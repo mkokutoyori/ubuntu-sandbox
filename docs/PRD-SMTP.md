@@ -1,20 +1,28 @@
-# PRD — Courrier électronique : SMTP/ESMTP (RFC 5321, 5322, 1870, 6152, 2920, 3463/5248), sécurisation (STARTTLS RFC 3207, AUTH RFC 4954/4616/2195) et authentification anti-usurpation (SPF RFC 7208, DKIM RFC 6376, DMARC RFC 7489)
+# PRD — Courrier électronique : SMTP/ESMTP (RFC 5321, 5322, 1870, 6152, 2920, 3463/5248), sécurisation (STARTTLS RFC 3207, AUTH RFC 4954/4616/2195), soumission (RFC 6409), notifications de non-remise (RFC 3461/3464/6522) et authentification anti-usurpation (SPF RFC 7208, DKIM RFC 6376, DMARC RFC 7489)
 
-**Version** : 1.0
+**Version** : 1.1
 **Date** : 2026-07-24
 **Projet** : Ubuntu Sandbox — Module SMTP
 **Auteur** : Claude Code
 **Références normatives** : RFC 5321 (Simple Mail Transfer Protocol —
 canal de contrôle, machine à états, enveloppe MAIL FROM/RCPT TO, routage
-par MX), RFC 5322 (Internet Message Format — en-têtes From/To/Subject/
-Date/Message-ID, distincts de l'enveloppe SMTP), RFC 1870 (extension
-`SIZE`), RFC 6152 (extension `8BITMIME`), RFC 2920 (extension
-`PIPELINING`), RFC 3463 + RFC 5248 (codes de statut étendus
-« Enhanced Mail System Status Codes », ex. `2.1.0`/`5.1.1`), RFC 3207
-(sécurisation par TLS — `STARTTLS`, upgrade en place du canal en clair),
-RFC 8446 (TLS 1.3 — prérequis externe pour `STARTTLS`, cf. `PRD-TLS.md`,
-**déjà livré**), RFC 4954 (extension `AUTH`), RFC 4616 (mécanisme SASL
-`PLAIN`), RFC 2195 (mécanisme SASL `CRAM-MD5`), RFC 7208 (Sender Policy
+par MX, champs de trace `Received:`/`Return-Path:` §4.4, limites
+protocolaires §4.5.3, accessibilité de `postmaster` §4.5.1, stratégie de
+réessai §4.5.4.1, sensibilité à la casse §2.4), RFC 5322 (Internet
+Message Format — en-têtes From/To/Subject/Date/Message-ID, distincts de
+l'enveloppe SMTP), RFC 1870 (extension `SIZE`), RFC 6152 (extension
+`8BITMIME`), RFC 2920 (extension `PIPELINING`), RFC 3463 + RFC 5248
+(codes de statut étendus « Enhanced Mail System Status Codes », ex.
+`2.1.0`/`5.1.1`), RFC 3207 (sécurisation par TLS — `STARTTLS`, upgrade en
+place du canal en clair), RFC 8446 (TLS 1.3 — prérequis externe pour
+`STARTTLS`, cf. `PRD-TLS.md`, **déjà livré**), RFC 4954 (extension
+`AUTH`), RFC 4616 (mécanisme SASL `PLAIN`), RFC 2195 (mécanisme SASL
+`CRAM-MD5`), RFC 6409 (Message Submission for Mail — règles spécifiques
+au port 587, distinctes du relais MTA-à-MTA du port 25), RFC 3461
+(extension SMTP `DSN` — paramètres `NOTIFY=`/`ORCPT=` de `RCPT TO`), RFC
+3464 (format du message de notification de non-remise — « Delivery
+Status Notification »), RFC 6522 (structure `multipart/report`
+générique dont RFC 3464 est une instance), RFC 7208 (Sender Policy
 Framework — SPF), RFC 6376 (DomainKeys Identified Mail — DKIM), RFC 7489
 (Domain-based Message Authentication, Reporting and Conformance —
 DMARC), RFC 1035/1034 (DNS — enregistrements `MX`/`TXT`, déjà livrés dans
@@ -93,7 +101,7 @@ PRD-SMTP.md                                              ◄── VOUS ÊTES IC
    │  Chantier 2 (SPF/DKIM/DMARC) : consomme le moteur DNS existant
    │  (MX/TXT) et la PKI existante (signature DKIM), et le moteur SMTP
    │  du chantier 1 (point d'évaluation/signature) — dépend donc de P1
-   │  à P12 de ce même document, pas d'un PRD externe
+   │  à P17 de ce même document, pas d'un PRD externe
    ▼
 (aucun consommateur PRD identifié pour l'instant — `cron` et la
 convention `/var/mail/` sont des consommateurs internes déjà présents
@@ -196,6 +204,13 @@ interne du chantier 1 (§ 5).
 | 14 | Aucune vérification SPF, malgré un moteur DNS `TXT` déjà complet | RFC 7208 | Moyenne |
 | 15 | Aucune signature/vérification DKIM, malgré une PKI déjà réutilisable | RFC 6376 | Moyenne |
 | 16 | Aucune politique DMARC (alignement SPF/DKIM, action `reject`/`quarantine`) | RFC 7489 | Moyenne |
+| 17 | Aucun champ de trace `Received:` ajouté à chaque saut, aucun `Return-Path:` à la remise finale — sans ces en-têtes, le chemin de transport d'un message n'est pas reconstituable, alors que c'est l'exigence normative la plus fondamentale de RFC 5321 §4.4 après l'enveloppe elle-même | RFC 5321 §4.4 | Élevée |
+| 18 | Aucune notification de non-remise (DSN/bounce) conforme — le modèle de données prévu (§ 4.5, `RelayAttempt.outcome === 'bounced'`) capture bien qu'un échec s'est produit, mais rien ne génère le **message** RFC 3464 attendu par l'expéditeur (`multipart/report`, `Action`/`Status`/`Diagnostic-Code`), et aucun paramètre `NOTIFY=`/`ORCPT=` de `RCPT TO` (RFC 3461) n'est reconnu | RFC 3461, RFC 3464, RFC 6522 | Élevée |
+| 19 | Aucune distinction entre relais MTA-à-MTA (port 25) et soumission cliente (port 587) — le PRD initial traite le port 587 comme une simple variante d'écoute du même moteur, alors que RFC 6409 impose des règles propres à la soumission (authentification obligatoire et non simplement recommandée, ajout d'un en-tête `Sender:` si l'identité authentifiée diffère du `From:`, interdiction d'agir comme relais MTA de réception distante sur ce port) | RFC 6409 | Moyenne |
+| 20 | Aucune limite protocolaire appliquée — longueur de ligne de commande (512 octets), longueur de ligne de texte du corps (1000 octets CRLF inclus), nombre minimal de destinataires par transaction (100), délais d'inactivité par état de session — un serveur qui accepte une ligne de 50 000 octets ou ne se déconnecte jamais d'une session inactive est infidèle à la RFC et vulnérable par construction | RFC 5321 §4.5.3 | Moyenne |
+| 21 | Aucune garantie que `postmaster@<domaine local>` (ou `postmaster` sans domaine) soit toujours acceptable en `RCPT TO`, indépendamment de toute politique de relais ou de l'existence d'un compte système réel de ce nom — exigence normative absolue de la RFC, pas une option de configuration | RFC 5321 §4.5.1 | Faible |
+| 22 | Aucune règle explicite de sensibilité à la casse (partie locale d'une adresse potentiellement sensible, domaine toujours insensible, cohérent avec DNS) — laissée implicite dans le modèle actuel (§ 4.2), donc non testable ni garantie | RFC 5321 §2.4 | Faible |
+| 23 | Aucune stratégie de réessai/file d'attente pour une remise sortante temporairement différée (§ 2.1.13/objectif 13 existant couvre l'aller-retour SMTP client lui-même, mais pas ce qu'il advient d'un échec `4xx`/de connexion) — sans échéancier de réessai avec abandon après une durée bornée, une remise différée serait soit perdue silencieusement, soit retentée indéfiniment, les deux étant infidèles au comportement réel d'un MTA de production | RFC 5321 §4.5.4.1 | Moyenne |
 
 **Conclusion de la phase d'analyse** : SMTP est un chantier entièrement
 greenfield — comparable à l'état de FTP avant `PRD-FTP-SFTP.md` — mais
@@ -393,6 +408,98 @@ objectifs 17/18 sans réévaluer leur logique propre, appose un en-tête
 (`reject` refuse la remise avec `550 5.7.1`, `quarantine` remet mais
 marque le message, `none` remet et journalise seulement).
 
+**20. RFC 5321 §4.4 — Champs de trace (`Received:`, `Return-Path:`).**
+Chaque MTA qui reçoit un message ajoute réellement un en-tête
+`Received:` en **tête** du message (jamais en fin — l'ordre reflète le
+sens de propagation), portant l'horodatage, le protocole (`SMTP`/
+`ESMTP`/`ESMTPS`/`ESMTPA` selon `STARTTLS`/`AUTH` réellement actifs sur
+cette session, cohérent avec les objectifs 8/9), l'identité annoncée par
+l'émetteur (`HELO`/`EHLO`) **et** l'adresse IP source réelle de la
+connexion TCP (les deux, jamais fusionnées — un `HELO` menteur est un
+cas réel, pas un bug, exactement comme SPF, objectif 17, l'évalue), et
+l'identité du destinataire local le cas échéant. Un message relayé
+accumule un `Received:` par saut, jamais réécrit ni supprimé — c'est ce
+qui rend le chemin de transport reconstituable a posteriori, y compris
+par SPF/DKIM/DMARC (objectifs 17-19) qui inspectent ces mêmes en-têtes.
+`Return-Path:` n'est ajouté **qu'à la remise finale** (LDA, objectif 11)
+et reflète l'adresse `MAIL FROM` de l'enveloppe — jamais sur un message
+simplement relayé, où il n'aurait pas de sens.
+
+**21. RFC 3461 + RFC 3464 + RFC 6522 — Notifications de non-remise
+(DSN/bounce) conformes.** `RCPT TO:<adresse> NOTIFY=SUCCESS,FAILURE,
+DELAY` et `ORCPT=rfc822;<adresse-originale>` (RFC 3461) sont reconnus et
+honorés par le canal de contrôle (objectif 1) et l'enveloppe (objectif
+2). Un échec de remise (locale, objectif 11, ou relayée, objectif 13 —
+y compris après épuisement de la file d'attente, objectif 26) génère un
+**vrai** message de notification RFC 3464 : structure `multipart/report`
+(RFC 6522) avec une partie `message/delivery-status` portant les champs
+`Final-Recipient`/`Action`/`Status` (le code étendu de l'objectif 3) /
+`Diagnostic-Code`, et une partie `message/rfc822` optionnelle contenant
+les en-têtes originaux du message. Ce DSN est expédié avec
+**`MAIL FROM:<>`** (enveloppe vide, RFC 5321 §3.6) vers l'adresse issue
+de `Return-Path`/`ORCPT` de l'envoi original — jamais vers un `From:` de
+l'enveloppe elle-même, et une session recevant un message dont
+l'enveloppe est déjà vide **ne génère jamais de second DSN en cas
+d'échec** (prévention de boucle de rebond, cf. § 7).
+
+**22. RFC 6409 — Distinction MTA (port 25) / MSA-soumission (port
+587).** Le port 587 applique réellement les règles de soumission
+distinctes du relais MTA-à-MTA du port 25 (le même moteur, objectif 1,
+mais une politique différente selon le port d'écoute, comme le port 465
+de l'objectif 16 est une variante de configuration TLS du même moteur) :
+authentification `AUTH` **obligatoire** sur 587 (pas seulement autorisée
+comme sur 25, durcissant l'objectif 9), ajout d'un en-tête `Sender:`
+lorsque l'identité authentifiée diffère du `From:` déclaré par le
+client, application immédiate des limites protocolaires (objectif 23) dès
+la soumission plutôt qu'au relais, et **refus explicite d'agir comme MTA
+de réception distante** sur ce port — une session sur 587 n'accepte
+jamais un `RCPT TO` qui ne serait ni local ni couvert par la politique
+anti-relais authentifiée (objectif 10), cohérence renforcée plutôt que
+redondante avec cette dernière.
+
+**23. RFC 5321 §4.5.3 — Limites protocolaires.** Longueur de ligne de
+commande maximale (512 octets CRLF inclus, §4.5.3.1.4 — rejet `500` au
+delà, pas de troncature silencieuse), longueur de ligne de texte du
+corps (1000 octets CRLF inclus, §4.5.3.1.6), nombre minimal de
+destinataires qu'une transaction doit pouvoir accumuler (100,
+§4.5.3.1.8 — un serveur qui refuse un 4ᵉ `RCPT TO` serait non conforme).
+Délais d'inactivité par état de session (§4.5.3.2 — ex. 5 minutes en
+attente d'une commande initiale, 3 minutes entre le dernier octet de
+`DATA` et la ligne de terminaison) ferment la connexion avec
+`421 4.4.2` (code étendu de l'objectif 3) plutôt que de la laisser
+ouverte indéfiniment.
+
+**24. RFC 5321 §4.5.1 — Accessibilité garantie de `postmaster`.**
+`RCPT TO:<postmaster>` (sans domaine) et `RCPT TO:<postmaster@<domaine
+local>>` sont **toujours** acceptables pour un domaine local, même en
+l'absence de tout compte système réel de ce nom — exigence normative
+absolue, indépendante de la politique de relais (objectif 10) et de
+l'existence d'un utilisateur Linux réel ; la remise elle-même route vers
+un compte cible configurable (`root` par défaut), cohérent avec la
+convention `/var/mail/<user>` déjà établie (objectif 11).
+
+**25. RFC 5321 §2.4 — Sensibilité à la casse des adresses.** La partie
+locale d'une adresse (`utilisateur@...`) est comparée en respectant sa
+casse au sens strict de la RFC — documentée et testée explicitement
+plutôt que laissée implicite, y compris le choix pragmatique assumé (et
+courant chez les MTA réels en pratique) de la traiter en interne de
+façon insensible pour la résolution de compte, sans jamais prétendre
+l'inverse dans la documentation ou les tests. Le domaine est **toujours**
+insensible à la casse (`Example.COM` équivaut à `example.com`), cohérent
+avec DNS (§ 1.2) et avec la résolution `MX` de l'objectif 13.
+
+**26. RFC 5321 §4.5.4.1 — Stratégie de réessai et file d'attente pour
+la remise différée.** Une remise sortante (objectif 13) qui échoue
+temporairement (MX injoignable, réponse `4xx`) est **réellement mise en
+file d'attente** plutôt que perdue ou retentée en boucle serrée, et
+réessayée selon un échéancier borné et croissant (premier réessai après
+un délai configurable, espacement croissant à chaque échec successif,
+abandon avec génération d'un DSN d'échec, objectif 21, après une durée
+totale configurable — RFC 5321 ne fixe pas de valeurs précises, les
+échéanciers usuels de production servant de référence par défaut). Une
+remise qui réussit finalement après un ou plusieurs réessais est
+observable comme telle (objectif 15), distincte d'une remise immédiate.
+
 ### 2.2 Non-objectifs (explicitement hors périmètre)
 
 - **Vrai chiffrement/vraie négociation cryptographique bit-exacte** —
@@ -429,6 +536,30 @@ marque le message, `none` remet et journalise seulement).
 - **Logiciel de liste de diffusion** (type Majordomo/Mailman, gestion
   d'abonnés, digest) — hors périmètre, sans lien direct avec la fidélité
   protocolaire SMTP elle-même.
+- **MTA-STS (RFC 8461) et DANE pour SMTP (RFC 7672)** — application
+  **obligatoire** (et non plus opportuniste) de TLS au relais sortant par
+  découverte d'une politique publiée en DNS/HTTPS (MTA-STS) ou par
+  enregistrements `TLSA` sécurisés par DNSSEC (DANE) : mécanismes de
+  **découverte de politique**, distincts de `STARTTLS` lui-même
+  (objectif 8, déjà couvert) qu'ils rendent seulement obligatoire plutôt
+  qu'optionnel ; la résolution `TLSA`/DNSSEC ou la récupération HTTPS
+  d'un fichier de politique ajouterait une complexité disproportionnée
+  par rapport à la valeur pédagogique pour ce simulateur — le même
+  compromis que celui déjà acté par `PRD-TLS.md` pour la crypto simulée.
+- **ARC — Authenticated Received Chain (RFC 8617)** — préservation de
+  l'authentification SPF/DKIM/DMARC (objectifs 17-19) à travers des
+  intermédiaires qui modifient légitimement le message (listes de
+  diffusion, redirection) ; extension avancée construite au-dessus de
+  DKIM, hors périmètre initial — cohérent avec l'exclusion du logiciel
+  de liste de diffusion ci-dessus, qui en serait le principal
+  utilisateur concret.
+- **CHUNKING/BINARYMIME (RFC 3030, commande `BDAT`)** — alternative à
+  `DATA` transmettant le corps par blocs de taille annoncée sans
+  dot-stuffing (utile pour des corps binaires volumineux) ; `DATA` +
+  dot-stuffing (objectif 2) couvre déjà la transmission fidèle et
+  complète du corps du message, `BDAT` n'apporte qu'un gain de
+  performance sans valeur pédagogique supplémentaire pour un simulateur
+  qui ne transporte pas de volumes réels.
 
 ---
 
@@ -439,12 +570,13 @@ marque le message, `none` remet et journalise seulement).
 **Additif d'abord, migration ensuite en un point de bascule net** — même
 discipline que `PRD-TLS.md`/`PRD-FTP-SFTP.md`. Le chantier 1 (SMTP/
 ESMTP/STARTTLS/AUTH) est construit **greenfield**, en couches strictement
-empilées (canal de contrôle → enveloppe/extensions → sécurité/
-authentification → remise locale/relais), sans toucher à aucun fichier
-existant avant la phase de branchement dédiée (§ 5, P12-P13). Le
-chantier 2 (SPF/DKIM/DMARC) s'ajoute **par-dessus** le chantier 1 stabilisé,
-en pur point d'évaluation/signature, sans réécrire le moteur SMTP ni le
-moteur DNS existant.
+empilées (canal de contrôle → enveloppe/extensions/trace → limites
+protocolaires/sécurité/authentification/soumission → remise locale/
+relais/file d'attente/DSN), sans toucher à aucun fichier existant avant
+la phase de branchement dédiée (§ 5, P17-P18). Le chantier 2 (SPF/DKIM/
+DMARC) s'ajoute **par-dessus** le chantier 1 stabilisé, en pur point
+d'évaluation/signature, sans réécrire le moteur SMTP ni le moteur DNS
+existant.
 
 Discipline explicite héritée de FTP/HTTP (§ 1.1, § 1.2) : SMTP est un
 protocole **synchrone requête/réponse**, pas un protocole piloté par le
@@ -456,7 +588,7 @@ réactif (contrairement à OSPF/DHCP/BGP).
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│ Consommateurs (branchés en P12-P13, § 2.1.12/16) :                  │
+│ Consommateurs (branchés en P17-P18, § 2.1.12/16) :                  │
 │   LinuxCommandExecutor.ts (deliverMail de cron → réel) ·             │
 │   IanaServiceRegistry.ts/WellKnownPorts.ts (port 465 ajouté) ·       │
 │   shell Linux (mail/mailx/sendmail, objectif 14)                    │
@@ -467,19 +599,32 @@ réactif (contrairement à OSPF/DHCP/BGP).
 │                    │                      │   DKIM, pas de logique   │
 │                    │                      │   propre d'évaluation)   │
 ├────────────────────────────────────────────────────────────────────┤
-│  AUTH (4954/4616/2195) — smtp/auth.ts (NOUVEAU)                      │
+│  DSN/bounce (3461/3464/6522) — smtp/dsn.ts (NOUVEAU) · consomme      │
+│  trace.ts (Return-Path/ORCPT) et queue.ts (échec définitif)          │
+├────────────────────────────────────────────────────────────────────┤
+│  File d'attente et réessai différé (5321 §4.5.4.1) —                │
+│  smtp/queue.ts (NOUVEAU) — au-dessus du relais sortant               │
+├────────────────────────────────────────────────────────────────────┤
+│  AUTH (4954/4616/2195) — smtp/auth.ts (NOUVEAU) ·                    │
+│  Soumission MSA port 587 (6409) — smtp/submission.ts (NOUVEAU,       │
+│  AUTH obligatoire + Sender:, au-dessus de auth.ts)                   │
 ├────────────────────────────────────────────────────────────────────┤
 │  STARTTLS (3207) — smtp/starttls.ts (NOUVEAU) — même patron que      │
 │  ldapStartTls.ts : TlsClientSession/TlsServerSession + TlsRecordWire │
 ├────────────────────────────────────────────────────────────────────┤
-│  Extensions ESMTP (1870/6152/2920) — smtp/extensions.ts (NOUVEAU)    │
+│  Extensions ESMTP (1870/6152/2920) — smtp/extensions.ts (NOUVEAU) ·  │
+│  Limites protocolaires (5321 §4.5.3) — smtp/limits.ts (NOUVEAU)      │
+├────────────────────────────────────────────────────────────────────┤
+│  Champs de trace (5321 §4.4) — smtp/trace.ts (NOUVEAU) :             │
+│  Received:/Return-Path:, apposés par SmtpServerSession               │
 ├────────────────────────────────────────────────────────────────────┤
 │  Canal de contrôle SMTP (5321/5322) — smtp/SmtpClientSession.ts,     │
 │  smtp/SmtpServerSession.ts, smtp/replies.ts, smtp/envelope.ts        │
 │  (NOUVEAU, patron FtpClientSession.ts/FtpServerSession.ts)           │
 ├────────────────────────────────────────────────────────────────────┤
-│  Remise locale (LDA) — smtp/localDelivery.ts (NOUVEAU) ·             │
-│  Relais sortant MX — smtp/relay.ts (NOUVEAU, RecursiveResolver)      │
+│  Remise locale (LDA) — smtp/localDelivery.ts (NOUVEAU, postmaster/   │
+│  casse §4.5.1/§2.4) · Relais sortant MX — smtp/relay.ts (NOUVEAU,    │
+│  RecursiveResolver)                                                  │
 ├────────────────────────────────────────────────────────────────────┤
 │  TcpStack/TcpSocket (canaux 25/465/587) · moteur DNS existant        │
 │  (MX/TXT, inchangé) · PKI existante (PkiKeyPair, inchangée) ·        │
@@ -497,16 +642,26 @@ src/network/smtp/                      # NOUVEAU — protocole SMTP entier
 ├── SmtpServer.ts                      # écoute TCP/25,465,587 ; instancie une session par connexion
 ├── replies.ts                         # dictionnaire codes 2xx-5xx + codes étendus 3463/5248
 ├── envelope.ts                        # MAIL FROM/RCPT TO, dot-stuffing (§4.5.2), parsing RFC 5322 minimal
+├── trace.ts                           # NOUVEAU — Received:/Return-Path: (RFC 5321 §4.4, objectif 20)
+├── limits.ts                          # NOUVEAU — longueurs de ligne/commande, délais par état (§4.5.3, objectif 23)
 ├── extensions.ts                      # SIZE/8BITMIME/PIPELINING (1870/6152/2920)
 ├── starttls.ts                        # upgrade en place — patron ldapStartTls.ts
 ├── auth.ts                            # AUTH PLAIN/LOGIN/CRAM-MD5 (4954/4616/2195)
-├── relayPolicy.ts                     # anti-relais ouvert (§2.1.10) : domaines locaux, gate d'authentification
+├── submission.ts                      # NOUVEAU — règles MSA port 587 (RFC 6409, objectif 22) : AUTH
+│                                       # obligatoire, en-tête Sender:, refus d'agir en relais MTA
+├── relayPolicy.ts                     # anti-relais ouvert (§2.1.10) : domaines locaux, gate d'authentification,
+│                                       # postmaster toujours acceptable (§4.5.1, objectif 24)
 ├── localDelivery.ts                   # LDA — écriture mbox réelle dans /var/mail/<user>
 ├── relay.ts                           # relais sortant — résolution MX réelle, retombée A/AAAA
+├── queue.ts                           # NOUVEAU — file d'attente et réessai borné pour la remise différée
+│                                       # (RFC 5321 §4.5.4.1, objectif 26)
+├── dsn.ts                             # NOUVEAU — notification de non-remise conforme (RFC 3461/3464/6522,
+│                                       # objectif 21) : NOTIFY=/ORCPT=, message multipart/report
 ├── spf.ts                             # NOUVEAU (chantier 2) — évaluation de politique SPF (TXT)
 ├── dkim.ts                            # NOUVEAU (chantier 2) — signature/vérification DKIM (PkiKeyPair)
 ├── dmarc.ts                           # NOUVEAU (chantier 2) — alignement SPF/DKIM, action de politique
-├── events.ts                          # smtp.session.*, smtp.mail.*, smtp.delivery.*, smtp.auth.*
+├── events.ts                          # smtp.session.*, smtp.mail.*, smtp.delivery.*, smtp.auth.*,
+│                                       # smtp.dsn.generated, smtp.queue.retried/expired
 └── observables.ts                     # flux dérivés (tests/UI)
 
 src/network/devices/LinuxServer.ts     # étendu : héberge un SmtpServer sur son propre TcpStack,
@@ -550,6 +705,18 @@ consommées telles quelles (§ 1.2), jamais réécrites.
   `dmarc.ts` branchés sur `SmtpServerSession` à `RCPT`/`DATA`) — même
   principe que `FtpAlg.ts` s'ajoutant à `NATEngine.ts` sans le réécrire
   (`PRD-FTP-SFTP.md` § 3.4).
+- **Exception assumée à la discipline synchrone : `queue.ts`.** La
+  session de contrôle SMTP elle-même (`SmtpServerSession`/
+  `SmtpClientSession`) reste strictement synchrone requête/réponse
+  (ci-dessus) — mais la **file d'attente de réessai différé** (objectif
+  26) est, par nature, pilotée par le temps (un réessai a lieu à une
+  échéance future, pas en réaction à une commande entrante). `queue.ts`
+  s'appuie donc sur l'abstraction de planification déjà existante
+  (`src/events/Scheduler.ts`, `IScheduler`/`getDefaultScheduler`, déjà
+  réutilisée par des mécanismes similaires de ce dépôt comme
+  `LoginBlocker`/`TacacsClientAgent`) plutôt que sur un nouveau timer ad
+  hoc — seul module de ce PRD dans ce cas, explicitement isolé pour ne
+  pas contaminer la discipline synchrone du reste du moteur.
 
 ---
 
@@ -676,6 +843,78 @@ interface MboxEntry {
 }
 ```
 
+### 4.10 Champs de trace (RFC 5321 §4.4, objectif 20)
+
+```ts
+interface ReceivedHeader {
+  readonly fromHelo: string;           // identité annoncée par HELO/EHLO
+  readonly fromIp: string;             // adresse IP source réelle de la connexion TCP
+  readonly by: string;                 // nom d'hôte du serveur receveur (ce simulateur)
+  readonly withProtocol: 'SMTP' | 'ESMTP' | 'ESMTPS' | 'ESMTPA'; // reflète STARTTLS/AUTH réels
+  readonly forRecipient?: string;      // présent seulement en remise finale à un seul destinataire
+  readonly timestamp: number;          // epoch ms
+}
+
+interface ReturnPath {
+  readonly address: string;            // MAIL FROM de l'enveloppe d'origine, '<>' pour un DSN
+}
+```
+
+### 4.11 Notification de non-remise — DSN (RFC 3461/3464/6522, objectif 21)
+
+```ts
+type DsnNotifyCondition = 'SUCCESS' | 'FAILURE' | 'DELAY' | 'NEVER';
+
+interface DsnRequest {
+  readonly notify: readonly DsnNotifyCondition[]; // RCPT TO: ... NOTIFY=
+  readonly orcpt?: string;                        // RCPT TO: ... ORCPT=rfc822;<adresse>
+}
+
+type DsnAction = 'failed' | 'delayed' | 'delivered' | 'relayed' | 'expanded';
+
+interface DsnReport {
+  readonly finalRecipient: string;
+  readonly action: DsnAction;
+  readonly status: string;             // code étendu RFC 3463, ex. '5.1.1'
+  readonly diagnosticCode?: string;     // ex. 'smtp; 550 5.1.1 User unknown'
+  readonly originalEnvelopeId?: string; // reprend l'ORCPT si fourni
+}
+```
+
+### 4.12 Soumission MSA — port 587 (RFC 6409, objectif 22)
+
+```ts
+interface SubmissionContext {
+  readonly authenticatedIdentity: string; // toujours présent — AUTH est obligatoire sur ce port
+  readonly declaredFrom: string;          // en-tête From: du message tel que soumis
+  readonly senderHeaderAdded: boolean;    // true si declaredFrom !== authenticatedIdentity
+}
+```
+
+### 4.13 Limites protocolaires (RFC 5321 §4.5.3, objectif 23)
+
+```ts
+interface SmtpProtocolLimits {
+  readonly maxCommandLineBytes: number;    // 512 (§4.5.3.1.4)
+  readonly maxTextLineBytes: number;       // 1000, CRLF inclus (§4.5.3.1.6)
+  readonly minRecipientsBuffered: number;  // 100 (§4.5.3.1.8)
+  readonly idleTimeoutMs: Record<'initial' | 'mailCmd' | 'rcptCmd' | 'dataInit' | 'dataBlock' | 'dataTerm', number>; // §4.5.3.2
+}
+```
+
+### 4.14 File d'attente de remise différée (RFC 5321 §4.5.4.1, objectif 26)
+
+```ts
+interface QueuedDelivery {
+  readonly envelope: MailEnvelope;
+  readonly attempts: number;
+  readonly firstAttemptAt: number;     // epoch ms
+  readonly nextAttemptAt: number;      // epoch ms — piloté par IScheduler (§ 3.4)
+  readonly lastError?: string;
+  readonly expiresAt: number;          // abandon → génération d'un DsnReport (§ 4.11)
+}
+```
+
 ---
 
 ## 5. Plan de mise en œuvre (TDD, par phases)
@@ -684,25 +923,30 @@ interface MboxEntry {
 |---|---|---|
 | **P1 — Canal de contrôle SMTP nominal (5321 §2-4)** | `types.ts`/`SmtpServerSession.ts`/`SmtpClientSession.ts`/`replies.ts` : connexion, bannière `220`, `HELO`, `MAIL`/`RCPT`/`DATA` minimal, `QUIT`/`NOOP`/`RSET`, réponses à code + multi-lignes | — |
 | **P2 — Enveloppe et dot-stuffing (5321 §2.3.1/§4.5.2)** | `envelope.ts` : parsing `MAIL FROM`/`RCPT TO`, dot-stuffing round-trip, distinction enveloppe/en-têtes RFC 5322 | P1 |
-| **P3 — Codes étendus (3463/5248)** | Extension de `replies.ts` : table complète code↔code-étendu, chaque commande de P1-P2 mappée | P1, P2 |
-| **P4 — `EHLO`/capacités ESMTP (5321 §4.1.1.7)** | `SmtpServerSession.ts` répond dynamiquement selon l'état réel (TLS actif ou non, etc.) | P1 |
-| **P5 — Extensions `SIZE`/`8BITMIME`/`PIPELINING`** | `extensions.ts` : rejet `552` sur dépassement de taille, vérification 8-bit réelle, tampon de commandes groupées | P4 |
-| **P6 — `STARTTLS` (3207)** | `starttls.ts` : upgrade en place selon le patron `ldapStartTls.ts`, purge du tampon de commandes pré-upgrade, re-négociation `EHLO` obligatoire | P4, **moteur TLS de `PRD-TLS.md` (livré)** |
-| **P7 — `AUTH` (4954/4616/2195)** | `auth.ts` : `PLAIN`/`LOGIN`/`CRAM-MD5`, annoncé seulement si TLS actif (P6) ou clair explicitement autorisé | P6 |
-| **P8 — Anti-relais ouvert** | `relayPolicy.ts` : domaines locaux vs distants, gate d'authentification (P7) | P2, P7 |
-| **P9 — Remise locale réelle (LDA)** | `localDelivery.ts` : écriture mbox dans `/var/mail/<user>` (convention déjà existante, § 1.1) | P2, P8 |
-| **P10 — Relais sortant par MX réel (5321 §5)** | `relay.ts` : `RecursiveResolver.resolve(qname, RRType.MX)` (déjà livré), tri par préférence, retombée `A`/`AAAA` | P8, moteur DNS existant |
-| **P11 — Observabilité SMTP** | `events.ts`/`observables.ts`, émission en ligne (§ 3.4) | P1–P10 |
-| **P12 — Branchement `SmtpServer` sur `LinuxServer`** | `LinuxServer.ts` étendu, `SmtpServer.ts` écoute 25/465/587 sur son `TcpStack`, port 465 en TLS implicite (variante de P6) | P1–P11 |
-| **P13 — Branchement des consommateurs existants** | `deliverMail` de `cron` → réel (§2.1.12) ; port 465 ajouté à `IanaServiceRegistry.ts`/`WellKnownPorts.ts` (§2.1.16) | P9, P12 |
-| **P14 — Client `mail`/`mailx`/`sendmail`** | `MailCommand.ts` : mode interactif + non-interactif, lecture de boîte locale | P9, P12 |
-| **P15 — SPF (7208)** | `spf.ts` : parsing de politique `TXT`, mécanismes `ip4`/`ip6`/`a`/`mx`/`include`/`all`, `Received-SPF` | P12, moteur DNS existant (`TXT`) |
-| **P16 — DKIM (6376)** | `dkim.ts` : génération de sélecteur (`PkiKeyPair`), signature à l'émission, vérification à la réception, `DKIM-Signature` | P12, PKI existante |
-| **P17 — DMARC (7489)** | `dmarc.ts` : alignement, `Authentication-Results`, action de politique réelle | P15, P16 |
+| **P3 — Champs de trace (5321 §4.4, objectif 20)** | `trace.ts` : `Received:` apposé en tête à chaque saut (HELO + IP source réelle + protocole réel), `Return-Path:` uniquement à la remise finale | P2 |
+| **P4 — Codes étendus (3463/5248)** | Extension de `replies.ts` : table complète code↔code-étendu, chaque commande de P1-P3 mappée | P1, P2 |
+| **P5 — `EHLO`/capacités ESMTP (5321 §4.1.1.7)** | `SmtpServerSession.ts` répond dynamiquement selon l'état réel (TLS actif ou non, etc.) | P1 |
+| **P6 — Extensions `SIZE`/`8BITMIME`/`PIPELINING`** | `extensions.ts` : rejet `552` sur dépassement de taille, vérification 8-bit réelle, tampon de commandes groupées | P5 |
+| **P7 — Limites protocolaires (5321 §4.5.3, objectif 23)** | `limits.ts` : rejet `500` au-delà de 512/1000 octets de ligne, minimum de 100 destinataires bufferisés, fermeture `421 4.4.2` sur délai d'inactivité par état | P1 |
+| **P8 — `STARTTLS` (3207)** | `starttls.ts` : upgrade en place selon le patron `ldapStartTls.ts`, purge du tampon de commandes pré-upgrade, re-négociation `EHLO` obligatoire | P5, **moteur TLS de `PRD-TLS.md` (livré)** |
+| **P9 — `AUTH` (4954/4616/2195)** | `auth.ts` : `PLAIN`/`LOGIN`/`CRAM-MD5`, annoncé seulement si TLS actif (P8) ou clair explicitement autorisé | P8 |
+| **P10 — Soumission MSA port 587 (6409, objectif 22)** | `submission.ts` : `AUTH` rendu obligatoire (pas seulement autorisé) sur ce port, ajout de `Sender:` si l'identité authentifiée diffère de `From:`, refus d'agir en relais MTA de réception distante | P9 |
+| **P11 — Anti-relais ouvert** | `relayPolicy.ts` : domaines locaux vs distants, gate d'authentification (P9), `postmaster` toujours acceptable pour un domaine local (§4.5.1, objectif 24) | P2, P9 |
+| **P12 — Remise locale réelle (LDA)** | `localDelivery.ts` : écriture mbox dans `/var/mail/<user>` (convention déjà existante, § 1.1), sensibilité à la casse du domaine/partie locale (§2.4, objectif 25) | P3, P11 |
+| **P13 — Relais sortant par MX réel (5321 §5)** | `relay.ts` : `RecursiveResolver.resolve(qname, RRType.MX)` (déjà livré), tri par préférence, retombée `A`/`AAAA` | P11, moteur DNS existant |
+| **P14 — File d'attente et réessai différé (5321 §4.5.4.1, objectif 26)** | `queue.ts` : échéancier de réessai borné et croissant sur `IScheduler` (§ 3.4), abandon après durée configurable | P13 |
+| **P15 — DSN/bounce conforme (3461/3464/6522, objectif 21)** | `dsn.ts` : `NOTIFY=`/`ORCPT=` sur `RCPT TO`, génération d'un message `multipart/report` réel à l'échec (local ou après épuisement de P14), `MAIL FROM:<>`, jamais de second DSN sur un DSN | P12, P14 |
+| **P16 — Observabilité SMTP** | `events.ts`/`observables.ts`, émission en ligne (§ 3.4), y compris `smtp.dsn.generated`/`smtp.queue.retried`/`smtp.queue.expired` | P1–P15 |
+| **P17 — Branchement `SmtpServer` sur `LinuxServer`** | `LinuxServer.ts` étendu, `SmtpServer.ts` écoute 25/465/587 sur son `TcpStack`, port 465 en TLS implicite (variante de P8) | P1–P16 |
+| **P18 — Branchement des consommateurs existants** | `deliverMail` de `cron` → réel (§2.1.12) ; port 465 ajouté à `IanaServiceRegistry.ts`/`WellKnownPorts.ts` (§2.1.16) | P12, P17 |
+| **P19 — Client `mail`/`mailx`/`sendmail`** | `MailCommand.ts` : mode interactif + non-interactif, lecture de boîte locale | P12, P17 |
+| **P20 — SPF (7208)** | `spf.ts` : parsing de politique `TXT`, mécanismes `ip4`/`ip6`/`a`/`mx`/`include`/`all`, `Received-SPF` | P17, moteur DNS existant (`TXT`) |
+| **P21 — DKIM (6376)** | `dkim.ts` : génération de sélecteur (`PkiKeyPair`), signature à l'émission, vérification à la réception, `DKIM-Signature` | P17, PKI existante |
+| **P22 — DMARC (7489)** | `dmarc.ts` : alignement, `Authentication-Results`, action de politique réelle | P20, P21 |
 
 Chaque phase suit le cycle rouge → vert → refactor. Le module reste
-strictement additif jusqu'à P13 (aucune suite existante ne change) ;
-P13 change délibérément ce principe pour les seuls fichiers listés
+strictement additif jusqu'à P18 (aucune suite existante ne change) ;
+P18 change délibérément ce principe pour les seuls fichiers listés
 (`LinuxCommandExecutor.ts`'s `deliverMail`, les deux registres de ports),
 en conservant leur comportement observable préexistant partout ailleurs.
 
@@ -719,47 +963,76 @@ en conservant leur comportement observable préexistant partout ailleurs.
    les en-têtes `To`/`Cc`).
 3. **Unitaires codes étendus** : chaque réponse porte le bon couple
    code/code-étendu.
-4. **Unitaires ESMTP** : `EHLO` avant/après `STARTTLS` annonce des
+4. **Unitaires champs de trace** : un message relayé sur deux sauts porte
+   deux `Received:` distincts, dans l'ordre inverse de propagation
+   (le plus récent en tête) ; l'IP source réelle et le `HELO` annoncé
+   sont capturés séparément (un `HELO` menteur ne réécrit pas l'IP
+   observée) ; `Return-Path:` n'apparaît que sur le message tel que lu
+   dans `/var/mail/<user>`, jamais sur une copie relayée.
+5. **Unitaires ESMTP** : `EHLO` avant/après `STARTTLS` annonce des
    capacités différentes ; `AUTH` absent tant que TLS n'est pas actif.
-5. **Unitaires extensions** : `SIZE` rejette un message trop grand avant
+6. **Unitaires extensions** : `SIZE` rejette un message trop grand avant
    `DATA` ; `8BITMIME` rejette un corps 8 bits si `7BIT` déclaré ;
    `PIPELINING` traite un groupe `MAIL`+`RCPT`+`DATA` envoyé sans
    attendre chaque réponse.
-6. **Unitaires/intégration `STARTTLS`** : handshake réel (contre le
+7. **Unitaires limites protocolaires** : une ligne de commande de plus de
+   512 octets est rejetée (`500`) sans être exécutée partiellement ; une
+   session inactive au-delà du délai de l'état courant se ferme avec
+   `421 4.4.2` ; une transaction accepte réellement au moins 100
+   `RCPT TO`.
+8. **Unitaires/intégration `STARTTLS`** : handshake réel (contre le
    moteur de `PRD-TLS.md`) ; **une commande envoyée juste avant
    l'upgrade n'est jamais exécutée après** (test dédié à la classe de
    vulnérabilité historique, § 2.1.8) ; `EHLO` post-upgrade obligatoire.
-7. **Unitaires/intégration `AUTH`** : `PLAIN`/`LOGIN`/`CRAM-MD5` round-trip
+9. **Unitaires/intégration `AUTH`** : `PLAIN`/`LOGIN`/`CRAM-MD5` round-trip
    avec un identifiant valide, échec propre sur mot de passe incorrect,
    `AUTH` refusé en clair par défaut.
-8. **Unitaires anti-relais** : un domaine local est toujours acceptable ;
-   un domaine distant est refusé (`550 5.7.1`) sans authentification, puis
-   accepté avec.
-9. **Unitaires remise locale** : un message accepté pour un destinataire
-   local est réellement lisible dans `/var/mail/<user>` au format mbox
-   correct.
-10. **Unitaires/intégration relais sortant** : une remise vers un domaine
+10. **Unitaires soumission MSA (port 587)** : une session sur 587 sans
+    `AUTH` préalable est refusée avant tout `MAIL FROM` (contrairement au
+    port 25) ; un `From:` différent de l'identité authentifiée produit un
+    `Sender:` ajouté ; une tentative de relais vers un destinataire non
+    local/non autorisé échoue même après authentification réussie sur ce
+    port précis.
+11. **Unitaires anti-relais** : un domaine local est toujours acceptable ;
+    un domaine distant est refusé (`550 5.7.1`) sans authentification, puis
+    accepté avec ; `RCPT TO:<postmaster>` est accepté même sans compte
+    système réel de ce nom.
+12. **Unitaires remise locale** : un message accepté pour un destinataire
+    local est réellement lisible dans `/var/mail/<user>` au format mbox
+    correct ; la comparaison de domaine ignore la casse, celle de la
+    partie locale la respecte.
+13. **Unitaires/intégration relais sortant** : une remise vers un domaine
     distant interroge réellement `MX`, essaie les serveurs par
     préférence croissante, retombe sur `A`/`AAAA` en l'absence de `MX`.
-11. **Intégration `cron`** : une tâche cron sans redirection dont la
+14. **Unitaires file d'attente/réessai** : un échec temporaire (`4xx`)
+    place la remise en file, le réessai suivant n'a pas lieu avant
+    l'échéance planifiée (vérifiable via un scheduler de test, sans
+    attente réelle) ; l'abandon après la durée totale configurée
+    déclenche la génération d'un DSN (§ 6.15) plutôt qu'un silence.
+15. **Unitaires/intégration DSN** : `NOTIFY=FAILURE` déclenche un DSN
+    RFC 3464 valide (`multipart/report`, champs `Action`/`Status`
+    corrects) à l'échec, envoyé avec `MAIL FROM:<>` ; un message dont
+    l'enveloppe est déjà vide qui échoue à son tour **ne génère jamais**
+    de second DSN (test dédié anti-boucle, § 7).
+16. **Intégration `cron`** : une tâche cron sans redirection dont la
     sortie est non vide produit réellement un message dans
     `/var/mail/<user>` (ou vers `MAILTO`).
-12. **Unitaires client `mail`** : mode interactif et non-interactif
+17. **Unitaires client `mail`** : mode interactif et non-interactif
     produisent la même enveloppe/le même message ; lecture de boîte
     locale cohérente avec le contenu réel.
-13. **Unitaires SPF** : chaque mécanisme (`ip4`/`ip6`/`a`/`mx`/`include`/
+18. **Unitaires SPF** : chaque mécanisme (`ip4`/`ip6`/`a`/`mx`/`include`/
     `all`) et chaque qualificatif produisent le bon `SpfResult` ; `TXT`
     absent → `none` ; syntaxe invalide → `permerror`.
-14. **Unitaires DKIM** : signature à l'émission puis vérification à la
+19. **Unitaires DKIM** : signature à l'émission puis vérification à la
     réception réussissent pour un message non modifié ; une altération du
     corps ou d'un en-tête signé fait échouer la vérification (`fail`).
-15. **Unitaires DMARC** : alignement strict vs relaxed correctement
+20. **Unitaires DMARC** : alignement strict vs relaxed correctement
     évalué ; `p=reject` refuse réellement la remise, `p=quarantine`
     remet en marquant, `p=none` remet sans action.
-16. **Non-régression (P1–P12)** : suites existantes (`nmap-integration`,
+21. **Non-régression (P1–P17)** : suites existantes (`nmap-integration`,
     `journalization`, tests de `cron`, registres de ports) inchangées
-    tant que P13 n'est pas atteinte.
-17. **Migration (P13)** : `LinuxCommandExecutor.ts`'s tests de `cron`
+    tant que P18 n'est pas atteinte.
+22. **Migration (P18)** : `LinuxCommandExecutor.ts`'s tests de `cron`
     vérifient le nouveau comportement observable (mail réellement
     délivré) ; les tests de registre de ports incluent désormais
     l'entrée 465.
@@ -807,14 +1080,31 @@ en conservant leur comportement observable préexistant partout ailleurs.
    (même principe que `FtpAlg.ts` ne dupliquant pas `NATEngine.ts`,
    `PRD-FTP-SFTP.md` § 3.4).
 9. **Pas de dépendance bloquante externe**, mais un séquencement interne
-   strict existe (§ 5) : SPF/DKIM/DMARC (P15-P17) ne peuvent pas
-   commencer avant que le moteur SMTP principal (P1-P12) ne soit
+   strict existe (§ 5) : SPF/DKIM/DMARC (P20-P22) ne peuvent pas
+   commencer avant que le moteur SMTP principal (P1-P17) ne soit
    stabilisé — ne pas paralléliser au-delà de ce que le tableau § 5
    permet.
 10. **Le parsing MIME reste volontairement superficiel** (§ 2.2) — ne
     pas laisser un besoin ultérieur (pièces jointes, `multipart/*`)
     dériver silencieusement dans ce PRD sans mise à jour explicite du
     document ; c'est un non-objectif assumé, pas un oubli.
+11. **Boucle de non-remise infinie (DSN)** (§ 2.1.21) : un DSN généré
+    pour un message dont l'enveloppe est déjà `MAIL FROM:<>` ne doit
+    **jamais** générer un second DSN à son tour en cas d'échec — c'est
+    la règle RFC 3464 la plus facile à violer par inattention (un
+    `dsn.ts` naïf qui traite toute remise échouée de façon uniforme sans
+    inspecter l'enveloppe source créerait une boucle de rebonds
+    illimitée) ; le test dédié (§ 6.15) ne doit jamais être affaibli ou
+    retiré.
+12. **File d'attente : famine et croissance non bornée** (§ 2.1.26) :
+    `queue.ts` est la seule exception au principe synchrone du § 3.4 et
+    réutilise `Scheduler` — un défaut d'implémentation classique serait
+    soit un réessai trop agressif (charge excessive sur le domaine
+    distant, voire trop rapide pour être réaliste pédagogiquement), soit
+    l'absence de purge après la durée totale configurée (croissance non
+    bornée de la file en mémoire) ; les deux doivent être couverts par
+    des tests explicites (§ 6.14) utilisant un scheduler de test plutôt
+    qu'une attente réelle.
 
 ---
 
@@ -858,7 +1148,35 @@ en conservant leur comportement observable préexistant partout ailleurs.
 15. Une politique DMARC `p=reject` refuse réellement la remise d'un
     message non aligné SPF/DKIM ; `p=quarantine`/`p=none` le remettent
     avec l'action attendue et un `Authentication-Results` cohérent.
-16. Pendant P1–P12, aucune suite existante ne change ; P13 change
+16. Pendant P1–P17, aucune suite existante ne change ; P18 change
     délibérément le comportement observable de `cron` (mail réellement
     délivré) et des deux registres de ports (port 465 présent), sans
     aucune autre régression.
+17. Un message relayé sur deux sauts porte deux en-têtes `Received:`
+    distincts, dans l'ordre inverse de propagation, chacun capturant
+    séparément l'IP source réelle et le `HELO` annoncé ; `Return-Path:`
+    n'apparaît que sur le message lu dans `/var/mail/<user>`, jamais sur
+    une copie relayée.
+18. Un échec définitif de remise (`NOTIFY=FAILURE` ou abandon après
+    épuisement des réessais) génère un DSN RFC 3464 valide
+    (`multipart/report`, `Action`/`Status` corrects) envoyé avec
+    `MAIL FROM:<>` ; un message dont l'enveloppe est déjà vide qui échoue
+    à son tour ne génère jamais de second DSN.
+19. Sur le port 587, une session sans `AUTH` préalable est refusée avant
+    tout `MAIL FROM` ; un `From:` différent de l'identité authentifiée
+    reçoit un `Sender:` ajouté ; toute tentative de relais non autorisé
+    échoue même après authentification réussie sur ce port.
+20. Une ligne de commande de plus de 512 octets est rejetée (`500`) sans
+    exécution partielle ; une session inactive au-delà du délai de
+    l'état courant se ferme avec `421 4.4.2` ; une transaction accepte
+    réellement au moins 100 `RCPT TO`.
+21. `RCPT TO:<postmaster>` est accepté même sans compte système réel de
+    ce nom, conformément à RFC 5321 § 4.5.1.
+22. La comparaison de domaine dans une adresse ignore la casse tandis que
+    la partie locale la respecte, vérifiable sur un même test avec les
+    deux composants variés indépendamment.
+23. Un échec temporaire (`4xx`) place la remise en file d'attente ; le
+    réessai suivant n'a lieu qu'à l'échéance planifiée (vérifiable via un
+    scheduler de test) ; l'abandon après la durée totale configurée
+    déclenche un DSN plutôt qu'un silence, sans croissance non bornée de
+    la file.
