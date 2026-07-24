@@ -2978,6 +2978,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   getMailboxDatabaseCopyStatus(_dagName: string, _database?: string): import('./windows/server/exchange/DatabaseAvailabilityGroup').MailboxDatabaseCopy[] { return []; }
 
+  testServiceHealth(): import('./WindowsServer').ServiceHealthCheck[] { return []; }
+
+  testMailflow(fromIdentity: string, toIdentity: string): import('./WindowsServer').MailflowTestResult {
+    return { success: false, fromMailbox: fromIdentity, toMailbox: toIdentity, latencyMs: 0, failureReason: 'Exchange Server has not been installed on this computer.' };
+  }
+
   /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a

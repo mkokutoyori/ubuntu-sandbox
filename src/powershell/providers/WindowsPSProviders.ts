@@ -65,6 +65,7 @@ import type {
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
   DistributionGroupInfo, GalEntryInfo, ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, QueueInfo, MailboxDatabaseCopyInfo,
+  ServiceHealthCheckInfo, MailflowTestResultInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2275,6 +2276,16 @@ class WindowsExchangeAdapter implements IExchangeProvider {
   getMailboxDatabaseCopyStatus(dagName: string, database?: string): MailboxDatabaseCopyInfo[] {
     this.requireOrg('Get-MailboxDatabaseCopyStatus');
     return this.pc.getMailboxDatabaseCopyStatus(dagName, database);
+  }
+
+  testServiceHealth(): ServiceHealthCheckInfo[] {
+    this.requireOrg('Test-ServiceHealth');
+    return this.pc.testServiceHealth();
+  }
+
+  testMailflow(fromIdentity: string, toIdentity: string): MailflowTestResultInfo {
+    this.requireOrg('Test-Mailflow');
+    return this.pc.testMailflow(fromIdentity, toIdentity);
   }
 }
 

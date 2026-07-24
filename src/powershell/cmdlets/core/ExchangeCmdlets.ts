@@ -5,7 +5,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo, GalEntryInfo,
   ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, TransportRuleConditionInfo, TransportRuleActionInfo, QueueInfo,
-  MailboxDatabaseCopyInfo,
+  MailboxDatabaseCopyInfo, ServiceHealthCheckInfo, MailflowTestResultInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
@@ -872,5 +872,50 @@ export class GetMailboxDatabaseCopyStatusCmdlet implements ICmdlet {
     const database = ctx.named['database'] !== undefined ? psValueToString(ctx.named['database']) : undefined;
     const copies = exchange.getMailboxDatabaseCopyStatus(dag, database).map(databaseCopyToPSObject);
     return copies.length === 1 ? copies[0] : copies;
+  }
+}
+
+function serviceHealthToPSObject(h: ServiceHealthCheckInfo): Record<string, PSValue> {
+  return { ServiceName: h.serviceName, Status: h.status, Expected: h.expected };
+}
+
+export class TestServiceHealthCmdlet implements ICmdlet {
+  readonly name = 'test-servicehealth';
+  readonly displayName = 'Test-ServiceHealth';
+  readonly aliases = [] as const;
+  readonly parameters = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Test-ServiceHealth');
+    return exchange.testServiceHealth().map(serviceHealthToPSObject);
+  }
+}
+
+function mailflowResultToPSObject(r: MailflowTestResultInfo): Record<string, PSValue> {
+  return {
+    TestMailflowResult: r.success ? 'Success' : 'Failure',
+    MessageLatencyTime: r.latencyMs,
+    FromMailbox: r.fromMailbox,
+    ToMailbox: r.toMailbox,
+    ...(r.failureReason !== undefined ? { FailureReason: r.failureReason } : {}),
+  };
+}
+
+export class TestMailflowCmdlet implements ICmdlet {
+  readonly name = 'test-mailflow';
+  readonly displayName = 'Test-Mailflow';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'TargetMailboxIdentity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Test-Mailflow');
+    const identity = identityFrom(ctx);
+    const targetMailboxIdentity = psValueToString(ctx.named['targetmailboxidentity'] ?? '');
+    if (!identity || !targetMailboxIdentity) {
+      ctx.emitError('Test-Mailflow : Cannot process command because of one or more missing mandatory parameters: Identity, TargetMailboxIdentity.');
+      return null;
+    }
+    const result = exchange.testMailflow(identity, targetMailboxIdentity);
+    return mailflowResultToPSObject(result);
   }
 }

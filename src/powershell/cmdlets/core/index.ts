@@ -177,6 +177,7 @@ import {
   NewJournalRuleCmdlet, GetJournalRuleCmdlet,
   NewDatabaseAvailabilityGroupCmdlet, AddDatabaseAvailabilityGroupServerCmdlet,
   AddMailboxDatabaseCopyCmdlet, UpdateMailboxDatabaseCopyCmdlet, GetMailboxDatabaseCopyStatusCmdlet,
+  TestServiceHealthCmdlet, TestMailflowCmdlet,
 } from './ExchangeCmdlets';
 import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
@@ -547,6 +548,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new AddMailboxDatabaseCopyCmdlet());
   registry.register(new UpdateMailboxDatabaseCopyCmdlet());
   registry.register(new GetMailboxDatabaseCopyStatusCmdlet());
+  registry.register(new TestServiceHealthCmdlet());
+  registry.register(new TestMailflowCmdlet());
 
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());

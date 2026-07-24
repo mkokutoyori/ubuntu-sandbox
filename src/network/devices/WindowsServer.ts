@@ -52,6 +52,26 @@ import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecor
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
+export interface ServiceHealthCheck {
+  readonly serviceName: string;
+  readonly status: 'Running' | 'Stopped';
+  readonly expected: boolean;
+}
+
+export interface MailflowTestResult {
+  readonly success: boolean;
+  readonly fromMailbox: string;
+  readonly toMailbox: string;
+  readonly latencyMs: number;
+  readonly failureReason?: string;
+}
+
+/** Real Exchange Windows service names per role (docs/PRD-Exchange.md §2.1 P12) — `Test-ServiceHealth` distinguishes a stopped-but-expected service from one this server's installed roles never expected in the first place. */
+const EXCHANGE_ROLE_SERVICES: Readonly<Record<string, readonly string[]>> = {
+  Mailbox: ['MSExchangeTransport', 'MSExchangeIS', 'MSExchangeADTopology'],
+  ClientAccess: ['MSExchangeFrontEndTransport'],
+};
+
 /** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `WinDomainDiag.cmdNltest` has always reported. */
 const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
 
@@ -347,7 +367,20 @@ export class WindowsServer extends WindowsPC {
     org.servers.set(this.getHostname(), { hostname: this.getHostname(), roles: new Set(roles), installedAt: Date.now() });
     this.exchangeOrgName = organizationName;
     this.startAutodiscoverService();
+    this.startExchangeRoleServices(roles);
     return { ok: true, message: '' };
+  }
+
+  private startExchangeRoleServices(roles: readonly string[]): void {
+    const manager = this.getServiceManager();
+    for (const role of roles) {
+      for (const svcName of EXCHANGE_ROLE_SERVICES[role] ?? []) {
+        if (!manager.getService(svcName)) {
+          manager.createService(svcName, { binaryPath: 'C:\\Program Files\\Microsoft\\Exchange Server\\V15\\Bin\\edgetransport.exe', displayName: `Microsoft Exchange ${svcName.replace('MSExchange', '')}`, startType: 'Automatic' }, true);
+        }
+        manager.startService(svcName, true);
+      }
+    }
   }
 
   /**
@@ -900,6 +933,60 @@ export class WindowsServer extends WindowsPC {
 
   getMailboxDatabaseCopyStatus(dagName: string, database?: string): MailboxDatabaseCopy[] {
     return this.getDatabaseAvailabilityGroup(dagName)?.listCopyStatuses(database) ?? [];
+  }
+
+  /**
+   * `Test-ServiceHealth` (docs/PRD-Exchange.md §2.1 P12) — reuses
+   * `WindowsServiceManager` (§ grounding), not a second service registry:
+   * reports every service any Exchange role could own, `expected: true`
+   * only for roles this server actually installed (§ P1's `roles` set),
+   * so a service stopped outside its owning role's scope is distinguished
+   * from a genuinely-down expected service.
+   */
+  testServiceHealth(): ServiceHealthCheck[] {
+    const installedRoles = this.getExchangeServer()?.roles ?? new Set<string>();
+    const manager = this.getServiceManager();
+    const results: ServiceHealthCheck[] = [];
+    for (const [role, services] of Object.entries(EXCHANGE_ROLE_SERVICES)) {
+      const expected = installedRoles.has(role);
+      for (const serviceName of services) {
+        const status = manager.getService(serviceName)?.state === 'Running' ? 'Running' : 'Stopped';
+        results.push({ serviceName, status, expected });
+      }
+    }
+    return results;
+  }
+
+  /**
+   * `Test-Mailflow` (docs/PRD-Exchange.md §2.1 P12) — a real delivery
+   * through `deliverToRecipient()` (§ P2-P4), never a `success: true`
+   * façade: an existing-but-quota-exceeded or missing/disabled target
+   * mailbox fails for real, with the actual reason the pipeline reported.
+   */
+  testMailflow(fromIdentity: string, toIdentity: string): MailflowTestResult {
+    const store = this.getMailboxStore();
+    if (!store) {
+      return { success: false, fromMailbox: fromIdentity, toMailbox: toIdentity, latencyMs: 0, failureReason: 'Exchange Server has not been installed on this computer.' };
+    }
+    const fromMailbox = store.get(fromIdentity);
+    const toMailbox = store.get(toIdentity);
+    if (!fromMailbox || !toMailbox) {
+      return {
+        success: false, fromMailbox: fromMailbox?.primarySmtpAddress ?? fromIdentity, toMailbox: toMailbox?.primarySmtpAddress ?? toIdentity,
+        latencyMs: 0, failureReason: 'One or both mailboxes could not be found.',
+      };
+    }
+    const start = Date.now();
+    const results = this.deliverToRecipient(
+      toMailbox.primarySmtpAddress, fromMailbox.primarySmtpAddress, 'Test-Mailflow',
+      'Subject: Test-Mailflow\r\n\r\nThis is a mail flow test message.', Date.now(),
+    );
+    const latencyMs = Date.now() - start;
+    if (!results.some((r) => r.delivered)) {
+      const failureReason = results[0]?.reason === 'quota-exceeded' ? 'Recipient mailbox quota exceeded.' : 'Recipient mailbox unavailable.';
+      return { success: false, fromMailbox: fromMailbox.primarySmtpAddress, toMailbox: toMailbox.primarySmtpAddress, latencyMs, failureReason };
+    }
+    return { success: true, fromMailbox: fromMailbox.primarySmtpAddress, toMailbox: toMailbox.primarySmtpAddress, latencyMs };
   }
 
   /**

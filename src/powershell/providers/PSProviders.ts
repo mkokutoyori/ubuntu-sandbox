@@ -510,6 +510,22 @@ export interface IExchangeProvider {
   addMailboxDatabaseCopy(dagName: string, database: string, server: string): ExchangeOpResult;
   updateMailboxDatabaseCopy(dagName: string, database: string, server: string): ExchangeOpResult;
   getMailboxDatabaseCopyStatus(dagName: string, database?: string): MailboxDatabaseCopyInfo[];
+
+  testServiceHealth(): ServiceHealthCheckInfo[];
+  testMailflow(fromIdentity: string, toIdentity: string): MailflowTestResultInfo;
+}
+
+export interface ServiceHealthCheckInfo {
+  readonly serviceName: string;
+  readonly status: 'Running' | 'Stopped';
+  readonly expected: boolean;
+}
+export interface MailflowTestResultInfo {
+  readonly success: boolean;
+  readonly fromMailbox: string;
+  readonly toMailbox: string;
+  readonly latencyMs: number;
+  readonly failureReason?: string;
 }
 
 export type DatabaseCopyStatus = 'Mounted' | 'Healthy' | 'FailedAndSuspended' | 'Resynchronizing';
