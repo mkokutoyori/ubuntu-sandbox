@@ -4,6 +4,7 @@ import { encodeCommand, decodeReply } from './replies';
 import { stuffDotLines } from './envelope';
 import { SMTP_PORT } from './SmtpServer';
 import { type TlsClientConfig, TlsClientSession, stepHandshake, encryptText, decryptText, encodeFlight } from './starttls';
+import { toBase64, fromBase64, computeCramMd5Digest } from './auth';
 
 const CRLF = '\r\n';
 
@@ -70,6 +71,36 @@ export class SmtpClientSession {
     const before = this.repliesBuffer.length;
     this.writeText(encodeCommand(cmd));
     return this.repliesBuffer[before] ?? null;
+  }
+
+  private sendRawLine(text: string): SmtpReply | null {
+    if (!this.socket) return null;
+    const before = this.repliesBuffer.length;
+    this.writeText(`${text}${CRLF}`);
+    return this.repliesBuffer[before] ?? null;
+  }
+
+  authPlain(authcid: string, password: string, authzid = ''): SmtpReply | null {
+    const payload = toBase64(`${authzid}\0${authcid}\0${password}`);
+    const r = this.sendCommand({ verb: 'AUTH', argument: `PLAIN ${payload}` });
+    return r;
+  }
+
+  authLogin(username: string, password: string): SmtpReply | null {
+    const first = this.sendCommand({ verb: 'AUTH', argument: 'LOGIN' });
+    if (first?.code !== 334) return first;
+    const afterUser = this.sendRawLine(toBase64(username));
+    if (afterUser?.code !== 334) return afterUser;
+    return this.sendRawLine(toBase64(password));
+  }
+
+  authCramMd5(username: string, password: string): SmtpReply | null {
+    const challengeReply = this.sendCommand({ verb: 'AUTH', argument: 'CRAM-MD5' });
+    if (challengeReply?.code !== 334) return challengeReply;
+    const challenge = fromBase64(challengeReply.lines[0]);
+    if (challenge === null) return challengeReply;
+    const digest = computeCramMd5Digest(challenge, password);
+    return this.sendRawLine(toBase64(`${username} ${digest}`));
   }
 
   sendPipelined(cmds: readonly SmtpCommand[]): SmtpReply[] {

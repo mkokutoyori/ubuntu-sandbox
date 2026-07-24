@@ -121,6 +121,12 @@ export class SmtpServer {
         return;
       }
 
+      if (session.isAwaitingAuthContinuation()) {
+        writeReply(session.handleAuthContinuation(text));
+        armIdle();
+        return;
+      }
+
       const lines = text.split('\r\n').filter((l) => l.length > 0);
       if (lines.length === 0) {
         writeReply(reply(500, 'Syntax error, command unrecognized.'));
@@ -159,7 +165,7 @@ export class SmtpServer {
           socket.close();
           return;
         }
-        if (awaitingDataBody) break;
+        if (awaitingDataBody || session.isAwaitingAuthContinuation()) break;
       }
       armIdle();
     });
