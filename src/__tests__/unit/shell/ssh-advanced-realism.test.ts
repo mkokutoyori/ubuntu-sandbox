@@ -73,13 +73,27 @@ async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string):
   }
 }
 
+/**
+ * True only while a REAL password/host-key prompt is outstanding — either
+ * the top-level pendingSshIO (first hop) or an active sub-shell's
+ * subShellPendingInput (any nested hop). Deliberately NOT based on
+ * currentInputMode.type alone: once connected, an active
+ * SshInteractiveSubShell reports 'interactive-text' for "idle, ready for
+ * the next line" too, which is indistinguishable from a real prompt by
+ * type string — and isInsideSshSession alone breaks for a *nested* login
+ * (it's already true from the outer hop before the inner one even starts).
+ */
+function hasRealPendingPrompt(t: LinuxTerminalSession): boolean {
+  const anyT = t as unknown as {
+    subShellPendingInput: unknown;
+    pendingSshIO?: { isWaitingForInput?: boolean } | null;
+  };
+  return anyT.subShellPendingInput !== null || !!anyT.pendingSshIO?.isWaitingForInput;
+}
+
 async function linuxSshLogin(t: LinuxTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
-  // Once connected, an active SshInteractiveSubShell reports
-  // 'interactive-text' for "idle, ready for the next line" too — stop on
-  // isInsideSshSession as well, not just the mode string, or this would
-  // keep "answering" a prompt that isn't there anymore.
-  for (let i = 0; i < 4 && !t.isInsideSshSession && t.currentInputMode.type !== 'normal'; i++) {
+  for (let i = 0; i < 4 && hasRealPendingPrompt(t); i++) {
     if (t.currentInputMode.type === 'password') t.setPasswordBuf(pw);
     else if (t.currentInputMode.type === 'interactive-text') t.setInputBuf('yes');
     else break;
@@ -97,28 +111,28 @@ function expectAnyLine(t: TerminalSession, needle: string | RegExp): void {
 
 describe('SSH advanced realism — multi-hop, service control, user admin', () => {
   // ─── Multi-hop SSH (linux → linux → linux) ────────────────────────
-  test('§A01 — Linux→Linux→Linux: only the first real-wire SSH hop changes the client prompt', async () => {
+  test('§A01 — Linux→Linux→Linux: nested ssh typed inside a real-wire SSH session is a REAL second hop', async () => {
     const { linuxA } = await buildLan();
     const t = new LinuxTerminalSession('t', linuxA);
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.2', 'alice');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxB/);
-    // Nested ssh typed from inside a real-wire SSH session is a documented
-    // limitation (SshInteractiveSubShell.ts): the underlying remote auth
-    // to linuxSrv genuinely succeeds (see §A03's auth.log check below),
-    // but the line just runs remotely as a plain bash command — there's
-    // no client-side stand-in to push a second interactive frame, so the
-    // prompt stays on linuxB.
+    // linuxB opens its own genuine SshSession to linuxSrv
+    // (SshInteractiveSubShell.startNestedHop()) — real password
+    // challenge, real auth (see §A03's auth.log check below), and the
+    // prompt now reflects the second hop.
     await linuxSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxB/);
+    expect(t.foreground.getPrompt()).toMatch(/bob@linuxSrv/);
   });
 
-  test('§A02 — Linux→Linux: exiting the one real SSH hop returns cleanly to the host', async () => {
+  test('§A02 — Linux→Linux→Linux: exiting each real SSH hop unwinds one level at a time', async () => {
     const { linuxA } = await buildLan();
     const t = new LinuxTerminalSession('t', linuxA);
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.2', 'alice');
-    await linuxSshLogin(t, 'ssh bob@10.0.0.3', 'bob'); // documented no-op, see §A01
+    await linuxSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
+    await typeRoot(t, 'exit');
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxB/);
     await typeRoot(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
   });

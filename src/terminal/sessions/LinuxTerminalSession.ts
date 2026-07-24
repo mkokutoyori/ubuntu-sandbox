@@ -2928,7 +2928,7 @@ export class LinuxTerminalSession extends TerminalSession {
         for (const line of banner) this.addLine(line);
         this.activeSubShell = new SshInteractiveSubShell(
           session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
-          linuxRemoteDevice.getSshHostname(),
+          linuxRemoteDevice.getSshHostname(), linuxRemoteDevice,
         );
         this._inputBuf = '';
         this.notify();

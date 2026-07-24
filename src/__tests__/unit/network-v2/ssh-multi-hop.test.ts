@@ -54,7 +54,7 @@ async function buildLab() {
 }
 
 describe('SSH from inside a remote session works recursively', () => {
-  it('Win -> Linux -> Linux: the second (Linux target) hop uses the real-wire subshell, not a nested LinuxTerminalSession', async () => {
+  it('Win -> Linux -> Linux: the second (Linux target) hop is a REAL nested SshInteractiveSubShell', async () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
@@ -64,26 +64,31 @@ describe('SSH from inside a remote session works recursively', () => {
     await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
     // Linux↔Linux drives the interactive session over the real,
     // authenticated SSH channel — no second child is pushed, so
-    // `foreground` stays the same linuxA session; the sub-shell is the tell.
+    // `foreground` stays the same linuxA session; the second hop is a
+    // REAL nested SshInteractiveSubShell (its own real SshSession to
+    // linuxB, opened FROM linuxA's own SSH channel to linuxB — see
+    // SshInteractiveSubShell.startNestedHop()), not a documented no-op.
     expect(host.foreground).toBe(linuxHop);
     expect(host.foreground.device.getName()).toBe('linuxA');
-    expect((host.foreground as unknown as { activeSubShell: unknown }).activeSubShell)
-      .toBeInstanceOf(SshInteractiveSubShell);
+    const hop1 = (host.foreground as unknown as { activeSubShell: unknown }).activeSubShell;
+    expect(hop1).toBeInstanceOf(SshInteractiveSubShell);
+    expect((hop1 as { getPrompt(): string }).getPrompt()).toMatch(/user@linuxB/);
   });
 
-  it('exit from the ssh sub-shell returns to the middle child, exit again pops to the host', async () => {
+  it('exit from the nested ssh hop returns to the first hop, exit again pops to the host', async () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
     await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
     await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
     expect(host.foreground.device.getName()).toBe('linuxA');
-    expect((host.foreground as unknown as { activeSubShell: unknown }).activeSubShell)
-      .toBeInstanceOf(SshInteractiveSubShell);
+    const hop1 = (host.foreground as unknown as { activeSubShell: { getPrompt(): string } }).activeSubShell;
+    expect(hop1.getPrompt()).toMatch(/user@linuxB/);
     runOnForeground(host, 'exit');
     await tick();
+    // Back on hop1 (linuxA -> linuxB), the nested hop is gone.
     expect(host.foreground.device.getName()).toBe('linuxA');
-    expect((host.foreground as unknown as { activeSubShell: unknown }).activeSubShell).toBeNull();
+    expect(hop1.getPrompt()).toMatch(/user@linuxB/);
     runOnForeground(host, 'exit');
     await tick();
     expect(host.foreground).toBe(host);
