@@ -12,12 +12,18 @@ export const SMTP_SUBMISSION_TLS_PORT = 465;
 
 type ControlWireState = 'plaintext' | 'tls-handshake' | 'tls-established';
 
+export type SmtpAcceptedMessage = NonNullable<SmtpServerSession['lastDelivered']>;
+
 export interface SmtpServerOptions {
   readonly limits?: SmtpProtocolLimits;
   readonly scheduler?: IScheduler;
   readonly tls?: TlsServerConfig;
   /** RFC 8314 — smtps (port 465): the connection is TLS from the very first byte, no STARTTLS negotiation. */
   readonly implicitTls?: boolean;
+  /** Called once a message has been fully accepted (DATA terminated with a 2xx), so a consumer can perform real local delivery/relay — the engine itself never writes to a mailbox (§ FTP/HTTP-style separation of protocol from LDA, docs/PRD-Exchange.md § 3). */
+  readonly onMessageAccepted?: (delivered: SmtpAcceptedMessage) => void;
+  /** Receive Connector source-IP restriction (docs/PRD-Exchange.md §4.4) — a connection from an IP this predicate rejects is closed before any protocol interaction, never gets a banner. */
+  readonly remoteIpAllowed?: (ip: string) => boolean;
 }
 
 export class SmtpServer {
@@ -26,6 +32,8 @@ export class SmtpServer {
   private readonly scheduler: IScheduler;
   private readonly tlsConfig?: TlsServerConfig;
   private readonly implicitTls: boolean;
+  private readonly onMessageAccepted?: (delivered: SmtpAcceptedMessage) => void;
+  private readonly remoteIpAllowed?: (ip: string) => boolean;
 
   constructor(
     private readonly tcpStack: TcpStack,
@@ -37,6 +45,8 @@ export class SmtpServer {
     this.scheduler = opts.scheduler ?? getDefaultScheduler();
     this.tlsConfig = opts.tls;
     this.implicitTls = opts.implicitTls ?? false;
+    this.onMessageAccepted = opts.onMessageAccepted;
+    this.remoteIpAllowed = opts.remoteIpAllowed;
   }
 
   start(): void {
@@ -50,6 +60,10 @@ export class SmtpServer {
   }
 
   private handleConnection(socket: TcpSocket): void {
+    if (this.remoteIpAllowed && !this.remoteIpAllowed(socket.remoteIp)) {
+      socket.close();
+      return;
+    }
     const sessionConfig: SmtpServerConfig = {
       ...this.config,
       tlsSupported: !!this.tlsConfig,
@@ -144,6 +158,7 @@ export class SmtpServer {
       if (awaitingDataBody) {
         awaitingDataBody = false;
         writeReply(session.handleDataBody(text));
+        if (session.lastDelivered) this.onMessageAccepted?.(session.lastDelivered);
         if (session.result !== 'closed') armIdle();
         return;
       }

@@ -480,6 +480,27 @@ export interface IExchangeProvider {
   getDistributionGroupMembers(identity: string): readonly string[] | null;
 
   getGlobalAddressList(): GalEntryInfo[];
+
+  newReceiveConnector(def: ReceiveConnectorInfo): ExchangeOpResult;
+  getReceiveConnector(name: string): ReceiveConnectorInfo | null;
+  listReceiveConnectors(): ReceiveConnectorInfo[];
+  newSendConnector(def: SendConnectorInfo): ExchangeOpResult;
+  getSendConnector(name: string): SendConnectorInfo | null;
+  listSendConnectors(): SendConnectorInfo[];
+}
+
+export interface ReceiveConnectorInfo {
+  readonly name: string;
+  readonly bindings: readonly string[];
+  readonly remoteIpRanges: readonly string[];
+  readonly authMechanisms: readonly ('TLS' | 'BasicAuth' | 'ExchangeServer')[];
+}
+
+export interface SendConnectorInfo {
+  readonly name: string;
+  readonly addressSpaces: readonly string[];
+  readonly smartHosts: readonly string[];
+  readonly costMetric: number;
 }
 
 export interface GalEntryInfo {

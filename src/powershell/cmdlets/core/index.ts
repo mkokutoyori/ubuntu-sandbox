@@ -170,6 +170,7 @@ import {
   NewDistributionGroupCmdlet, SetDistributionGroupCmdlet, GetDistributionGroupCmdlet,
   AddDistributionGroupMemberCmdlet, GetDistributionGroupMemberCmdlet,
   GetGlobalAddressListCmdlet,
+  NewReceiveConnectorCmdlet, GetReceiveConnectorCmdlet, NewSendConnectorCmdlet, GetSendConnectorCmdlet,
 } from './ExchangeCmdlets';
 import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
@@ -519,6 +520,10 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new AddDistributionGroupMemberCmdlet());
   registry.register(new GetDistributionGroupMemberCmdlet());
   registry.register(new GetGlobalAddressListCmdlet());
+  registry.register(new NewReceiveConnectorCmdlet());
+  registry.register(new GetReceiveConnectorCmdlet());
+  registry.register(new NewSendConnectorCmdlet());
+  registry.register(new GetSendConnectorCmdlet());
 
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());

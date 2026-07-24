@@ -63,7 +63,7 @@ import type {
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
-  DistributionGroupInfo, GalEntryInfo,
+  DistributionGroupInfo, GalEntryInfo, ReceiveConnectorInfo, SendConnectorInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2135,6 +2135,36 @@ class WindowsExchangeAdapter implements IExchangeProvider {
     return this.pc.getGlobalAddressList().map((e) => ({
       displayName: e.displayName, samAccountName: e.samAccountName, primarySmtpAddress: e.primarySmtpAddress, kind: e.kind,
     }));
+  }
+
+  newReceiveConnector(def: ReceiveConnectorInfo): ExchangeOpResult {
+    this.requireOrg('New-ReceiveConnector');
+    return this.pc.newReceiveConnector(def);
+  }
+
+  getReceiveConnector(name: string): ReceiveConnectorInfo | null {
+    this.requireOrg('Get-ReceiveConnector');
+    return this.pc.getReceiveConnector(name);
+  }
+
+  listReceiveConnectors(): ReceiveConnectorInfo[] {
+    this.requireOrg('Get-ReceiveConnector');
+    return this.pc.listReceiveConnectors();
+  }
+
+  newSendConnector(def: SendConnectorInfo): ExchangeOpResult {
+    this.requireOrg('New-SendConnector');
+    return this.pc.newSendConnector(def);
+  }
+
+  getSendConnector(name: string): SendConnectorInfo | null {
+    this.requireOrg('Get-SendConnector');
+    return this.pc.getSendConnector(name);
+  }
+
+  listSendConnectors(): SendConnectorInfo[] {
+    this.requireOrg('Get-SendConnector');
+    return this.pc.listSendConnectors();
   }
 }
 

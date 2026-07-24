@@ -2,7 +2,10 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo, GalEntryInfo } from '@/powershell/providers/PSProviders';
+import type {
+  IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo, GalEntryInfo,
+  ReceiveConnectorInfo, SendConnectorInfo,
+} from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function requireExchange(ctx: CmdletContext, cmdletName: string): IExchangeProvider {
@@ -386,5 +389,115 @@ export class GetGlobalAddressListCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const exchange = requireExchange(ctx, 'Get-GlobalAddressList');
     return exchange.getGlobalAddressList().map(galEntryToPSObject);
+  }
+}
+
+function stringArrayFrom(raw: PSValue): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (Array.isArray(raw)) return raw.map(psValueToString);
+  return [psValueToString(raw)];
+}
+
+function receiveConnectorToPSObject(c: ReceiveConnectorInfo): Record<string, PSValue> {
+  return {
+    Name: c.name,
+    Bindings: c.bindings.join(', '),
+    RemoteIPRanges: c.remoteIpRanges.join(', '),
+    AuthMechanism: c.authMechanisms.join(', '),
+  };
+}
+
+export class NewReceiveConnectorCmdlet implements ICmdlet {
+  readonly name = 'new-receiveconnector';
+  readonly displayName = 'New-ReceiveConnector';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Bindings', 'RemoteIPRanges', 'AuthMechanism'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'New-ReceiveConnector');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('New-ReceiveConnector : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const bindings = stringArrayFrom(ctx.named['bindings']);
+    if (bindings.length === 0) { ctx.emitError('New-ReceiveConnector : Cannot process command because of one or more missing mandatory parameters: Bindings.'); return null; }
+    const remoteIpRanges = stringArrayFrom(ctx.named['remoteipranges']);
+    const authMechanisms = stringArrayFrom(ctx.named['authmechanism']) as ReceiveConnectorInfo['authMechanisms'];
+    const res = exchange.newReceiveConnector({ name, bindings, remoteIpRanges, authMechanisms });
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    const connector = exchange.getReceiveConnector(name);
+    return connector ? receiveConnectorToPSObject(connector) : null;
+  }
+}
+
+export class GetReceiveConnectorCmdlet implements ICmdlet {
+  readonly name = 'get-receiveconnector';
+  readonly displayName = 'Get-ReceiveConnector';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-ReceiveConnector');
+    const identity = identityFrom(ctx);
+    if (identity) {
+      const connector = exchange.getReceiveConnector(identity);
+      if (!connector) {
+        ctx.emitError(`Get-ReceiveConnector : The operation couldn't be performed because object '${identity}' couldn't be found.`);
+        return null;
+      }
+      return receiveConnectorToPSObject(connector);
+    }
+    const connectors = exchange.listReceiveConnectors().map(receiveConnectorToPSObject);
+    return connectors.length === 1 ? connectors[0] : connectors;
+  }
+}
+
+function sendConnectorToPSObject(c: SendConnectorInfo): Record<string, PSValue> {
+  return {
+    Name: c.name,
+    AddressSpaces: c.addressSpaces.join(', '),
+    SmartHosts: c.smartHosts.join(', '),
+    Cost: c.costMetric,
+  };
+}
+
+export class NewSendConnectorCmdlet implements ICmdlet {
+  readonly name = 'new-sendconnector';
+  readonly displayName = 'New-SendConnector';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'AddressSpaces', 'SmartHosts', 'Cost'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'New-SendConnector');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('New-SendConnector : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const addressSpaces = stringArrayFrom(ctx.named['addressspaces']);
+    if (addressSpaces.length === 0) { ctx.emitError('New-SendConnector : Cannot process command because of one or more missing mandatory parameters: AddressSpaces.'); return null; }
+    const smartHosts = stringArrayFrom(ctx.named['smarthosts']);
+    const costMetric = ctx.named['cost'] !== undefined ? Number(psValueToString(ctx.named['cost'])) : 1;
+    const res = exchange.newSendConnector({ name, addressSpaces, smartHosts, costMetric });
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    const connector = exchange.getSendConnector(name);
+    return connector ? sendConnectorToPSObject(connector) : null;
+  }
+}
+
+export class GetSendConnectorCmdlet implements ICmdlet {
+  readonly name = 'get-sendconnector';
+  readonly displayName = 'Get-SendConnector';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-SendConnector');
+    const identity = identityFrom(ctx);
+    if (identity) {
+      const connector = exchange.getSendConnector(identity);
+      if (!connector) {
+        ctx.emitError(`Get-SendConnector : The operation couldn't be performed because object '${identity}' couldn't be found.`);
+        return null;
+      }
+      return sendConnectorToPSObject(connector);
+    }
+    const connectors = exchange.listSendConnectors().map(sendConnectorToPSObject);
+    return connectors.length === 1 ? connectors[0] : connectors;
   }
 }

@@ -37,6 +37,8 @@ import { getExchangeOrganization, getOrCreateExchangeOrganization, type Exchange
 import { MailboxStore, type MailboxOpResult, type DeliverResult } from './windows/server/exchange/MailboxStore';
 import { DistributionGroupStore, deliverExpanded, type DistributionGroupOpResult, type DistributionGroupType } from './windows/server/exchange/DistributionGroupStore';
 import { buildGlobalAddressList, resolveGalRecipient, type GalEntry } from './windows/server/exchange/GlobalAddressList';
+import { parseBinding, ipAllowedByRanges, type ReceiveConnectorDef, type SendConnectorDef } from './windows/server/exchange/TransportConnector';
+import { SmtpServer, type SmtpAcceptedMessage } from '@/network/smtp/SmtpServer';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
 export interface AdDsOpResult { ok: boolean; message: string }
@@ -58,6 +60,8 @@ export class WindowsServer extends WindowsPC {
   private wsusRoleInstance: WindowsWsusRole | null = null;
   private printServerRoleInstance: WindowsPrintServerRole | null = null;
   private exchangeOrgName: string | null = null;
+  private readonly receiveConnectors = new Map<string, { def: ReceiveConnectorDef; servers: SmtpServer[] }>();
+  private readonly sendConnectors = new Map<string, SendConnectorDef>();
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -478,6 +482,81 @@ export class WindowsServer extends WindowsPC {
       (sam) => this.directoryStore?.getGroup(sam)?.members ?? [],
       recipientAddress, from, subject, rawMessage, receivedAt,
     );
+  }
+
+  /**
+   * `New-ReceiveConnector`/`Get-ReceiveConnector` (docs/PRD-Exchange.md
+   * §2.1 P5) — a Receive Connector **is** an SMTP binding: creating one
+   * really starts an `SmtpServer` listener per binding on this server's
+   * own `TcpStack` (§ 0.2, no second SMTP engine). Every message it
+   * accepts is delivered through `deliverToRecipient()` (P2-P4) via the
+   * engine's `onMessageAccepted` hook — real local delivery, not a
+   * simulated success.
+   */
+  newReceiveConnector(def: ReceiveConnectorDef): AdDsOpResult {
+    if (this.exchangeOrgName === null) return { ok: false, message: 'New-ReceiveConnector : Exchange Server has not been installed on this computer.' };
+    const key = def.name.toLowerCase();
+    if (this.receiveConnectors.has(key)) return { ok: false, message: `New-ReceiveConnector : A connector named '${def.name}' already exists.` };
+
+    const servers: SmtpServer[] = [];
+    const localDomains = this.directoryStore ? new Set([this.directoryStore.dnsName]) : new Set<string>();
+    for (const binding of def.bindings) {
+      const parsed = parseBinding(binding);
+      if (!parsed) return { ok: false, message: `New-ReceiveConnector : '${binding}' is not a valid binding.` };
+      const server = new SmtpServer(
+        this.getTcpStack(),
+        { hostname: this.getHostname(), eventBus: this.getBus(), localDomains },
+        parsed.port,
+        {
+          remoteIpAllowed: def.remoteIpRanges.length === 0 ? undefined : (ip) => ipAllowedByRanges(ip, def.remoteIpRanges),
+          onMessageAccepted: (delivered) => this.handleAcceptedMessage(delivered),
+        },
+      );
+      server.start();
+      servers.push(server);
+    }
+    this.receiveConnectors.set(key, { def, servers });
+    return { ok: true, message: '' };
+  }
+
+  getReceiveConnector(name: string): ReceiveConnectorDef | null {
+    return this.receiveConnectors.get(name.toLowerCase())?.def ?? null;
+  }
+
+  listReceiveConnectors(): ReceiveConnectorDef[] {
+    return [...this.receiveConnectors.values()].map((c) => c.def);
+  }
+
+  /**
+   * `New-SendConnector`/`Get-SendConnector` — a Send Connector is a
+   * named outbound relay policy (address spaces + smart hosts + cost).
+   * Selection (`selectSendConnector`) is real and tested; actually
+   * driving a live outbound SMTP flight through it is not yet wired
+   * here (`relay.ts`'s DNS-backed relay has no live binding to any
+   * device in this simulator yet, Linux or Windows — a pre-existing gap
+   * in the base SMTP engine, not something this phase's scope covers).
+   */
+  newSendConnector(def: SendConnectorDef): AdDsOpResult {
+    if (this.exchangeOrgName === null) return { ok: false, message: 'New-SendConnector : Exchange Server has not been installed on this computer.' };
+    const key = def.name.toLowerCase();
+    if (this.sendConnectors.has(key)) return { ok: false, message: `New-SendConnector : A connector named '${def.name}' already exists.` };
+    this.sendConnectors.set(key, def);
+    return { ok: true, message: '' };
+  }
+
+  getSendConnector(name: string): SendConnectorDef | null {
+    return this.sendConnectors.get(name.toLowerCase()) ?? null;
+  }
+
+  listSendConnectors(): SendConnectorDef[] {
+    return [...this.sendConnectors.values()];
+  }
+
+  private handleAcceptedMessage(delivered: SmtpAcceptedMessage): void {
+    const subject = delivered.message.headers.get('Subject') ?? '';
+    for (const recipient of delivered.envelope.to) {
+      this.deliverToRecipient(recipient, delivered.envelope.from, subject, delivered.rawMessage, Date.now());
+    }
   }
 
   /**
