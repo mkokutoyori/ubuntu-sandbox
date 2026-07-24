@@ -3,6 +3,28 @@ import type { SmtpCommand, SmtpReply } from './types';
 const CRLF = '\r\n';
 const ENHANCED_CODE_RE = /^(\d\.\d{1,3}\.\d{1,3}) (.*)$/;
 
+export const ENHANCED = {
+  SERVICE_READY: '2.0.0',
+  CLOSING: '2.0.0',
+  OK: '2.0.0',
+  SENDER_OK: '2.1.0',
+  DEST_VALID: '2.1.5',
+  MESSAGE_ACCEPTED: '2.6.0',
+  START_MAIL_INPUT: '2.0.0',
+  SYNTAX_ERROR_COMMAND: '5.5.2',
+  SYNTAX_ERROR_ARGS: '5.5.4',
+  BAD_SEQUENCE: '5.5.1',
+  COMMAND_NOT_IMPLEMENTED: '5.5.1',
+  SERVICE_NOT_AVAILABLE: '4.3.0',
+  RELAY_DENIED: '5.7.1',
+  MAILBOX_UNAVAILABLE: '4.2.1',
+  USER_UNKNOWN: '5.1.1',
+  MESSAGE_TOO_LARGE: '5.3.4',
+  AUTH_REQUIRED: '5.7.1',
+  AUTH_CREDENTIALS_INVALID: '5.7.8',
+  AUTH_SUCCEEDED: '2.7.0',
+} as const;
+
 export function reply(code: number, ...lines: string[]): SmtpReply {
   return { code, lines: lines.length > 0 ? lines : [''] };
 }
