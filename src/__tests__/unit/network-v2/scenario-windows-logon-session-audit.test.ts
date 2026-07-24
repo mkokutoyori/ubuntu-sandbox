@@ -29,6 +29,7 @@ describe('Scénario 2 (Windows) — audit des connexions et sessions : 4624/4625
   describe('activation de l\'audit des connexions (auditpol)', () => {
     it('auditpol /set active Logon, Logoff et Other Logon/Logoff Events en succès et échec', async () => {
       const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+      pc.setCurrentUser('Administrator');
       for (const subcat of ['Logon', 'Logoff', 'Other Logon/Logoff Events']) {
         const out = await pc.executeCmdCommand(`auditpol /set /subcategory:"${subcat}" /success:enable /failure:enable`);
         expect(out).toMatch(/successfully executed/i);

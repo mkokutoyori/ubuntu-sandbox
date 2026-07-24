@@ -48,6 +48,10 @@ export class WindowsSecurityAuditProjection {
     );
   }
 
+  private gated(subcategory: string, kind: 'success' | 'failure'): boolean {
+    return this.auditPolicy ? this.auditPolicy.isEnabled(subcategory, kind) : true;
+  }
+
   private onServiceCreated(p: WindowsServiceCreatedPayload): void {
     if (p.deviceId !== this.deviceId) return;
     this.audit.serviceInstalled(p.serviceName, p.binaryPath, p.account, p.installedBy);
@@ -55,7 +59,7 @@ export class WindowsSecurityAuditProjection {
 
   private onServiceAccountChanged(p: WindowsServiceAccountChangedPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    if (!this.auditPolicy?.isEnabled('registry', 'success')) return;
+    if (!this.gated('registry', 'success')) return;
     this.audit.registryValueModified(
       `HKLM\\SYSTEM\\CurrentControlSet\\Services\\${p.serviceName}\\ObjectName`,
       p.previousAccount, p.newAccount, p.changedBy,
@@ -64,7 +68,7 @@ export class WindowsSecurityAuditProjection {
 
   private onAclChanged(p: WindowsFileAclChangedPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    if (!this.auditPolicy?.isEnabled('file system', 'success')) return;
+    if (!this.gated('file system', 'success')) return;
     this.audit.permissionChanged(p.path, p.identity, p.permissions, p.changedBy);
   }
 
@@ -78,6 +82,7 @@ export class WindowsSecurityAuditProjection {
 
   private onAccountChanged(p: WindowsAccountChangedPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('User Account Management', 'success')) return;
     switch (p.change) {
       case 'created': this.audit.accountCreated(p.account); break;
       case 'deleted': this.audit.accountDeleted(p.account); break;
@@ -91,34 +96,48 @@ export class WindowsSecurityAuditProjection {
 
   private onLogon(p: WindowsLogonEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    if (p.success) this.audit.logonSuccess(p.account, p.logonType);
-    else this.audit.logonFailure(p.account);
+    if (p.success) {
+      if (!this.gated('Logon', 'success')) return;
+      this.audit.logonSuccess(p.account, p.logonType);
+    } else {
+      if (!this.gated('Logon', 'failure')) return;
+      this.audit.logonFailure(p.account);
+    }
   }
 
   private onLogoff(p: WindowsLogoffEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Logoff', 'success')) return;
     this.audit.logoff(p.account);
   }
 
   private onGroupCreated(p: WindowsGroupEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Security Group Management', 'success')) return;
     this.audit.groupCreated(p.group);
   }
 
   private onGroupDeleted(p: WindowsGroupEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Security Group Management', 'success')) return;
     this.audit.groupDeleted(p.group);
   }
 
   private onMembership(p: WindowsGroupMemberEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Security Group Management', 'success')) return;
     if (p.added) this.audit.groupMemberAdded(p.group, p.member);
     else this.audit.groupMemberRemoved(p.group, p.member);
   }
 
   private onProcess(p: WindowsProcessEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    if (p.started) this.audit.processCreated(p.name, p.pid);
-    else this.audit.processTerminated(p.name, p.pid);
+    if (p.started) {
+      if (!this.gated('Process Creation', 'success')) return;
+      this.audit.processCreated(p.name, p.pid);
+    } else {
+      if (!this.gated('Process Termination', 'success')) return;
+      this.audit.processTerminated(p.name, p.pid);
+    }
   }
 }

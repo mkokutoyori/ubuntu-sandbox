@@ -298,6 +298,7 @@ export class WindowsServer extends WindowsPC {
     this.provisionDomainDnsZone(domainName);
     this.provisionDefaultDomainPolicy();
     this.logDirectoryServiceStartup();
+    this.auditPolicy.seedDefaults('domain-controller');
     return { ok: true, message: '' };
   }
 
@@ -524,6 +525,7 @@ export class WindowsServer extends WindowsPC {
     if (opts.installDns !== false) this.roleManager.install('DNS');
     this.provisionDomainDnsZone(domainName);
     this.logDirectoryServiceStartup();
+    this.auditPolicy.seedDefaults('domain-controller');
     /**
      * Real DCPromo urgently replicates the new DC's own computer object
      * back out (a critical-object push, distinct from the initial sync

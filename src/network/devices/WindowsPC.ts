@@ -369,6 +369,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.initEnv();
     this.initDefaultSockets();
     this.wireReactiveProjections();
+    this.auditPolicy.seedDefaults(type === 'windows-server' ? 'server' : 'client');
   }
 
   /**
@@ -1757,7 +1758,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'sc.exe': return cmdSc(
         { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser }, args);
       case 'auditpol':
-      case 'auditpol.exe': return cmdAuditpol(this.auditPolicy, args);
+      case 'auditpol.exe': return cmdAuditpol(this.auditPolicy, args, this.userMgr.isCurrentUserAdmin(), {
+        resolvePath: (p) => fileCtx.fs.normalizePath(p, fileCtx.cwd),
+        readFile: (p) => { const r = fileCtx.fs.readFile(p); return r.ok ? (r.content ?? '') : null; },
+        writeFile: (p, c) => fileCtx.fs.createFile(p, c).ok,
+      }, fileCtx.hostname);
       case 'winrm':   return cmdWinrm(this.winrm, args);
       case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable, this.buildNetContext());
       case 'attrib':  return cmdAttrib(fileCtx, args);
@@ -2416,7 +2421,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       );
     }
     if (lower === 'auditpol' || lower === 'auditpol.exe') {
-      return cmdAuditpol(this.auditPolicy, args);
+      return cmdAuditpol(this.auditPolicy, args, this.userMgr.isCurrentUserAdmin(), {
+        resolvePath: (p) => this.fs.normalizePath(p, this.cwd),
+        readFile: (p) => { const r = this.fs.readFile(p); return r.ok ? (r.content ?? '') : null; },
+        writeFile: (p, c) => this.fs.createFile(p, c).ok,
+      }, this.hostname);
     }
     if (lower === 'winrm') {
       return cmdWinrm(this.winrm, args);
