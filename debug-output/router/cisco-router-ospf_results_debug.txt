@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-07-18T20:51:25.946Z
+Generated: 2026-07-24T16:41:05.592Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -286,7 +286,7 @@ Total steps: 311
 
 [74/311] r1 R1# show ip ospf
   Routing Process "ospf 1" with ID 1.1.1.1
-   Number of areas in this router is 3
+   Number of areas in this router is 4
    Reference bandwidth unit is 10000 mbps
    Initial SPF schedule delay 10 msecs
    Minimum hold time between two consecutive SPFs 100 msecs
@@ -310,6 +310,12 @@ Total steps: 311
           Area type: NORMAL
           SPF algorithm last executed: recently
           Number of LSA 1
+  
+      Area 3
+          Number of interfaces in this area is 0
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 0
   
 
 [75/311] r1 R1# show ip ospf border-routers
@@ -491,7 +497,7 @@ Total steps: 311
 
 [124/311] r1 R1# show ip ospf
   Routing Process "ospf 1" with ID 1.1.1.1
-   Number of areas in this router is 3
+   Number of areas in this router is 4
    Reference bandwidth unit is 10000 mbps
    Initial SPF schedule delay 10 msecs
    Minimum hold time between two consecutive SPFs 100 msecs
@@ -515,6 +521,12 @@ Total steps: 311
   
       Area 0
           Number of interfaces in this area is 3
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 1
+  
+      Area 3
+          Number of interfaces in this area is 0
           Area type: NORMAL
           SPF algorithm last executed: recently
           Number of LSA 1
@@ -606,7 +618,7 @@ Total steps: 311
 --- [147] § OSPF show / clear / debug ---
 [147/311] r1 R1# show ip ospf
   Routing Process "ospf 1" with ID 1.1.1.1
-   Number of areas in this router is 3
+   Number of areas in this router is 4
    Reference bandwidth unit is 10000 mbps
    Initial SPF schedule delay 10 msecs
    Minimum hold time between two consecutive SPFs 100 msecs
@@ -634,6 +646,12 @@ Total steps: 311
           SPF algorithm last executed: recently
           Number of LSA 1
   
+      Area 3
+          Number of interfaces in this area is 0
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 1
+  
 
 [148/311] r1 R1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -649,17 +667,22 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000004c        0x40c1      2
+  1.1.1.1         1.1.1.1         0           0x8000005a        0x4e91      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000004d        0x1939      1
+  1.1.1.1         1.1.1.1         0           0x8000005b        0x2760      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000004e        0x9f7c      2
+  1.1.1.1         1.1.1.1         0           0x8000005c        0xad4c      2
+  
+                  Router Link States (Area 3)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x8000005d        0x290       0
   
 
 [151/311] r1 R1# show ip ospf database router
@@ -668,17 +691,22 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000004f        0x4325      2
+  1.1.1.1         1.1.1.1         0           0x8000005e        0x5216      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000050        0x1c78      1
+  1.1.1.1         1.1.1.1         0           0x8000005f        0x2bb4      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000051        0xa2df      2
+  1.1.1.1         1.1.1.1         0           0x80000060        0xb1d0      2
+  
+                  Router Link States (Area 3)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x80000061        0x6b4       0
   
 
 [152/311] r1 R1# show ip ospf database network
@@ -712,11 +740,13 @@ Total steps: 311
   OSPF Router with ID (1.1.1.1) (Process ID 1)
   
     Area 1 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000058
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000006a
     Area 2 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000059
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000006b
     Area 0 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000005a
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000006c
+    Area 3 self-originated LSAs
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000006d
 
 [158/311] r1 R1# show ip ospf interface
   Loopback1 is up, line protocol is up
@@ -814,7 +844,7 @@ Total steps: 311
 [162/311] r1 R1# show ip ospf statistics
   OSPF statistics:
     Rcvd: 0 total, 0 errors
-    LSA: 3 total
+    LSA: 4 total
     SPF: 34 runs, last run recently
     Neighbors: 0, Adjacent: 0
     Neighbor state changes: 0
@@ -823,6 +853,7 @@ Total steps: 311
       Area 1: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
       Area 2: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
       Area 0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 3: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
 
 [163/311] r1 R1# show ip ospf summary-address
   OSPF Router with ID (1.1.1.1) (Process ID 1), Summary-address
@@ -929,15 +960,13 @@ Total steps: 311
 <empty>
 
 [192/311] r1 R1# show ip ospf | include Area
-   Number of areas in this router is 3
       Area 1
-          Number of interfaces in this area is 2
           Area type: TOTALLY-STUBBY
       Area 2
-          Number of interfaces in this area is 1
           Area type: NSSA
       Area 0
-          Number of interfaces in this area is 3
+          Area type: NORMAL
+      Area 3
           Area type: NORMAL
 
 [193/311] r1 R1# show ip ospf neighbor GigabitEthernet0/1
@@ -1010,7 +1039,7 @@ Total steps: 311
 [204/311] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 907 bytes
   !
   hostname R1
   !
@@ -1042,6 +1071,7 @@ Total steps: 311
   !
   !
   router ospf 1
+   router-id 1.1.1.1
    network 10.10.1.0 0.0.0.255 area 1
    network 10.10.2.0 0.0.0.255 area 2
    network 10.10.3.0 0.0.0.255 area 0
@@ -1052,6 +1082,7 @@ Total steps: 311
    network 10.10.8.0 0.0.0.255 area 2
    network 192.168.1.0 0.0.0.255 area 0
    network 10.0.0.0 0.0.0.3 area 0
+  !
   end
 
 [205/311] r1 R1# show startup-config
@@ -1197,7 +1228,7 @@ Total steps: 311
 
 [213/311] r1 R1# show ip ospf
   Routing Process "ospf 1" with ID 1.1.1.1
-   Number of areas in this router is 3
+   Number of areas in this router is 4
    Reference bandwidth unit is 10000 mbps
    Initial SPF schedule delay 10 msecs
    Minimum hold time between two consecutive SPFs 100 msecs
@@ -1225,6 +1256,12 @@ Total steps: 311
           SPF algorithm last executed: recently
           Number of LSA 1
   
+      Area 3
+          Number of interfaces in this area is 0
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 1
+  
 
 [214/311] r1 R1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -1235,17 +1272,22 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000088        0x7c85      2
+  1.1.1.1         1.1.1.1         0           0x800000aa        0x9eeb      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000089        0x552a      1
+  1.1.1.1         1.1.1.1         0           0x800000ab        0x77f6      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000008a        0xdb40      2
+  1.1.1.1         1.1.1.1         0           0x800000ac        0xfda6      2
+  
+                  Router Link States (Area 3)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x800000ad        0x5263      0
   
 
 [216/311] r1 R1# show ip ospf interface brief
@@ -1353,7 +1395,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0665CE.04189374 (20:51:26.016 UTC Sat Jul 18 2026)
+  reference time is EE0E1421.A978D4FD (16:41:05.662 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1362,7 +1404,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *20:51:26.000 UTC Sat Jul 18 2026
+  *16:41:05.000 UTC Fri Jul 24 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1560,7 +1602,7 @@ Total steps: 311
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 907 bytes
   !
   hostname R1
   !
@@ -1592,6 +1634,7 @@ Total steps: 311
   !
   !
   router ospf 1
+   router-id 1.1.1.1
    network 10.10.1.0 0.0.0.255 area 1
    network 10.10.2.0 0.0.0.255 area 2
    network 10.10.3.0 0.0.0.255 area 0
@@ -1602,6 +1645,7 @@ Total steps: 311
    network 10.10.8.0 0.0.0.255 area 2
    network 192.168.1.0 0.0.0.255 area 0
    network 10.0.0.0 0.0.0.3 area 0
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1724,7 +1768,7 @@ Total steps: 311
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
     Router ID 1.1.1.1
-    Number of areas in this router is 3
+    Number of areas in this router is 4
     Reference bandwidth unit is 10000 mbps
     Routing for Networks:
       10.10.1.0 0.0.0.255 area 1
@@ -1814,22 +1858,31 @@ Total steps: 311
 --- [265] § regression: pipe filters ---
 [265/311] r1 R1# show running-config | include router
   router ospf 1
+   router-id 1.1.1.1
 
 [266/311] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
   interface Loopback1
    ip address 10.10.1.1 255.255.255.0
+  !
   interface Loopback2
    ip address 10.10.2.1 255.255.255.0
+  !
   interface Loopback3
    ip address 10.10.3.1 255.255.255.0
+  !
   interface Loopback4
    ip address 10.10.4.1 255.255.255.0
+  !
 
 [267/311] r1 R1# show running-config | begin line
 <empty>
@@ -1837,7 +1890,7 @@ Total steps: 311
 [268/311] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 907 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -1856,6 +1909,7 @@ Total steps: 311
    ip address 10.10.4.1 255.255.255.0
   access-list 10 permit 172.16.0.0 0.0.255.255
   router ospf 1
+   router-id 1.1.1.1
    network 10.10.1.0 0.0.0.255 area 1
    network 10.10.2.0 0.0.0.255 area 2
    network 10.10.3.0 0.0.0.255 area 0
@@ -2006,33 +2060,33 @@ Total steps: 311
 
 [305/311] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [306/311] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2041,15 +2095,15 @@ Total steps: 311
     ospf   Enter OSPF routing protocol configuration
 
 [307/311] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [308/311] r1 R1(config)# no ?
@@ -2074,7 +2128,7 @@ Total steps: 311
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -2084,7 +2138,7 @@ Total steps: 311
 <empty>
 
 [310/311] r1 R1# show running-config | count !
-  15
+  17
 
 [311/311] r1 R1# write memory
   Building configuration...

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-07-18T20:53:30.385Z
+Generated: 2026-07-24T16:41:53.545Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -526,58 +526,69 @@ Total steps: 369
 
 [126/369] r1 R1# show running-config | section dhcp
   service dhcp
+  !
   ip dhcp pool VLAN10
    network 192.168.1.0 255.255.255.0
    default-router 192.168.1.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan10.lab
+  !
   ip dhcp pool VLAN20
    network 192.168.2.0 255.255.255.0
    default-router 192.168.2.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan20.lab
    lease 2
+  !
   ip dhcp pool VLAN30
    network 192.168.3.0 255.255.255.0
    default-router 192.168.3.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan30.lab
    lease 3
+  !
   ip dhcp pool VLAN40
    network 192.168.4.0 255.255.255.0
    default-router 192.168.4.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan40.lab
    lease 4
+  !
   ip dhcp pool VLAN50
    network 192.168.5.0 255.255.255.0
    default-router 192.168.5.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan50.lab
    lease 5
+  !
   ip dhcp pool VLAN60
    network 192.168.6.0 255.255.255.0
    default-router 192.168.6.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan60.lab
    lease 6
+  !
   ip dhcp pool VLAN70
    network 192.168.7.0 255.255.255.0
    default-router 192.168.7.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan70.lab
    lease 7
+  !
   ip dhcp pool VLAN80
    network 192.168.8.0 255.255.255.0
    default-router 192.168.8.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan80.lab
    lease 8
+  !
   ip dhcp pool RESERVED
+  !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
+  !
 
 
 --- [127] § DHCP classes / options ---
@@ -1167,7 +1178,7 @@ Total steps: 369
 [262/369] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2969 bytes
   !
   hostname R1
   !
@@ -1665,7 +1676,7 @@ Total steps: 369
 [297/369] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE06664A.68F5C28F (20:53:30.410 UTC Sat Jul 18 2026)
+  reference time is EE0E1451.922D0E56 (16:41:53.571 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1# show ntp associations
@@ -1674,7 +1685,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *20:53:30.000 UTC Sat Jul 18 2026
+  *16:41:53.000 UTC Fri Jul 24 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1852,7 +1863,7 @@ Total steps: 369
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2969 bytes
   !
   hostname R1
   !
@@ -2151,11 +2162,15 @@ Total steps: 369
    ip helper-address 10.0.0.2
    ip helper-address 10.0.0.3
    ip nat inside
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    ip nat outside
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
 
 [325/369] r1 R1# show running-config | begin line
@@ -2164,7 +2179,7 @@ Total steps: 369
 [326/369] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2969 bytes
   hostname R1
   service dhcp
   ip dhcp pool VLAN10
@@ -2388,33 +2403,33 @@ Total steps: 369
 
 [363/369] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [364/369] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2423,15 +2438,15 @@ Total steps: 369
     ospf   Enter OSPF routing protocol configuration
 
 [365/369] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [366/369] r1 R1(config)# no ?
@@ -2456,7 +2471,7 @@ Total steps: 369
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -2466,7 +2481,7 @@ Total steps: 369
 <empty>
 
 [368/369] r1 R1# show running-config | count !
-  23
+  25
 
 [369/369] r1 R1# write memory
   Building configuration...

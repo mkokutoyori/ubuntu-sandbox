@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-07-18T20:51:01.874Z
+Generated: 2026-07-24T16:41:04.025Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -885,49 +885,57 @@ Total steps: 388
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 2026-07-18 20:51:01
+  % Key pair was generated at: 2026-07-24 16:41:04
   Key name: default
    Storage Device: not specified
    Usage: Signature Key
    Key is not exportable.
    Key Data:
-   064120627AB40E0A4FF4C2609E4CBA28D5603173B4B2F25711747247A2114F1F
-    63B231A2C837C48209E6D66469A6D0941D3405739193465FDEFBED0B9553AD33
-    66A2D062848C6B22E16B3FE8A2E0DBC8601E76F350A5B64FCE17CD4FCDEE3ACF
-    93A71CA242C262CA640C1EECB6FA87D4A3BFA5F3FA9C6EC78AAEFCF32C1CB7B3
-    6911AA42A7E9832AF5E69150A7093C188E781A534008ABB7BCB6BA1748BEF5AF
-    0AAF8D62521015A25928A134C8879E8411C5F4338A624C5FD98324BB427AE2E3
-    3ACAE60200B3D7E2CC326E98A701C3D89D3F53932B6E3E4FDD005CDF3307CB1F
-    A2C5D422F2D5D40AACFC197C6F48C66450925873FC33B7E714C34C637BD8BC63
+   322E21CADA22639231D4E348F27999D032BC99DBA49F549FEA09CA2F15A54E87
+    CC58A10A268C258A2EFA054CA7A8A9BC147B1BDBA13A48278D99F7E3C040726B
+    5CE802CA4AA808EAFCF6A6C03174DC609AFC455BF7943D97FCE3102764405B87
+    90A8070A762D5AB26959BDC40EDFEBAC525E2C5BCC1335AF442912DB395BBE3B
+    3FAD77AA58D057D24D0DBE384E2216C02A9FCEBB131E459F6AC79DFF05EB9B37
+    86EDC8CA7786B4AA9D9BDC1CB377ADACB421569B147F5C27BD15BB935936BEBB
+    7850E46A9831262A9FF6E170E6CD76F0C23A6DFB111F821716F92BB7AB2F09B7
+    F5708A8AF9679152021BC454F124247C0B172ADBCD57316FC4425A8B7D99500B
   
-  % Key pair was generated at: 2026-07-18 20:51:01
+  % Key pair was generated at: 2026-07-24 16:41:04
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   A6220F7C44EB392C0EF1441E4A93F8E6E63CCD0DBD2EF4F987E2043994B43D71
-    B829497C3914C544ED7C775A596B574A12747C4DC915B1011A1988B5043817AD
-    85AC65FCA031C034A43DC516AD750436001AFE0DEA37A9B104EF17B1DE54A531
-    8CEB44FC596CA02CCE3F0D528DF44DAAABE4324D91157CB9EC8FC74D95E3A1CD
-    2167529C6ACA9F4C4EF7322EFC68AFD6E0C3912DE91E3759381A596925441101
-    00277ABC1B0477640ACC298A675F8A3ACD8EFA8D1BA85F61804EAE059C0CD7DD
-    96B59D5CC92F50D408F1D366AB62FF0612044E6D277F40111654A52146E01CC1
-    FA839A7C7690864C10040FC2C55F849ACCC96CCDEF353F1978AB54DD8A91969D
-    33C4DE3CEBBB17AC148BC0BED657C0C68A65618DE3D5DCF9E49066D90624F4D1
-    F0A8503C19DD1AC433D1ABFA9F12936A40AE48CDC7BFDD011827A3551D7EC44D
-    1751A4BC8C93FFF4A677B1B6BD1ED256BA70028D335F50F1C746EA51716638D1
-    3580BBBC663AE2EC3F07B1F214C5AACAD3DE6ECD2DFC6EF99D9B51EDDD512C6D
-    C058951C345693CC4CA3E2CE1EC386F65DF485ED0171EA5938F31C091E5FE0A1
-    6152E17C6A0044E489AFBE2A57687D1A0199270DAA789E61A0CF28A54519C23D
-    1AF0CFDC63DC8414112D74068BE9EFE6FB79332DA27CD3D19E9657C1A6403021
-    24ACF13CCF50068C1CEA9462D0BE767A244B894DE41957D943CBE6FDBC43807D
+   ED652A181281BBF80B6E65FA0AC094E2AC063229BCC546E56BAAF61D0831C0E5
+    EEAD7E984D117460BEBF393E3E38CCFEBD8181694A02BB5DE6884D11C4F21929
+    30D5A5985ABACDA06D577BF2083C6552439468291E12253D14C87E95B66BA075
+    251D5F182543EE588CFA24363EE346AEAA50FC692BDC1FA5F552C0A95FBC7F09
+    B2D6373885F85778AC34FE0AFF157612221C804951C1FC85085BB54DDCC9C555
+    6606F9D8F5A4FA40A627156E4B7682AEA52B09A97CDAA81DDD5D5C61BCCFB099
+    1C09A6F8C55DB280491B34429308760294AC4289EAB958FD7A9576050A3B1AE5
+    954FFE987ED192D86E6650A6044DD4DE36A440E9B7B1B645635ECBF962EF6879
+    9E4C085862B505B880C9865A10D09502DDE42AA99D00E8256D29107D42903685
+    B505E4D8746D2120E8E1619E548E3C1EB7C401E978C3079D31D06F719D630709
+    31A593D8512A73A0BB66AC52501BD2B2D58170A90627677D0F40A8F5B748BB15
+    B1EAD558E3915418B29C5C965577740E7FAE8CE96C44C325F8E0F309D0C49FE9
+    3785A1B832B3DB386D64EA6A055798329CA918893339A68534366FAD2876E7F5
+    9E0A0018558AE6C06CE1DDCE791F31CE68942A291F5B345DDDFA1EC123A1DE79
+    69DAA178B3E7F740E78FB0A2D1CE7E6263B06AC932F7223D802AC065DCE85885
+    756094D8CB0B2798BF91A90647886D3ED5F0F1697A5E4F85EB621E59AC7A5759
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
-  Quiet-Mode access list MGMT
-  Block-for: 120 sec, attempts 3, within 60 sec
-  Router NOT enabled to watch for login attacks
+  Quiet-Mode access list MGMT is applied.
+  
+  Router enabled to watch for login Attacks.
+  If more than 3 login failures occur in 60 seconds
+  or less, logins will be disabled for 120 seconds.
+  
+  Router presently in Normal-Mode.
+  Current Watch Window
+      Time remaining: 0 seconds
+      Login failures for current window: 0
+  Total login failures: 0
 
 [218/388] r1 R1# show login failures
   Information about login failure's with the device
@@ -1169,13 +1177,14 @@ Total steps: 388
 [281/388] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 6565 bytes
   !
   hostname R1
   !
   line console 0
    login
    exec-timeout 10 0
+   logging synchronous
   !
   service dhcp
   !
@@ -1256,32 +1265,32 @@ Total steps: 388
   access-list 104 permit ip any any dscp af21
   access-list 105 permit tcp any any eq 80 log
   ip access-list standard MGMT
-   permit 10.0.0.0 0.0.0.255
-   permit host 192.168.1.10
-   deny any log
+   10 permit 10.0.0.0 0.0.0.255
+   20 permit host 192.168.1.10
+   30 deny any log
   ip access-list extended WAN-IN
-   permit tcp any host 10.0.0.1 eq 443
-   permit tcp any any eq 22
-   permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.4 eq 443
-   permit tcp any host 10.0.0.5 eq 443
-   permit tcp any host 10.0.0.6 eq 443
-   permit tcp any host 10.0.0.7 eq 443
-   permit tcp any host 10.0.0.8 eq 443
-   permit tcp any host 10.0.0.9 eq 443
-   permit tcp any host 10.0.0.10 eq 443
-   permit udp any any eq 161
-   deny icmp any any
-   permit ip any any
+   10 permit tcp any host 10.0.0.1 eq 443
+   20 permit tcp any any eq 22
+   30 permit tcp any host 10.0.0.2 eq 443
+   40 permit tcp any host 10.0.0.4 eq 443
+   50 permit tcp any host 10.0.0.5 eq 443
+   60 permit tcp any host 10.0.0.6 eq 443
+   70 permit tcp any host 10.0.0.7 eq 443
+   80 permit tcp any host 10.0.0.8 eq 443
+   90 permit tcp any host 10.0.0.9 eq 443
+   100 permit tcp any host 10.0.0.10 eq 443
+   110 permit udp any any eq 161
+   120 deny icmp any any
+   130 permit ip any any
   ip access-list extended TIMED
-   permit ip any any time-range BUSINESS-HOURS
+   10 permit ip any any time-range BUSINESS-HOURS
   ip access-list extended REFLECT-OUT
-   permit tcp any any reflect TCP-REFLECT
+   10 permit tcp any any reflect TCP-REFLECT
   ip access-list extended REFLECT-IN
-   evaluate TCP-REFLECT
+   10 evaluate TCP-REFLECT
   ip access-list extended COPP-CRITICAL
-   permit ospf any any
-   permit tcp any any eq 179
+   10 permit ospf any any
+   20 permit tcp any any eq 179
   !
   !
   username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
@@ -1768,7 +1777,7 @@ Total steps: 388
 [316/388] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0665B5.E83126E9 (20:51:01.907 UTC Sat Jul 18 2026)
+  reference time is EE0E1420.0E978D4F (16:41:04.057 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [317/388] r1 R1# show ntp associations
@@ -1777,7 +1786,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1# show clock
-  *20:51:01.000 UTC Sat Jul 18 2026
+  *16:41:04.000 UTC Fri Jul 24 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1955,13 +1964,14 @@ Total steps: 388
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 6565 bytes
   !
   hostname R1
   !
   line console 0
    login
    exec-timeout 10 0
+   logging synchronous
   !
   service dhcp
   !
@@ -2042,32 +2052,32 @@ Total steps: 388
   access-list 104 permit ip any any dscp af21
   access-list 105 permit tcp any any eq 80 log
   ip access-list standard MGMT
-   permit 10.0.0.0 0.0.0.255
-   permit host 192.168.1.10
-   deny any log
+   10 permit 10.0.0.0 0.0.0.255
+   20 permit host 192.168.1.10
+   30 deny any log
   ip access-list extended WAN-IN
-   permit tcp any host 10.0.0.1 eq 443
-   permit tcp any any eq 22
-   permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.4 eq 443
-   permit tcp any host 10.0.0.5 eq 443
-   permit tcp any host 10.0.0.6 eq 443
-   permit tcp any host 10.0.0.7 eq 443
-   permit tcp any host 10.0.0.8 eq 443
-   permit tcp any host 10.0.0.9 eq 443
-   permit tcp any host 10.0.0.10 eq 443
-   permit udp any any eq 161
-   deny icmp any any
-   permit ip any any
+   10 permit tcp any host 10.0.0.1 eq 443
+   20 permit tcp any any eq 22
+   30 permit tcp any host 10.0.0.2 eq 443
+   40 permit tcp any host 10.0.0.4 eq 443
+   50 permit tcp any host 10.0.0.5 eq 443
+   60 permit tcp any host 10.0.0.6 eq 443
+   70 permit tcp any host 10.0.0.7 eq 443
+   80 permit tcp any host 10.0.0.8 eq 443
+   90 permit tcp any host 10.0.0.9 eq 443
+   100 permit tcp any host 10.0.0.10 eq 443
+   110 permit udp any any eq 161
+   120 deny icmp any any
+   130 permit ip any any
   ip access-list extended TIMED
-   permit ip any any time-range BUSINESS-HOURS
+   10 permit ip any any time-range BUSINESS-HOURS
   ip access-list extended REFLECT-OUT
-   permit tcp any any reflect TCP-REFLECT
+   10 permit tcp any any reflect TCP-REFLECT
   ip access-list extended REFLECT-IN
-   evaluate TCP-REFLECT
+   10 evaluate TCP-REFLECT
   ip access-list extended COPP-CRITICAL
-   permit ospf any any
-   permit tcp any any eq 179
+   10 permit ospf any any
+   20 permit tcp any any eq 179
   !
   !
   username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
@@ -2322,6 +2332,7 @@ Total steps: 388
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    zone-member security INSIDE
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    ip access-group WAN-IN in
@@ -2332,14 +2343,18 @@ Total steps: 388
    ip verify unicast source reachable-via rx
    zone-member security OUTSIDE
    ipv6 traffic-filter V6-FILTER in
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
   ip ssh source-interface Loopback0
 
 [344/388] r1 R1# show running-config | begin line
   line console 0
    login
    exec-timeout 10 0
+   logging synchronous
   !
   service dhcp
   !
@@ -2420,32 +2435,32 @@ Total steps: 388
   access-list 104 permit ip any any dscp af21
   access-list 105 permit tcp any any eq 80 log
   ip access-list standard MGMT
-   permit 10.0.0.0 0.0.0.255
-   permit host 192.168.1.10
-   deny any log
+   10 permit 10.0.0.0 0.0.0.255
+   20 permit host 192.168.1.10
+   30 deny any log
   ip access-list extended WAN-IN
-   permit tcp any host 10.0.0.1 eq 443
-   permit tcp any any eq 22
-   permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.4 eq 443
-   permit tcp any host 10.0.0.5 eq 443
-   permit tcp any host 10.0.0.6 eq 443
-   permit tcp any host 10.0.0.7 eq 443
-   permit tcp any host 10.0.0.8 eq 443
-   permit tcp any host 10.0.0.9 eq 443
-   permit tcp any host 10.0.0.10 eq 443
-   permit udp any any eq 161
-   deny icmp any any
-   permit ip any any
+   10 permit tcp any host 10.0.0.1 eq 443
+   20 permit tcp any any eq 22
+   30 permit tcp any host 10.0.0.2 eq 443
+   40 permit tcp any host 10.0.0.4 eq 443
+   50 permit tcp any host 10.0.0.5 eq 443
+   60 permit tcp any host 10.0.0.6 eq 443
+   70 permit tcp any host 10.0.0.7 eq 443
+   80 permit tcp any host 10.0.0.8 eq 443
+   90 permit tcp any host 10.0.0.9 eq 443
+   100 permit tcp any host 10.0.0.10 eq 443
+   110 permit udp any any eq 161
+   120 deny icmp any any
+   130 permit ip any any
   ip access-list extended TIMED
-   permit ip any any time-range BUSINESS-HOURS
+   10 permit ip any any time-range BUSINESS-HOURS
   ip access-list extended REFLECT-OUT
-   permit tcp any any reflect TCP-REFLECT
+   10 permit tcp any any reflect TCP-REFLECT
   ip access-list extended REFLECT-IN
-   evaluate TCP-REFLECT
+   10 evaluate TCP-REFLECT
   ip access-list extended COPP-CRITICAL
-   permit ospf any any
-   permit tcp any any eq 179
+   10 permit ospf any any
+   20 permit tcp any any eq 179
   !
   !
   username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
@@ -2527,11 +2542,12 @@ Total steps: 388
 [345/388] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 6565 bytes
   hostname R1
   line console 0
    login
    exec-timeout 10 0
+   logging synchronous
   service dhcp
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2606,32 +2622,32 @@ Total steps: 388
   access-list 104 permit ip any any dscp af21
   access-list 105 permit tcp any any eq 80 log
   ip access-list standard MGMT
-   permit 10.0.0.0 0.0.0.255
-   permit host 192.168.1.10
-   deny any log
+   10 permit 10.0.0.0 0.0.0.255
+   20 permit host 192.168.1.10
+   30 deny any log
   ip access-list extended WAN-IN
-   permit tcp any host 10.0.0.1 eq 443
-   permit tcp any any eq 22
-   permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.4 eq 443
-   permit tcp any host 10.0.0.5 eq 443
-   permit tcp any host 10.0.0.6 eq 443
-   permit tcp any host 10.0.0.7 eq 443
-   permit tcp any host 10.0.0.8 eq 443
-   permit tcp any host 10.0.0.9 eq 443
-   permit tcp any host 10.0.0.10 eq 443
-   permit udp any any eq 161
-   deny icmp any any
-   permit ip any any
+   10 permit tcp any host 10.0.0.1 eq 443
+   20 permit tcp any any eq 22
+   30 permit tcp any host 10.0.0.2 eq 443
+   40 permit tcp any host 10.0.0.4 eq 443
+   50 permit tcp any host 10.0.0.5 eq 443
+   60 permit tcp any host 10.0.0.6 eq 443
+   70 permit tcp any host 10.0.0.7 eq 443
+   80 permit tcp any host 10.0.0.8 eq 443
+   90 permit tcp any host 10.0.0.9 eq 443
+   100 permit tcp any host 10.0.0.10 eq 443
+   110 permit udp any any eq 161
+   120 deny icmp any any
+   130 permit ip any any
   ip access-list extended TIMED
-   permit ip any any time-range BUSINESS-HOURS
+   10 permit ip any any time-range BUSINESS-HOURS
   ip access-list extended REFLECT-OUT
-   permit tcp any any reflect TCP-REFLECT
+   10 permit tcp any any reflect TCP-REFLECT
   ip access-list extended REFLECT-IN
-   evaluate TCP-REFLECT
+   10 evaluate TCP-REFLECT
   ip access-list extended COPP-CRITICAL
-   permit ospf any any
-   permit tcp any any eq 179
+   10 permit ospf any any
+   20 permit tcp any any eq 179
   username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
   line vty 0 4
    exec-timeout 5 0
@@ -2835,33 +2851,33 @@ Total steps: 388
 
 [382/388] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [383/388] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2870,15 +2886,15 @@ Total steps: 388
     ospf   Enter OSPF routing protocol configuration
 
 [384/388] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [385/388] r1 R1(config)# no ?
@@ -2903,7 +2919,7 @@ Total steps: 388
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -2913,7 +2929,7 @@ Total steps: 388
 <empty>
 
 [387/388] r1 R1# show running-config | count !
-  15
+  16
 
 [388/388] r1 R1# write memory
   Building configuration...

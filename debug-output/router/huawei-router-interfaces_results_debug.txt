@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-07-18T20:54:25.931Z
+Generated: 2026-07-24T16:42:06.153Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -807,7 +807,7 @@ Total steps: 286
       Output: 0 packets, 0 bytes
 
 [169/286] r1 <R1> display interface GigabitEthernet0/0/0 | include line protocol
-  Line protocol current state : UP
+<empty>
 
 [170/286] r1 <R1> display interface GigabitEthernet0/0/1
   GE0/0/1 current state : UP
@@ -831,7 +831,7 @@ Total steps: 286
       Output: 0 packets, 0 bytes
 
 [172/286] r1 <R1> display interface GigabitEthernet0/0/1 | include line protocol
-  Line protocol current state : UP
+<empty>
 
 [173/286] r1 <R1> display interface LoopBack0
   Error: Wrong parameter found at '^' position.
@@ -866,7 +866,7 @@ Total steps: 286
       Output: 0 packets, 0 bytes
 
 [178/286] r1 <R1> display interface Tunnel0/0/0 | include line protocol
-  Line protocol current state : UP
+<empty>
 
 [179/286] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
@@ -1104,128 +1104,7 @@ Total steps: 286
   #
 
 [185/286] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   description ## LAN to L1 ##
-   ip address 192.168.100.1 255.255.255.0
-   dhcp select global
-   arp expire-time 600
-   mtu 9000
-   bandwidth 100000
-   mac-address 00e0-fc12-3456
-   flow-control
-   ipv6 enable
-   ipv6 mtu 1280
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack1
-   description LOOP-1
-   ip address 10.255.255.1 255.255.255.255
-  #
-  interface LoopBack2
-   description LOOP-2
-   ip address 10.255.255.2 255.255.255.255
-  #
-  interface LoopBack3
-   description LOOP-3
-   ip address 10.255.255.3 255.255.255.255
-  #
-  interface LoopBack4
-   description LOOP-4
-   ip address 10.255.255.4 255.255.255.255
-  #
-  interface LoopBack5
-   description LOOP-5
-   ip address 10.255.255.5 255.255.255.255
-  #
-  interface LoopBack6
-   description LOOP-6
-   ip address 10.255.255.6 255.255.255.255
-  #
-  interface LoopBack7
-   description LOOP-7
-   ip address 10.255.255.7 255.255.255.255
-  #
-  interface LoopBack8
-   description LOOP-8
-   ip address 10.255.255.8 255.255.255.255
-  #
-  interface GigabitEthernet0/0/0.10
-   ip address 192.168.1.1 255.255.255.0
-   dot1q termination vid 10
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.20
-   ip address 192.168.2.1 255.255.255.0
-   dot1q termination vid 20
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.30
-   ip address 192.168.3.1 255.255.255.0
-   dot1q termination vid 30
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.40
-   ip address 192.168.4.1 255.255.255.0
-   dot1q termination vid 40
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.50
-   ip address 192.168.5.1 255.255.255.0
-   dot1q termination vid 50
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.60
-   ip address 192.168.6.1 255.255.255.0
-   dot1q termination vid 60
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.70
-   ip address 192.168.7.1 255.255.255.0
-   dot1q termination vid 70
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.80
-   ip address 192.168.8.1 255.255.255.0
-   dot1q termination vid 80
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.90
-   ip address 192.168.9.1 255.255.255.0
-   dot1q termination vid 90
-   arp broadcast enable
-  #
-  interface GigabitEthernet0/0/0.100
-   ip address 192.168.10.1 255.255.255.0
-   dot1q termination vid 100
-   arp broadcast enable
-  #
-  interface Tunnel0/0/0
-   ip address 172.16.0.1 255.255.255.252
-   tunnel-protocol gre
-   source GigabitEthernet0/0/0
-   destination 10.0.0.2
-   gre key 1234
-   keepalive period 5 retry-times 3
-  #
-  interface Tunnel0/0/1
-   ip address 172.16.0.5 255.255.255.252
-   tunnel-protocol ipsec
-   source LoopBack0
-   destination 10.0.0.2
-   ipsec profile PROF1
-  #
-  #
+  Error: The configuration file doesn't exist.
 
 [186/286] r1 <R1> display ip interface brief
   *down: administratively down
@@ -1570,8 +1449,8 @@ Total steps: 286
   No NTP associations
 
 [217/286] r1 <R1> display clock
-  2026-07-18 20:54:25
-  Saturday
+  2026-07-24 16:42:06
+  Friday
   Time Zone(UTC) : UTC
 
 [218/286] r1 <R1> display lldp neighbor
@@ -1583,13 +1462,13 @@ Total steps: 286
 [220/286] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-18 20:54:25
+  CPU Usage Stat. Time : 2026-07-24 16:42:06
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-18 20:54:25
+  Memory utilization statistics at 2026-07-24 16:42:06
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1889,7 +1768,7 @@ Total steps: 286
     38     VTY 4           -        -      0      0            N      -
 
 [242/286] r1 <R1> display port-security
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   display port-security
           ^
 
@@ -2139,8 +2018,6 @@ Total steps: 286
   172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
 [247/286] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 2
-  The number of interface that is UP in Protocol is 2
   GigabitEthernet0/0/0              192.168.100.1/24     up         up
   GigabitEthernet0/0/1              unassigned           up         up
 
@@ -2273,14 +2150,14 @@ Total steps: 286
     routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    routing-table  
 
 [283/286] r1 [Huawei] undo ?
-    terminal       terminal
+    terminal       
     debugging      Disable debugging
     lldp           Disable LLDP
     command-alias  Disable CLI alias
-    ip             ip
+    ip             Internet Protocol
     local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
@@ -2290,21 +2167,21 @@ Total steps: 286
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
+    ike            Internet Key Exchange
+    ipsec          IP Security
+    ikev2          Internet Key Exchange version 2
     acl            Delete Access Control List
-    nat            nat
+    nat            Network Address Translation
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
+    traffic        Display traffic statistics
+    nqa            Network Quality Analysis
+    firewall       Firewall configuration
     <cr>           
 
 [284/286] r1 [Huawei] acl ?
     advanced  
     basic     
-    ipv6      
+    ipv6      Internet Protocol version 6
     name      
     <cr>      
 

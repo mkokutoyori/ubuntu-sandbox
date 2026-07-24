@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-07-18T20:51:40.793Z
+Generated: 2026-07-24T16:41:08.035Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -1093,7 +1093,7 @@ Total steps: 355
 [248/355] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 626 bytes
   !
   hostname R1
   !
@@ -1129,6 +1129,7 @@ Total steps: 355
     key-string secretrip
     accept-lifetime 00:00:00 Jan 1 2020 infinite
     send-lifetime 00:00:00 Jan 1 2020 infinite
+  !
   end
 
 [249/355] r1 R1# show startup-config
@@ -1461,7 +1462,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0665DC.E0418937 (20:51:40.876 UTC Sat Jul 18 2026)
+  reference time is EE0E1424.1B22D0E5 (16:41:08.106 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1470,7 +1471,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *20:51:40.000 UTC Sat Jul 18 2026
+  *16:41:08.000 UTC Fri Jul 24 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1648,7 +1649,7 @@ Total steps: 355
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 626 bytes
   !
   hostname R1
   !
@@ -1684,6 +1685,7 @@ Total steps: 355
     key-string secretrip
     accept-lifetime 00:00:00 Jan 1 2020 infinite
     send-lifetime 00:00:00 Jan 1 2020 infinite
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1879,10 +1881,14 @@ Total steps: 355
 [310/355] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
 
 [311/355] r1 R1# show running-config | begin line
 <empty>
@@ -1890,7 +1896,7 @@ Total steps: 355
 [312/355] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 626 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -2122,33 +2128,33 @@ Total steps: 355
 
 [349/355] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [350/355] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2157,15 +2163,15 @@ Total steps: 355
     ospf   Enter OSPF routing protocol configuration
 
 [351/355] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [352/355] r1 R1(config)# no ?
@@ -2190,7 +2196,7 @@ Total steps: 355
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -2200,7 +2206,7 @@ Total steps: 355
 <empty>
 
 [354/355] r1 R1# show running-config | count !
-  13
+  15
 
 [355/355] r1 R1# write memory
   Building configuration...

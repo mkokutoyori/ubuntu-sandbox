@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-07-18T20:54:00.534Z
+Generated: 2026-07-24T16:42:10.432Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -1293,75 +1293,7 @@ Total steps: 300
   #
 
 [199/300] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
-  acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  #
-  acl number 3000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
-  ip route-static 172.18.2.0 255.255.255.0 10.0.0.2
-  ip route-static 172.19.3.0 255.255.255.0 10.0.0.2
-  ip route-static 172.20.4.0 255.255.255.0 10.0.0.2
-  ip route-static 172.21.5.0 255.255.255.0 10.0.0.2
-  ip route-static 172.22.6.0 255.255.255.0 10.0.0.2
-  ip route-static 172.23.7.0 255.255.255.0 10.0.0.2
-  ip route-static 172.24.8.0 255.255.255.0 10.0.0.2
-  ip route-static 172.25.9.0 255.255.255.0 10.0.0.2
-  ip route-static 172.26.10.0 255.255.255.0 10.0.0.2
-  ip route-static 172.27.11.0 255.255.255.0 10.0.0.2
-  ip route-static 172.28.12.0 255.255.255.0 10.0.0.2
-  ip route-static 172.29.13.0 255.255.255.0 10.0.0.2
-  ip route-static 172.30.14.0 255.255.255.0 10.0.0.2
-  ip route-static 172.31.15.0 255.255.255.0 10.0.0.2
-  ip route-static 172.16.16.0 255.255.255.0 10.0.0.2
-  ip route-static 172.17.17.0 255.255.255.0 10.0.0.2
-  ip route-static 172.18.18.0 255.255.255.0 10.0.0.2
-  ip route-static 172.19.19.0 255.255.255.0 10.0.0.2
-  ip route-static 172.20.20.0 255.255.255.0 10.0.0.2
-  ip route-static 172.21.21.0 255.255.255.0 10.0.0.2
-  ip route-static 172.22.22.0 255.255.255.0 10.0.0.2
-  ip route-static 172.23.23.0 255.255.255.0 10.0.0.2
-  ip route-static 172.24.24.0 255.255.255.0 10.0.0.2
-  ip route-static 172.25.25.0 255.255.255.0 10.0.0.2
-  ip route-static 172.26.26.0 255.255.255.0 10.0.0.2
-  ip route-static 172.27.27.0 255.255.255.0 10.0.0.2
-  ip route-static 172.28.28.0 255.255.255.0 10.0.0.2
-  ip route-static 172.29.29.0 255.255.255.0 10.0.0.2
-  ip route-static 172.30.30.0 255.255.255.0 10.0.0.2
-  ip route-static 172.31.31.0 255.255.255.0 10.0.0.2
-  ip route-static 172.16.32.0 255.255.255.0 10.0.0.2
-  ip route-static 172.17.33.0 255.255.255.0 10.0.0.2
-  ip route-static 172.18.34.0 255.255.255.0 10.0.0.2
-  ip route-static 172.19.35.0 255.255.255.0 10.0.0.2
-  ip route-static 172.20.36.0 255.255.255.0 10.0.0.2
-  ip route-static 172.21.37.0 255.255.255.0 10.0.0.2
-  ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
-  ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
-  ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
-  ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
-  ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
-  ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
-  #
+  Error: The configuration file doesn't exist.
 
 [200/300] r1 <R1> display ip interface brief
   *down: administratively down
@@ -1574,8 +1506,8 @@ Total steps: 300
   No NTP associations
 
 [231/300] r1 <R1> display clock
-  2026-07-18 20:54:00
-  Saturday
+  2026-07-24 16:42:10
+  Friday
   Time Zone(UTC) : UTC
 
 [232/300] r1 <R1> display lldp neighbor
@@ -1587,13 +1519,13 @@ Total steps: 300
 [234/300] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-18 20:54:00
+  CPU Usage Stat. Time : 2026-07-24 16:42:10
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-18 20:54:00
+  Memory utilization statistics at 2026-07-24 16:42:10
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1819,7 +1751,7 @@ Total steps: 300
     38     VTY 4           -        -      0      0            N      -
 
 [256/300] r1 <R1> display port-security
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   display port-security
           ^
 
@@ -1963,8 +1895,6 @@ Total steps: 300
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [261/300] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 2
-  The number of interface that is UP in Protocol is 2
   GigabitEthernet0/0/0              192.168.1.1/24       up         up
   GigabitEthernet0/0/1              10.0.0.1/30          up         up
 
@@ -2088,14 +2018,14 @@ Total steps: 300
     routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    routing-table  
 
 [297/300] r1 [Huawei] undo ?
-    terminal       terminal
+    terminal       
     debugging      Disable debugging
     lldp           Disable LLDP
     command-alias  Disable CLI alias
-    ip             ip
+    ip             Internet Protocol
     local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
@@ -2105,21 +2035,21 @@ Total steps: 300
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
+    ike            Internet Key Exchange
+    ipsec          IP Security
+    ikev2          Internet Key Exchange version 2
     acl            Delete Access Control List
-    nat            nat
+    nat            Network Address Translation
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
+    traffic        Display traffic statistics
+    nqa            Network Quality Analysis
+    firewall       Firewall configuration
     <cr>           
 
 [298/300] r1 [Huawei] acl ?
     advanced  
     basic     
-    ipv6      
+    ipv6      Internet Protocol version 6
     name      
     <cr>      
 

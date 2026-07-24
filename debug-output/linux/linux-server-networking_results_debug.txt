@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-07-18T20:38:48.825Z
+Generated: 2026-07-24T16:23:33.898Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -121,7 +121,7 @@ $ [12/302]> ip link set eth0 mtu 1400
 <empty>
 
 $ [13/302]> ip link show eth0
-  2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST> mtu 1400 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:05 brd ff:ff:ff:ff:ff:ff
 
 $ [14/302]> ip link set eth0 mtu 1500
@@ -725,6 +725,7 @@ $ [114/302]> ping
     -c count         Stop after sending count ECHO_REQUEST packets.
     -s packetsize    Specifies the number of data bytes to be sent.
     -t ttl           Set the IP Time to Live.
+    -w deadline      Time to wait before exiting, regardless of packet count.
     -W timeout       Time to wait for a response, in seconds.
     -i interval      Wait interval seconds between sending each packet.
     -I interface     Set source address to specified interface address.
@@ -1046,22 +1047,22 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-07-18 20:38:51--  http://192.168.10.1
+  --2026-07-24 16:23:36--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-07-18 20:38:51--  http://192.168.10.1
+  --2026-07-24 16:23:36--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-07-18 20:38:51--  http://192.168.10.1
+  --2026-07-24 16:23:36--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-07-18 20:38:51--  http://192.168.10.99
+  --2026-07-24 16:23:36--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1237,21 +1238,21 @@ $ [210/302]> iptables -A INPUT -j TRUC
 --- [211] § capture & ARP — tcpdump / arping ---
 $ [211/302]> tcpdump -c 1
   tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
-  listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
   0 packets captured
   0 packets received by filter
   0 packets dropped by kernel
 
 $ [212/302]> tcpdump -i eth0 -c 1
   tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
-  listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
   0 packets captured
   0 packets received by filter
   0 packets dropped by kernel
 
 $ [213/302]> tcpdump -i eth0 -n -c 1
   tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
-  listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
   0 packets captured
   0 packets received by filter
   0 packets dropped by kernel
@@ -1284,11 +1285,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Jul 18 20:39 /tmp/id_rsa
-  -rw-r--r-- 1 root root 42 Jul 18 20:39 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Jul 24 16:23 /tmp/id_rsa
+  -rw-r--r-- 1 root root 42 Jul 24 16:23 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAt8og11srtqi root@linux-server
+  ssh-rsa AAAAhvobh8fgyt4 root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1297,7 +1298,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAa8bsqgcb4sj root@localhost
+  ssh-ed25519 AAAAvscknfpe74 root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]

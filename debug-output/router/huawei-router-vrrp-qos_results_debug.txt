@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-07-18T20:53:55.657Z
+Generated: 2026-07-24T16:42:05.515Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -564,27 +564,17 @@ Total steps: 257
   acl number 3000
    rule 0 permit
   #
+  bfd
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+   discriminator local 1
+   discriminator remote 2
+   min-tx-interval 100
+   min-rx-interval 100
+   detect-multiplier 3
+  #
 
 [156/257] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.2 255.255.255.0
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
-  acl number 3000
-   rule 0 permit
-  #
+  Error: The configuration file doesn't exist.
 
 [157/257] r1 <R1> display ip interface brief
   *down: administratively down
@@ -781,8 +771,8 @@ Total steps: 257
   No NTP associations
 
 [188/257] r1 <R1> display clock
-  2026-07-18 20:53:55
-  Saturday
+  2026-07-24 16:42:05
+  Friday
   Time Zone(UTC) : UTC
 
 [189/257] r1 <R1> display lldp neighbor
@@ -794,13 +784,13 @@ Total steps: 257
 [191/257] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-18 20:53:55
+  CPU Usage Stat. Time : 2026-07-24 16:42:05
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-18 20:53:55
+  Memory utilization statistics at 2026-07-24 16:42:05
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -936,6 +926,14 @@ Total steps: 257
   acl number 3000
    rule 0 permit
   #
+  bfd
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+   discriminator local 1
+   discriminator remote 2
+   min-tx-interval 100
+   min-rx-interval 100
+   detect-multiplier 3
+  #
 
 [207/257] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -976,7 +974,7 @@ Total steps: 257
     38     VTY 4           -        -      0      0            N      -
 
 [213/257] r1 <R1> display port-security
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   display port-security
           ^
 
@@ -1002,6 +1000,14 @@ Total steps: 257
   acl number 3000
    rule 0 permit
   #
+  bfd
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+   discriminator local 1
+   discriminator remote 2
+   min-tx-interval 100
+   min-rx-interval 100
+   detect-multiplier 3
+  #
 
 [216/257] r1 <R1> display current-configuration | exclude #
   sysname R1
@@ -1015,14 +1021,19 @@ Total steps: 257
    shutdown
   acl number 3000
    rule 0 permit
+  bfd
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+   discriminator local 1
+   discriminator remote 2
+   min-tx-interval 100
+   min-rx-interval 100
+   detect-multiplier 3
 
 [217/257] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.2     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [218/257] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 2
-  The number of interface that is UP in Protocol is 2
   GigabitEthernet0/0/0              192.168.1.2/24       up         up
   GigabitEthernet0/0/1              10.0.0.1/30          up         up
 
@@ -1146,14 +1157,14 @@ Total steps: 257
     routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    routing-table  
 
 [254/257] r1 [Huawei] undo ?
-    terminal       terminal
+    terminal       
     debugging      Disable debugging
     lldp           Disable LLDP
     command-alias  Disable CLI alias
-    ip             ip
+    ip             Internet Protocol
     local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
@@ -1163,21 +1174,21 @@ Total steps: 257
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
+    ike            Internet Key Exchange
+    ipsec          IP Security
+    ikev2          Internet Key Exchange version 2
     acl            Delete Access Control List
-    nat            nat
+    nat            Network Address Translation
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
+    traffic        Display traffic statistics
+    nqa            Network Quality Analysis
+    firewall       Firewall configuration
     <cr>           
 
 [255/257] r1 [Huawei] acl ?
     advanced  
     basic     
-    ipv6      
+    ipv6      Internet Protocol version 6
     name      
     <cr>      
 

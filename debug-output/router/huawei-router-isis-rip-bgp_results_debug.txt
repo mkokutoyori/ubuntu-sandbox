@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-07-18T20:53:55.339Z
+Generated: 2026-07-24T16:41:58.285Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -504,12 +504,12 @@ Total steps: 260
 <empty>
 
 [137/260] r1 [R1] ipv6-family unicast
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   ipv6-family unicast
   ^
 
 [138/260] r1 [R1] network 2001:db8:: 32
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   network 2001:db8:: 32
   ^
 
@@ -527,40 +527,40 @@ Total steps: 260
   Local AS number : 65000
   Total number of peers : 7              Peers in established state : 0
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
-    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
-    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
-    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
-    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
-    IBGP             4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
+    IBGP             4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.1         4    65000     0        0     0  00:00:00      Idle       0
 
 [143/260] r1 <R1> display bgp peer verbose
   BGP local router ID : 1.1.1.1
   Local AS number : 65000
   Total number of peers : 7              Peers in established state : 0
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
-    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
-    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
-    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
-    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
-    IBGP             4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
+    IBGP             4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.1         4    65000     0        0     0  00:00:00      Idle       0
 
 [144/260] r1 <R1> display bgp routing-table
   BGP Local router ID : 1.1.1.1
    Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
-   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
+   10.0.0.0/30        0.0.0.0         0          100       32768   i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
 
 [145/260] r1 <R1> display bgp routing-table statistics
   BGP Local router ID : 1.1.1.1
    Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
-   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
+   10.0.0.0/30        0.0.0.0         0          100       32768   i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
 
 [146/260] r1 <R1> display bgp network
     192.168.1.0/255.255.255.0
@@ -573,8 +573,8 @@ Total steps: 260
   BGP Local router ID : 1.1.1.1
    Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
-   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
+   10.0.0.0/30        0.0.0.0         0          100       32768   i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
 
 [149/260] r1 <R1> display bgp paths
   Info: No BGP paths.
@@ -650,35 +650,70 @@ Total steps: 260
    network 192.168.1.0
    network 10.0.0.0
   #
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
+  #
 
 [159/260] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-   network 10.1.0.0
-   network 10.2.0.0
-   network 10.3.0.0
-   network 10.4.0.0
-   network 10.5.0.0
-   network 10.6.0.0
-   network 192.168.1.0
-   network 10.0.0.0
-  #
+  Error: The configuration file doesn't exist.
 
 [160/260] r1 <R1> display ip interface brief
   *down: administratively down
@@ -780,67 +815,6 @@ Total steps: 260
       10.0.0.0/255.0.0.0
   
     Routes: 0
-  #
-  bgp 65000
-   router-id 1.1.1.1
-   network 192.168.1.0 255.255.255.0
-   network 10.0.0.0 255.255.255.252
-   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
-   group IBGP internal
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 description PEER-1
-   peer 10.0.0.2 connect-interface LoopBack0
-   peer 10.0.0.2 ebgp-max-hop 2
-   peer 10.0.0.2 password cipher BgpKey1
-   peer 10.0.0.2 timer keepalive 10 hold 30
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 description PEER-2
-   peer 10.0.0.3 connect-interface LoopBack0
-   peer 10.0.0.3 ebgp-max-hop 2
-   peer 10.0.0.3 password cipher BgpKey2
-   peer 10.0.0.3 timer keepalive 10 hold 30
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 description PEER-3
-   peer 10.0.0.4 connect-interface LoopBack0
-   peer 10.0.0.4 ebgp-max-hop 2
-   peer 10.0.0.4 password cipher BgpKey3
-   peer 10.0.0.4 timer keepalive 10 hold 30
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 description PEER-4
-   peer 10.0.0.5 connect-interface LoopBack0
-   peer 10.0.0.5 ebgp-max-hop 2
-   peer 10.0.0.5 password cipher BgpKey4
-   peer 10.0.0.5 timer keepalive 10 hold 30
-   peer IBGP
-   peer IBGP connect-interface LoopBack0
-   peer 10.0.0.10 group IBGP
-   peer 10.0.0.10 group IBGP
-   peer 10.0.0.1
-   peer 10.0.0.1 enable
-   peer 10.0.0.1 next-hop-local
-   peer 10.0.0.1 reflect-client
-   peer 10.0.0.1 route-policy RP import
-   peer 10.0.0.1 ip-prefix PL-IN import
-   peer 10.0.0.1 advertise-community
-   peer 10.0.0.1 default-route-advertise
-   peer 10.0.0.1 route-limit 1000
-   graceful-restart
-   timer keepalive 10 hold 30
-   import-route direct
-   import-route static
-   import-route ospf 1
-  isis 1
-   network-entity 49.0001.0000.0000.0001.00
-   is-level level-2
-   cost-style wide
-   default-route-advertise
-   import-route direct
-   import-route static
-   import-route ospf 1 cost 10 level-2
 
 [172/260] r1 <R1> display rip 1 route
   RIP process 1
@@ -860,87 +834,26 @@ Total steps: 260
       10.0.0.0/255.0.0.0
   
     Routes: 0
-  #
-  bgp 65000
-   router-id 1.1.1.1
-   network 192.168.1.0 255.255.255.0
-   network 10.0.0.0 255.255.255.252
-   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
-   group IBGP internal
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 description PEER-1
-   peer 10.0.0.2 connect-interface LoopBack0
-   peer 10.0.0.2 ebgp-max-hop 2
-   peer 10.0.0.2 password cipher BgpKey1
-   peer 10.0.0.2 timer keepalive 10 hold 30
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 description PEER-2
-   peer 10.0.0.3 connect-interface LoopBack0
-   peer 10.0.0.3 ebgp-max-hop 2
-   peer 10.0.0.3 password cipher BgpKey2
-   peer 10.0.0.3 timer keepalive 10 hold 30
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 description PEER-3
-   peer 10.0.0.4 connect-interface LoopBack0
-   peer 10.0.0.4 ebgp-max-hop 2
-   peer 10.0.0.4 password cipher BgpKey3
-   peer 10.0.0.4 timer keepalive 10 hold 30
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 description PEER-4
-   peer 10.0.0.5 connect-interface LoopBack0
-   peer 10.0.0.5 ebgp-max-hop 2
-   peer 10.0.0.5 password cipher BgpKey4
-   peer 10.0.0.5 timer keepalive 10 hold 30
-   peer IBGP
-   peer IBGP connect-interface LoopBack0
-   peer 10.0.0.10 group IBGP
-   peer 10.0.0.10 group IBGP
-   peer 10.0.0.1
-   peer 10.0.0.1 enable
-   peer 10.0.0.1 next-hop-local
-   peer 10.0.0.1 reflect-client
-   peer 10.0.0.1 route-policy RP import
-   peer 10.0.0.1 ip-prefix PL-IN import
-   peer 10.0.0.1 advertise-community
-   peer 10.0.0.1 default-route-advertise
-   peer 10.0.0.1 route-limit 1000
-   graceful-restart
-   timer keepalive 10 hold 30
-   import-route direct
-   import-route static
-   import-route ospf 1
-  isis 1
-   network-entity 49.0001.0000.0000.0001.00
-   is-level level-2
-   cost-style wide
-   default-route-advertise
-   import-route direct
-   import-route static
-   import-route ospf 1 cost 10 level-2
 
 [173/260] r1 <R1> display bgp peer
   BGP local router ID : 1.1.1.1
   Local AS number : 65000
   Total number of peers : 7              Peers in established state : 0
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
-    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
-    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
-    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
-    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
-    IBGP             4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
+    IBGP             4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.1         4    65000     0        0     0  00:00:00      Idle       0
 
 [174/260] r1 <R1> display bgp routing-table
   BGP Local router ID : 1.1.1.1
    Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
-   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
+   10.0.0.0/30        0.0.0.0         0          100       32768   i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
 
 [175/260] r1 <R1> display nat session all
   NAT Session Table Information:
@@ -1005,8 +918,8 @@ Total steps: 260
   No NTP associations
 
 [191/260] r1 <R1> display clock
-  2026-07-18 20:53:55
-  Saturday
+  2026-07-24 16:41:58
+  Friday
   Time Zone(UTC) : UTC
 
 [192/260] r1 <R1> display lldp neighbor
@@ -1018,13 +931,13 @@ Total steps: 260
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-18 20:53:55
+  CPU Usage Stat. Time : 2026-07-24 16:41:58
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-18 20:53:55
+  Memory utilization statistics at 2026-07-24 16:41:58
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1168,6 +1081,67 @@ Total steps: 260
    network 192.168.1.0
    network 10.0.0.0
   #
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
+  #
 
 [210/260] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1208,14 +1182,15 @@ Total steps: 260
     38     VTY 4           -        -      0      0            N      -
 
 [216/260] r1 <R1> display port-security
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   display port-security
           ^
 
 
 --- [217] § regression: pipe filters ---
 [217/260] r1 <R1> display current-configuration | include ospf
-<empty>
+   import-route ospf 1
+   import-route ospf 1 cost 10 level-2
 
 [218/260] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1242,6 +1217,67 @@ Total steps: 260
    network 192.168.1.0
    network 10.0.0.0
   #
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
+  #
 
 [219/260] r1 <R1> display current-configuration | exclude #
   sysname R1
@@ -1263,14 +1299,72 @@ Total steps: 260
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
 
 [220/260] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [221/260] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 2
-  The number of interface that is UP in Protocol is 2
   GigabitEthernet0/0/0              192.168.1.1/24       up         up
   GigabitEthernet0/0/1              10.0.0.1/30          up         up
 
@@ -1394,14 +1488,14 @@ Total steps: 260
     routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    routing-table  
 
 [257/260] r1 [Huawei] undo ?
-    terminal       terminal
+    terminal       
     debugging      Disable debugging
     lldp           Disable LLDP
     command-alias  Disable CLI alias
-    ip             ip
+    ip             Internet Protocol
     local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
@@ -1411,21 +1505,21 @@ Total steps: 260
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
+    ike            Internet Key Exchange
+    ipsec          IP Security
+    ikev2          Internet Key Exchange version 2
     acl            Delete Access Control List
-    nat            nat
+    nat            Network Address Translation
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
+    traffic        Display traffic statistics
+    nqa            Network Quality Analysis
+    firewall       Firewall configuration
     <cr>           
 
 [258/260] r1 [Huawei] acl ?
     advanced  
     basic     
-    ipv6      
+    ipv6      Internet Protocol version 6
     name      
     <cr>      
 

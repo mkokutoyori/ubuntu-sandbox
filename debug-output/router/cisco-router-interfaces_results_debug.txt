@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-07-18T20:53:17.047Z
+Generated: 2026-07-24T16:42:00.074Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -1293,7 +1293,7 @@ Total steps: 343
 [211/343] r1 R1# show interfaces Loopback0
   % Invalid input detected at '^' marker.
   show interface Loopback0
-       ^
+                 ^
 
 [212/343] r1 R1# show ip interface Loopback0
   % Invalid input detected at '^' marker.
@@ -1304,17 +1304,17 @@ Total steps: 343
 [214/343] r1 R1# show interfaces Loopback0 accounting
   % Invalid input detected at '^' marker.
   show interface Loopback0 accounting
-       ^
+                 ^
 
 [215/343] r1 R1# show interfaces Loopback0 switchport
   % Invalid input detected at '^' marker.
   show interface Loopback0 switchport
-       ^
+                 ^
 
 [216/343] r1 R1# show interfaces Loopback0 stats
   % Invalid input detected at '^' marker.
   show interface Loopback0 stats
-       ^
+                 ^
 
 [217/343] r1 R1# show controllers Loopback0
   Interface does not exist
@@ -1567,7 +1567,7 @@ Total steps: 343
 [236/343] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2731 bytes
   !
   hostname R1
   !
@@ -2231,7 +2231,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE06663D.12B020C4 (20:53:17.073 UTC Sat Jul 18 2026)
+  reference time is EE0E1458.1B645A1C (16:42:00.107 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -2240,7 +2240,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *20:53:17.000 UTC Sat Jul 18 2026
+  *16:42:00.000 UTC Fri Jul 24 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2533,7 +2533,7 @@ Total steps: 343
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2731 bytes
   !
   hostname R1
   !
@@ -3151,91 +3151,118 @@ Total steps: 343
    no ip proxy-arp
    ip flow ingress
    ip flow egress
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
+  !
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
+  !
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
+  !
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
+  !
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
+  !
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
+  !
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
+  !
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+  !
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
+  !
   interface GigabitEthernet0/0.10
    encapsulation dot1q 10 native
    ip address 192.168.1.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.20
    description VLAN20
    encapsulation dot1q 20
    ip address 192.168.2.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.30
    description VLAN30
    encapsulation dot1q 30
    ip address 192.168.3.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.40
    description VLAN40
    encapsulation dot1q 40
    ip address 192.168.4.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.50
    description VLAN50
    encapsulation dot1q 50
    ip address 192.168.5.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.60
    description VLAN60
    encapsulation dot1q 60
    ip address 192.168.6.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.70
    description VLAN70
    encapsulation dot1q 70
    ip address 192.168.7.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.80
    description VLAN80
    encapsulation dot1q 80
    ip address 192.168.8.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.90
    description VLAN90
    encapsulation dot1q 90
    ip address 192.168.9.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.100
    description VLAN100
    encapsulation dot1q 100
    ip address 192.168.10.1 255.255.255.0
+  !
   interface GigabitEthernet0/0.999
    encapsulation isl 999
    ip address 192.168.99.1 255.255.255.0
+  !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
    tunnel key 1234
+  !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    tunnel mode ipip
    tunnel source Loopback0
    tunnel destination 10.0.0.2
+  !
   interface Tunnel2
    tunnel mode ipv6ip
+  !
 
 [299/343] r1 R1# show running-config | begin line
 <empty>
@@ -3243,7 +3270,7 @@ Total steps: 343
 [300/343] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2731 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -3518,33 +3545,33 @@ Total steps: 343
 
 [337/343] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [338/343] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -3553,15 +3580,15 @@ Total steps: 343
     ospf   Enter OSPF routing protocol configuration
 
 [339/343] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [340/343] r1 R1(config)# no ?
@@ -3586,7 +3613,7 @@ Total steps: 343
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -3596,7 +3623,7 @@ Total steps: 343
 <empty>
 
 [342/343] r1 R1# show running-config | count !
-  33
+  35
 
 [343/343] r1 R1# write memory
   Building configuration...

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-connectivity
-Generated: 2026-07-18T20:37:58.221Z
+Generated: 2026-07-24T16:22:42.515Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP routed data path: static/default/OSPF/RIP/BGP/DHCP + faults
 Total steps: 312
@@ -82,7 +82,7 @@ Total steps: 312
   Enter system view, return user view with return command.
 
 [8/312] r1 [R1] system-view
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   system-view
   ^
 
@@ -201,7 +201,7 @@ Total steps: 312
   Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
-  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=1 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
   
   --- 10.0.0.2 ping statistics ---
   5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
@@ -230,39 +230,39 @@ Total steps: 312
 
 [38/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=254 time=1.346 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.451 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.462 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=254 time=1.508 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.572 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.521 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.451/0.753/1.346/0.419 ms
+  rtt min/avg/max/mdev = 0.521/0.867/1.508/0.454 ms
 
 [39/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.606 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=1.159 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=1.280 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.696 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.977 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=1.016 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.606/1.015/1.280/0.293 ms
+  rtt min/avg/max/mdev = 0.696/0.896/1.016/0.142 ms
 
 [40/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.962 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.969 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.824 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.333 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.996 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=1.014 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.824/1.252/1.962/0.506 ms
+  rtt min/avg/max/mdev = 0.996/1.114/1.333/0.155 ms
 
 [41/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.790 ms  0.401 ms  0.188 ms
-   2  10.0.0.2 (10.0.0.2)  0.446 ms  0.349 ms  0.371 ms
-   3  192.168.2.10 (192.168.2.10)  0.699 ms  0.491 ms  0.470 ms
+   1  192.168.1.1 (192.168.1.1)  1.118 ms  0.388 ms  0.232 ms
+   2  10.0.0.2 (10.0.0.2)  0.294 ms  0.326 ms  0.223 ms
+   3  192.168.2.10 (192.168.2.10)  0.368 ms  0.416 ms  0.287 ms
 
 [42/312] win1 win1$ ping 192.168.1.10
   
@@ -270,12 +270,12 @@ Total steps: 312
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
-  Reply from 192.168.1.10: bytes=32 time=3ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 3ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [43/312] win1 win1$ tracert 192.168.1.10
   
@@ -398,39 +398,39 @@ Total steps: 312
 
 [60/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.191 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.397 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.319 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.147 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.468 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.401 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.191/0.303/0.397/0.085 ms
+  rtt min/avg/max/mdev = 0.147/0.339/0.468/0.138 ms
 
 [61/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.306 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.431 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.596 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.401 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.598 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.560 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.306/0.444/0.596/0.119 ms
+  rtt min/avg/max/mdev = 0.401/0.520/0.598/0.085 ms
 
 [62/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.554 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.522 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.733 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.555 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.689 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.662 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.522/0.603/0.733/0.093 ms
+  rtt min/avg/max/mdev = 0.555/0.635/0.689/0.058 ms
 
 [63/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.328 ms  0.310 ms  0.149 ms
-   2  10.0.0.2 (10.0.0.2)  0.253 ms  0.171 ms  0.159 ms
-   3  192.168.2.10 (192.168.2.10)  0.433 ms  0.356 ms  0.213 ms
+   1  192.168.1.1 (192.168.1.1)  0.330 ms  0.213 ms  0.100 ms
+   2  10.0.0.2 (10.0.0.2)  0.228 ms  0.154 ms  0.160 ms
+   3  192.168.2.10 (192.168.2.10)  0.289 ms  0.189 ms  0.235 ms
 
 [64/312] win1 win1$ ping 192.168.1.10
   
@@ -449,7 +449,7 @@ Total steps: 312
   
   Tracing route to 192.168.1.10 over a maximum of 30 hops:
   
-     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     1    <1 ms    1 ms     <1 ms    192.168.2.1
      2    <1 ms    <1 ms    <1 ms    10.0.0.1
      3    <1 ms    <1 ms    <1 ms    192.168.1.10
   
@@ -589,7 +589,7 @@ Total steps: 312
   PING 10.0.0.2: 56  data bytes, press CTRL_C to break
   Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
-  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=1 ms
   Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
   
@@ -610,19 +610,19 @@ Total steps: 312
 
 [96/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.195 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.342 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.375 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.216 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.442 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.352 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.195/0.304/0.375/0.078 ms
+  rtt min/avg/max/mdev = 0.216/0.337/0.442/0.093 ms
 
 [97/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=2 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=3 Destination Host Unreachable
+  From 192.168.1.1 icmp_seq=1 Destination Net Unreachable
+  From 192.168.1.1 icmp_seq=2 Destination Net Unreachable
+  From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss
@@ -630,9 +630,9 @@ Total steps: 312
 
 [98/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=2 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=3 Destination Host Unreachable
+  From 192.168.1.1 icmp_seq=1 Destination Net Unreachable
+  From 192.168.1.1 icmp_seq=2 Destination Net Unreachable
+  From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss
@@ -640,8 +640,8 @@ Total steps: 312
 
 [99/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.375 ms  0.223 ms  0.115 ms
-   2  192.168.1.1 (192.168.1.1)  0.104 ms !N (Net unreachable)  0.084 ms !N (Net unreachable)  0.143 ms !N (Net unreachable)
+   1  192.168.1.1 (192.168.1.1)  0.307 ms  0.114 ms  0.082 ms
+   2  192.168.1.1 (192.168.1.1)  0.143 ms !N (Net unreachable)  0.100 ms !N (Net unreachable)  0.151 ms !N (Net unreachable)
 
 [100/312] win1 win1$ ping 192.168.1.10
   
@@ -653,7 +653,6 @@ Total steps: 312
   
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),
-  Request timed out. Destination host unreachable.
 
 [101/312] win1 win1$ tracert 192.168.1.10
   
@@ -662,6 +661,34 @@ Total steps: 312
      1    <1 ms    <1 ms    <1 ms    192.168.2.1
      2    <1 ms    <1 ms    <1 ms    192.168.2.1
           Destination net unreachable.
+     3     * * *     Request timed out.
+     4     * * *     Request timed out.
+     5     * * *     Request timed out.
+     6     * * *     Request timed out.
+     7     * * *     Request timed out.
+     8     * * *     Request timed out.
+     9     * * *     Request timed out.
+    10     * * *     Request timed out.
+    11     * * *     Request timed out.
+    12     * * *     Request timed out.
+    13     * * *     Request timed out.
+    14     * * *     Request timed out.
+    15     * * *     Request timed out.
+    16     * * *     Request timed out.
+    17     * * *     Request timed out.
+    18     * * *     Request timed out.
+    19     * * *     Request timed out.
+    20     * * *     Request timed out.
+    21     * * *     Request timed out.
+    22     * * *     Request timed out.
+    23     * * *     Request timed out.
+    24     * * *     Request timed out.
+    25     * * *     Request timed out.
+    26     * * *     Request timed out.
+    27     * * *     Request timed out.
+    28     * * *     Request timed out.
+    29     * * *     Request timed out.
+    30     * * *     Request timed out.
   
   Trace complete.
 
@@ -801,7 +828,7 @@ Total steps: 312
   Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
-  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=1 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
   
   --- 10.0.0.2 ping statistics ---
   5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
@@ -820,19 +847,19 @@ Total steps: 312
 
 [130/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.184 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.388 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.378 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.204 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.434 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.469 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.184/0.317/0.388/0.094 ms
+  rtt min/avg/max/mdev = 0.204/0.369/0.469/0.118 ms
 
 [131/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=2 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=3 Destination Host Unreachable
+  From 192.168.1.1 icmp_seq=1 Destination Net Unreachable
+  From 192.168.1.1 icmp_seq=2 Destination Net Unreachable
+  From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss
@@ -840,9 +867,9 @@ Total steps: 312
 
 [132/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=2 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=3 Destination Host Unreachable
+  From 192.168.1.1 icmp_seq=1 Destination Net Unreachable
+  From 192.168.1.1 icmp_seq=2 Destination Net Unreachable
+  From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss
@@ -850,8 +877,8 @@ Total steps: 312
 
 [133/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.239 ms  0.094 ms  0.223 ms
-   2  192.168.1.1 (192.168.1.1)  0.166 ms !N (Net unreachable)  0.104 ms !N (Net unreachable)  0.099 ms !N (Net unreachable)
+   1  192.168.1.1 (192.168.1.1)  0.225 ms  0.087 ms  0.194 ms
+   2  192.168.1.1 (192.168.1.1)  0.109 ms !N (Net unreachable)  0.079 ms !N (Net unreachable)  0.115 ms !N (Net unreachable)
 
 [134/312] win1 win1$ ping 192.168.1.10
   
@@ -863,7 +890,6 @@ Total steps: 312
   
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),
-  Request timed out. Destination host unreachable.
 
 [135/312] win1 win1$ tracert 192.168.1.10
   
@@ -872,6 +898,34 @@ Total steps: 312
      1    <1 ms    <1 ms    <1 ms    192.168.2.1
      2    <1 ms    <1 ms    <1 ms    192.168.2.1
           Destination net unreachable.
+     3     * * *     Request timed out.
+     4     * * *     Request timed out.
+     5     * * *     Request timed out.
+     6     * * *     Request timed out.
+     7     * * *     Request timed out.
+     8     * * *     Request timed out.
+     9     * * *     Request timed out.
+    10     * * *     Request timed out.
+    11     * * *     Request timed out.
+    12     * * *     Request timed out.
+    13     * * *     Request timed out.
+    14     * * *     Request timed out.
+    15     * * *     Request timed out.
+    16     * * *     Request timed out.
+    17     * * *     Request timed out.
+    18     * * *     Request timed out.
+    19     * * *     Request timed out.
+    20     * * *     Request timed out.
+    21     * * *     Request timed out.
+    22     * * *     Request timed out.
+    23     * * *     Request timed out.
+    24     * * *     Request timed out.
+    25     * * *     Request timed out.
+    26     * * *     Request timed out.
+    27     * * *     Request timed out.
+    28     * * *     Request timed out.
+    29     * * *     Request timed out.
+    30     * * *     Request timed out.
   
   Trace complete.
 
@@ -956,15 +1010,16 @@ Total steps: 312
 [160/312] r1 <R1> display bgp peer
   BGP local router ID : 1.1.1.1
   Local AS number : 65001
-  Total number of peers : 1              Peers in established state : 0
+  Total number of peers : 1              Peers in established state : 1
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
-    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
+    10.0.0.2         4    65002     0        0     0  0s            Established       0
 
 [161/312] r1 <R1> display bgp routing-table
   BGP Local router ID : 1.1.1.1
-   Total Number of Routes: 1
+   Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
+   192.168.2.0/24     10.0.0.2        0          100       0       65002 i
 
 
 --- [162] § verify (bgp) ---
@@ -988,21 +1043,23 @@ Total steps: 312
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 2        Routes : 2
+           Destinations : 3        Routes : 3
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/1
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/0
+  192.168.2.0/24      BGP     255  0     RD    10.0.0.2        GE0/0/0
 
 [164/312] r2 <R2> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 2        Routes : 2
+           Destinations : 3        Routes : 3
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.2.0/24      Direct  0    0     D     192.168.2.1     GE0/0/1
   10.0.0.0/30         Direct  0    0     D     10.0.0.2        GE0/0/0
+  192.168.1.0/24      BGP     255  0     RD    10.0.0.1        GE0/0/0
 
 [165/312] r1 <R1> ping 10.0.0.2
   PING 10.0.0.2: 56  data bytes, press CTRL_C to break
@@ -1017,70 +1074,82 @@ Total steps: 312
 
 [166/312] r1 <R1> ping 192.168.2.1
   PING 192.168.2.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.2.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=5 ttl=255 time=0 ms
   
   --- 192.168.2.1 ping statistics ---
-  5 packet(s) transmitted, 0 packet(s) received, 100% packet loss
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
 
 [167/312] r2 <R2> ping 192.168.1.1
   PING 192.168.1.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.1.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=5 ttl=255 time=0 ms
   
   --- 192.168.1.1 ping statistics ---
-  5 packet(s) transmitted, 0 packet(s) received, 100% packet loss
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
 
 [168/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.236 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.416 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.348 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.150 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.415 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.416 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.236/0.333/0.416/0.074 ms
+  rtt min/avg/max/mdev = 0.150/0.327/0.416/0.125 ms
 
 [169/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=2 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=3 Destination Host Unreachable
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=1.006 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=1.344 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.946 ms
   
   --- 192.168.2.1 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.946/1.099/1.344/0.175 ms
 
 [170/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=2 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=3 Destination Host Unreachable
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.877 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=1.366 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=1.214 ms
   
   --- 192.168.2.10 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 1.214/1.486/1.877/0.284 ms
 
 [171/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.481 ms  0.218 ms  0.218 ms
-   2  192.168.1.1 (192.168.1.1)  0.145 ms !N (Net unreachable)  0.138 ms !N (Net unreachable)  0.114 ms !N (Net unreachable)
+   1  192.168.1.1 (192.168.1.1)  0.577 ms  1.537 ms  0.359 ms
+   2  10.0.0.2 (10.0.0.2)  0.454 ms  0.330 ms  0.443 ms
+   3  192.168.2.10 (192.168.2.10)  1.929 ms  0.611 ms  0.814 ms
 
 [172/312] win1 win1$ ping 192.168.1.10
   
   Pinging 192.168.1.10 with 32 bytes of data:
-  Reply from 192.168.2.1: Destination host unreachable.
-  Reply from 192.168.2.1: Destination host unreachable.
-  Reply from 192.168.2.1: Destination host unreachable.
-  Reply from 192.168.2.1: Destination host unreachable.
+  Reply from 192.168.1.10: bytes=32 time=2ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 192.168.1.10:
-      Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),
-  Request timed out. Destination host unreachable.
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 2ms, Average = 1ms
 
 [173/312] win1 win1$ tracert 192.168.1.10
   
   Tracing route to 192.168.1.10 over a maximum of 30 hops:
   
      1    <1 ms    <1 ms    <1 ms    192.168.2.1
-     2    <1 ms    2 ms     <1 ms    192.168.2.1
-          Destination net unreachable.
+     2    1 ms     1 ms     <1 ms    10.0.0.1
+     3    2 ms     1 ms     1 ms     192.168.1.10
   
   Trace complete.
 
@@ -1199,8 +1268,6 @@ Total steps: 312
 
 [198/312] linux1 linux1$ ping -c 2 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=2 Destination Host Unreachable
   
   --- 192.168.2.10 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss
@@ -1220,13 +1287,13 @@ Total steps: 312
 
 [203/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=2 Destination Host Unreachable
-  From 192.168.1.1 icmp_seq=3 Destination Host Unreachable
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.870 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=1.529 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=1.137 ms
   
   --- 192.168.2.10 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.870/1.179/1.529/0.270 ms
 
 
 --- [204] § final state ---
@@ -1256,16 +1323,24 @@ Total steps: 312
    shutdown
   #
   #
+  bgp 65001
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 enable
+  #
 
 [205/312] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 2        Routes : 2
+           Destinations : 3        Routes : 3
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/1
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/0
+  192.168.2.0/24      BGP     255  0     RD    10.0.0.2        GE0/0/0
 
 [206/312] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -1334,33 +1409,16 @@ Total steps: 312
    shutdown
   #
   #
+  bgp 65001
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 enable
+  #
 
 [211/312] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  dhcp enable
-  #
-  ip pool LAN1
-   network 192.168.1.0 mask 255.255.255.0
-   gateway-list 192.168.1.1
-   dns-list 8.8.8.8
-  #
-  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
-  interface GigabitEthernet0/0/0
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/1
-   ip address 192.168.1.1 255.255.255.0
-   dhcp select global
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
+  Error: The configuration file doesn't exist.
 
 [212/312] r1 <R1> display ip interface brief
   *down: administratively down
@@ -1408,18 +1466,20 @@ Total steps: 312
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 2        Routes : 2
+           Destinations : 3        Routes : 3
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/1
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/0
+  192.168.2.0/24      BGP     255  0     RD    10.0.0.2        GE0/0/0
 
 [215/312] r1 <R1> display ip routing-table statistics
   Proto     route
   --------------------
   Direct    2
+  Static    1
   --------------------
-  Total     2
+  Total     3
 
 [216/312] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -1455,15 +1515,16 @@ Total steps: 312
 [225/312] r1 <R1> display bgp peer
   BGP local router ID : 1.1.1.1
   Local AS number : 65001
-  Total number of peers : 1              Peers in established state : 0
+  Total number of peers : 1              Peers in established state : 1
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
-    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
+    10.0.0.2         4    65002     0        0     0  10s           Established       0
 
 [226/312] r1 <R1> display bgp routing-table
   BGP Local router ID : 1.1.1.1
-   Total Number of Routes: 1
+   Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
+   192.168.2.0/24     10.0.0.2        0          100       0       65002 i
 
 [227/312] r1 <R1> display nat session all
   NAT Session Table Information:
@@ -1537,8 +1598,8 @@ Total steps: 312
   No NTP associations
 
 [243/312] r1 <R1> display clock
-  2026-07-18 20:38:31
-  Saturday
+  2026-07-24 16:23:16
+  Friday
   Time Zone(UTC) : UTC
 
 [244/312] r1 <R1> display lldp neighbor
@@ -1550,13 +1611,13 @@ Total steps: 312
 [246/312] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-18 20:38:31
+  CPU Usage Stat. Time : 2026-07-24 16:23:16
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [247/312] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-18 20:38:31
+  Memory utilization statistics at 2026-07-24 16:23:16
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1698,6 +1759,13 @@ Total steps: 312
    shutdown
   #
   #
+  bgp 65001
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 enable
+  #
 
 [262/312] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1738,7 +1806,7 @@ Total steps: 312
     38     VTY 4           -        -      0      0            N      -
 
 [268/312] r1 <R1> display port-security
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   display port-security
           ^
 
@@ -1762,6 +1830,13 @@ Total steps: 312
    shutdown
   #
   #
+  bgp 65001
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 enable
+  #
 
 [271/312] r1 <R1> display current-configuration | exclude #
   sysname R1
@@ -1780,14 +1855,18 @@ Total steps: 312
    shutdown
   interface GigabitEthernet0/0/3
    shutdown
+  bgp 65001
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 enable
 
 [272/312] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/1
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/0
 
 [273/312] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 2
-  The number of interface that is UP in Protocol is 2
   GigabitEthernet0/0/0              10.0.0.1/30          up         up
   GigabitEthernet0/0/1              192.168.1.1/24       up         up
 
@@ -1911,14 +1990,14 @@ Total steps: 312
     routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    routing-table  
 
 [309/312] r1 [Huawei] undo ?
-    terminal       terminal
+    terminal       
     debugging      Disable debugging
     lldp           Disable LLDP
     command-alias  Disable CLI alias
-    ip             ip
+    ip             Internet Protocol
     local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
@@ -1928,21 +2007,21 @@ Total steps: 312
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
+    ike            Internet Key Exchange
+    ipsec          IP Security
+    ikev2          Internet Key Exchange version 2
     acl            Delete Access Control List
-    nat            nat
+    nat            Network Address Translation
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
+    traffic        Display traffic statistics
+    nqa            Network Quality Analysis
+    firewall       Firewall configuration
     <cr>           
 
 [310/312] r1 [Huawei] acl ?
     advanced  
     basic     
-    ipv6      
+    ipv6      Internet Protocol version 6
     name      
     <cr>      
 

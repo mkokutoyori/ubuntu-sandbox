@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-07-18T20:54:02.933Z
+Generated: 2026-07-24T16:42:00.746Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-07-18 20:54:02
-  Saturday
+  2026-07-24 16:42:00
+  Friday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-18 20:54:02
+  CPU Usage Stat. Time : 2026-07-24 16:42:00
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-18 20:54:02
+  Memory utilization statistics at 2026-07-24 16:42:00
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -89,22 +89,7 @@ Total steps: 304
   #
 
 [10/304] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
+  Error: The configuration file doesn't exist.
 
 [11/304] r1 <R1> display this
   #
@@ -369,7 +354,7 @@ Total steps: 304
     38     VTY 4           -        -      0      0            N      -
 
 [48/304] r1 <R1> display port
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   display port
           ^
 
@@ -435,61 +420,61 @@ Total steps: 304
     system-view    Enter system view
     stelnet        stelnet client
     ssh            ssh client
-    display        display
+    display        
     save           Save current configuration
     reboot         Reboot device
-    reset          reset
+    reset          
     commit         Commit candidate configuration
     screen-length  Set terminal screen length
     header         Configure login/shell banner
-    terminal       terminal
+    terminal       
     undo           Undo configuration
     debugging      Enable debugging
     screen-width   Set terminal screen width
-    ip             ip
+    ip             Internet Protocol
     rip            Configure RIP routing
     bgp            Configure BGP routing
     isis           Configure IS-IS routing
     tracert        Trace route to destination
     ping           Send ICMP echo messages
     telnet         Open Telnet session
-    compare        compare
-    startup        startup
+    compare        
+    startup        
 
 [60/304] r1 <R1> display ?
     version                 Display version information
-    ip                      ip
-    icmp                    icmp
+    ip                      Internet Protocol
+    icmp                    Internet Control Message Protocol
     arp                     Display ARP table
     current-configuration   Display running configuration
-    traffic-filter          traffic-filter
+    traffic-filter          Traffic filter configuration
     saved-configuration     Display saved configuration
     startup                 Display startup configuration
     history-command         Display CLI history
     alarm                   Display alarm records
-    aaa                     aaa
+    aaa                     Authentication, Authorization and Accounting
     user-interface          Display user interface info
     dhcp                    Display DHCP snooping
-    nat                     nat
+    nat                     Network Address Translation
     vrrp                    Display VRRP groups
-    bfd                     bfd
-    qos                     qos
-    traffic                 traffic
+    bfd                     Bidirectional Forwarding Detection
+    qos                     Quality of Service
+    traffic                 Display traffic statistics
     ssh                     Display SSH server status
-    stelnet                 stelnet
-    telnet                  telnet
+    stelnet                 Secure Telnet (SSH-based)
+    telnet                  Telnet protocol
     snmp-agent              Display SNMP agent info
     ntp-service             Display NTP status
     info-center             Display info-center configuration
     sflow                   Display sFlow configuration
     lldp                    Display LLDP
-    bgp                     bgp
-    isis                    isis
+    bgp                     Border Gateway Protocol
+    isis                    Intermediate System to Intermediate System
     rip                     Display RIP information
     counters                Display traffic counters
-    router                  router
+    router                  Router configuration information
     fib                     Display forwarding table
-    ipv6                    ipv6
+    ipv6                    Internet Protocol version 6
     debugging               Display active debugging flags
     interface               Display interface information
     clock                   Display system clock
@@ -504,35 +489,35 @@ Total steps: 304
     patch-information       Display patch information
     diagnostic-information  Collect diagnostic information
     local-user              Display local users
-    ospf                    ospf
-    ospfv3                  ospfv3
-    ike                     ike
-    ipsec                   ipsec
-    ikev2                   ikev2
+    ospf                    Open Shortest Path First
+    ospfv3                  OSPF version 3 (IPv6)
+    ike                     Internet Key Exchange
+    ipsec                   IP Security
+    ikev2                   Internet Key Exchange version 2
     acl                     Display ACL configuration
-    vxlan                   vxlan
+    vxlan                   Virtual Extensible LAN
     debug                   Display enabled debug flags
     health                  Display device health
-    temperature             temperature
+    temperature             Display device temperature
     fan                     Display fan status
     power                   Display power supply status
     environment             Display environment status
-    tcp                     tcp
+    tcp                     Transmission Control Protocol
     sockets                 Display open sockets
-    dns                     dns
-    dhcp-server             dhcp-server
-    dhcp-snooping           dhcp-snooping
-    dhcpv6                  dhcpv6
+    dns                     Domain Name System
+    dhcp-server             DHCP server configuration
+    dhcp-snooping           DHCP snooping configuration
+    dhcpv6                  DHCPv6 configuration
     route-policy            Display a route-policy
-    traffic-policy          traffic-policy
-    nqa                     nqa
+    traffic-policy          Traffic policy configuration
+    nqa                     Network Quality Analysis
     domain                  Display AAA domains
-    radius-server           radius-server
-    hwtacacs-server         hwtacacs-server
-    rsa                     rsa
-    time-range              time-range
-    cpu-defend              cpu-defend
-    firewall                firewall
+    radius-server           
+    hwtacacs-server         
+    rsa                     RSA key pair
+    time-range              Time range configuration
+    cpu-defend              CPU defend policy configuration
+    firewall                Firewall configuration
     channel                 Display info-center channels
     this                    Display current view configuration
 
@@ -657,6 +642,8 @@ Total steps: 304
   #
   ospf 1
   #
+  bgp 65000
+  #
 
 [86/304] r1 [R1-CORE-bgp-65000] quit
 <empty>
@@ -691,6 +678,9 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  bgp 65000
+  isis 1
   #
 
 [89/304] r1 [R1-CORE-isis-1] quit
@@ -727,6 +717,9 @@ Total steps: 304
   #
   ospf 1
   #
+  bgp 65000
+  isis 1
+  #
 
 [92/304] r1 [R1-CORE-acl-basic-2000] quit
 <empty>
@@ -761,6 +754,9 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  bgp 65000
+  isis 1
   #
 
 [95/304] r1 [R1-CORE-acl-basic-MGMT] quit
@@ -810,6 +806,9 @@ Total steps: 304
   #
   ospf 1
   #
+  bgp 65000
+  isis 1
+  #
 
 [101/304] r1 [R1-CORE-aaa] quit
 <empty>
@@ -846,6 +845,9 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  bgp 65000
+  isis 1
   #
 
 [104/304] r1 [R1-CORE-ui-vtyconsole0] quit
@@ -886,6 +888,9 @@ Total steps: 304
   user-interface vty 0 4
   #
   #
+  bgp 65000
+  isis 1
+  #
 
 [107/304] r1 [R1-CORE-ui-vty0 4] quit
 <empty>
@@ -924,6 +929,9 @@ Total steps: 304
   ospf 1
   user-interface vty 0 4
   #
+  #
+  bgp 65000
+  isis 1
   #
 
 [110/304] r1 [R1-CORE-route-policy-RP-10] quit
@@ -967,6 +975,9 @@ Total steps: 304
    dh group1
   user-interface vty 0 4
   #
+  #
+  bgp 65000
+  isis 1
   #
 
 [113/304] r1 [R1-CORE-ike-proposal-1] quit
@@ -1013,6 +1024,9 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
   #
+  #
+  bgp 65000
+  isis 1
   #
 
 [116/304] r1 [R1-CORE-ipsec-proposal-P1] quit
@@ -1066,6 +1080,9 @@ Total steps: 304
   user-interface vty 0 4
   #
   #
+  bgp 65000
+  isis 1
+  #
 
 
 --- [121] § abbreviations ---
@@ -1114,6 +1131,9 @@ Total steps: 304
   user-interface vty 0 4
   #
   #
+  bgp 65000
+  isis 1
+  #
 
 [124/304] r1 [R1-EDGE] int g0/0/0
   Error: Wrong parameter found at '^' position.
@@ -1156,6 +1176,9 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
   #
+  #
+  bgp 65000
+  isis 1
   #
 
 [126/304] r1 [R1-EDGE] q
@@ -1203,6 +1226,9 @@ Total steps: 304
   user-interface vty 0 4
   #
   #
+  bgp 65000
+  isis 1
+  #
 
 [129/304] r1 <R1-EDGE> dis ip int b
   *down: administratively down
@@ -1246,18 +1272,18 @@ Total steps: 304
     routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    routing-table  
 
 [134/304] r1 [R1-EDGE] ospf ?
     WORD  Configure OSPF protocol
     <cr>  
 
 [135/304] r1 [R1-EDGE] undo ?
-    terminal       terminal
+    terminal       
     debugging      Disable debugging
     lldp           Disable LLDP
     command-alias  Disable CLI alias
-    ip             ip
+    ip             Internet Protocol
     local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
@@ -1267,21 +1293,21 @@ Total steps: 304
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
+    ike            Internet Key Exchange
+    ipsec          IP Security
+    ikev2          Internet Key Exchange version 2
     acl            Delete Access Control List
-    nat            nat
+    nat            Network Address Translation
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
+    traffic        Display traffic statistics
+    nqa            Network Quality Analysis
+    firewall       Firewall configuration
     <cr>           
 
 [136/304] r1 [R1-EDGE] acl ?
     advanced  
     basic     
-    ipv6      
+    ipv6      Internet Protocol version 6
     name      
     <cr>      
 
@@ -1310,7 +1336,7 @@ Total steps: 304
 [143/304] r1 [R1-EDGE-GE0/0/0] ip ?
     address           Configure IP address
     helper-address    Set DHCP relay helper address
-    forward-protocol  forward-protocol
+    forward-protocol  
     urpf              Configure URPF mode
 
 [144/304] r1 [R1-EDGE-GE0/0/0] ip address ?
@@ -1431,6 +1457,8 @@ Total steps: 304
   ipsec proposal P1
    encapsulation-mode tunnel
   user-interface vty 0 4
+  bgp 65000
+  isis 1
 
 [173/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1467,23 +1495,19 @@ Total steps: 304
   user-interface vty 0 4
   #
   #
+  bgp 65000
+  isis 1
+  #
 
 [174/304] r1 <Huawei> display ip routing-table | include Direct
 <empty>
 
 [175/304] r1 <Huawei> display ip interface brief | include up
-  The number of interface that is UP in Physical is 2
-  The number of interface that is UP in Protocol is 2
   GigabitEthernet0/0/0              unassigned           up         up
   GigabitEthernet0/0/1              unassigned           up         up
 
 [176/304] r1 <Huawei> display interface | include line protocol
-  Line protocol current state : UP
-  Line protocol current state : UP
-  Line protocol current state : DOWN
-  Line protocol current state : DOWN
-  Line protocol current state : UP
-  Line protocol current state : UP
+<empty>
 
 
 --- [177] § user-interface / screen ---
@@ -1591,9 +1615,12 @@ Total steps: 304
    protocol inbound ssh
   #
   #
+  bgp 65000
+  isis 1
+  #
 
 [195/304] r1 <Huawei> reset saved-configuration
-  Info: Succeeded in clearing the configuration in the device.
+  Warning: The action will delete the saved configuration on the device.
 
 [196/304] r1 <Huawei> compare configuration
   Info: The current configuration is the same as the saved configuration.
@@ -1602,10 +1629,12 @@ Total steps: 304
   Info: Succeeded in setting the file for booting system.
 
 [198/304] r1 <Huawei> reboot fast
-  Info: This operation will reboot the system. Continue? [Y/N]:
+  Info: The system is rebooting ...
+  System restart completed.
 
 [199/304] r1 <Huawei> reboot
-  Info: This operation will reboot the system. Continue? [Y/N]:
+  Info: The system is rebooting ...
+  System restart completed.
 
 
 --- [200] § regression: display family ---
@@ -1653,7 +1682,6 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
@@ -1671,53 +1699,13 @@ Total steps: 304
    idle-timeout 5 0
    protocol inbound ssh
   #
+  #
+  bgp 65000
+  isis 1
   #
 
 [203/304] r1 <Huawei> display saved-configuration
-  #
-  sysname Huawei
-  #
-  dhcp enable
-  #
-  ip pool LAN
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
-  #
-  ike proposal 1
-   authentication-algorithm sha
-   dh group1
-  #
-  ipsec proposal P1
-   encapsulation-mode tunnel
-  user-interface vty 0 4
-   authentication-mode aaa
-   idle-timeout 5 0
-   protocol inbound ssh
-  #
-  #
+  Error: The configuration file doesn't exist.
 
 [204/304] r1 <Huawei> display ip interface brief
   *down: administratively down
@@ -1779,17 +1767,15 @@ Total steps: 304
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 1        Routes : 1
+           Destinations : 0        Routes : 0
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  1.1.1.0/24          Static  60   0     RD    10.0.0.2        
 
 [207/304] r1 <Huawei> display ip routing-table statistics
   Proto     route
   --------------------
-  Static    1
   --------------------
-  Total     1
+  Total     0
 
 [208/304] r1 <Huawei> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -1838,9 +1824,6 @@ Total steps: 304
     Networks:
   
     Routes: 0
-  #
-  bgp 65000
-  isis 1
 
 [216/304] r1 <Huawei> display rip 1 route
   RIP process 1
@@ -1852,9 +1835,6 @@ Total steps: 304
     Networks:
   
     Routes: 0
-  #
-  bgp 65000
-  isis 1
 
 [217/304] r1 <Huawei> display bgp peer
   BGP local router ID : 0.0.0.0
@@ -1955,8 +1935,8 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-07-18 20:54:02
-  Saturday
+  2026-07-24 16:42:00
+  Friday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <Huawei> display lldp neighbor
@@ -1968,13 +1948,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-18 20:54:02
+  CPU Usage Stat. Time : 2026-07-24 16:42:00
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-07-18 20:54:02
+  Memory utilization statistics at 2026-07-24 16:42:00
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2118,7 +2098,6 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
@@ -2136,6 +2115,9 @@ Total steps: 304
    idle-timeout 5 0
    protocol inbound ssh
   #
+  #
+  bgp 65000
+  isis 1
   #
 
 [254/304] r1 <Huawei> display diagnostic-information
@@ -2183,7 +2165,7 @@ Total steps: 304
   #
 
 [260/304] r1 <Huawei> display port-security
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   display port-security
           ^
 
@@ -2211,7 +2193,6 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
@@ -2229,6 +2210,9 @@ Total steps: 304
    idle-timeout 5 0
    protocol inbound ssh
   #
+  #
+  bgp 65000
+  isis 1
   #
 
 [263/304] r1 <Huawei> display current-configuration | exclude #
@@ -2247,7 +2231,6 @@ Total steps: 304
    shutdown
   interface Tunnel0/0/0
    shutdown
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
   ospf 1
@@ -2260,13 +2243,13 @@ Total steps: 304
    authentication-mode aaa
    idle-timeout 5 0
    protocol inbound ssh
+  bgp 65000
+  isis 1
 
 [264/304] r1 <Huawei> display ip routing-table | include Direct
 <empty>
 
 [265/304] r1 <Huawei> display ip interface brief | include up
-  The number of interface that is UP in Physical is 2
-  The number of interface that is UP in Protocol is 2
   GigabitEthernet0/0/0              unassigned           up         up
   GigabitEthernet0/0/1              unassigned           up         up
 
@@ -2389,14 +2372,14 @@ Total steps: 304
     routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    routing-table  
 
 [301/304] r1 [Huawei] undo ?
-    terminal       terminal
+    terminal       
     debugging      Disable debugging
     lldp           Disable LLDP
     command-alias  Disable CLI alias
-    ip             ip
+    ip             Internet Protocol
     local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
@@ -2406,21 +2389,21 @@ Total steps: 304
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
+    ike            Internet Key Exchange
+    ipsec          IP Security
+    ikev2          Internet Key Exchange version 2
     acl            Delete Access Control List
-    nat            nat
+    nat            Network Address Translation
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
+    traffic        Display traffic statistics
+    nqa            Network Quality Analysis
+    firewall       Firewall configuration
     <cr>           
 
 [302/304] r1 [Huawei] acl ?
     advanced  
     basic     
-    ipv6      
+    ipv6      Internet Protocol version 6
     name      
     <cr>      
 

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-07-18T20:52:26.869Z
+Generated: 2026-07-24T16:41:47.075Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -1389,7 +1389,7 @@ Total steps: 325
 [218/325] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2461 bytes
   !
   hostname R1
   !
@@ -1458,6 +1458,8 @@ Total steps: 325
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   !
   router ospf 1
+   router-id 192.168.1.1
+  !
   end
 
 [219/325] r1 R1# show startup-config
@@ -1754,7 +1756,7 @@ Total steps: 325
 [253/325] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE06660A.E7AE147A (20:52:26.905 UTC Sat Jul 18 2026)
+  reference time is EE0E144B.1F7CED91 (16:41:47.123 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [254/325] r1 R1# show ntp associations
@@ -1763,7 +1765,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1# show clock
-  *20:52:26.000 UTC Sat Jul 18 2026
+  *16:41:47.000 UTC Fri Jul 24 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1989,7 +1991,7 @@ Total steps: 325
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2461 bytes
   !
   hostname R1
   !
@@ -2058,6 +2060,8 @@ Total steps: 325
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   !
   router ospf 1
+   router-id 192.168.1.1
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -2288,14 +2292,19 @@ Total steps: 325
 --- [279] § regression: pipe filters ---
 [279/325] r1 R1# show running-config | include router
   router ospf 1
+   router-id 192.168.1.1
 
 [280/325] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
 
 [281/325] r1 R1# show running-config | begin line
 <empty>
@@ -2303,7 +2312,7 @@ Total steps: 325
 [282/325] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2461 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -2363,6 +2372,7 @@ Total steps: 325
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   router ospf 1
+   router-id 192.168.1.1
   end
 
 [283/325] r1 R1# show ip route | include via
@@ -2541,33 +2551,33 @@ Total steps: 325
 
 [319/325] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [320/325] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2576,15 +2586,15 @@ Total steps: 325
     ospf   Enter OSPF routing protocol configuration
 
 [321/325] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [322/325] r1 R1(config)# no ?
@@ -2609,7 +2619,7 @@ Total steps: 325
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -2619,7 +2629,7 @@ Total steps: 325
 <empty>
 
 [324/325] r1 R1# show running-config | count !
-  11
+  13
 
 [325/325] r1 R1# write memory
   Building configuration...

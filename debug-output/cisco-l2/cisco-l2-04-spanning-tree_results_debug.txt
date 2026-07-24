@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-07-18T20:45:40.832Z
+Generated: 2026-07-24T16:33:29.612Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -1056,9 +1056,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
   Gi0/1            Desg  FWD  4         128.25    P2p
   
   ##### MST2    vlans mapped:   vlan 40,50,60
@@ -1066,10 +1063,7 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Gi0/1            Desg  FWD  4         128.25    P2p
+  Gi0/1            Desg  FWD  20000     128.25    P2p
 
 [219/363] sw1 SW1(config)# do show spanning-tree mst configuration
   Name      [REGION1]
@@ -1087,9 +1081,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
   Gi0/1            Desg  FWD  4         128.25    P2p
 
 [221/363] sw1 SW1(config)# end
@@ -1114,7 +1105,7 @@ Total steps: 363
 
 [224/363] sw1 SW1# show spanning-tree summary
   Switch is in mst mode
-  Root bridge for: VLAN0001, VLAN0030, VLAN0040, VLAN0050, VLAN0060, VLAN0070, VLAN0080, VLAN0090, VLAN0100
+  Root bridge for: VLAN0001, VLAN0010, VLAN0020, VLAN0030, VLAN0040, VLAN0050, VLAN0060, VLAN0070, VLAN0080, VLAN0090, VLAN0100
   Extended system ID           is enabled
   Portfast Default             is enabled
   PortFast BPDU Guard Default  is enabled
@@ -1137,26 +1128,26 @@ Total steps: 363
 [226/363] sw1 SW1# show spanning-tree vlan 10
   VLAN0010
     Spanning tree enabled protocol ieee
-    Root ID    Priority    8202
+    Root ID    Priority    24586
                Address     0200.0000.0001
-               Cost        4
-               Port        Gi0/1
+               Cost        0
+               This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Root  FWD  4         128.25    P2p
+  Gi0/1            Desg  FWD  4         128.25    P2p
 
 [227/363] sw1 SW1# show spanning-tree vlan 20
   VLAN0020
     Spanning tree enabled protocol ieee
-    Root ID    Priority    12308
+    Root ID    Priority    28692
                Address     0200.0000.0001
-               Cost        4
-               Port        Gi0/1
+               Cost        0
+               This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Root  FWD  4         128.25    P2p
+  Gi0/1            Desg  FWD  4         128.25    P2p
 
 [228/363] sw1 SW1# show spanning-tree interface FastEthernet0/1
   FastEthernet0/1
@@ -1199,9 +1190,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
   Gi0/1            Desg  FWD  4         128.25    P2p
   
   ##### MST2    vlans mapped:   vlan 40,50,60
@@ -1209,10 +1197,7 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Gi0/1            Desg  FWD  4         128.25    P2p
+  Gi0/1            Desg  FWD  20000     128.25    P2p
 
 [233/363] sw1 SW1# show errdisable recovery
   ErrDisable Reason            Timer Status
@@ -1230,26 +1215,26 @@ Total steps: 363
 [235/363] sw1 SW1# show spanning-tree vlan 10
   VLAN0010
     Spanning tree enabled protocol ieee
-    Root ID    Priority    8202
+    Root ID    Priority    24586
                Address     0200.0000.0001
-               Cost        4
-               Port        Gi0/1
+               Cost        0
+               This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Root  FWD  4         128.25    P2p
+  Gi0/1            Desg  FWD  4         128.25    P2p
 
 [236/363] sw1 SW1# show spanning-tree vlan 20
   VLAN0020
     Spanning tree enabled protocol ieee
-    Root ID    Priority    12308
+    Root ID    Priority    28692
                Address     0200.0000.0001
-               Cost        4
-               Port        Gi0/1
+               Cost        0
+               This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Root  FWD  4         128.25    P2p
+  Gi0/1            Desg  FWD  4         128.25    P2p
 
 [237/363] sw1 SW1# show spanning-tree vlan 30
   VLAN0030
@@ -1516,10 +1501,10 @@ Total steps: 363
 <empty>
 
 [272/363] sw1 SW1(config-if)# shutdown
-  *20:45:40: STP: VLAN0001 Fa0/3 -> disabled
+  *16:33:29: STP: VLAN0001 Fa0/3 -> disabled
 
 [273/363] sw1 SW1(config-if)# no shutdown
-  *20:45:40: STP: VLAN0001 Fa0/3 -> forwarding
+  *16:33:29: STP: VLAN0001 Fa0/3 -> forwarding
 
 [274/363] sw1 SW1(config-if)# end
 <empty>
@@ -1542,7 +1527,7 @@ Total steps: 363
 
 [276/363] sw1 SW1# show spanning-tree summary
   Switch is in mst mode
-  Root bridge for: VLAN0001, VLAN0030, VLAN0040, VLAN0050, VLAN0060, VLAN0070, VLAN0080, VLAN0090, VLAN0100
+  Root bridge for: VLAN0001, VLAN0010, VLAN0020, VLAN0030, VLAN0040, VLAN0050, VLAN0060, VLAN0070, VLAN0080, VLAN0090, VLAN0100
   Extended system ID           is enabled
   Portfast Default             is enabled
   PortFast BPDU Guard Default  is enabled
@@ -1584,7 +1569,7 @@ Total steps: 363
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         24577 0200.0000.0001  4       Gi0/1   2     20  15
+  VLAN0001         4097 0200.0000.0001  4       Gi0/1   2     20  15
 
 [281/363] sw2 SW2> enable
 <empty>
@@ -1643,12 +1628,12 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.145 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.052 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.362 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.687 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.052/1.598/2.145/0.546 ms
+  rtt min/avg/max/mdev = 0.687/1.524/2.362/0.837 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...
@@ -1863,7 +1848,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       28 packets output, 1868 bytes, 0 underruns
+       35 packets output, 2316 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1884,7 +1869,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       26 packets output, 1702 bytes, 0 underruns
+       33 packets output, 2150 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1905,7 +1890,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       28 packets output, 1868 bytes, 0 underruns
+       35 packets output, 2316 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

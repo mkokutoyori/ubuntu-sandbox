@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-07-18T20:49:26.731Z
+Generated: 2026-07-24T16:40:13.755Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -500,7 +500,7 @@ $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  11
+  53
 
 
 --- [92] § sort — tri ---
@@ -806,7 +806,12 @@ $ [140/303]> sed 's/^/>> /' fruits.txt
   >> banane
 
 $ [141/303]> sed 's/$/ <</' fruits.txt
-  bash: bash: syntax error at line 1:5: Unterminated single-quoted string
+  banane <<
+  pomme <<
+  cerise <<
+  pomme <<
+  fraise <<
+  banane <<
 
 $ [142/303]> sed -e 's/pomme/P/' -e 's/banane/B/' fruits.txt
   B
@@ -988,10 +993,10 @@ $ [177/303]> cat /etc/passwd | wc -l
   8
 
 $ [178/303]> ls /etc | grep conf | sort | head
-  adduser.conf    group           lsb-release     passwd-         skel
-  cron.daily      hostname        netplan         resolv.conf     sudoers
-  cron.weekly     issue.net       nsswitch.conf   services        timezone
-  default         logrotate.conf  pam.d           shadow-
+  adduser.conf
+  logrotate.conf
+  nsswitch.conf
+  resolv.conf
 
 $ [179/303]> sort fruits.txt | uniq -c | sort -rn | head -3
         1 CERISE

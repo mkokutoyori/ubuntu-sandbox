@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-07-18T20:43:41.494Z
+Generated: 2026-07-24T16:32:05.618Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -31,9 +31,9 @@ Total steps: 366
     platform        Display platform information
     license         Display licenses
     diag            Display chassis diagnostics
-    idprom          idprom
-    mac             mac
-    running-config  running-config
+    idprom          Display IDPROM contents
+    mac             MAC configuration
+    running-config  
     privilege       Display current privilege level
     history         Display command history
     ntp             Display NTP associations
@@ -43,7 +43,7 @@ Total steps: 366
     controllers     Display controller status
     environment     Display environment
     line            Display TTY lines
-    ip              ip
+    ip              Internet Protocol
     ssh             Display SSH sessions
     hosts           Display host cache
     vrf             Display VRFs
@@ -64,8 +64,8 @@ Total steps: 366
     logging         Display syslog messages
     spanning-tree   Display spanning tree state
     dtp             Display DTP information
-    errdisable      errdisable
-    vtp             vtp
+    errdisable      
+    vtp             VLAN Trunking Protocol
     udld            Display UDLD state
     monitor         Display SPAN sessions
     adjacency       Display CEF adjacency table
@@ -78,7 +78,7 @@ Total steps: 366
     sntp            Show SNTP
     interfaces      Display interface information
     etherchannel    Display EtherChannel
-    queuing         queuing
+    queuing         
     vlan            Display VLAN information
     current         Show current MST config
     pending         Show pending MST config
@@ -103,8 +103,12 @@ Total steps: 366
     <cr>  
 
 [8/366] sw1 SW1> terminal ?
-    WORD  Set terminal parameters
-    <cr>  
+    length   Set number of lines on a screen
+    width    Set width of the display terminal
+    monitor  Copy debug output to the current terminal line
+    history  Enable and control the command history function
+    no       Negate a command or set its defaults
+    <cr>     
 
 [9/366] sw1 SW1> show version
   Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
@@ -133,7 +137,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *20:43:41.000 UTC Sat Jul 18 2026
+  *16:32:05.000 UTC Fri Jul 24 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -223,10 +227,10 @@ Total steps: 366
     telnet      Open a Telnet session
     ping        Send echo messages
     undebug     Disable debugging
-    vtp         vtp
+    vtp         VLAN Trunking Protocol
 
 [19/366] sw1 SW1# show ?
-    ip              ip
+    ip              Internet Protocol
     sntp            Show SNTP
     clock           Display the system clock
     users           Display active lines
@@ -238,8 +242,8 @@ Total steps: 366
     platform        Display platform information
     license         Display licenses
     diag            Display chassis diagnostics
-    idprom          idprom
-    mac             mac
+    idprom          Display IDPROM contents
+    mac             MAC configuration
     running-config  Display current running configuration
     privilege       Display current privilege level
     history         Display command history
@@ -268,7 +272,7 @@ Total steps: 366
     arp             Display ARP table
     interfaces      Display interface information
     etherchannel    Display EtherChannel
-    queuing         queuing
+    queuing         
     vlan            Display VLAN information
     startup-config  Display startup configuration
     version         Display system information
@@ -278,8 +282,8 @@ Total steps: 366
     spanning-tree   Display spanning tree state
     debugging       Display active debugging
     dtp             Display DTP information
-    errdisable      errdisable
-    vtp             vtp
+    errdisable      
+    vtp             VLAN Trunking Protocol
     udld            Display UDLD state
     monitor         Display SPAN sessions
     adjacency       Display CEF adjacency table
@@ -294,16 +298,16 @@ Total steps: 366
     terminal  Enter configuration mode
 
 [21/366] sw1 SW1# clear ?
-    ip             ip
+    ip             Internet Protocol
     logging        Clear the syslog buffer
     counters       Clear interface counters
     line           Terminate a vty session
     history        Clear command history buffer
     arp-cache      Clear ARP cache
-    mac            mac
-    spanning-tree  spanning-tree
+    mac            MAC configuration
+    spanning-tree  
     port-security  Clear secure MAC entries
-    errdisable     errdisable
+    errdisable     
 
 [22/366] sw1 SW1# debug ?
     ip                 Enable IP debug
@@ -314,7 +318,7 @@ Total steps: 366
     cdp                Debug CDP
     all                Enable all debugging
     spanning-tree      Enable STP debugging
-    mac                mac
+    mac                MAC configuration
     mac-address-table  Enable MAC table debugging
     link-state         Enable link-state debugging
     ipv6               Debug IPv6 subsystem
@@ -329,7 +333,7 @@ Total steps: 366
     <cr>      
 
 [24/366] sw1 SW1# copy ?
-    running-config  running-config
+    running-config  
     startup-config  Saved startup configuration
     tftp:           Trivial File Transfer Protocol
     flash:          Local flash filesystem
@@ -1264,7 +1268,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *20:43:41.000 UTC Sat Jul 18 2026
+  *16:32:05.000 UTC Fri Jul 24 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1498,7 +1502,7 @@ Total steps: 366
     errdisable     Error-disable recovery configuration
     vtp            VTP configuration
     udld           UDLD global configuration
-    monitor        monitor
+    monitor        
 
 [75/366] sw1 SW1(config)# hostname SW1-EDGE
 <empty>
@@ -1580,7 +1584,7 @@ Total steps: 366
 <empty>
 
 [80/366] sw1 SW1(config)# do show running-config | include banner
-<empty>
+  banner motd ^C
 
 [81/366] sw1 SW1(config)# exit
 <empty>
@@ -1594,12 +1598,12 @@ Total steps: 366
 <empty>
 
 [84/366] sw1 SW1(config-if)# ?
-    cdp                cdp
-    no                 no
-    lldp               lldp
+    cdp                Cisco Discovery Protocol
+    no                 Negate a command or set its defaults
+    lldp               Link Layer Discovery Protocol
     interface          Select an interface to configure
-    switchport         switchport
-    private-vlan       private-vlan
+    switchport         
+    private-vlan       Configure private VLAN
     l2protocol-tunnel  Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally
     channel-protocol   Interface channel-protocol
     storm-control      Interface storm-control
@@ -1609,17 +1613,17 @@ Total steps: 366
     power              Interface power
     srr-queue          Interface srr-queue
     load-interval      Interface load-interval
-    mls                mls
+    mls                Multilayer switching
     channel-group      EtherChannel membership
     shutdown           Disable interface
     description        Interface description
-    ip                 ip
+    ip                 Internet Protocol
     spanning-tree      Interface STP configuration
     mtu                Set MTU
     vrrp               VRRP group config
     standby            HSRP group config
     glbp               GLBP group config
-    udld               udld
+    udld               
 
 [85/366] sw1 SW1(config-if)# description LINK-TO-L1
 <empty>
@@ -1737,6 +1741,10 @@ Total steps: 366
   Current configuration:
   !
   hostname SW1
+  !
+  banner motd ^C
+   Authorized access only 
+  ^C
   !
   line vty 0 15
    exec-timeout 10 0
@@ -3305,7 +3313,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   20:43:41 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:32:05 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3398,7 +3406,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/18/2026, 8:43:41 PM
+  System Boot Time:          7/24/2026, 4:32:05 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3454,7 +3462,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   20:43:41 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:32:05 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3486,7 +3494,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   20:43:41 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:32:05 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3579,7 +3587,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/18/2026, 8:43:41 PM
+  System Boot Time:          7/24/2026, 4:32:05 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3635,27 +3643,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   20:43:41 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:32:05 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.372 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.821 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.821 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.778 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.821/1.597/2.372/0.776 ms
+  rtt min/avg/max/mdev = 0.778/1.300/1.821/0.521 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.826 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.116 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.859 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=3.998 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.826/0.971/1.116/0.145 ms
+  rtt min/avg/max/mdev = 2.859/3.429/3.998/0.569 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0

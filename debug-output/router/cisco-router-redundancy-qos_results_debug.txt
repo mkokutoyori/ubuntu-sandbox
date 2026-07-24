@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-07-18T20:53:14.186Z
+Generated: 2026-07-24T16:41:11.745Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1396,7 +1396,7 @@ Total steps: 413
 [301/413] r1 R1# show interfaces GigabitEthernet0/1 rate-limit
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/1 rate-limit
-       ^
+                 ^
 
 [302/413] r1 R1# show traffic-shape
    No traffic shaping configured.
@@ -1429,7 +1429,7 @@ Total steps: 413
 [306/413] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 1259 bytes
   !
   hostname R1
   !
@@ -1447,13 +1447,15 @@ Total steps: 413
   interface GigabitEthernet0/3
   !
   ip access-list extended VOICE
-   permit udp any any range 16384 32767
+   10 permit udp any any range 16384 32767
   ip access-list extended VIDEO
-   permit tcp any any eq 1720
+   10 permit tcp any any eq 1720
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
   router ospf 1
+   router-id 192.168.1.2
+  !
   !
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
@@ -1783,7 +1785,7 @@ Total steps: 413
 [341/413] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE06663A.389374BC (20:53:14.221 UTC Sat Jul 18 2026)
+  reference time is EE0E1427.C9374BC6 (16:41:11.786 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1# show ntp associations
@@ -1792,7 +1794,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *20:53:14.000 UTC Sat Jul 18 2026
+  *16:41:11.000 UTC Fri Jul 24 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1971,7 +1973,7 @@ Total steps: 413
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 1259 bytes
   !
   hostname R1
   !
@@ -1989,13 +1991,15 @@ Total steps: 413
   interface GigabitEthernet0/3
   !
   ip access-list extended VOICE
-   permit udp any any range 16384 32767
+   10 permit udp any any range 16384 32767
   ip access-list extended VIDEO
-   permit tcp any any eq 1720
+   10 permit tcp any any eq 1720
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
   router ospf 1
+   router-id 192.168.1.2
+  !
   !
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
@@ -2211,15 +2215,20 @@ Total steps: 413
 --- [367] § regression: pipe filters ---
 [367/413] r1 R1# show running-config | include router
   router ospf 1
+   router-id 192.168.1.2
 
 [368/413] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    bfd echo
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
 
 [369/413] r1 R1# show running-config | begin line
 <empty>
@@ -2227,7 +2236,7 @@ Total steps: 413
 [370/413] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 1259 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -2238,11 +2247,12 @@ Total steps: 413
   interface GigabitEthernet0/2
   interface GigabitEthernet0/3
   ip access-list extended VOICE
-   permit udp any any range 16384 32767
+   10 permit udp any any range 16384 32767
   ip access-list extended VIDEO
-   permit tcp any any eq 1720
+   10 permit tcp any any eq 1720
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
   router ospf 1
+   router-id 192.168.1.2
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
   class-map match-any CM-VOICE
@@ -2404,33 +2414,33 @@ Total steps: 413
 
 [407/413] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [408/413] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2439,15 +2449,15 @@ Total steps: 413
     ospf   Enter OSPF routing protocol configuration
 
 [409/413] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [410/413] r1 R1(config)# no ?
@@ -2472,7 +2482,7 @@ Total steps: 413
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -2482,7 +2492,7 @@ Total steps: 413
 <empty>
 
 [412/413] r1 R1# show running-config | count !
-  14
+  15
 
 [413/413] r1 R1# write memory
   Building configuration...

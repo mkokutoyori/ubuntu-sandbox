@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-07-discovery-management
-Generated: 2026-07-18T20:42:53.131Z
+Generated: 2026-07-24T16:31:29.718Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CDP/LLDP, management SVI, users/AAA, SSH, logging, NTP/SNTP, SNMP
 Total steps: 366
@@ -56,7 +56,7 @@ Total steps: 366
   Total entries displayed: 0
 
 [7/366] sw1 SW1# show clock
-  *20:42:53.000 UTC Sat Jul 18 2026
+  *16:31:29.000 UTC Fri Jul 24 2026
 
 [8/366] sw1 SW1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
@@ -373,10 +373,12 @@ Total steps: 366
     Holdtime is 120 seconds
 
 [58/366] sw1 SW1# show cdp traffic
-  Global CDP information:
-          Sending CDP packets every 30 seconds
-          Sending a holdtime value of 120 seconds
-          Sending CDPv2 advertisements is  enabled
+  CDP counters :
+          Total packets output: 1, Input: 1
+          Hdr syntax: 0, Chksum error: 0, Encaps failed: 0
+          No memory: 0, Invalid packet: 0,
+          CDP version 1 advertisements output: 0, Input: 0
+          CDP version 2 advertisements output: 1, Input: 1
 
 
 --- [59] § LLDP global + per-interface loop ---
@@ -1011,7 +1013,7 @@ Total steps: 366
   Clock is unsynchronized, stratum 16, no reference clock
 
 [196/366] sw1 SW1(config)# do show clock
-  *20:42:53.000 UTC Sat Jul 18 2026
+  *16:31:29.000 UTC Fri Jul 24 2026
 
 [197/366] sw1 SW1(config)# end
 <empty>
@@ -1099,21 +1101,21 @@ Total steps: 366
 --- [214] § management reachability from hosts ---
 [214/366] l1 l1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=1.349 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=1.121 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=1.560 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=1.270 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.121/1.235/1.349/0.114 ms
+  rtt min/avg/max/mdev = 1.270/1.415/1.560/0.145 ms
 
 [215/366] srv1 srv1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.507 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.759 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.452 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.655 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.507/0.633/0.759/0.126 ms
+  rtt min/avg/max/mdev = 0.452/0.554/0.655/0.101 ms
 
 [216/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -4471,12 +4473,12 @@ Total steps: 366
 
 [283/366] l2 l2$ ping -c 2 192.168.1.253
   PING 192.168.1.253 (192.168.1.253) 56(84) bytes of data.
-  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.373 ms
-  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.755 ms
+  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.418 ms
+  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.645 ms
   
   --- 192.168.1.253 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.373/0.564/0.755/0.191 ms
+  rtt min/avg/max/mdev = 0.418/0.532/0.645/0.114 ms
 
 
 --- [284] § host service inspection (SRV1/SRV2) ---
@@ -4521,8 +4523,20 @@ Total steps: 366
   !
   hostname SW1
   !
+  banner motd ^C
+  Unauthorized access prohibited
+  ^C
+  !
+  banner login ^C
+  Login banner
+  ^C
+  !
+  banner exec ^C
+  Welcome
+  ^C
+  !
   enable secret 5 $1$ec95d4ed$iXyMKwbvZfoKEqIhdw7oI0
-  enable password 0 Weak
+  enable password Weak
   !
   ip domain-name lab.local
   !

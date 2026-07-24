@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-07-18T20:53:26.695Z
+Generated: 2026-07-24T16:41:43.560Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -487,7 +487,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE066646.B74BC6A7 (20:53:26.716 UTC Sat Jul 18 2026)
+  reference time is EE0E1447.94BC6A7E (16:41:43.581 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -509,14 +509,14 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  21:53:26.000 CET Sat Jul 18 2026
+  17:41:43.000 CET Fri Jul 24 2026
 
 [128/322] r1 R1# show clock detail
-  21:53:26.000 CET Sat Jul 18 2026
+  17:41:43.000 CET Fri Jul 24 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  20:53:26 UTC Sat Jul 18 2026
+  16:41:43 UTC Fri Jul 24 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -811,10 +811,12 @@ Total steps: 322
     Holdtime is 120 seconds
 
 [203/322] r1 R1# show cdp traffic
-  Global CDP information:
-          Sending CDP packets every 30 seconds
-          Sending a holdtime value of 120 seconds
-          Sending CDPv2 advertisements is  enabled
+  CDP counters :
+          Total packets output: 1, Input: 1
+          Hdr syntax: 0, Chksum error: 0, Encaps failed: 0
+          No memory: 0, Invalid packet: 0,
+          CDP version 1 advertisements output: 0, Input: 0
+          CDP version 2 advertisements output: 1, Input: 1
 
 [204/322] r1 R1# show lldp
   Global LLDP Information:
@@ -858,6 +860,7 @@ Total steps: 322
   logging host 10.0.0.5
   logging host 10.0.0.10
   logging host 10.0.0.11
+  !
 
 [209/322] r1 R1# show running-config | section snmp
   snmp-server community public RO
@@ -890,6 +893,7 @@ Total steps: 322
   snmp-server enable traps cpu threshold
   snmp-server enable traps threshold
   snmp-server enable traps envmon
+  !
 
 [210/322] r1 R1# show running-config | section ntp
   ntp master 3
@@ -905,6 +909,7 @@ Total steps: 322
   ntp trusted-key 2
   ntp access-group peer 10
   ntp access-group serve-only 10
+  !
 
 [211/322] r1 R1# show processes cpu sorted
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -942,7 +947,7 @@ Total steps: 322
 [215/322] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 3656 bytes
   !
   hostname R1
   !
@@ -1073,6 +1078,7 @@ Total steps: 322
    event timer cron cron-entry "0 2 * * *"
    action 1.0 cli command "enable"
    action 2.0 cli command "copy running-config flash:nightly.cfg"
+  !
   end
 
 [216/322] r1 R1# show startup-config
@@ -1330,7 +1336,7 @@ Total steps: 322
 [250/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE066646.BCAC0831 (20:53:26.737 UTC Sat Jul 18 2026)
+  reference time is EE0E1447.99581062 (16:41:43.599 UTC Fri Jul 24 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1# show ntp associations
@@ -1343,7 +1349,7 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1# show clock
-  21:53:26.000 CET Sat Jul 18 2026
+  17:41:43.000 CET Fri Jul 24 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1526,7 +1532,7 @@ Total steps: 322
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 3656 bytes
   !
   hostname R1
   !
@@ -1657,6 +1663,7 @@ Total steps: 322
    event timer cron cron-entry "0 2 * * *"
    action 1.0 cli command "enable"
    action 2.0 cli command "copy running-config flash:nightly.cfg"
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1842,15 +1849,20 @@ Total steps: 322
 
 [277/322] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    ip flow ingress
    ip flow egress
    ip flow monitor FM1 input
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
+  !
   logging source-interface Loopback0
 
 [278/322] r1 R1# show running-config | begin line
@@ -1859,7 +1871,7 @@ Total steps: 322
 [279/322] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 3656 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -2106,33 +2118,33 @@ Total steps: 322
 
 [316/322] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [317/322] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2141,15 +2153,15 @@ Total steps: 322
     ospf   Enter OSPF routing protocol configuration
 
 [318/322] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [319/322] r1 R1(config)# no ?
@@ -2174,7 +2186,7 @@ Total steps: 322
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -2184,7 +2196,7 @@ Total steps: 322
 <empty>
 
 [321/322] r1 R1# show running-config | count !
-  19
+  21
 
 [322/322] r1 R1# write memory
   Building configuration...
