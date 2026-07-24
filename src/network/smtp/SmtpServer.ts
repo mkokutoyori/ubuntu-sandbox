@@ -40,19 +40,33 @@ export class SmtpServer {
         return;
       }
 
-      const cmd = decodeCommand(text);
-      if (!cmd) {
+      const lines = text.split('\r\n').filter((l) => l.length > 0);
+      if (lines.length === 0) {
         socket.write(encodeReply(reply(500, 'Syntax error, command unrecognized.')));
         return;
       }
-      for (const r of session.handle(cmd)) {
-        socket.write(encodeReply(r));
-        if (r.code === 354) awaitingDataBody = true;
-      }
 
-      if (session.result === 'closed') {
-        unsubscribe();
-        socket.close();
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0 && !session.pipeliningNegotiated()) {
+          socket.write(encodeReply(reply(503, 'Pipelining not negotiated; send one command at a time.')));
+          continue;
+        }
+        const cmd = decodeCommand(lines[i]);
+        if (!cmd) {
+          socket.write(encodeReply(reply(500, 'Syntax error, command unrecognized.')));
+          continue;
+        }
+        for (const r of session.handle(cmd)) {
+          socket.write(encodeReply(r));
+          if (r.code === 354) awaitingDataBody = true;
+        }
+
+        if (session.result === 'closed') {
+          unsubscribe();
+          socket.close();
+          return;
+        }
+        if (awaitingDataBody) break;
       }
     });
   }

@@ -20,6 +20,28 @@ export function buildCapabilities(opts: CapabilityInputs): EsmtpCapabilities {
   };
 }
 
+export interface MailFromExtensionParams {
+  readonly size?: number;
+  readonly bodyType?: '7BIT' | '8BITMIME';
+}
+
+export function parseMailFromExtensionParams(argument: string | undefined): MailFromExtensionParams {
+  if (!argument) return {};
+  const sizeMatch = /\bSIZE=(\d+)\b/i.exec(argument);
+  const bodyMatch = /\bBODY=(7BIT|8BITMIME)\b/i.exec(argument);
+  return {
+    size: sizeMatch ? parseInt(sizeMatch[1], 10) : undefined,
+    bodyType: bodyMatch ? (bodyMatch[1].toUpperCase() as '7BIT' | '8BITMIME') : undefined,
+  };
+}
+
+export function hasNonAsciiBytes(body: string): boolean {
+  for (let i = 0; i < body.length; i++) {
+    if (body.charCodeAt(i) > 127) return true;
+  }
+  return false;
+}
+
 export function formatCapabilityLines(caps: EsmtpCapabilities): string[] {
   const lines: string[] = [];
   if (caps.size !== undefined) lines.push(`SIZE ${caps.size}`);

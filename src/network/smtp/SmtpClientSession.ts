@@ -8,7 +8,7 @@ const CRLF = '\r\n';
 
 export class SmtpClientSession {
   private socket: TcpSocket | null = null;
-  private lastReply: SmtpReply | null = null;
+  private repliesBuffer: SmtpReply[] = [];
 
   constructor(
     private readonly tcpStack: TcpStack,
@@ -18,29 +18,40 @@ export class SmtpClientSession {
   ) {}
 
   connect(): SmtpReply | null {
-    this.lastReply = null;
+    this.repliesBuffer = [];
     const socket = this.tcpStack.connect(this.targetIp, this.port, {
-      onData: (data) => { this.lastReply = decodeReply(String(data)); },
+      onData: (data) => {
+        const r = decodeReply(String(data));
+        if (r) this.repliesBuffer.push(r);
+      },
     });
     if (!socket || socket.state !== 'established') return null;
     this.socket = socket;
-    return this.lastReply;
+    return this.repliesBuffer[0] ?? null;
   }
 
   sendCommand(cmd: SmtpCommand): SmtpReply | null {
     if (!this.socket) return null;
-    this.lastReply = null;
+    const before = this.repliesBuffer.length;
     this.socket.write(encodeCommand(cmd));
-    return this.lastReply;
+    return this.repliesBuffer[before] ?? null;
+  }
+
+  sendPipelined(cmds: readonly SmtpCommand[]): SmtpReply[] {
+    if (!this.socket) return [];
+    const before = this.repliesBuffer.length;
+    const blob = cmds.map(encodeCommand).join('');
+    this.socket.write(blob);
+    return this.repliesBuffer.slice(before);
   }
 
   sendDataBody(rawMessage: string): SmtpReply | null {
     if (!this.socket) return null;
-    this.lastReply = null;
+    const before = this.repliesBuffer.length;
     const stuffed = stuffDotLines(rawMessage);
     const blob = stuffed.endsWith(CRLF) ? `${stuffed}.${CRLF}` : `${stuffed}${CRLF}.${CRLF}`;
     this.socket.write(blob);
-    return this.lastReply;
+    return this.repliesBuffer[before] ?? null;
   }
 
   close(): void {

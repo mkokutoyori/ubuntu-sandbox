@@ -2,12 +2,15 @@ import type { SmtpCommand, SmtpReply, SmtpSessionState, MailEnvelope, MimeMessag
 import { reply, replyEnhanced, ENHANCED } from './replies';
 import { parseMailFromArgument, parseRcptToArgument, buildEnvelope, unstuffDotLines, splitHeadersAndBody } from './envelope';
 import { determineProtocolLabel, prependReceivedHeader } from './trace';
-import { buildCapabilities, formatCapabilityLines } from './extensions';
+import { buildCapabilities, formatCapabilityLines, parseMailFromExtensionParams, hasNonAsciiBytes } from './extensions';
 
 export interface SmtpServerConfig {
   readonly hostname: string;
   readonly verifyEnabled?: boolean;
   readonly allowPlainTextAuth?: boolean;
+  readonly maxMessageSize?: number;
+  readonly pipeliningEnabled?: boolean;
+  readonly eightBitMimeEnabled?: boolean;
 }
 
 const CRLF = '\r\n';
@@ -19,6 +22,8 @@ export class SmtpServerSession {
   private state: SmtpSessionState = 'connected';
   private envelopeFrom: string | null = null;
   private envelopeTo: string[] = [];
+  private envelopeSize: number | undefined;
+  private envelopeBodyType: '7BIT' | '8BITMIME' | undefined;
   private usedEhlo = false;
   private tlsActive = false;
   private authActive = false;
@@ -79,7 +84,14 @@ export class SmtpServerSession {
       tlsActive: this.tlsActive,
       authActive: this.authActive,
       allowPlainAuth: this.config.allowPlainTextAuth ?? false,
+      maxMessageSize: this.config.maxMessageSize,
+      pipeliningEnabled: this.config.pipeliningEnabled ?? false,
+      eightBitMimeEnabled: this.config.eightBitMimeEnabled ?? false,
     });
+  }
+
+  pipeliningNegotiated(): boolean {
+    return this.usedEhlo && (this.config.pipeliningEnabled ?? false);
   }
 
   private handleMail(cmd: SmtpCommand): SmtpReply {
@@ -87,8 +99,14 @@ export class SmtpServerSession {
     if (this.state !== 'greeted') return replyEnhanced(503, ENHANCED.BAD_SEQUENCE, 'Mail transaction already in progress; send RSET first.');
     const from = parseMailFromArgument(cmd.argument);
     if (from === null) return replyEnhanced(501, ENHANCED.SYNTAX_ERROR_ARGS, 'Syntax error in MAIL command.');
+    const ext = parseMailFromExtensionParams(cmd.argument);
+    if (ext.size !== undefined && this.config.maxMessageSize !== undefined && ext.size > this.config.maxMessageSize) {
+      return replyEnhanced(552, ENHANCED.MESSAGE_TOO_LARGE, 'Message size exceeds fixed maximum message size.');
+    }
     this.envelopeFrom = from;
     this.envelopeTo = [];
+    this.envelopeSize = ext.size;
+    this.envelopeBodyType = ext.bodyType;
     this.state = 'mail-set';
     return replyEnhanced(250, ENHANCED.SENDER_OK, 'Sender ok');
   }
@@ -114,6 +132,15 @@ export class SmtpServerSession {
     const termIdx = lines.indexOf('.');
     const bodyLines = termIdx === -1 ? lines : lines.slice(0, termIdx);
     const unstuffed = unstuffDotLines(bodyLines.join(CRLF));
+
+    const eightBitNegotiated = this.config.eightBitMimeEnabled ?? false;
+    const bodyDeclared7Bit = this.envelopeBodyType === '7BIT' || (this.envelopeBodyType === undefined && !eightBitNegotiated);
+    if (bodyDeclared7Bit && hasNonAsciiBytes(unstuffed)) {
+      this.resetTransaction();
+      this.state = 'greeted';
+      return replyEnhanced(554, ENHANCED.CONTENT_7BIT_VIOLATION, 'Transaction failed: message contains 8-bit data but 7BIT was declared.');
+    }
+
     const rawMessage = prependReceivedHeader(unstuffed, {
       fromHelo: this.heloDomain ?? 'unknown',
       fromIp: this.remoteIp,
@@ -146,5 +173,7 @@ export class SmtpServerSession {
   private resetTransaction(): void {
     this.envelopeFrom = null;
     this.envelopeTo = [];
+    this.envelopeSize = undefined;
+    this.envelopeBodyType = undefined;
   }
 }
