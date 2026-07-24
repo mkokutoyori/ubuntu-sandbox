@@ -2936,6 +2936,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   listTransportRules(): import('./windows/server/exchange/TransportRuleEngine').TransportRule[] { return []; }
 
+  getDeliveryQueue(): import('@/network/smtp/queue').DeliveryQueue | null { return null; }
+
   /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a

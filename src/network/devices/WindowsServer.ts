@@ -37,9 +37,13 @@ import { getExchangeOrganization, getOrCreateExchangeOrganization, type Exchange
 import { MailboxStore, type MailboxOpResult, type DeliverResult } from './windows/server/exchange/MailboxStore';
 import { DistributionGroupStore, deliverExpanded, type DistributionGroupOpResult, type DistributionGroupType } from './windows/server/exchange/DistributionGroupStore';
 import { buildGlobalAddressList, resolveGalRecipient, type GalEntry } from './windows/server/exchange/GlobalAddressList';
-import { parseBinding, ipAllowedByRanges, type ReceiveConnectorDef, type SendConnectorDef } from './windows/server/exchange/TransportConnector';
+import { parseBinding, ipAllowedByRanges, selectSendConnector, type ReceiveConnectorDef, type SendConnectorDef } from './windows/server/exchange/TransportConnector';
 import { TransportRuleStore, evaluateTransportRules, type TransportRule, type EvaluatedMessage, type TransportRuleOutcome } from './windows/server/exchange/TransportRuleEngine';
+import { createDnsLookupAdapter } from './windows/server/exchange/DnsLookupAdapter';
 import { SmtpServer, type SmtpAcceptedMessage } from '@/network/smtp/SmtpServer';
+import { DeliveryQueue } from '@/network/smtp/queue';
+import { domainOf } from '@/network/smtp/relay';
+import { IPAddress } from '@/network/core/types';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
 export interface AdDsOpResult { ok: boolean; message: string }
@@ -63,6 +67,7 @@ export class WindowsServer extends WindowsPC {
   private exchangeOrgName: string | null = null;
   private readonly receiveConnectors = new Map<string, { def: ReceiveConnectorDef; servers: SmtpServer[] }>();
   private readonly sendConnectors = new Map<string, SendConnectorDef>();
+  private deliveryQueue: DeliveryQueue | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -478,11 +483,72 @@ export class WindowsServer extends WindowsPC {
     if (!groupStore || !mailboxStore) return [{ delivered: false, reason: 'not-found' }];
     const recipientAddress = this.resolveRecipientAddress(recipientQuery);
     if (recipientAddress === null) return [{ delivered: false, reason: 'not-found' }];
-    return deliverExpanded(
+    const results = deliverExpanded(
       groupStore, mailboxStore,
       (sam) => this.directoryStore?.getGroup(sam)?.members ?? [],
       recipientAddress, from, subject, rawMessage, receivedAt,
     );
+    if (results.length === 1 && !results[0].delivered && results[0].reason === 'not-found' && this.isExternalAddress(recipientAddress)) {
+      this.queueForRelay(recipientAddress, from, rawMessage);
+      return [{ delivered: true }];
+    }
+    return results;
+  }
+
+  /**
+   * Recipients whose domain isn't this org's accepted domain aren't a
+   * local-mailbox lookup failure — they're outbound mail (docs/PRD-
+   * Exchange.md §2.1 P7), routed through `queueForRelay()` instead.
+   */
+  private isExternalAddress(address: string): boolean {
+    const domain = domainOf(address).toLowerCase();
+    return domain !== '' && domain !== (this.directoryStore?.dnsName ?? '').toLowerCase();
+  }
+
+  /**
+   * Real outbound routing: a matching Send Connector's address space is
+   * required (§2.1 P5), then the message is handed to a real,
+   * DNS-resolving `DeliveryQueue` (§2.1 P7, `src/network/smtp/queue.ts` —
+   * no second queue implementation) for MX-based relay over this server's
+   * own `TcpStack`. No matching connector means no route: the message is
+   * dropped, matching the pre-existing documented gap that Send Connectors
+   * are policy, not a guaranteed-delivery mechanism.
+   */
+  private queueForRelay(recipient: string, from: string, rawMessage: string): void {
+    const domain = domainOf(recipient);
+    const connector = selectSendConnector(domain, this.listSendConnectors());
+    if (!connector) return;
+    const queue = this.getDeliveryQueue();
+    if (!queue) return;
+    const heloDomain = this.directoryStore?.dnsName ?? this.getHostname();
+    queue.enqueue(recipient, from, rawMessage, heloDomain);
+  }
+
+  /**
+   * Lazily constructed, real `DeliveryQueue` (§2.1 P7) — DNS resolution
+   * goes through `createDnsLookupAdapter()` wrapping this server's own
+   * `queryDnsServer()` against its configured DNS client server, so relay
+   * attempts are genuine simulated MX lookups + SMTP flights, not stubs.
+   * `null` before `Install-ExchangeServer` or without a usable interface.
+   */
+  getDeliveryQueue(): DeliveryQueue | null {
+    if (this.exchangeOrgName === null) return null;
+    if (!this.deliveryQueue) {
+      const iface = this.getInterfaces().find((p) => p.getIPAddress() !== null);
+      if (!iface) return null;
+      const dnsServers = this.getDnsServers(iface.getName());
+      const lookup = dnsServers[0]
+        ? createDnsLookupAdapter(this, new IPAddress(dnsServers[0]))
+        : { resolveMx: async () => [], resolveAddress: async () => null };
+      this.deliveryQueue = new DeliveryQueue({
+        tcpStack: this.getTcpStack(),
+        localIp: iface.getIPAddress()!.toString(),
+        lookup,
+        scheduler: this.getScheduler(),
+        eventBus: this.getBus(),
+      });
+    }
+    return this.deliveryQueue;
   }
 
   /**

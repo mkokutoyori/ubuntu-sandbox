@@ -172,6 +172,7 @@ import {
   GetGlobalAddressListCmdlet,
   NewReceiveConnectorCmdlet, GetReceiveConnectorCmdlet, NewSendConnectorCmdlet, GetSendConnectorCmdlet,
   NewTransportRuleCmdlet, GetTransportRuleCmdlet,
+  GetQueueCmdlet, RetryQueueCmdlet, SuspendQueueCmdlet, ResumeQueueCmdlet,
 } from './ExchangeCmdlets';
 import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
@@ -527,6 +528,10 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetSendConnectorCmdlet());
   registry.register(new NewTransportRuleCmdlet());
   registry.register(new GetTransportRuleCmdlet());
+  registry.register(new GetQueueCmdlet());
+  registry.register(new RetryQueueCmdlet());
+  registry.register(new SuspendQueueCmdlet());
+  registry.register(new ResumeQueueCmdlet());
 
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());

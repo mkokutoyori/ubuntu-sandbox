@@ -4,7 +4,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo, GalEntryInfo,
-  ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, TransportRuleConditionInfo, TransportRuleActionInfo,
+  ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, TransportRuleConditionInfo, TransportRuleActionInfo, QueueInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
@@ -578,5 +578,81 @@ export class GetTransportRuleCmdlet implements ICmdlet {
     }
     const rules = exchange.listTransportRules().map(transportRuleToPSObject);
     return rules.length === 1 ? rules[0] : rules;
+  }
+}
+
+function queueToPSObject(q: QueueInfo): Record<string, PSValue> {
+  return {
+    Identity: q.identity,
+    NextHopDomain: q.nextHopDomain,
+    MessageCount: q.messageCount,
+    Status: q.status,
+  };
+}
+
+export class GetQueueCmdlet implements ICmdlet {
+  readonly name = 'get-queue';
+  readonly displayName = 'Get-Queue';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-Queue');
+    const identity = identityFrom(ctx);
+    const queues = exchange.listQueues();
+    if (identity) {
+      const queue = queues.find((q) => q.identity.toLowerCase() === identity.toLowerCase());
+      return queue ? queueToPSObject(queue) : [];
+    }
+    const mapped = queues.map(queueToPSObject);
+    return mapped.length === 1 ? mapped[0] : mapped;
+  }
+}
+
+export class RetryQueueCmdlet implements ICmdlet {
+  readonly name = 'retry-queue';
+  readonly displayName = 'Retry-Queue';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Retry-Queue');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Retry-Queue : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const res = exchange.retryQueue(identity);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+export class SuspendQueueCmdlet implements ICmdlet {
+  readonly name = 'suspend-queue';
+  readonly displayName = 'Suspend-Queue';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Suspend-Queue');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Suspend-Queue : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const res = exchange.suspendQueue(identity);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+export class ResumeQueueCmdlet implements ICmdlet {
+  readonly name = 'resume-queue';
+  readonly displayName = 'Resume-Queue';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Resume-Queue');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Resume-Queue : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const res = exchange.resumeQueue(identity);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
   }
 }

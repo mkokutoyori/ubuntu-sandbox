@@ -18,6 +18,7 @@ import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceM
 import type { WindowsServer } from '@/network/devices/WindowsServer';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
 import { MAIL_FOLDER_NAMES, type Mailbox as MailboxRecord } from '@/network/devices/windows/server/exchange/MailboxStore';
+import { domainOf } from '@/network/smtp/relay';
 import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
@@ -63,7 +64,7 @@ import type {
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
-  DistributionGroupInfo, GalEntryInfo, ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo,
+  DistributionGroupInfo, GalEntryInfo, ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, QueueInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2180,6 +2181,45 @@ class WindowsExchangeAdapter implements IExchangeProvider {
   listTransportRules(): TransportRuleInfo[] {
     this.requireOrg('Get-TransportRule');
     return this.pc.listTransportRules();
+  }
+
+  listQueues(): QueueInfo[] {
+    this.requireOrg('Get-Queue');
+    const queue = this.pc.getDeliveryQueue();
+    if (!queue) return [];
+    const counts = new Map<string, number>();
+    for (const entry of queue.peekAll()) {
+      const domain = domainOf(entry.recipient).toLowerCase();
+      counts.set(domain, (counts.get(domain) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([domain, messageCount]) => ({
+      identity: domain, nextHopDomain: domain, messageCount,
+      status: queue.isSuspended(domain) ? 'Suspended' : 'Active',
+    }));
+  }
+
+  retryQueue(identity: string): ExchangeOpResult {
+    this.requireOrg('Retry-Queue');
+    const queue = this.pc.getDeliveryQueue();
+    if (!queue) return { ok: false, message: 'Retry-Queue : Exchange Server has not been installed on this computer.' };
+    void queue.retryNow(identity);
+    return { ok: true, message: '' };
+  }
+
+  suspendQueue(identity: string): ExchangeOpResult {
+    this.requireOrg('Suspend-Queue');
+    const queue = this.pc.getDeliveryQueue();
+    if (!queue) return { ok: false, message: 'Suspend-Queue : Exchange Server has not been installed on this computer.' };
+    queue.suspend(identity);
+    return { ok: true, message: '' };
+  }
+
+  resumeQueue(identity: string): ExchangeOpResult {
+    this.requireOrg('Resume-Queue');
+    const queue = this.pc.getDeliveryQueue();
+    if (!queue) return { ok: false, message: 'Resume-Queue : Exchange Server has not been installed on this computer.' };
+    queue.resume(identity);
+    return { ok: true, message: '' };
   }
 }
 

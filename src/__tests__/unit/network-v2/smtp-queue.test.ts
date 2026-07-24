@@ -144,3 +144,74 @@ describe('DeliveryQueue scheduling (RFC 5321 §4.5.4.1)', () => {
     expect(delivered).not.toBeNull();
   });
 });
+
+describe('DeliveryQueue domain suspend/resume/retryNow (docs/PRD-Exchange.md §2.1 P7 — Get-Queue et al.)', () => {
+  it('a suspended domain is skipped on tick even once its deadline has passed', async () => {
+    const scheduler = new VirtualTimeScheduler();
+    const { pc } = buildTopology();
+    let lookupCalls = 0;
+    const lookup: DnsLookup = { resolveMx: async () => { lookupCalls++; return []; }, resolveAddress: async () => null };
+    const queue = new DeliveryQueue({ tcpStack: pc.getTcpStack(), localIp: '10.0.1.2', lookup, scheduler, schedule: FAST_SCHEDULE });
+    queue.enqueue('bob@example.org', 'alice@sender.net', 'body', 'sender.net');
+
+    queue.suspend('example.org');
+    scheduler.advance(1000);
+    await queue.tick();
+
+    expect(lookupCalls).toBe(0);
+    expect(queue.size()).toBe(1);
+    expect(queue.peekAll()[0].attempts).toBe(0);
+    expect(queue.isSuspended('example.org')).toBe(true);
+  });
+
+  it('resume() lets a previously-suspended, already-due entry attempt on the next tick', async () => {
+    const scheduler = new VirtualTimeScheduler();
+    const { pc } = buildTopology();
+    const lookup: DnsLookup = {
+      resolveMx: async () => [{ preference: 10, exchange: 'mx.example.org' }],
+      resolveAddress: async () => '10.0.1.10',
+    };
+    const queue = new DeliveryQueue({ tcpStack: pc.getTcpStack(), localIp: '10.0.1.2', lookup, scheduler, schedule: FAST_SCHEDULE });
+    queue.enqueue('bob@example.org', 'alice@sender.net', 'Subject: hi\r\n\r\nBody', 'sender.net');
+    queue.suspend('example.org');
+
+    scheduler.advance(1000);
+    await queue.tick();
+    expect(queue.size()).toBe(1);
+
+    queue.resume('example.org');
+    await queue.tick();
+    expect(queue.size()).toBe(0);
+    expect(queue.isSuspended('example.org')).toBe(false);
+  });
+
+  it('retryNow() forces an immediate attempt regardless of the scheduled backoff', async () => {
+    const scheduler = new VirtualTimeScheduler();
+    const { pc } = buildTopology();
+    const lookup: DnsLookup = {
+      resolveMx: async () => [{ preference: 10, exchange: 'mx.example.org' }],
+      resolveAddress: async () => '10.0.1.10',
+    };
+    const queue = new DeliveryQueue({ tcpStack: pc.getTcpStack(), localIp: '10.0.1.2', lookup, scheduler, schedule: FAST_SCHEDULE });
+    queue.enqueue('bob@example.org', 'alice@sender.net', 'Subject: hi\r\n\r\nBody', 'sender.net');
+    expect(queue.peekAll()[0].nextAttemptAt).toBe(1000);
+
+    await queue.retryNow('example.org');
+    expect(queue.size()).toBe(0);
+  });
+
+  it('retryNow() on a suspended domain does not deliver — suspension still wins', async () => {
+    const scheduler = new VirtualTimeScheduler();
+    const { pc } = buildTopology();
+    let lookupCalls = 0;
+    const lookup: DnsLookup = { resolveMx: async () => { lookupCalls++; return []; }, resolveAddress: async () => null };
+    const queue = new DeliveryQueue({ tcpStack: pc.getTcpStack(), localIp: '10.0.1.2', lookup, scheduler, schedule: FAST_SCHEDULE });
+    queue.enqueue('bob@example.org', 'alice@sender.net', 'body', 'sender.net');
+    queue.suspend('example.org');
+
+    await queue.retryNow('example.org');
+
+    expect(lookupCalls).toBe(0);
+    expect(queue.size()).toBe(1);
+  });
+});

@@ -1,7 +1,7 @@
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import type { IScheduler, TimerHandle } from '@/events/Scheduler';
 import type { IEventBus } from '@/events/EventBus';
-import { relayToRecipient, type DnsLookup } from './relay';
+import { relayToRecipient, domainOf, type DnsLookup } from './relay';
 
 export interface QueuedDelivery {
   readonly recipient: string;
@@ -50,8 +50,32 @@ export class DeliveryQueue {
   private entries: QueuedDelivery[] = [];
   private timerHandle: TimerHandle | null = null;
   private inFlight: Promise<void> | null = null;
+  private readonly suspendedDomains = new Set<string>();
 
   constructor(private readonly deps: DeliveryQueueDeps) {}
+
+  suspend(domain: string): void {
+    this.suspendedDomains.add(domain.toLowerCase());
+  }
+
+  resume(domain: string): void {
+    this.suspendedDomains.delete(domain.toLowerCase());
+    this.rearm();
+  }
+
+  isSuspended(domain: string): boolean {
+    return this.suspendedDomains.has(domain.toLowerCase());
+  }
+
+  retryNow(domain: string): Promise<void> {
+    const key = domain.toLowerCase();
+    const now = this.deps.scheduler.now();
+    for (const entry of this.entries) {
+      if (domainOf(entry.recipient).toLowerCase() === key) entry.nextAttemptAt = now;
+    }
+    this.rearm();
+    return this.tick();
+  }
 
   enqueue(recipient: string, envelopeFrom: string, rawMessage: string, heloDomain: string, initialError?: string): QueuedDelivery {
     const schedule = this.deps.schedule ?? DEFAULT_RETRY_SCHEDULE;
@@ -85,9 +109,10 @@ export class DeliveryQueue {
       this.deps.scheduler.clear(this.timerHandle);
       this.timerHandle = null;
     }
-    if (this.entries.length === 0) return;
+    const active = this.entries.filter((e) => !this.isSuspended(domainOf(e.recipient)));
+    if (active.length === 0) return;
     const now = this.deps.scheduler.now();
-    const soonest = Math.min(...this.entries.map((e) => e.nextAttemptAt));
+    const soonest = Math.min(...active.map((e) => e.nextAttemptAt));
     const delay = Math.max(0, soonest - now);
     this.timerHandle = this.deps.scheduler.setTimeout(() => { void this.tick(); }, delay);
   }
@@ -100,7 +125,7 @@ export class DeliveryQueue {
 
   private async runTick(): Promise<void> {
     const now = this.deps.scheduler.now();
-    const due = this.entries.filter((e) => e.nextAttemptAt <= now);
+    const due = this.entries.filter((e) => e.nextAttemptAt <= now && !this.isSuspended(domainOf(e.recipient)));
     const schedule = this.deps.schedule ?? DEFAULT_RETRY_SCHEDULE;
 
     for (const entry of due) {

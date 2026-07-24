@@ -491,6 +491,18 @@ export interface IExchangeProvider {
   newTransportRule(rule: TransportRuleInfo): ExchangeOpResult;
   getTransportRule(name: string): TransportRuleInfo | null;
   listTransportRules(): TransportRuleInfo[];
+
+  listQueues(): QueueInfo[];
+  retryQueue(identity: string): ExchangeOpResult;
+  suspendQueue(identity: string): ExchangeOpResult;
+  resumeQueue(identity: string): ExchangeOpResult;
+}
+
+export interface QueueInfo {
+  readonly identity: string;
+  readonly nextHopDomain: string;
+  readonly messageCount: number;
+  readonly status: 'Active' | 'Suspended';
 }
 
 export type TransportRuleConditionInfo = {
