@@ -2810,6 +2810,24 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   listExchangeServers(): import('./windows/server/exchange/ExchangeOrganization').ExchangeServerRecord[] { return []; }
 
+  getMailboxStore(): import('./windows/server/exchange/MailboxStore').MailboxStore | null { return null; }
+
+  enableMailbox(_identity: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Enable-Mailbox : Exchange Server has not been installed on this computer.' };
+  }
+
+  newMailbox(_sam: string, _password: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'New-Mailbox : Exchange Server has not been installed on this computer.' };
+  }
+
+  disableMailbox(_identity: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Disable-Mailbox : Exchange Server has not been installed on this computer.' };
+  }
+
+  removeMailbox(_identity: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Remove-Mailbox : Exchange Server has not been installed on this computer.' };
+  }
+
   /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a

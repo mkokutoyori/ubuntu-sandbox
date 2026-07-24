@@ -443,10 +443,34 @@ export interface ExchangeServerInfo {
   readonly installedAt: number;
 }
 
+export type MailFolderName = 'Inbox' | 'Sent Items' | 'Drafts' | 'Deleted Items' | 'Junk Email';
+export interface MailboxOpResult { ok: boolean; message: string }
+export interface MailboxInfo {
+  readonly identity: string;
+  readonly primarySmtpAddress: string;
+  readonly proxyAddresses: readonly string[];
+  readonly quotaBytes: number | null;
+}
+export interface MailboxStatisticsInfo {
+  readonly identity: string;
+  readonly totalItemSize: number;
+  readonly itemCount: number;
+  readonly folderItemCounts: Readonly<Record<MailFolderName, number>>;
+}
+
 export interface IExchangeProvider {
   installExchangeServer(organizationName: string, roles: readonly string[]): ExchangeOpResult;
   getExchangeServer(hostname?: string): ExchangeServerInfo | null;
   listExchangeServers(): ExchangeServerInfo[];
+
+  enableMailbox(identity: string): MailboxOpResult;
+  newMailbox(name: string, password: string): MailboxOpResult;
+  getMailbox(identity: string): MailboxInfo | null;
+  listMailboxes(): MailboxInfo[];
+  setMailboxQuota(identity: string, quotaBytes: number | null): MailboxOpResult;
+  getMailboxStatistics(identity: string): MailboxStatisticsInfo | null;
+  disableMailbox(identity: string): MailboxOpResult;
+  removeMailbox(identity: string): MailboxOpResult;
 }
 
 // ── AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5 P13) ──

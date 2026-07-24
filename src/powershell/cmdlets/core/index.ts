@@ -163,7 +163,11 @@ import {
   RestartWebAppPoolCmdlet, GetWebGlobalModuleCmdlet,
 } from './WebAdminCmdlets';
 import { NewSelfSignedCertificateCmdlet } from './PkiCmdlets';
-import { InstallExchangeServerCmdlet, GetExchangeServerCmdlet } from './ExchangeCmdlets';
+import {
+  InstallExchangeServerCmdlet, GetExchangeServerCmdlet,
+  EnableMailboxCmdlet, NewMailboxCmdlet, GetMailboxCmdlet, SetMailboxCmdlet,
+  GetMailboxStatisticsCmdlet, DisableMailboxCmdlet, RemoveMailboxCmdlet,
+} from './ExchangeCmdlets';
 import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
   NewDfsReplicationGroupCmdlet, SyncDfsReplicationGroupCmdlet,
@@ -496,9 +500,16 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewADTrustCmdlet());
   registry.register(new GetADTrustCmdlet());
 
-  // ── Exchange Server (docs/PRD-Exchange.md §2.1 P1) ──────────────────────────
+  // ── Exchange Server (docs/PRD-Exchange.md §2.1 P1/P2) ───────────────────────
   registry.register(new InstallExchangeServerCmdlet());
   registry.register(new GetExchangeServerCmdlet());
+  registry.register(new EnableMailboxCmdlet());
+  registry.register(new NewMailboxCmdlet());
+  registry.register(new GetMailboxCmdlet());
+  registry.register(new SetMailboxCmdlet());
+  registry.register(new GetMailboxStatisticsCmdlet());
+  registry.register(new DisableMailboxCmdlet());
+  registry.register(new RemoveMailboxCmdlet());
 
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());

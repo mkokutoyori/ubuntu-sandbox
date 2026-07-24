@@ -17,6 +17,7 @@ import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
+import { MAIL_FOLDER_NAMES, type Mailbox as MailboxRecord } from '@/network/devices/windows/server/exchange/MailboxStore';
 import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
@@ -61,6 +62,7 @@ import type {
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
+  MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2033,6 +2035,65 @@ class WindowsExchangeAdapter implements IExchangeProvider {
     return this.pc.listExchangeServers().map((record) => ({
       hostname: record.hostname, roles: [...record.roles], organizationName: orgName, installedAt: record.installedAt,
     }));
+  }
+
+  private mailboxToInfo(mailbox: MailboxRecord): MailboxInfo {
+    return {
+      identity: mailbox.adIdentity, primarySmtpAddress: mailbox.primarySmtpAddress,
+      proxyAddresses: [...mailbox.proxyAddresses], quotaBytes: mailbox.quotaBytes,
+    };
+  }
+
+  enableMailbox(identity: string): MailboxOpResult {
+    this.requireOrg('Enable-Mailbox');
+    return this.pc.enableMailbox(identity);
+  }
+
+  newMailbox(name: string, password: string): MailboxOpResult {
+    this.requireOrg('New-Mailbox');
+    return this.pc.newMailbox(name, password);
+  }
+
+  getMailbox(identity: string): MailboxInfo | null {
+    this.requireOrg('Get-Mailbox');
+    const mailbox = this.pc.getMailboxStore()?.get(identity) ?? null;
+    return mailbox ? this.mailboxToInfo(mailbox) : null;
+  }
+
+  listMailboxes(): MailboxInfo[] {
+    this.requireOrg('Get-Mailbox');
+    return (this.pc.getMailboxStore()?.list() ?? []).map((m) => this.mailboxToInfo(m));
+  }
+
+  setMailboxQuota(identity: string, quotaBytes: number | null): MailboxOpResult {
+    this.requireOrg('Set-Mailbox');
+    const store = this.pc.getMailboxStore();
+    if (!store) return { ok: false, message: 'Set-Mailbox : Exchange Server has not been installed on this computer.' };
+    return store.setQuota(identity, quotaBytes);
+  }
+
+  getMailboxStatistics(identity: string): MailboxStatisticsInfo | null {
+    this.requireOrg('Get-MailboxStatistics');
+    const store = this.pc.getMailboxStore();
+    const mailbox = store?.get(identity) ?? null;
+    if (!store || !mailbox) return null;
+    const folderItemCounts = Object.fromEntries(
+      MAIL_FOLDER_NAMES.map((f) => [f, mailbox.folders[f].length]),
+    ) as Record<MailFolderName, number>;
+    return {
+      identity: mailbox.adIdentity, totalItemSize: store.totalSizeBytes(mailbox),
+      itemCount: store.totalItemCount(mailbox), folderItemCounts,
+    };
+  }
+
+  disableMailbox(identity: string): MailboxOpResult {
+    this.requireOrg('Disable-Mailbox');
+    return this.pc.disableMailbox(identity);
+  }
+
+  removeMailbox(identity: string): MailboxOpResult {
+    this.requireOrg('Remove-Mailbox');
+    return this.pc.removeMailbox(identity);
   }
 }
 

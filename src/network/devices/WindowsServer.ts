@@ -34,6 +34,7 @@ import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
 import { getExchangeOrganization, getOrCreateExchangeOrganization, type ExchangeServerRecord } from './windows/server/exchange/ExchangeOrganization';
+import { MailboxStore, type MailboxOpResult } from './windows/server/exchange/MailboxStore';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
 export interface AdDsOpResult { ok: boolean; message: string }
@@ -340,6 +341,52 @@ export class WindowsServer extends WindowsPC {
     if (this.exchangeOrgName === null) return [];
     const org = getExchangeOrganization(this.exchangeOrgName);
     return org ? [...org.servers.values()] : [];
+  }
+
+  /**
+   * `Enable-Mailbox`/`New-Mailbox`/`Get-Mailbox`/`Set-Mailbox`/
+   * `Get-MailboxStatistics`/`Disable-Mailbox`/`Remove-Mailbox`
+   * (docs/PRD-Exchange.md §2.1 P2) — the `MailboxStore` behind these
+   * lives on the shared `ExchangeOrganization`, not per-server, so any
+   * server in the org sees the same mailboxes (mirrors how `Get-
+   * ExchangeServer` already works, § 2.1 P1).
+   */
+  getMailboxStore(): MailboxStore | null {
+    if (this.exchangeOrgName === null) return null;
+    return getExchangeOrganization(this.exchangeOrgName)?.mailboxes ?? null;
+  }
+
+  enableMailbox(identity: string): MailboxOpResult {
+    const store = this.getMailboxStore();
+    if (!store) return { ok: false, message: 'Enable-Mailbox : Exchange Server has not been installed on this computer.' };
+    if (!this.directoryStore) return { ok: false, message: 'Enable-Mailbox : This computer is not configured as a domain controller.' };
+    const user = this.directoryStore.getUser(identity);
+    if (!user) return { ok: false, message: `Enable-Mailbox : The operation couldn't be performed because object '${identity}' couldn't be found.` };
+    return store.enable(user.sam, `${user.sam}@${this.directoryStore.dnsName}`);
+  }
+
+  newMailbox(sam: string, password: string): MailboxOpResult {
+    const store = this.getMailboxStore();
+    if (!store) return { ok: false, message: 'New-Mailbox : Exchange Server has not been installed on this computer.' };
+    if (!this.directoryStore) return { ok: false, message: 'New-Mailbox : This computer is not configured as a domain controller.' };
+    const userRes = this.directoryStore.newUser(sam, { password });
+    if (!userRes.ok) return { ok: false, message: `New-Mailbox : ${userRes.message}` };
+    return store.enable(sam, `${sam}@${this.directoryStore.dnsName}`);
+  }
+
+  disableMailbox(identity: string): MailboxOpResult {
+    const store = this.getMailboxStore();
+    if (!store) return { ok: false, message: 'Disable-Mailbox : Exchange Server has not been installed on this computer.' };
+    const sam = this.directoryStore?.resolveIdentity(identity) ?? identity;
+    return store.disable(sam);
+  }
+
+  removeMailbox(identity: string): MailboxOpResult {
+    const disableRes = this.disableMailbox(identity);
+    if (!disableRes.ok) return disableRes;
+    const removeRes = this.directoryStore?.removeUser(identity);
+    if (removeRes && !removeRes.ok) return { ok: false, message: `Remove-Mailbox : ${removeRes.message}` };
+    return { ok: true, message: '' };
   }
 
   /**

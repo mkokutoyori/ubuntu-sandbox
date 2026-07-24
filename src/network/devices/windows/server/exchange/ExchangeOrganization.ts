@@ -1,3 +1,5 @@
+import { MailboxStore } from './MailboxStore';
+
 export interface ExchangeServerRecord {
   readonly hostname: string;
   readonly roles: ReadonlySet<string>;
@@ -7,6 +9,7 @@ export interface ExchangeServerRecord {
 export interface ExchangeOrganization {
   readonly name: string;
   readonly servers: Map<string, ExchangeServerRecord>;
+  readonly mailboxes: MailboxStore;
 }
 
 const organizations = new Map<string, ExchangeOrganization>();
@@ -22,7 +25,7 @@ export function getExchangeOrganization(name: string): ExchangeOrganization | un
 export function getOrCreateExchangeOrganization(name: string): ExchangeOrganization {
   let org = organizations.get(name);
   if (!org) {
-    org = { name, servers: new Map() };
+    org = { name, servers: new Map(), mailboxes: new MailboxStore() };
     organizations.set(name, org);
   }
   return org;

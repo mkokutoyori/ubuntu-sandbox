@@ -2,7 +2,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { IExchangeProvider, ExchangeServerInfo } from '@/powershell/providers/PSProviders';
+import type { IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function requireExchange(ctx: CmdletContext, cmdletName: string): IExchangeProvider {
@@ -71,5 +71,186 @@ export class GetExchangeServerCmdlet implements ICmdlet {
 
     const servers = exchange.listExchangeServers().map(serverToPSObject);
     return servers.length === 1 ? servers[0] : servers;
+  }
+}
+
+function identityFrom(ctx: CmdletContext): string {
+  return psValueToString(ctx.named['identity'] ?? ctx.positional[0] ?? '');
+}
+
+function securePasswordFrom(ctx: CmdletContext, key: string): string | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw) && 'SecureString' in (raw as Record<string, PSValue>)) {
+    return psValueToString((raw as Record<string, PSValue>).SecureString);
+  }
+  return psValueToString(raw);
+}
+
+function parseQuotaBytes(raw: string): number | null | undefined {
+  const trimmed = raw.trim();
+  if (trimmed.toLowerCase() === 'unlimited') return null;
+  const m = /^(\d+(?:\.\d+)?)\s*(KB|MB|GB)?$/i.exec(trimmed);
+  if (!m) return undefined;
+  const value = parseFloat(m[1]);
+  const unit = (m[2] ?? '').toUpperCase();
+  const multiplier = unit === 'GB' ? 1024 ** 3 : unit === 'MB' ? 1024 ** 2 : unit === 'KB' ? 1024 : 1;
+  return Math.round(value * multiplier);
+}
+
+function mailboxToPSObject(m: MailboxInfo): Record<string, PSValue> {
+  return {
+    Identity: m.identity,
+    Name: m.identity,
+    PrimarySmtpAddress: m.primarySmtpAddress,
+    EmailAddresses: m.proxyAddresses.join(', '),
+    ProhibitSendReceiveQuota: m.quotaBytes === null ? 'Unlimited' : String(m.quotaBytes),
+  };
+}
+
+function statisticsToPSObject(s: MailboxStatisticsInfo): Record<string, PSValue> {
+  const folderCounts: Record<string, PSValue> = {};
+  for (const [folder, count] of Object.entries(s.folderItemCounts)) {
+    folderCounts[`${folder.replace(/\s+/g, '')}Count`] = count;
+  }
+  return {
+    Identity: s.identity,
+    ItemCount: s.itemCount,
+    TotalItemSize: s.totalItemSize,
+    ...folderCounts,
+  };
+}
+
+export class EnableMailboxCmdlet implements ICmdlet {
+  readonly name = 'enable-mailbox';
+  readonly displayName = 'Enable-Mailbox';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Enable-Mailbox');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Enable-Mailbox : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const res = exchange.enableMailbox(identity);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    const mailbox = exchange.getMailbox(identity);
+    return mailbox ? mailboxToPSObject(mailbox) : null;
+  }
+}
+
+export class NewMailboxCmdlet implements ICmdlet {
+  readonly name = 'new-mailbox';
+  readonly displayName = 'New-Mailbox';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Password'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'New-Mailbox');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('New-Mailbox : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const password = securePasswordFrom(ctx, 'password');
+    if (!password) { ctx.emitError('New-Mailbox : Cannot process command because of one or more missing mandatory parameters: Password.'); return null; }
+    const res = exchange.newMailbox(name, password);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    const mailbox = exchange.getMailbox(name);
+    return mailbox ? mailboxToPSObject(mailbox) : null;
+  }
+}
+
+export class GetMailboxCmdlet implements ICmdlet {
+  readonly name = 'get-mailbox';
+  readonly displayName = 'Get-Mailbox';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-Mailbox');
+    const identity = identityFrom(ctx);
+    if (identity) {
+      const mailbox = exchange.getMailbox(identity);
+      if (!mailbox) {
+        ctx.emitError(`Get-Mailbox : The operation couldn't be performed because object '${identity}' couldn't be found.`);
+        return null;
+      }
+      return mailboxToPSObject(mailbox);
+    }
+    const mailboxes = exchange.listMailboxes().map(mailboxToPSObject);
+    return mailboxes.length === 1 ? mailboxes[0] : mailboxes;
+  }
+}
+
+export class SetMailboxCmdlet implements ICmdlet {
+  readonly name = 'set-mailbox';
+  readonly displayName = 'Set-Mailbox';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'ProhibitSendReceiveQuota'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Set-Mailbox');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Set-Mailbox : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    if (ctx.named['prohibitsendreceivequota'] !== undefined) {
+      const raw = psValueToString(ctx.named['prohibitsendreceivequota']);
+      const quotaBytes = parseQuotaBytes(raw);
+      if (quotaBytes === undefined) {
+        ctx.emitError(`Set-Mailbox : Cannot convert value "${raw}" to type "Microsoft.Exchange.Data.ByteQuantifiedSize".`);
+        return null;
+      }
+      const res = exchange.setMailboxQuota(identity, quotaBytes);
+      if (!res.ok) { ctx.emitError(res.message); return null; }
+    }
+    const mailbox = exchange.getMailbox(identity);
+    return mailbox ? mailboxToPSObject(mailbox) : null;
+  }
+}
+
+export class GetMailboxStatisticsCmdlet implements ICmdlet {
+  readonly name = 'get-mailboxstatistics';
+  readonly displayName = 'Get-MailboxStatistics';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-MailboxStatistics');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Get-MailboxStatistics : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const stats = exchange.getMailboxStatistics(identity);
+    if (!stats) {
+      ctx.emitError(`Get-MailboxStatistics : The operation couldn't be performed because object '${identity}' couldn't be found.`);
+      return null;
+    }
+    return statisticsToPSObject(stats);
+  }
+}
+
+export class DisableMailboxCmdlet implements ICmdlet {
+  readonly name = 'disable-mailbox';
+  readonly displayName = 'Disable-Mailbox';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Disable-Mailbox');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Disable-Mailbox : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const res = exchange.disableMailbox(identity);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+export class RemoveMailboxCmdlet implements ICmdlet {
+  readonly name = 'remove-mailbox';
+  readonly displayName = 'Remove-Mailbox';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Remove-Mailbox');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Remove-Mailbox : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const res = exchange.removeMailbox(identity);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
   }
 }
