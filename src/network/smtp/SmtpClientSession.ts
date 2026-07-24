@@ -54,6 +54,10 @@ export class SmtpClientSession {
     return this.repliesBuffer[before] ?? null;
   }
 
+  allReplies(): readonly SmtpReply[] {
+    return this.repliesBuffer;
+  }
+
   close(): void {
     this.socket?.close();
     this.socket = null;
