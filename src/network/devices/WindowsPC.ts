@@ -87,9 +87,12 @@ import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
 import { KerberosSignalStore } from '@/network/kerberos/observables';
 import { KerberosSignalRefreshActor } from '@/network/kerberos/actors/KerberosSignalRefreshActor';
 import {
-  ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication, notifySyncNow,
+  ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication, notifySyncNow, queryRemoteReplicationStatus, triggerRemotePull, setRemoteOption,
   type ReplicationPullResult, type ReplicationLogEntry,
 } from './windows/server/ad/replication/ReplicationSession';
+import { encodeHighWatermarkVector } from './windows/server/ad/replication/HighWatermarkVector';
+import { parseDN } from './windows/server/ad/ldap/LdapDN';
+import { NTDS_OPTION_NAMES, type NtdsOption } from './windows/WinRepadmin';
 import { ReplicationSignalStore } from './windows/server/ad/replication/observables';
 import { ReplicationSignalRefreshActor } from './windows/server/ad/replication/actors/ReplicationSignalRefreshActor';
 import { AdcsSignalStore } from './windows/server/adcs/observables';
@@ -221,6 +224,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly kerberosTicketCache: KerberosTicketCache = new KerberosTicketCache();
   /** One entry per `replicateFrom` cycle, annotated intra-/inter-site (PRD-Windows-Server-Advanced.md §5 P6) — this simulator's minimal stand-in for a real replication event log (full observability arrives at §5 P12). */
   private readonly replicationLog: ReplicationLogEntry[] = [];
+  /** `repadmin /options` (PRD-Repadmin.md P8) — this DC's NTDS Settings flags. `DISABLE_OUTBOUND_REPL`/`DISABLE_INBOUND_REPL` have a real causal effect on `ReplicationServerHandler`/`replicateFrom`; `IS_GC`/`DISABLE_SPN_REGISTRATION` are declarative storage only (§2.1 P8). */
+  private readonly ntdsOptions = new Set<NtdsOption>();
   /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
   private ldapStartTlsIdentity: ReturnType<typeof selfSignedLdapCert> | null = null;
   /** Remote Desktop (PRD-Windows-Server-Advanced.md §5 P17) — disabled by default; toggled via `Enable-RemoteDesktop`. */
@@ -567,7 +572,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
         const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
-        new ReplicationServerHandler(store, this.getHostname(), this.getBus(), ownIp, (partnerIp) => this.replicateFrom(partnerIp)).register(socket);
+        new ReplicationServerHandler(
+          store, this.getHostname(), this.getBus(), ownIp,
+          (partnerIp) => this.replicateFrom(partnerIp),
+          () => this.getReplicationSignals().log.get(),
+          () => this.ntdsOptions.has('DISABLE_OUTBOUND_REPL'),
+          (sourceIp) => this.replicateFrom(sourceIp),
+          (dn) => {
+            try { return store.getTree().getByDn(parseDN(dn))?.replMeta ?? null; } catch { return null; }
+          },
+          (option, enabled) => {
+            if (!NTDS_OPTION_NAMES.includes(option as NtdsOption)) return false;
+            if (enabled) this.ntdsOptions.add(option as NtdsOption); else this.ntdsOptions.delete(option as NtdsOption);
+            return true;
+          },
+        ).register(socket);
       },
     });
 
@@ -653,7 +672,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   replicateFrom(partnerIp: string): ReplicationPullResult {
     const store = this.getDirectoryStore();
     if (!store) return { ok: false, error: 'This computer is not a domain controller.', applied: 0 };
-    const result = pullReplication(this.getTcpStack(), partnerIp, store);
+    const result = pullReplication(this.getTcpStack(), partnerIp, store, {
+      inboundReplDisabled: this.ntdsOptions.has('DISABLE_INBOUND_REPL'),
+    });
 
     const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
     const ownSite = ownIp ? store.siteForIp(ownIp) : null;
@@ -662,6 +683,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
     const logEntry: ReplicationLogEntry = {
       timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation, direction: 'inbound',
+      error: result.error, remoteInvocationId: result.responderInvocationId,
     };
     this.replicationLog.push(logEntry);
     this.getBus().publish(
@@ -1851,17 +1873,53 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'repadmin': {
         const store = this.getDirectoryStore();
         if (!store) return "'repadmin' requires this computer to be a domain controller.";
+        const resolveNameToIp = (name: string): string | null => this.resolveHostnameSync(name)?.toString() ?? null;
         const ctx: RepadminContext = {
           hostname: this.hostname,
           fqdn: `${this.hostname}.${store.dnsName}`,
           domainDn: store.getDomainDn(),
+          invocationId: store.getInvocationId(),
           log: this.getReplicationSignals().log.get(),
+          outboundVector: encodeHighWatermarkVector(store.getOutboundHighWatermark()),
           knownDcFqdns: store.listDomainControllers()
             .filter(c => c.name.toLowerCase() !== this.hostname.toLowerCase())
             .map(c => `${c.name}.${store.dnsName}`),
           resolveIpToName: (ip) => this.reverseLookupClient(ip),
+          resolveIpToSite: (ip) => store.siteForIp(ip),
           pullFrom: (ip) => this.replicateFrom(ip),
           pushTo: (ip) => notifySyncNow(this.getTcpStack(), ip),
+          resolveNameToIp,
+          usnForInvocation: (invocationId) => store.highestKnownUsnFor(invocationId),
+          getObjectReplMeta: (dn) => {
+            try {
+              const entry = store.getTree().getByDn(parseDN(dn));
+              return entry?.replMeta ?? null;
+            } catch { return null; }
+          },
+          options: this.ntdsOptions,
+          setOption: (opt, enabled) => { if (enabled) this.ntdsOptions.add(opt); else this.ntdsOptions.delete(opt); },
+          setRemoteOption: (targetIp, opt, enabled) => setRemoteOption(this.getTcpStack(), targetIp, opt, enabled),
+          triggerRemoteReplicate: (destIp, sourceIp) => triggerRemotePull(this.getTcpStack(), destIp, sourceIp),
+          resolveTarget: (name, objectDn) => {
+            const isSelf = name.toLowerCase() === ctx.fqdn.toLowerCase() || name.toLowerCase() === this.hostname.toLowerCase();
+            if (isSelf) {
+              return {
+                ok: true, fqdn: ctx.fqdn, hostname: this.hostname, invocationId: store.getInvocationId(),
+                log: this.getReplicationSignals().log.get(), outboundVector: encodeHighWatermarkVector(store.getOutboundHighWatermark()),
+                objectMeta: objectDn !== undefined ? ctx.getObjectReplMeta(objectDn) : undefined,
+              };
+            }
+            const targetIp = resolveNameToIp(name);
+            if (!targetIp) return { ok: false, error: `Unable to contact target: ${name}`, fqdn: '', hostname: '', invocationId: '', log: [], outboundVector: [] };
+            const start = Date.now();
+            const remote = queryRemoteReplicationStatus(this.getTcpStack(), targetIp, objectDn);
+            const latencyMs = Date.now() - start;
+            if (!remote) return { ok: false, error: `Unable to contact target: ${name}`, fqdn: '', hostname: '', invocationId: '', log: [], outboundVector: [] };
+            return {
+              ok: true, fqdn: remote.fqdn, hostname: remote.fqdn.split('.')[0], invocationId: remote.invocationId,
+              log: remote.log, outboundVector: remote.outboundVector, latencyMs, objectMeta: remote.objectMeta,
+            };
+          },
         };
         return cmdRepadmin(ctx, args);
       }

@@ -199,6 +199,11 @@ export class DirectoryStore {
   getInvocationId(): string { return this.invocationId; }
   getLocalUsn(): number { return this.localUsn; }
 
+  /** PRD-Repadmin.md P2: how far this DC has absorbed a specific partner's changes — `/showrepl`'s per-neighbor USN column. */
+  highestKnownUsnFor(invocationId: string): number {
+    return this.inboundHighWatermark.usnByInvocationId.get(invocationId) ?? 0;
+  }
+
   /** The vector to send a replication partner: what this DC already knows, from itself and from every other DC it's absorbed via replication — so the partner only returns genuinely new objects. */
   getOutboundHighWatermark(): HighWatermarkVector {
     const vector = cloneHighWatermarkVector(this.inboundHighWatermark);
