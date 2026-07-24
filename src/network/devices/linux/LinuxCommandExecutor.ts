@@ -23,6 +23,7 @@ import { LinuxCronManager } from './LinuxCronManager';
 import { cronAllowed } from './cron/CronPermissions';
 import { CronEngine } from './cron/CronEngine';
 import { SystemCron } from './cron/SystemCron';
+import { deliverLocalMessage } from '@/network/smtp/localDelivery';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
@@ -1922,7 +1923,15 @@ export class LinuxCommandExecutor {
       sources: [source],
       runner: (command, ctx) => this.runWithEnv(command, ctx.env),
       syslog: (tag, message) => this.logMgr.logDaemon(tag, message),
-      deliverMail: () => { void 0; },
+      deliverMail: (recipient, body) => {
+        const entry = this.userMgr.getUser(recipient);
+        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        deliverLocalMessage(
+          this.vfs, recipient,
+          { envelopeFrom: `cron@${hostname}`, receivedAt: this.wallEpoch + this.clock.now(), rawMessage: body },
+          { uid: entry?.uid ?? 0, gid: entry?.gid ?? 0 },
+        );
+      },
       homeFor: (user) => this.userMgr.getUser(user)?.home ?? `/home/${user}`,
       hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
       now: () => this.simulatedDate(),

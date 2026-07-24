@@ -50,6 +50,7 @@ const IANA: Map<number, { tcp?: string; udp?: string }> = new Map([
   [389,  { tcp: 'ldap', udp: 'ldap' }],
   [443,  { tcp: 'https' }],
   [445,  { tcp: 'microsoft-ds', udp: 'microsoft-ds' }],
+  [465,  { tcp: 'smtps' }],
   [500,  { udp: 'isakmp' }],
   [514,  { udp: 'syslog' }],
   [520,  { udp: 'route' }],

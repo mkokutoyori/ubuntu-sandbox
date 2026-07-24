@@ -23,9 +23,18 @@ function buildTopology() {
   return { pc, srv };
 }
 
-describe('LinuxServer hosts a real SMTP service on 25/587/465 (§2.1.16/P17)', () => {
-  it('listens on all three SMTP ports by default', () => {
+describe('LinuxServer can host a real SMTP service on 25/587/465 (§2.1.16/P17)', () => {
+  it('does not listen on any SMTP port until the service is explicitly enabled (no MTA installed by default)', () => {
     const { srv } = buildTopology();
+    const before = srv.getTcpStack().listListeners().map((l) => l.localPort);
+    expect(before).not.toContain(SMTP_PORT);
+    expect(before).not.toContain(SMTP_SUBMISSION_PORT);
+    expect(before).not.toContain(SMTP_SUBMISSION_TLS_PORT);
+  });
+
+  it('listens on all three SMTP ports once enableSmtpService() runs', () => {
+    const { srv } = buildTopology();
+    srv.enableSmtpService();
     const ports = srv.getTcpStack().listListeners().map((l) => l.localPort);
     expect(ports).toContain(SMTP_PORT);
     expect(ports).toContain(SMTP_SUBMISSION_PORT);
@@ -40,7 +49,8 @@ describe('LinuxServer hosts a real SMTP service on 25/587/465 (§2.1.16/P17)', (
   });
 
   it('a real client can complete a full SMTP transaction against port 25', () => {
-    const { pc } = buildTopology();
+    const { pc, srv } = buildTopology();
+    srv.enableSmtpService();
     const client = new SmtpClientSession(pc.getTcpStack(), '10.0.1.10', '10.0.1.2');
     client.connect();
     client.sendCommand({ verb: 'EHLO', argument: 'client.example.org' });
@@ -52,7 +62,8 @@ describe('LinuxServer hosts a real SMTP service on 25/587/465 (§2.1.16/P17)', (
   });
 
   it('port 587 (submission) requires AUTH before MAIL FROM', () => {
-    const { pc } = buildTopology();
+    const { pc, srv } = buildTopology();
+    srv.enableSmtpService();
     const client = new SmtpClientSession(pc.getTcpStack(), '10.0.1.10', '10.0.1.2', SMTP_SUBMISSION_PORT);
     client.connect();
     client.sendCommand({ verb: 'EHLO', argument: 'client.example.org' });
@@ -61,7 +72,8 @@ describe('LinuxServer hosts a real SMTP service on 25/587/465 (§2.1.16/P17)', (
   });
 
   it('port 465 (smtps) refuses a plaintext handshake (implicit TLS, never a clear banner)', () => {
-    const { pc } = buildTopology();
+    const { pc, srv } = buildTopology();
+    srv.enableSmtpService();
     const client = new SmtpClientSession(pc.getTcpStack(), '10.0.1.10', '10.0.1.2', SMTP_SUBMISSION_TLS_PORT);
     const banner = client.connect();
     expect(banner).toBeNull();

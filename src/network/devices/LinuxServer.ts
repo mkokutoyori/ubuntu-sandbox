@@ -106,11 +106,8 @@ export class LinuxServer extends LinuxMachine {
     const smtpTls = { serverCert: smtpCert.cert, serverPrivateKey: smtpCert.keyPair.privateKey };
     const smtpConfig = { hostname: this.getHostname(), eventBus: this.getBus() };
     this.smtpServer = new SmtpServer(this.getTcpStack(), smtpConfig, SMTP_PORT, { tls: smtpTls });
-    this.smtpServer.start();
     this.smtpSubmissionServer = new SmtpServer(this.getTcpStack(), smtpConfig, SMTP_SUBMISSION_PORT, { tls: smtpTls });
-    this.smtpSubmissionServer.start();
     this.smtpImplicitTlsServer = new SmtpServer(this.getTcpStack(), smtpConfig, SMTP_SUBMISSION_TLS_PORT, { tls: smtpTls, implicitTls: true });
-    this.smtpImplicitTlsServer.start();
 
     // Wire Oracle bootstrap so `sqlplus` from the bash interpreter
     // actually boots the instance (pmon/smon/lgwr appear in ps -ef).
@@ -239,6 +236,12 @@ export class LinuxServer extends LinuxMachine {
   getSmtpServer(): SmtpServer { return this.smtpServer; }
   getSmtpSubmissionServer(): SmtpServer { return this.smtpSubmissionServer; }
   getSmtpImplicitTlsServer(): SmtpServer { return this.smtpImplicitTlsServer; }
+
+  enableSmtpService(): void {
+    this.smtpServer.start();
+    this.smtpSubmissionServer.start();
+    this.smtpImplicitTlsServer.start();
+  }
 
   /** Expose a background process in `ps` output (used by Oracle DBMS). */
   registerProcess(pid: number, user: string, command: string): void {
