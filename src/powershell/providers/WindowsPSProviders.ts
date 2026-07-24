@@ -63,6 +63,7 @@ import type {
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
+  DistributionGroupInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2094,6 +2095,39 @@ class WindowsExchangeAdapter implements IExchangeProvider {
   removeMailbox(identity: string): MailboxOpResult {
     this.requireOrg('Remove-Mailbox');
     return this.pc.removeMailbox(identity);
+  }
+
+  newDistributionGroup(identity: string, type: 'Distribution' | 'Security'): ExchangeOpResult {
+    this.requireOrg('New-DistributionGroup');
+    return this.pc.newDistributionGroup(identity, type === 'Security' ? 'SecurityMailEnabled' : 'Distribution');
+  }
+
+  setDistributionGroupPrimarySmtpAddress(identity: string, address: string): ExchangeOpResult {
+    this.requireOrg('Set-DistributionGroup');
+    return this.pc.setDistributionGroupPrimarySmtpAddress(identity, address);
+  }
+
+  getDistributionGroup(identity: string): DistributionGroupInfo | null {
+    this.requireOrg('Get-DistributionGroup');
+    const group = this.pc.getDistributionGroupStore()?.get(identity) ?? null;
+    return group ? { identity: group.adGroupSam, type: group.type, primarySmtpAddress: group.primarySmtpAddress } : null;
+  }
+
+  listDistributionGroups(): DistributionGroupInfo[] {
+    this.requireOrg('Get-DistributionGroup');
+    return (this.pc.getDistributionGroupStore()?.list() ?? []).map((g) => ({
+      identity: g.adGroupSam, type: g.type, primarySmtpAddress: g.primarySmtpAddress,
+    }));
+  }
+
+  addDistributionGroupMember(identity: string, member: string): ExchangeOpResult {
+    this.requireOrg('Add-DistributionGroupMember');
+    return this.pc.addDistributionGroupMember(identity, member);
+  }
+
+  getDistributionGroupMembers(identity: string): readonly string[] | null {
+    this.requireOrg('Get-DistributionGroupMember');
+    return this.pc.getDistributionGroupMembers(identity);
   }
 }
 

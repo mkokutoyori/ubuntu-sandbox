@@ -34,7 +34,8 @@ import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
 import { getExchangeOrganization, getOrCreateExchangeOrganization, type ExchangeServerRecord } from './windows/server/exchange/ExchangeOrganization';
-import { MailboxStore, type MailboxOpResult } from './windows/server/exchange/MailboxStore';
+import { MailboxStore, type MailboxOpResult, type DeliverResult } from './windows/server/exchange/MailboxStore';
+import { DistributionGroupStore, deliverExpanded, type DistributionGroupOpResult, type DistributionGroupType } from './windows/server/exchange/DistributionGroupStore';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
 export interface AdDsOpResult { ok: boolean; message: string }
@@ -387,6 +388,67 @@ export class WindowsServer extends WindowsPC {
     const removeRes = this.directoryStore?.removeUser(identity);
     if (removeRes && !removeRes.ok) return { ok: false, message: `Remove-Mailbox : ${removeRes.message}` };
     return { ok: true, message: '' };
+  }
+
+  /**
+   * `New-DistributionGroup`/`Set-DistributionGroup`/`Add-
+   * DistributionGroupMember`/`Get-DistributionGroupMember`
+   * (docs/PRD-Exchange.md §2.1 P3) — mail-enables an AD group that
+   * already carries the matching `GroupCategory` (§ P3-préalable), it
+   * never creates the AD group itself (mirrors `Enable-Mailbox`, not
+   * `New-Mailbox`, for groups). `-Type Security` mail-enables an
+   * existing `Security` group; the default `Distribution` type requires
+   * an existing `Distribution` group.
+   */
+  getDistributionGroupStore(): DistributionGroupStore | null {
+    if (this.exchangeOrgName === null) return null;
+    return getExchangeOrganization(this.exchangeOrgName)?.distributionGroups ?? null;
+  }
+
+  newDistributionGroup(sam: string, type: DistributionGroupType = 'Distribution'): DistributionGroupOpResult {
+    const store = this.getDistributionGroupStore();
+    if (!store) return { ok: false, message: 'New-DistributionGroup : Exchange Server has not been installed on this computer.' };
+    if (!this.directoryStore) return { ok: false, message: 'New-DistributionGroup : This computer is not configured as a domain controller.' };
+    const group = this.directoryStore.getGroup(sam);
+    if (!group) return { ok: false, message: `New-DistributionGroup : The operation couldn't be performed because object '${sam}' couldn't be found.` };
+    const expectedCategory = type === 'SecurityMailEnabled' ? 'Security' : 'Distribution';
+    if (group.category !== expectedCategory) {
+      return { ok: false, message: `New-DistributionGroup : '${sam}' is a ${group.category} group and cannot be mail-enabled as ${type === 'SecurityMailEnabled' ? 'a mail-enabled security group' : 'a distribution group'}.` };
+    }
+    return store.mailEnable(group.sam, `${group.sam}@${this.directoryStore.dnsName}`, type);
+  }
+
+  setDistributionGroupPrimarySmtpAddress(identity: string, address: string): DistributionGroupOpResult {
+    const store = this.getDistributionGroupStore();
+    if (!store) return { ok: false, message: 'Set-DistributionGroup : Exchange Server has not been installed on this computer.' };
+    return store.setPrimarySmtpAddress(identity, address);
+  }
+
+  addDistributionGroupMember(identity: string, memberSam: string): DistributionGroupOpResult {
+    const store = this.getDistributionGroupStore();
+    if (!store) return { ok: false, message: 'Add-DistributionGroupMember : Exchange Server has not been installed on this computer.' };
+    if (!store.get(identity)) return { ok: false, message: `Add-DistributionGroupMember : The operation couldn't be performed because object '${identity}' couldn't be found.` };
+    const res = this.directoryStore?.addGroupMember(identity, memberSam);
+    if (!res) return { ok: false, message: 'Add-DistributionGroupMember : This computer is not configured as a domain controller.' };
+    if (!res.ok) return { ok: false, message: `Add-DistributionGroupMember : ${res.message}` };
+    return { ok: true, message: '' };
+  }
+
+  getDistributionGroupMembers(identity: string): string[] | null {
+    const store = this.getDistributionGroupStore();
+    if (!store || !store.get(identity)) return null;
+    return this.directoryStore?.getGroup(identity)?.members ?? [];
+  }
+
+  deliverToRecipient(recipientAddress: string, from: string, subject: string, rawMessage: string, receivedAt: number): DeliverResult[] {
+    const groupStore = this.getDistributionGroupStore();
+    const mailboxStore = this.getMailboxStore();
+    if (!groupStore || !mailboxStore) return [{ delivered: false, reason: 'not-found' }];
+    return deliverExpanded(
+      groupStore, mailboxStore,
+      (sam) => this.directoryStore?.getGroup(sam)?.members ?? [],
+      recipientAddress, from, subject, rawMessage, receivedAt,
+    );
   }
 
   /**

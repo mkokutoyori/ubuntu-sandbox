@@ -471,6 +471,19 @@ export interface IExchangeProvider {
   getMailboxStatistics(identity: string): MailboxStatisticsInfo | null;
   disableMailbox(identity: string): MailboxOpResult;
   removeMailbox(identity: string): MailboxOpResult;
+
+  newDistributionGroup(identity: string, type: 'Distribution' | 'Security'): ExchangeOpResult;
+  setDistributionGroupPrimarySmtpAddress(identity: string, address: string): ExchangeOpResult;
+  getDistributionGroup(identity: string): DistributionGroupInfo | null;
+  listDistributionGroups(): DistributionGroupInfo[];
+  addDistributionGroupMember(identity: string, member: string): ExchangeOpResult;
+  getDistributionGroupMembers(identity: string): readonly string[] | null;
+}
+
+export interface DistributionGroupInfo {
+  readonly identity: string;
+  readonly type: 'Distribution' | 'SecurityMailEnabled';
+  readonly primarySmtpAddress: string;
 }
 
 // ── AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5 P13) ──

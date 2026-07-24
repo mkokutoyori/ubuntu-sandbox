@@ -2828,6 +2828,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return { ok: false, message: 'Remove-Mailbox : Exchange Server has not been installed on this computer.' };
   }
 
+  getDistributionGroupStore(): import('./windows/server/exchange/DistributionGroupStore').DistributionGroupStore | null { return null; }
+
+  newDistributionGroup(_sam: string, _type?: 'Distribution' | 'SecurityMailEnabled'): { ok: boolean; message: string } {
+    return { ok: false, message: 'New-DistributionGroup : Exchange Server has not been installed on this computer.' };
+  }
+
+  setDistributionGroupPrimarySmtpAddress(_identity: string, _address: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Set-DistributionGroup : Exchange Server has not been installed on this computer.' };
+  }
+
+  addDistributionGroupMember(_identity: string, _memberSam: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Add-DistributionGroupMember : Exchange Server has not been installed on this computer.' };
+  }
+
+  getDistributionGroupMembers(_identity: string): string[] | null { return null; }
+
+  deliverToRecipient(_recipientAddress: string, _from: string, _subject: string, _rawMessage: string, _receivedAt: number): import('./windows/server/exchange/MailboxStore').DeliverResult[] {
+    return [{ delivered: false, reason: 'not-found' }];
+  }
+
   /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a

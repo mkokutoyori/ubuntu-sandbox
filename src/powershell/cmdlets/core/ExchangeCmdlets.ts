@@ -2,7 +2,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo } from '@/powershell/providers/PSProviders';
+import type { IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function requireExchange(ctx: CmdletContext, cmdletName: string): IExchangeProvider {
@@ -251,6 +251,119 @@ export class RemoveMailboxCmdlet implements ICmdlet {
     if (!identity) { ctx.emitError('Remove-Mailbox : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
     const res = exchange.removeMailbox(identity);
     if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+function distributionGroupToPSObject(g: DistributionGroupInfo): Record<string, PSValue> {
+  return {
+    Identity: g.identity,
+    Name: g.identity,
+    GroupType: g.type,
+    PrimarySmtpAddress: g.primarySmtpAddress,
+  };
+}
+
+export class NewDistributionGroupCmdlet implements ICmdlet {
+  readonly name = 'new-distributiongroup';
+  readonly displayName = 'New-DistributionGroup';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Type'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'New-DistributionGroup');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('New-DistributionGroup : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const typeRaw = ctx.named['type'] !== undefined ? psValueToString(ctx.named['type']) : 'Distribution';
+    const type = (['Distribution', 'Security'] as const).find((t) => t.toLowerCase() === typeRaw.toLowerCase());
+    if (!type) {
+      ctx.emitError(`New-DistributionGroup : Cannot validate argument on parameter 'Type'. The argument "${typeRaw}" does not belong to the set "Distribution,Security".`);
+      return null;
+    }
+    const res = exchange.newDistributionGroup(name, type);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    const group = exchange.getDistributionGroup(name);
+    return group ? distributionGroupToPSObject(group) : null;
+  }
+}
+
+export class SetDistributionGroupCmdlet implements ICmdlet {
+  readonly name = 'set-distributiongroup';
+  readonly displayName = 'Set-DistributionGroup';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'PrimarySmtpAddress'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Set-DistributionGroup');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Set-DistributionGroup : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    if (ctx.named['primarysmtpaddress'] !== undefined) {
+      const res = exchange.setDistributionGroupPrimarySmtpAddress(identity, psValueToString(ctx.named['primarysmtpaddress']));
+      if (!res.ok) { ctx.emitError(res.message); return null; }
+    }
+    const group = exchange.getDistributionGroup(identity);
+    return group ? distributionGroupToPSObject(group) : null;
+  }
+}
+
+export class GetDistributionGroupCmdlet implements ICmdlet {
+  readonly name = 'get-distributiongroup';
+  readonly displayName = 'Get-DistributionGroup';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-DistributionGroup');
+    const identity = identityFrom(ctx);
+    if (identity) {
+      const group = exchange.getDistributionGroup(identity);
+      if (!group) {
+        ctx.emitError(`Get-DistributionGroup : The operation couldn't be performed because object '${identity}' couldn't be found.`);
+        return null;
+      }
+      return distributionGroupToPSObject(group);
+    }
+    const groups = exchange.listDistributionGroups().map(distributionGroupToPSObject);
+    return groups.length === 1 ? groups[0] : groups;
+  }
+}
+
+export class AddDistributionGroupMemberCmdlet implements ICmdlet {
+  readonly name = 'add-distributiongroupmember';
+  readonly displayName = 'Add-DistributionGroupMember';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Member'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Add-DistributionGroupMember');
+    const identity = identityFrom(ctx);
+    const member = psValueToString(ctx.named['member'] ?? ctx.positional[1] ?? '');
+    if (!identity || !member) {
+      ctx.emitError('Add-DistributionGroupMember : Cannot process command because of one or more missing mandatory parameters: Identity, Member.');
+      return null;
+    }
+    const res = exchange.addDistributionGroupMember(identity, member);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+export class GetDistributionGroupMemberCmdlet implements ICmdlet {
+  readonly name = 'get-distributiongroupmember';
+  readonly displayName = 'Get-DistributionGroupMember';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-DistributionGroupMember');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Get-DistributionGroupMember : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const members = exchange.getDistributionGroupMembers(identity);
+    if (members === null) {
+      ctx.emitError(`Get-DistributionGroupMember : The operation couldn't be performed because object '${identity}' couldn't be found.`);
+      return null;
+    }
+    for (const m of members) ctx.emit({ Name: m, SamAccountName: m } as Record<string, PSValue>);
     return null;
   }
 }

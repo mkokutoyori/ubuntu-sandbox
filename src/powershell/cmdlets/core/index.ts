@@ -167,6 +167,8 @@ import {
   InstallExchangeServerCmdlet, GetExchangeServerCmdlet,
   EnableMailboxCmdlet, NewMailboxCmdlet, GetMailboxCmdlet, SetMailboxCmdlet,
   GetMailboxStatisticsCmdlet, DisableMailboxCmdlet, RemoveMailboxCmdlet,
+  NewDistributionGroupCmdlet, SetDistributionGroupCmdlet, GetDistributionGroupCmdlet,
+  AddDistributionGroupMemberCmdlet, GetDistributionGroupMemberCmdlet,
 } from './ExchangeCmdlets';
 import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
@@ -510,6 +512,11 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetMailboxStatisticsCmdlet());
   registry.register(new DisableMailboxCmdlet());
   registry.register(new RemoveMailboxCmdlet());
+  registry.register(new NewDistributionGroupCmdlet());
+  registry.register(new SetDistributionGroupCmdlet());
+  registry.register(new GetDistributionGroupCmdlet());
+  registry.register(new AddDistributionGroupMemberCmdlet());
+  registry.register(new GetDistributionGroupMemberCmdlet());
 
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());
