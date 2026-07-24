@@ -72,6 +72,7 @@ import { FtpClientSession } from '@/network/ftp/FtpClientSession';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
@@ -2910,6 +2911,31 @@ export class LinuxTerminalSession extends TerminalSession {
       session.disconnect();
     };
 
+    // Linux↔Linux: drive the interactive session over the real,
+    // authenticated SSH channel (streaming ping, real Ctrl+C-interrupt —
+    // see SshInteractiveSubShell) instead of the in-memory
+    // createSessionForDevice bypass below. Non-Linux vendor targets
+    // (Cisco/Huawei/Windows) are untouched and keep using that bypass.
+    if (linuxRemoteDevice) {
+      const channelResult = session.openShellChannel();
+      if (isOk(channelResult)) {
+        // adoptRemoteChild() (the bypass path below) prints this same
+        // banner and records the login for lastlog/auth.log — do the
+        // same here since this path never calls adoptRemoteChild.
+        const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
+        const sourceHost = this.device.getHostname?.() ?? '';
+        const banner = this.composeLoginBanner(linuxRemoteDevice, user, sourceIp, sourceHost, false);
+        for (const line of banner) this.addLine(line);
+        this.activeSubShell = new SshInteractiveSubShell(
+          session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
+          linuxRemoteDevice.getSshHostname(),
+        );
+        this._inputBuf = '';
+        this.notify();
+        return;
+      }
+    }
+
     const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
     if (anyRemoteDevice) {
       const child = createSessionForDevice(anyRemoteDevice, `${this.id}>ssh`);
@@ -3470,7 +3496,8 @@ export class LinuxTerminalSession extends TerminalSession {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
 
-      const maybePromise = this.activeSubShell.processLine(line);
+      const onProgress = (text: string) => { this.addLine(text); this.notify(); };
+      const maybePromise = this.activeSubShell.processLine(line, onProgress);
 
       const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {
         if (result.clearScreen) this.clear();
@@ -3550,6 +3577,10 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     if (e.key === 'c' && e.ctrlKey) {
+      if (this.activeSubShell.interruptForeground?.()) {
+        this.notify();
+        return true;
+      }
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.addLine(`${this.activeSubShell.getPrompt()}^C`);
@@ -3686,7 +3717,8 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   get isInsideSshSession(): boolean {
-    return this.sshStack.length > 0 || this.hasActiveChild;
+    return this.sshStack.length > 0 || this.hasActiveChild
+      || this.activeSubShell?.connection === 'ssh';
   }
 
   /**
@@ -3899,7 +3931,7 @@ function findEquipmentByIp(targetIp: string): Equipment | null {
   return null;
 }
 
-function findLinuxMachineByIp(targetIp: string): Equipment | null {
+function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
   const eq = findEquipmentByIp(targetIp);
   if (eq && eq instanceof LinuxMachine) return eq;
   return null;

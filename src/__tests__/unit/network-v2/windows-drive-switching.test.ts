@@ -386,14 +386,23 @@ describe('su over SSH prompts for password and switches user', () => {
     // `su` must immediately enter password mode — the prompt is rendered
     // on the input row (broker path) so the regression check looks at
     // currentInputMode, not at scrollback.
-    term.setInput('su'); term.handleKey(k('Enter')); await flush();
+    // (Post-connect commands go through the active sub-shell, which reads
+    // `_inputBuf`, not `.input` — set both so this helper works regardless
+    // of which dispatch mechanism is live.)
+    term.setInput('su'); term.setInputBuf('su'); term.handleKey(k('Enter')); await flush();
     await waitFor(() => term.currentInputMode.type === 'password');
     expect(term.currentInputMode.type).toBe('password');
 
     term.setPasswordBuf('admin'); term.handleKey(k('Enter')); await flush();
-    await waitFor(() => term.currentInputMode.type === 'normal');
+    // Idle-and-ready-for-the-next-line is `'interactive-text'` here, not
+    // `'normal'` — the SSH session is driven by an active sub-shell
+    // (SshInteractiveSubShell), and currentInputMode always reports
+    // `'interactive-text'` for "typing into a sub-shell's own prompt"
+    // whenever no password/pendingInput challenge is outstanding.
+    await waitFor(() => term.currentInputMode.type !== 'password');
+    expect(term.currentInputMode.type).toBe('interactive-text');
 
-    term.setInput('whoami'); term.handleKey(k('Enter')); await flush(20);
+    term.setInput('whoami'); term.setInputBuf('whoami'); term.handleKey(k('Enter')); await flush(20);
     const last = term.lines.slice(-6).map(l => l.text);
     expect(last.some(l => /root/.test(l))).toBe(true);
   });
@@ -428,7 +437,7 @@ describe('su over SSH prompts for password and switches user', () => {
     term.setPasswordBuf('admin'); term.handleKey(k('Enter')); await flush();
     await waitFor(() => term.isInsideSshSession);
 
-    term.setInput('su'); term.handleKey(k('Enter')); await flush();
+    term.setInput('su'); term.setInputBuf('su'); term.handleKey(k('Enter')); await flush();
     await waitFor(() => term.currentInputMode.type === 'password');
     // Feed wrong password — the validation step re-prompts up to
     // MAX_SU_ATTEMPTS (3) times before giving up.
@@ -436,9 +445,11 @@ describe('su over SSH prompts for password and switches user', () => {
       if (term.currentInputMode.type !== 'password') break;
       term.setPasswordBuf('definitely-wrong'); term.handleKey(k('Enter')); await flush();
     }
-    await waitFor(() => term.currentInputMode.type === 'normal', 3000);
+    // See the sibling test above: idle-with-an-active-sub-shell reports
+    // `'interactive-text'`, not `'normal'`.
+    await waitFor(() => term.currentInputMode.type === 'interactive-text', 3000);
 
-    term.setInput('whoami'); term.handleKey(k('Enter')); await flush(20);
+    term.setInput('whoami'); term.setInputBuf('whoami'); term.handleKey(k('Enter')); await flush(20);
     // Identity unchanged — still the SSH'd `user`, not root.
     const last = term.lines.slice(-6).map(l => l.text);
     expect(last.some(l => /^user$/.test(l))).toBe(true);

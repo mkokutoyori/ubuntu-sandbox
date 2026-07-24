@@ -94,6 +94,13 @@ export class SshShellChannel
     }
   }
 
+  sendSignal(signal: 'SIGINT'): void {
+    if (!this._isOpen) return;
+    this.conn.write(
+      JSON.stringify({ op: 'shell_signal', channelId: this.channelId, signal }),
+    );
+  }
+
   getDimensions(): { cols: number; rows: number } {
     return { cols: this.cols, rows: this.rows };
   }
@@ -109,8 +116,22 @@ export class SshShellChannel
       for (const h of this.dataHandlers) h(raw);
       return;
     }
-    if (parsed.ok === true && parsed.channelId === this.channelId) {
+    // Traffic tagged for a different channel on this same connection (e.g.
+    // another shell channel, or a keepalive with no channelId at all —
+    // those fall through unfiltered below, same as before).
+    if (parsed.channelId !== undefined && parsed.channelId !== this.channelId) {
+      return;
+    }
+    if (parsed.ok === true) {
       // shell_open / shell_close ack — surface nothing to onData.
+      return;
+    }
+    if (parsed.op === 'shell_output') {
+      // A line of output pushed while a real-time job (e.g. `ping`) is
+      // still running server-side — runLine()'s promise stays pending
+      // until the matching stdout/stderr/exitCode reply arrives below.
+      const chunk = typeof parsed.chunk === 'string' ? parsed.chunk : '';
+      if (chunk) for (const h of this.dataHandlers) h(chunk);
       return;
     }
     if (

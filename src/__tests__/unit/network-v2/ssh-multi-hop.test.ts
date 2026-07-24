@@ -5,6 +5,7 @@ import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -53,28 +54,36 @@ async function buildLab() {
 }
 
 describe('SSH from inside a remote session works recursively', () => {
-  it('Win -> Linux -> Linux nests a second LinuxTerminalSession as a grandchild', async () => {
+  it('Win -> Linux -> Linux: the second (Linux target) hop uses the real-wire subshell, not a nested LinuxTerminalSession', async () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
     await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
     expect(host.foreground).toBeInstanceOf(LinuxTerminalSession);
+    const linuxHop = host.foreground;
     await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
-    expect(host.foreground).toBeInstanceOf(LinuxTerminalSession);
-    expect(host.foreground.device.getName()).toBe('linuxB');
-    expect(host.foreground.isRemoteChild).toBe(true);
+    // Linux↔Linux drives the interactive session over the real,
+    // authenticated SSH channel — no second child is pushed, so
+    // `foreground` stays the same linuxA session; the sub-shell is the tell.
+    expect(host.foreground).toBe(linuxHop);
+    expect(host.foreground.device.getName()).toBe('linuxA');
+    expect((host.foreground as unknown as { activeSubShell: unknown }).activeSubShell)
+      .toBeInstanceOf(SshInteractiveSubShell);
   });
 
-  it('exit from the deepest child pops to the middle child, exit again pops to the host', async () => {
+  it('exit from the ssh sub-shell returns to the middle child, exit again pops to the host', async () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
     await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
     await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
-    expect(host.foreground.device.getName()).toBe('linuxB');
+    expect(host.foreground.device.getName()).toBe('linuxA');
+    expect((host.foreground as unknown as { activeSubShell: unknown }).activeSubShell)
+      .toBeInstanceOf(SshInteractiveSubShell);
     runOnForeground(host, 'exit');
     await tick();
     expect(host.foreground.device.getName()).toBe('linuxA');
+    expect((host.foreground as unknown as { activeSubShell: unknown }).activeSubShell).toBeNull();
     runOnForeground(host, 'exit');
     await tick();
     expect(host.foreground).toBe(host);
@@ -100,11 +109,8 @@ describe('SSH from inside a remote session works recursively', () => {
     await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
     await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
     runOnForeground(host, 'ping 10.0.0.2');
-    await tick();
-    expect(host.foreground.hasForegroundAsyncJob).toBe(true);
     await waitFor(host, (l) => l.some((t) => /bytes from 10\.0\.0\.2/.test(t)));
     host.handleKey(key('c', { ctrlKey: true }));
-    await tick();
-    expect(host.foreground.hasForegroundAsyncJob).toBe(false);
+    await waitFor(host, (l) => l.some((t) => /ping statistics/.test(t)));
   });
 });

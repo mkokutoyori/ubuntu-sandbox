@@ -11,6 +11,7 @@
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import type { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
+import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
@@ -37,6 +38,7 @@ import { SshdServerConfig } from './SshdServerConfig';
 import { LinuxUtmpProjection } from '../logging/LinuxUtmpProjection';
 import { SshAuthThrottler } from '../security/SshAuthThrottler';
 import { Fail2banAgent } from '../security/Fail2banAgent';
+import { SshInteractiveShell } from './SshInteractiveShell';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -122,6 +124,14 @@ export interface LinuxSshServerContextOptions {
   throttlerThreshold?: number;
   throttlerWindowMs?: number;
   throttlerBlockMs?: number;
+  /**
+   * The LinuxMachine this context serves. Passed through to
+   * `createInteractiveShell()` so SshServerHandler can offer real-time
+   * streaming (`ping`) over an interactive shell channel. Omitted by tests
+   * that construct a bare context without a full device — those simply
+   * don't get streaming (createInteractiveShell returns null).
+   */
+  device?: unknown;
 }
 
 export class LinuxSshServerContext implements ISshServerContext {
@@ -136,6 +146,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   private readonly utmpProjection: LinuxUtmpProjection | null;
   readonly rawConfig: string;
   private cachedEffective: SshdServerConfig | null = null;
+  private readonly device: unknown;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -164,6 +175,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     });
     this.auth = this.buildAuthContext();
     this.events = opts.bus ?? new SshServerEventBus();
+    this.device = opts.device ?? null;
 
     // Reactive subsystems: each one is independent and only needs the bus.
     this.syslogger = (opts.enableSyslog ?? true)
@@ -270,7 +282,19 @@ export class LinuxSshServerContext implements ISshServerContext {
   reloadConfig(): LinuxSshServerContext {
     return new LinuxSshServerContext(
       this.vfs, this.userManager, this.hostname, {}, this.executor, this.fullExecutor,
+      { device: this.device },
     );
+  }
+
+  /**
+   * Real-time job runtime for one shell channel (streaming `ping`, Ctrl+C
+   * interrupt). Returns null when this context was built without a device
+   * reference (bare unit-test contexts) — SshServerHandler falls back to
+   * the plain one-shot `getShell()` round trip in that case.
+   */
+  createInteractiveShell(_userCtx: SshUserContext): SshInteractiveShell | null {
+    if (!this.device) return null;
+    return new SshInteractiveShell(this.device);
   }
 
   /**
@@ -295,11 +319,39 @@ export class LinuxSshServerContext implements ISshServerContext {
     return new LinuxSftpFSAdapter(this.vfs, userCtx.uid, userCtx.gid);
   }
 
-  getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
-    // BRD SSH-05/SSH-04: prefer the device-wide pipeline (`fullExecutor`)
+  getShell(userCtx: SshUserContext, cwd: string, opts?: { interactive?: boolean }): ILinuxShell {
+    // Real per-session isolation: a dedicated LinuxShellSession (its own
+    // cwd/env/su-stack, exactly like a real pty) so commands run as the
+    // AUTHENTICATED user, not whatever user the device's single shared
+    // ambient LinuxCommandExecutor happens to be sitting in. Without
+    // this, `ssh alice@host` then `whoami` would print the device's
+    // ambient console user instead of "alice" — SshServerHandler calls
+    // getShell() once per shell channel and reuses the returned object
+    // (see `shell_open`), so this session persists correctly across the
+    // channel's lifetime and is torn down via ILinuxShell.dispose().
+    if (this.device instanceof LinuxMachine) {
+      const device = this.device;
+      const interactive = opts?.interactive ?? false;
+      const session = device.openShellSession({ user: userCtx.username, cwd });
+      return {
+        execute: async (line: string) => {
+          const stdout = await device.executeCommandInSession(line, session, { color: interactive });
+          const exitCode = /command not found|Permission denied/.test(stdout) ? 1 : 0;
+          return { stdout, stderr: '', exitCode };
+        },
+        // A persistent shell channel ends by hanging up (real terminal
+        // close); a one-shot exec ran its single command to completion,
+        // so its shell exits normally instead.
+        dispose: () => device.closeShellSession(session, { graceful: !interactive }),
+      };
+    }
+
+    // BRD SSH-05/SSH-04: bare test contexts built without a resolvable
+    // device fall back to the shared ambient pipeline (`fullExecutor`)
     // when available, since it covers network commands (ip, arp, ping)
     // and systemctl in addition to the bash interpreter. Fall back to the
-    // executor's bash-only path, then to an informative stub.
+    // executor's bash-only path, then to an informative stub. No real
+    // device (LinuxMachine.getSshServerContext()) ever takes this path.
     const executor = this.executor;
     const full = this.fullExecutor;
     if (full) {
