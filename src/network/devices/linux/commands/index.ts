@@ -38,6 +38,7 @@ import { nmapCommand } from './net/Nmap';
 import { curlCommand } from './net/Curl';
 import { ssCommand } from './net/Ss';
 import { ncCommand } from './net/Nc';
+import { tcCommand } from './net/Tc';
 import { radtestCommand } from './net/Radtest';
 import { tcpdumpCommand } from './net/Tcpdump';
 import { arpingCommand } from './net/Arping';
@@ -122,6 +123,7 @@ export {
   curlCommand,
   ssCommand,
   ncCommand,
+  tcCommand,
   radtestCommand,
   tcpdumpCommand,
   arpingCommand,
@@ -217,6 +219,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   curlCommand,
   ssCommand,
   ncCommand,
+  tcCommand,
   radtestCommand,
   tcpdumpCommand,
   arpingCommand,

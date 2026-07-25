@@ -27,6 +27,14 @@ export interface ExecResult {
    * (docs/PRD-SSH-Unification.md §3.1).
    */
   readonly prompt?: string;
+  /**
+   * True while a sub-shell (SQL*Plus, PowerShell, a future psql) owns
+   * the channel's input on the server side. A client MUST NOT treat
+   * `exit` as "close the SSH session" while this holds — the line
+   * belongs to the nested interpreter, which pops itself
+   * (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  readonly nested?: boolean;
 }
 
 export interface ISshShellChannel extends ISshChannel {
@@ -51,6 +59,12 @@ export interface ISshShellChannel extends ISshChannel {
    * (docs/PRD-SSH-Unification.md §4bis B1).
    */
   complete(line: string): Promise<string[]>;
+  /**
+   * True when the remote treats `?` as a help key rather than an ordinary
+   * character, so a client can offer inline help without breaking
+   * `ls ?.txt` on a POSIX shell.
+   */
+  supportsInlineHelp(): boolean;
   /**
    * Send a signal to the channel's currently-running foreground job
    * (Ctrl+C ⇒ 'SIGINT'). No-op server-side if nothing is running.

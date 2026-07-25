@@ -3623,6 +3623,15 @@ export class LinuxTerminalSession extends TerminalSession {
       return true;
     }
 
+    // `?` is a help key on a network CLI and an ordinary character on a
+    // POSIX shell, so only a remote that advertises inline help gets the
+    // interception — `ls ?.txt` over SSH to Linux still types a `?`.
+    if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey
+        && this.subShellOffersInlineHelp()) {
+      void this.showSubShellInlineHelp();
+      return true;
+    }
+
     // Any other key ends a completion cycle and clears the suggestions.
     this.subShellCompletion.reset();
     if (this.tabSuggestions) {
@@ -3632,6 +3641,26 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Let the view handle other keys (typing into the interactive-text input)
     return false;
+  }
+
+  private subShellOffersInlineHelp(): boolean {
+    const sub = this.activeSubShell as { supportsInlineHelp?: () => boolean } | null;
+    return sub?.supportsInlineHelp?.() === true;
+  }
+
+  /**
+   * Echo the composed line with `?`, print the device's help, then hand
+   * the line back for editing — what a real console does when `?` is
+   * pressed mid-command (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  private async showSubShellInlineHelp(): Promise<void> {
+    const sub = this.activeSubShell as
+      { inlineHelpAsync?: (line: string) => Promise<string[]>; getPrompt(): string } | null;
+    if (!sub?.inlineHelpAsync) return;
+    const line = this._inputBuf;
+    this.addEchoLine(sub.getPrompt(), `${line}?`);
+    for (const helpLine of await sub.inlineHelpAsync(line)) this.addLine(helpLine);
+    this.notify();
   }
 
   private onSubShellTab(reverse: boolean): void {

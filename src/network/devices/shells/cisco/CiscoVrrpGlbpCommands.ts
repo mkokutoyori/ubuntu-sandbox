@@ -8,6 +8,7 @@ import type { Router } from '../../Router';
 import type {
   FhrpRepository, VrrpGroup, GlbpGroup,
 } from '../../inspection/config/FhrpRepository';
+import { getVrrpAgent, getGlbpAgent } from '../../../equipment/RouterServiceCapabilities';
 
 interface Ctx {
   r(): Router;
@@ -21,7 +22,7 @@ function isUp(router: Router, iface: string): boolean {
 }
 
 function applyVrrp(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
-  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+  const agent = getVrrpAgent(router);
   const group = parseInt(args[0], 10);
   if (Number.isNaN(group)) return '% Invalid VRRP group';
   const g = repo.ensureVrrp(iface, group);
@@ -67,7 +68,7 @@ function applyVrrp(repo: FhrpRepository, iface: string, args: string[], router: 
 }
 
 function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
-  const agent = (router as unknown as { getGlbpAgent?: () => import('../../../glbp/GlbpAgent').GlbpAgent }).getGlbpAgent?.();
+  const agent = getGlbpAgent(router);
   const group = parseInt(args[0], 10);
   if (Number.isNaN(group)) return '% Invalid GLBP group';
   const g = repo.ensureGlbp(iface, group);
@@ -119,14 +120,14 @@ function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: 
 }
 
 function vrrpState(router: Router, g: VrrpGroup): string {
-  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+  const agent = getVrrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live) return live.state.charAt(0).toUpperCase() + live.state.slice(1);
   return isUp(router, g.iface) ? 'Master' : 'Init';
 }
 
 function vrrpMasterIp(router: Router, g: VrrpGroup): string {
-  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+  const agent = getVrrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live?.state === 'master') return 'local';
   return live?.masterIp ?? 'unknown';
@@ -147,14 +148,14 @@ function vrrpDetail(router: Router, g: VrrpGroup): string {
 }
 
 function glbpState(router: Router, g: GlbpGroup): string {
-  const agent = (router as unknown as { getGlbpAgent?: () => import('../../../glbp/GlbpAgent').GlbpAgent }).getGlbpAgent?.();
+  const agent = getGlbpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live) return live.avgState.charAt(0).toUpperCase() + live.avgState.slice(1);
   return isUp(router, g.iface) ? 'Active' : 'Disabled';
 }
 
 function glbpActiveIp(router: Router, g: GlbpGroup): string {
-  const agent = (router as unknown as { getGlbpAgent?: () => import('../../../glbp/GlbpAgent').GlbpAgent }).getGlbpAgent?.();
+  const agent = getGlbpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live?.avgState === 'active') return 'local';
   return live?.avgIp ?? 'unknown';
@@ -162,7 +163,7 @@ function glbpActiveIp(router: Router, g: GlbpGroup): string {
 
 function glbpDetail(router: Router, g: GlbpGroup): string {
   const state = glbpState(router, g);
-  const agent = (router as unknown as { getGlbpAgent?: () => import('../../../glbp/GlbpAgent').GlbpAgent }).getGlbpAgent?.();
+  const agent = getGlbpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   const forwarders = live ? [...live.forwarders.values()].sort((a, b) => a.forwarderNumber - b.forwarderNumber) : [];
   const lines = [

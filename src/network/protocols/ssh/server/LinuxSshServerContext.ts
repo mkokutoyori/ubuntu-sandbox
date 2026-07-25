@@ -39,6 +39,8 @@ import { LinuxUtmpProjection } from '../logging/LinuxUtmpProjection';
 import { SshAuthThrottler } from '../security/SshAuthThrottler';
 import { Fail2banAgent } from '../security/Fail2banAgent';
 import { SshInteractiveShell } from './SshInteractiveShell';
+import { SubShellStack } from '@/shell/SubShellStack';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -98,6 +100,12 @@ function appendJsonLog(
   arr.push(entry);
   vfs.writeFile(path, JSON.stringify(arr), 0, 0, 0o022);
   vfs.chmod(path, mode);
+}
+
+/** Render a sub-shell's output lines the way the wire expects stdout. */
+function joinLines(lines: readonly string[]): string {
+  if (lines.length === 0) return '';
+  return lines.join('\n') + '\n';
 }
 
 function matchesUserPattern(pattern: string, user: string): boolean {
@@ -338,8 +346,22 @@ export class LinuxSshServerContext implements ISshServerContext {
       // directory that isn't there.
       const startCwd = this.vfs.exists(cwd) ? cwd : '/';
       const session = device.openShellSession({ user: userCtx.username, cwd: startCwd });
+      // `sqlplus` / `rman` typed over SSH must push their REPL on this
+      // side of the wire — the client only exchanges lines and a prompt,
+      // so a client-side sub-shell stack would never see them.
+      const subShells = new SubShellStack({
+        device: device as unknown as Equipment,
+        user: userCtx.username,
+        primaryKind: 'bash',
+      });
       return {
         execute: async (line: string) => {
+          if (subShells.active) {
+            const routed = await subShells.process(line);
+            return { stdout: joinLines(routed.output), stderr: '', exitCode: routed.exitCode };
+          }
+          const launched = subShells.launch(line);
+          if (launched) return { stdout: joinLines(launched), stderr: '', exitCode: 0 };
           const stdout = await device.executeCommandInSession(line, session, { color: interactive });
           // The shell session's own `$?`, captured by the command pipeline.
           // Guessing it from the output text used to report success for
@@ -349,8 +371,12 @@ export class LinuxSshServerContext implements ISshServerContext {
         },
         // Completion runs inside this channel's own session, so paths
         // resolve against its cwd rather than the device-wide one.
-        getCompletions: (line: string) => device.getCompletionsForSession(line, session),
+        getCompletions: (line: string) =>
+          [...(subShells.getCompletions(line) ?? device.getCompletionsForSession(line, session))],
+        isNested: () => subShells.active,
         getPrompt: () => {
+          const nested = subShells.getPrompt();
+          if (nested !== null) return nested;
           // The authenticated user's real home from /etc/passwd — never a
           // guessed `/home/<name>`, which would be wrong for root (/root)
           // and for any account with a custom home.
@@ -363,7 +389,10 @@ export class LinuxSshServerContext implements ISshServerContext {
         // A persistent shell channel ends by hanging up (real terminal
         // close); a one-shot exec ran its single command to completion,
         // so its shell exits normally instead.
-        dispose: () => device.closeShellSession(session, { graceful: !interactive }),
+        dispose: () => {
+          subShells.dispose();
+          device.closeShellSession(session, { graceful: !interactive });
+        },
       };
     }
 

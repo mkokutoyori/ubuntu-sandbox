@@ -145,6 +145,7 @@ import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
+import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
   cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
@@ -741,6 +742,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
       getCwd: () => this.getCwd(),
+      createVtyShell: (user: string) => this.createVtyShell(user),
     },
     // Publish a `windows.account.logon` per inbound SSH auth attempt
     // — the SecurityAuditProjection turns each into a 4624 / 4625 in
@@ -2827,6 +2829,36 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getFileSystem(): WindowsFileSystem { return this.fs; }
   getPortsMap(): Map<string, Port> { return this.ports; }
   getCwd(): string { return this.cwd; }
+
+  /**
+   * A stacked CLI session for one SSH channel — cmd at the bottom, with
+   * `powershell` and friends pushed on top. The stack lives here, on the
+   * server side of the wire, so an SSH client only ever exchanges lines
+   * and a prompt (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  createVtyShell(user: string): {
+    execute(rawInput: string): Promise<string>;
+    getPrompt(): string;
+    getCompletions(line: string): string[];
+    isNested(): boolean;
+  } | null {
+    let stack: CrossVendorRemoteShell;
+    try {
+      stack = new CrossVendorRemoteShell({
+        device: this, user, remoteHost: this.hostname, primaryKind: 'cmd',
+      });
+    } catch {
+      // No shell registered for 'cmd' (bare unit fixtures): fall back to
+      // the flat one-shot executor rather than failing the session.
+      return null;
+    }
+    return {
+      execute: async (rawInput: string) => (await stack.processLine(rawInput)).output.join('\n'),
+      getPrompt: () => stack.getPrompt(),
+      getCompletions: (line: string) => [...stack.getCompletions(line)],
+      isNested: () => stack.topKind !== 'cmd',
+    };
+  }
   setCwd(path: string): void { this.cwd = path; }
   /**
    * String-returning surface for PowerShell/cmd consumers (PSDeviceContext).

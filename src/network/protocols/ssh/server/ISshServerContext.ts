@@ -37,6 +37,12 @@ export interface ILinuxShell {
    */
   getCompletions?(line: string): string[];
   /**
+   * True when `?` is a help key on this remote rather than an ordinary
+   * character — a network CLI, not a POSIX shell where `?` is a glob.
+   * Lets a client offer inline help without breaking `ls ?.txt`.
+   */
+  readonly supportsInlineHelp?: boolean;
+  /**
    * The remote's own prompt as it stands right now. Read after each line,
    * since the command may have changed it (`cd`, `enable`,
    * `configure terminal`). Optional: a context that omits it leaves the
@@ -44,6 +50,13 @@ export interface ILinuxShell {
    * (docs/PRD-SSH-Unification.md §3.1).
    */
   getPrompt?(): string;
+  /**
+   * True while a sub-shell launched on this channel (SQL*Plus, RMAN,
+   * PowerShell, a future psql) owns the input. The client uses it to
+   * know that `exit` pops that interpreter rather than closing the SSH
+   * session (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  isNested?(): boolean;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
   dispose?(): void;
 }

@@ -10,6 +10,7 @@ import type { Router } from '../../Router';
 import { FhrpRepository, hsrpVirtualMac, type HsrpGroup }
   from '../../inspection/config/FhrpRepository';
 import { hsrpMaxGroup, HSRP_V1_MAX_GROUP } from '../../../hsrp/types';
+import { getHsrpAgent } from '../../../equipment/RouterServiceCapabilities';
 
 interface HsrpCtx {
   r(): Router;
@@ -17,7 +18,7 @@ interface HsrpCtx {
 }
 
 function groupState(router: Router, g: HsrpGroup): string {
-  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const agent = getHsrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live) {
     const s = live.state;
@@ -28,14 +29,14 @@ function groupState(router: Router, g: HsrpGroup): string {
 }
 
 function activeRouterLabel(router: Router, g: HsrpGroup): string {
-  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const agent = getHsrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live?.state === 'active') return 'local';
   return live?.activeRouterIp ?? 'unknown';
 }
 
 function standbyRouterLabel(router: Router, g: HsrpGroup): string {
-  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const agent = getHsrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live?.state === 'standby') return 'local';
   return live?.standbyRouterIp ?? 'unknown';
@@ -81,7 +82,7 @@ function renderBrief(router: Router, groups: HsrpGroup[]): string {
 }
 
 function applyStandby(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
-  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const agent = getHsrpAgent(router);
   if (args[0] === 'version') {
     const v = args[1] === '2' ? 2 : 1;
     // Real IOS refuses to fall back to version 1 while groups above 255

@@ -407,7 +407,13 @@ export class SshServerHandler {
             user: userCtx.username,
             channelType: 'shell',
           });
-          conn.write(JSON.stringify({ ok: true, channelId }));
+          conn.write(JSON.stringify({
+            ok: true,
+            channelId,
+            // Capability advertised at open time: `?` is a help key on a
+            // network CLI, an ordinary glob character on a POSIX shell.
+            inlineHelp: channels.get(channelId)?.shell?.supportsInlineHelp === true,
+          }));
           break;
         }
 
@@ -455,7 +461,8 @@ export class SshServerHandler {
             // Read the prompt AFTER the line ran: `cd`, `enable` and
             // `configure terminal` all change it.
             const prompt = shell.getPrompt?.();
-            conn.write(JSON.stringify({ ...result, prompt, channelId }));
+            const nested = shell.isNested?.() ?? false;
+            conn.write(JSON.stringify({ ...result, prompt, nested, channelId }));
           });
           break;
         }

@@ -32,6 +32,10 @@ export class SshShellChannel
   private rows = 24;
   private pendingLine: ((r: ExecResult) => void) | null = null;
   private pendingComplete: ((c: string[]) => void) | null = null;
+  private inlineHelp = false;
+
+  /** True when the remote treats `?` as a help key (network CLI). */
+  supportsInlineHelp(): boolean { return this.inlineHelp; }
 
   constructor(conn: TcpConnection, channelId: number) {
     super(conn, channelId, 'shell');
@@ -134,7 +138,9 @@ export class SshShellChannel
       return;
     }
     if (parsed.ok === true) {
-      // shell_open / shell_close ack — surface nothing to onData.
+      // shell_open / shell_close ack — surface nothing to onData, but
+      // record the capabilities the server advertised on open.
+      if (typeof parsed.inlineHelp === 'boolean') this.inlineHelp = parsed.inlineHelp;
       return;
     }
     if (parsed.op === 'shell_complete_result') {
@@ -164,6 +170,7 @@ export class SshShellChannel
         exitCode:
           typeof parsed.exitCode === 'number' ? parsed.exitCode : 0,
         prompt: typeof parsed.prompt === 'string' ? parsed.prompt : undefined,
+        nested: parsed.nested === true,
       };
       this.pendingLine?.(result);
       this.pendingLine = null;
