@@ -83,6 +83,8 @@ export interface PSDeviceContext {
   getCwd(): string;
   /** Get default gateway IP or null */
   getDefaultGatewayString(): string | null;
+  /** This machine's domain-join state, or null while in a workgroup (Get-WmiObject/Get-CimInstance Win32_ComputerSystem's `Domain`). */
+  getDomainMembership?(): { dnsName: string } | null;
   /** Resolve a hostname to an IP synchronously (Test-NetConnection). */
   resolveHostnameSync(name: string): IPAddress | null;
   /** Synchronous ICMP probe (Test-NetConnection). */
@@ -3954,7 +3956,8 @@ export class PowerShellExecutor {
       return `SystemDirectory : C:\\Windows\\system32\nOrganization    : \nBuildNumber     : 22631\nRegisteredUser  : User\nSerialNumber    : 00000-00000-00000-AA000\nVersion         : 10.0.22631`;
     }
     if (className.toLowerCase() === 'win32_computersystem') {
-      return `Domain              : WORKGROUP\nManufacturer        : Microsoft Corporation\nModel               : Virtual Machine\nName                : ${this.device.getHostname()}\nPrimaryOwnerName    : User\nTotalPhysicalMemory : 8589934592`;
+      const domain = this.device.getDomainMembership?.()?.dnsName ?? 'WORKGROUP';
+      return `Domain              : ${domain}\nManufacturer        : Microsoft Corporation\nModel               : Virtual Machine\nName                : ${this.device.getHostname()}\nPrimaryOwnerName    : User\nTotalPhysicalMemory : 8589934592`;
     }
     return `Get-CimInstance : Invalid class "${className}"`;
   }

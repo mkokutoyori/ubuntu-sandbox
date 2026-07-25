@@ -360,6 +360,11 @@ export class PSRuntime {
       const t = typeof v;
       if (t === 'string' || t === 'number' || t === 'boolean') continue;
       if (v instanceof Date) continue;
+      // TimeSpan values (`{ __type: 'TimeSpan', TotalMilliseconds, ... }`,
+      // e.g. Get-ADDefaultDomainPasswordPolicy's MaxPasswordAge) are a value
+      // type like Date — allow them through to table/list formatting rather
+      // than falling back to the `Key=Value; ...` inline form.
+      if (t === 'object' && (v as Record<string, unknown>).__type === 'TimeSpan') continue;
       // Arrays render through renderObjectShort as `{a, b, c}` — that is a
       // legitimate table cell, so allow them. Nested non-Date objects still
       // disqualify the row (Get-Acl's Access keeps Format-List rendering).

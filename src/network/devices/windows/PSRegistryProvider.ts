@@ -415,6 +415,19 @@ export class PSRegistryProvider {
     seedValue(key, 'ImagePath', fields.imagePath, 'ExpandString');
   }
 
+  /**
+   * `gpupdate` writing a `Set-GPRegistryValue` policy entry into the local
+   * hive — unlike the interactive `Set-ItemProperty` cmdlet, real Group
+   * Policy Client creates whatever key path is missing (it isn't asking
+   * the admin to pre-create `HKLM:\Software\Policies\...` by hand).
+   */
+  applyGpoRegistryValue(path: string, name: string, value: string | number, type: RegistryValue['type']): void {
+    const parsed = parseRegistryPath(path);
+    if (!parsed) return;
+    const key = this.ensurePath(parsed);
+    seedValue(key, name, value, type);
+  }
+
   setItemProperty(path: string, name: string, value: string | number): string {
     const parsed = parseRegistryPath(path);
     if (!parsed) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;

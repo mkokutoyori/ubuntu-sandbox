@@ -47,9 +47,16 @@ async function buildLan(): Promise<{ dc: WindowsServer; srvOracle: WindowsServer
   await run(ps(dc), 'New-ADOrganizationalUnit -Name "Mandeng" -Path "DC=mandeng,DC=lan"');
   await run(ps(dc), 'New-ADOrganizationalUnit -Name "ServiceAccounts" -Path "OU=Mandeng,DC=mandeng,DC=lan"');
 
+  // Add-Computer needs each client's DNS resolver already pointed at the
+  // domain (this simulator has no dynamic-DNS registration for a promoted
+  // DC yet) — seed the hosts file the same way a real DHCP-assigned DNS
+  // server would already know it.
+  const hostsEntry = 'Add-Content -Path "C:\\Windows\\System32\\drivers\\etc\\hosts" -Value "192.168.10.10 mandeng.lan`n192.168.10.10 DC01.mandeng.lan"';
   srvOracle.setCurrentUser('Administrator');
+  await run(ps(srvOracle), hostsEntry);
   await run(ps(srvOracle), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "SRV-ORACLE" -Force');
   srvWeb.setCurrentUser('Administrator');
+  await run(ps(srvWeb), hostsEntry);
   await run(ps(srvWeb), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "SRV-WEB" -Force');
 
   return { dc, srvOracle, srvWeb };

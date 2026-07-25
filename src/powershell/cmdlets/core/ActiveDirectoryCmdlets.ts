@@ -18,9 +18,11 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
-  AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo,
+  AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdGenericObjectInfo,
+  AdServiceAccountInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { makeTimeSpan } from './DateTimeCmdlets';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
 
@@ -66,13 +68,46 @@ function identityOf(ctx: CmdletContext): string {
   return psValueToString(ctx.named['identity'] ?? ctx.positional[0] ?? '');
 }
 
+/**
+ * `-Identity` that also accepts a piped/variable-held AD object (e.g. `Get-
+ * ADUserResultantPasswordPolicy -Identity $_` inside a `Get-ADUser | ForEach-
+ * Object {...}` pipeline) instead of only a bare string — extracts
+ * SamAccountName/DistinguishedName the same way `identityOrDnOf` does for
+ * `Restore-ADObject`. A single-match `-Filter` result assigned to a
+ * variable is still a 1-element array (this simulator's `Get-AD*` cmdlets
+ * always return arrays from `-Filter`, unlike real PowerShell's pipeline
+ * auto-unwrap), so that's unwrapped first too.
+ */
+function identityOrObjectOf(ctx: CmdletContext): string {
+  let raw = ctx.named['identity'] ?? ctx.positional[0];
+  if (Array.isArray(raw) && raw.length === 1) raw = raw[0];
+  if (raw !== undefined && typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    const rec = raw as Record<string, PSValue>;
+    if (rec.SamAccountName !== undefined) return psValueToString(rec.SamAccountName);
+    if (rec.DistinguishedName !== undefined) return psValueToString(rec.DistinguishedName);
+  }
+  return psValueToString(raw ?? '');
+}
+
 function installDnsOf(ctx: CmdletContext): boolean {
   return ctx.named['installdns'] !== false;
 }
 
 interface AdFilterClause { prop: string; op: string; value: string }
+/** A `-Filter {A -eq X -and B -eq Y -and C -eq Z}` chain — real AD filter blocks routinely combine several conditions, not just one. */
+interface AdFilterChain { first: AdFilterClause; rest: Array<{ connector: 'and' | 'or'; clause: AdFilterClause }> }
 
-function parseAdFilterClause(raw: PSValue): AdFilterClause | null {
+/**
+ * Parses ONE `-Filter {...}` script block's single command into a chain of
+ * comparison clauses. Because comparison/logical operator PARAMETER names
+ * (`-eq`, `-and`, ...) are kept valueless by the parser (`PS_AMBIGUOUS_
+ * OPERATOR_PARAMS`, for `Where-Object`'s bare chained-comparison syntax),
+ * `A -eq X -and B -eq Y` parses as ONE command whose `name` is `A`, whose
+ * `parameters` are `[eq, and, eq]`, and whose `arguments` are `[X, B, Y]` —
+ * i.e. the first property comes from the command name, every subsequent
+ * property is itself an argument value interleaved with the connector.
+ */
+function parseAdFilterChain(raw: PSValue): AdFilterChain | null {
   const block = raw as unknown as { type?: string; body?: { statements?: unknown[] } };
   if (!block || block.type !== 'ScriptBlock') return null;
   const stmt = block.body?.statements?.[0] as { pipeline?: { commands?: unknown[] } } | undefined;
@@ -81,15 +116,39 @@ function parseAdFilterClause(raw: PSValue): AdFilterClause | null {
     parameters?: Array<{ name?: string }>;
     arguments?: Array<{ value?: unknown; raw?: string }>;
   } | undefined;
-  const prop = cmd?.name?.name;
-  const op = cmd?.parameters?.[0]?.name;
-  const arg = cmd?.arguments?.[0];
-  if (!prop || !op || !arg) return null;
-  const value = arg.value !== undefined && arg.value !== null ? String(arg.value) : (arg.raw ?? '');
-  return { prop, op: op.toLowerCase(), value };
+  let prop = cmd?.name?.name;
+  const parameters = cmd?.parameters ?? [];
+  const args = cmd?.arguments ?? [];
+  if (!prop || parameters.length === 0) return null;
+
+  const argValue = (arg: { value?: unknown; raw?: string } | undefined): string =>
+    arg ? (arg.value !== undefined && arg.value !== null ? String(arg.value) : (arg.raw ?? '')) : '';
+
+  let argIdx = 0;
+  let first: AdFilterClause | null = null;
+  const rest: Array<{ connector: 'and' | 'or'; clause: AdFilterClause }> = [];
+  let pendingConnector: 'and' | 'or' | null = null;
+
+  for (const param of parameters) {
+    const name = (param.name ?? '').toLowerCase();
+    if (name === 'and' || name === 'or') {
+      pendingConnector = name;
+      prop = argValue(args[argIdx]);
+      argIdx++;
+      continue;
+    }
+    const value = argValue(args[argIdx]);
+    argIdx++;
+    if (!prop) return null;
+    const clause: AdFilterClause = { prop, op: name, value };
+    if (!first) first = clause;
+    else if (pendingConnector) { rest.push({ connector: pendingConnector, clause }); pendingConnector = null; }
+    else return null;
+  }
+  return first ? { first, rest } : null;
 }
 
-function matchesAdFilterClause(record: Record<string, PSValue>, clause: AdFilterClause): boolean {
+function evalAdFilterClause(record: Record<string, PSValue>, clause: AdFilterClause): boolean {
   const key = Object.keys(record).find(k => k.toLowerCase() === clause.prop.toLowerCase());
   if (key === undefined) return true;
   const actual = psValueToString(record[key]).toLowerCase();
@@ -105,19 +164,29 @@ function matchesAdFilterClause(record: Record<string, PSValue>, clause: AdFilter
   }
 }
 
+function matchesAdFilterChain(record: Record<string, PSValue>, chain: AdFilterChain): boolean {
+  let result = evalAdFilterClause(record, chain.first);
+  for (const { connector, clause } of chain.rest) {
+    const next = evalAdFilterClause(record, clause);
+    result = connector === 'and' ? (result && next) : (result || next);
+  }
+  return result;
+}
+
 function filterAdObjects<T extends Record<string, PSValue>>(items: T[], filterRaw: PSValue | undefined): T[] {
   if (filterRaw === undefined) return items;
   if (typeof filterRaw !== 'object' || filterRaw === null) return items;
-  const clause = parseAdFilterClause(filterRaw);
-  if (!clause) return items;
-  return items.filter(item => matchesAdFilterClause(item, clause));
+  const chain = parseAdFilterChain(filterRaw);
+  if (!chain) return items;
+  return items.filter(item => matchesAdFilterChain(item, chain));
 }
 
 function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
   return {
     SamAccountName: u.sam, UserPrincipalName: u.upn, DistinguishedName: u.dn, SID: u.sid,
     Enabled: u.enabled, MemberOf: u.memberOf.join(', '), Name: u.fullName || u.sam,
-    ObjectClass: 'user', Department: u.department, Title: u.title,
+    ObjectClass: 'user', Department: u.department, Title: u.title, EmailAddress: u.emailAddress,
+    PasswordLastSet: (u.passwordLastSet ? new Date(u.passwordLastSet) : '') as unknown as PSValue,
     ServicePrincipalNames: [...u.servicePrincipalNames],
   };
 }
@@ -127,9 +196,20 @@ function groupToPSObject(g: AdGroupInfo): Record<string, PSValue> {
     Members: g.members.join(', '), ObjectClass: 'group',
   };
 }
+/** The domain DNS suffix implied by a DN's trailing `DC=` components (e.g. `CN=PC01,OU=Postes,DC=mandeng,DC=lan` → `mandeng.lan`). */
+function dnsSuffixFromDn(dn: string): string {
+  return dn.split(',')
+    .map(rdn => rdn.trim())
+    .filter(rdn => rdn.toLowerCase().startsWith('dc='))
+    .map(rdn => rdn.slice(3))
+    .join('.');
+}
+
 function computerToPSObject(c: AdComputerInfo): Record<string, PSValue> {
+  const suffix = dnsSuffixFromDn(c.dn);
   return {
     Name: c.name, DistinguishedName: c.dn, Enabled: c.enabled, ObjectClass: 'computer',
+    DNSHostName: suffix ? `${c.name}.${suffix}` : c.name,
     ServicePrincipalNames: [...c.servicePrincipalNames],
   };
 }
@@ -205,9 +285,15 @@ export class InstallADDSDomainControllerCmdlet implements ICmdlet {
 export class GetADDomainControllerCmdlet implements ICmdlet {
   readonly name = 'get-addomaincontroller';
   readonly aliases = [] as const;
-  readonly parameters = ['Filter', 'Identity'] as const;
+  readonly parameters = ['Filter', 'Identity', 'Discover'] as const;
 
   execute(ctx: CmdletContext): PSValue {
+    if (ctx.named['discover'] !== undefined) {
+      const computer = ctx.providers.computer;
+      const found = computer?.discoverDomainController();
+      if (!found) { ctx.emitError('Get-ADDomainController : Cannot find any domain controller in the domain.'); return null; }
+      return { HostName: found.hostName, Name: found.hostName.split('.')[0] } as Record<string, PSValue>;
+    }
     const ad = requireAd(ctx, 'Get-ADDomainController');
     const dcs = ad.listDomainControllers().map(dcToPSObject);
     if (dcs.length === 0) { ctx.emitError('Get-ADDomainController : Cannot find any domain controller in the domain.'); return null; }
@@ -248,7 +334,7 @@ function dcToPSObject(c: AdComputerInfo): Record<string, PSValue> {
 export class NewADUserCmdlet implements ICmdlet {
   readonly name = 'new-aduser';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Enabled', 'Path', 'DisplayName', 'Department', 'Title', 'Credential'] as const;
+  readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Enabled', 'Path', 'DisplayName', 'Department', 'Title', 'EmailAddress', 'PasswordNeverExpires', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADUser');
@@ -264,8 +350,10 @@ export class NewADUserCmdlet implements ICmdlet {
     const enabled = ctx.named['enabled'] !== undefined ? ctx.named['enabled'] === true : undefined;
     const department = ctx.named['department'] !== undefined ? psValueToString(ctx.named['department']) : undefined;
     const title = ctx.named['title'] !== undefined ? psValueToString(ctx.named['title']) : undefined;
+    const emailAddress = ctx.named['emailaddress'] !== undefined ? psValueToString(ctx.named['emailaddress']) : undefined;
+    const passwordNeverExpires = ctx.named['passwordneverexpires'] === true ? true : undefined;
     const actingSam = ctx.named['credential'] !== undefined ? subjectUserOf(ctx) : undefined;
-    const res = ad.newUser(sam, { password, fullName, path, enabled, department, title, actingSam });
+    const res = ad.newUser(sam, { password, fullName, path, enabled, department, title, emailAddress, passwordNeverExpires, actingSam });
     if (!res.ok) { ctx.emitError(`New-ADUser : ${res.message}`); return null; }
     auditSinkFor(ctx)?.accountCreated(sam, subjectUserOf(ctx));
     const u = ad.getUser(sam);
@@ -280,23 +368,33 @@ export class GetADUserCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADUser');
-    const requested = stringArrayOf(ctx, 'properties').map(p => p.toLowerCase());
-    const withPasswordPolicy = (identity: string, obj: Record<string, PSValue>): Record<string, PSValue> => {
-      if (requested.includes('passwordneverexpires')) {
-        const effective = ad.getResultantPasswordPolicy(identity) ?? ad.getDefaultDomainPasswordPolicy();
-        obj.PasswordNeverExpires = effective.maxPasswordAgeDays === 0;
-      }
+    // PasswordNeverExpires/PasswordExpired are real, always-queryable LDAP-
+    // backed attributes (not conditional on `-Properties`) — `-Filter`
+    // needs to evaluate them regardless of what's requested for display,
+    // same as every other attribute. PasswordNeverExpires combines the
+    // per-user UAC flag with an effective domain/FGPP policy of
+    // maxPasswordAgeDays===0 (either makes the password never expire,
+    // matching real AD). PasswordExpired compares PasswordLastSet against
+    // the effective policy's max age.
+    const now = ctx.providers.scheduledTasks?.now?.() ?? new Date();
+    const withPasswordFields = (u: AdUserInfo): Record<string, PSValue> => {
+      const obj = userToPSObject(u);
+      const effective = ad.getResultantPasswordPolicy(u.sam) ?? ad.getDefaultDomainPasswordPolicy();
+      const neverExpires = u.passwordNeverExpires || effective.maxPasswordAgeDays === 0;
+      obj.PasswordNeverExpires = neverExpires;
+      obj.PasswordExpired = !neverExpires && u.passwordLastSet
+        ? (now.getTime() - new Date(u.passwordLastSet).getTime()) > effective.maxPasswordAgeDays * 86400000
+        : false;
       return obj;
     };
     if (ctx.named['filter'] !== undefined) {
-      return filterAdObjects(ad.listUsers().map(userToPSObject), ctx.named['filter'])
-        .map(obj => withPasswordPolicy(obj.SamAccountName as string, obj)) as PSValue;
+      return filterAdObjects(ad.listUsers().map(withPasswordFields), ctx.named['filter']) as PSValue;
     }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const u = ad.getUser(identity);
     if (!u) { ctx.emitError(`Get-ADUser : Cannot find an object with identity: '${identity}'.`); return null; }
-    return withPasswordPolicy(identity, userToPSObject(u));
+    return withPasswordFields(u);
   }
 }
 
@@ -447,6 +545,21 @@ export class GetADGroupCmdlet implements ICmdlet {
   }
 }
 
+export class RemoveADGroupCmdlet implements ICmdlet {
+  readonly name = 'remove-adgroup';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Remove-ADGroup');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError("Remove-ADGroup : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const res = ad.removeGroup(identity);
+    if (!res.ok) { ctx.emitError(`Remove-ADGroup : ${res.message}`); return null; }
+    return null;
+  }
+}
+
 function membersOf(ctx: CmdletContext): string[] {
   const raw = ctx.named['members'];
   if (raw === undefined) return [];
@@ -499,6 +612,23 @@ export class RemoveADGroupMemberCmdlet implements ICmdlet {
   }
 }
 
+export class GetADGroupMemberCmdlet implements ICmdlet {
+  readonly name = 'get-adgroupmember';
+  readonly displayName = 'Get-ADGroupMember';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Recursive'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADGroupMember');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError("Get-ADGroupMember : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    if (!ad.getGroup(identity)) { ctx.emitError(`Get-ADGroupMember : Cannot find an object with identity: '${identity}'.`); return null; }
+    return ad.getGroupMembers(identity).map(m => ({
+      SamAccountName: m.sam, Name: m.sam, DistinguishedName: m.dn, objectClass: m.objectClass,
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
 // ── Get-ADComputer ───────────────────────────────────────────────────────────
 
 export class GetADComputerCmdlet implements ICmdlet {
@@ -525,17 +655,324 @@ export class GetADComputerCmdlet implements ICmdlet {
 }
 
 /** `Get-ADObject -Filter {ServicePrincipalName -like "*"}` — every user/computer carrying at least one SPN, the basis for duplicate-SPN detection scripts. `-Filter` is accepted but not deeply evaluated (matching this codebase's other AD `-Filter` cmdlets), since the one real use is enumerating SPN-bearing objects. */
+/** Every likely-useful property flattened onto one PS object, regardless of `-Properties` (this codebase's other `Get-AD*` cmdlets are equally permissive about `-Properties` filtering — see `Get-ADUser`). */
+function genericObjectToPSObject(o: AdGenericObjectInfo): Record<string, PSValue> {
+  const get = (attr: string): string => firstOfAttr(o.attributes, attr);
+  // Every common property key is ALWAYS present (empty string when the
+  // underlying attribute is absent) — `matchesAdFilterClause` treats a
+  // MISSING key as an automatic filter pass (it can't tell "no such
+  // property on this object type" from "not filtered on"), so a container
+  // silently matching `-Filter {SamAccountName -eq "..."}` because it has
+  // no SamAccountName at all would otherwise leak into every -Filter result.
+  return {
+    Name: o.name,
+    DistinguishedName: o.dn,
+    ObjectClass: o.objectClass,
+    isDeleted: o.isDeleted,
+    LastKnownParent: o.lastKnownParent ?? '',
+    // Real `[DateTime]` typed property — stored as an ISO string at the
+    // directory layer (like every other AD attribute), converted here so
+    // `-gt`/`-lt` against `(Get-Date)...` compare chronologically instead
+    // of falling back to JS's lexicographic Date-to-string coercion.
+    whenChanged: (o.whenChanged ? new Date(o.whenChanged) : '') as unknown as PSValue,
+    SamAccountName: get('samaccountname'),
+    ServicePrincipalName: [...(o.attributes['serviceprincipalname'] ?? [])],
+    Department: get('department'),
+    Title: get('title'),
+    EmailAddress: get('mail'),
+    'msDS-DeletedObjectLifetime': get('msds-deletedobjectlifetime'),
+  };
+}
+function firstOfAttr(attributes: Record<string, string[]>, key: string): string {
+  return attributes[key.toLowerCase()]?.[0] ?? '';
+}
+
+/**
+ * `Get-ADObject` — generic across every object class (PRD AD Recycle
+ * Bin's `-IncludeDeletedObjects`/`-SearchBase`, plus the pre-existing
+ * SPN-enumeration use `-Filter {ServicePrincipalName -like "*"}`).
+ * `-Identity` returns one object (soft-deleted included only with
+ * `-IncludeDeletedObjects`); `-Filter` returns every match via the same
+ * generic `filterAdObjects` every other `Get-AD*` cmdlet already uses.
+ */
 export class GetADObjectCmdlet implements ICmdlet {
   readonly name = 'get-adobject';
   readonly displayName = 'Get-ADObject';
   readonly aliases = [] as const;
-  readonly parameters = ['Filter', 'Properties'] as const;
+  readonly parameters = ['Identity', 'Filter', 'Properties', 'IncludeDeletedObjects', 'SearchBase'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADObject');
-    return ad.listObjectsWithSpns().map(o => ({
-      Name: o.name, ServicePrincipalName: [...o.servicePrincipalNames],
-    } as Record<string, PSValue>)) as PSValue;
+    const includeDeleted = ctx.named['includedeletedobjects'] === true;
+    const identity = identityOf(ctx);
+    if (identity) {
+      const o = ad.getGenericObject(identity, includeDeleted);
+      if (!o) { ctx.emitError(`Get-ADObject : Cannot find an object with identity: '${identity}'.`); return null; }
+      return genericObjectToPSObject(o);
+    }
+    if (ctx.named['filter'] !== undefined) {
+      const searchBase = ctx.named['searchbase'] !== undefined ? psValueToString(ctx.named['searchbase']) : undefined;
+      const objects = ad.listGenericObjects({ includeDeleted, searchBaseDn: searchBase });
+      const chain = parseAdFilterChain(ctx.named['filter']);
+      if (chain && chain.rest.length === 0 && chain.first.prop.toLowerCase() === 'serviceprincipalname') {
+        // Preserve the original SPN-enumeration shorthand: only objects
+        // actually carrying an SPN, in the legacy {Name, ServicePrincipalName}
+        // shape (`evalAdFilterClause` would otherwise treat an ABSENT
+        // property as a pass, matching every object, not just SPN-bearing ones).
+        return objects.filter(o => (o.attributes['serviceprincipalname'] ?? []).length > 0)
+          .map(o => ({ Name: o.name, ServicePrincipalName: [...(o.attributes['serviceprincipalname'] ?? [])] } as Record<string, PSValue>)) as PSValue;
+      }
+      return filterAdObjects(objects.map(genericObjectToPSObject), ctx.named['filter']) as PSValue;
+    }
+    return [];
+  }
+}
+
+/** `Set-ADObject -Identity <dn> -Replace @{attr = value}` — writes arbitrary attributes directly, e.g. `msDS-DeletedObjectLifetime` on the Configuration NC's Directory Service object. */
+export class SetADObjectCmdlet implements ICmdlet {
+  readonly name = 'set-adobject';
+  readonly displayName = 'Set-ADObject';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Replace'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADObject');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError("Set-ADObject : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const raw = ctx.named['replace'];
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      ctx.emitError('Set-ADObject : Cannot process command because of one or more missing mandatory parameters: Replace.');
+      return null;
+    }
+    const replace: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, PSValue>)) replace[k] = psValueToString(v);
+    const res = ad.setGenericObject(identity, replace);
+    if (!res.ok) { ctx.emitError(`Set-ADObject : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+/** Accepts either a plain `-Identity "dn"` string or a piped `Get-ADObject` result object (`$DeletedUser`, whose `.DistinguishedName` names the real object). */
+function identityOrDnOf(ctx: CmdletContext): string {
+  let raw = ctx.named['identity'] ?? ctx.positional[0];
+  // A single-match `Get-ADObject -Filter {...}` result is still a
+  // one-element PSValue[] (its `filterAdObjects` return type is always an
+  // array) — real PowerShell would have unwrapped that to a lone object
+  // on the pipeline, but a plain variable assignment here doesn't, so
+  // `$DeletedUser` from `$DeletedUser = Get-ADObject -Filter ...` is a
+  // 1-element array, not a bare record.
+  if (Array.isArray(raw) && raw.length === 1) raw = raw[0];
+  if (raw !== undefined && typeof raw === 'object' && raw !== null && !Array.isArray(raw) && 'DistinguishedName' in (raw as Record<string, PSValue>)) {
+    return psValueToString((raw as Record<string, PSValue>).DistinguishedName);
+  }
+  return psValueToString(raw ?? '');
+}
+
+/** `Restore-ADObject -Identity $deletedObj [-TargetPath <ou>]` (PRD AD Recycle Bin). */
+export class RestoreADObjectCmdlet implements ICmdlet {
+  readonly name = 'restore-adobject';
+  readonly displayName = 'Restore-ADObject';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'TargetPath'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Restore-ADObject');
+    const identity = identityOrDnOf(ctx);
+    if (!identity) { ctx.emitError("Restore-ADObject : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const targetPath = ctx.named['targetpath'] !== undefined ? psValueToString(ctx.named['targetpath']) : undefined;
+    const res = ad.restoreObject(identity, targetPath);
+    if (!res.ok) { ctx.emitError(`Restore-ADObject : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+/** `Get-ADOptionalFeature -Filter {Name -eq "Recycle Bin Feature"}` — the one optional feature this simulator models. */
+export class GetADOptionalFeatureCmdlet implements ICmdlet {
+  readonly name = 'get-adoptionalfeature';
+  readonly displayName = 'Get-ADOptionalFeature';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Filter'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADOptionalFeature');
+    const toPSObject = (f: { name: string; enabledScopes: string[] }): Record<string, PSValue> =>
+      ({ Name: f.name, EnabledScopes: [...f.enabledScopes] });
+    const name = identityOf(ctx) || 'Recycle Bin Feature';
+    const feature = ad.getOptionalFeature(name);
+    if (!feature) { ctx.emitError(`Get-ADOptionalFeature : Cannot find an optional feature with identity: '${name}'.`); return null; }
+    if (ctx.named['filter'] !== undefined) return filterAdObjects([toPSObject(feature)], ctx.named['filter']) as PSValue;
+    return toPSObject(feature);
+  }
+}
+
+/** `Enable-ADOptionalFeature -Identity "Recycle Bin Feature" -Scope ForestOrConfigurationSet -Target <domain>` — irreversible, matching real AD (no `Disable-ADOptionalFeature` cmdlet exists). */
+export class EnableADOptionalFeatureCmdlet implements ICmdlet {
+  readonly name = 'enable-adoptionalfeature';
+  readonly displayName = 'Enable-ADOptionalFeature';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Scope', 'Target', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Enable-ADOptionalFeature');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError("Enable-ADOptionalFeature : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const scopeDn = `CN=Partitions,${ad.getConfigurationNamingContext()}`;
+    const res = ad.enableOptionalFeature(identity, scopeDn);
+    if (!res.ok) { ctx.emitError(`Enable-ADOptionalFeature : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+/** `Get-ADRootDSE` — currently just `configurationNamingContext`, the one attribute `Set-ADObject`/`Get-ADObject` scripts targeting the Configuration NC actually read. */
+export class GetADRootDSECmdlet implements ICmdlet {
+  readonly name = 'get-adrootdse';
+  readonly displayName = 'Get-ADRootDSE';
+  readonly aliases = [] as const;
+  readonly parameters = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADRootDSE');
+    return { configurationNamingContext: ad.getConfigurationNamingContext() } as Record<string, PSValue>;
+  }
+}
+
+// ─── Managed Service Accounts (gMSA/sMSA) ──────────────────────────────────
+
+/** `Add-KdsRootKey -EffectiveImmediately` — the real prerequisite `New-ADServiceAccount` (for a gMSA) refuses without. */
+export class AddKdsRootKeyCmdlet implements ICmdlet {
+  readonly name = 'add-kdsrootkey';
+  readonly displayName = 'Add-KdsRootKey';
+  readonly aliases = [] as const;
+  readonly parameters = ['EffectiveImmediately', 'EffectiveTime'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Add-KdsRootKey');
+    const key = ad.addKdsRootKey();
+    return { KeyId: key.keyId, EffectiveTime: new Date(key.effectiveTime) } as Record<string, PSValue>;
+  }
+}
+
+export class GetKdsRootKeyCmdlet implements ICmdlet {
+  readonly name = 'get-kdsrootkey';
+  readonly displayName = 'Get-KdsRootKey';
+  readonly aliases = [] as const;
+  readonly parameters = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-KdsRootKey');
+    const key = ad.getKdsRootKey();
+    if (!key) return null;
+    const created = new Date(key.effectiveTime);
+    return {
+      KeyId: key.keyId, EffectiveTime: created, CreationTime: created,
+      IsEfficientlyDeleted: false, VersionNumber: 1, KdfAlgorithm: 'SP800_108_CTR_HMAC',
+    } as Record<string, PSValue>;
+  }
+}
+
+function serviceAccountToPSObject(a: AdServiceAccountInfo): Record<string, PSValue> {
+  return {
+    Name: a.sam.replace(/\$$/, ''),
+    DistinguishedName: a.dn,
+    SamAccountName: a.sam,
+    ObjectClass: a.isGroupManaged ? 'msDS-GroupManagedServiceAccount' : 'msDS-ManagedServiceAccount',
+    DNSHostName: a.dnsHostName,
+    Description: a.description,
+    ServicePrincipalNames: [...a.servicePrincipalNames],
+    ManagedPasswordInterval: a.managedPasswordIntervalDays,
+    PrincipalsAllowedToRetrieveManagedPassword: [...a.principalsAllowed],
+    PasswordLastSet: (a.passwordLastSet ? new Date(a.passwordLastSet) : '') as unknown as PSValue,
+    HostComputer: a.hostComputerDn,
+  };
+}
+
+/** `New-ADServiceAccount` — a gMSA (`-PrincipalsAllowedToRetrieveManagedPassword`, multi-computer) or an sMSA (`-RestrictToSingleComputer`, linked later via `Add-ADComputerServiceAccount`). */
+export class NewADServiceAccountCmdlet implements ICmdlet {
+  readonly name = 'new-adserviceaccount';
+  readonly displayName = 'New-ADServiceAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'DNSHostName', 'Description', 'PrincipalsAllowedToRetrieveManagedPassword', 'ManagedPasswordIntervalInDays', 'Path', 'RestrictToSingleComputer'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADServiceAccount');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('New-ADServiceAccount : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const dnsHostName = psValueToString(ctx.named['dnshostname'] ?? '');
+    const description = ctx.named['description'] !== undefined ? psValueToString(ctx.named['description']) : undefined;
+    const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
+    const principalsRaw = ctx.named['principalsallowedtoretrievemanagedpassword'];
+    const principalsAllowed = principalsRaw !== undefined
+      ? (Array.isArray(principalsRaw) ? principalsRaw.map(psValueToString) : [psValueToString(principalsRaw)])
+      : undefined;
+    const managedPasswordIntervalDays = ctx.named['managedpasswordintervalindays'] !== undefined
+      ? Number(psValueToString(ctx.named['managedpasswordintervalindays'])) : undefined;
+    const restrictToSingleComputer = ctx.named['restricttosinglecomputer'] === true;
+    const res = ad.newServiceAccount(name, { dnsHostName, description, path, principalsAllowed, managedPasswordIntervalDays, restrictToSingleComputer });
+    if (!res.ok) { ctx.emitError(`New-ADServiceAccount : ${res.message}`); return null; }
+    const a = ad.getServiceAccount(name);
+    return a ? serviceAccountToPSObject(a) : null;
+  }
+}
+
+export class GetADServiceAccountCmdlet implements ICmdlet {
+  readonly name = 'get-adserviceaccount';
+  readonly displayName = 'Get-ADServiceAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Properties'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADServiceAccount');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError("Get-ADServiceAccount : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const a = ad.getServiceAccount(identity);
+    if (!a) { ctx.emitError(`Get-ADServiceAccount : Cannot find an object with identity: '${identity}'.`); return null; }
+    return serviceAccountToPSObject(a);
+  }
+}
+
+/** `Set-ADServiceAccount -ServicePrincipalNames @{ Add = @(...) }`. */
+export class SetADServiceAccountCmdlet implements ICmdlet {
+  readonly name = 'set-adserviceaccount';
+  readonly displayName = 'Set-ADServiceAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'ServicePrincipalNames'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADServiceAccount');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError("Set-ADServiceAccount : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const raw = ctx.named['serviceprincipalnames'];
+    if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+      const rec = raw as Record<string, PSValue>;
+      const addRaw = rec['Add'] ?? rec['add'];
+      const addSpns = addRaw !== undefined ? (Array.isArray(addRaw) ? addRaw.map(psValueToString) : [psValueToString(addRaw)]) : [];
+      if (addSpns.length) {
+        const res = ad.addServiceAccountSpns(identity, addSpns);
+        if (!res.ok) { ctx.emitError(`Set-ADServiceAccount : ${res.message}`); return null; }
+      }
+    }
+    return null;
+  }
+}
+
+/** `Add-ADComputerServiceAccount -Identity <computer> -ServiceAccount <sMSA>` — links an sMSA to its exclusive host computer. */
+export class AddADComputerServiceAccountCmdlet implements ICmdlet {
+  readonly name = 'add-adcomputerserviceaccount';
+  readonly displayName = 'Add-ADComputerServiceAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'ServiceAccount'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Add-ADComputerServiceAccount');
+    const identity = identityOf(ctx);
+    const serviceAccount = psValueToString(ctx.named['serviceaccount'] ?? '');
+    if (!identity || !serviceAccount) {
+      ctx.emitError('Add-ADComputerServiceAccount : Cannot process command because of one or more missing mandatory parameters: Identity, ServiceAccount.');
+      return null;
+    }
+    const res = ad.addComputerServiceAccount(identity, serviceAccount);
+    if (!res.ok) { ctx.emitError(`Add-ADComputerServiceAccount : ${res.message}`); return null; }
+    return null;
   }
 }
 
@@ -637,13 +1074,14 @@ export class SetADAccountPasswordCmdlet implements ICmdlet {
 export class NewADOrganizationalUnitCmdlet implements ICmdlet {
   readonly name = 'new-adorganizationalunit';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'Path'] as const;
+  readonly parameters = ['Name', 'Path', 'Description', 'ProtectedFromAccidentalDeletion'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADOrganizationalUnit');
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
     if (!name) { ctx.emitError("New-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Name."); return null; }
-    const res = ad.newOrganizationalUnit(name);
+    const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
+    const res = ad.newOrganizationalUnit(name, path);
     if (!res.ok) { ctx.emitError(`New-ADOrganizationalUnit : ${res.message}`); return null; }
     const ou = ad.getOrganizationalUnit(name);
     return ou ? ouToPSObject(ou) : null;
@@ -657,6 +1095,9 @@ export class GetADOrganizationalUnitCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADOrganizationalUnit');
+    if (ctx.named['filter'] !== undefined) {
+      return ad.listOrganizationalUnits().map(ouToPSObject) as PSValue;
+    }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const ou = ad.getOrganizationalUnit(identity);
@@ -999,15 +1440,23 @@ function passwordPolicyPatchFrom(ctx: CmdletContext): Partial<AdPasswordPolicyIn
   return patch;
 }
 
+/**
+ * Real `Get-ADDefaultDomainPasswordPolicy`/`Get-ADFineGrainedPasswordPolicy`
+ * expose `MaxPasswordAge`/`MinPasswordAge`/`LockoutDuration`/
+ * `LockoutObservationWindow` as `[TimeSpan]` values (not plain numbers) —
+ * that's load-bearing for scripts doing `$user.PasswordLastSet + $MaxAge`
+ * date arithmetic (PSRuntime's `applyPlus` Date-branch only extends a Date
+ * correctly when the right-hand side is TimeSpan-shaped). Mirror that here.
+ */
 function policyToPSObject(p: AdPasswordPolicyInfo): Record<string, PSValue> {
   return {
     MinPasswordLength: p.minPasswordLength,
     PasswordHistoryCount: p.passwordHistoryCount,
-    MaxPasswordAge: p.maxPasswordAgeDays,
-    MinPasswordAge: p.minPasswordAgeDays,
+    MaxPasswordAge: makeTimeSpan(p.maxPasswordAgeDays * 86400000) as unknown as PSValue,
+    MinPasswordAge: makeTimeSpan(p.minPasswordAgeDays * 86400000) as unknown as PSValue,
     LockoutThreshold: p.lockoutThreshold,
-    LockoutDuration: p.lockoutDurationMinutes,
-    LockoutObservationWindow: p.lockoutObservationWindowMinutes,
+    LockoutDuration: makeTimeSpan(p.lockoutDurationMinutes * 60000) as unknown as PSValue,
+    LockoutObservationWindow: makeTimeSpan(p.lockoutObservationWindowMinutes * 60000) as unknown as PSValue,
     ComplexityEnabled: p.complexityEnabled,
     ReversibleEncryptionEnabled: p.reversibleEncryptionEnabled,
   };
@@ -1143,7 +1592,7 @@ export class GetADUserResultantPasswordPolicyCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADUserResultantPasswordPolicy');
-    const identity = identityOf(ctx);
+    const identity = identityOrObjectOf(ctx);
     if (!identity) {
       ctx.emitError('Get-ADUserResultantPasswordPolicy : Cannot process command because of one or more missing mandatory parameters: Identity.');
       return null;

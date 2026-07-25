@@ -14,7 +14,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { IGpoProvider, GpoInfo } from '@/powershell/providers/PSProviders';
+import type { IGpoProvider, GpoInfo, GpLinkOptions } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function requireGpo(ctx: CmdletContext, cmdletName: string): IGpoProvider {
@@ -29,6 +29,13 @@ function gpoToPSObject(g: GpoInfo): Record<string, PSValue> {
 }
 function nameOf(ctx: CmdletContext): string {
   return psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+}
+function linkOptionsOf(ctx: CmdletContext): GpLinkOptions {
+  const opts: GpLinkOptions = {};
+  if (ctx.named['linkenabled'] !== undefined) opts.linkEnabled = /^(yes|true)$/i.test(psValueToString(ctx.named['linkenabled']));
+  if (ctx.named['enforced'] !== undefined) opts.enforced = /^(yes|true)$/i.test(psValueToString(ctx.named['enforced']));
+  if (ctx.named['order'] !== undefined) opts.order = Number(psValueToString(ctx.named['order']));
+  return opts;
 }
 
 export class NewGPOCmdlet implements ICmdlet {
@@ -67,15 +74,55 @@ export class GetGPOCmdlet implements ICmdlet {
 export class NewGPLinkCmdlet implements ICmdlet {
   readonly name = 'new-gplink';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'Target'] as const;
+  readonly parameters = ['Name', 'Target', 'LinkEnabled', 'Enforced', 'Order'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const gpo = requireGpo(ctx, 'New-GPLink');
     const name = nameOf(ctx);
     const target = psValueToString(ctx.named['target'] ?? '') || gpo.getDomainDn();
     if (!name) { ctx.emitError('New-GPLink : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
-    const res = gpo.newGPLink(name, target);
+    const res = gpo.newGPLink(name, target, linkOptionsOf(ctx));
     if (!res.ok) { ctx.emitError(`New-GPLink : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+export class SetGPLinkCmdlet implements ICmdlet {
+  readonly name = 'set-gplink';
+  readonly displayName = 'Set-GPLink';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Target', 'LinkEnabled', 'Enforced', 'Order'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const gpo = requireGpo(ctx, 'Set-GPLink');
+    const name = nameOf(ctx);
+    const target = psValueToString(ctx.named['target'] ?? '') || gpo.getDomainDn();
+    if (!name) { ctx.emitError('Set-GPLink : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const res = gpo.setGpLink(name, target, linkOptionsOf(ctx));
+    if (!res.ok) { ctx.emitError(`Set-GPLink : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+export class SetGPRegistryValueCmdlet implements ICmdlet {
+  readonly name = 'set-gpregistryvalue';
+  readonly displayName = 'Set-GPRegistryValue';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Key', 'ValueName', 'Type', 'Value'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const gpo = requireGpo(ctx, 'Set-GPRegistryValue');
+    const name = nameOf(ctx);
+    const key = psValueToString(ctx.named['key'] ?? '');
+    const valueName = psValueToString(ctx.named['valuename'] ?? '');
+    const type = psValueToString(ctx.named['type'] ?? 'String');
+    const value = psValueToString(ctx.named['value'] ?? '');
+    if (!name || !key || !valueName) {
+      ctx.emitError('Set-GPRegistryValue : Cannot process command because of one or more missing mandatory parameters: Name, Key, ValueName.');
+      return null;
+    }
+    const res = gpo.setGpRegistryValue(name, key, valueName, type, value);
+    if (!res.ok) { ctx.emitError(`Set-GPRegistryValue : ${res.message}`); return null; }
     return null;
   }
 }
@@ -110,7 +157,11 @@ export class GetGPInheritanceCmdlet implements ICmdlet {
     const res = gpo.getGpInheritance(target);
     if (!res) { ctx.emitError(`Get-GPInheritance : Cannot find an object with distinguished name: '${target}'.`); return null; }
     return {
-      Path: res.dn, GpoInheritanceBlocked: res.gpoInheritanceBlocked, GpoLinks: res.gpoLinks.join('; '),
+      Path: res.dn,
+      GpoInheritanceBlocked: res.gpoInheritanceBlocked,
+      GpoLinks: res.gpoLinks.map(l => ({
+        DisplayName: l.displayName, Enabled: l.enabled, Enforced: l.enforced, Order: l.order,
+      })) as PSValue[],
     } as Record<string, PSValue>;
   }
 }

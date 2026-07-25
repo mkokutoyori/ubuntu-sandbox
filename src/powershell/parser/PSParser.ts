@@ -12,7 +12,7 @@
  *   Expression → unary, binary, member, index, cast, range, ...
  */
 
-import { PSTokenType, PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
+import { PSTokenType, PS_OPERATOR_PARAMS, PS_AMBIGUOUS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 // PSTokenType.INCREMENT and PSTokenType.DECREMENT are used below
 import type { PSToken, SourcePosition } from '@/powershell/lexer/PSToken';
 import { PSParserError } from './PSParserError';
@@ -477,9 +477,13 @@ export class PSParser {
     const name = paramTok.value;    // already lowercased
 
     // If next token can be a value (not another param, not a terminator, not a pipe)
-    // and the param name is NOT a known operator used standalone
+    // and the param name is NOT a comparison/logical operator used standalone
+    // (see PS_AMBIGUOUS_OPERATOR_PARAMS — Where-Object's bare chained-
+    // comparison syntax needs `-eq`/`-and`/etc. to stay valueless here;
+    // string/bitwise-operator-named params like `-Replace` are real cmdlet
+    // parameters and DO need their value consumed).
     let value: PSExpression | null = null;
-    if (!PS_OPERATOR_PARAMS.has(name)
+    if (!PS_AMBIGUOUS_OPERATOR_PARAMS.has(name)
         && (this.canStartExpression()
             || this.check(PSTokenType.MULTIPLY)
             || this.check(PSTokenType.MODULO))
@@ -703,7 +707,7 @@ export class PSParser {
     // named parameter OR by a positional expression argument when the head was a
     // bare command name.
     const hasNamedParam = this.check(PSTokenType.PARAMETER)
-      && !PS_OPERATOR_PARAMS.has(this.peek().value);
+      && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value);
     const hasPositionalArg = first.type === 'CommandExpression'
       && !this.isAtEnd() && !this.isTerminator()
       && !this.check(PSTokenType.PIPE)
@@ -712,14 +716,14 @@ export class PSParser {
     if (hasNamedParam || hasPositionalArg) {
       const params: PSCommandParameter[] = [];
       const args:   PSExpression[]       = [];
-      while (this.check(PSTokenType.PARAMETER) && !PS_OPERATOR_PARAMS.has(this.peek().value)) {
+      while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)) {
         params.push(this.parseCommandParameter());
       }
       while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE)
              && !this.isRedirection()
              && this.canStartExpression()) {
         args.push(this.parseCommandArgument());
-        while (this.check(PSTokenType.PARAMETER) && !PS_OPERATOR_PARAMS.has(this.peek().value)) {
+        while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)) {
           params.push(this.parseCommandParameter());
         }
       }
@@ -1600,6 +1604,22 @@ export class PSParser {
   private parsePrimaryExpression(): PSExpression {
     const pos = this.pos_();
     const tok = this.peek();
+
+    // ── `if`/`switch` as a value-yielding expression (real PowerShell:
+    // these aren't limited to a top-level `$x = if (...) {...}` assignment
+    // RHS — they're valid anywhere a value is expected, e.g. a hashtable
+    // literal's value position (`@{ K = if ($c) {1} else {2} }`), a
+    // function argument, etc. `parseAssignmentRHS()` already had this
+    // special-case for the assignment position; mirrored here so every
+    // other expression context gets it too. ──
+    if (tok.type === PSTokenType.WORD && tok.value === 'switch') {
+      const stmt = this.parseSwitchStatement();
+      return { type: 'StatementExpression', stmt, position: pos } as unknown as PSExpression;
+    }
+    if (tok.type === PSTokenType.WORD && tok.value === 'if') {
+      const stmt = this.parseIfStatement();
+      return { type: 'StatementExpression', stmt, position: pos } as unknown as PSExpression;
+    }
 
     // ── Parenthesized expression or pipeline (expr | cmd ...) ──
     if (tok.type === PSTokenType.LPAREN) {

@@ -85,6 +85,7 @@ import {
   RestartNetAdapterCmdlet, TestNetConnectionCmdlet,
   ClearNetNeighborCacheCmdlet, GetNetAdapterStatisticsCmdlet,
 } from './NetworkCmdlets';
+import { SendMailMessageCmdlet } from './MailMessageCmdlets';
 import {
   AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
   SetVpnConnectionCmdlet, RemoveVpnConnectionCmdlet,
@@ -118,8 +119,11 @@ import {
   InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet, RemoveADDomainControllerCmdlet,
   NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet, SetADAccountPasswordCmdlet,
   DisableADAccountCmdlet, EnableADAccountCmdlet,
-  NewADGroupCmdlet, GetADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet,
-  GetADComputerCmdlet, SetADComputerCmdlet, GetADObjectCmdlet, SearchADAccountCmdlet,
+  NewADGroupCmdlet, GetADGroupCmdlet, RemoveADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet, GetADGroupMemberCmdlet,
+  GetADComputerCmdlet, SetADComputerCmdlet, GetADObjectCmdlet, SetADObjectCmdlet, RestoreADObjectCmdlet,
+  GetADOptionalFeatureCmdlet, EnableADOptionalFeatureCmdlet, GetADRootDSECmdlet, SearchADAccountCmdlet,
+  AddKdsRootKeyCmdlet, GetKdsRootKeyCmdlet, NewADServiceAccountCmdlet, GetADServiceAccountCmdlet,
+  SetADServiceAccountCmdlet, AddADComputerServiceAccountCmdlet,
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
   NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
   GetADReplicationConnectionCmdlet, GetADReplicationFailureCmdlet,
@@ -134,7 +138,7 @@ import {
 import {
   InstallAdcsCertificationAuthorityCmdlet, GetCATemplateCmdlet, GetCertificateCmdlet,
 } from './AdcsCmdlets';
-import { AddComputerCmdlet } from './ComputerCmdlets';
+import { AddComputerCmdlet, TestComputerSecureChannelCmdlet, InstallADServiceAccountCmdlet, TestADServiceAccountCmdlet } from './ComputerCmdlets';
 import {
   AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet,
   AddDnsServerResourceRecordACmdlet, AddDnsServerResourceRecordAAAACmdlet,
@@ -155,7 +159,7 @@ import {
   NewNpsConnectionRequestPolicyCmdlet, GetNpsConnectionRequestPolicyCmdlet, RemoveNpsConnectionRequestPolicyCmdlet,
   SetNpsAccountingConfigurationCmdlet,
 } from './NpsCmdlets';
-import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet } from './GroupPolicyCmdlets';
+import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet, SetGPLinkCmdlet, SetGPRegistryValueCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet } from './GroupPolicyCmdlets';
 import {
   NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
   NewWebBindingCmdlet,
@@ -379,6 +383,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new SetNetRouteCmdlet());
   registry.register(new RestartNetAdapterCmdlet());
   registry.register(new TestNetConnectionCmdlet());
+  registry.register(new SendMailMessageCmdlet());
 
   // ── VPN (provider-backed) ─────────────────────────────────────────────────
   registry.register(new AddVpnConnectionCmdlet());
@@ -426,6 +431,16 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
 
   // ── Domain join (a workstation joins a domain with Add-Computer) ─────────
   registry.register(new AddComputerCmdlet());
+  registry.register(new TestComputerSecureChannelCmdlet());
+  registry.register(new InstallADServiceAccountCmdlet());
+  registry.register(new TestADServiceAccountCmdlet());
+  // Real Get-ADDomainController: `-Discover` is a client-side DC-locator
+  // dial (works from any domain-joined machine, RSAT-only in real Windows,
+  // simplified here to "any domain-joined machine"), while the plain
+  // `-Filter`/no-argument form still requires this machine to itself be a
+  // DC (gated inside the cmdlet via `requireAd`) — so it's safe to register
+  // for every Windows device, not just servers.
+  registry.register(new GetADDomainControllerCmdlet());
 
   // ── Remote Desktop toggle + Windows Update client settings ───────────────
   registry.register(new EnableRemoteDesktopCmdlet());
@@ -471,7 +486,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   // ── AD DS (PRD-Windows-Server.md §5 P5) ─────────────────────────────────────
   registry.register(new InstallADDSForestCmdlet());
   registry.register(new InstallADDSDomainControllerCmdlet());
-  registry.register(new GetADDomainControllerCmdlet());
+  // Get-ADDomainController is registered in the common section above (its
+  // -Discover form must work from a plain domain-joined client).
   registry.register(new RemoveADDomainControllerCmdlet());
   registry.register(new NewADReplicationSiteCmdlet());
   registry.register(new GetADReplicationSiteCmdlet());
@@ -496,11 +512,24 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new EnableADAccountCmdlet());
   registry.register(new NewADGroupCmdlet());
   registry.register(new GetADGroupCmdlet());
+  registry.register(new RemoveADGroupCmdlet());
   registry.register(new AddADGroupMemberCmdlet());
   registry.register(new RemoveADGroupMemberCmdlet());
+  registry.register(new GetADGroupMemberCmdlet());
   registry.register(new GetADComputerCmdlet());
   registry.register(new SetADComputerCmdlet());
   registry.register(new GetADObjectCmdlet());
+  registry.register(new SetADObjectCmdlet());
+  registry.register(new RestoreADObjectCmdlet());
+  registry.register(new GetADOptionalFeatureCmdlet());
+  registry.register(new EnableADOptionalFeatureCmdlet());
+  registry.register(new GetADRootDSECmdlet());
+  registry.register(new AddKdsRootKeyCmdlet());
+  registry.register(new GetKdsRootKeyCmdlet());
+  registry.register(new NewADServiceAccountCmdlet());
+  registry.register(new GetADServiceAccountCmdlet());
+  registry.register(new SetADServiceAccountCmdlet());
+  registry.register(new AddADComputerServiceAccountCmdlet());
   registry.register(new SearchADAccountCmdlet());
   registry.register(new NewADOrganizationalUnitCmdlet());
   registry.register(new GetADOrganizationalUnitCmdlet());
@@ -594,6 +623,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewGPOCmdlet());
   registry.register(new GetGPOCmdlet());
   registry.register(new NewGPLinkCmdlet());
+  registry.register(new SetGPLinkCmdlet());
+  registry.register(new SetGPRegistryValueCmdlet());
   registry.register(new SetGPInheritanceCmdlet());
   registry.register(new GetGPInheritanceCmdlet());
 

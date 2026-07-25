@@ -53,7 +53,7 @@ import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { HostClock } from './host/lifecycle/HostClock';
-import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from './windows/PSRegistryProvider';
+import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
@@ -109,6 +109,7 @@ import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinCl
 import { logonDomainUser } from './windows/domain/DomainLogonClient';
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
+import { SmtpClientSession } from '@/network/smtp/SmtpClientSession';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
@@ -218,6 +219,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private userMgr: WindowsUserManager;
   /** Domain-join state (`Add-Computer`/`netdom join`) — null while this machine is in a workgroup (PRD-Windows-Server.md §5 P6). */
   private domainMembership: DomainMembership | null = null;
+  /** `Install-ADServiceAccount`'s local cache — real Windows retrieves and caches the gMSA/sMSA's managed password locally once authorized; `Test-ADServiceAccount` reflects whether that succeeded on THIS machine, not global directory state. Keyed by sAMAccountName (`<name>$`), lowercased. */
+  private readonly installedServiceAccounts = new Set<string>();
   /** The active domain logon (`LAB\alice`/`alice@lab.local`), if any — distinct from `userMgr.currentUser`, which domain logon also updates for prompt/env-var purposes. */
   private domainSession: DomainSession | null = null;
   /** Real Kerberos ticket cache (PRD-Windows-Server-Advanced.md §5 P2) — populated by an actual AS exchange as a side effect of domain logon, backing `klist`. */
@@ -848,6 +851,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return result;
   }
 
+  markServiceAccountInstalled(sam: string): void { this.installedServiceAccounts.add(sam.toLowerCase()); }
+  hasServiceAccountInstalled(sam: string): boolean { return this.installedServiceAccounts.has(sam.toLowerCase()); }
+
   /** Domain logon (`LAB\alice`/`alice@lab.local`) — validated against the DC over the real network, not a topology shortcut. */
   logonDomain(rawUser: string, password: string): { ok: boolean; message: string } {
     if (!this.domainMembership) {
@@ -940,6 +946,91 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
+  /**
+   * `Send-MailMessage` — a real outbound SMTP client transaction against
+   * `-SmtpServer:-Port` (this machine's own `TcpStack`, real DNS
+   * resolution, the same `SmtpClientSession` used by `relay.ts`/the
+   * Exchange transport pipeline, docs/PRD-SMTP.md §0.2 — no second SMTP
+   * engine). `-UseSsl` really attempts `STARTTLS`; since this device has
+   * no trusted-root store wired yet for outbound clients (unlike
+   * `LinuxMachine.trustedCAs`), a self-signed/AD-CS-issued peer
+   * certificate won't validate and the send genuinely fails closed —
+   * an honest limitation, not a shortcut that pretends success.
+   */
+  sendMailMessage(opts: {
+    from: string; to: readonly string[]; cc?: readonly string[]; bcc?: readonly string[];
+    subject: string; body: string; smtpServer: string; port?: number;
+    useSsl?: boolean; credential?: { username: string; password: string };
+  }): { ok: boolean; error?: string } {
+    const ips = this.resolveDnsSync(opts.smtpServer);
+    const targetIp = ips[0] ?? IPAddress.tryParse(opts.smtpServer)?.toString();
+    if (!targetIp) return { ok: false, error: `Send-MailMessage : Unable to resolve the SMTP server '${opts.smtpServer}'.` };
+    const iface = this.getInterfaces().find(p => p.getIPAddress() !== null);
+    if (!iface) return { ok: false, error: 'Send-MailMessage : No network interface with an IP address is available.' };
+    const localIp = iface.getIPAddress()!.toString();
+    const port = opts.port ?? 25;
+
+    const tlsConfig = opts.useSsl ? { verifier: new CertificateVerifier({ trustAnchors: [] }) } : undefined;
+    const session = new SmtpClientSession(this.getTcpStack(), targetIp, localIp, port, tlsConfig);
+    const banner = session.connect();
+    if (!banner || banner.code !== 220) {
+      return { ok: false, error: `Send-MailMessage : Unable to connect to the remote server ('${opts.smtpServer}:${port}').` };
+    }
+    session.sendCommand({ verb: 'EHLO', argument: this.getHostname() });
+
+    if (opts.useSsl) {
+      session.startTls();
+      if (!session.isTlsActive()) {
+        session.close();
+        return { ok: false, error: `Send-MailMessage : The SMTP server '${opts.smtpServer}' does not support (or this client does not trust) a secure connection.` };
+      }
+      session.sendCommand({ verb: 'EHLO', argument: this.getHostname() });
+    }
+
+    if (opts.credential) {
+      const auth = session.authPlain(opts.credential.username, opts.credential.password);
+      if (!auth || auth.code !== 235) {
+        session.close();
+        return { ok: false, error: 'Send-MailMessage : Mailbox unavailable. The server response was: authentication failed.' };
+      }
+    }
+
+    const mail = session.sendCommand({ verb: 'MAIL', argument: `FROM:<${opts.from}>` });
+    if (!mail || mail.code >= 400) {
+      session.close();
+      return { ok: false, error: `Send-MailMessage : ${mail?.lines.join(' ') ?? 'The MAIL FROM command was rejected.'}` };
+    }
+    const to = opts.to;
+    const cc = opts.cc ?? [];
+    const bcc = opts.bcc ?? [];
+    for (const recipient of [...to, ...cc, ...bcc]) {
+      const rcpt = session.sendCommand({ verb: 'RCPT', argument: `TO:<${recipient}>` });
+      if (!rcpt || rcpt.code >= 400) {
+        session.close();
+        return { ok: false, error: `Send-MailMessage : ${rcpt?.lines.join(' ') ?? `The recipient '${recipient}' was rejected.`}` };
+      }
+    }
+    const dataReply = session.sendCommand({ verb: 'DATA' });
+    if (!dataReply || dataReply.code !== 354) {
+      session.close();
+      return { ok: false, error: 'Send-MailMessage : The server refused to accept the message body.' };
+    }
+    const headerLines = [
+      `From: ${opts.from}`,
+      `To: ${to.join(', ')}`,
+      ...(cc.length ? [`Cc: ${cc.join(', ')}`] : []),
+      `Subject: ${opts.subject}`,
+      `Date: ${this.simulatedDate().toUTCString()}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=utf-8',
+    ];
+    const rawMessage = `${headerLines.join('\r\n')}\r\n\r\n${opts.body}`;
+    const final = session.sendDataBody(rawMessage);
+    session.close();
+    if (final && final.code >= 200 && final.code < 300) return { ok: true };
+    return { ok: false, error: `Send-MailMessage : ${final?.lines.join(' ') ?? 'The message was rejected by the server.'}` };
+  }
+
   // ─── Group Policy (PRD-Windows-Server.md §5 P10) ────────────────────
 
   private gpoAppliedNames: string[] = [];
@@ -979,6 +1070,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (settings.auditPolicy !== undefined) {
       for (const [subcategory, setting] of Object.entries(settings.auditPolicy)) {
         this.auditPolicy.set(subcategory, setting);
+      }
+    }
+    if (settings.registryPolicy !== undefined) {
+      for (const entry of settings.registryPolicy) {
+        const type = (['String', 'DWord', 'QWord', 'ExpandString', 'MultiString', 'Binary'] as const).includes(entry.type as never)
+          ? entry.type as RegistryValue['type'] : 'String';
+        const value = type === 'DWord' || type === 'QWord' ? Number(entry.value) : entry.value;
+        this.registry.applyGpoRegistryValue(entry.key, entry.valueName, value, type);
       }
     }
     this.gpoAppliedNames = appliedGpoNames;

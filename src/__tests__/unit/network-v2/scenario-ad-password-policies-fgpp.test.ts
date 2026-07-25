@@ -62,8 +62,10 @@ describe('Scénario 6 — politique de mots de passe et FGPP (mandeng.lan)', () 
       ].join(' '));
 
       // Select-Object with 4+ properties renders as a table, not a Key : Value list.
+      // MaxPasswordAge is a real [TimeSpan] (as in actual AD PowerShell), so it
+      // renders via TimeSpan.ToString()'s default "d.hh:mm:ss" format.
       const out = await run(sh, 'Get-ADDefaultDomainPasswordPolicy | Select-Object MinPasswordLength, MaxPasswordAge, LockoutThreshold, ComplexityEnabled');
-      expect(out).toMatch(/12\s+90\s+5\s+True/);
+      expect(out).toMatch(/12\s+90\.00:00:00\s+5\s+True/);
     });
   });
 
