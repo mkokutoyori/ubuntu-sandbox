@@ -339,6 +339,13 @@ export class LinuxSshServerContext implements ISshServerContext {
           const exitCode = /command not found|Permission denied/.test(stdout) ? 1 : 0;
           return { stdout, stderr: '', exitCode };
         },
+        getPrompt: () => {
+          const home = `/home/${userCtx.username}`;
+          const shortCwd = session.cwd === home ? '~'
+            : session.cwd.startsWith(`${home}/`) ? `~${session.cwd.slice(home.length)}`
+            : session.cwd;
+          return `${userCtx.username}@${device.getSshHostname()}:${shortCwd}$ `;
+        },
         // A persistent shell channel ends by hanging up (real terminal
         // close); a one-shot exec ran its single command to completion,
         // so its shell exits normally instead.

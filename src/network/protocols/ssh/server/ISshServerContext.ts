@@ -30,6 +30,14 @@ export interface SshServerConfig {
 
 export interface ILinuxShell {
   execute(line: string): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  /**
+   * The remote's own prompt as it stands right now. Read after each line,
+   * since the command may have changed it (`cd`, `enable`,
+   * `configure terminal`). Optional: a context that omits it leaves the
+   * client rendering its own prompt exactly as before
+   * (docs/PRD-SSH-Unification.md §3.1).
+   */
+  getPrompt?(): string;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
   dispose?(): void;
 }

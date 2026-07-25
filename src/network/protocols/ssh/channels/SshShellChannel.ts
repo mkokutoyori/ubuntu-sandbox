@@ -144,6 +144,7 @@ export class SshShellChannel
         stderr: typeof parsed.stderr === 'string' ? parsed.stderr : '',
         exitCode:
           typeof parsed.exitCode === 'number' ? parsed.exitCode : 0,
+        prompt: typeof parsed.prompt === 'string' ? parsed.prompt : undefined,
       };
       this.pendingLine?.(result);
       this.pendingLine = null;
