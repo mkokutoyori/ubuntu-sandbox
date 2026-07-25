@@ -115,6 +115,7 @@ export class RouterSshServerContext implements ISshServerContext {
           return { stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`, stderr: '', exitCode: 0 };
         },
         getPrompt: () => vty.getPrompt(),
+        getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
       };
     }
 
