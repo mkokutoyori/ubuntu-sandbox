@@ -41,6 +41,10 @@ import { Fail2banAgent } from '../security/Fail2banAgent';
 import { SshInteractiveShell } from './SshInteractiveShell';
 import { SubShellStack } from '@/shell/SubShellStack';
 import type { Equipment } from '@/network/equipment/Equipment';
+import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
+import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { createEditorSession } from '@/network/devices/linux/editors/EditorView';
+import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -374,6 +378,28 @@ export class LinuxSshServerContext implements ISshServerContext {
         getCompletions: (line: string) =>
           [...(subShells.getCompletions(line) ?? device.getCompletionsForSession(line, session))],
         isNested: () => subShells.active,
+        // The engine runs here, on this channel's own session: the file
+        // it opens, the permissions it obeys and the swap file it drops
+        // are the remote's, not the client's.
+        openEditor: (commandLine: string) => {
+          installDefaultEditors();
+          const launch = parseEditorLaunch(commandLine);
+          if (!launch) return null;
+          const fs = new LinuxEditorFsContext(device, session);
+          const content = launch.filePath === '' ? null : fs.readFile(launch.filePath);
+          return createEditorSession(launch.editor, {
+            fs,
+            filePath: launch.filePath === '' ? '' : fs.resolvePath(launch.filePath),
+            content: content ?? '',
+            isNewFile: content === null,
+            owner: userCtx.username,
+            readOnly: launch.readOnly,
+            showPosition: launch.showPosition,
+            showLineNumbers: launch.showLineNumbers,
+            initialCursorLine: launch.initialCursorLine,
+            initialCursorCol: launch.initialCursorCol,
+          });
+        },
         getPrompt: () => {
           const nested = subShells.getPrompt();
           if (nested !== null) return nested;

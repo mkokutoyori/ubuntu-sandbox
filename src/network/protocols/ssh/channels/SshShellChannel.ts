@@ -7,6 +7,10 @@
  *   client → server  { op: 'shell_input', channelId, data: '<line>' }
  *   server → client  { stdout, stderr, exitCode }
  *   client → server  { op: 'shell_close', channelId }
+ *   client → server  { op: 'editor_open', channelId, data: '<cmdline>' }
+ *   client → server  { op: 'editor_key',  channelId, key }
+ *   server → client  { op: 'editor_view', channelId, view }
+ *   client → server  { op: 'editor_close', channelId }
  *
  * Real OpenSSH uses an arbitrary byte stream; the simulator slices on
  * line boundaries because every shell call is line-oriented. The
@@ -17,6 +21,8 @@
  */
 
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
+import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { AbstractSshChannel } from './AbstractSshChannel';
 import type { ExecResult, ISshShellChannel } from './ISshChannel';
 
@@ -32,6 +38,7 @@ export class SshShellChannel
   private rows = 24;
   private pendingLine: ((r: ExecResult) => void) | null = null;
   private pendingComplete: ((c: string[]) => void) | null = null;
+  private pendingEditor: ((v: EditorView | null) => void) | null = null;
   private inlineHelp = false;
 
   /** True when the remote treats `?` as a help key (network CLI). */
@@ -99,6 +106,51 @@ export class SshShellChannel
     });
   }
 
+  openEditor(commandLine: string): Promise<EditorView | null> {
+    if (!this._isOpen) return Promise.resolve(null);
+    return new Promise<EditorView | null>((resolve) => {
+      this.pendingEditor = resolve;
+      this.conn.write(
+        JSON.stringify({ op: 'editor_open', channelId: this.channelId, data: commandLine }),
+      );
+    });
+  }
+
+  sendEditorKey(key: EditorKeyInput): Promise<EditorView | null> {
+    if (!this._isOpen) return Promise.resolve(null);
+    return new Promise<EditorView | null>((resolve) => {
+      this.pendingEditor = resolve;
+      this.conn.write(
+        JSON.stringify({ op: 'editor_key', channelId: this.channelId, key }),
+      );
+    });
+  }
+
+  pasteIntoEditor(text: string): Promise<EditorView | null> {
+    if (!this._isOpen) return Promise.resolve(null);
+    return new Promise<EditorView | null>((resolve) => {
+      this.pendingEditor = resolve;
+      this.conn.write(
+        JSON.stringify({ op: 'editor_paste', channelId: this.channelId, data: text }),
+      );
+    });
+  }
+
+  moveEditorCursor(offset: number): Promise<EditorView | null> {
+    if (!this._isOpen) return Promise.resolve(null);
+    return new Promise<EditorView | null>((resolve) => {
+      this.pendingEditor = resolve;
+      this.conn.write(
+        JSON.stringify({ op: 'editor_cursor', channelId: this.channelId, offset }),
+      );
+    });
+  }
+
+  closeEditor(): void {
+    if (!this._isOpen) return;
+    this.conn.write(JSON.stringify({ op: 'editor_close', channelId: this.channelId }));
+  }
+
   resize(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
@@ -149,6 +201,12 @@ export class SshShellChannel
         : [];
       this.pendingComplete?.(candidates);
       this.pendingComplete = null;
+      return;
+    }
+    if (parsed.op === 'editor_view') {
+      const view = (parsed.view ?? null) as EditorView | null;
+      this.pendingEditor?.(view);
+      this.pendingEditor = null;
       return;
     }
     if (parsed.op === 'shell_output') {

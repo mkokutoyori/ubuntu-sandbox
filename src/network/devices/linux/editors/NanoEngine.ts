@@ -1,6 +1,7 @@
 import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
+import { displayNotation, displayWidth, displayColumnFor } from './editorRender';
 
 export type NanoMode =
   | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
@@ -28,21 +29,6 @@ export interface PendingReplaceMatch {
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** displayContent's rendering of a single raw character: `\t`/`\n` pass
- *  through unchanged, control bytes (< 0x20, plus DEL) become `^X`. */
-function displayNotation(ch: string): string {
-  if (ch === '\t' || ch === '\n') return ch;
-  const code = ch.charCodeAt(0);
-  if (code < 0x20) return '^' + String.fromCharCode(code + 64);
-  if (code === 0x7f) return '^?';
-  return ch;
-}
-
-/** Width (1 or 2) that a single raw character occupies in displayContent. */
-function displayWidth(ch: string): number {
-  return displayNotation(ch).length;
 }
 
 /** Ctrl+Left/Right word-jump boundary: any non-whitespace character. */
@@ -184,10 +170,7 @@ export class NanoEngine {
    * position the `pendingReplaceMatch` highlight over the textarea.
    */
   displayColumnFor(line: number, col: number): number {
-    const text = this.line(line);
-    let w = 0;
-    for (let i = 0; i < col && i < text.length; i++) w += displayWidth(text[i]);
-    return w;
+    return displayColumnFor(this.linesArr, line, col);
   }
   /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
   private serialize(): string { return this.linesArr.join('\n') + '\n'; }

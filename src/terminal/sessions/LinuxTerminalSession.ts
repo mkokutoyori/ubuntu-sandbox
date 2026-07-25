@@ -73,6 +73,12 @@ import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
+import {
+  createRemoteEditorController,
+  type RemoteEditorTransport,
+} from '@/terminal/editors/RemoteEditorController';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
@@ -558,6 +564,12 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.pendingSshIO?.isWaitingForInput) {
       return this.inputMode;
     }
+    // An editor opened on the remote owns the screen the same way a
+    // local one does — the SSH sub-shell underneath is suspended until
+    // the engine exits (docs/PRD-SSH-Unification.md §4bis B3).
+    if (this.inputMode.type === 'remote-editor') {
+      return this.inputMode;
+    }
     // Pending password / text driven by a sub-shell or by the root bash:
     // those take priority over the regular interactive-text mode so the
     // view masks keystrokes for a password challenge.
@@ -672,7 +684,7 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     // Editor mode is handled by the view component (NanoEditor / VimEditor)
-    if (this.inputMode.type === 'editor') return false;
+    if (this.inputMode.type === 'editor' || this.inputMode.type === 'remote-editor') return false;
 
     if (e.key === 'd' && e.ctrlKey && this.input === '') {
       if (this.endRemoteSession()) return true;
@@ -3494,6 +3506,54 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /**
+   * Open `line` as an editor on the remote when the active sub-shell is
+   * an SSH session and the remote accepts it. The engine stays on the
+   * remote; the overlay drives it through a proxy over the same channel.
+   * Returns false when the line is not an editor invocation at all, so
+   * the caller runs it as a normal command.
+   */
+  private tryOpenRemoteEditor(line: string): boolean {
+    const sub = this.activeSubShell as {
+      openRemoteEditor?: (l: string) => Promise<EditorView | null>;
+      editorTransport?: () => RemoteEditorTransport;
+    } | null;
+    if (!sub?.openRemoteEditor || !sub.editorTransport) return false;
+    if (!parseEditorLaunch(line)) return false;
+
+    void sub.openRemoteEditor(line).then((view) => {
+      if (!view) return;
+      const launch = parseEditorLaunch(line)!;
+      const controller = createRemoteEditorController(
+        sub.editorTransport!(),
+        view,
+        () => this.onRemoteEditorUpdate(),
+      );
+      this.inputMode = {
+        type: 'remote-editor',
+        editorType: launch.editor,
+        filePath: view.filePath,
+        controller,
+      };
+      this.notify();
+    });
+    return true;
+  }
+
+  /**
+   * A fresh screen arrived from the remote editor. Re-render, and hand
+   * the prompt back to the SSH session once the engine has exited.
+   */
+  private onRemoteEditorUpdate(): void {
+    const mode = this.inputMode;
+    if (mode.type !== 'remote-editor') { this.notify(); return; }
+    if (mode.controller.exited) {
+      this.inputMode = { type: 'normal' };
+      this.addLine(this.getPrompt());
+    }
+    this.notify();
+  }
+
+  /**
    * Generic sub-shell key handler.
    * Works for SQL*Plus and any future ISubShell implementations.
    */
@@ -3511,6 +3571,11 @@ export class LinuxTerminalSession extends TerminalSession {
       if (line.trim()) {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
+
+      // An editor typed in a remote session opens on the remote, where
+      // the file is. Only once the remote declines does the line run as
+      // an ordinary command (docs/PRD-SSH-Unification.md §4bis B3).
+      if (this.tryOpenRemoteEditor(line)) return true;
 
       const onProgress = (text: string) => { this.addLine(text); this.notify(); };
       const maybePromise = this.activeSubShell.processLine(line, onProgress);
@@ -4152,19 +4217,7 @@ export function parseShellChain(
   return segments;
 }
 
-/** Is this segment a `nano`/`vi`/`vim` invocation (with or without sudo)? */
-export function isEditorSegment(segment: string): boolean {
-  const noSudo = segment.startsWith('sudo ') ? segment.slice(5).trimStart() : segment;
-  const parts = noSudo.split(/\s+/);
-  const head = parts[0];
-  if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
-  // `--version`/`-V`/`--help`/`-h` print and exit — they never open the
-  // editor overlay, so let these fall through to the normal command path
-  // (which prints the banner via LinuxCommandExecutor) instead of being
-  // mistaken for "no filename given" (which would open an empty buffer).
-  if (parts.slice(1).some((a) => a === '--version' || a === '-V' || a === '--help' || a === '-h')) return false;
-  return true;
-}
+export { isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 
 /** Connector gating: should this segment run given the previous exit code? */
 export function shouldExecuteSegment(

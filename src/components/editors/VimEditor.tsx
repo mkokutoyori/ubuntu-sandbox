@@ -10,12 +10,27 @@ import React, { useRef, useEffect, useCallback, useReducer } from 'react';
 import { VimEngine, type VimVariant } from '@/network/devices/linux/editors/VimEngine';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 
+/**
+ * What the renderer needs from whatever holds the buffer. A local
+ * VimEngine satisfies it directly; a RemoteVimController satisfies it
+ * over an SSH channel (docs/PRD-SSH-Unification.md §4bis B3).
+ */
+export type VimEditorDriver = Pick<VimEngine,
+  | 'applyKey' | 'renderListLine' | 'lines' | 'content' | 'mode' | 'message'
+  | 'commandLineText' | 'searchText' | 'cursorLine' | 'cursorCol' | 'modified'
+  | 'exited' | 'savedOnExit' | 'isReadOnly' | 'lineNumbersShown'
+  | 'relativeNumbersShown' | 'listMode' | 'colorColumn' | 'fileFormat'
+  | 'variant' | 'isRecordingMacro' | 'recordingMacroName'
+  | 'pendingBinaryWarning' | 'pendingSubstMatch' | 'pendingSwapRecovery'>;
+
 interface VimEditorProps {
   filePath: string;
   initialContent: string;
   isNewFile: boolean;
   editorName: VimVariant;
-  fsContext: EditorFsContext;
+  fsContext?: EditorFsContext;
+  /** Drive an already-open buffer instead of constructing a local one. */
+  driver?: VimEditorDriver;
   owner?: string;
   onExit: (saved: boolean) => void;
   /** `vim +LINE file`: initial cursor line (1-indexed). */
@@ -41,14 +56,15 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   isNewFile,
   editorName,
   fsContext,
+  driver,
   owner,
   onExit,
   initialCursorLine,
 }) => {
-  const engineRef = useRef<VimEngine>();
+  const engineRef = useRef<VimEditorDriver>();
   if (!engineRef.current) {
-    engineRef.current = new VimEngine(
-      fsContext, filePath, initialContent, isNewFile, editorName, owner ?? 'user',
+    engineRef.current = driver ?? new VimEngine(
+      fsContext!, filePath, initialContent, isNewFile, editorName, owner ?? 'user',
       initialCursorLine !== undefined ? { line: initialCursorLine } : undefined,
     );
   }

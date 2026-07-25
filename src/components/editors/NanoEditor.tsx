@@ -10,11 +10,27 @@ import React, { useRef, useEffect, useCallback, useReducer } from 'react';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 
+/**
+ * What the renderer needs from whatever holds the buffer. A local
+ * NanoEngine satisfies it directly; a RemoteNanoController satisfies it
+ * over an SSH channel (docs/PRD-SSH-Unification.md §4bis B3).
+ */
+export type NanoEditorDriver = Pick<NanoEngine,
+  | 'applyKey' | 'applyPaste' | 'displayColumnFor' | 'moveCursorToDisplayOffset'
+  | 'lines' | 'mode' | 'cursorLine' | 'cursorCol' | 'modified' | 'exited'
+  | 'savedOnExit' | 'isReadOnly' | 'lineNumbersShown' | 'statusMessage'
+  | 'helpText' | 'displayContent' | 'displayCursorOffset' | 'promptCursor'
+  | 'saveFileName' | 'searchQuery' | 'gotoLineQuery' | 'executeCommandQuery'
+  | 'readFileQuery' | 'regexSearchEnabled' | 'replaceSearchQuery'
+  | 'replaceWithText' | 'pendingReplaceMatch'>;
+
 interface NanoEditorProps {
   filePath: string;
   initialContent: string;
   isNewFile: boolean;
-  fsContext: EditorFsContext;
+  fsContext?: EditorFsContext;
+  /** Drive an already-open buffer instead of constructing a local one. */
+  driver?: NanoEditorDriver;
   onExit: (saved: boolean) => void;
   /** `nano -v`: buffer is immutable, no Write Out. */
   readOnly?: boolean;
@@ -31,7 +47,7 @@ type Shortcut = readonly [string, string];
 
 /** The bottom two-row shortcut bar is strictly contextual in real nano —
  *  only the keys meaningful in the active mode are ever shown. */
-function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], readonly Shortcut[]] {
+function shortcutsForMode(engine: NanoEditorDriver): readonly [readonly Shortcut[], readonly Shortcut[]] {
   switch (engine.mode) {
     case 'search':
       return [
@@ -105,6 +121,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   initialContent,
   isNewFile,
   fsContext,
+  driver,
   onExit,
   readOnly = false,
   showPosition = false,
@@ -112,10 +129,10 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   initialCursorLine,
   initialCursorCol,
 }) => {
-  const engineRef = useRef<NanoEngine>();
+  const engineRef = useRef<NanoEditorDriver>();
   if (!engineRef.current) {
-    engineRef.current = new NanoEngine(
-      fsContext, filePath, initialContent, isNewFile, readOnly,
+    engineRef.current = driver ?? new NanoEngine(
+      fsContext!, filePath, initialContent, isNewFile, readOnly,
       initialCursorLine !== undefined ? { line: initialCursorLine, col: initialCursorCol } : undefined,
       showLineNumbers,
     );
