@@ -72,6 +72,7 @@ import {
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   type ICMPErrorType,
 } from '../core/IcmpErrors';
+import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
 import { DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
@@ -277,6 +278,8 @@ export abstract class EndHost extends Equipment {
   /** In-flight ARP solicitations for forwarding — dedup signal for
    *  fwdQueueAndResolve (replaces the pendingARPs map after Phase 5.5). */
   private inFlightFwdARPs: Set<string> = new Set();
+  /** Reassembles fragments of datagrams addressed to this host (RFC 791 §3.2). */
+  private readonly ipv4Reassembler = new IPv4Reassembler();
   /** Monotonically increasing ICMP echo identifier */
   protected pingIdCounter: number = 0;
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
@@ -1697,6 +1700,13 @@ export abstract class EndHost extends Equipment {
       || (myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask));
 
     if (isForUs || isBroadcast) {
+      // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first
+      // fragment carries no L4 header for the firewall or upper layer to
+      // inspect, so hold it here until the full datagram is back together.
+      const reassembled = this.ipv4Reassembler.add(ipPkt);
+      if (!reassembled) return;
+      ipPkt = reassembled;
+
       // ── Firewall: filter incoming packets ──
       const verdict = this.firewallFilter(portName, ipPkt, 'in');
       if (verdict === 'drop' || verdict === 'reject') {
@@ -1791,17 +1801,35 @@ export abstract class EndHost extends Equipment {
     };
     fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
 
+    // RFC 791 §3.2 / RFC 1191: this NAT-gateway forward can cross an MTU
+    // boundary just like a real router forward can. DF=1 gets an ICMP
+    // frag-needed instead of going out oversized; DF=0 gets fragmented.
+    const effectiveMtu = route.port.getMTU();
+    let outgoingFragments: IPv4Packet[] = [fwdPkt];
+    if (fwdPkt.totalLength > effectiveMtu) {
+      const dfSet = (fwdPkt.flags & IPV4_FLAG_DF) !== 0;
+      if (dfSet) {
+        Logger.info(this.id, 'ipv4:mtu-exceeded',
+          `${this.name}: packet ${fwdPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
+        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_FRAG_NEEDED, effectiveMtu);
+        return;
+      }
+      outgoingFragments = fragmentIPv4(fwdPkt, effectiveMtu);
+    }
+
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
     if (nextHopMAC) {
-      this.sendFrame(outPortName, {
-        srcMAC: route.port.getMAC(),
-        dstMAC: nextHopMAC.mac,
-        etherType: ETHERTYPE_IPV4,
-        payload: fwdPkt,
-      });
+      for (const frag of outgoingFragments) {
+        this.sendFrame(outPortName, {
+          srcMAC: route.port.getMAC(),
+          dstMAC: nextHopMAC.mac,
+          etherType: ETHERTYPE_IPV4,
+          payload: frag,
+        });
+      }
     } else {
-      // Queue packet and send ARP request (async resolution for forwarded packets)
-      this.fwdQueueAndResolve(fwdPkt, outPortName, route.nextHopIP, route.port);
+      // Queue packets and send ARP request (async resolution for forwarded packets)
+      for (const frag of outgoingFragments) this.fwdQueueAndResolve(frag, outPortName, route.nextHopIP, route.port);
     }
   }
 
@@ -2114,6 +2142,7 @@ export abstract class EndHost extends Equipment {
     offendingPkt: IPv4Packet,
     icmpType: ICMPErrorType,
     code: number,
+    nextHopMTU?: number,
   ): void {
     if (!mayGenerateICMPError(offendingPkt)) return;
 
@@ -2123,7 +2152,7 @@ export abstract class EndHost extends Equipment {
     const srcIP = this.ports.get(inPort)?.getIPAddress() ?? route.port.getIPAddress();
     if (!srcIP) return;
 
-    const errorIP = buildICMPError(srcIP, offendingPkt, icmpType, code, this.defaultTTL);
+    const errorIP = buildICMPError(srcIP, offendingPkt, icmpType, code, this.defaultTTL, { nextHopMTU });
 
     const outPortName = route.port.getName();
     const verdict = this.firewallFilter(outPortName, errorIP, 'out');
@@ -2237,6 +2266,7 @@ export abstract class EndHost extends Equipment {
     sourcePort: number,
     payload: unknown,
     payloadBytes: number = 0,
+    options: { df?: boolean } = {},
   ): boolean {
     const udp: UDPPacket = {
       type: 'udp',
@@ -2246,12 +2276,16 @@ export abstract class EndHost extends Equipment {
       checksum: 0,
       payload,
     };
+    // Preserve the existing DF=1 default (every prior caller relied on
+    // it); pass { df: false } to originate fragmentable UDP traffic that
+    // a smaller-MTU hop can split instead of bouncing (RFC 791 §3.2).
+    const flags = options.df === false ? 0 : IPV4_FLAG_DF;
 
     // Local delivery (loopback or own address) — like a real kernel, this
     // never reaches the wire.
     if (destinationIP.isLoopback() || this.getPortOwningIP(destinationIP)) {
       const localPkt = createIPv4Packet(
-        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length,
+        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
       );
       this.deliverUDP('lo', localPkt, false);
       return true;
@@ -2263,7 +2297,7 @@ export abstract class EndHost extends Equipment {
     if (!srcIP) return false;
 
     const ipPkt = createIPv4Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length,
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
     );
 
     const outPortName = route.port.getName();

@@ -77,6 +77,7 @@ import {
 import type { IIPv4Route } from '../core/interfaces';
 import { Logger } from '../core/Logger';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
+import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
@@ -314,6 +315,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** In-flight ARP solicitations for forwarding — dedup signal that replaces
    *  pendingARPs use as a "request-already-sent" check (Phase 5.8). */
   private inFlightFwdARPs: Set<string> = new Set();
+  /** Reassembles fragments of datagrams addressed to this router itself (RFC 791 §3.2). */
+  private readonly ipv4Reassembler = new IPv4Reassembler();
 
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
@@ -1292,6 +1295,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Supports: ICMP echo-request → echo-reply, UDP/RIP.
    */
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
+    // RFC 791 §3.2: hold non-first/more-fragments datagrams until the full
+    // set arrives — buffered fragments return null here and are simply
+    // dropped from this call; the reassembled datagram continues through
+    // the same dispatch a non-fragmented one would.
+    const reassembled = this.ipv4Reassembler.add(ipPkt);
+    if (!reassembled) return;
+    ipPkt = reassembled;
+
     // OSPF runs directly over IP (proto 89, RFC 2328 §4.3).
     if (ipPkt.protocol === IP_PROTO_OSPF) {
       const ospfPkt = ipPkt.payload as { type?: string };
@@ -1707,13 +1718,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     // Phase E.3: ARP resolve next-hop → L2 rewrite → send
+    // RFC 791 §3.2: fragment now, as the very last step — NAT/ACL/IPSec
+    // above have already acted on the whole logical datagram, since only
+    // fragment 0 will carry the L4 header they need to inspect. The
+    // DF=1-and-oversized case already returned earlier (ICMP frag-needed),
+    // so any oversized packet reaching here is safe to split.
+    const outgoingFragments = fragmentIPv4(fwdPkt, effectiveMtu);
     const cached = this.arpTable.get(nextHopIP.toString());
     if (cached) {
       this.counters.ipForwDatagrams++;
-      this.counters.ifOutOctets += fwdPkt.totalLength;
       Logger.info(
         this.id, 'router:forward',
-        `${this.name}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} via ${nextHopIP} (${route.iface}, ttl=${fwdPkt.ttl})`,
+        `${this.name}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} via ${nextHopIP} (${route.iface}, ttl=${fwdPkt.ttl})` +
+          (outgoingFragments.length > 1 ? ` [fragmented x${outgoingFragments.length}]` : ''),
         {
           src: fwdPkt.sourceIP.toString(),
           dst: fwdPkt.destinationIP.toString(),
@@ -1723,12 +1740,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           totalLength: fwdPkt.totalLength,
         },
       );
-      this.sendFrame(route.iface, {
-        srcMAC: outPort.getMAC(), dstMAC: cached.mac,
-        etherType: ETHERTYPE_IPV4, payload: fwdPkt,
-      });
+      for (const frag of outgoingFragments) {
+        this.counters.ifOutOctets += frag.totalLength;
+        this.sendFrame(route.iface, {
+          srcMAC: outPort.getMAC(), dstMAC: cached.mac,
+          etherType: ETHERTYPE_IPV4, payload: frag,
+        });
+      }
     } else {
-      this.queueAndResolve(fwdPkt, route.iface, nextHopIP, outPort);
+      for (const frag of outgoingFragments) this.queueAndResolve(frag, route.iface, nextHopIP, outPort);
     }
   }
 
