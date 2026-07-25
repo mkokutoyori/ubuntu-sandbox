@@ -57,6 +57,7 @@ abstract class BaseRemoteEditorController<V extends EditorView> {
   get savedOnExit(): boolean { return this.current.savedOnExit; }
   get isReadOnly(): boolean { return this.current.isReadOnly; }
   get lineNumbersShown(): boolean { return this.current.lineNumbersShown; }
+  get isNewFile(): boolean { return this.current.isNewFile; }
 
   /**
    * Keystrokes reach the engine one round trip later — the same

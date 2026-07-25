@@ -197,7 +197,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           <NanoEditor
             filePath={remote.filePath}
             initialContent=""
-            isNewFile={false}
+            isNewFile={remote.controller.isNewFile}
             driver={remote.controller as RemoteNanoController}
             onExit={done}
           />
@@ -205,7 +205,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           <VimEditor
             filePath={remote.filePath}
             initialContent=""
-            isNewFile={false}
+            isNewFile={remote.controller.isNewFile}
             editorName={remote.editorType === 'vi' ? 'vi' : 'vim'}
             driver={remote.controller as RemoteVimController}
             onExit={done}

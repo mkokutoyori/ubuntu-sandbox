@@ -25,6 +25,8 @@ export interface EditorViewBase {
   readonly savedOnExit: boolean;
   readonly isReadOnly: boolean;
   readonly lineNumbersShown: boolean;
+  /** Whether the file was absent when the buffer opened (vim's splash). */
+  readonly isNewFile: boolean;
 }
 
 export interface VimEditorView extends EditorViewBase {
