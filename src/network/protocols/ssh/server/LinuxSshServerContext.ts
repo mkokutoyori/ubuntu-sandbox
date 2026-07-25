@@ -341,8 +341,11 @@ export class LinuxSshServerContext implements ISshServerContext {
       return {
         execute: async (line: string) => {
           const stdout = await device.executeCommandInSession(line, session, { color: interactive });
-          const exitCode = /command not found|Permission denied/.test(stdout) ? 1 : 0;
-          return { stdout, stderr: '', exitCode };
+          // The shell session's own `$?`, captured by the command pipeline.
+          // Guessing it from the output text used to report success for
+          // anything the pattern missed — `false`, a failing grep, a
+          // missing file.
+          return { stdout, stderr: '', exitCode: session.lastExitCode };
         },
         getPrompt: () => {
           // The authenticated user's real home from /etc/passwd — never a

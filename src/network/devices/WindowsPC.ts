@@ -731,6 +731,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getSshServerContext(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
+      getCwd: () => this.getCwd(),
     },
     // Publish a `windows.account.logon` per inbound SSH auth attempt
     // — the SecurityAuditProjection turns each into a 4624 / 4625 in
