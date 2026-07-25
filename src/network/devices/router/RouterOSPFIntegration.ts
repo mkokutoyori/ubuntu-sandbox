@@ -154,6 +154,15 @@ export class RouterOSPFIntegration {
       this.sendPacket(iface, packet, destIP);
     });
 
+    // Reactive RIB sync: every `ospf.routes-recomputed` the engine ever
+    // publishes — including ones the engine schedules and fires entirely on
+    // its own (SPF throttle timer after a link/neighbor goes down, LSA
+    // aging, dead-interval expiry) — gets pushed into the RIB. Without this,
+    // only `autoConverge()`'s own direct `installRoutes()` call (driven by
+    // CLI commands / link-up) ever reached the RIB, so autonomous
+    // reconvergence recomputed routes the engine never actually installed.
+    this.ospfEngine.routingTableSync?.onRoutes((routes) => this.installRoutes(routes));
+
     Logger.info(this.ctx.id, 'ospf:enabled',
       `${this.ctx.name}: OSPFv2 process ${processId} enabled, Router ID ${highestIP}`);
   }
@@ -406,8 +415,12 @@ export class RouterOSPFIntegration {
   onPortDown(portName: string): void {
     if (!this.ospfEngine) return;
     if (!this.ospfEngine.getInterface(portName)) return;
+    // deactivateInterface() only schedules SPF (RFC 2328 §16.5 throttle
+    // timer) — it doesn't recompute routes synchronously, so there is
+    // nothing fresh to install yet. The routingTableSync subscription
+    // wired in enableOSPF() installs the real result once that timer
+    // actually fires.
     this.ospfEngine.deactivateInterface(portName);
-    this.installRoutes(this.ospfEngine.getRoutes());
   }
 
   autoConverge(): void {
