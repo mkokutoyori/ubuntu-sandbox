@@ -22,6 +22,7 @@ import { CrossVendorRemoteShell } from './CrossVendorRemoteShell';
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
 import { readForceCommand } from '@/network/devices/linux/network/LinuxSshClient';
+import { pathLiveness } from '@/network/protocols/ssh/sessionLiveness';
 
 /** Tokenise an ssh command line into flags, optional value, user/host, and remaining argv. */
 interface ParsedSshLine {
@@ -436,7 +437,13 @@ function livenessProbeFor(auth: PendingSshAuth): (() => boolean) | undefined {
   if (!probe) return undefined;
   const host = IPAddress.isValid(auth.host) ? auth.host : firstConfiguredIp(auth.target);
   if (!host) return undefined;
-  return () => probe(host, auth.port) === 'open';
+  const source = auth.sourceIp ?? firstConfiguredIp(auth.sourceDevice ?? auth.target);
+  if (!source) return undefined;
+  // This push holds no socket of its own, so liveness is read from the
+  // cabled topology rather than provoked with a handshake: re-probing
+  // per command made the remote log an accept/close pair every time
+  // (src/network/protocols/ssh/sessionLiveness.ts).
+  return pathLiveness(source, host);
 }
 
 function firstConfiguredIp(dev: Equipment): string | undefined {
