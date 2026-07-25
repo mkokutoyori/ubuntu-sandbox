@@ -95,6 +95,11 @@ export class HuaweiRouter extends Router {
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
     this.bfdAgent = new BfdAgent(hostBase, () => this.getBus());
+    this.getBus().subscribe('bfd.session.changed', (e) => {
+      if (e.payload.deviceId !== this.id) return;
+      if (e.payload.newState !== 'down' && e.payload.newState !== 'admin-down') return;
+      this.ospfIntegration.onBfdSessionDown(e.payload.iface, e.payload.neighborIp);
+    });
     this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus());
     this.pimAgent = new PimAgent(hostBase, () => this.getBus());
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());

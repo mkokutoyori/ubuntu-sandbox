@@ -26,6 +26,7 @@ import type { OSPFNeighbor, OSPFPacket, OSPFInterface } from '../../ospf/types';
 import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
+import type { BfdAgent } from '../../bfd/BfdAgent';
 
 // ─── OSPF Extra Config Type ─────────────────────────────────────
 
@@ -51,6 +52,7 @@ export interface OSPFExtraConfig {
     authType?: number; authKey?: string;
     demandCircuit?: boolean; networkType?: string;
     mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
+    bfd?: boolean;
   }>;
   pendingV3IfConfig: Map<string, {
     cost?: number; priority?: number;
@@ -82,6 +84,7 @@ export interface OSPFRouterContext {
   getACLEngine(): ACLEngine;
   getIPv6Engine(): IPv6DataPlane;
   getIPv6AccessLists(): import('../Router').IPv6ACL[] | undefined;
+  getBfdAgent?(): BfdAgent | undefined;
 }
 
 // ─── OSPF Integration Engine ────────────────────────────────────
@@ -615,7 +618,40 @@ export class RouterOSPFIntegration {
       }
 
       peer.installRoutes(allOSPFRoutes);
+      peer.provisionBfdSessions();
     }
+  }
+
+  /** For every Full neighbor on a BFD-enabled interface, ensure a BFD session exists. */
+  private provisionBfdSessions(): void {
+    if (!this.ospfEngine) return;
+    const bfdAgent = this.ctx.getBfdAgent?.();
+    if (!bfdAgent) return;
+    for (const [ifaceName, iface] of this.ospfEngine.getInterfaces()) {
+      const bfdEnabled = this.extraConfig.bfdAllInterfaces
+        || this.extraConfig.pendingIfConfig.get(ifaceName)?.bfd === true;
+      if (!bfdEnabled) continue;
+      for (const neighbor of iface.neighbors.values()) {
+        if (neighbor.state === 'Full') bfdAgent.ensureSession(ifaceName, neighbor.ipAddress);
+      }
+    }
+  }
+
+  /**
+   * A BFD session went Down on an interface where OSPF requested BFD
+   * tracking — kill the neighbor immediately instead of waiting out the
+   * dead-interval (RFC 5880's whole reason to exist).
+   */
+  onBfdSessionDown(iface: string, neighborIp: string): void {
+    if (!this.ospfEngine) return;
+    const bfdEnabled = this.extraConfig.bfdAllInterfaces
+      || this.extraConfig.pendingIfConfig.get(iface)?.bfd === true;
+    if (!bfdEnabled) return;
+    const ospfIface = this.ospfEngine.getInterface(iface);
+    if (!ospfIface) return;
+    const neighbor = [...ospfIface.neighbors.values()].find(n => n.ipAddress === neighborIp);
+    if (!neighbor) return;
+    this.ospfEngine.neighborEvent(ospfIface, neighbor, 'KillNbr');
   }
 
   /** Collect all OSPF routers in the domain via BFS through cables/switches */
