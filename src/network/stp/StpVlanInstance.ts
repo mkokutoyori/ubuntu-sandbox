@@ -26,6 +26,9 @@ export interface StpInstanceAgent {
   costForPort(port: Port | undefined): number;
   portIdFor(portName: string): number;
   isRootInconsistent(portName: string): boolean;
+  isLoopGuardActive(portName: string): boolean;
+  isLoopInconsistent(portName: string): boolean;
+  setLoopInconsistent(portName: string, on: boolean): void;
   isPortFastOperational(portName: string): boolean;
   isPointToPoint(portName: string): boolean;
   portCarriesVlan(portName: string, vlan: number): boolean;
@@ -82,6 +85,19 @@ export class StpVlanInstance {
     for (const [portName, info] of this.portInfo) {
       if (bridgeEquals(info.designatedBridge, own)) continue;
       if (nowMs - info.ageMs <= this.agent.maxAgeSec(this.vlanId) * 1000) continue;
+      if (info.role !== 'designated' && this.agent.isLoopGuardActive(portName)) {
+        // Real IOS: without Loop Guard, a non-designated port that stops
+        // hearing BPDUs (the classic unidirectional-link failure) ages out
+        // and re-elects itself designated/forwarding — creating the loop
+        // the guard exists to prevent. Keep it blocked (loop-inconsistent)
+        // instead, and leave the stale info in place so this keeps firing
+        // (idempotently) until a fresh BPDU clears it in StpAgent.handleFrame.
+        if (!this.agent.isLoopInconsistent(portName)) {
+          this.agent.setLoopInconsistent(portName, true);
+          expired = true;
+        }
+        continue;
+      }
       this.portInfo.delete(portName);
       expired = true;
       this.agent.bus().publish({
@@ -138,6 +154,7 @@ export class StpVlanInstance {
       if (!port.getIsUp() || !port.isConnected()) continue;
       if (!this.agent.portCarriesVlan(name, this.vlanId)) continue;
       if (this.agent.isRootInconsistent(name)) { this.applyRole(name, 'alternate'); continue; }
+      if (this.agent.isLoopInconsistent(name)) { this.applyRole(name, 'alternate'); continue; }
       if (this.agent.isPortFastOperational(name) && name !== this.rootPort) {
         this.applyRole(name, 'designated');
         continue;
