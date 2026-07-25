@@ -183,6 +183,16 @@ export class SshInteractiveSubShell implements ISubShell {
   /** A fully-connected nested hop: once set, every call delegates to it. */
   private nestedHop: SshInteractiveSubShell | null = null;
 
+  /** Latest prompt the remote published, or null while it has published none. */
+  private serverPrompt: string | null = null;
+
+  /** Every line goes through here so the remote's prompt is never missed. */
+  private async run(line: string) {
+    const result = await this.channel.runLine(line);
+    if (result.prompt) this.serverPrompt = result.prompt;
+    return result;
+  }
+
   constructor(
     private readonly session: ISshSession,
     private readonly channel: ISshShellChannel,
@@ -212,6 +222,11 @@ export class SshInteractiveSubShell implements ISubShell {
 
   getPrompt(): string {
     if (this.nestedHop) return this.nestedHop.getPrompt();
+    // The remote's own prompt when it published one: it knows the real
+    // home (which may not be /home/<user>, or may not exist at all) and,
+    // for a router, the current CLI mode. The local guess below is only
+    // a fallback for servers that publish nothing.
+    if (this.serverPrompt !== null) return this.serverPrompt;
     const homeDir = `/home/${this.remoteUser}`;
     const cwdShort = this.cwd === homeDir ? '~' : this.cwd;
     return `${this.remoteUser}@${this.promptHost}:${cwdShort}$ `;
@@ -316,7 +331,7 @@ export class SshInteractiveSubShell implements ISubShell {
     const off = this.channel.onData(emit);
     this.inFlight = true;
     try {
-      await this.channel.runLine(trimmed);
+      await this.run(trimmed);
     } finally {
       this.inFlight = false;
       off();
@@ -347,7 +362,7 @@ export class SshInteractiveSubShell implements ISubShell {
       this.inFlight = true;
       let result;
       try {
-        result = await this.channel.runLine(`printf '%s\\n' ${shQuote(value)} | su${target}`);
+        result = await this.run(`printf '%s\\n' ${shQuote(value)} | su${target}`);
       } finally {
         this.inFlight = false;
       }
@@ -399,7 +414,7 @@ export class SshInteractiveSubShell implements ISubShell {
     this.inFlight = true;
     let result;
     try {
-      result = await this.channel.runLine(`${cdCmd} && pwd`);
+      result = await this.run(`${cdCmd} && pwd`);
     } finally {
       this.inFlight = false;
     }
