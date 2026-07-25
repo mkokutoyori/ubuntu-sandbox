@@ -530,6 +530,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           this.ipsecEngine?.onPortDown(name);
           this.ospfIntegration.onPortDown(name);
         }
+        // EIGRP/BGP have no port-down hook of their own (unlike OSPF's
+        // onPortDown above): without this, a dead neighbor/route just
+        // lingers in the RIB until an operator happens to run a CLI
+        // command, since converge() is otherwise only CLI-triggered
+        // (RouterDynamicRouting.ts — no real hold/SIA timers yet, see
+        // CLAUDE.md). This doesn't add real timer-driven convergence,
+        // it only makes the existing recompute run on link events too.
+        if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
       });
     }
   }
