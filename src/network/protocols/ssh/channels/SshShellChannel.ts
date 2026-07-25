@@ -40,9 +40,23 @@ export class SshShellChannel
   private pendingComplete: ((c: string[]) => void) | null = null;
   private pendingEditor: ((v: EditorView | null) => void) | null = null;
   private inlineHelp = false;
+  private openingPrompt: string | null = null;
+  private posix = true;
 
   /** True when the remote treats `?` as a help key (network CLI). */
   supportsInlineHelp(): boolean { return this.inlineHelp; }
+
+  /**
+   * The prompt the remote published when the channel opened, before any
+   * line ran. Null when it published none.
+   */
+  initialPrompt(): string | null { return this.openingPrompt; }
+
+  /**
+   * True when the remote is a POSIX shell — Ctrl+D is EOF and `clear`
+   * wipes the screen. False for cmd.exe and vendor CLIs.
+   */
+  isPosixShell(): boolean { return this.posix; }
 
   constructor(conn: TcpConnection, channelId: number) {
     super(conn, channelId, 'shell');
@@ -92,6 +106,18 @@ export class SshShellChannel
           channelId: this.channelId,
           data: line,
         }),
+      );
+    });
+  }
+
+  provideInput(value: string): Promise<ExecResult> {
+    if (!this._isOpen) {
+      return Promise.resolve({ stdout: '', stderr: 'channel closed', exitCode: 255 });
+    }
+    return new Promise<ExecResult>((resolve) => {
+      this.pendingLine = resolve;
+      this.conn.write(
+        JSON.stringify({ op: 'shell_input_value', channelId: this.channelId, data: value }),
       );
     });
   }
@@ -193,6 +219,8 @@ export class SshShellChannel
       // shell_open / shell_close ack — surface nothing to onData, but
       // record the capabilities the server advertised on open.
       if (typeof parsed.inlineHelp === 'boolean') this.inlineHelp = parsed.inlineHelp;
+      if (typeof parsed.prompt === 'string') this.openingPrompt = parsed.prompt;
+      if (typeof parsed.posixShell === 'boolean') this.posix = parsed.posixShell;
       return;
     }
     if (parsed.op === 'shell_complete_result') {
@@ -229,6 +257,9 @@ export class SshShellChannel
           typeof parsed.exitCode === 'number' ? parsed.exitCode : 0,
         prompt: typeof parsed.prompt === 'string' ? parsed.prompt : undefined,
         nested: parsed.nested === true,
+        clearScreen: parsed.clearScreen === true,
+        pendingInput: (parsed.pendingInput ?? undefined) as ExecResult['pendingInput'],
+        sessionEnded: parsed.sessionEnded === true,
       };
       this.pendingLine?.(result);
       this.pendingLine = null;

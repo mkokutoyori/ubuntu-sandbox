@@ -195,11 +195,32 @@ export class SshInteractiveSubShell implements ISubShell {
    */
   private serverNested = false;
 
+  /**
+   * The remote asked for the screen to be wiped on the last line (`cls`
+   * on cmd). Wiping is the client's job, so the intent is carried back
+   * out in the SubShellResult (docs/PRD-SSH-Unification.md §4bis B4).
+   */
+  private serverClearedScreen = false;
+
+  /**
+   * A challenge the remote's own shell raised (the password for an `ssh`
+   * it started itself). While set, the next value the host collects goes
+   * back over the wire instead of into a local flow
+   * (docs/PRD-SSH-Unification.md §4bis B4).
+   */
+  private serverPendingInput: { kind: 'password' | 'text'; promptText: string } | null = null;
+
+  /** The remote logged us out with its own exit word. */
+  private serverEndedSession = false;
+
   /** Every line goes through here so the remote's prompt is never missed. */
   private async run(line: string) {
     const result = await this.channel.runLine(line);
     if (result.prompt) this.serverPrompt = result.prompt;
     this.serverNested = result.nested === true;
+    this.serverClearedScreen = result.clearScreen === true;
+    this.serverPendingInput = result.pendingInput ?? null;
+    if (result.sessionEnded) this.serverEndedSession = true;
     return result;
   }
 
@@ -237,6 +258,10 @@ export class SshInteractiveSubShell implements ISubShell {
     // for a router, the current CLI mode. The local guess below is only
     // a fallback for servers that publish nothing.
     if (this.serverPrompt !== null) return this.serverPrompt;
+    // Published at channel open, so a vendor CLI shows `R1>` from the
+    // moment we land rather than a guessed bash shape.
+    const opening = this.channel.initialPrompt?.();
+    if (opening) return opening;
     const homeDir = `/home/${this.remoteUser}`;
     const cwdShort = this.cwd === homeDir ? '~' : this.cwd;
     return `${this.remoteUser}@${this.promptHost}:${cwdShort}$ `;
@@ -290,10 +315,15 @@ export class SshInteractiveSubShell implements ISubShell {
     return this.channel;
   }
 
-  /** Ctrl+D exits the sub-shell. */
+  /**
+   * Ctrl+D ends the session only where the remote treats EOF that way —
+   * a POSIX shell does, cmd.exe does not
+   * (docs/PRD-SSH-Unification.md §4bis B4).
+   */
   handleKey(e: KeyEvent): boolean {
     if (this.nestedHop) return this.nestedHop.handleKey(e);
-    return e.key === 'd' && e.ctrlKey;
+    if (!(e.key === 'd' && e.ctrlKey)) return false;
+    return this.channel.isPosixShell?.() ?? true;
   }
 
   /**
@@ -350,7 +380,10 @@ export class SshInteractiveSubShell implements ISubShell {
     if (!trimmed) return done([''], this.getPrompt());
 
     // clear: signal the host terminal to wipe the screen (Ctrl+L also works)
-    if (trimmed === 'clear') {
+    // `clear` only wipes the screen where it is the shell's own verb.
+    // On cmd it is an unknown command, and on a vendor CLI it starts a
+    // real one (`clear counters`) — let the remote answer in both cases.
+    if (trimmed === 'clear' && (this.channel.isPosixShell?.() ?? true)) {
       return { output: [''], exit: false, prompt: this.getPrompt(), clearScreen: true };
     }
 
@@ -402,8 +435,27 @@ export class SshInteractiveSubShell implements ISubShell {
     // Every line of output — streamed chunks and the final one-shot merged
     // reply alike — already reached the terminal via emit()/onProgress
     // above; `output` only needs to carry it when nobody wanted progress.
-    if (onProgress) return { output: [], exit: false, prompt: this.getPrompt() };
-    return done(collected.length ? collected : [''], this.getPrompt());
+    if (onProgress) {
+      return {
+        output: [], exit: false, prompt: this.getPrompt(),
+        clearScreen: this.serverClearedScreen,
+      };
+    }
+    if (this.serverEndedSession) {
+      this.session.disconnect();
+      return {
+        output: [...collected, `Connection to ${this.remoteHost} closed.`],
+        exit: true,
+        prompt: '',
+      };
+    }
+    return {
+      output: collected.length ? collected : [''],
+      exit: false,
+      prompt: this.getPrompt(),
+      clearScreen: this.serverClearedScreen,
+      pendingInput: this.serverPendingInput ?? undefined,
+    };
   }
 
   /** Feed a value the host collected for a pending su / nested-ssh challenge. */
@@ -411,6 +463,25 @@ export class SshInteractiveSubShell implements ISubShell {
     if (this.nestedHop) {
       const result = await this.nestedHop.handleInput(value);
       return this.afterNestedResult(result);
+    }
+
+    // A challenge raised by the remote's own shell: the answer belongs
+    // on the wire, not in a local flow.
+    if (this.serverPendingInput) {
+      const result = await this.channel.provideInput(value);
+      if (result.prompt) this.serverPrompt = result.prompt;
+      this.serverNested = result.nested === true;
+      this.serverClearedScreen = result.clearScreen === true;
+      this.serverPendingInput = result.pendingInput ?? null;
+      const merged = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+      const lines = merged.split('\n').filter((l, i, all) => l !== '' || i < all.length - 1);
+      return {
+        output: lines.length ? lines : [''],
+        exit: false,
+        prompt: this.getPrompt(),
+        clearScreen: this.serverClearedScreen,
+        pendingInput: this.serverPendingInput ?? undefined,
+      };
     }
 
     if (this.pendingHopConnect) {
