@@ -377,7 +377,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.shell = this.createShell();
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? ({ type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any);
-      return this.aclEngine.evaluateACLByName(String(aclId), pkt) !== 'deny';
+      // Undefined ACL = no interesting traffic, so require an explicit permit.
+      return this.aclEngine.evaluateACLByName(String(aclId), pkt) === 'permit';
     });
     this.natEngine.setInterfaceIPFn((iface) => {
       const port = this.ports.get(iface);
