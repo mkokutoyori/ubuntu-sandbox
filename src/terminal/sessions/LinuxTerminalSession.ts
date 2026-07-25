@@ -3636,12 +3636,31 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private onSubShellTab(reverse: boolean): void {
     const sub = this.activeSubShell;
-    if (!sub || typeof sub.getCompletions !== 'function') return;
+    if (!sub) return;
+    if (typeof sub.getCompletionsAsync === 'function') {
+      void this.onSubShellTabAsync(sub, reverse);
+      return;
+    }
+    if (typeof sub.getCompletions !== 'function') return;
+    this.applySubShellTab((line) => sub.getCompletions?.(line) ?? [], reverse);
+  }
 
-    const source = new LastWordSource(
-      (line) => sub.getCompletions?.(line) ?? [],
-      { uniqueSpace: 'never' },
-    );
+  /**
+   * Tab against a sub-shell that can only answer asynchronously (a remote
+   * shell over an SSH channel). The candidates are fetched first, then fed
+   * to the same synchronous completion controller; a keystroke landing
+   * while the request is in flight abandons the stale answer
+   * (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  private async onSubShellTabAsync(sub: ISubShell, reverse: boolean): Promise<void> {
+    const asked = this._inputBuf;
+    const candidates = await sub.getCompletionsAsync!(asked);
+    if (this._inputBuf !== asked) return;
+    this.applySubShellTab(() => candidates, reverse);
+  }
+
+  private applySubShellTab(fetch: (line: string) => readonly string[], reverse: boolean): void {
+    const source = new LastWordSource(fetch, { uniqueSpace: 'never' });
     const out = this.subShellCompletion.handleTab(this._inputBuf, source, reverse);
     if (!out.changed && out.suggestions === null) return;
     this._inputBuf = out.input;

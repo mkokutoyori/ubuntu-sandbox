@@ -232,6 +232,17 @@ export class SshInteractiveSubShell implements ISubShell {
     return `${this.remoteUser}@${this.promptHost}:${cwdShort}$ `;
   }
 
+  /**
+   * Tab candidates answered by the remote over the channel, so they
+   * reflect its commands, filesystem and CLI mode. A nested hop answers
+   * for its own level.
+   */
+  async getCompletionsAsync(line: string): Promise<string[]> {
+    if (this.nestedHop) return this.nestedHop.getCompletionsAsync(line);
+    if (this.inFlight) return [];
+    return this.channel.complete(line);
+  }
+
   /** Ctrl+D exits the sub-shell. */
   handleKey(e: KeyEvent): boolean {
     if (this.nestedHop) return this.nestedHop.handleKey(e);
