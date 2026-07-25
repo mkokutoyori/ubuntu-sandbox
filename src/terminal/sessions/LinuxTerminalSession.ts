@@ -73,6 +73,7 @@ import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
+import { transportLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 import {
@@ -2938,25 +2939,29 @@ export class LinuxTerminalSession extends TerminalSession {
       session.disconnect();
     };
 
-    // Linux↔Linux: drive the interactive session over the real,
-    // authenticated SSH channel (streaming ping, real Ctrl+C-interrupt —
-    // see SshInteractiveSubShell) instead of the in-memory
-    // createSessionForDevice bypass below. Non-Linux vendor targets
-    // (Cisco/Huawei/Windows) are untouched and keep using that bypass.
-    if (linuxRemoteDevice) {
+    // Linux↔Linux is driven over the real, authenticated SSH channel.
+    // Vendor targets still take the in-memory path below: flipping them
+    // to the wire is measured, not hypothetical, and the remaining gap
+    // is recorded in docs/PRD-SSH-Unification.md §4bis.5 — a vendor's
+    // own exit word does not yet end the session over the wire, and a
+    // nested `ssh` typed inside a vendor hop has no frame to push.
+    const wireRemoteDevice = linuxRemoteDevice;
+    if (wireRemoteDevice) {
       const channelResult = session.openShellChannel();
       if (isOk(channelResult)) {
-        // adoptRemoteChild() (the bypass path below) prints this same
-        // banner and records the login for lastlog/auth.log — do the
-        // same here since this path never calls adoptRemoteChild.
         const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
         const sourceHost = this.device.getHostname?.() ?? '';
-        const banner = this.composeLoginBanner(linuxRemoteDevice, user, sourceIp, sourceHost, false);
+        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false);
         for (const line of banner) this.addLine(line);
+        const promptHost = (wireRemoteDevice as unknown as { getSshHostname?: () => string })
+          .getSshHostname?.() ?? host;
         this.activeSubShell = new SshInteractiveSubShell(
           session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
-          linuxRemoteDevice.getSshHostname(), linuxRemoteDevice,
-          this.remoteLivenessProbe(host),
+          promptHost, linuxRemoteDevice ?? undefined,
+          // Liveness of an OPEN session is read from its own socket, not
+          // provoked with a fresh handshake — otherwise every command
+          // would make the remote log an accept/close pair.
+          transportLiveness(session),
         );
         this._inputBuf = '';
         this.notify();
@@ -3798,6 +3803,10 @@ export class LinuxTerminalSession extends TerminalSession {
    * that opened the session — so an interactive remote shell notices a
    * pulled cable instead of going on driving the remote in memory
    * (docs/PRD-Link-State.md §3.3).
+   */
+  /**
+   * Reachability BEFORE connecting — this one is a genuine probe,
+   * because running `ssh` really does open a connection.
    */
   private remoteLivenessProbe(host: string): (() => boolean) | undefined {
     const probe = (this.device as unknown as {

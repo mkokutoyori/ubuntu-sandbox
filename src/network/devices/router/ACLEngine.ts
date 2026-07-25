@@ -285,8 +285,9 @@ export class ACLEngine {
       ? this.accessLists.find(a => a.id === aclRef)
       : this.accessLists.find(a => a.name === aclRef);
 
+    // Undefined or empty ACL = no ACL applied (real IOS), not deny-all.
     if (!acl || acl.entries.length === 0) {
-      return 'deny';
+      return null;
     }
 
     for (const entry of acl.entries) {

@@ -30,7 +30,34 @@ export interface SshServerConfig {
 }
 
 export interface ILinuxShell {
-  execute(line: string): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  execute(line: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    /**
+     * The remote asked for the screen to be wiped (`cls` on cmd, `clear`
+     * on a POSIX shell). Clearing is the client's job, so the intent has
+     * to cross the wire (docs/PRD-SSH-Unification.md §4bis B4).
+     */
+    clearScreen?: boolean;
+    /**
+     * The remote's shell is waiting on one value (a password for an ssh
+     * or su it just started). Collecting it is the client's job, so the
+     * challenge crosses the wire and the answer comes back through
+     * `provideInput` (docs/PRD-SSH-Unification.md §4bis B4).
+     */
+    pendingInput?: { kind: 'password' | 'text'; promptText: string };
+    /** The line logged the session out, using the remote's own exit word. */
+    sessionEnded?: boolean;
+  }>;
+  /** Feed back the value the client collected for a pending challenge. */
+  provideInput?(value: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    clearScreen?: boolean;
+    pendingInput?: { kind: 'password' | 'text'; promptText: string };
+  }>;
   /**
    * Tab-completion candidates for a partial line, answered in this
    * shell's own context (its cwd, its CLI mode). Absent means the
@@ -43,6 +70,15 @@ export interface ILinuxShell {
    * Lets a client offer inline help without breaking `ls ?.txt`.
    */
   readonly supportsInlineHelp?: boolean;
+  /**
+   * True when this remote is a POSIX shell. It settles the handful of
+   * behaviours a client would otherwise have to assume: Ctrl+D is EOF
+   * and logs out, and `clear` wipes the screen. cmd.exe ignores Ctrl+D
+   * and does not know `clear`; on a vendor CLI `clear` is a real command
+   * (`clear counters`) — so the client asks instead of assuming
+   * (docs/PRD-SSH-Unification.md §4bis B4). Defaults to true.
+   */
+  readonly posixShell?: boolean;
   /**
    * The remote's own prompt as it stands right now. Read after each line,
    * since the command may have changed it (`cd`, `enable`,

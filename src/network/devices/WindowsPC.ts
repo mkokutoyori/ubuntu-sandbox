@@ -2848,6 +2848,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     getPrompt(): string;
     getCompletions(line: string): string[];
     isNested(): boolean;
+    lastClearedScreen(): boolean;
+    lastPendingInput(): { kind: 'password' | 'text'; promptText: string } | null;
+    handleInput(value: string): Promise<string>;
   } | null {
     let stack: CrossVendorRemoteShell;
     try {
@@ -2859,11 +2862,25 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       // the flat one-shot executor rather than failing the session.
       return null;
     }
+    // `cls` is a screen wipe, and the screen belongs to the client — so
+    // the intent is remembered here and reported over the wire rather
+    // than silently dropped (docs/PRD-SSH-Unification.md §4bis B4).
+    let cleared = false;
+    let pending: { kind: 'password' | 'text'; promptText: string } | null = null;
+    const absorb = (result: { output: readonly string[]; clearScreen?: boolean;
+      pendingInput?: { kind: 'password' | 'text'; promptText: string } }) => {
+      cleared = result.clearScreen === true;
+      pending = result.pendingInput ?? null;
+      return result.output.join('\n');
+    };
     return {
-      execute: async (rawInput: string) => (await stack.processLine(rawInput)).output.join('\n'),
+      execute: async (rawInput: string) => absorb(await stack.processLine(rawInput)),
+      handleInput: async (value: string) => absorb(await stack.handleInput(value)),
       getPrompt: () => stack.getPrompt(),
       getCompletions: (line: string) => [...stack.getCompletions(line)],
       isNested: () => stack.topKind !== 'cmd',
+      lastClearedScreen: () => cleared,
+      lastPendingInput: () => pending,
     };
   }
   setCwd(path: string): void { this.cwd = path; }

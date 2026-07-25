@@ -123,11 +123,27 @@ export class WindowsSshServerContext implements ISshServerContext {
             stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
             stderr: '',
             exitCode: 0,
+            clearScreen: vty.lastClearedScreen?.() ?? false,
+            pendingInput: vty.lastPendingInput?.() ?? undefined,
           };
         },
+        provideInput: vty.handleInput
+          ? async (value: string) => {
+              const stdout = await vty.handleInput!(value);
+              return {
+                stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
+                stderr: '',
+                exitCode: 0,
+                clearScreen: vty.lastClearedScreen?.() ?? false,
+                pendingInput: vty.lastPendingInput?.() ?? undefined,
+              };
+            }
+          : undefined,
         getPrompt: () => vty.getPrompt(),
         getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
         isNested: vty.isNested ? () => vty.isNested!() : undefined,
+        // cmd.exe ignores Ctrl+D and has no `clear` — it has `cls`.
+        posixShell: false,
       };
     }
 

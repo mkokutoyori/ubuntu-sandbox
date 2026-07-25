@@ -210,6 +210,8 @@ export interface IPv6ACL {
 export abstract class Router extends Equipment implements CredentialAuthenticator {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
+  /** Round-robin cursor across genuinely tied (same prefix/AD/metric) ECMP candidates in lookupRoute(). */
+  private ecmpCursor = 0;
   private arpTable: Map<string, ARPEntry> = new Map();
   protected ipv6AccessLists: IPv6ACL[] = [];
 
@@ -375,7 +377,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.shell = this.createShell();
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? ({ type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any);
-      return this.aclEngine.evaluateACLByName(String(aclId), pkt) !== 'deny';
+      // Undefined ACL = no interesting traffic, so require an explicit permit.
+      return this.aclEngine.evaluateACLByName(String(aclId), pkt) === 'permit';
     });
     this.natEngine.setInterfaceIPFn((iface) => {
       const port = this.ports.get(iface);
@@ -530,6 +533,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           this.ipsecEngine?.onPortDown(name);
           this.ospfIntegration.onPortDown(name);
         }
+        // EIGRP/BGP have no port-down hook of their own (unlike OSPF's
+        // onPortDown above): without this, a dead neighbor/route just
+        // lingers in the RIB until an operator happens to run a CLI
+        // command, since converge() is otherwise only CLI-triggered
+        // (RouterDynamicRouting.ts — no real hold/SIA timers yet, see
+        // CLAUDE.md). This doesn't add real timer-driven convergence,
+        // it only makes the existing recompute run on link events too.
+        if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
       });
     }
   }
@@ -660,13 +671,30 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     execute(rawInput: string): string | Promise<string>;
     getPrompt(): string;
     getCompletions(line: string): string[];
+    lastEndedSession(): boolean;
   } {
     const shell = this.createShell();
+    // A vendor CLI's exit word unwinds one mode at a time and, at the
+    // top level, logs the VTY line out. The shell owns that state, so
+    // the logout is detected here — an exit verb that leaves the prompt
+    // unchanged means there was no mode left to pop
+    // (docs/PRD-SSH-Unification.md §4bis B4).
+    const EXIT_VERBS = /^(exit|quit|logout)$/i;
+    let ended = false;
     return {
-      execute: (rawInput: string) => shell.execute(this, rawInput),
+      execute: (rawInput: string) => {
+        const before = shell.getPrompt(this);
+        const result = shell.execute(this, rawInput);
+        const settle = (out: string): string => {
+          ended = EXIT_VERBS.test(rawInput.trim()) && shell.getPrompt(this) === before;
+          return out;
+        };
+        return result instanceof Promise ? result.then(settle) : settle(result);
+      },
       getPrompt: () => shell.getPrompt(this),
       // The shell's own candidates, so they follow its CLI mode.
       getCompletions: (line: string) => shell.tabCandidates(line, this),
+      lastEndedSession: () => ended,
     };
   }
 
@@ -876,8 +904,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // updates) — a router does not hello on every packet it forwards.
     if (this.dynamicRouting?.hasActive()) this.dynamicRouting.refresh();
 
-    let bestRoute: RouteEntry | null = null;
+    // ECMP: collect every route genuinely tied for best (same prefix
+    // length, AD, and metric) instead of freezing on whichever happened
+    // to be inserted first, so equal-cost paths actually get used.
+    let candidates: RouteEntry[] = [];
     let bestPrefix = -1;
+    let bestAd = Infinity;
+    let bestMetric = Infinity;
     const destInt = destIP.toUint32();
 
     for (const route of this.routingTable) {
@@ -894,19 +927,23 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const maskInt = route.mask.toUint32();
       const prefix = route.mask.toCIDR();
 
-      if ((destInt & maskInt) === (netInt & maskInt)) {
-        if (prefix > bestPrefix) {
-          bestPrefix = prefix;
-          bestRoute = route;
-        } else if (prefix === bestPrefix && bestRoute) {
-          if (route.ad < bestRoute.ad ||
-              (route.ad === bestRoute.ad && route.metric < bestRoute.metric)) {
-            bestRoute = route;
-          }
-        }
+      if ((destInt & maskInt) !== (netInt & maskInt)) continue;
+
+      if (prefix > bestPrefix
+        || (prefix === bestPrefix && route.ad < bestAd)
+        || (prefix === bestPrefix && route.ad === bestAd && route.metric < bestMetric)) {
+        bestPrefix = prefix;
+        bestAd = route.ad;
+        bestMetric = route.metric;
+        candidates = [route];
+      } else if (prefix === bestPrefix && route.ad === bestAd && route.metric === bestMetric) {
+        candidates.push(route);
       }
     }
-    return bestRoute;
+
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+    return candidates[this.ecmpCursor++ % candidates.length];
   }
 
   private findInterfaceForIP(targetIP: IPAddress): Port | null {
