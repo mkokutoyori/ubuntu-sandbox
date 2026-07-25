@@ -96,6 +96,19 @@ export interface SshHostKeyInfo {
  */
 export interface SshVtyShell {
   execute(rawInput: string): string | Promise<string>;
+  /** True when the last executed line asked for the screen to be wiped. */
+  lastClearedScreen?(): boolean;
+  /** A challenge the last line raised, awaiting one value from the client. */
+  lastPendingInput?(): { kind: 'password' | 'text'; promptText: string } | null;
+  /**
+   * True when the last line logged the session out. The exit word is the
+   * vendor's own — `quit` at VRP user-view, `exit` at IOS EXEC, `exit`
+   * on cmd — so the remote says so rather than the client guessing
+   * (docs/PRD-SSH-Unification.md §4bis B4).
+   */
+  lastEndedSession?(): boolean;
+  /** Hand back the value the client collected for that challenge. */
+  handleInput?(value: string): Promise<string>;
   getPrompt(): string;
   /** Tab candidates for the shell's current CLI mode. */
   getCompletions?(line: string): string[];

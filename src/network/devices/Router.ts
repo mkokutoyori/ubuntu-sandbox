@@ -668,13 +668,30 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     execute(rawInput: string): string | Promise<string>;
     getPrompt(): string;
     getCompletions(line: string): string[];
+    lastEndedSession(): boolean;
   } {
     const shell = this.createShell();
+    // A vendor CLI's exit word unwinds one mode at a time and, at the
+    // top level, logs the VTY line out. The shell owns that state, so
+    // the logout is detected here — an exit verb that leaves the prompt
+    // unchanged means there was no mode left to pop
+    // (docs/PRD-SSH-Unification.md §4bis B4).
+    const EXIT_VERBS = /^(exit|quit|logout)$/i;
+    let ended = false;
     return {
-      execute: (rawInput: string) => shell.execute(this, rawInput),
+      execute: (rawInput: string) => {
+        const before = shell.getPrompt(this);
+        const result = shell.execute(this, rawInput);
+        const settle = (out: string): string => {
+          ended = EXIT_VERBS.test(rawInput.trim()) && shell.getPrompt(this) === before;
+          return out;
+        };
+        return result instanceof Promise ? result.then(settle) : settle(result);
+      },
       getPrompt: () => shell.getPrompt(this),
       // The shell's own candidates, so they follow its CLI mode.
       getCompletions: (line: string) => shell.tabCandidates(line, this),
+      lastEndedSession: () => ended,
     };
   }
 

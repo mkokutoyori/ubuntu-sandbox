@@ -2938,24 +2938,25 @@ export class LinuxTerminalSession extends TerminalSession {
       session.disconnect();
     };
 
-    // Linux↔Linux: drive the interactive session over the real,
-    // authenticated SSH channel (streaming ping, real Ctrl+C-interrupt —
-    // see SshInteractiveSubShell) instead of the in-memory
-    // createSessionForDevice bypass below. Non-Linux vendor targets
-    // (Cisco/Huawei/Windows) are untouched and keep using that bypass.
-    if (linuxRemoteDevice) {
+    // Linux↔Linux is driven over the real, authenticated SSH channel.
+    // Vendor targets still take the in-memory path below: flipping them
+    // to the wire is measured, not hypothetical, and the remaining gap
+    // is recorded in docs/PRD-SSH-Unification.md §4bis.5 — a vendor's
+    // own exit word does not yet end the session over the wire, and a
+    // nested `ssh` typed inside a vendor hop has no frame to push.
+    const wireRemoteDevice = linuxRemoteDevice;
+    if (wireRemoteDevice) {
       const channelResult = session.openShellChannel();
       if (isOk(channelResult)) {
-        // adoptRemoteChild() (the bypass path below) prints this same
-        // banner and records the login for lastlog/auth.log — do the
-        // same here since this path never calls adoptRemoteChild.
         const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
         const sourceHost = this.device.getHostname?.() ?? '';
-        const banner = this.composeLoginBanner(linuxRemoteDevice, user, sourceIp, sourceHost, false);
+        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false);
         for (const line of banner) this.addLine(line);
+        const promptHost = (wireRemoteDevice as unknown as { getSshHostname?: () => string })
+          .getSshHostname?.() ?? host;
         this.activeSubShell = new SshInteractiveSubShell(
           session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
-          linuxRemoteDevice.getSshHostname(), linuxRemoteDevice,
+          promptHost, linuxRemoteDevice ?? undefined,
           this.remoteLivenessProbe(host),
         );
         this._inputBuf = '';

@@ -116,11 +116,19 @@ export class RouterSshServerContext implements ISshServerContext {
       return {
         execute: async (line: string) => {
           const stdout = await vty.execute(line);
-          return { stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`, stderr: '', exitCode: 0 };
+          return {
+            stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
+            stderr: '',
+            exitCode: 0,
+            sessionEnded: vty.lastEndedSession?.() ?? false,
+          };
         },
         getPrompt: () => vty.getPrompt(),
         getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
         supportsInlineHelp: true,
+        // `?` is a help key here, and `clear counters` is a real command
+        // — neither behaves the POSIX way.
+        posixShell: false,
       };
     }
 

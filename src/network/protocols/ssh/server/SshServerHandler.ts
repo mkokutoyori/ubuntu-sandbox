@@ -421,6 +421,12 @@ export class SshServerHandler {
             // Capability advertised at open time: `?` is a help key on a
             // network CLI, an ordinary glob character on a POSIX shell.
             inlineHelp: channels.get(channelId)?.shell?.supportsInlineHelp === true,
+            // The remote's prompt before a single line has run, so a
+            // client shows `R1>` or `C:\Users\User>` from the moment it
+            // lands rather than guessing a bash shape
+            // (docs/PRD-SSH-Unification.md §4bis B4).
+            prompt: channels.get(channelId)?.shell?.getPrompt?.(),
+            posixShell: channels.get(channelId)?.shell?.posixShell !== false,
           }));
           break;
         }
@@ -472,6 +478,26 @@ export class SshServerHandler {
             const nested = shell.isNested?.() ?? false;
             conn.write(JSON.stringify({ ...result, prompt, nested, channelId }));
           });
+          break;
+        }
+
+        case 'shell_input_value': {
+          const channelId = parsed.channelId as number;
+          const info = channels.get(channelId);
+          const shell = info?.shell;
+          if (!userCtx || !shell?.provideInput) {
+            conn.write(JSON.stringify({ stdout: '', stderr: '', exitCode: 0, channelId }));
+            break;
+          }
+          void shell.provideInput(typeof parsed.data === 'string' ? parsed.data : '')
+            .then((result) => {
+              conn.write(JSON.stringify({
+                ...result,
+                prompt: shell.getPrompt?.(),
+                nested: shell.isNested?.() ?? false,
+                channelId,
+              }));
+            });
           break;
         }
 

@@ -250,6 +250,45 @@ Reste ouvert sous B3 : les éditeurs ne sont ouverts sur le fil que
 depuis une session Linux ; les hôtes Windows et les CLI vendeurs n'ont
 pas d'éditeur à exposer.
 
+### 4bis.5 B4 : « mécanique » était faux — mesure
+
+Le PRD annonçait B4 comme mécanique une fois B1-B3 faits. **C'est
+démenti par la mesure.** En basculant le terminal Linux sur le fil pour
+tous les vendeurs, la suite SSH+shell passe de 4 échecs (préexistants) à
+**21**. Les capacités fonctionnelles, elles, étaient bien là :
+`configure terminal`, `system-view`, l'empilement PowerShell et `exit`
+passaient déjà — ce qui manquait, c'est tout ce qu'un client *supposait*
+au lieu de le demander au distant.
+
+Cinq de ces suppositions ont été retirées et remplacées par des
+capacités portées par le fil, chacune couverte par un test :
+
+| Supposition du client | Capacité du fil |
+|---|---|
+| le prompt est une forme bash tant qu'aucune ligne n'a tourné | `prompt` dans l'accusé de `shell_open` |
+| `clear` efface l'écran | `posixShell` — sur cmd c'est inconnu, sur un CLI vendeur `clear counters` est une vraie commande |
+| Ctrl+D déconnecte | idem `posixShell` — cmd.exe l'ignore |
+| une demande de mot de passe vient forcément du client | `pendingInput` dans la réponse + op `shell_input_value` |
+| `exit`/`logout` sont les mots de sortie | `sessionEnded` — le distant annonce sa propre déconnexion |
+
+Après quoi il restait **6 échecs**, tous de la même famille : un `ssh`
+imbriqué tapé *à l'intérieur* d'un saut vendeur. Le bascule a donc été
+**annulée** — le terminal Linux reste sur le bypass pour les vendeurs —
+plutôt que de livrer 6 régressions. Les capacités ci-dessus sont
+conservées : elles n'enlèvent rien et sont ce dont la bascule aura
+besoin.
+
+Ce qui manque pour finir B4, mesuré et non supposé :
+
+1. Le mot de sortie d'un vendeur ne termine pas encore la session sur le
+   fil dans tous les cas. `Router.createVtyShell` déduit la déconnexion
+   d'un verbe de sortie qui ne change pas le prompt ; côté Cisco la
+   mesure confirme que ça marche, côté Huawei `quit` en vue utilisateur
+   ne déclenche pas encore.
+2. Un `ssh` imbriqué depuis un saut vendeur n'a pas de frame à empiler :
+   `SshInteractiveSubShell.startNestedHop` exige une `LinuxMachine`. Le
+   distant doit pousser lui-même le saut suivant côté serveur.
+
 ## 5. Hors périmètre
 
 - Le retrait effectif des chemins clients en mémoire (étape 2) et le
