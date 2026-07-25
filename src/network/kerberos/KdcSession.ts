@@ -338,6 +338,17 @@ export class KdcSessionHandler {
       topic: 'kerberos.tgs.succeeded',
       payload: { ...this.kdcRef(), cname: cnameStr, serviceName: snameStr, referral: isOutboundReferral },
     });
+    // 4769 "A Kerberos service ticket was requested" — TargetDomainName is
+    // the trusted domain's real NetBIOS name for a cross-realm referral
+    // (discovered over LDAP at New-ADTrust time, §1.3 grounding; falls
+    // back to the DNS realm, never fabricated, if that discovery never
+    // happened), or this DC's own domain for an ordinary same-realm ticket.
+    const targetDomainName = isOutboundReferral
+      ? (this.ctx.store.getTrust(targetRealm)?.remoteNetbiosName ?? targetRealm.toUpperCase())
+      : this.ctx.store.netbiosName;
+    this.ctx.writeSecurityEvent?.(4769, 'SuccessAudit',
+      `A Kerberos service ticket was requested.\n\nAccount Information:\n\tAccount Name:\t\t${cnameStr}\n\nService Information:\n\tService Name:\t\t${snameStr}\n\nNetwork Information:\n\tTarget Domain Name:\t${targetDomainName}`,
+      { TargetUserName: cnameStr, TargetDomainName: targetDomainName, ServiceName: snameStr, Status: '0x0' });
   }
 
   /**

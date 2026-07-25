@@ -27,6 +27,12 @@ export interface TrustInfo {
   readonly remoteRealm: string;
   readonly direction: TrustDirection;
   readonly transitive: boolean;
+  /** The remote domain's NetBIOS ("flat") name, discovered over real LDAP
+   *  at `New-ADTrust` time from its `crossRef` object (§1.3 grounding,
+   *  `WindowsServer.newADTrust`) — used as `TargetDomainName` on the 4769
+   *  a cross-realm Kerberos referral produces. Absent if the remote crossRef
+   *  couldn't be read (unreachable/older-style remote), never fabricated. */
+  readonly remoteNetbiosName?: string;
 }
 
 export interface TrustRecord extends TrustInfo {
@@ -59,7 +65,7 @@ export class TrustRegistry {
     return [...parseDN(`CN=${remoteRealm}`), ...this.systemDn];
   }
 
-  addTrust(remoteRealm: string, direction: TrustDirection, transitive: boolean, interrealmKey: string): TrustOpResult {
+  addTrust(remoteRealm: string, direction: TrustDirection, transitive: boolean, interrealmKey: string, remoteNetbiosName?: string): TrustOpResult {
     this.ensureContainer();
     const res = this.tree.addEntry(this.trustDn(remoteRealm), {
       objectClass: ['top', 'trustedDomain'],
@@ -68,6 +74,7 @@ export class TrustRegistry {
       trustDirection: [direction],
       trustAttributes: [transitive ? 'transitive' : 'nonTransitive'],
       trustAuthIncoming: [interrealmKey],
+      ...(remoteNetbiosName ? { flatName: [remoteNetbiosName] } : {}),
     });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: `A trust with "${remoteRealm}" already exists.` };
   }
@@ -105,11 +112,13 @@ export class TrustRegistry {
   }
 
   private project(entry: DirectoryEntry): TrustRecord {
+    const flatName = firstOf(entry.attributes.get('flatname'));
     return {
       remoteRealm: firstOf(entry.attributes.get('trustpartner')),
       direction: (firstOf(entry.attributes.get('trustdirection')) || 'Bidirectional') as TrustDirection,
       transitive: firstOf(entry.attributes.get('trustattributes')) === 'transitive',
       interrealmKey: firstOf(entry.attributes.get('trustauthincoming')),
+      ...(flatName ? { remoteNetbiosName: flatName } : {}),
     };
   }
 }

@@ -627,6 +627,22 @@ class WindowsAdAdapter implements IAdProvider {
     if (denied) return denied;
     const group = store.resolveIdentity(groupIdentity);
     for (const m of members) {
+      // `<remoteRealm>\<sam>` naming a domain other than this one (trust-
+      // relationships gap 1) — real AD stores this as a local
+      // `foreignSecurityPrincipal` stub rather than the actual foreign
+      // object, gated on a real established trust (`addForeignSecurityPrincipal`).
+      const backslash = m.indexOf('\\');
+      const domainPart = backslash !== -1 ? m.slice(0, backslash) : '';
+      const isForeign = backslash !== -1
+        && domainPart.toLowerCase() !== store.netbiosName.toLowerCase()
+        && domainPart.toLowerCase() !== store.dnsName.toLowerCase();
+      if (isForeign) {
+        const fsp = store.addForeignSecurityPrincipal(domainPart, m.slice(backslash + 1));
+        if (!fsp.ok) return fsp;
+        const res = store.addGroupMember(group, fsp.sam!);
+        if (!res.ok) return res;
+        continue;
+      }
       const res = store.addGroupMember(group, store.resolveIdentity(m));
       if (!res.ok) return res;
     }
@@ -643,7 +659,7 @@ class WindowsAdAdapter implements IAdProvider {
     }
     return { ok: true, message: '' };
   }
-  getGroupMembers(groupIdentity: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' }> {
+  getGroupMembers(groupIdentity: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' }> {
     const store = this.requireStore('Get-ADGroupMember');
     return store.getGroupMembersDetailed(store.resolveIdentity(groupIdentity));
   }
