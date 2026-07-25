@@ -14,10 +14,14 @@
  *   - `auth` consults the device's {@link NetworkOsCredentialStore}
  *     (the same store backing `username admin secret …` and the
  *     existing cross-vendor host's gate).
- *   - `getShell` delegates each line to the router's
- *     {@link SshExecTarget.runSshCommandSync}, which already speaks IOS
- *     / VRP / cmd.exe semantics for the line-mode commands the cross-
- *     vendor test suite exercises.
+ *   - `getShell` prefers `target.createVtyShell()` — a real per-channel
+ *     CLI session (PRD-SSH-Unification.md Phase A2) whose mode
+ *     transitions (`enable`, `configure terminal`) and prompt genuinely
+ *     persist across lines, with tab-completion/`?` help riding the same
+ *     channel (Phase B1). It falls back to
+ *     {@link SshExecTarget.runSshCommandSync} — a stateless one-shot
+ *     line dispatch with no mode/prompt persistence — only for a target
+ *     that doesn't implement `createVtyShell`.
  *   - `getFilesystem` returns the vendor's {@link RouterSftpFileSystem}
  *     view (running-config / startup-config), keeping the SFTP subsystem
  *     coherent with what `copy running-config tftp:` would expose.
