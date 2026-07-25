@@ -1022,7 +1022,29 @@ export class PSParser {
     const nameTok = this.advance();
     const name = nameTok.value;
 
+    // Optional C-style inline parameter list — real PowerShell allows
+    // `function Name([type]$a, [type]$b = default) { ... }` as an
+    // alternative to a `param(...)` block inside the braces (common in
+    // nested helper functions). Equivalent to the function's own
+    // param(...) block when neither the caller nor the body supplies one.
+    let inlineParams: PSParamDeclaration[] | null = null;
+    if (this.check(PSTokenType.LPAREN)) {
+      this.advance(); // (
+      inlineParams = [];
+      while (!this.check(PSTokenType.RPAREN) && !this.isAtEnd()) {
+        this.skipTerminators();
+        if (this.check(PSTokenType.RPAREN)) break;
+        inlineParams.push(this.parseParamDeclaration());
+        this.skipTerminators();
+        if (this.check(PSTokenType.COMMA)) { this.advance(); this.skipTerminators(); }
+      }
+      this.expect(PSTokenType.RPAREN);
+    }
+
     const body = this.parseScriptBlock();
+    if (inlineParams && !body.paramBlock) {
+      body.paramBlock = { type: 'ParamBlock', attributes: [], parameters: inlineParams, position: pos };
+    }
     return makeFunctionDef(kind, name, body, pos);
   }
 
@@ -1146,8 +1168,12 @@ export class PSParser {
   private parseReturnStatement(): PSReturnStatement {
     const pos = this.pos_();
     this.expectWord('return');
+    // `return`'s operand is a pipeline in PowerShell grammar, not a
+    // restricted expression — `return Get-Something 5` must invoke
+    // Get-Something with a positional arg, same as `$x = Get-Something 5`
+    // already does via parseAssignmentRHS().
     const value = !this.isTerminator() && !this.isAtEnd() && this.canStartExpression()
-      ? this.parseExpression() : null;
+      ? this.parseAssignmentRHS() : null;
     return { type: 'ReturnStatement', value, position: pos };
   }
 
