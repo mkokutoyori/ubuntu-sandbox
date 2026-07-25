@@ -4,6 +4,9 @@
  * Reference: DESIGN-SSH-SFTP.md section 7.
  */
 
+import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+
 export type ChannelType = 'shell' | 'exec' | 'sftp';
 
 export interface ISshChannel {
@@ -59,6 +62,17 @@ export interface ISshShellChannel extends ISshChannel {
    * (docs/PRD-SSH-Unification.md §4bis B1).
    */
   complete(line: string): Promise<string[]>;
+  /**
+   * Ask the remote to open an editor for `commandLine`. Resolves with
+   * the first screen when it did, or null when the line opens none (a
+   * different command, or a remote with no editor engines). The engine
+   * runs where the file is (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  openEditor(commandLine: string): Promise<EditorView | null>;
+  /** Feed one keystroke to the open editor and get the fresh screen. */
+  sendEditorKey(key: EditorKeyInput): Promise<EditorView | null>;
+  /** Abandon the editor session without waiting for its own exit key. */
+  closeEditor(): void;
   /**
    * True when the remote treats `?` as a help key rather than an ordinary
    * character, so a client can offer inline help without breaking

@@ -10,6 +10,8 @@
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler } from '@/events/Scheduler';
+import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
+import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
 import type { ChannelType } from '../channels/ISshChannel';
 import {
   encodeSftpChannelFrame,
@@ -48,6 +50,12 @@ interface OpenChannelInfo {
    * survive across the channel's lifetime, and disposed when it closes.
    */
   shell?: ILinuxShell;
+  /**
+   * The editor currently holding this channel, if any. While it is set
+   * every keystroke goes to the engine instead of the shell
+   * (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  editor?: EditorSession;
 }
 
 const PREAUTH_COUNT = new WeakMap<object, { value: number }>();
@@ -479,6 +487,42 @@ export class SshServerHandler {
           const line = typeof parsed.data === 'string' ? parsed.data : '';
           const candidates = info?.shell?.getCompletions?.(line) ?? [];
           conn.write(JSON.stringify({ op: 'shell_complete_result', channelId, candidates }));
+          break;
+        }
+
+        case 'editor_open': {
+          const channelId = parsed.channelId as number;
+          const info = channels.get(channelId);
+          const commandLine = typeof parsed.data === 'string' ? parsed.data : '';
+          const session = userCtx ? info?.shell?.openEditor?.(commandLine) ?? null : null;
+          if (info) info.editor = session ?? undefined;
+          conn.write(JSON.stringify({
+            op: 'editor_view', channelId, view: session ? session.view : null,
+          }));
+          break;
+        }
+
+        case 'editor_key': {
+          const channelId = parsed.channelId as number;
+          const info = channels.get(channelId);
+          const editor = info?.editor;
+          if (!editor) {
+            conn.write(JSON.stringify({ op: 'editor_view', channelId, view: null }));
+            break;
+          }
+          const view = editor.applyKey(parsed.key as EditorKeyInput);
+          // The buffer is gone once the engine exits: drop the session so
+          // the next line goes back to the shell.
+          if (view.exited) info.editor = undefined;
+          conn.write(JSON.stringify({ op: 'editor_view', channelId, view }));
+          break;
+        }
+
+        case 'editor_close': {
+          const channelId = parsed.channelId as number;
+          const info = channels.get(channelId);
+          info?.editor?.close();
+          if (info) info.editor = undefined;
           break;
         }
 
