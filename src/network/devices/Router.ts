@@ -54,6 +54,7 @@ import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { TcpStack } from '../tcp/TcpStack';
 import type { TcpStream } from '../tcp/types';
+import { verifyUdpChecksum } from '../tcp/types';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';
@@ -1482,6 +1483,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     } else if (ipPkt.protocol === IP_PROTO_UDP) {
       const udp = ipPkt.payload as UDPPacket;
       if (!udp || udp.type !== 'udp') return;
+      // RFC 768: a non-zero checksum that doesn't match is corruption —
+      // silently discarded, no ICMP reply (matches EndHost.deliverUDP).
+      if (!verifyUdpChecksum(udp, ipPkt.sourceIP.toString(), ipPkt.destinationIP.toString())) {
+        Logger.warn(this.id, 'udp:checksum-fail',
+          `${this.name}: invalid UDP checksum from ${ipPkt.sourceIP}:${udp.sourcePort}, dropping`);
+        return;
+      }
 
       // Dispatch by destination port
       if (udp.destinationPort === UDP_PORT_RIP) {

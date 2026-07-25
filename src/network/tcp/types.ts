@@ -220,6 +220,20 @@ export function verifyTcpChecksum(
   return computeTcpChecksum(seg, srcIp, dstIp) === seg.checksum;
 }
 
+/**
+ * Verify a received datagram's checksum. A checksum of 0 is treated as
+ * "not computed" (RFC 768's IPv4 opt-out) and accepted — the many internal
+ * protocol agents (RIP, DHCP, IKE, SNMP, …) that build `UDPPacket`s with
+ * structured (non-byte) payloads still stamp `checksum: 0` and are
+ * unaffected by this check.
+ */
+export function verifyUdpChecksum(
+  udp: UdpChecksumInput & { checksum: number }, srcIp: string, dstIp: string,
+): boolean {
+  if (udp.checksum === 0) return true;
+  return computeUdpChecksum(udp, srcIp, dstIp) === udp.checksum;
+}
+
 export function flagsString(f: TcpFlags): string {
   const parts: string[] = [];
   if (f.cwr) parts.push('CWR');

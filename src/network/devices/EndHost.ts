@@ -25,6 +25,7 @@ import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
 import type { TcpSegment } from '../tcp/types';
+import { computeUdpChecksum, verifyUdpChecksum } from '../tcp/types';
 import { TimerSet } from '@/events/TimerSet';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
@@ -2268,14 +2269,7 @@ export abstract class EndHost extends Equipment {
     payloadBytes: number = 0,
     options: { df?: boolean } = {},
   ): boolean {
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort,
-      destinationPort,
-      length: 8 + payloadBytes,
-      checksum: 0,
-      payload,
-    };
+    const udpBase = { type: 'udp' as const, sourcePort, destinationPort, length: 8 + payloadBytes, payload };
     // Preserve the existing DF=1 default (every prior caller relied on
     // it); pass { df: false } to originate fragmentable UDP traffic that
     // a smaller-MTU hop can split instead of bouncing (RFC 791 §3.2).
@@ -2284,6 +2278,8 @@ export abstract class EndHost extends Equipment {
     // Local delivery (loopback or own address) — like a real kernel, this
     // never reaches the wire.
     if (destinationIP.isLoopback() || this.getPortOwningIP(destinationIP)) {
+      const srcStr = destinationIP.toString();
+      const udp: UDPPacket = { ...udpBase, checksum: computeUdpChecksum(udpBase, srcStr, srcStr) };
       const localPkt = createIPv4Packet(
         destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
       );
@@ -2296,6 +2292,10 @@ export abstract class EndHost extends Equipment {
     const srcIP = route.port.getIPAddress();
     if (!srcIP) return false;
 
+    const udp: UDPPacket = {
+      ...udpBase,
+      checksum: computeUdpChecksum(udpBase, srcIP.toString(), destinationIP.toString()),
+    };
     const ipPkt = createIPv4Packet(
       srcIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
     );
@@ -2402,6 +2402,14 @@ export abstract class EndHost extends Equipment {
   private deliverUDP(portName: string, ipPkt: IPv4Packet, wasBroadcast: boolean, srcMac?: string): void {
     const udp = ipPkt.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
+
+    // RFC 768: a non-zero checksum that doesn't match is corruption — a
+    // real kernel silently discards it (UdpInErrors), no ICMP reply.
+    if (!verifyUdpChecksum(udp, ipPkt.sourceIP.toString(), ipPkt.destinationIP.toString())) {
+      Logger.warn(this.id, 'udp:checksum-fail',
+        `${this.name}: invalid UDP checksum from ${ipPkt.sourceIP}:${udp.sourcePort}, dropping`);
+      return;
+    }
 
     if (this.dispatchUdpToListener(portName, udp, ipPkt.sourceIP, ipPkt.destinationIP, srcMac)) return;
 
