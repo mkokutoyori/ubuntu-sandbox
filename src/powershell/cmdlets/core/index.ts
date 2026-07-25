@@ -138,7 +138,7 @@ import {
 import {
   InstallAdcsCertificationAuthorityCmdlet, GetCATemplateCmdlet, GetCertificateCmdlet,
 } from './AdcsCmdlets';
-import { AddComputerCmdlet, TestComputerSecureChannelCmdlet, InstallADServiceAccountCmdlet, TestADServiceAccountCmdlet } from './ComputerCmdlets';
+import { AddComputerCmdlet, RemoveComputerCmdlet, RenameComputerCmdlet, TestComputerSecureChannelCmdlet, InstallADServiceAccountCmdlet, TestADServiceAccountCmdlet } from './ComputerCmdlets';
 import {
   AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet,
   AddDnsServerResourceRecordACmdlet, AddDnsServerResourceRecordAAAACmdlet,
@@ -431,6 +431,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
 
   // ── Domain join (a workstation joins a domain with Add-Computer) ─────────
   registry.register(new AddComputerCmdlet());
+  registry.register(new RemoveComputerCmdlet());
+  registry.register(new RenameComputerCmdlet());
   registry.register(new TestComputerSecureChannelCmdlet());
   registry.register(new InstallADServiceAccountCmdlet());
   registry.register(new TestADServiceAccountCmdlet());

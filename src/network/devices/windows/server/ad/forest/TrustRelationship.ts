@@ -79,6 +79,22 @@ export class TrustRegistry {
     return this.project(entry);
   }
 
+  /** `netdom trust /Remove` (docs/PRD-Netdom.md §2.1 P9) — the symmetric inverse of `addTrust`. */
+  removeTrust(remoteRealm: string): TrustOpResult {
+    this.ensureContainer();
+    const res = this.tree.deleteEntry(this.trustDn(remoteRealm));
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: `Cannot find a trust with identity: '${remoteRealm}'.` };
+  }
+
+  /** `netdom trust /Reset` (docs/PRD-Netdom.md §2.1 P9) — regenerates an existing trust's interrealm key in place (same object, `trustAuthIncoming` replaced), rather than dropping and recreating the relationship. */
+  resetTrustSecret(remoteRealm: string, newInterrealmKey: string): TrustOpResult {
+    this.ensureContainer();
+    const dn = this.trustDn(remoteRealm);
+    if (!this.tree.getByDn(dn)) return { ok: false, message: `Cannot find a trust with identity: '${remoteRealm}'.` };
+    this.tree.modifyEntry(dn, [{ op: 'replace', type: 'trustAuthIncoming', values: [newInterrealmKey] }]);
+    return { ok: true, message: '' };
+  }
+
   listTrusts(): TrustInfo[] {
     this.ensureContainer();
     const container = this.tree.getByDn(this.systemDn);

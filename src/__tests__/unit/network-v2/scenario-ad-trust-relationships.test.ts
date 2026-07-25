@@ -113,6 +113,53 @@ describe('Scénario 16 — trust relationships entre mandeng.lan et partenaire.l
     });
   });
 
+  describe('netdom trust /Remove et /Reset (docs/PRD-Netdom.md §2.1 P9)', () => {
+    async function labWithTrust(): Promise<{ dc: WindowsServer; dcPartenaire: WindowsServer; client: WindowsPC }> {
+      const lab = await buildTwoDomainsAndClient();
+      await run(ps(lab.dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.10.20"');
+      return lab;
+    }
+
+    it('netdom trust .../Remove removes the trust on both sides when the remote is reachable', async () => {
+      const { dc, dcPartenaire } = await labWithTrust();
+      const out = await dc.executeCmdCommand('netdom trust mandeng.lan /domain:partenaire.local /remove /Server:192.168.10.20 /UserD:Administrator /PasswordD:DSRM@Partenaire2025!');
+      expect(out).toMatch(/command completed successfully/i);
+      expect(dc.getDirectoryStore()!.getTrust('partenaire.local')).toBeNull();
+      expect(dcPartenaire.getDirectoryStore()!.getTrust('mandeng.lan')).toBeNull();
+    });
+
+    it('netdom trust .../Remove still removes locally when the remote is unreachable', async () => {
+      const lab = await labWithTrust();
+      const out = await lab.dc.executeCmdCommand('netdom trust mandeng.lan /domain:partenaire.local /remove /Server:192.168.10.20 /UserD:Administrator /PasswordD:wrongpassword');
+      expect(out).toMatch(/command completed successfully/i);
+      expect(lab.dc.getDirectoryStore()!.getTrust('partenaire.local')).toBeNull();
+    });
+
+    it('netdom trust .../Remove fails cleanly when no such trust exists', async () => {
+      const { dc } = await buildTwoDomainsAndClient();
+      const out = await dc.executeCmdCommand('netdom trust mandeng.lan /domain:partenaire.local /remove');
+      expect(out).toMatch(/failed to complete successfully/i);
+    });
+
+    it('netdom trust .../Reset regenerates the interrealm key on both sides, and the trust still verifies afterwards', async () => {
+      const { dc, dcPartenaire } = await labWithTrust();
+      const before = dc.getDirectoryStore()!.getTrust('partenaire.local')!.interrealmKey;
+      const out = await dc.executeCmdCommand('netdom trust mandeng.lan /domain:partenaire.local /reset /Server:192.168.10.20 /UserD:Administrator /PasswordD:DSRM@Partenaire2025!');
+      expect(out).toMatch(/command completed successfully/i);
+      const after = dc.getDirectoryStore()!.getTrust('partenaire.local')!.interrealmKey;
+      expect(after).not.toBe(before);
+      expect(dcPartenaire.getDirectoryStore()!.getTrust('mandeng.lan')!.interrealmKey).toBe(after);
+      const verify = await dc.executeCmdCommand('netdom trust mandeng.lan /domain:partenaire.local /verify');
+      expect(verify).toMatch(/command completed successfully/i);
+    });
+
+    it('netdom trust /Force is accepted without error but has no additional observable effect', async () => {
+      const { dc } = await labWithTrust();
+      const out = await dc.executeCmdCommand('netdom trust mandeng.lan /domain:partenaire.local /remove /Force');
+      expect(out).toMatch(/command completed successfully/i);
+    });
+  });
+
   describe('accès aux ressources cross-domaine', () => {
     async function labWithTrustAndGroup(): Promise<{ dc: WindowsServer }> {
       const { dc, dcPartenaire, client } = await buildTwoDomainsAndClient();

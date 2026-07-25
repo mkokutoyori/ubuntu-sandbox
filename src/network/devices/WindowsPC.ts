@@ -80,6 +80,7 @@ import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient
 import { WinRmServerHandler } from './windows/server/winrm/WinRmServer';
 import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { selfSignedLdapCert } from './windows/server/ad/ldap/ldapStartTls';
+import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { getForestForDomain } from './windows/server/ad/forest/Forest';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
@@ -108,6 +109,8 @@ import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } f
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
 import { logonDomainUser } from './windows/domain/DomainLogonClient';
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
+import { resetComputerSecretOverWire, removeComputerAccountOverWire, renameComputerAccountOverWire } from './windows/domain/ComputerSecureChannelClient';
+import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
 import { SmtpClientSession } from '@/network/smtp/SmtpClientSession';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
@@ -854,6 +857,91 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   markServiceAccountInstalled(sam: string): void { this.installedServiceAccounts.add(sam.toLowerCase()); }
   hasServiceAccountInstalled(sam: string): boolean { return this.installedServiceAccounts.has(sam.toLowerCase()); }
+
+  /**
+   * `Test-ComputerSecureChannel`/`netdom verify` (docs/PRD-Netdom.md §2.1
+   * P1) — a real LDAP bind against this machine's own DC using its
+   * computer-account credentials (`<hostname>$` / the machine secret
+   * recorded at join time). `false` both when never joined and when the
+   * bind genuinely fails (DC unreachable or the secret is out of sync),
+   * matching real Windows' single boolean result.
+   */
+  testSecureChannel(): boolean {
+    if (!this.domainMembership) return false;
+    const conn = dialLdap(this.getTcpStack(), this.domainMembership.dcAddress);
+    if (!conn.ok || !conn.client) return false;
+    const bind = conn.client.bind(`${this.getHostname()}$`, this.domainMembership.machineSecret);
+    conn.client.unbind();
+    return bind.ok;
+  }
+
+  /**
+   * `netdom reset`/`netdom resetpwd` (docs/PRD-Netdom.md §2.1 P2/P3) —
+   * generates a fresh machine secret and pushes it to the DC via a real
+   * LDAP `ModifyRequest` (`ComputerSecureChannelClient`, § 1.3
+   * grounding), then updates `domainMembership` in place so a
+   * subsequent `testSecureChannel()`/`netdom verify` reflects the new
+   * secret immediately — both sides change together, or neither does.
+   */
+  resetSecureChannel(credentialUser: string, credentialPassword: string, dcAddressOverride?: string): { ok: boolean; message: string } {
+    if (!this.domainMembership) return { ok: false, message: 'The computer is not joined to a domain.' };
+    const newSecret = randomSessionKey();
+    const result = resetComputerSecretOverWire(
+      this.getTcpStack(), dcAddressOverride || this.domainMembership.dcAddress, this.domainMembership.dnsName,
+      this.getHostname(), newSecret, credentialUser, credentialPassword,
+    );
+    if (!result.ok) return result;
+    this.domainMembership = { ...this.domainMembership, machineSecret: newSecret };
+    return { ok: true, message: '' };
+  }
+
+  /**
+   * `netdom remove` (docs/PRD-Netdom.md §2.1 P4) — deletes this
+   * machine's computer account on the DC via a real LDAP `DelRequest`
+   * (real AD deletes the object outright, it doesn't just disable it),
+   * then clears `domainMembership` so the machine is back in a
+   * workgroup, symmetric with `joinDomainNow()`.
+   */
+  removeFromDomain(credentialUser: string, credentialPassword: string): { ok: boolean; message: string } {
+    if (!this.domainMembership) return { ok: false, message: 'The computer is not joined to a domain.' };
+    const result = removeComputerAccountOverWire(
+      this.getTcpStack(), this.domainMembership.dcAddress, this.domainMembership.dnsName,
+      this.getHostname(), credentialUser, credentialPassword,
+    );
+    if (!result.ok) return result;
+    this.domainMembership = null;
+    this.domainSession = null;
+    return { ok: true, message: '' };
+  }
+
+  /**
+   * `Rename-Computer`/`netdom renamecomputer`/`netdom computername
+   * /MakePrimary` (docs/PRD-Netdom.md §2.1 P5/P6) — renames this
+   * machine both locally (`setHostname()`, existing) and on the DC's AD
+   * computer object (`sAMAccountName`/`servicePrincipalName`/
+   * `dNSHostName`, via a real LDAP `ModifyDNRequest`+`ModifyRequest`,
+   * § 1.3 grounding) — unlike the join-time `-NewName` rename, this is
+   * the first path that updates the AD side of an ALREADY-joined
+   * machine's name. On a workgroup machine (not domain-joined), only
+   * the local rename happens — no AD object to update.
+   */
+  renameComputer(newName: string, credential?: { username: string; password: string }): { ok: boolean; message: string } {
+    if (!this.domainMembership) {
+      this.setHostname(newName);
+      return { ok: true, message: '' };
+    }
+    if (!credential) {
+      return { ok: false, message: 'Cannot process command because of one or more missing mandatory parameters: Credential.' };
+    }
+    const oldName = this.getHostname();
+    const result = renameComputerAccountOverWire(
+      this.getTcpStack(), this.domainMembership.dcAddress, this.domainMembership.dnsName,
+      oldName, newName, credential.username, credential.password,
+    );
+    if (!result.ok) return result;
+    this.setHostname(newName);
+    return { ok: true, message: '' };
+  }
 
   /** Domain logon (`LAB\alice`/`alice@lab.local`) — validated against the DC over the real network, not a topology shortcut. */
   logonDomain(rawUser: string, password: string): { ok: boolean; message: string } {
@@ -3222,11 +3310,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return true;
   }
 
-  /** `netdom join`/`netdom trust` — cmd-level equivalents of `Add-Computer -DomainName`/`New-ADTrust`, same real wire dialogue underneath. */
+  /** `netdom join`/`netdom trust`/`netdom verify` — cmd-level equivalents of `Add-Computer -DomainName`/`New-ADTrust`/`Test-ComputerSecureChannel`, same real wire dialogue underneath. */
   private cmdNetdom(args: string[]): string {
     const sub = args[0]?.toLowerCase();
     if (sub === 'trust') return this.cmdNetdomTrust(args.slice(1));
-    if (sub === 'query' && args[1]?.toLowerCase() === 'fsmo') return this.cmdNetdomQueryFsmo();
+    if (sub === 'verify') return this.cmdNetdomVerify(args.slice(1));
+    if (sub === 'reset') return this.cmdNetdomReset(args.slice(1));
+    if (sub === 'resetpwd') return this.cmdNetdomResetpwd(args.slice(1));
+    if (sub === 'remove') return this.cmdNetdomRemove(args.slice(1));
+    if (sub === 'renamecomputer') return this.cmdNetdomRenameComputer(args.slice(1));
+    if (sub === 'computername') return this.cmdNetdomComputerName(args.slice(1));
+    if (sub === 'add') return this.cmdNetdomAdd(args.slice(1));
+    if (sub === 'query') return this.cmdNetdomQuery(args.slice(1));
     if (args.length === 0 || sub !== 'join') {
       return 'NETDOM JOIN /Domain:<Domain> /UserD:<User> /PasswordD:<Password> [/Server:<DC>]';
     }
@@ -3256,6 +3351,48 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /**
+   * `netdom add <MachineName> /Domain:<Domain> /UserD:<User>
+   * /PasswordD:<Password> [/OU:<OUPath>] [/Server:<DC>]` (docs/PRD-
+   * Netdom.md §2.1 P8) — pre-stages a computer account without joining
+   * THIS machine: the exact same real wire dialogue as `netdom join`
+   * (`joinDomain()`, real Kerberos AS+TGS+AP-REQ, § 1.3 grounding), just
+   * for a DIFFERENT machine name, and without ever assigning the result
+   * to this device's own `domainMembership`.
+   */
+  private cmdNetdomAdd(args: string[]): string {
+    let domain = '';
+    let server = '';
+    let userD = '';
+    let passwordD = '';
+    let ouPath: string | undefined;
+    const positional: string[] = [];
+    for (const arg of args) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) { if (!arg.startsWith('/')) positional.push(arg); continue; }
+      const key = m[1].toLowerCase();
+      if (key === 'domain') domain = m[2];
+      else if (key === 'server') server = m[2];
+      else if (key === 'userd') userD = m[2];
+      else if (key === 'passwordd') passwordD = m[2];
+      else if (key === 'ou') ouPath = m[2];
+    }
+    const machineName = positional[0] || '';
+    if (!machineName || !domain || !userD) {
+      return 'NETDOM ADD <MachineName> /Domain:<Domain> /UserD:<User> /PasswordD:<Password> [/OU:<OUPath>] [/Server:<DC>]';
+    }
+    const dcAddress = server || this.resolveHostnameSync(domain)?.toString() || '';
+    if (!dcAddress) {
+      return `The specified domain either does not exist or could not be contacted.\nThe command failed to complete successfully.`;
+    }
+    const result: DomainJoinResult = joinDomain({
+      tcpStack: this.getTcpStack(), computerName: machineName, domainName: domain,
+      dcAddress, credentialUser: userD, credentialPassword: passwordD, ouPath,
+    });
+    if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+    return `The account for the workstation '${machineName}' has been successfully pre-created.\nThe command completed successfully.`;
+  }
+
+  /**
    * `netdom trust <TrustingDomain> /Domain:<TrustedDomain> [/Verify] |
    * netdom trust /d:<RemoteRealm> /Direction:<Inbound|Outbound|Bidirectional>
    * /Server:<RemoteDC> /UserD:<User> /PasswordD:<Password> [/Transitive:No]`
@@ -3277,11 +3414,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     let direction: 'Inbound' | 'Outbound' | 'Bidirectional' = 'Bidirectional';
     let transitive = true;
     let verify = false;
+    let removeTrust = false;
+    let resetTrust = false;
     const positional: string[] = [];
     for (const arg of args) {
       const m = /^\/([a-z]+):(.*)$/i.exec(arg);
       if (!m) {
-        if (arg.toLowerCase() === '/verify') { verify = true; continue; }
+        const flag = arg.toLowerCase();
+        if (flag === '/verify') { verify = true; continue; }
+        if (flag === '/remove') { removeTrust = true; continue; }
+        if (flag === '/reset') { resetTrust = true; continue; }
+        if (flag === '/force') { continue; } // accepted, no additional observable effect (docs/PRD-Netdom.md §2.2)
         if (!arg.startsWith('/')) positional.push(arg);
         continue;
       }
@@ -3306,6 +3449,28 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return `The secure channel from '${trustingDomain || store.dnsName}' to the domain '${remoteRealm}' has been verified.\nThe command completed successfully.`;
     }
 
+    if (removeTrust) {
+      if (!remoteRealm) return 'NETDOM TRUST <TrustingDomain> /Domain:<TrustedDomain> /Remove [/Server:<RemoteDC> /UserD:<User> /PasswordD:<Password>]';
+      const server2_ = this as unknown as { removeADTrust?: (r: string, s?: string, u?: string, p?: string) => { ok: boolean; message: string } };
+      if (typeof server2_.removeADTrust !== 'function') {
+        return 'The trust could not be removed. This computer is not a domain controller.\nThe command failed to complete successfully.';
+      }
+      const result = server2_.removeADTrust(remoteRealm, server || undefined, userD || undefined, passwordD || undefined);
+      if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+      return `The trust with '${remoteRealm}' has been successfully removed.\nThe command completed successfully.`;
+    }
+
+    if (resetTrust) {
+      if (!remoteRealm) return 'NETDOM TRUST <TrustingDomain> /Domain:<TrustedDomain> /Reset [/Server:<RemoteDC> /UserD:<User> /PasswordD:<Password>]';
+      const server3_ = this as unknown as { resetADTrust?: (r: string, s?: string, u?: string, p?: string) => { ok: boolean; message: string } };
+      if (typeof server3_.resetADTrust !== 'function') {
+        return 'The trust could not be reset. This computer is not a domain controller.\nThe command failed to complete successfully.';
+      }
+      const result = server3_.resetADTrust(remoteRealm, server || undefined, userD || undefined, passwordD || undefined);
+      if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+      return `The trust with '${remoteRealm}' has been successfully reset.\nThe command completed successfully.`;
+    }
+
     if (!remoteRealm || !server || !userD) {
       return 'NETDOM TRUST /d:<RemoteRealm> /Server:<RemoteDC> /UserD:<User> /PasswordD:<Password> [/Direction:<Inbound|Outbound|Bidirectional>] [/Transitive:No]';
     }
@@ -3316,6 +3481,175 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const result = server_.newADTrust(remoteRealm, server, direction, transitive, userD, passwordD);
     if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
     return `The trust with '${remoteRealm}' has been successfully established.\nThe command completed successfully.`;
+  }
+
+  /**
+   * `netdom verify <MachineName> [/Domain:<Domain>]` (docs/PRD-Netdom.md
+   * §2.1 P1) — verifies the LOCAL machine's own secure channel to its
+   * domain via `testSecureChannel()` (§ 1.3 grounding: same primitive
+   * `Test-ComputerSecureChannel` already uses, no second implementation).
+   * `MachineName`/`/Domain:` are accepted (real `netdom verify` can
+   * target a remote machine given credentials) but only checked against
+   * this machine's own hostname/domain — this simulator has no remote
+   * dial for a THIRD machine's secure channel, only its own.
+   */
+  private cmdNetdomVerify(args: string[]): string {
+    let domain = '';
+    const positional: string[] = [];
+    for (const arg of args) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) { if (!arg.startsWith('/')) positional.push(arg); continue; }
+      if (m[1].toLowerCase() === 'domain') domain = m[2];
+    }
+    const machineName = positional[0] || this.getHostname();
+    if (!this.domainMembership) {
+      return `The secure channel between the workstation and the primary domain failed.\nThe command failed to complete successfully.`;
+    }
+    const targetDomain = domain || this.domainMembership.dnsName;
+    if (targetDomain.toLowerCase() !== this.domainMembership.dnsName.toLowerCase()) {
+      return `NetGetAnyDCName failed: Status = 1355 0x54b ERROR_NO_SUCH_DOMAIN\nThe command failed to complete successfully.`;
+    }
+    if (!this.testSecureChannel()) {
+      return `The secure channel between '${machineName}' and the domain '${targetDomain}' failed.\nThe command failed to complete successfully.`;
+    }
+    return `The secure channel from '${machineName}' to the domain '${targetDomain}' has been verified.\nThe command completed successfully.`;
+  }
+
+  /**
+   * `netdom reset <MachineName> /Domain:<Domain> /UserO:<User>
+   * /PasswordO:<Password>` (docs/PRD-Netdom.md §2.1 P2) — regenerates
+   * and repushes this machine's own secure-channel secret via
+   * `resetSecureChannel()`. `MachineName`/`/Domain:` are accepted for
+   * fidelity with real `netdom` syntax but, like `verify` (P1), only
+   * this machine's own channel can actually be reset.
+   */
+  private cmdNetdomReset(args: string[]): string {
+    let userO = '';
+    let passwordO = '';
+    const positional: string[] = [];
+    for (const arg of args) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) { if (!arg.startsWith('/')) positional.push(arg); continue; }
+      const key = m[1].toLowerCase();
+      if (key === 'usero' || key === 'userd') userO = m[2];
+      else if (key === 'passwordo' || key === 'passwordd') passwordO = m[2];
+    }
+    const machineName = positional[0] || this.getHostname();
+    if (!userO) {
+      return 'NETDOM RESET <MachineName> /Domain:<Domain> /UserO:<User> /PasswordO:<Password>';
+    }
+    const result = this.resetSecureChannel(userO, passwordO);
+    if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+    return `The secure channel from '${machineName}' to the domain has been reset.\nThe command completed successfully.`;
+  }
+
+  /**
+   * `netdom resetpwd /Server:<DC> /UserD:<User> /PasswordD:<Password>`
+   * (docs/PRD-Netdom.md §2.1 P3) — the DC-only variant of `reset` (P2):
+   * repairs THIS server's own computer-account secure channel, dialing
+   * a DIFFERENT DC (`/Server:`) than the one it would otherwise use,
+   * which is the whole point when the usual DC is the one that's
+   * unreachable/broken. Same underlying primitive as P2, not a second
+   * mechanism.
+   */
+  private cmdNetdomResetpwd(args: string[]): string {
+    let server = '';
+    let userD = '';
+    let passwordD = '';
+    for (const arg of args) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) continue;
+      const key = m[1].toLowerCase();
+      if (key === 'server') server = m[2];
+      else if (key === 'userd') userD = m[2];
+      else if (key === 'passwordd') passwordD = m[2];
+    }
+    if (!server || !userD) {
+      return 'NETDOM RESETPWD /Server:<DC> /UserD:<User> /PasswordD:<Password>';
+    }
+    const result = this.resetSecureChannel(userD, passwordD, server);
+    if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+    return `The password has been set successfully.\nThe command completed successfully.`;
+  }
+
+  /**
+   * `netdom remove <MachineName> /Domain:<Domain> /UserD:<User>
+   * /PasswordD:<Password>` (docs/PRD-Netdom.md §2.1 P4) — unjoins this
+   * machine via `removeFromDomain()` (real LDAP `DelRequest`, § 1.3).
+   * Same limitation as `verify`/`reset`: only this machine's own
+   * membership can be removed, `MachineName`/`/Domain:` are accepted
+   * for syntax fidelity but not used to target a third machine.
+   */
+  private cmdNetdomRemove(args: string[]): string {
+    let userD = '';
+    let passwordD = '';
+    for (const arg of args) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) continue;
+      const key = m[1].toLowerCase();
+      if (key === 'userd') userD = m[2];
+      else if (key === 'passwordd') passwordD = m[2];
+    }
+    if (!userD) {
+      return 'NETDOM REMOVE <MachineName> /Domain:<Domain> /UserD:<User> /PasswordD:<Password>';
+    }
+    const result = this.removeFromDomain(userD, passwordD);
+    if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+    return `The computer '${this.getHostname()}' has been removed from the domain.\nThe command completed successfully.`;
+  }
+
+  /**
+   * `netdom renamecomputer <MachineName> /NewName:<NewName>
+   * [/UserD:<User> /PasswordD:<Password>]` (docs/PRD-Netdom.md §2.1 P5)
+   * — renames this machine via `renameComputer()` (local + AD object).
+   */
+  private cmdNetdomRenameComputer(args: string[]): string {
+    let newName = '';
+    let userD = '';
+    let passwordD = '';
+    for (const arg of args) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) continue;
+      const key = m[1].toLowerCase();
+      if (key === 'newname') newName = m[2];
+      else if (key === 'userd') userD = m[2];
+      else if (key === 'passwordd') passwordD = m[2];
+    }
+    if (!newName) {
+      return 'NETDOM RENAMECOMPUTER <MachineName> /NewName:<NewName> [/UserD:<User> /PasswordD:<Password>]';
+    }
+    const result = this.renameComputer(newName, this.domainMembership ? { username: userD, password: passwordD } : undefined);
+    if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+    return `The computer name has been successfully changed to '${newName}'.\nThe command completed successfully.`;
+  }
+
+  /**
+   * `netdom computername <MachineName> /Enumerate | /MakePrimary:<Name>`
+   * (docs/PRD-Netdom.md §2.1 P6) — `/Enumerate` lists the single
+   * primary name this simulator models (no alternate-name bookkeeping,
+   * § 2.2 non-objective); `/MakePrimary` is a full rename, same
+   * primitive as `renamecomputer` (P5).
+   */
+  private cmdNetdomComputerName(args: string[]): string {
+    if (args.some(a => a.toLowerCase() === '/enumerate')) {
+      return [`Primary name:  ${this.getHostname()}`, 'The command completed successfully.'].join('\n');
+    }
+    const makePrimary = args.find(a => /^\/makeprimary:/i.exec(a));
+    if (!makePrimary) {
+      return 'NETDOM COMPUTERNAME <MachineName> /Enumerate | /MakePrimary:<Name>';
+    }
+    const newName = makePrimary.slice(makePrimary.indexOf(':') + 1);
+    let userD = '';
+    let passwordD = '';
+    for (const arg of args) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) continue;
+      if (m[1].toLowerCase() === 'userd') userD = m[2];
+      else if (m[1].toLowerCase() === 'passwordd') passwordD = m[2];
+    }
+    const result = this.renameComputer(newName, this.domainMembership ? { username: userD, password: passwordD } : undefined);
+    if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+    return `The primary computer name has been successfully changed to '${newName}'.\nThe command completed successfully.`;
   }
 
   /**
@@ -3340,6 +3674,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     ].join('\n');
   }
 
+  /**
+   * `netdom query {fsmo|pdc|dc|dclist|ou}` (docs/PRD-Netdom.md §2.1 P7 —
+   * `pdc`/`dc`/`dclist`/`ou` are the extension, `fsmo` pre-existing) —
+   * every form is read-only formatting on data already real elsewhere
+   * (`Get-ADDomain`/`Get-ADDomainController`/`Get-ADOrganizationalUnit`),
+   * no second data collection.
+   */
+  private cmdNetdomQuery(args: string[]): string {
+    const mode = args[0]?.toLowerCase();
+    if (mode === 'fsmo') return this.cmdNetdomQueryFsmo();
+    if (mode === 'pdc') return this.cmdNetdomQueryPdc();
+    if (mode === 'dc' || mode === 'dclist') return this.cmdNetdomQueryDc();
+    if (mode === 'ou') return this.cmdNetdomQueryOu();
+    return 'NETDOM QUERY {FSMO | PDC | DC | DCLIST | OU}';
+  }
+
   /** `netdom query fsmo` — the 5 real FSMO role owners, server-only (a plain workstation has no directory to query). */
   private cmdNetdomQueryFsmo(): string {
     const store = this.getDirectoryStore();
@@ -3354,6 +3704,38 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       `PDC                   ${fqdn(store.getDomainFsmoRoleOwner('PDCEmulator'))}`,
       `RID pool manager      ${fqdn(store.getDomainFsmoRoleOwner('RIDMaster'))}`,
       `Infrastructure        ${fqdn(store.getDomainFsmoRoleOwner('InfrastructureMaster'))}`,
+      'The command completed successfully.',
+    ].join('\n');
+  }
+
+  /** `netdom query pdc` — the domain's PDC Emulator FQDN. */
+  private cmdNetdomQueryPdc(): string {
+    const store = this.getDirectoryStore();
+    if (!store) return 'This computer is not a domain controller.\nThe command failed to complete successfully.';
+    const pdc = store.getDomainFsmoRoleOwner('PDCEmulator');
+    return [pdc ? `${pdc}.${store.dnsName}` : '', 'The command completed successfully.'].join('\n');
+  }
+
+  /** `netdom query dc`/`netdom query dclist` — every DC known to the local domain's directory. */
+  private cmdNetdomQueryDc(): string {
+    const store = this.getDirectoryStore();
+    if (!store) return 'This computer is not a domain controller.\nThe command failed to complete successfully.';
+    const dcs = store.listDomainControllers();
+    return [
+      `List of domain controllers with accounts in the domain:`,
+      ...dcs.map(dc => dc.name),
+      'The command completed successfully.',
+    ].join('\n');
+  }
+
+  /** `netdom query ou` — every organizational unit in the local domain's directory. */
+  private cmdNetdomQueryOu(): string {
+    const store = this.getDirectoryStore();
+    if (!store) return 'This computer is not a domain controller.\nThe command failed to complete successfully.';
+    const ous = store.listOrgUnits();
+    return [
+      `List of OUs in the domain:`,
+      ...ous.map(ou => ou.dn),
       'The command completed successfully.',
     ].join('\n');
   }

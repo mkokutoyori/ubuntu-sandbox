@@ -1144,6 +1144,66 @@ export class WindowsServer extends WindowsPC {
   }
 
   /**
+   * `netdom trust /Remove` (docs/PRD-Netdom.md §2.1 P9) — the symmetric
+   * inverse of `newADTrust()`: removes the local trust record always;
+   * when a remote DC address/credential is supplied and reachable, also
+   * deletes the mirrored object on the remote side (a real `DelRequest`,
+   * same wire shape `newADTrust`'s `AddRequest` uses). Unreachable/no
+   * credential given still removes locally rather than silently no-op —
+   * documented, not a full two-phase-commit guarantee.
+   */
+  removeADTrust(remoteRealm: string, remoteDcAddress?: string, credentialUser?: string, credentialPassword?: string): AdDsOpResult {
+    if (!this.directoryStore) {
+      return { ok: false, message: 'netdom trust : This computer is not configured as a domain controller.' };
+    }
+    const localRealm = this.directoryStore.getRealm();
+    const localRemove = this.directoryStore.removeTrust(remoteRealm);
+    if (!localRemove.ok) return { ok: false, message: `netdom trust : ${localRemove.message}` };
+    if (remoteDcAddress && credentialUser !== undefined && credentialPassword !== undefined) {
+      const conn = dialLdap(this.getTcpStack(), remoteDcAddress);
+      if (conn.ok && conn.client) {
+        const bind = conn.client.bind(credentialUser, credentialPassword);
+        if (bind.ok) {
+          const remoteRootDn = remoteRealm.split('.').map(p => `DC=${p}`).join(',');
+          conn.client.delete(`CN=${localRealm},CN=System,${remoteRootDn}`);
+        }
+        conn.client.unbind();
+      }
+    }
+    return { ok: true, message: '' };
+  }
+
+  /**
+   * `netdom trust /Reset` (docs/PRD-Netdom.md §2.1 P9) — regenerates the
+   * trust's interrealm key locally, and (same reachability caveat as
+   * `removeADTrust`) pushes the new key to the remote side's mirrored
+   * object too, matching the push `newADTrust()` does at creation time.
+   */
+  resetADTrust(remoteRealm: string, remoteDcAddress?: string, credentialUser?: string, credentialPassword?: string): AdDsOpResult {
+    if (!this.directoryStore) {
+      return { ok: false, message: 'netdom trust : This computer is not configured as a domain controller.' };
+    }
+    const localRealm = this.directoryStore.getRealm();
+    const newSecret = randomSessionKey();
+    const localReset = this.directoryStore.resetTrustSecret(remoteRealm, newSecret);
+    if (!localReset.ok) return { ok: false, message: `netdom trust : ${localReset.message}` };
+    if (remoteDcAddress && credentialUser !== undefined && credentialPassword !== undefined) {
+      const conn = dialLdap(this.getTcpStack(), remoteDcAddress);
+      if (conn.ok && conn.client) {
+        const bind = conn.client.bind(credentialUser, credentialPassword);
+        if (bind.ok) {
+          const remoteRootDn = remoteRealm.split('.').map(p => `DC=${p}`).join(',');
+          conn.client.modify(`CN=${localRealm},CN=System,${remoteRootDn}`, [
+            { operation: 'replace', modification: { type: 'trustAuthIncoming', values: [newSecret] } },
+          ]);
+        }
+        conn.client.unbind();
+      }
+    }
+    return { ok: true, message: '' };
+  }
+
+  /**
    * `Install-ADDSDomainController` (PRD-Windows-Server-Advanced.md §5 P5)
    * — promotes this server as an *additional* DC of a domain that
    * already exists elsewhere, reached at `sourceDcAddress`. Real DCPromo
