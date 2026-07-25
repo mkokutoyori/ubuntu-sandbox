@@ -44,6 +44,14 @@ export interface ISshShellChannel extends ISshChannel {
    */
   runLine(line: string): Promise<ExecResult>;
   /**
+   * Ask the remote for Tab-completion candidates for a partial line.
+   * Answered by the server's own shell, so the candidates reflect the
+   * remote's commands, filesystem and CLI mode — never the client's.
+   * Resolves to an empty list when the remote offers nothing
+   * (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  complete(line: string): Promise<string[]>;
+  /**
    * Send a signal to the channel's currently-running foreground job
    * (Ctrl+C ⇒ 'SIGINT'). No-op server-side if nothing is running.
    */

@@ -3255,7 +3255,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return `The computer name '${this.getHostname()}' has been successfully joined to the domain '${domain}'.\nThe command completed successfully.`;
   }
 
-  /** `netdom trust /d:<RemoteRealm> /Direction:<Inbound|Outbound|Bidirectional> /Server:<RemoteDC> /UserD:<User> /PasswordD:<Password> [/Transitive:No]` — cmd-level equivalent of `New-ADTrust` (PRD-Windows-Server-Advanced.md §5 P9). Server-only: this is a no-op stub on a plain workstation. */
+  /**
+   * `netdom trust <TrustingDomain> /Domain:<TrustedDomain> [/Verify] |
+   * netdom trust /d:<RemoteRealm> /Direction:<Inbound|Outbound|Bidirectional>
+   * /Server:<RemoteDC> /UserD:<User> /PasswordD:<Password> [/Transitive:No]`
+   * — cmd-level equivalent of `New-ADTrust`/`Get-ADTrust` (PRD-Windows-
+   * Server-Advanced.md §5 P9). Real `netdom trust` accepts the trusted
+   * domain as either a positional `TrustingDomain` + `/Domain:` pair
+   * (the create/verify form) or the older `/d:` flag (this simulator's
+   * original create-only form) — both map onto the same `DirectoryStore`
+   * trust registry, no second implementation. `/Verify` doesn't create
+   * anything: it just confirms an existing trust's secure channel, so it
+   * looks the trust up instead of calling `newADTrust`. Server-only: a
+   * no-op stub on a plain workstation.
+   */
   private cmdNetdomTrust(args: string[]): string {
     let remoteRealm = '';
     let server = '';
@@ -3263,17 +3276,36 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     let passwordD = '';
     let direction: 'Inbound' | 'Outbound' | 'Bidirectional' = 'Bidirectional';
     let transitive = true;
+    let verify = false;
+    const positional: string[] = [];
     for (const arg of args) {
       const m = /^\/([a-z]+):(.*)$/i.exec(arg);
-      if (!m) continue;
+      if (!m) {
+        if (arg.toLowerCase() === '/verify') { verify = true; continue; }
+        if (!arg.startsWith('/')) positional.push(arg);
+        continue;
+      }
       const key = m[1].toLowerCase();
-      if (key === 'd') remoteRealm = m[2];
+      if (key === 'd' || key === 'domain') remoteRealm = m[2];
       else if (key === 'server') server = m[2];
       else if (key === 'userd') userD = m[2];
       else if (key === 'passwordd') passwordD = m[2];
       else if (key === 'direction' && (m[2] === 'Inbound' || m[2] === 'Outbound' || m[2] === 'Bidirectional')) direction = m[2];
       else if (key === 'transitive') transitive = m[2].toLowerCase() !== 'no';
     }
+    const trustingDomain = positional[0] ?? '';
+
+    if (verify) {
+      if (!remoteRealm) {
+        return 'NETDOM TRUST <TrustingDomain> /Domain:<TrustedDomain> /Verify';
+      }
+      const store = this.getDirectoryStore();
+      if (!store) return 'The trust could not be verified. This computer is not a domain controller.\nThe command failed to complete successfully.';
+      const trust = store.getTrust(remoteRealm);
+      if (!trust) return `The secure channel between '${trustingDomain || store.dnsName}' and '${remoteRealm}' was not verified.\nThe command failed to complete successfully.`;
+      return `The secure channel from '${trustingDomain || store.dnsName}' to the domain '${remoteRealm}' has been verified.\nThe command completed successfully.`;
+    }
+
     if (!remoteRealm || !server || !userD) {
       return 'NETDOM TRUST /d:<RemoteRealm> /Server:<RemoteDC> /UserD:<User> /PasswordD:<Password> [/Direction:<Inbound|Outbound|Bidirectional>] [/Transitive:No]';
     }

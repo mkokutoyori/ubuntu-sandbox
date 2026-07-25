@@ -31,6 +31,12 @@ export interface SshServerConfig {
 export interface ILinuxShell {
   execute(line: string): Promise<{ stdout: string; stderr: string; exitCode: number }>;
   /**
+   * Tab-completion candidates for a partial line, answered in this
+   * shell's own context (its cwd, its CLI mode). Absent means the
+   * remote offers no completion (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  getCompletions?(line: string): string[];
+  /**
    * The remote's own prompt as it stands right now. Read after each line,
    * since the command may have changed it (`cd`, `enable`,
    * `configure terminal`). Optional: a context that omits it leaves the

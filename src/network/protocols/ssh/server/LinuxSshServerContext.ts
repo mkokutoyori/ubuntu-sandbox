@@ -347,6 +347,9 @@ export class LinuxSshServerContext implements ISshServerContext {
           // missing file.
           return { stdout, stderr: '', exitCode: session.lastExitCode };
         },
+        // Completion runs inside this channel's own session, so paths
+        // resolve against its cwd rather than the device-wide one.
+        getCompletions: (line: string) => device.getCompletionsForSession(line, session),
         getPrompt: () => {
           // The authenticated user's real home from /etc/passwd — never a
           // guessed `/home/<name>`, which would be wrong for root (/root)

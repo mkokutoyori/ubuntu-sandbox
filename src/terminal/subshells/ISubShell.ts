@@ -94,6 +94,15 @@ export interface ISubShell extends IShellBase {
   getCompletions?(line: string): string[];
 
   /**
+   * Completion candidates that can only be obtained asynchronously —
+   * a remote shell answering over an SSH channel, for instance. The
+   * owning session awaits this before running its Tab logic, and falls
+   * back to the synchronous {@link getCompletions} when it is absent
+   * (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  getCompletionsAsync?(line: string): Promise<string[]>;
+
+  /**
    * Continuation hook: after the host terminal collects the value
    * requested by a `pendingInput` directive, it calls this method with
    * the user's input. Sub-shells that never request pendingInput can
