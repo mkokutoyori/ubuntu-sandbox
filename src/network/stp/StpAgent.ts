@@ -6,7 +6,7 @@ import {
   type StpPortGuards, type MstRegion,
   createDefaultStpConfig, compareBridge, defaultPathCost, defaultPathCostLong,
   defaultPortGuards, createDefaultMstRegion, parseStpVlanList,
-  ETHERTYPE_STP, STP_BRIDGE_MAC,
+  ETHERTYPE_STP, STP_BRIDGE_MAC, PVST_PLUS_MAC,
 } from './types';
 import { StpVlanInstance, type StpInstanceAgent, type StpForwardState } from './StpVlanInstance';
 import { MACAddress, type EthernetFrame } from '../core/types';
@@ -25,6 +25,9 @@ export interface StpHost {
   onStpBpduGuardErrDisable?(portName: string, senderMac: string): void;
   onTopologyChangeAging?(agingSec: number | null): void;
   getStpPortVlans?(portName: string): number[];
+  /** Only real 802.1Q trunk ports get Cisco's PVST+ per-VLAN wire dressing (see `PVST_PLUS_MAC`); absent entirely on non-Cisco hosts. */
+  isStpTrunkPort?(portName: string): boolean;
+  getStpNativeVlan?(portName: string): number;
 }
 
 export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
@@ -798,12 +801,24 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       topologyChange: this.tcFlagActive,
       topologyChangeAck: this.pendingTcAck.delete(adKey),
     };
-    const frame: EthernetFrame = {
+    // Real IOS sends the CST BPDU on a trunk's native VLAN (and on any
+    // access port) untagged to the IEEE bridge address, but dresses the
+    // per-VLAN PVST+ hello for every OTHER VLAN on a trunk as an
+    // 802.1Q-tagged frame to Cisco's proprietary SSTP MAC. VLAN demux
+    // inside this engine still runs off `bpdu.vlan` (unchanged) — this
+    // only fixes what a `tcpdump` capture or `show`-style inspection would
+    // see on the wire, not the internal per-VLAN dispatch mechanism.
+    const nativeVlan = this.host.getStpNativeVlan?.(portName) ?? 1;
+    const pvstPlus = this.config.mode !== 'mstp'
+      && (this.host.isStpTrunkPort?.(portName) ?? false)
+      && key !== nativeVlan;
+    const frame: EthernetFrame & { dot1q?: { tpid: number; pcp: number; dei: number; vid: number } } = {
       srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(STP_BRIDGE_MAC),
+      dstMAC: new MACAddress(pvstPlus ? PVST_PLUS_MAC : STP_BRIDGE_MAC),
       etherType: ETHERTYPE_STP,
       payload: bpdu,
     };
+    if (pvstPlus) frame.dot1q = { tpid: 0x8100, pcp: 0, dei: 0, vid: key };
     this.advertising.add(adKey);
     this.bpduSentCounts.set(portName, (this.bpduSentCounts.get(portName) ?? 0) + 1);
     try { this.host.sendFrame(portName, frame); }

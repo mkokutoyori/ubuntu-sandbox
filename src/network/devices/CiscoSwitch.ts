@@ -83,6 +83,8 @@ export class CiscoSwitch extends Switch {
       onStpBpduGuardErrDisable: (p) => this.applyStpBpduGuardErrDisable(p),
       onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
       getStpPortVlans: (p) => this.getStpPortVlans(p),
+      isStpTrunkPort: (p) => this._vtpIsTrunkPort(p),
+      getStpNativeVlan: (p) => this.getSwitchportConfig(p)?.trunkNativeVlan ?? 1,
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.vtpAgent = new VtpAgent({

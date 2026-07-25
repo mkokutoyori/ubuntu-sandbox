@@ -1,5 +1,14 @@
 export const ETHERTYPE_STP = 0x4242;
 export const STP_BRIDGE_MAC = '01:80:c2:00:00:00';
+/**
+ * Cisco's proprietary PVST+/SSTP destination MAC. Real IOS sends the CST
+ * BPDU on a trunk's native VLAN untagged to `STP_BRIDGE_MAC` like plain
+ * 802.1D, but sends one extra, 802.1Q-tagged BPDU per non-native VLAN to
+ * this address (LLC/SNAP-encapsulated on the wire) so a receiving switch's
+ * hardware can tell "PVST+ per-VLAN hello" apart from the common tree BPDU
+ * without needing to already know the trunk's VLAN membership.
+ */
+export const PVST_PLUS_MAC = '01:00:0c:cc:cc:cd';
 
 export type StpBpduType = 'config' | 'tcn';
 /**
