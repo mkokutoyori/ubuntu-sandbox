@@ -116,6 +116,7 @@ export class RouterSshServerContext implements ISshServerContext {
         },
         getPrompt: () => vty.getPrompt(),
         getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
+        supportsInlineHelp: true,
       };
     }
 

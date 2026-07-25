@@ -52,6 +52,12 @@ export interface ISshShellChannel extends ISshChannel {
    */
   complete(line: string): Promise<string[]>;
   /**
+   * True when the remote treats `?` as a help key rather than an ordinary
+   * character, so a client can offer inline help without breaking
+   * `ls ?.txt` on a POSIX shell.
+   */
+  supportsInlineHelp(): boolean;
+  /**
    * Send a signal to the channel's currently-running foreground job
    * (Ctrl+C ⇒ 'SIGINT'). No-op server-side if nothing is running.
    */

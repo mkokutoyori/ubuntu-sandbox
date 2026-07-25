@@ -407,7 +407,13 @@ export class SshServerHandler {
             user: userCtx.username,
             channelType: 'shell',
           });
-          conn.write(JSON.stringify({ ok: true, channelId }));
+          conn.write(JSON.stringify({
+            ok: true,
+            channelId,
+            // Capability advertised at open time: `?` is a help key on a
+            // network CLI, an ordinary glob character on a POSIX shell.
+            inlineHelp: channels.get(channelId)?.shell?.supportsInlineHelp === true,
+          }));
           break;
         }
 

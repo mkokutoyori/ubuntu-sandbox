@@ -37,6 +37,12 @@ export interface ILinuxShell {
    */
   getCompletions?(line: string): string[];
   /**
+   * True when `?` is a help key on this remote rather than an ordinary
+   * character — a network CLI, not a POSIX shell where `?` is a glob.
+   * Lets a client offer inline help without breaking `ls ?.txt`.
+   */
+  readonly supportsInlineHelp?: boolean;
+  /**
    * The remote's own prompt as it stands right now. Read after each line,
    * since the command may have changed it (`cd`, `enable`,
    * `configure terminal`). Optional: a context that omits it leaves the
