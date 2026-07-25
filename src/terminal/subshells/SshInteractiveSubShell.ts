@@ -180,7 +180,18 @@ export class SshInteractiveSubShell implements ISubShell {
   /** True while a runLine() call is outstanding (streaming or not). */
   private inFlight = false;
   /** Set while `su`'s password broker is waiting on handleInput(). */
-  private pendingSu: { targetUser: string; attemptsLeft: number } | null = null;
+  /**
+   * A command the remote will only run once we hand it one password —
+   * `su` and the `sudo` family alike. `remoteCommand` is the
+   * non-interactive form the value gets piped into, so both verbs share
+   * one round trip and one retry budget.
+   */
+  private pendingSu: {
+    remoteCommand: string;
+    label: string;
+    promptText: string;
+    attemptsLeft: number;
+  } | null = null;
   /** Set while a nested `ssh`'s connect handshake is awaiting a password/host-key answer. */
   private pendingHopConnect: PendingHopConnect | null = null;
   /** A fully-connected nested hop: once set, every call delegates to it. */
@@ -401,10 +412,35 @@ export class SshInteractiveSubShell implements ISubShell {
     // beginSuSession() itself no-ops the check when currentUid is 0.
     const suMatch = /^su(?:\s+(?:-l|--login|-))?(?:\s+(\S+))?$/.exec(trimmed);
     if (suMatch) {
-      this.pendingSu = { targetUser: suMatch[1] ?? 'root', attemptsLeft: MAX_SU_ATTEMPTS };
+      const target = suMatch[1] && suMatch[1] !== 'root' ? ` ${suMatch[1]}` : '';
+      this.pendingSu = {
+        remoteCommand: `su${target}`,
+        label: 'su',
+        promptText: 'Password:',
+        attemptsLeft: MAX_SU_ATTEMPTS,
+      };
       return {
         output: [], exit: false, prompt: this.getPrompt(),
         pendingInput: { kind: 'password', promptText: 'Password:' },
+      };
+    }
+
+    // `sudo …` challenges exactly like `su` does — same single password,
+    // same remote session. Leaving it out was why `sudo su` silently did
+    // nothing on a remote frame while it worked at the local console.
+    // `-n` is sudo's own "never prompt", so it stays non-interactive.
+    const sudoMatch = /^sudo\s+(?!-n\b)(.+)$/.exec(trimmed);
+    if (sudoMatch) {
+      const promptText = `[sudo] password for ${this.remoteUser}:`;
+      this.pendingSu = {
+        remoteCommand: `sudo -S ${sudoMatch[1]}`,
+        label: 'sudo',
+        promptText,
+        attemptsLeft: MAX_SU_ATTEMPTS,
+      };
+      return {
+        output: [], exit: false, prompt: this.getPrompt(),
+        pendingInput: { kind: 'password', promptText },
       };
     }
 
@@ -439,6 +475,11 @@ export class SshInteractiveSubShell implements ISubShell {
       return {
         output: [], exit: false, prompt: this.getPrompt(),
         clearScreen: this.serverClearedScreen,
+        // The remote may be waiting on a value (the password for an
+        // `ssh` it started itself). Dropping it here left every hop
+        // past a vendor frame unreachable: the line echoed, nothing
+        // asked, nothing failed.
+        pendingInput: this.serverPendingInput ?? undefined,
       };
     }
     if (this.serverEndedSession) {
@@ -492,28 +533,30 @@ export class SshInteractiveSubShell implements ISubShell {
     const su = this.pendingSu;
     if (su) {
       su.attemptsLeft -= 1;
-      const target = su.targetUser === 'root' ? '' : ` ${su.targetUser}`;
       this.inFlight = true;
       let result;
       try {
-        result = await this.run(`printf '%s\\n' ${shQuote(value)} | su${target}`);
+        result = await this.run(`printf '%s\\n' ${shQuote(value)} | ${su.remoteCommand}`);
       } finally {
         this.inFlight = false;
       }
 
-      const failed = /Authentication failure/.test(result.stdout + result.stderr);
+      const merged = result.stdout + result.stderr;
+      const failed = /Authentication failure|incorrect password|Sorry, try again/i.test(merged);
       if (!failed) {
         this.pendingSu = null;
-        return done([''], this.getPrompt());
+        const lines = merged.split('\n').filter((l) => l.length > 0);
+        return done(lines.length ? lines : [''], this.getPrompt());
       }
+      const message = `${su.label}: Authentication failure`;
       if (su.attemptsLeft > 0) {
         return {
-          output: ['su: Authentication failure'], exit: false, prompt: this.getPrompt(),
-          pendingInput: { kind: 'password', promptText: 'Password:' },
+          output: [message], exit: false, prompt: this.getPrompt(),
+          pendingInput: { kind: 'password', promptText: su.promptText },
         };
       }
       this.pendingSu = null;
-      return done(['su: Authentication failure'], this.getPrompt());
+      return done([message], this.getPrompt());
     }
 
     return done([''], this.getPrompt());

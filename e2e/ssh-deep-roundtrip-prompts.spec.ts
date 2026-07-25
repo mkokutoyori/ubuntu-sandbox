@@ -42,14 +42,7 @@ test.describe('deep SSH round trips keep interactive prompts working', () => {
     await openTerminal(page, lab.linux1);
   });
 
-  /**
-   * Known gap, diagnosed 2026-07-25: a vendor frame reached over SSH does
-   * not run its own outbound `ssh`. Hops 1 and 2 are fine; from the
-   * Windows frame the line echoes and nothing happens — no challenge, no
-   * error — so every hop past a vendor hop is unreachable. Same family as
-   * the last item in docs/PRD-SSH-Unification.md §4bis.5.
-   */
-  test.fixme('six alternating hops, then sudo su still challenges and elevates', async ({ page }) => {
+  test('six alternating hops, then sudo su still challenges and elevates', async ({ page }) => {
     await hop(page, `ssh user@${TARGETS.linux2.ip}`, 'admin', /user@PC2/);
     await hop(page, `ssh carl@${TARGETS.win1.ip}`, 'carl', /C:\\Users\\carl>/);
     await hop(page, `ssh user@${lab.ip.linux1}`, 'admin', /user@PC1/);
@@ -64,14 +57,7 @@ test.describe('deep SSH round trips keep interactive prompts working', () => {
     expect(out).not.toMatch(/command not found|not recognized/i);
   });
 
-  /**
-   * Known gap, diagnosed 2026-07-25: a vendor frame reached over SSH does
-   * not run its own outbound `ssh`. Hops 1 and 2 are fine; from the
-   * Windows frame the line echoes and nothing happens — no challenge, no
-   * error — so every hop past a vendor hop is unreachable. Same family as
-   * the last item in docs/PRD-SSH-Unification.md §4bis.5.
-   */
-  test.fixme('su - at depth challenges for a password and switches user', async ({ page }) => {
+  test('su - at depth challenges for a password and switches user', async ({ page }) => {
     await hop(page, `ssh user@${TARGETS.linux2.ip}`, 'admin', /user@PC2/);
     await hop(page, `ssh carl@${TARGETS.win1.ip}`, 'carl', /C:\\Users\\carl>/);
     await hop(page, `ssh user@${lab.ip.linux1}`, 'admin', /user@PC1/);
@@ -101,11 +87,10 @@ test.describe('deep SSH round trips keep interactive prompts working', () => {
   });
 
   /**
-   * Known gap, diagnosed 2026-07-25: a vendor frame reached over SSH does
-   * not run its own outbound `ssh`. Hops 1 and 2 are fine; from the
-   * Windows frame the line echoes and nothing happens — no challenge, no
-   * error — so every hop past a vendor hop is unreachable. Same family as
-   * the last item in docs/PRD-SSH-Unification.md §4bis.5.
+   * Separate gap, not an SSH one: `Get-Credential` returns nothing and
+   * raises no challenge even on a local PowerShell frame, so there is no
+   * interactive behaviour for a hop to inherit yet. Measured directly on
+   * the device's own shell stack, with no wire involved.
    */
   test.fixme('Get-Credential on a PowerShell frame reached through two hops', async ({ page }) => {
     await hop(page, `ssh user@${TARGETS.linux2.ip}`, 'admin', /user@PC2/);
@@ -126,14 +111,7 @@ test.describe('deep SSH round trips keep interactive prompts working', () => {
     expect((await termText(page)).slice(before)).toContain('carl');
   });
 
-  /**
-   * Known gap, diagnosed 2026-07-25: a vendor frame reached over SSH does
-   * not run its own outbound `ssh`. Hops 1 and 2 are fine; from the
-   * Windows frame the line echoes and nothing happens — no challenge, no
-   * error — so every hop past a vendor hop is unreachable. Same family as
-   * the last item in docs/PRD-SSH-Unification.md §4bis.5.
-   */
-  test.fixme('unwinding six hops returns to the original local prompt', async ({ page }) => {
+  test('unwinding six hops returns to the original local prompt', async ({ page }) => {
     await hop(page, `ssh user@${TARGETS.linux2.ip}`, 'admin', /user@PC2/);
     await hop(page, `ssh carl@${TARGETS.win1.ip}`, 'carl', /C:\\Users\\carl>/);
     await hop(page, `ssh user@${lab.ip.linux1}`, 'admin', /user@PC1/);
