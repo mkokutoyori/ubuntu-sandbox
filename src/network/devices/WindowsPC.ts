@@ -85,6 +85,7 @@ import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { getForestForDomain } from './windows/server/ad/forest/Forest';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
+import { principalName, PrincipalNameType } from '@/network/kerberos/types';
 import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
 import { KerberosSignalStore } from '@/network/kerberos/observables';
 import { KerberosSignalRefreshActor } from '@/network/kerberos/actors/KerberosSignalRefreshActor';
@@ -3296,19 +3297,51 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * DirectoryStore is right here, no network round-trip needed), a
    * domain-qualified name matching its own domain is resolved against
    * the real directory instead of being unconditionally "not recognized".
-   * A non-DC domain member has no local directory to consult synchronously
-   * (real Windows would round-trip to a DC here) — out of scope for now.
+   * A name qualified with a *different* domain is checked as a real
+   * cross-realm Kerberos referral request against this device's own DC
+   * (`crossRealmRunasCheck`) — that DC's own real `TrustRegistry` is the
+   * sole authority on whether it succeeds.
    */
   private getDomainUserForRunas(name: string): RunasUserLookup | undefined {
     const backslash = name.indexOf('\\');
     if (backslash === -1) return undefined;
-    const domainPart = name.slice(0, backslash).toUpperCase();
+    const domainPart = name.slice(0, backslash);
     const sam = name.slice(backslash + 1);
     const store = this.getDirectoryStore();
     const ownNetbiosName = store?.netbiosName ?? this.domainMembership?.netbiosName;
-    if (!ownNetbiosName || domainPart !== ownNetbiosName.toUpperCase()) return undefined;
-    const u = store?.getUser(sam);
-    return u ? { name: sam, enabled: u.enabled } : undefined;
+    if (ownNetbiosName && domainPart.toUpperCase() === ownNetbiosName.toUpperCase()) {
+      const u = store?.getUser(sam);
+      return u ? { name: sam, enabled: u.enabled } : undefined;
+    }
+    return this.crossRealmRunasCheck(domainPart, sam);
+  }
+
+  /**
+   * `runas /user:<foreign-realm>\<sam>` on a domain-joined machine
+   * (docs — scenario-ad-trust-relationships gap 2): performs a genuine
+   * AS-REQ (as this computer's own machine account) then a TGS-REQ with
+   * `targetRealm = <foreign-realm>` against this device's own DC —
+   * exactly the real inter-realm referral request a workstation's KDC
+   * chase produces (`KdcSession.handleTgsReq`'s `isOutboundReferral`
+   * branch, which only succeeds if that DC's own `TrustRegistry` actually
+   * has a matching Outbound/Bidirectional trust — real 4769 auditing on
+   * that DC included). Documented simplification: this does not chase the
+   * referral all the way to the foreign realm's own KDC to fully
+   * authenticate as `sam` there — verifying the real referral succeeds is
+   * as far as this simulator's cross-realm model goes.
+   */
+  private crossRealmRunasCheck(targetRealm: string, sam: string): RunasUserLookup | undefined {
+    if (!this.domainMembership) return undefined;
+    const kdcConn = dialKdc(this.getTcpStack(), this.domainMembership.dcAddress);
+    if (!kdcConn.ok || !kdcConn.client) return undefined;
+    const ownSam = `${this.hostname}$`;
+    const realm = this.domainMembership.dnsName.toUpperCase();
+    const asResult = kdcConn.client.asExchange(ownSam, this.domainMembership.machineSecret, realm);
+    if (!asResult.ok || !asResult.ticket || !asResult.sessionKey) return undefined;
+    const cname = principalName(PrincipalNameType.NT_PRINCIPAL, ownSam);
+    const tgsResult = kdcConn.client.tgsExchange(asResult.ticket, asResult.sessionKey, cname, realm, ownSam, targetRealm.toLowerCase());
+    if (!tgsResult.ok) return undefined;
+    return { name: sam, enabled: true };
   }
 
   /**

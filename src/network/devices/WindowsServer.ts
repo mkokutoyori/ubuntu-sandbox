@@ -1110,14 +1110,26 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: 'New-ADTrust : Logon failure: unknown user name or bad password.' };
     }
 
+    const remoteRootDn = remoteRealm.split('.').map(p => `DC=${p}`).join(',');
+    // Real cross-realm Kerberos referral auditing (4769's TargetDomainName,
+    // PRD trust-relationships gap 2) needs the remote domain's NetBIOS
+    // name — discovered here over the LDAP connection already open for
+    // this trust, reading its real `crossRef` object (§1.3 grounding,
+    // `DirectoryStore.seedDefaults`) rather than fabricating one.
+    const crossRefSearch = conn.client.search(
+      `CN=Partitions,CN=Configuration,${remoteRootDn}`, 'sub',
+      { kind: 'equalityMatch', attr: 'objectClass', value: 'crossRef' }, ['nETBIOSName'],
+    );
+    const remoteNetbiosName = crossRefSearch.entries[0]?.attributes
+      .find(a => a.type.toLowerCase() === 'netbiosname')?.values[0];
+
     const interrealmSecret = randomSessionKey();
-    const localAdd = this.directoryStore.addTrust(remoteRealm, direction, transitive, interrealmSecret);
+    const localAdd = this.directoryStore.addTrust(remoteRealm, direction, transitive, interrealmSecret, remoteNetbiosName);
     if (!localAdd.ok) {
       conn.client.unbind();
       return { ok: false, message: `New-ADTrust : ${localAdd.message}` };
     }
 
-    const remoteRootDn = remoteRealm.split('.').map(p => `DC=${p}`).join(',');
     const remoteTrustDn = `CN=${localRealm},CN=System,${remoteRootDn}`;
     const push = conn.client.add(remoteTrustDn, [
       { type: 'objectClass', values: ['top', 'trustedDomain'] },

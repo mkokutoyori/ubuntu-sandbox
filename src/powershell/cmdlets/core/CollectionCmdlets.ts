@@ -362,12 +362,19 @@ export class SelectObjectCmdlet implements ICmdlet {
       // single input object emits each array element as its own pipeline
       // object (not one object wrapping the whole array), so a further
       // `| Select-Object ...` stage downstream sees the individual items.
-      return items.flatMap(item => {
+      const expanded = items.flatMap(item => {
         const src = item as Record<string, PSValue>;
         const key = Object.keys(src).find(k => k.toLowerCase() === expandProp.toLowerCase()) ?? expandProp;
         const val = src[key] ?? null;
         return Array.isArray(val) ? val : [val];
       });
+      // A pipeline that ends up with exactly one object on it is that one
+      // object, not a 1-element collection (same convention already
+      // applied to other single-result pipeline/output paths in
+      // PSRuntime.ts) — otherwise `$x = ... | Select -ExpandProperty Foo`
+      // followed by `$x -eq "bar"` compares an array to a string and
+      // always reports false, even though `$x` prints as "bar".
+      return expanded.length === 1 ? expanded[0] : expanded;
     }
 
     if (rawProps.length === 0) return items;

@@ -182,8 +182,8 @@ export class DirectoryStore {
 
   // ─── Trusts (PRD-Windows-Server-Advanced.md §5 P9) ─────────────────────
 
-  addTrust(remoteRealm: string, direction: TrustDirection, transitive: boolean, interrealmKey: string): TrustOpResult {
-    return this.trustRegistry.addTrust(remoteRealm, direction, transitive, interrealmKey);
+  addTrust(remoteRealm: string, direction: TrustDirection, transitive: boolean, interrealmKey: string, remoteNetbiosName?: string): TrustOpResult {
+    return this.trustRegistry.addTrust(remoteRealm, direction, transitive, interrealmKey, remoteNetbiosName);
   }
   getTrust(remoteRealm: string): TrustRecord | null { return this.trustRegistry.getTrust(remoteRealm); }
   listTrusts(): TrustInfo[] { return this.trustRegistry.listTrusts(); }
@@ -279,6 +279,16 @@ export class DirectoryStore {
     this.tree.addEntry(this.pswdSettingsDn, { objectClass: ['top', 'container'], cn: ['Password Settings Container'] });
     this.tree.addEntry(this.configurationDn, { objectClass: ['top', 'container'], cn: ['Configuration'] });
     this.tree.addEntry([...parseDN('CN=Partitions'), ...this.configurationDn], { objectClass: ['top', 'container'], cn: ['Partitions'] });
+    // Real AD's own crossRef object for this domain (`CN=<netbios>,CN=
+    // Partitions,CN=Configuration,...`), carrying the NetBIOS↔DNS mapping
+    // (`nETBIOSName`/`dnsRoot`) — queried over real LDAP by a remote DC
+    // creating a trust with us (PRD-Wecutil.md's sibling gap fix,
+    // WindowsServer.newADTrust §1.3 grounding) to learn our flat name for
+    // its own 4769 `TargetDomainName` auditing, exactly as real cross-realm
+    // Kerberos referral auditing does.
+    this.tree.addEntry([...parseDN(`CN=${this.netbiosName}`), ...parseDN('CN=Partitions'), ...this.configurationDn], {
+      objectClass: ['top', 'crossRef'], cn: [this.netbiosName], nETBIOSName: [this.netbiosName], dnsRoot: [this.dnsName],
+    });
     this.tree.addEntry([...parseDN('CN=Services'), ...this.configurationDn], { objectClass: ['top', 'container'], cn: ['Services'] });
     this.tree.addEntry([...parseDN('CN=Windows NT'), ...parseDN('CN=Services'), ...this.configurationDn], { objectClass: ['top', 'container'], cn: ['Windows NT'] });
     this.tree.addEntry(this.directoryServiceDn, { objectClass: ['top', 'container'], cn: ['Directory Service'] });
@@ -1129,9 +1139,64 @@ export class DirectoryStore {
     };
   }
 
-  /** A group member can itself be a user, a computer, or another group — real AD's AGDLP model (Account → Global → Domain Local → Permission) relies on nesting Global groups inside Domain Local ones. */
+  /** A group member can itself be a user, a computer, another group, or a
+   *  `foreignSecurityPrincipal` stub for a cross-domain trust member —
+   *  real AD's AGDLP model (Account → Global → Domain Local → Permission)
+   *  relies on nesting Global groups inside Domain Local ones. */
   private findGroupMemberEntry(sam: string): DirectoryEntry | null {
-    return this.findUserEntry(sam) ?? this.findComputerEntry(sam) ?? this.findGroupEntry(sam);
+    return this.findUserEntry(sam) ?? this.findComputerEntry(sam) ?? this.findGroupEntry(sam)
+      ?? this.findForeignSecurityPrincipalEntry(sam);
+  }
+
+  private foreignSecurityPrincipalsDn(): DistinguishedName {
+    return [...parseDN('CN=ForeignSecurityPrincipals'), ...this.tree.getRootDn()];
+  }
+
+  private ensureForeignSecurityPrincipalsContainer(): void {
+    const dn = this.foreignSecurityPrincipalsDn();
+    if (!this.tree.getByDn(dn)) {
+      this.tree.addEntry(dn, { objectClass: ['top', 'container'], cn: ['ForeignSecurityPrincipals'] });
+    }
+  }
+
+  private findForeignSecurityPrincipalEntry(qualifiedSam: string): DirectoryEntry | null {
+    this.ensureForeignSecurityPrincipalsContainer();
+    const container = this.tree.getByDn(this.foreignSecurityPrincipalsDn());
+    if (!container) return null;
+    for (const entry of container.children.values()) {
+      if (hasObjectClass(entry, 'foreignSecurityPrincipal') && firstOf(entry.attributes.get('samaccountname')) === qualifiedSam) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * `Add-ADGroupMember -Members "<remoteRealm>\<sam>"` (trust-relationships
+   * gap 1): real AD never fully imports a trusted domain's object — it
+   * creates a lightweight local `foreignSecurityPrincipal` stub the group's
+   * `member` attribute can actually reference. Only succeeds when
+   * `remoteRealm` has a real established trust (`TrustRegistry.getTrust`,
+   * already checked by `New-ADTrust`/`netdom trust`) — a made-up domain
+   * name is rejected exactly like a made-up local user would be.
+   */
+  addForeignSecurityPrincipal(remoteRealm: string, remoteSam: string): DirOpResult & { sam?: string } {
+    if (!this.getTrust(remoteRealm)) {
+      return { ok: false, message: `Cannot find an object with identity: '${remoteRealm}\\${remoteSam}'.` };
+    }
+    const qualifiedSam = `${remoteRealm}\\${remoteSam}`;
+    const existing = this.findForeignSecurityPrincipalEntry(qualifiedSam);
+    if (existing) return { ok: true, message: '', sam: qualifiedSam };
+    this.ensureForeignSecurityPrincipalsContainer();
+    const rdn = `${remoteSam}@${remoteRealm}`;
+    const dn = [...parseDN(`CN=${rdn}`), ...this.foreignSecurityPrincipalsDn()];
+    const res = this.tree.addEntry(dn, {
+      objectClass: ['top', 'foreignSecurityPrincipal'],
+      cn: [rdn],
+      sAMAccountName: [qualifiedSam],
+      name: [remoteSam],
+    });
+    return res.ok ? { ok: true, message: '', sam: qualifiedSam } : { ok: false, message: 'An object with that name already exists.' };
   }
 
   addGroupMember(groupSam: string, memberSam: string): DirOpResult {
@@ -1156,11 +1221,11 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  /** `Get-ADGroupMember` — direct members only, each tagged by kind so a caller can distinguish a nested Global group from a plain user/computer (real AD's AGDLP model). */
-  getGroupMembersDetailed(groupSam: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' }> {
+  /** `Get-ADGroupMember` — direct members only, each tagged by kind so a caller can distinguish a nested Global group, a cross-domain `foreignSecurityPrincipal`, or a plain user/computer (real AD's AGDLP model). */
+  getGroupMembersDetailed(groupSam: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' }> {
     const group = this.findGroupEntry(groupSam);
     if (!group) return [];
-    const out: Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' }> = [];
+    const out: Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' }> = [];
     for (const dnStr of group.attributes.get('member') ?? []) {
       let dn: DistinguishedName;
       try { dn = parseDN(dnStr); } catch { continue; }
@@ -1168,7 +1233,8 @@ export class DirectoryStore {
       if (!entry) continue;
       const sam = firstOf(entry.attributes.get('samaccountname'));
       if (!sam) continue;
-      const objectClass: 'user' | 'computer' | 'group' = hasObjectClass(entry, 'group')
+      const objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' = hasObjectClass(entry, 'foreignSecurityPrincipal')
+        ? 'foreignSecurityPrincipal' : hasObjectClass(entry, 'group')
         ? 'group' : hasObjectClass(entry, 'computer') ? 'computer' : 'user';
       out.push({ sam, dn: formatDN(entry.dn), objectClass });
     }

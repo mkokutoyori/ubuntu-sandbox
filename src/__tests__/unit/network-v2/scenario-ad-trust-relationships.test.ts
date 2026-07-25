@@ -57,7 +57,7 @@ async function buildTwoDomainsAndClient(): Promise<{ dc: WindowsServer; dcParten
   await run(ps(dcPartenaire), 'New-ADUser -Name "Utilisateur Partenaire" -SamAccountName "user-partenaire" -AccountPassword (ConvertTo-SecureString "Partner@2025!" -AsPlainText -Force) -Enabled $true');
 
   client.setCurrentUser('Administrator');
-  await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Force');
+  await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Server 192.168.10.10 -Force');
 
   return { dc, dcPartenaire, client };
 }
