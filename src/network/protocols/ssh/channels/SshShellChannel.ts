@@ -31,6 +31,7 @@ export class SshShellChannel
   private cols = 80;
   private rows = 24;
   private pendingLine: ((r: ExecResult) => void) | null = null;
+  private pendingComplete: ((c: string[]) => void) | null = null;
 
   constructor(conn: TcpConnection, channelId: number) {
     super(conn, channelId, 'shell');
@@ -84,6 +85,16 @@ export class SshShellChannel
     });
   }
 
+  complete(line: string): Promise<string[]> {
+    if (!this._isOpen) return Promise.resolve([]);
+    return new Promise<string[]>((resolve) => {
+      this.pendingComplete = resolve;
+      this.conn.write(
+        JSON.stringify({ op: 'shell_complete', channelId: this.channelId, data: line }),
+      );
+    });
+  }
+
   resize(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
@@ -124,6 +135,14 @@ export class SshShellChannel
     }
     if (parsed.ok === true) {
       // shell_open / shell_close ack — surface nothing to onData.
+      return;
+    }
+    if (parsed.op === 'shell_complete_result') {
+      const candidates = Array.isArray(parsed.candidates)
+        ? (parsed.candidates as unknown[]).filter((c): c is string => typeof c === 'string')
+        : [];
+      this.pendingComplete?.(candidates);
+      this.pendingComplete = null;
       return;
     }
     if (parsed.op === 'shell_output') {

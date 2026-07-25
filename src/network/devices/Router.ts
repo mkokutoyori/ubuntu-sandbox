@@ -652,11 +652,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * console into config mode, while the configuration it edits lives on
    * the device and is therefore shared (docs/PRD-SSH-Unification.md §3.2).
    */
-  createVtyShell(): { execute(rawInput: string): string | Promise<string>; getPrompt(): string } {
+  createVtyShell(): {
+    execute(rawInput: string): string | Promise<string>;
+    getPrompt(): string;
+    getCompletions(line: string): string[];
+  } {
     const shell = this.createShell();
     return {
       execute: (rawInput: string) => shell.execute(this, rawInput),
       getPrompt: () => shell.getPrompt(this),
+      // The shell's own candidates, so they follow its CLI mode.
+      getCompletions: (line: string) => shell.tabCandidates(line, this),
     };
   }
 

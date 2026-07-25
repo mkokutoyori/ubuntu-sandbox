@@ -460,6 +460,21 @@ export class SshServerHandler {
           break;
         }
 
+        case 'shell_complete': {
+          const channelId = parsed.channelId as number;
+          const info = channels.get(channelId);
+          if (!userCtx) {
+            conn.write(JSON.stringify({ op: 'shell_complete_result', channelId, candidates: [] }));
+            break;
+          }
+          // Answered by the channel's own shell so candidates carry its
+          // cwd / CLI mode; a channel without one simply offers nothing.
+          const line = typeof parsed.data === 'string' ? parsed.data : '';
+          const candidates = info?.shell?.getCompletions?.(line) ?? [];
+          conn.write(JSON.stringify({ op: 'shell_complete_result', channelId, candidates }));
+          break;
+        }
+
         case 'shell_close': {
           const channelId = parsed.channelId as number;
           const info = channels.get(channelId);

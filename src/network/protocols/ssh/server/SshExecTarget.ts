@@ -97,6 +97,8 @@ export interface SshHostKeyInfo {
 export interface SshVtyShell {
   execute(rawInput: string): string | Promise<string>;
   getPrompt(): string;
+  /** Tab candidates for the shell's current CLI mode. */
+  getCompletions?(line: string): string[];
 }
 
 export interface SshExecTarget {
