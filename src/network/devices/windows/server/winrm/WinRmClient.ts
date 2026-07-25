@@ -53,3 +53,49 @@ export function dialWinRm(opts: {
   }
   return { ok: true };
 }
+
+/**
+ * Windows Event Forwarding push (PRD-Wecutil.md §2.1 P4) — dial + real
+ * negotiate/auth (same wire path as `dialWinRm`), then a `wecPush` op
+ * carrying the matching event. Authenticates as the SOURCE machine's own
+ * computer account (`<hostname>$` + its domain secret) — a computer
+ * account is a first-class Kerberos principal in this simulator's KDC
+ * already (`KdcSession.handleAsReq`), so no new server-side credential
+ * path is needed. One real dial per forwarded event (same one-shot
+ * pattern as `Send-MailMessage`), not a persistent channel.
+ */
+export function pushForwardedEvent(opts: {
+  tcpStack: TcpStack;
+  targetIp: string;
+  username: string;
+  password: string;
+  subscriptionId: string;
+  sourceMachine: string;
+  event: { eventId: number; timeGenerated: string; message: string; sourceLogName: string };
+}): WinRmDialResult {
+  const socket = opts.tcpStack.connect(opts.targetIp, 5985);
+  if (!socket || socket.state !== 'established') {
+    return { ok: false, error: 'WinRM cannot complete the operation: the collector is not reachable.' };
+  }
+
+  const negotiate = roundTrip(socket, { op: 'negotiate' });
+  if (!negotiate?.ok) {
+    socket.close();
+    return { ok: false, error: 'WinRM cannot complete the operation. Verify that the WinRM service is running on the destination.' };
+  }
+
+  const auth = roundTrip(socket, { op: 'auth', username: opts.username, password: opts.password });
+  if (!auth?.ok) {
+    socket.close();
+    return { ok: false, error: (auth as { message?: string } | null)?.message ?? 'Access is denied.' };
+  }
+
+  const push = roundTrip(socket, {
+    op: 'wecPush', subscriptionId: opts.subscriptionId, sourceMachine: opts.sourceMachine, event: opts.event,
+  });
+  socket.close();
+  if (!push?.ok) {
+    return { ok: false, error: (push as { message?: string } | null)?.message ?? 'The event could not be forwarded.' };
+  }
+  return { ok: true };
+}

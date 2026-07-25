@@ -271,6 +271,14 @@ export class WindowsServiceManager {
       'Windows Remote Management (WinRM) service',
       { dependencies: ['RpcSs'], startType: 'Manual', state: 'Stopped', account: 'NT AUTHORITY\\NetworkService' });
 
+    // Windows Event Collector — subscription-based centralized event
+    // forwarding (WEF/WEC, PRD-Wecutil.md § 2.1 P1). Manual/Stopped by
+    // default, same as WinRM, until `wecutil qc` (or a manual
+    // Set-Service/Start-Service) configures it.
+    svc('Wecsvc', 'Windows Event Collector',
+      'This service manages persistent subscriptions to events from remote sources that support WS-Management protocol. This includes Windows Vista event logs, hardware and IPMI-enabled event sources.',
+      { dependencies: ['WinRM'], startType: 'Manual', state: 'Stopped', account: 'NT AUTHORITY\\NetworkService' });
+
     // Bluetooth
     svc('bthserv', 'Bluetooth Support Service', 'Supports Bluetooth HID devices and Audio',
       { startType: 'Manual', state: 'Stopped', account: 'NT AUTHORITY\\LocalService' });

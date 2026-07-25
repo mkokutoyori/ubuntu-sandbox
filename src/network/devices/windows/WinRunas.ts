@@ -29,6 +29,12 @@ export interface RunasHost extends RunasUserSource {
   getCurrentUser(): string;
   setCurrentUser(name: string): void;
   executeCmdCommand(command: string): Promise<string>;
+  /** Publishes `windows.account.logon` (Logon Type 2 — Interactive, the
+   *  real type RunAs generates) so a genuine Security-log 4624 entry
+   *  results, same audit trail as SSH/local logons (PRD-Wecutil.md
+   *  §2.1 P4 needs a real generator to forward). Optional so hosts that
+   *  don't wire an audit sink keep working unchanged. */
+  onLogon?(userName: string): void;
 }
 
 export interface RunasInvocation {
@@ -84,6 +90,7 @@ export function validateRunasUser(host: RunasUserSource, userName: string): Runa
 export async function runAsUser(host: RunasHost, userName: string, command: string): Promise<string> {
   const previousUser = host.getCurrentUser();
   host.setCurrentUser(userName);
+  host.onLogon?.(userName);
   try {
     return await host.executeCmdCommand(command);
   } finally {
