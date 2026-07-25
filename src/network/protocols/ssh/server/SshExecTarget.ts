@@ -89,9 +89,27 @@ export interface SshHostKeyInfo {
  * `null` to mean "I cannot answer synchronously, defer to the async
  * path".
  */
+/**
+ * One CLI session's worth of shell, minted per SSH channel. It owns its
+ * own mode context (user EXEC / privileged / config) the way a real VTY
+ * line does, while the device configuration it edits stays shared.
+ */
+export interface SshVtyShell {
+  execute(rawInput: string): string | Promise<string>;
+  getPrompt(): string;
+}
+
 export interface SshExecTarget {
   /** Device hostname as it would appear in a remote shell prompt. */
   getSshHostname(): string;
+
+  /**
+   * Mint a CLI shell for one SSH channel. Targets that provide it get a
+   * genuinely stateful remote session (`enable`, `configure terminal`);
+   * those that do not fall back to the one-shot `runSshCommandSync` path
+   * (docs/PRD-SSH-Unification.md §3.2).
+   */
+  createVtyShell?(): SshVtyShell | null;
 
   /** Reactive bus the target publishes SSH lifecycle events on. */
   getSshEventBus?(): IEventBus;

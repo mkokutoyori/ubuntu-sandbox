@@ -26,6 +26,8 @@ import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
 import { toDisplayName, toPortName, formatLinkSpeedMbps } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
+import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 
 type FwRow = {
@@ -57,10 +59,12 @@ import type {
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
+  AdKdsRootKeyInfo, AdServiceAccountInfo,
+  AdGenericObjectInfo, AdOptionalFeatureInfo,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
   AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
-  IGpoProvider, GpoInfo,
+  IGpoProvider, GpoInfo, GpLinkOptions, GpoLinkResultInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
@@ -495,6 +499,39 @@ class WindowsAdAdapter implements IAdProvider {
     return pso ? this.toPsoInfo(pso) : null;
   }
 
+  addKdsRootKey(): AdKdsRootKeyInfo {
+    return this.requireStore('Add-KdsRootKey').addKdsRootKey();
+  }
+  getKdsRootKey(): AdKdsRootKeyInfo | null {
+    return this.requireStore('Get-KdsRootKey').getKdsRootKey();
+  }
+  newServiceAccount(name: string, opts: {
+    dnsHostName: string; description?: string; path?: string;
+    principalsAllowed?: string[]; managedPasswordIntervalDays?: number; restrictToSingleComputer?: boolean;
+  }): AdOpResult {
+    const store = this.requireStore('New-ADServiceAccount');
+    const denied = this.requireAdmin('New-ADServiceAccount');
+    if (denied) return denied;
+    return store.newServiceAccount(name, opts);
+  }
+  getServiceAccount(identity: string): AdServiceAccountInfo | null {
+    const store = this.requireStore('Get-ADServiceAccount');
+    const a = store.getServiceAccount(store.resolveIdentity(identity));
+    return a ? { ...a } : null;
+  }
+  addServiceAccountSpns(identity: string, addSpns: string[]): AdOpResult {
+    const store = this.requireStore('Set-ADServiceAccount');
+    const denied = this.requireAdmin('Set-ADServiceAccount');
+    if (denied) return denied;
+    return store.addServiceAccountSpns(store.resolveIdentity(identity), addSpns);
+  }
+  addComputerServiceAccount(computerIdentity: string, serviceAccountIdentity: string): AdOpResult {
+    const store = this.requireStore('Add-ADComputerServiceAccount');
+    const denied = this.requireAdmin('Add-ADComputerServiceAccount');
+    if (denied) return denied;
+    return store.addComputerServiceAccount(store.resolveIdentity(computerIdentity).replace(/\$$/, ''), store.resolveIdentity(serviceAccountIdentity));
+  }
+
   listReplicationFailures(): AdReplicationFailureInfo[] {
     const store = this.requireStore('Get-ADReplicationFailure');
     const server = this.pc as WindowsServer;
@@ -524,14 +561,15 @@ class WindowsAdAdapter implements IAdProvider {
     return store.removeComputer(name);
   }
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): AdOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): AdOpResult {
     const store = this.requireStore('New-ADUser');
     const denied = this.requireAdmin('New-ADUser');
     if (denied) return denied;
     return store.newUser(sam, {
       password: opts.password, fullName: opts.fullName, enabled: opts.enabled,
-      ou: opts.path ? store.resolveIdentity(opts.path) : undefined,
-      department: opts.department, title: opts.title, actingSam: opts.actingSam,
+      ou: opts.path,
+      department: opts.department, title: opts.title, emailAddress: opts.emailAddress,
+      passwordNeverExpires: opts.passwordNeverExpires, actingSam: opts.actingSam,
     });
   }
   getUser(identity: string): AdUserInfo | null {
@@ -539,7 +577,8 @@ class WindowsAdAdapter implements IAdProvider {
     const u = store.getUser(store.resolveIdentity(identity));
     return u ? {
       sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
-      department: u.department, title: u.title, servicePrincipalNames: u.servicePrincipalNames,
+      department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
+      passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
     } : null;
   }
   setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult {
@@ -551,7 +590,8 @@ class WindowsAdAdapter implements IAdProvider {
   listUsers(): AdUserInfo[] {
     return this.requireStore('Get-ADUser').listUsers().map(u => ({
       sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
-      department: u.department, title: u.title, servicePrincipalNames: u.servicePrincipalNames,
+      department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
+      passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
     }));
   }
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {
@@ -571,7 +611,7 @@ class WindowsAdAdapter implements IAdProvider {
     const store = this.requireStore('New-ADGroup');
     const denied = this.requireAdmin('New-ADGroup');
     if (denied) return denied;
-    return store.newGroup(sam, scope, path ? store.resolveIdentity(path) : undefined, category);
+    return store.newGroup(sam, scope, path, category);
   }
   getGroup(identity: string): AdGroupInfo | null {
     const store = this.requireStore('Get-ADGroup');
@@ -603,6 +643,48 @@ class WindowsAdAdapter implements IAdProvider {
     }
     return { ok: true, message: '' };
   }
+  getGroupMembers(groupIdentity: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' }> {
+    const store = this.requireStore('Get-ADGroupMember');
+    return store.getGroupMembersDetailed(store.resolveIdentity(groupIdentity));
+  }
+  removeGroup(identity: string): AdOpResult {
+    const store = this.requireStore('Remove-ADGroup');
+    const denied = this.requireAdmin('Remove-ADGroup');
+    if (denied) return denied;
+    return store.removeGroup(store.resolveIdentity(identity));
+  }
+
+  // ── AD Recycle Bin ──────────────────────────────────────────────────
+  getConfigurationNamingContext(): string {
+    return this.requireStore('Get-ADRootDSE').getConfigurationNamingContext();
+  }
+  getOptionalFeature(name: string): AdOptionalFeatureInfo | null {
+    return this.requireStore('Get-ADOptionalFeature').getOptionalFeature(name);
+  }
+  enableOptionalFeature(name: string, scopeDn: string): AdOpResult {
+    const store = this.requireStore('Enable-ADOptionalFeature');
+    const denied = this.requireAdmin('Enable-ADOptionalFeature');
+    if (denied) return denied;
+    return store.enableOptionalFeature(name, scopeDn);
+  }
+  getGenericObject(dn: string, includeDeleted: boolean): AdGenericObjectInfo | null {
+    return this.requireStore('Get-ADObject').getObjectByDn(dn, includeDeleted);
+  }
+  listGenericObjects(opts: { includeDeleted: boolean; searchBaseDn?: string }): AdGenericObjectInfo[] {
+    return this.requireStore('Get-ADObject').listObjects(opts);
+  }
+  setGenericObject(dn: string, replace: Record<string, string>): AdOpResult {
+    const store = this.requireStore('Set-ADObject');
+    const denied = this.requireAdmin('Set-ADObject');
+    if (denied) return denied;
+    return store.setObjectAttributes(dn, replace);
+  }
+  restoreObject(dn: string, targetPathDn?: string): AdOpResult {
+    const store = this.requireStore('Restore-ADObject');
+    const denied = this.requireAdmin('Restore-ADObject');
+    if (denied) return denied;
+    return store.restoreObject(dn, targetPathDn);
+  }
 
   getComputer(identity: string): AdComputerInfo | null {
     const store = this.requireStore('Get-ADComputer');
@@ -622,16 +704,19 @@ class WindowsAdAdapter implements IAdProvider {
     return store.setAllowedToDelegateTo(name, targetServiceNames);
   }
 
-  newOrganizationalUnit(name: string): AdOpResult {
+  newOrganizationalUnit(name: string, path?: string): AdOpResult {
     const store = this.requireStore('New-ADOrganizationalUnit');
     const denied = this.requireAdmin('New-ADOrganizationalUnit');
     if (denied) return denied;
-    return store.newOrgUnit(name);
+    return store.newOrgUnit(name, path);
   }
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null {
     const store = this.requireStore('Get-ADOrganizationalUnit');
     const ou = store.getOrgUnit(store.resolveIdentity(identity));
     return ou ? { name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] } : null;
+  }
+  listOrganizationalUnits(): AdOrgUnitInfo[] {
+    return this.requireStore('Get-ADOrganizationalUnit').listOrgUnits().map(ou => ({ name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] }));
   }
 
   newReplicationSite(name: string): AdOpResult {
@@ -1447,6 +1532,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   clearDnsClientCache(): void { this.pc.dnsCache.flush(); }
   invokeWebRequest(url: string) { return this.pc.invokeWebRequest(url); }
+  sendMailMessage(opts: Parameters<WindowsPC['sendMailMessage']>[0]) { return this.pc.sendMailMessage(opts); }
   testPingProbe(target: string) {
     const ip = this.resolveTargetSync(target);
     if (!ip) return null;
@@ -1907,6 +1993,8 @@ interface JoinableDevice {
     opts?: { ouPath?: string; newName?: string },
   ): AdOpResult;
   getDomainMembership(): DomainMembershipInfo | null;
+  markServiceAccountInstalled(sam: string): void;
+  hasServiceAccountInstalled(sam: string): boolean;
 }
 
 class WindowsComputerAdapter implements IComputerProvider {
@@ -1924,6 +2012,53 @@ class WindowsComputerAdapter implements IComputerProvider {
 
   getDomainInfo(): DomainMembershipInfo | null {
     return this.device().getDomainMembership();
+  }
+
+  discoverDomainController(): { hostName: string } | null {
+    const membership = this.device().getDomainMembership();
+    if (!membership) return null;
+    const hostname = discoverDcHostname(this.pc.getTcpStack(), membership.dcAddress, membership.dnsName);
+    return hostname ? { hostName: `${hostname}.${membership.dnsName}` } : null;
+  }
+
+  testSecureChannel(): boolean {
+    const membership = this.device().getDomainMembership();
+    if (!membership) return false;
+    const conn = dialLdap(this.pc.getTcpStack(), membership.dcAddress);
+    if (!conn.ok || !conn.client) return false;
+    const sam = `${this.pc.getHostname()}$`;
+    const bind = conn.client.bind(sam, membership.machineSecret);
+    conn.client.unbind();
+    return bind.ok;
+  }
+
+  installServiceAccount(identity: string): AdOpResult {
+    const membership = this.device().getDomainMembership();
+    if (!membership) return { ok: false, message: 'Install-ADServiceAccount : The server is not joined to a domain.' };
+    const conn = dialLdap(this.pc.getTcpStack(), membership.dcAddress);
+    if (!conn.ok || !conn.client) return { ok: false, message: 'Install-ADServiceAccount : Unable to contact a domain controller.' };
+    const bind = conn.client.bind(`${this.pc.getHostname()}$`, membership.machineSecret);
+    if (!bind.ok) { conn.client.unbind(); return { ok: false, message: 'Install-ADServiceAccount : Access is denied.' }; }
+    const sam = identity.endsWith('$') ? identity : `${identity}$`;
+    const result = conn.client.search(rootDnOf(membership.dnsName), 'sub',
+      { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam },
+      ['msDS-GroupMSAMembership', 'msDS-HostServiceAccount']);
+    conn.client.unbind();
+    const entry = result.entries[0];
+    if (!entry) return { ok: false, message: `Install-ADServiceAccount : Cannot find an object with identity: '${identity}'.` };
+    const principals = entry.attributes.find(a => a.type.toLowerCase() === 'msds-groupmsamembership')?.values ?? [];
+    const hostServiceAccount = entry.attributes.find(a => a.type.toLowerCase() === 'msds-hostserviceaccount')?.values[0];
+    const myHostname = this.pc.getHostname().toLowerCase();
+    const authorized = principals.some(p => p.replace(/\$$/, '').toLowerCase() === myHostname)
+      || (hostServiceAccount !== undefined && hostServiceAccount.toLowerCase().startsWith(`cn=${myHostname},`));
+    if (!authorized) return { ok: false, message: 'Install-ADServiceAccount : Access is denied.' };
+    this.device().markServiceAccountInstalled(sam);
+    return { ok: true, message: '' };
+  }
+
+  testServiceAccount(identity: string): boolean {
+    const sam = identity.endsWith('$') ? identity : `${identity}$`;
+    return this.device().hasServiceAccountInstalled(sam);
   }
 }
 
@@ -1954,8 +2089,16 @@ class WindowsGpoAdapter implements IGpoProvider {
     return this.requireDc('Get-GPO').listGpos().map(g => ({ id: g.id, name: g.name, links: g.links }));
   }
 
-  newGPLink(gpoName: string, targetDn: string): AdOpResult {
-    return this.requireDc('New-GPLink').newGPLink(gpoName, targetDn);
+  newGPLink(gpoName: string, targetDn: string, opts?: GpLinkOptions): AdOpResult {
+    return this.requireDc('New-GPLink').newGPLink(gpoName, targetDn, opts);
+  }
+
+  setGpLink(gpoName: string, targetDn: string, opts: GpLinkOptions): AdOpResult {
+    return this.requireDc('Set-GPLink').setGpLink(gpoName, targetDn, opts);
+  }
+
+  setGpRegistryValue(gpoName: string, key: string, valueName: string, type: string, value: string): AdOpResult {
+    return this.requireDc('Set-GPRegistryValue').setGpRegistryValue(gpoName, { key, valueName, type, value });
   }
 
   getDomainDn(): string {
@@ -1966,7 +2109,7 @@ class WindowsGpoAdapter implements IGpoProvider {
     return this.requireDc('Set-GPInheritance').setGpInheritance(targetDn, blocked);
   }
 
-  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null {
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: GpoLinkResultInfo[] } | null {
     return this.requireDc('Get-GPInheritance').getGpInheritance(targetDn);
   }
 }

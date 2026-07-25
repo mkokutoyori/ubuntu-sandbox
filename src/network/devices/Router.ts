@@ -646,6 +646,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   getShell(): IRouterShell { return this.shell; }
 
+  /**
+   * A CLI shell dedicated to one remote session. Real VTY semantics: its
+   * own mode context, so `configure terminal` over SSH never drags the
+   * console into config mode, while the configuration it edits lives on
+   * the device and is therefore shared (docs/PRD-SSH-Unification.md §3.2).
+   */
+  createVtyShell(): { execute(rawInput: string): string | Promise<string>; getPrompt(): string } {
+    const shell = this.createShell();
+    return {
+      execute: (rawInput: string) => shell.execute(this, rawInput),
+      getPrompt: () => shell.getPrompt(this),
+    };
+  }
+
   /** Get the vendor-specific boot sequence */
   abstract getBootSequence(): string;
 

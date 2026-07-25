@@ -18,7 +18,8 @@
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
-import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, AdFineGrainedPasswordPolicy, AdAccessRule } from './AdTypes';
+import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, GpoRegistryValue, GpoLinkInfo, AdFineGrainedPasswordPolicy, AdAccessRule, AdGenericObject, AdServiceAccount } from './AdTypes';
+import { encodeGpLink, decodeGpLink } from './AdTypes';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -37,6 +38,7 @@ const UAC = {
   NORMAL_ACCOUNT: 0x0200,
   WORKSTATION_TRUST_ACCOUNT: 0x1000,
   SERVER_TRUST_ACCOUNT: 0x2000,
+  DONT_EXPIRE_PASSWORD: 0x10000,
 } as const;
 
 /** Real AD groupType bit-flag values: a scope bit (2/4/8) plus the top SECURITY_ENABLED bit (0x80000000) when the group is a security group — a Distribution group carries the same scope bit without that top bit set (docs/PRD-Exchange.md §1.2 point 3/§2.1 P3-préalable). */
@@ -68,6 +70,10 @@ function isEnabledFromUac(values: string[] | undefined): boolean {
 function hasObjectClass(entry: DirectoryEntry, oc: string): boolean {
   return (entry.attributes.get('objectclass') ?? []).some(v => v.toLowerCase() === oc.toLowerCase());
 }
+/** Recycle-Bin-soft-deleted (`isDeleted=TRUE`) — every "normal" find/list method excludes these; only `-IncludeDeletedObjects` reaches them. */
+function isSoftDeleted(entry: DirectoryEntry): boolean {
+  return firstOf(entry.attributes.get('isdeleted')).toUpperCase() === 'TRUE';
+}
 /** Drop attribute keys with no values so we don't materialize empty multi-valued attributes on the entry. */
 function compact(attrs: Record<string, string[]>): Record<string, string[]> {
   return Object.fromEntries(Object.entries(attrs).filter(([, v]) => v.length > 0));
@@ -84,6 +90,13 @@ export class DirectoryStore {
   private readonly computersOuDn: DistinguishedName;
   private readonly policiesDn: DistinguishedName;
   private readonly pswdSettingsDn: DistinguishedName;
+  private readonly configurationDn: DistinguishedName;
+  private readonly directoryServiceDn: DistinguishedName;
+  private readonly deletedObjectsDn: DistinguishedName;
+  /** `Enable-ADOptionalFeature -Identity "Recycle Bin Feature"` (PRD AD Recycle Bin) — irreversible, matching real AD; a non-empty list means enabled at those scope DNs (`CN=Partitions,CN=Configuration,...` for `-Scope ForestOrConfigurationSet`). */
+  private recycleBinEnabledScopes: string[] = [];
+  /** `Add-KdsRootKey` — real gMSA creation refuses without this present first. */
+  private kdsRootKey: { keyId: string; effectiveTime: string } | null = null;
   /** This DC's stable replication identity (PRD-Windows-Server-Advanced.md §5 P4, MS-DRSR's invocationId) — one per `DirectoryStore` instance, for its whole lifetime. */
   private readonly invocationId = `invocation-${generateId()}`;
   private localUsn = 0;
@@ -106,12 +119,25 @@ export class DirectoryStore {
    * on the initial replication sync (§5 P4) to populate everything,
    * exactly like real DCPromo's initial-sync-from-a-source-DC step.
    */
+  /**
+   * The device's simulated clock (`WindowsPC.simulatedDate`), NOT wall-clock
+   * `new Date()` — devices boot at a fixed simulated epoch
+   * (`WindowsPC.wallEpoch`, unrelated to real time) so every timestamp this
+   * store stamps (`pwdLastSet`, `whenChanged`, KDS root key `effectiveTime`)
+   * must agree with what `Get-Date`/`Get-ADUserResultantPasswordPolicy`
+   * date arithmetic sees, or `PasswordLastSet + MaxPasswordAge` comparisons
+   * against `Get-Date` drift by however far the simulated epoch and real
+   * wall-clock have diverged.
+   */
+  private readonly now: () => Date;
+
   constructor(
     readonly dnsName: string,
     readonly netbiosName: string,
     adminPassword: string,
-    opts: { skipSeed?: boolean; sharedSchemaValidator?: SchemaValidator } = {},
+    opts: { skipSeed?: boolean; sharedSchemaValidator?: SchemaValidator; now?: () => Date } = {},
   ) {
+    this.now = opts.now ?? (() => new Date());
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
     this.schemaValidator = opts.sharedSchemaValidator ?? new SchemaValidator();
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
@@ -122,6 +148,9 @@ export class DirectoryStore {
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
     this.pswdSettingsDn = [...parseDN('CN=Password Settings Container'), ...parseDN('CN=System'), ...rootDn];
+    this.configurationDn = [...parseDN('CN=Configuration'), ...rootDn];
+    this.directoryServiceDn = [...parseDN('CN=Directory Service'), ...parseDN('CN=Windows NT'), ...parseDN('CN=Services'), ...this.configurationDn];
+    this.deletedObjectsDn = [...parseDN('CN=Deleted Objects'), ...rootDn];
     this.sites = new SiteRegistry(this.tree);
     this.schema = new SchemaPartition(this.tree, this.schemaValidator);
     this.trustRegistry = new TrustRegistry(this.tree);
@@ -246,6 +275,16 @@ export class DirectoryStore {
     this.tree.addEntry([...parseDN('CN=System'), ...this.tree.getRootDn()], { objectClass: ['top', 'container'], cn: ['System'] });
     this.tree.addEntry(this.policiesDn, { objectClass: ['top', 'container'], cn: ['Policies'] });
     this.tree.addEntry(this.pswdSettingsDn, { objectClass: ['top', 'container'], cn: ['Password Settings Container'] });
+    this.tree.addEntry(this.configurationDn, { objectClass: ['top', 'container'], cn: ['Configuration'] });
+    this.tree.addEntry([...parseDN('CN=Partitions'), ...this.configurationDn], { objectClass: ['top', 'container'], cn: ['Partitions'] });
+    this.tree.addEntry([...parseDN('CN=Services'), ...this.configurationDn], { objectClass: ['top', 'container'], cn: ['Services'] });
+    this.tree.addEntry([...parseDN('CN=Windows NT'), ...parseDN('CN=Services'), ...this.configurationDn], { objectClass: ['top', 'container'], cn: ['Windows NT'] });
+    this.tree.addEntry(this.directoryServiceDn, { objectClass: ['top', 'container'], cn: ['Directory Service'] });
+    // Real AD always has this container, whether or not the Recycle Bin
+    // optional feature is enabled (it also backs pre-2008-R2 tombstone
+    // reanimation) — seeded unconditionally so `Enable-ADOptionalFeature`
+    // only needs to flip the feature flag, not lazily create it.
+    this.tree.addEntry(this.deletedObjectsDn, { objectClass: ['top', 'container'], cn: ['Deleted Objects'] });
 
     this.createGroupEntry('Domain Admins', 'Global', this.usersOuDn);
     this.createGroupEntry('Domain Users', 'Global', this.usersOuDn);
@@ -258,13 +297,40 @@ export class DirectoryStore {
 
   // ─── Organizational Units ───────────────────────────────────────────
 
-  newOrgUnit(name: string): DirOpResult {
-    const res = this.tree.addEntry(this.ouDn(name), { objectClass: ['top', 'organizationalUnit'], ou: [name] });
+  /** A real nested container DN (`OU=Child,OU=Parent,DC=...`) if `rawDn` names one that already exists, else `null` — real AD's `-Path` for OU/user/group creation, not just a leaf name under the domain root. */
+  private resolveContainerDn(rawDn: string): DistinguishedName | null {
+    try {
+      const parsed = parseDN(rawDn);
+      if (this.tree.getByDn(parsed)) return parsed;
+    } catch { /* not a valid DN */ }
+    return null;
+  }
+
+  /** `-Path`/`ou` container resolution shared by `newUser`/`newGroup`: a full nested DN first (real AD `-Path`), falling back to a bare OU name directly under the domain root for callers that only ever passed a leaf name. `undefined` input returns `fallback` unconditionally; a non-empty input that resolves to neither returns `null` (caller reports "not found"). */
+  private resolveOuContainer(rawPathOrName: string | undefined, fallback: DistinguishedName): DistinguishedName | null {
+    if (rawPathOrName === undefined) return fallback;
+    const nested = this.resolveContainerDn(rawPathOrName);
+    if (nested) return nested;
+    const flat = this.ouDn(this.resolveIdentity(rawPathOrName));
+    return this.tree.getByDn(flat) ? flat : null;
+  }
+
+  newOrgUnit(name: string, path?: string): DirOpResult {
+    const parentDn = path ? this.resolveContainerDn(path) : this.tree.getRootDn();
+    if (!parentDn) return { ok: false, message: `Cannot find an object with identity: '${path}'.` };
+    const dn = [...parseDN(`OU=${name}`), ...parentDn];
+    const res = this.tree.addEntry(dn, { objectClass: ['top', 'organizationalUnit'], ou: [name] });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
 
+  private findOrgUnitEntry(name: string): DirectoryEntry | null {
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'ou', value: name })
+      .filter(e => hasObjectClass(e, 'organizationalUnit'));
+    return entry ?? null;
+  }
+
   getOrgUnit(name: string): AdOrgUnit | null {
-    const entry = this.tree.getByDn(this.ouDn(name));
+    const entry = this.findOrgUnitEntry(name);
     return entry ? this.projectOrgUnit(entry) : null;
   }
 
@@ -275,7 +341,7 @@ export class DirectoryStore {
   }
 
   private projectOrgUnit(entry: DirectoryEntry): AdOrgUnit {
-    return { name: firstOf(entry.attributes.get('ou')), dn: formatDN(entry.dn), gpLinks: entry.attributes.get('gplink') ?? [] };
+    return { name: firstOf(entry.attributes.get('ou')), dn: formatDN(entry.dn), gpLinks: (entry.attributes.get('gplink') ?? []).map(v => decodeGpLink(v).gpoDn) };
   }
 
   // ─── Group Policy Objects (PRD-Windows-Server.md §5 P10) ────────────
@@ -308,18 +374,20 @@ export class DirectoryStore {
     const logonBannerJson = firstOf(entry.attributes.get('gpologonbanner'));
     const startupScript = firstOf(entry.attributes.get('gpostartupscript'));
     const auditPolicyJson = firstOf(entry.attributes.get('gpoauditpolicy'));
+    const registryPolicyJson = firstOf(entry.attributes.get('gporegistrypolicy'));
     const gpoDn = formatDN(entry.dn);
     return {
       id: firstOf(entry.attributes.get('cn')),
       name: firstOf(entry.attributes.get('displayname')),
       links: this.tree.allDescendants(this.tree.getRootDn())
-        .filter(e => (e.attributes.get('gplink') ?? []).some(v => v.toLowerCase() === gpoDn.toLowerCase()))
+        .filter(e => (e.attributes.get('gplink') ?? []).some(v => decodeGpLink(v).gpoDn.toLowerCase() === gpoDn.toLowerCase()))
         .map(e => formatDN(e.dn)),
       settings: {
         accountPolicy: accountPolicyJson ? JSON.parse(accountPolicyJson) : undefined,
         logonBanner: logonBannerJson ? JSON.parse(logonBannerJson) : undefined,
         startupScript: startupScript || undefined,
         auditPolicy: auditPolicyJson ? JSON.parse(auditPolicyJson) : undefined,
+        registryPolicy: registryPolicyJson ? JSON.parse(registryPolicyJson) : undefined,
       },
     };
   }
@@ -332,17 +400,60 @@ export class DirectoryStore {
     if (settings.logonBanner !== undefined) changes.push({ op: 'replace', type: 'gpoLogonBanner', values: [JSON.stringify(settings.logonBanner)] });
     if (settings.startupScript !== undefined) changes.push({ op: 'replace', type: 'gpoStartupScript', values: [settings.startupScript] });
     if (settings.auditPolicy !== undefined) changes.push({ op: 'replace', type: 'gpoAuditPolicy', values: [JSON.stringify(settings.auditPolicy)] });
+    if (settings.registryPolicy !== undefined) changes.push({ op: 'replace', type: 'gpoRegistryPolicy', values: [JSON.stringify(settings.registryPolicy)] });
     this.tree.modifyEntry(entry.dn, changes);
     return { ok: true, message: '' };
   }
 
-  /** `New-GPLink` — links a GPO to a domain or OU DN (`gPLink`, RFC-faithful attribute name — real AD stores an ordered, precedence-flagged list; this simulator keeps only the unordered link set, applied in `resultantSetOfPolicy`'s fixed domain-then-OU order). */
-  newGPLink(gpoName: string, targetDn: string): DirOpResult {
+  /** `Set-GPRegistryValue` — records/updates one registry-based policy entry on a GPO (keyed by key+valueName), applied into the target's registry hive by `gpupdate` (PRD-Windows-Server.md §5 P10). */
+  setGpRegistryValue(gpoName: string, entryPatch: GpoRegistryValue): DirOpResult {
+    const gpo = this.getGpo(gpoName);
+    if (!gpo) return { ok: false, message: `Cannot find a GPO with name "${gpoName}".` };
+    const existing = gpo.settings.registryPolicy ?? [];
+    const idx = existing.findIndex(e => e.key.toLowerCase() === entryPatch.key.toLowerCase() && e.valueName.toLowerCase() === entryPatch.valueName.toLowerCase());
+    const next = [...existing];
+    if (idx >= 0) next[idx] = entryPatch; else next.push(entryPatch);
+    return this.setGpoSettings(gpoName, { registryPolicy: next });
+  }
+
+  /** `New-GPLink` — links a GPO to a domain or OU DN (`gPLink`, RFC-faithful attribute name — real AD stores an ordered, precedence-flagged list encoded as a trailing options bitmask on each link string; this simulator mirrors that shape (`<gpoDn>;linkEnabled=..;enforced=..;order=..`) instead of a bare DN, so `-LinkEnabled`/`-Enforced`/`-Order` round-trip through `Get-GPInheritance`). */
+  newGPLink(gpoName: string, targetDn: string, opts?: { linkEnabled?: boolean; enforced?: boolean; order?: number }): DirOpResult {
     const gpo = this.findGpoEntry(gpoName);
     if (!gpo) return { ok: false, message: `Cannot find a GPO with name "${gpoName}".` };
     const targetEntry = this.resolveTargetEntry(targetDn);
     if (!targetEntry) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
-    this.tree.modifyEntry(targetEntry.dn, [{ op: 'add', type: 'gPLink', values: [formatDN(gpo.dn)] }]);
+    const gpoDn = formatDN(gpo.dn);
+    const existingLinks = targetEntry.attributes.get('gplink') ?? [];
+    if (existingLinks.some(v => decodeGpLink(v).gpoDn.toLowerCase() === gpoDn.toLowerCase())) {
+      return { ok: false, message: `The GPO "${gpoName}" is already linked to '${targetDn}'.` };
+    }
+    const encoded = encodeGpLink(gpoDn, {
+      linkEnabled: opts?.linkEnabled ?? true,
+      enforced: opts?.enforced ?? false,
+      order: opts?.order ?? 1,
+    });
+    this.tree.modifyEntry(targetEntry.dn, [{ op: 'add', type: 'gPLink', values: [encoded] }]);
+    return { ok: true, message: '' };
+  }
+
+  /** `Set-GPLink` — updates the link options (`-LinkEnabled`/`-Enforced`/`-Order`) of an EXISTING link between a GPO and a target; fields omitted from `opts` keep their current value. */
+  setGpLink(gpoName: string, targetDn: string, opts: { linkEnabled?: boolean; enforced?: boolean; order?: number }): DirOpResult {
+    const gpo = this.findGpoEntry(gpoName);
+    if (!gpo) return { ok: false, message: `Cannot find a GPO with name "${gpoName}".` };
+    const targetEntry = this.resolveTargetEntry(targetDn);
+    if (!targetEntry) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
+    const gpoDn = formatDN(gpo.dn).toLowerCase();
+    const links = targetEntry.attributes.get('gplink') ?? [];
+    const idx = links.findIndex(v => decodeGpLink(v).gpoDn.toLowerCase() === gpoDn);
+    if (idx < 0) return { ok: false, message: `The GPO "${gpoName}" is not linked to '${targetDn}'.` };
+    const current = decodeGpLink(links[idx]);
+    const next = [...links];
+    next[idx] = encodeGpLink(current.gpoDn, {
+      linkEnabled: opts.linkEnabled ?? current.linkEnabled,
+      enforced: opts.enforced ?? current.enforced,
+      order: opts.order ?? current.order,
+    });
+    this.tree.modifyEntry(targetEntry.dn, [{ op: 'replace', type: 'gPLink', values: next }]);
     return { ok: true, message: '' };
   }
 
@@ -351,7 +462,10 @@ export class DirectoryStore {
    * then GPOs linked to the computer's own OU (more specific — its
    * settings override the domain's on conflicting keys). Only direct
    * links are honored (no OU-hierarchy walk beyond the computer's
-   * immediate container).
+   * immediate container). Disabled links (`-LinkEnabled No`) never apply;
+   * an Enforced domain-level link still applies even when the computer's
+   * own OU has inheritance blocked — real AD's "Enforced wins over
+   * blocked inheritance" rule.
    */
   resultantSetOfPolicy(computerName?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
     let ouEntry: DirectoryEntry | null = null;
@@ -360,15 +474,20 @@ export class DirectoryStore {
       if (computer) ouEntry = this.tree.getByDn(computer.dn.slice(1));
     }
     const inheritanceBlocked = ouEntry ? firstOf(ouEntry.attributes.get('gpoptions')) === '1' : false;
-    const domainLinked = inheritanceBlocked ? [] : this.linkedGposFor(this.tree.getRootDn());
-    const ouLinked = ouEntry ? this.linkedGposFor(ouEntry.dn) : [];
-    const ordered = [...domainLinked, ...ouLinked];
+    const domainLinks = this.linkedGposFor(this.tree.getRootDn()).filter(l => l.enabled && (l.enforced || !inheritanceBlocked));
+    const ouLinks = ouEntry ? this.linkedGposFor(ouEntry.dn).filter(l => l.enabled) : [];
+    const ordered = [...domainLinks, ...ouLinks].sort((a, b) => a.order - b.order).map(l => l.gpo);
     const merged: GpoSettings = {};
     for (const gpo of ordered) {
       if (gpo.settings.accountPolicy !== undefined) merged.accountPolicy = { ...merged.accountPolicy, ...gpo.settings.accountPolicy };
       if (gpo.settings.logonBanner !== undefined) merged.logonBanner = gpo.settings.logonBanner;
       if (gpo.settings.startupScript !== undefined) merged.startupScript = gpo.settings.startupScript;
       if (gpo.settings.auditPolicy !== undefined) merged.auditPolicy = { ...merged.auditPolicy, ...gpo.settings.auditPolicy };
+      if (gpo.settings.registryPolicy !== undefined) {
+        const byKey = new Map((merged.registryPolicy ?? []).map(e => [`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e]));
+        for (const e of gpo.settings.registryPolicy) byKey.set(`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e);
+        merged.registryPolicy = Array.from(byKey.values());
+      }
     }
     return { appliedGpoNames: ordered.map(g => g.name), settings: merged };
   }
@@ -380,23 +499,39 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null {
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: GpoLinkInfo[] } | null {
     const entry = this.resolveTargetEntry(targetDn);
     if (!entry) return null;
+    const links = entry.attributes.get('gplink') ?? [];
     return {
       dn: formatDN(entry.dn),
       gpoInheritanceBlocked: firstOf(entry.attributes.get('gpoptions')) === '1',
-      gpoLinks: entry.attributes.get('gplink') ?? [],
+      gpoLinks: links.map(raw => {
+        const decoded = decodeGpLink(raw);
+        const gpoEntry = this.tree.getByDn(parseDN(decoded.gpoDn));
+        return {
+          displayName: gpoEntry ? firstOf(gpoEntry.attributes.get('displayname')) : decoded.gpoDn,
+          gpoDn: decoded.gpoDn,
+          enabled: decoded.linkEnabled,
+          enforced: decoded.enforced,
+          order: decoded.order,
+        };
+      }),
     };
   }
 
-  private linkedGposFor(dn: DistinguishedName): Gpo[] {
+  private linkedGposFor(dn: DistinguishedName): Array<{ gpo: Gpo; enabled: boolean; enforced: boolean; order: number }> {
     const entry = this.tree.getByDn(dn);
     const links = entry?.attributes.get('gplink') ?? [];
     return links
-      .map(gpoDn => { try { return this.tree.getByDn(parseDN(gpoDn)); } catch { return null; } })
-      .filter((e): e is DirectoryEntry => e !== null)
-      .map(e => this.projectGpo(e));
+      .map(raw => {
+        const decoded = decodeGpLink(raw);
+        let gpoEntry: DirectoryEntry | null;
+        try { gpoEntry = this.tree.getByDn(parseDN(decoded.gpoDn)); } catch { gpoEntry = null; }
+        if (!gpoEntry) return null;
+        return { gpo: this.projectGpo(gpoEntry), enabled: decoded.linkEnabled, enforced: decoded.enforced, order: decoded.order };
+      })
+      .filter((l): l is { gpo: Gpo; enabled: boolean; enforced: boolean; order: number } => l !== null);
   }
 
   // ─── Password policy: Default Domain Policy + Fine-Grained (PSO) ────
@@ -503,9 +638,9 @@ export class DirectoryStore {
 
   // ─── Users ──────────────────────────────────────────────────────────
 
-  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): DirOpResult {
-    const containerDn = opts.ou ? this.ouDn(opts.ou) : this.usersOuDn;
-    if (opts.ou && !this.tree.getByDn(containerDn)) {
+  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): DirOpResult {
+    const containerDn = this.resolveOuContainer(opts.ou, this.usersOuDn);
+    if (!containerDn) {
       return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
     }
     if (opts.actingSam && !this.hasPermission(opts.actingSam, formatDN(containerDn), 'CreateChild')) {
@@ -513,7 +648,8 @@ export class DirectoryStore {
     }
     const res = this.createUserEntry(sam, {
       password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled,
-      department: opts.department, title: opts.title,
+      department: opts.department, title: opts.title, emailAddress: opts.emailAddress,
+      passwordNeverExpires: opts.passwordNeverExpires,
     });
     if (!res.ok) return res;
     this.addGroupMember('Domain Users', sam);
@@ -522,26 +658,30 @@ export class DirectoryStore {
 
   private nextObjectSid(): string { return `${this.domainSidPrefix}-${this.nextRid++}`; }
 
-  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string }): DirOpResult {
+  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean }): DirOpResult {
     const enabled = opts.enabled ?? true;
+    let uac = enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE;
+    if (opts.passwordNeverExpires) uac |= UAC.DONT_EXPIRE_PASSWORD;
     const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user'],
       cn: [sam],
       sAMAccountName: [sam],
       userPrincipalName: [`${sam}@${this.dnsName}`],
       objectSid: [this.nextObjectSid()],
-      userAccountControl: [String(enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)],
+      userAccountControl: [String(uac)],
       userPassword: [opts.password],
       displayName: opts.fullName ? [opts.fullName] : [],
       department: opts.department ? [opts.department] : [],
       title: opts.title ? [opts.title] : [],
+      mail: opts.emailAddress ? [opts.emailAddress] : [],
+      pwdLastSet: [this.now().toISOString()],
     }));
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
 
   private findUserEntry(sam: string): DirectoryEntry | null {
     const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam })
-      .filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer'));
+      .filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer') && !isSoftDeleted(e));
     return entry ?? null;
   }
 
@@ -552,7 +692,7 @@ export class DirectoryStore {
 
   listUsers(): AdUser[] {
     return this.tree.allDescendants(this.tree.getRootDn())
-      .filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer'))
+      .filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer') && !isSoftDeleted(e))
       .map(e => this.projectUser(e));
   }
 
@@ -566,6 +706,9 @@ export class DirectoryStore {
       ou: dnEqualsOu(containerDn, this.usersOuDn) ? 'Users' : firstOf(entry.attributes.get('ou')) || leafOuName(containerDn),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
       password: firstOf(entry.attributes.get('userpassword')),
+      emailAddress: firstOf(entry.attributes.get('mail')),
+      passwordLastSet: firstOf(entry.attributes.get('pwdlastset')),
+      passwordNeverExpires: (Number(firstOf(entry.attributes.get('useraccountcontrol'))) & UAC.DONT_EXPIRE_PASSWORD) !== 0,
       memberOf: (entry.attributes.get('memberof') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
       fullName: firstOf(entry.attributes.get('displayname')),
       department: firstOf(entry.attributes.get('department')),
@@ -593,7 +736,10 @@ export class DirectoryStore {
       changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
     }
     if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
-    if (opts.password !== undefined) changes.push({ op: 'replace', type: 'userPassword', values: [opts.password] });
+    if (opts.password !== undefined) {
+      changes.push({ op: 'replace', type: 'userPassword', values: [opts.password] });
+      changes.push({ op: 'replace', type: 'pwdLastSet', values: [this.now().toISOString()] });
+    }
     if (opts.department !== undefined) changes.push({ op: 'replace', type: 'department', values: opts.department ? [opts.department] : [] });
     if (opts.title !== undefined) changes.push({ op: 'replace', type: 'title', values: opts.title ? [opts.title] : [] });
     if (opts.addSpns && opts.addSpns.length > 0) changes.push({ op: 'add', type: 'servicePrincipalName', values: opts.addSpns });
@@ -644,7 +790,7 @@ export class DirectoryStore {
   }
 
   private listUserEntries(): DirectoryEntry[] {
-    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer'));
+    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer') && !isSoftDeleted(e));
   }
 
   removeUser(sam: string): DirOpResult {
@@ -656,8 +802,7 @@ export class DirectoryStore {
         this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: [userDn] }]);
       }
     }
-    const res = this.tree.deleteEntry(entry.dn);
-    return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
+    return this.softOrHardDelete(entry);
   }
 
   /** `Remove-ADDomainController` / the AD-metadata-cleanup half of `ntdsutil` — deletes a (real or seized-from) DC's own computer account and its group memberships, same shape as `removeUser`. */
@@ -670,8 +815,238 @@ export class DirectoryStore {
         this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: [computerDn] }]);
       }
     }
-    const res = this.tree.deleteEntry(entry.dn);
-    return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
+    return this.softOrHardDelete(entry);
+  }
+
+  /** `Remove-ADGroup` — same shape as `removeUser`/`removeComputer`; also unlinks this group from any parent group it's nested in. The group's OWN `member` attribute is left untouched, so a `Restore-ADObject` brings its membership back automatically (real AD Recycle Bin's actual behavior — no separate membership ledger needed). */
+  removeGroup(sam: string): DirOpResult {
+    const entry = this.findGroupEntry(sam);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+    const groupDn = formatDN(entry.dn);
+    for (const group of this.listGroupEntries()) {
+      if (group === entry) continue;
+      if ((group.attributes.get('member') ?? []).some(m => m.toLowerCase() === groupDn.toLowerCase())) {
+        this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: [groupDn] }]);
+      }
+    }
+    return this.softOrHardDelete(entry);
+  }
+
+  // ─── AD Recycle Bin / Optional Features ─────────────────────────────
+
+  /** `(Get-ADRootDSE).configurationNamingContext`. */
+  getConfigurationNamingContext(): string { return formatDN(this.configurationDn); }
+
+  /** `Get-ADObject -Identity "CN=Directory Service,CN=Windows NT,CN=Services,$ConfigNC"` — the well-known object real `Set-ADObject -Replace @{msDS-DeletedObjectLifetime=...}` targets. */
+  getDirectoryServiceObjectDn(): string { return formatDN(this.directoryServiceDn); }
+
+  getOptionalFeature(name: string): { name: string; enabledScopes: string[] } | null {
+    if (name.toLowerCase() !== 'recycle bin feature') return null;
+    return { name: 'Recycle Bin Feature', enabledScopes: [...this.recycleBinEnabledScopes] };
+  }
+
+  /** `Enable-ADOptionalFeature -Identity "Recycle Bin Feature" -Scope ForestOrConfigurationSet -Target <domain>` — irreversible in real AD (no `Disable-ADOptionalFeature` exists); idempotent here (re-enabling at the same scope is a no-op, not an error). */
+  enableOptionalFeature(name: string, scopeDn: string): DirOpResult {
+    if (name.toLowerCase() !== 'recycle bin feature') return { ok: false, message: `Cannot find an optional feature with identity: '${name}'.` };
+    let formatted: string;
+    try { formatted = formatDN(parseDN(scopeDn)); } catch { return { ok: false, message: `Cannot find an object with distinguished name: '${scopeDn}'.` }; }
+    if (!this.recycleBinEnabledScopes.some(s => s.toLowerCase() === formatted.toLowerCase())) {
+      this.recycleBinEnabledScopes.push(formatted);
+    }
+    return { ok: true, message: '' };
+  }
+
+  private isRecycleBinEnabled(): boolean { return this.recycleBinEnabledScopes.length > 0; }
+
+  /**
+   * Moves a deleted leaf entry into `CN=Deleted Objects` in place — same
+   * RDN, no GUID-mangling (unlike real AD, whose `CN=<name>\nDEL:<guid>`
+   * exists purely to dodge same-CN collisions across many deletes; out of
+   * scope here since these tests only ever restore what they just
+   * deleted) — recording `isDeleted`/`lastKnownParent`/`whenChanged` for
+   * `Restore-ADObject`. All other attributes (including a group's own
+   * `member` list) are left untouched, so a restored object comes back
+   * exactly as it was — real AD Recycle Bin's actual behavior. Hard-
+   * deletes instead when the Recycle Bin optional feature isn't enabled
+   * (this simulator doesn't model pre-2008-R2 tombstone reanimation, so a
+   * disabled-feature delete stays simply permanent, matching this
+   * codebase's pre-Recycle-Bin behavior).
+   */
+  private softOrHardDelete(entry: DirectoryEntry): DirOpResult {
+    if (!this.isRecycleBinEnabled()) {
+      const res = this.tree.deleteEntry(entry.dn);
+      return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
+    }
+    const originalParentDn = formatDN(entry.dn.slice(1));
+    const leafRdn = formatDN([entry.dn[0]]);
+    const move = this.tree.renameEntry(entry.dn, leafRdn, false, this.deletedObjectsDn);
+    if (!move.ok) return { ok: false, message: move.message };
+    const moved = this.tree.getByDn([entry.dn[0], ...this.deletedObjectsDn]);
+    if (moved) {
+      this.tree.modifyEntry(moved.dn, [
+        { op: 'replace', type: 'isDeleted', values: ['TRUE'] },
+        { op: 'replace', type: 'lastKnownParent', values: [originalParentDn] },
+        { op: 'replace', type: 'whenChanged', values: [this.now().toISOString()] },
+      ]);
+    }
+    return { ok: true, message: '' };
+  }
+
+  /** `Restore-ADObject -Identity $deletedObj [-TargetPath <ou>]` — moves the entry back out of `CN=Deleted Objects` to `-TargetPath` (or its recorded `lastKnownParent` when omitted), clearing the tombstone markers. */
+  restoreObject(rawDn: string, targetPathDn?: string): DirOpResult {
+    let entry: DirectoryEntry | null;
+    try { entry = this.tree.getByDn(parseDN(rawDn)); } catch { entry = null; }
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${rawDn}'.` };
+    if (!isSoftDeleted(entry)) return { ok: false, message: 'The specified object is not in a deleted state, and no changes were made.' };
+    const targetRaw = targetPathDn || firstOf(entry.attributes.get('lastknownparent'));
+    if (!targetRaw) return { ok: false, message: 'Cannot determine the original location to restore this object to.' };
+    let targetParentDn: DistinguishedName;
+    try { targetParentDn = parseDN(targetRaw); } catch { return { ok: false, message: `Cannot find an object with identity: '${targetRaw}'.` }; }
+    if (!this.tree.getByDn(targetParentDn)) return { ok: false, message: `Cannot find an object with identity: '${targetRaw}'.` };
+    const leafRdn = formatDN([entry.dn[0]]);
+    const move = this.tree.renameEntry(entry.dn, leafRdn, false, targetParentDn);
+    if (!move.ok) return { ok: false, message: move.message };
+    const restored = this.tree.getByDn([entry.dn[0], ...targetParentDn]);
+    if (restored) {
+      this.tree.modifyEntry(restored.dn, [
+        { op: 'delete', type: 'isDeleted', values: [] },
+        { op: 'delete', type: 'lastKnownParent', values: [] },
+      ]);
+    }
+    return { ok: true, message: '' };
+  }
+
+  // ─── Generic AD objects (Get-ADObject / Set-ADObject) ────────────────
+
+  private genericObjectClassOf(entry: DirectoryEntry): string {
+    if (hasObjectClass(entry, 'computer')) return 'computer';
+    if (hasObjectClass(entry, 'user')) return 'user';
+    if (hasObjectClass(entry, 'group')) return 'group';
+    if (hasObjectClass(entry, 'organizationalUnit')) return 'organizationalUnit';
+    if (hasObjectClass(entry, 'groupPolicyContainer')) return 'groupPolicyContainer';
+    return 'container';
+  }
+
+  private projectGenericObject(entry: DirectoryEntry): AdGenericObject {
+    const attributes: Record<string, string[]> = {};
+    for (const [k, v] of entry.attributes) attributes[k] = [...v];
+    return {
+      dn: formatDN(entry.dn),
+      name: firstOf(entry.attributes.get('cn')) || firstOf(entry.attributes.get('ou')) || firstOf(entry.attributes.get('samaccountname')),
+      objectClass: this.genericObjectClassOf(entry),
+      isDeleted: isSoftDeleted(entry),
+      lastKnownParent: firstOf(entry.attributes.get('lastknownparent')) || undefined,
+      whenChanged: firstOf(entry.attributes.get('whenchanged')) || undefined,
+      attributes,
+    };
+  }
+
+  getObjectByDn(rawDn: string, includeDeleted: boolean): AdGenericObject | null {
+    let entry: DirectoryEntry | null;
+    try { entry = this.tree.getByDn(parseDN(rawDn)); } catch { entry = null; }
+    if (!entry) return null;
+    if (isSoftDeleted(entry) && !includeDeleted) return null;
+    return this.projectGenericObject(entry);
+  }
+
+  /** `Get-ADObject -Filter {...} [-SearchBase <dn>] [-IncludeDeletedObjects]` — every real object in the tree (any class), for the cmdlet layer's own generic `-Filter` clause matching. */
+  listObjects(opts: { includeDeleted: boolean; searchBaseDn?: string }): AdGenericObject[] {
+    let baseDn = this.tree.getRootDn();
+    if (opts.searchBaseDn) {
+      try { baseDn = parseDN(opts.searchBaseDn); } catch { /* fall back to the root */ }
+    }
+    return this.tree.allDescendants(baseDn)
+      .filter(e => opts.includeDeleted || !isSoftDeleted(e))
+      .map(e => this.projectGenericObject(e));
+  }
+
+  /** `Set-ADObject -Identity <dn> -Replace @{attr = value}`. */
+  setObjectAttributes(rawDn: string, replace: Record<string, string>): DirOpResult {
+    let entry: DirectoryEntry | null;
+    try { entry = this.tree.getByDn(parseDN(rawDn)); } catch { entry = null; }
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${rawDn}'.` };
+    this.tree.modifyEntry(entry.dn, Object.entries(replace).map(([type, value]) => ({ op: 'replace' as const, type, values: [value] })));
+    return { ok: true, message: '' };
+  }
+
+  // ─── KDS root key / Managed Service Accounts (gMSA/sMSA) ────────────
+
+  /** `Add-KdsRootKey` — the forest-wide secret every gMSA's managed password is derived from in real AD; this simulator only needs its presence (as a real prerequisite `New-ADServiceAccount` enforces), not the actual key-derivation cryptography. */
+  addKdsRootKey(): { keyId: string; effectiveTime: string } {
+    this.kdsRootKey = { keyId: generateId(), effectiveTime: new Date().toISOString() };
+    return this.kdsRootKey;
+  }
+
+  getKdsRootKey(): { keyId: string; effectiveTime: string } | null { return this.kdsRootKey; }
+
+  /** `New-ADServiceAccount` — a gMSA (`principalsAllowed` non-empty, multi-computer) or an sMSA (`-RestrictToSingleComputer`, linked to exactly one computer via `Add-ADComputerServiceAccount`). Real AD refuses without a KDS root key already present. */
+  newServiceAccount(name: string, opts: {
+    dnsHostName: string; description?: string; path?: string;
+    principalsAllowed?: string[]; managedPasswordIntervalDays?: number; restrictToSingleComputer?: boolean;
+  }): DirOpResult {
+    if (!this.kdsRootKey) {
+      return { ok: false, message: 'The Key Distribution Services root key is not yet available. Run Add-KdsRootKey first.' };
+    }
+    const containerDn = this.resolveOuContainer(opts.path, this.usersOuDn);
+    if (!containerDn) return { ok: false, message: `Cannot find an object with identity: '${opts.path}'.` };
+    const isGroupManaged = !opts.restrictToSingleComputer;
+    const res = this.tree.addEntry(this.cnDn(name, containerDn), compact({
+      objectClass: ['top', isGroupManaged ? 'msDS-GroupManagedServiceAccount' : 'msDS-ManagedServiceAccount'],
+      cn: [name],
+      sAMAccountName: [`${name}$`],
+      dNSHostName: [opts.dnsHostName],
+      description: opts.description ? [opts.description] : [],
+      'msDS-ManagedPasswordInterval': [String(opts.managedPasswordIntervalDays ?? 30)],
+      'msDS-GroupMSAMembership': opts.principalsAllowed ?? [],
+      pwdLastSet: [this.now().toISOString()],
+    }));
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  }
+
+  private findServiceAccountEntry(name: string): DirectoryEntry | null {
+    const bare = name.replace(/\$$/, '');
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'cn', value: bare })
+      .filter(e => hasObjectClass(e, 'msDS-GroupManagedServiceAccount') || hasObjectClass(e, 'msDS-ManagedServiceAccount'));
+    return entry ?? null;
+  }
+
+  private projectServiceAccount(entry: DirectoryEntry): AdServiceAccount {
+    const hostComputerDn = firstOf(entry.attributes.get('msds-hostserviceaccount'));
+    return {
+      sam: firstOf(entry.attributes.get('samaccountname')),
+      dn: formatDN(entry.dn),
+      dnsHostName: firstOf(entry.attributes.get('dnshostname')),
+      description: firstOf(entry.attributes.get('description')),
+      isGroupManaged: hasObjectClass(entry, 'msDS-GroupManagedServiceAccount'),
+      principalsAllowed: entry.attributes.get('msds-groupmsamembership') ?? [],
+      managedPasswordIntervalDays: Number(firstOf(entry.attributes.get('msds-managedpasswordinterval'))) || 30,
+      hostComputerDn,
+      servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
+      passwordLastSet: firstOf(entry.attributes.get('pwdlastset')),
+    };
+  }
+
+  getServiceAccount(name: string): AdServiceAccount | null {
+    const entry = this.findServiceAccountEntry(name);
+    return entry ? this.projectServiceAccount(entry) : null;
+  }
+
+  /** `Set-ADServiceAccount -ServicePrincipalNames @{ Add = @(...) }`. */
+  addServiceAccountSpns(name: string, addSpns: string[]): DirOpResult {
+    const entry = this.findServiceAccountEntry(name);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${name}'.` };
+    this.tree.modifyEntry(entry.dn, [{ op: 'add', type: 'servicePrincipalName', values: addSpns }]);
+    return { ok: true, message: '' };
+  }
+
+  /** `Add-ADComputerServiceAccount -Identity <computer> -ServiceAccount <sMSA>` — links an sMSA to its exclusive host computer. */
+  addComputerServiceAccount(computerName: string, serviceAccountName: string): DirOpResult {
+    const computer = this.findComputerEntry(computerName);
+    if (!computer) return { ok: false, message: `Cannot find an object with identity: '${computerName}'.` };
+    const account = this.findServiceAccountEntry(serviceAccountName);
+    if (!account) return { ok: false, message: `Cannot find an object with identity: '${serviceAccountName}'.` };
+    this.tree.modifyEntry(account.dn, [{ op: 'replace', type: 'msDS-HostServiceAccount', values: [formatDN(computer.dn)] }]);
+    return { ok: true, message: '' };
   }
 
   checkPassword(sam: string, password: string): boolean {
@@ -699,8 +1074,8 @@ export class DirectoryStore {
   // ─── Groups ─────────────────────────────────────────────────────────
 
   newGroup(sam: string, scope: AdGroup['scope'] = 'Global', ou?: string, category: AdGroup['category'] = 'Security'): DirOpResult {
-    const containerDn = ou ? this.ouDn(ou) : this.usersOuDn;
-    if (ou && !this.tree.getByDn(containerDn)) {
+    const containerDn = this.resolveOuContainer(ou, this.usersOuDn);
+    if (!containerDn) {
       return { ok: false, message: `Cannot find an object with identity: '${ou}'.` };
     }
     const res = this.createGroupEntry(sam, scope, containerDn, category);
@@ -718,12 +1093,12 @@ export class DirectoryStore {
 
   private findGroupEntry(sam: string): DirectoryEntry | null {
     const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam })
-      .filter(e => hasObjectClass(e, 'group'));
+      .filter(e => hasObjectClass(e, 'group') && !isSoftDeleted(e));
     return entry ?? null;
   }
 
   private listGroupEntries(): DirectoryEntry[] {
-    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'group'));
+    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'group') && !isSoftDeleted(e));
   }
 
   getGroup(sam: string): AdGroup | null {
@@ -745,10 +1120,15 @@ export class DirectoryStore {
     };
   }
 
+  /** A group member can itself be a user, a computer, or another group — real AD's AGDLP model (Account → Global → Domain Local → Permission) relies on nesting Global groups inside Domain Local ones. */
+  private findGroupMemberEntry(sam: string): DirectoryEntry | null {
+    return this.findUserEntry(sam) ?? this.findComputerEntry(sam) ?? this.findGroupEntry(sam);
+  }
+
   addGroupMember(groupSam: string, memberSam: string): DirOpResult {
     const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    const member = this.findUserEntry(memberSam) ?? this.findComputerEntry(memberSam);
+    const member = this.findGroupMemberEntry(memberSam);
     if (!member) return { ok: false, message: `Cannot find an object with identity: '${memberSam}'.` };
     const memberDn = formatDN(member.dn);
     const groupDn = formatDN(group.dn);
@@ -760,11 +1140,30 @@ export class DirectoryStore {
   removeGroupMember(groupSam: string, memberSam: string): DirOpResult {
     const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    const member = this.findUserEntry(memberSam) ?? this.findComputerEntry(memberSam);
+    const member = this.findGroupMemberEntry(memberSam);
     const groupDn = formatDN(group.dn);
     this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: member ? [formatDN(member.dn)] : [] }]);
     if (member) this.tree.modifyEntry(member.dn, [{ op: 'delete', type: 'memberOf', values: [groupDn] }]);
     return { ok: true, message: '' };
+  }
+
+  /** `Get-ADGroupMember` — direct members only, each tagged by kind so a caller can distinguish a nested Global group from a plain user/computer (real AD's AGDLP model). */
+  getGroupMembersDetailed(groupSam: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' }> {
+    const group = this.findGroupEntry(groupSam);
+    if (!group) return [];
+    const out: Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' }> = [];
+    for (const dnStr of group.attributes.get('member') ?? []) {
+      let dn: DistinguishedName;
+      try { dn = parseDN(dnStr); } catch { continue; }
+      const entry = this.tree.getByDn(dn);
+      if (!entry) continue;
+      const sam = firstOf(entry.attributes.get('samaccountname'));
+      if (!sam) continue;
+      const objectClass: 'user' | 'computer' | 'group' = hasObjectClass(entry, 'group')
+        ? 'group' : hasObjectClass(entry, 'computer') ? 'computer' : 'user';
+      out.push({ sam, dn: formatDN(entry.dn), objectClass });
+    }
+    return out;
   }
 
   /** Resolve a member DN string back to its sAMAccountName (real AD's `member`/`memberOf` store DNs, not names — callers want the friendlier sam). */
@@ -801,7 +1200,7 @@ export class DirectoryStore {
 
   private findComputerEntry(name: string): DirectoryEntry | null {
     const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'cn', value: name })
-      .filter(e => hasObjectClass(e, 'computer'));
+      .filter(e => hasObjectClass(e, 'computer') && !isSoftDeleted(e));
     return entry ?? null;
   }
 
@@ -830,7 +1229,7 @@ export class DirectoryStore {
   }
 
   listComputers(): AdComputer[] {
-    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'computer')).map(e => this.projectComputer(e));
+    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'computer') && !isSoftDeleted(e)).map(e => this.projectComputer(e));
   }
 
   private projectComputer(entry: DirectoryEntry): AdComputer {

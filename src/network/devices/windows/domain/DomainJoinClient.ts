@@ -27,7 +27,6 @@ import { dialKdc, buildApReq } from '@/network/kerberos/KerberosClient';
 import { KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
 import { principalName, PrincipalNameType } from '@/network/kerberos/types';
 import { discoverDcHostname, rootDnOf } from './DcHostnameDiscovery';
-import { parseDN, leafValue } from '../server/ad/ldap/LdapDN';
 import type { DomainMembership } from './DomainTypes';
 
 export interface DomainJoinResult { ok: boolean; message: string; membership?: DomainMembership }
@@ -80,14 +79,14 @@ export function joinDomain(opts: {
     return badCredential;
   }
 
-  const targetContainer = (() => {
-    if (!opts.ouPath) return 'CN=Computers';
-    try {
-      const leaf = leafValue(parseDN(opts.ouPath));
-      return leaf ? `OU=${leaf}` : 'CN=Computers';
-    } catch { return 'CN=Computers'; }
-  })();
-  const computerDn = `CN=${opts.computerName},${targetContainer},${rootDnOf(opts.domainName)}`;
+  // `-OUPath` names a real, possibly-nested container DN (e.g.
+  // `OU=Postes,OU=Ordinateurs,OU=Mandeng,DC=...`) — used verbatim as the
+  // parent, exactly like a real `Add-Computer -OUPath`/`dsadd computer`
+  // over LDAP. The DC's own `Add` handling (`DirectoryTree.addEntry`)
+  // is what actually validates the parent exists.
+  const computerDn = opts.ouPath
+    ? `CN=${opts.computerName},${opts.ouPath}`
+    : `CN=${opts.computerName},CN=Computers,${rootDnOf(opts.domainName)}`;
   const machineSecret = randomMachineSecret();
   const add = ldap.add(computerDn, [
     { type: 'objectClass', values: ['top', 'person', 'organizationalPerson', 'user', 'computer'] },
@@ -95,6 +94,7 @@ export function joinDomain(opts: {
     { type: 'sAMAccountName', values: [`${opts.computerName}$`] },
     { type: 'userAccountControl', values: ['4096'] },
     { type: 'userPassword', values: [machineSecret] },
+    { type: 'servicePrincipalName', values: [`HOST/${opts.computerName}`, `HOST/${opts.computerName}.${opts.domainName}`] },
   ]);
   ldap.unbind();
 

@@ -33,7 +33,7 @@ async function promotedDc(): Promise<WindowsServer> {
 
 describe('Scénario 2 — objets AD : OUs, utilisateurs, groupes (LAN Mandeng)', () => {
   describe('création de la structure OU', () => {
-    it('New-ADOrganizationalUnit crée la racine "Mandeng" et 8 sous-OUs (9 au total)', async () => {
+    it('New-ADOrganizationalUnit crée la racine "Mandeng" et 9 sous-OUs (10 au total)', async () => {
       const dc = await promotedDc();
       const sh = ps(dc);
       await run(sh, 'New-ADOrganizationalUnit -Name "Mandeng" -Path "DC=mandeng,DC=lan" -Description "OU racine Mandeng" -ProtectedFromAccidentalDeletion $true');
@@ -56,7 +56,7 @@ describe('Scénario 2 — objets AD : OUs, utilisateurs, groupes (LAN Mandeng)',
       const out = await run(sh, 'Get-ADOrganizationalUnit -Filter *');
       const created = ['Mandeng', ...ous.map((o) => o.name)];
       for (const name of created) expect(out).toContain(name);
-      expect(created.length).toBe(9);
+      expect(created.length).toBe(10);
     });
   });
 

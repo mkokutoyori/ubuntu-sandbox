@@ -328,7 +328,7 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: 'Install-ADDSForest : This computer is already configured as a domain controller.' };
     }
     const netbios = netbiosName ?? domainName.split('.')[0].toUpperCase();
-    this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword);
+    this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { now: () => this.simulatedDate() });
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
@@ -1027,7 +1027,7 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: `New-ADDomain : ${join.message}` };
     }
 
-    this.directoryStore = new DirectoryStore(newDomainDnsName, netbios, safeModeAdminPassword, { sharedSchemaValidator: join.schemaValidator });
+    this.directoryStore = new DirectoryStore(newDomainDnsName, netbios, safeModeAdminPassword, { sharedSchemaValidator: join.schemaValidator, now: () => this.simulatedDate() });
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
@@ -1177,7 +1177,7 @@ export class WindowsServer extends WindowsPC {
     }
 
     const netbios = netbiosName ?? domainName.split('.')[0].toUpperCase();
-    const store = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { skipSeed: true });
+    const store = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { skipSeed: true, now: () => this.simulatedDate() });
     const sync = pullReplication(this.getTcpStack(), sourceDcAddress, store);
     /**
      * The initial sync (PRD-Windows-Server-Advanced.md §5 P12) has no

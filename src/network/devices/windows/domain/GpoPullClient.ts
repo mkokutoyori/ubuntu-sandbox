@@ -19,6 +19,7 @@ import type { TcpStack } from '@/network/tcp/TcpStack';
 import { dialLdap } from '../server/ad/ldap/LdapClient';
 import type { DomainMembership } from './DomainTypes';
 import type { GpoSettings } from '../server/ad/AdTypes';
+import { decodeGpLink } from '../server/ad/AdTypes';
 
 export interface GpoPullResult {
   ok: boolean;
@@ -38,11 +39,13 @@ function parseGpoSettings(attrs: Array<{ type: string; values: string[] }>): Gpo
   const logonBannerJson = get('gpoLogonBanner');
   const startupScript = get('gpoStartupScript');
   const auditPolicyJson = get('gpoAuditPolicy');
+  const registryPolicyJson = get('gpoRegistryPolicy');
   return {
     accountPolicy: accountPolicyJson ? JSON.parse(accountPolicyJson) : undefined,
     logonBanner: logonBannerJson ? JSON.parse(logonBannerJson) : undefined,
     startupScript: startupScript || undefined,
     auditPolicy: auditPolicyJson ? JSON.parse(auditPolicyJson) : undefined,
+    registryPolicy: registryPolicyJson ? JSON.parse(registryPolicyJson) : undefined,
   };
 }
 
@@ -51,6 +54,11 @@ function mergeSettings(target: GpoSettings, source: GpoSettings): void {
   if (source.logonBanner !== undefined) target.logonBanner = source.logonBanner;
   if (source.startupScript !== undefined) target.startupScript = source.startupScript;
   if (source.auditPolicy !== undefined) target.auditPolicy = { ...target.auditPolicy, ...source.auditPolicy };
+  if (source.registryPolicy !== undefined) {
+    const byKey = new Map((target.registryPolicy ?? []).map(e => [`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e]));
+    for (const e of source.registryPolicy) byKey.set(`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e);
+    target.registryPolicy = Array.from(byKey.values());
+  }
 }
 
 export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership, hostname: string): GpoPullResult {
@@ -68,31 +76,46 @@ export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership
 
   const rootDn = rootDnOf(membership.dnsName);
   const merged: GpoSettings = {};
-  const appliedGpoNames: string[] = [];
+  const applied: Array<{ name: string; order: number }> = [];
 
-  const applyLinksFrom = (dn: string): void => {
+  /** Reads and applies one container's `gPLink` — decoding each entry's `-LinkEnabled`/`-Enforced`/`-Order` options; `overrideBlock` lets an Enforced link win even when this container's own inheritance is blocked, matching real AD's precedence rule. */
+  const applyLinksFrom = (dn: string, inheritanceBlocked: boolean): void => {
     const self = ldap.search(dn, 'base', { kind: 'present', attr: 'objectClass' }, ['gPLink']);
     const links = self.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'gplink')?.values ?? [];
-    for (const gpoDn of links) {
-      const gpoResult = ldap.search(gpoDn, 'base', { kind: 'present', attr: 'objectClass' },
-        ['displayName', 'gpoAccountPolicy', 'gpoLogonBanner', 'gpoStartupScript']);
+    for (const raw of links) {
+      const decoded = decodeGpLink(raw);
+      if (!decoded.linkEnabled) continue;
+      if (inheritanceBlocked && !decoded.enforced) continue;
+      const gpoResult = ldap.search(decoded.gpoDn, 'base', { kind: 'present', attr: 'objectClass' },
+        ['displayName', 'gpoAccountPolicy', 'gpoLogonBanner', 'gpoStartupScript', 'gpoAuditPolicy', 'gpoRegistryPolicy']);
       const entry = gpoResult.entries[0];
       if (!entry) continue;
-      const name = entry.attributes.find(a => a.type.toLowerCase() === 'displayname')?.values[0] ?? gpoDn;
-      appliedGpoNames.push(name);
+      const name = entry.attributes.find(a => a.type.toLowerCase() === 'displayname')?.values[0] ?? decoded.gpoDn;
+      applied.push({ name, order: decoded.order });
       mergeSettings(merged, parseGpoSettings(entry.attributes));
     }
   };
 
-  applyLinksFrom(rootDn);
-
+  // Resolve the computer's own OU (and whether IT blocks inherited policy)
+  // before processing domain-linked GPOs — blocked inheritance only ever
+  // withholds policy the computer would otherwise INHERIT from an ancestor
+  // (the domain root); it never withholds the OU's own direct links.
   const selfSearch = ldap.search(rootDn, 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: computerSam }, []);
   const computerDn = selfSearch.entries[0]?.dn;
+  let parentDn: string | null = null;
+  let ouBlocked = false;
   if (computerDn) {
-    const parentDn = computerDn.split(',').slice(1).join(',');
-    if (parentDn && parentDn.toLowerCase() !== rootDn.toLowerCase()) applyLinksFrom(parentDn);
+    const candidate = computerDn.split(',').slice(1).join(',');
+    if (candidate && candidate.toLowerCase() !== rootDn.toLowerCase()) {
+      parentDn = candidate;
+      const ouResult = ldap.search(parentDn, 'base', { kind: 'present', attr: 'objectClass' }, ['gPOptions']);
+      ouBlocked = ouResult.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'gpoptions')?.values[0] === '1';
+    }
   }
 
+  applyLinksFrom(rootDn, ouBlocked);
+  if (parentDn) applyLinksFrom(parentDn, false);
+
   ldap.unbind();
-  return { ok: true, message: '', appliedGpoNames, settings: merged };
+  return { ok: true, message: '', appliedGpoNames: applied.sort((a, b) => a.order - b.order).map(a => a.name), settings: merged };
 }

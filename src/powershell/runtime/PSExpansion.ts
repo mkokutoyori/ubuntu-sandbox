@@ -164,6 +164,25 @@ function resolveVar(name: string, env: PSEnvironment): PSValue {
 }
 
 /** Converts a PSValue to string (matching PowerShell's default formatting). */
+/**
+ * Real .NET `TimeSpan.ToString()` default ("c") format: `[-]d.hh:mm:ss`,
+ * with the `d.` prefix omitted when there are zero whole days. Shared by
+ * every place a `{ __type: 'TimeSpan', TotalMilliseconds, ... }` value
+ * (`New-TimeSpan`, `Get-Date` subtraction, Date+TimeSpan arithmetic) needs
+ * to render as text — table cells, `psValueToString`, string interpolation.
+ */
+export function formatTimeSpanValue(totalMs: number): string {
+  const negative = totalMs < 0;
+  const abs = Math.abs(totalMs);
+  const days    = Math.floor(abs / 86400000);
+  const hours   = Math.floor((abs % 86400000) / 3600000);
+  const minutes = Math.floor((abs % 3600000) / 60000);
+  const seconds = Math.floor((abs % 60000) / 1000);
+  const core = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const withDays = days !== 0 ? `${days}.${core}` : core;
+  return negative ? `-${withDays}` : withDays;
+}
+
 export function psValueToString(value: PSValue): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'boolean') return value ? 'True' : 'False';
@@ -185,6 +204,9 @@ export function psValueToString(value: PSValue): string {
   if (typeof value === 'function') return '';
   if (typeof value === 'object') {
     const rec = value as Record<string, PSValue>;
+    if (rec.__type === 'TimeSpan' && typeof rec.TotalMilliseconds === 'number') {
+      return formatTimeSpanValue(rec.TotalMilliseconds);
+    }
     if (typeof rec.Message === 'string' && 'Exception' in rec && 'CategoryInfo' in rec) {
       return String(rec.Message);
     }

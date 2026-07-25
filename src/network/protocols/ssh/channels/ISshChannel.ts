@@ -20,6 +20,13 @@ export interface ExecResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number;
+  /**
+   * The remote's prompt after this line ran, when the server publishes
+   * one. Lets a client render the vendor's real prompt (`R1(config)#`,
+   * `C:\Users\User>`) instead of guessing
+   * (docs/PRD-SSH-Unification.md §3.1).
+   */
+  readonly prompt?: string;
 }
 
 export interface ISshShellChannel extends ISshChannel {

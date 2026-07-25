@@ -42,3 +42,63 @@ export class AddComputerCmdlet implements ICmdlet {
     return null;
   }
 }
+
+export class TestComputerSecureChannelCmdlet implements ICmdlet {
+  readonly name = 'test-computersecurechannel';
+  readonly displayName = 'Test-ComputerSecureChannel';
+  readonly aliases = [] as const;
+  readonly parameters = ['Repair', 'Credential'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const computer = ctx.providers.computer;
+    if (!computer || !computer.getDomainInfo()) {
+      ctx.emitError('Test-ComputerSecureChannel : The computer is not currently joined to a domain, so this operation cannot be performed.');
+      return null;
+    }
+    return computer.testSecureChannel();
+  }
+}
+
+function serviceAccountIdentityOf(ctx: CmdletContext): string {
+  return psValueToString(ctx.named['identity'] ?? ctx.positional[0] ?? '');
+}
+
+/** `Install-ADServiceAccount -Identity <gMSA|sMSA>` — a real LDAP round trip to the DC verifying this machine is authorized, then caching the account locally (PRD Managed Service Accounts). */
+export class InstallADServiceAccountCmdlet implements ICmdlet {
+  readonly name = 'install-adserviceaccount';
+  readonly displayName = 'Install-ADServiceAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const computer = ctx.providers.computer;
+    if (!computer) {
+      ctx.emitError('Install-ADServiceAccount : The term \'Install-ADServiceAccount\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      return null;
+    }
+    const identity = serviceAccountIdentityOf(ctx);
+    if (!identity) { ctx.emitError('Install-ADServiceAccount : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const res = computer.installServiceAccount(identity);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+/** `Test-ADServiceAccount -Identity <gMSA|sMSA>` — true only if `Install-ADServiceAccount` already succeeded on this machine. */
+export class TestADServiceAccountCmdlet implements ICmdlet {
+  readonly name = 'test-adserviceaccount';
+  readonly displayName = 'Test-ADServiceAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const computer = ctx.providers.computer;
+    if (!computer) {
+      ctx.emitError('Test-ADServiceAccount : The term \'Test-ADServiceAccount\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      return null;
+    }
+    const identity = serviceAccountIdentityOf(ctx);
+    if (!identity) { ctx.emitError('Test-ADServiceAccount : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    return computer.testServiceAccount(identity);
+  }
+}

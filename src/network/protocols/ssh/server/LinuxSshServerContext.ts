@@ -332,12 +332,30 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (this.device instanceof LinuxMachine) {
       const device = this.device;
       const interactive = opts?.interactive ?? false;
-      const session = device.openShellSession({ user: userCtx.username, cwd });
+      // An account can exist in /etc/passwd with no home on disk
+      // (`useradd` without -m). Real sshd reports "Could not chdir to home
+      // directory" and starts the session in `/` rather than in a
+      // directory that isn't there.
+      const startCwd = this.vfs.exists(cwd) ? cwd : '/';
+      const session = device.openShellSession({ user: userCtx.username, cwd: startCwd });
       return {
         execute: async (line: string) => {
           const stdout = await device.executeCommandInSession(line, session, { color: interactive });
-          const exitCode = /command not found|Permission denied/.test(stdout) ? 1 : 0;
-          return { stdout, stderr: '', exitCode };
+          // The shell session's own `$?`, captured by the command pipeline.
+          // Guessing it from the output text used to report success for
+          // anything the pattern missed — `false`, a failing grep, a
+          // missing file.
+          return { stdout, stderr: '', exitCode: session.lastExitCode };
+        },
+        getPrompt: () => {
+          // The authenticated user's real home from /etc/passwd — never a
+          // guessed `/home/<name>`, which would be wrong for root (/root)
+          // and for any account with a custom home.
+          const home = userCtx.homeDirectory;
+          const shortCwd = session.cwd === home ? '~'
+            : session.cwd.startsWith(`${home}/`) ? `~${session.cwd.slice(home.length)}`
+            : session.cwd;
+          return `${userCtx.username}@${device.getSshHostname()}:${shortCwd}${userCtx.isRoot() ? '#' : '$'} `;
         },
         // A persistent shell channel ends by hanging up (real terminal
         // close); a one-shot exec ran its single command to completion,

@@ -179,8 +179,16 @@ export interface ISmbProvider {
 
 export interface AdUserInfo {
   sam: string; upn: string; dn: string; sid: string; enabled: boolean; memberOf: string[]; fullName: string;
-  department: string; title: string; servicePrincipalNames: string[];
+  department: string; title: string; emailAddress: string; passwordLastSet: string; passwordNeverExpires: boolean;
+  servicePrincipalNames: string[];
 }
+
+/** A raw AD object of any class — `Get-ADObject`/`Set-ADObject`/`Restore-ADObject` (PRD AD Recycle Bin). See `AdGenericObject` in `AdTypes.ts` for the rationale of exposing raw attributes rather than a fixed shape. */
+export interface AdGenericObjectInfo {
+  dn: string; name: string; objectClass: string; isDeleted: boolean;
+  lastKnownParent?: string; whenChanged?: string; attributes: Record<string, string[]>;
+}
+export interface AdOptionalFeatureInfo { name: string; enabledScopes: string[] }
 
 export interface AdAccessRuleInfo {
   identitySam: string;
@@ -213,7 +221,7 @@ export interface IAdProvider {
   /** `Remove-ADDomainController` — AD metadata cleanup for a DC that will never come back online (the `ntdsutil metadata cleanup` equivalent). */
   removeDomainController(name: string): AdOpResult;
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): AdOpResult;
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
   listUsers(): AdUserInfo[];
   setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult;
@@ -228,6 +236,25 @@ export interface IAdProvider {
   listGroups(): AdGroupInfo[];
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult;
   removeGroupMember(groupIdentity: string, members: string[]): AdOpResult;
+  /** `Get-ADGroupMember` — direct members only (users, computers, or nested groups — the AGDLP model relies on nesting Global groups inside Domain Local ones), each with enough shape to tell members apart by kind. */
+  getGroupMembers(groupIdentity: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' }>;
+  removeGroup(identity: string): AdOpResult;
+
+  // ── AD Recycle Bin (PRD-Windows-Server-Advanced.md — optional features) ──
+  /** `(Get-ADRootDSE).configurationNamingContext`. */
+  getConfigurationNamingContext(): string;
+  /** `Get-ADOptionalFeature -Filter {Name -eq "Recycle Bin Feature"}` — null for any name other than the one optional feature this simulator models. */
+  getOptionalFeature(name: string): AdOptionalFeatureInfo | null;
+  /** `Enable-ADOptionalFeature -Identity "Recycle Bin Feature" -Scope ForestOrConfigurationSet`. */
+  enableOptionalFeature(name: string, scopeDn: string): AdOpResult;
+  /** `Get-ADObject -Identity <dn> [-IncludeDeletedObjects]` — any object class, raw attributes. */
+  getGenericObject(dn: string, includeDeleted: boolean): AdGenericObjectInfo | null;
+  /** `Get-ADObject -Filter {...} [-SearchBase <dn>] [-IncludeDeletedObjects]`. */
+  listGenericObjects(opts: { includeDeleted: boolean; searchBaseDn?: string }): AdGenericObjectInfo[];
+  /** `Set-ADObject -Identity <dn> -Replace @{attr = value}`. */
+  setGenericObject(dn: string, replace: Record<string, string>): AdOpResult;
+  /** `Restore-ADObject -Identity <deletedObj> [-TargetPath <ou>]`. */
+  restoreObject(dn: string, targetPathDn?: string): AdOpResult;
 
   getComputer(identity: string): AdComputerInfo | null;
   listComputers(): AdComputerInfo[];
@@ -236,6 +263,7 @@ export interface IAdProvider {
 
   newOrganizationalUnit(name: string, path?: string): AdOpResult;
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null;
+  listOrganizationalUnits(): AdOrgUnitInfo[];
 
   /** `New-ADReplicationSite` (PRD-Windows-Server-Advanced.md §5 P6). */
   newReplicationSite(name: string): AdOpResult;
@@ -296,6 +324,29 @@ export interface IAdProvider {
   listFineGrainedPasswordPolicySubjects(name: string): string[];
   /** `Get-ADUserResultantPasswordPolicy` — null when no PSO applies (Default Domain Policy governs implicitly). */
   getResultantPasswordPolicy(userIdentity: string): AdFineGrainedPasswordPolicyInfo | null;
+
+  // ── Managed Service Accounts (gMSA/sMSA) ────────────────────────────────
+  /** `Add-KdsRootKey` — the real prerequisite `New-ADServiceAccount` (for a gMSA) refuses without. */
+  addKdsRootKey(): AdKdsRootKeyInfo;
+  /** `Get-KdsRootKey` — null before `Add-KdsRootKey` has ever run. */
+  getKdsRootKey(): AdKdsRootKeyInfo | null;
+  /** `New-ADServiceAccount` — a gMSA (`principalsAllowed` set) or an sMSA (`restrictToSingleComputer`). */
+  newServiceAccount(name: string, opts: {
+    dnsHostName: string; description?: string; path?: string;
+    principalsAllowed?: string[]; managedPasswordIntervalDays?: number; restrictToSingleComputer?: boolean;
+  }): AdOpResult;
+  getServiceAccount(identity: string): AdServiceAccountInfo | null;
+  /** `Set-ADServiceAccount -ServicePrincipalNames @{ Add = @(...) }`. */
+  addServiceAccountSpns(identity: string, addSpns: string[]): AdOpResult;
+  /** `Add-ADComputerServiceAccount -Identity <computer> -ServiceAccount <sMSA>`. */
+  addComputerServiceAccount(computerIdentity: string, serviceAccountIdentity: string): AdOpResult;
+}
+
+export interface AdKdsRootKeyInfo { keyId: string; effectiveTime: string }
+export interface AdServiceAccountInfo {
+  sam: string; dn: string; dnsHostName: string; description: string; isGroupManaged: boolean;
+  principalsAllowed: string[]; managedPasswordIntervalDays: number; hostComputerDn: string;
+  servicePrincipalNames: string[]; passwordLastSet: string;
 }
 
 export interface AdPasswordPolicyInfo {
@@ -375,21 +426,38 @@ export interface IComputerProvider {
   join(domainName: string, credential: { username: string; password: string }, server?: string, opts?: { ouPath?: string; newName?: string }): AdOpResult;
   /** This machine's domain-join state, or null while in a workgroup. */
   getDomainInfo(): DomainMembershipInfo | null;
+  /** `Get-ADDomainController -Discover` from a domain-joined machine that isn't itself a DC — a real CLDAP-style dial to the known DC address to learn its actual computer name (`DcHostnameDiscovery`), same mechanism `Add-Computer` already uses during join. `null` while in a workgroup, or if the DC can't be reached. */
+  discoverDomainController(): { hostName: string } | null;
+  /** `Test-ComputerSecureChannel` — a real LDAP bind to the DC as this machine's own computer account (`<name>$` / the cached machine secret), the same "does the DC still agree with my machine password" check NetLogon's secure channel verifies. `false` while in a workgroup or if the DC can't be reached. */
+  testSecureChannel(): boolean;
+  /** `Install-ADServiceAccount -Identity <gMSA|sMSA>` — a real LDAP search against the DC to verify this machine is authorized (`principalsAllowed` for a gMSA, or the sMSA's exclusive linked host) before caching the account locally as "installed", the same authorization gate real Windows enforces before letting a service run as the account. */
+  installServiceAccount(identity: string): AdOpResult;
+  /** `Test-ADServiceAccount -Identity <gMSA|sMSA>` — true only if `Install-ADServiceAccount` already succeeded on this machine. */
+  testServiceAccount(identity: string): boolean;
 }
 
 // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
 
 export interface GpoInfo { id: string; name: string; links: string[] }
 
+/** A single `gPLink`, decoded — what `Get-GPInheritance ... GpoLinks | Select DisplayName, Enabled, Enforced, Order` reports per link. */
+export interface GpoLinkResultInfo { displayName: string; enabled: boolean; enforced: boolean; order: number }
+
+export interface GpLinkOptions { linkEnabled?: boolean; enforced?: boolean; order?: number }
+
 export interface IGpoProvider {
   newGpo(name: string): AdOpResult;
   getGpo(name: string): GpoInfo | null;
   listGpos(): GpoInfo[];
   /** `New-GPLink -Target` accepts a distinguished name (domain root or an OU's DN, e.g. from `Get-ADOrganizationalUnit`). */
-  newGPLink(gpoName: string, targetDn: string): AdOpResult;
+  newGPLink(gpoName: string, targetDn: string, opts?: GpLinkOptions): AdOpResult;
+  /** `Set-GPLink` — updates `-LinkEnabled`/`-Enforced`/`-Order` on an existing link. */
+  setGpLink(gpoName: string, targetDn: string, opts: GpLinkOptions): AdOpResult;
+  /** `Set-GPRegistryValue` — records/updates a registry-based policy setting on a GPO. */
+  setGpRegistryValue(gpoName: string, key: string, valueName: string, type: string, value: string): AdOpResult;
   getDomainDn(): string;
   setGpInheritance(targetDn: string, blocked: boolean): AdOpResult;
-  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null;
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: GpoLinkResultInfo[] } | null;
 }
 
 // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
@@ -1037,6 +1105,17 @@ export interface INetworkProvider {
    * real HTTP-hosting device) on the simulated network, not a stub.
    */
   invokeWebRequest?(url: string): { ok: boolean; error?: string; statusCode?: number; statusDescription?: string; content?: string; headers?: Record<string, string> };
+  /**
+   * `Send-MailMessage`: a real outbound SMTP client transaction (DNS
+   * resolution + `TcpStack` + `SmtpClientSession`, same engine as
+   * `relay.ts`/Exchange transport, docs/PRD-SMTP.md §0.2) — not a stub
+   * that unconditionally reports success.
+   */
+  sendMailMessage?(opts: {
+    from: string; to: readonly string[]; cc?: readonly string[]; bcc?: readonly string[];
+    subject: string; body: string; smtpServer: string; port?: number;
+    useSsl?: boolean; credential?: { username: string; password: string };
+  }): { ok: boolean; error?: string };
   /** Get-NetTCPConnection */
   getTcpConnections(): Array<{ localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }>;
   getFirewallRules(): Array<{ name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;

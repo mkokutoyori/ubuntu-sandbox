@@ -357,10 +357,16 @@ export class SelectObjectCmdlet implements ICmdlet {
     }
 
     if (expandProp) {
-      return items.map(item => {
+      // Real PowerShell's output stream enumerates a collection-valued
+      // property automatically — `Select -ExpandProperty ArrayProp` on a
+      // single input object emits each array element as its own pipeline
+      // object (not one object wrapping the whole array), so a further
+      // `| Select-Object ...` stage downstream sees the individual items.
+      return items.flatMap(item => {
         const src = item as Record<string, PSValue>;
         const key = Object.keys(src).find(k => k.toLowerCase() === expandProp.toLowerCase()) ?? expandProp;
-        return src[key] ?? null;
+        const val = src[key] ?? null;
+        return Array.isArray(val) ? val : [val];
       });
     }
 

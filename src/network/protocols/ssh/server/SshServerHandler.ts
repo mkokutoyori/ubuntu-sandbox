@@ -452,7 +452,10 @@ export class SshServerHandler {
           // only if shell_input somehow arrives without a prior shell_open.
           const shell = info?.shell ?? this.ctx.getShell(userCtx, info?.cwd ?? userCtx.homeDirectory);
           void shell.execute(line).then((result) => {
-            conn.write(JSON.stringify({ ...result, channelId }));
+            // Read the prompt AFTER the line ran: `cd`, `enable` and
+            // `configure terminal` all change it.
+            const prompt = shell.getPrompt?.();
+            conn.write(JSON.stringify({ ...result, prompt, channelId }));
           });
           break;
         }
