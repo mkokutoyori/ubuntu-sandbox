@@ -12,6 +12,7 @@ import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { WindowsSftpFSAdapter } from '../sftp/WindowsSftpFSAdapter';
 import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
+import type { SshVtyShell } from './SshExecTarget';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
   type ILinuxShell,
@@ -40,6 +41,13 @@ export interface WindowsShellExecutor {
   executeCmdCommand(line: string): Promise<string>;
   /** Current cmd working directory — rendered as the `C:\…>` prompt. */
   getCwd?(): string;
+  /**
+   * A stacked CLI session for one SSH channel: cmd at the bottom, with
+   * `powershell` and friends pushed on top server-side, so the client
+   * only ever sees lines and a prompt
+   * (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  createVtyShell?(user: string): SshVtyShell | null;
 }
 
 /**
@@ -105,6 +113,23 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
     const exec = this.shellExecutor;
+
+    const vty = exec?.createVtyShell?.(_userCtx.username);
+    if (vty) {
+      return {
+        async execute(line: string) {
+          const stdout = await vty.execute(line);
+          return {
+            stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
+            stderr: '',
+            exitCode: 0,
+          };
+        },
+        getPrompt: () => vty.getPrompt(),
+        getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
+      };
+    }
+
     if (!exec) {
       return {
         async execute(line: string) {
