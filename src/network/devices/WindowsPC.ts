@@ -1540,6 +1540,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }).then(r => r.output);
   }
 
+  /**
+   * `telnet host [port]` — real TCP/23 handshake via `tcpConnect`, then
+   * the socket is closed immediately. No nested interactive session is
+   * pushed the way `cmdSsh` does (see the Telnet note in CLAUDE.md's
+   * Terminal emulation section).
+   */
   private async cmdTelnet(args: string[]): Promise<string> {
     const positional = args.filter((a) => !a.startsWith('-'));
     const host = positional[0];

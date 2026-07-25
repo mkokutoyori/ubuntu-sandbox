@@ -1711,6 +1711,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * pick a source interface, and verify L2/L3 reachability. A session is
    * recorded only when a Telnet listener (network CLI device with telnet
    * transport) actually accepts the connection.
+   *
+   * Unlike `runOutboundSshClient`, this never pushes a nested interactive
+   * session — success just prints the banner (see the Telnet note in
+   * CLAUDE.md's Terminal emulation section).
    */
   private runOutboundTelnet(args: string[]): string {
     const positional = args.filter((a) => !a.startsWith('-'));

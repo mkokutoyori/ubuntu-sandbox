@@ -60,6 +60,7 @@ Vendor-agnostic shell layer: `IShell`/`IShellBase`, `AbstractShell`, `ShellFacto
 - `sessions/` — per-vendor `TerminalSession` implementations and `TerminalManager`.
 - `sql/` — Oracle SQL*Plus terminal glue.
 - `filesystem.ts`/`shellUtils.ts` — in-memory filesystem and shared shell utilities.
+- **Outbound Telnet is a one-shot banner, not an interactive session.** `telnet` on Linux (`LinuxCommandExecutor.runTelnetClient`), Windows (`WindowsPC.cmdTelnet`), and the outbound `telnet` verb on Cisco/Huawei router CLIs (`CiscoShellBase.runOutboundTelnet`, `HuaweiVRPShell.runOutboundTelnet`) all resolve the target over the real cabled topology, check L2/L3 reachability (`isPathReachable`), probe the real `TcpStack` where one exists, and evaluate the remote VTY's real admission policy (ACLs, quiet-mode, `transport input`/`protocol inbound`, unset line password) via `VtyIncomingPolicy`/`vtyAdmissionVerdict` — refusals are genuine, not scripted. But on success they print a static "Connected to …" banner and return; unlike outbound `ssh` (`CLITerminalSession.buildSshInteractiveFlowSteps`, and the Linux/Windows equivalents), no nested `TerminalSession` is pushed, so there is no follow-on interactive shell into the remote device and no username/password prompt even when the line requires one. Don't build labs that expect to actually operate a remote device after `telnet`-ing into it — use `ssh` for that.
 
 ### Database simulation (`src/database/`)
 

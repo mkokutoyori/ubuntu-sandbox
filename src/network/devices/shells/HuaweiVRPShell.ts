@@ -24,6 +24,7 @@ import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { CommandTrie } from './CommandTrie';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
+import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
@@ -665,6 +666,60 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       localVfs: { readFile: () => null, writeFile: () => undefined },
     });
     return result.output;
+  }
+
+  /**
+   * Outbound Telnet driven by the real topology — mirrors
+   * CiscoShellBase.runOutboundTelnet: resolve the target, pick a source
+   * interface, and verify L2/L3 reachability plus the remote VTY's
+   * `protocol inbound` transport before reporting success. As on Cisco,
+   * this never pushes a nested interactive session (see the Telnet note
+   * in CLAUDE.md's Terminal emulation section).
+   */
+  private runOutboundTelnet(args: string[]): string {
+    const positional = args.filter((a) => !a.startsWith('-'));
+    if (positional.length === 0) return 'Error: Incomplete command.';
+    const display = positional[0];
+    const port = positional[1] ? parseInt(positional[1], 10) : 23;
+    const router = this.routerRef as unknown as {
+      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      _getHostsTable?: () => { resolve: (n: string) => string | null };
+    };
+    if (!router) return 'Error: device not bound';
+    let host = display;
+    const resolved = router._getHostsTable?.().resolve(host);
+    if (resolved) host = resolved;
+
+    let sourceIp: string | null = null;
+    for (const [, p] of router._getPortsInternal()) {
+      const ip = p.getIPAddress();
+      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+    }
+    if (!sourceIp) return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+
+    const remote = findHostByAddress(host);
+    if (!remote || remote.poweredOff || remote.interfaceDown) {
+      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    }
+    if (!isPathReachable(sourceIp, remote.ip)) {
+      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    }
+    if (!this.remoteAcceptsTelnet(remote.device, port)) {
+      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    }
+    return `Trying ${display} ...\nPress CTRL+K to abort\nConnected to ${display} ...\n`;
+  }
+
+  private remoteAcceptsTelnet(device: unknown, port: number): boolean {
+    if (port !== 23) return false;
+    const d = device as { getDeviceType?: () => string; constructor: { name: string } };
+    const cls = d.constructor?.name ?? '';
+    const type = (d.getDeviceType?.() ?? '').toLowerCase();
+    const isNetworkCli = /Router|Switch/.test(cls) || /router|switch/.test(type);
+    if (!isNetworkCli) return false;
+    const transport = (device as { _getVtyTransportInput?: () => string })._getVtyTransportInput?.();
+    if (transport === undefined) return true;
+    return transport === 'telnet' || transport === 'all';
   }
 
   private cmdQuit(): string {
@@ -1422,10 +1477,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return 'Warning: The action will delete the saved configuration on the device.';
     });
 
-    t.registerGreedy('telnet', 'Open Telnet session', (args) => {
-      if (!args[0]) return 'Error: Incomplete command.';
-      return `Trying ${args[0]} ...\nError: Failed to connect to the remote host.`;
-    });
+    t.registerGreedy('telnet', 'Open Telnet session', (args) => this.runOutboundTelnet(args));
 
     t.register('compare configuration', 'Compare running vs saved configuration', () => {
       return 'Info: The current configuration is the same as the saved configuration.';

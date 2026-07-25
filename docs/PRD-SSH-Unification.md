@@ -142,6 +142,56 @@ shell console partagé :
 8. Windows renvoie son prompt (`C:\Users\User>`).
 9. Non-régression : toute la suite SSH existante passe inchangée.
 
+## 4bis. Étape 2 — ce que coûte réellement le retrait des bypass
+
+L'étape 1 a levé les deux blocages qu'elle visait. Une mesure des
+capacités effectives montre qu'elle ne suffit pas : le bypass en mémoire
+n'est pas seulement un raccourci, il apporte des fonctions que le vrai
+fil ne transporte pas encore.
+
+| Capacité | Bypass en mémoire | Vrai fil |
+|---|---|---|
+| Exécution ligne par ligne | oui | oui |
+| État de session (cwd, mode CLI) | oui | oui (depuis A2) |
+| Prompt vendeur | oui | oui (depuis A1/A3/A4) |
+| Code retour réel | oui | oui (depuis A5) |
+| **Complétion Tab** | oui | **non** |
+| **Aide contextuelle `?` (IOS/VRP)** | oui | **non** |
+| **Sous-shells (PowerShell, SQL\*Plus, RMAN)** | oui | **non** |
+| **Éditeurs (vim, nano)** | oui | **non** |
+
+Les quatre dernières lignes sont documentées par le code lui-même
+(en-tête de `SshInteractiveSubShell`, « Still out of scope: … `sqlplus`,
+RMAN, `sftp`/`ftp` sub-shells, `vim`/`nano` »), et `SshInteractiveSubShell`
+n'implémente pas `ISubShell.getCompletions`.
+
+Conséquence : **basculer aujourd'hui un vendeur quelconque sur le vrai
+fil est une régression fonctionnelle**, y compris pour les routeurs — on
+y perdrait `?` et Tab, qui sont au cœur de l'usage pédagogique d'un CLI
+Cisco.
+
+### 4bis.1 Obstacle structurel : la complétion est synchrone
+
+`ISubShell.getCompletions?(line): string[]` est **synchrone**, et le
+terminal l'appelle ainsi (`LinuxTerminalSession` ligne 3642). Une
+complétion servie par le serveur suppose un aller-retour asynchrone sur
+le canal. Porter la complétion sur le fil impose donc d'abord de rendre
+asynchrone le chemin de complétion de la couche terminal — ce n'est pas
+un détail d'implémentation, c'est un changement de contrat.
+
+### 4bis.2 Prérequis ordonnés
+
+| Prérequis | Contenu | Ampleur |
+|---|---|---|
+| B1 | Chemin de complétion asynchrone dans la couche terminal, puis `shell_complete` sur le fil (Tab + `?`) | moyen |
+| B2 | Empilement de sous-shells côté serveur (PowerShell, SQL\*Plus, RMAN) | lourd |
+| B3 | Éditeurs sur le fil (vim / nano) | lourd |
+| B4 | Retrait des bypass, `CrossVendorRemoteShell` replié | mécanique une fois B1-B3 faits |
+
+Tant que B1-B3 ne sont pas faits, le nombre de drivers clients reste à
+quatre. Les réduire prématurément échangerait de la dette d'architecture
+contre de la perte de fonctionnalité — un mauvais échange.
+
 ## 5. Hors périmètre
 
 - Le retrait effectif des chemins clients en mémoire (étape 2) et le
