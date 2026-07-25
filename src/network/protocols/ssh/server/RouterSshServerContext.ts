@@ -103,6 +103,21 @@ export class RouterSshServerContext implements ISshServerContext {
 
   getShell(userCtx: SshUserContext, _cwd: string): ILinuxShell {
     const target = this.deps.execTarget();
+
+    // A real per-channel CLI session when the target can mint one: mode
+    // transitions (`enable`, `configure terminal`) then persist across
+    // lines, which the one-shot path below cannot express.
+    const vty = target.createVtyShell?.();
+    if (vty) {
+      return {
+        execute: async (line: string) => {
+          const stdout = await vty.execute(line);
+          return { stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`, stderr: '', exitCode: 0 };
+        },
+        getPrompt: () => vty.getPrompt(),
+      };
+    }
+
     return {
       execute: async (line: string) => {
         const result = target.runSshCommandSync(userCtx.username, line);
