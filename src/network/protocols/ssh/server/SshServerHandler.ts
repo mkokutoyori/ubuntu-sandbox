@@ -461,7 +461,8 @@ export class SshServerHandler {
             // Read the prompt AFTER the line ran: `cd`, `enable` and
             // `configure terminal` all change it.
             const prompt = shell.getPrompt?.();
-            conn.write(JSON.stringify({ ...result, prompt, channelId }));
+            const nested = shell.isNested?.() ?? false;
+            conn.write(JSON.stringify({ ...result, prompt, nested, channelId }));
           });
           break;
         }

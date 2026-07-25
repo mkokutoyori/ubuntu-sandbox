@@ -417,7 +417,7 @@ function topShellKind(t: WindowsTerminalSession | LinuxTerminalSession): string 
 
 describe('Deep shell nesting — 4 to 5 levels', () => {
   // ── #D1 — Win cmd → SSH Linux → ssh Linux, nesting and unwinding cleanly ──
-  test('§D1 — Win→SSH→Linux→SSH→Linux: two REAL nested SSH hops nest and unwind cleanly (sqlplus over the wire is a documented no-op)', async () => {
+  test('§D1 — Win→SSH→Linux→SSH→Linux: two REAL nested SSH hops nest and unwind cleanly, sqlplus included', async () => {
     const { winA } = await buildLan();
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
@@ -429,11 +429,13 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     // recursive nested-hop support), real password challenge included.
     await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
-    // sqlplus: still a known, documented limitation — it's a multi-turn
-    // REPL, not a single password challenge like ssh/su, so there's no
-    // client-side stand-in to push its own sub-shell over the wire; the
-    // line just runs remotely as a plain bash command, no frame pushed.
+    // sqlplus is a multi-turn REPL, so it can only be pushed where the
+    // lines actually arrive — on the server side of the wire
+    // (docs/PRD-SSH-Unification.md §4bis B2). The client just sees the
+    // prompt it reports back.
     await typeSub(t, 'sqlplus / as sysdba');
+    expect(t.foreground.getPrompt()).toMatch(/^SQL>/);
+    await typeSub(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
     // Unwind: first exit pops the nested hop (linuxA -> linuxSrv), second
     // pops the first hop (linuxSrv -> Windows cmd).
@@ -1548,7 +1550,7 @@ describe('Root-cause shell/session integrity', () => {
     expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
-  test('§RC2 — Linux→Huawei→Linux : shell ownership never leaks (sqlplus/exec-mode-nested-ssh over the real-wire hop are documented no-ops)', async () => {
+  test('§RC2 — Linux→Huawei→Linux : shell ownership never leaks (exec-mode nested ssh over the real-wire hop is a documented no-op)', async () => {
     const { linuxA, huawei } = await buildLan();
 
     huawei.setHostname('HW');
@@ -1591,12 +1593,15 @@ describe('Root-cause shell/session integrity', () => {
 
     expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
 
-    // sqlplus: known, documented limitation of the real-wire SSH session
-    // (see SshInteractiveSubShell.ts) — there's no client-side stand-in
-    // to push sqlplus's own REPL sub-shell over the wire, so the line
-    // just runs remotely as a plain bash command; no frame is pushed and
-    // the bash prompt is unchanged.
+    // sqlplus's REPL is pushed on the server side of the wire and the
+    // client follows the prompt it reports back
+    // (docs/PRD-SSH-Unification.md §4bis B2); `exit` pops it without
+    // touching the SSH frame underneath.
     await typeSub(t, 'sqlplus / as sysdba');
+
+    expect(t.foreground.getPrompt()).toMatch(/^SQL>/);
+
+    await typeSub(t, 'exit');
 
     expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
 

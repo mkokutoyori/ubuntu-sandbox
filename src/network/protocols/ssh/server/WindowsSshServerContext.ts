@@ -127,6 +127,7 @@ export class WindowsSshServerContext implements ISshServerContext {
         },
         getPrompt: () => vty.getPrompt(),
         getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
+        isNested: vty.isNested ? () => vty.isNested!() : undefined,
       };
     }
 

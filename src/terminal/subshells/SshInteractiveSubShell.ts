@@ -186,10 +186,17 @@ export class SshInteractiveSubShell implements ISubShell {
   /** Latest prompt the remote published, or null while it has published none. */
   private serverPrompt: string | null = null;
 
+  /**
+   * True while an interpreter pushed on the server side of the wire
+   * (SQL*Plus, RMAN, PowerShell, …) owns the remote's input.
+   */
+  private serverNested = false;
+
   /** Every line goes through here so the remote's prompt is never missed. */
   private async run(line: string) {
     const result = await this.channel.runLine(line);
     if (result.prompt) this.serverPrompt = result.prompt;
+    this.serverNested = result.nested === true;
     return result;
   }
 
@@ -304,7 +311,12 @@ export class SshInteractiveSubShell implements ISubShell {
 
     const trimmed = line.trim();
 
-    if (trimmed === 'exit' || trimmed === 'logout') {
+    // `exit` belongs to whichever shell owns the remote's input. While
+    // an interpreter is stacked server-side it pops that interpreter, so
+    // the line has to travel the wire like any other
+    // (docs/PRD-SSH-Unification.md §4bis B2); only the login shell's own
+    // `exit` ends the session.
+    if ((trimmed === 'exit' || trimmed === 'logout') && !this.serverNested) {
       this.session.disconnect();
       return {
         output: ['logout', `Connection to ${this.remoteHost} closed.`],

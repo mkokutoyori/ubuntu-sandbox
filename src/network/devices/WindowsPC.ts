@@ -2829,6 +2829,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     execute(rawInput: string): Promise<string>;
     getPrompt(): string;
     getCompletions(line: string): string[];
+    isNested(): boolean;
   } | null {
     let stack: CrossVendorRemoteShell;
     try {
@@ -2844,6 +2845,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       execute: async (rawInput: string) => (await stack.processLine(rawInput)).output.join('\n'),
       getPrompt: () => stack.getPrompt(),
       getCompletions: (line: string) => [...stack.getCompletions(line)],
+      isNested: () => stack.topKind !== 'cmd',
     };
   }
   setCwd(path: string): void { this.cwd = path; }

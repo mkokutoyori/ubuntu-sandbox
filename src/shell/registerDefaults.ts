@@ -66,8 +66,16 @@ export function installDefaultShells(): void {
       parent: a.parent ?? null, windowsSession,
     });
   });
-  ShellFactory.register('sqlplus', (a) => new SqlPlusShell(a));
-  ShellFactory.register('rman', (a) => new RmanShell(a));
+  // Interpreters reachable from a POSIX login shell. The `launcher`
+  // pattern is what makes `sqlplus` open a real REPL both at the local
+  // console and over the SSH wire — a future `python3`, `psql` or
+  // `mysql` adapter only has to add its own line here.
+  ShellFactory.register('sqlplus', (a) => new SqlPlusShell(a), {
+    launcher: /^sqlplus\b/i, launchableFrom: ['bash'],
+  });
+  ShellFactory.register('rman', (a) => new RmanShell(a), {
+    launcher: /^rman\b/i, launchableFrom: ['bash'],
+  });
   ShellFactory.register('cisco-ios', (a) => {
     const vty = (a as { extras?: { vty?: CliShellSession | null } }).extras?.vty ?? null;
     return new CiscoIOSShellAdapter({
