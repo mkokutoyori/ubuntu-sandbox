@@ -1154,14 +1154,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!this.domainMembership && !localStore) {
       return { ok: false, message: 'gpupdate : This computer is not joined to a domain.' };
     }
+    // A domain user (not a local/built-in account) currently logged on —
+    // real gpupdate resolves User Configuration policy (folder redirection,
+    // HKCU registry policy, …) against THIS object's own OU, independently
+    // of where the computer object sits (PRD AD roaming-profiles gap).
+    const currentUser = this.userMgr.currentUser;
+    const userSam = currentUser.includes('\\') ? currentUser.split('\\').pop() : currentUser;
     let appliedGpoNames: string[];
     let settings: GpoSettings;
     if (localStore) {
-      const rsop = localStore.resultantSetOfPolicy(this.getHostname());
+      const rsop = localStore.resultantSetOfPolicy(this.getHostname(), userSam);
       appliedGpoNames = rsop.appliedGpoNames;
       settings = rsop.settings;
     } else {
-      const result = pullGroupPolicy(this.getTcpStack(), this.domainMembership, this.getHostname());
+      const result = pullGroupPolicy(this.getTcpStack(), this.domainMembership, this.getHostname(), userSam);
       if (!result.ok) return { ok: false, message: `gpupdate : ${result.message}` };
       appliedGpoNames = result.appliedGpoNames;
       settings = result.settings;

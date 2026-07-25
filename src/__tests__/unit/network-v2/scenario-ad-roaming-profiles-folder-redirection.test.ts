@@ -51,7 +51,13 @@ async function buildLan(): Promise<{ dc: WindowsServer; srvFichiers: WindowsServ
   await run(ps(dc), 'New-ADUser -Name "Pierre Reseau" -SamAccountName preseau -Path "OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan" -AccountPassword (ConvertTo-SecureString "User@Mandeng2025!" -AsPlainText -Force) -Enabled $true');
 
   srvFichiers.setCurrentUser('Administrator');
+  await run(ps(srvFichiers), 'Install-WindowsFeature FS-FileServer');
   client.setCurrentUser('Administrator');
+  // Add-Computer needs the client's DNS resolver already pointed at the
+  // domain (this simulator has no dynamic-DNS registration for a promoted
+  // DC yet) — seed the hosts file the same way a real DHCP-assigned DNS
+  // server would already know it.
+  await run(ps(client), 'Add-Content -Path "C:\\Windows\\System32\\drivers\\etc\\hosts" -Value "192.168.10.10 mandeng.lan`n192.168.10.10 DC01.mandeng.lan"');
   await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Force');
 
   return { dc, srvFichiers, client };
@@ -210,8 +216,12 @@ describe('Scénario 12 — profils itinérants et dossiers redirigés (mandeng.l
         'New-GPLink -Name "MANDENG-Folder-Redirection" -Target "OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan" -LinkEnabled Yes',
       ].join('\n'));
 
+      // `runas` (unlike a real interactive logon) deliberately restores the
+      // caller's identity once its command returns — see WinRunas.ts's
+      // `runAsUser` — so it cannot be used here to make jadmin the
+      // logged-on user for the subsequent `gpupdate`/GetFolderPath calls.
+      client.setCurrentUser('jadmin');
       const clientSh = ps(client);
-      await run(clientSh, 'runas /user:MANDENG\\jadmin whoami');
       await run(clientSh, 'gpupdate /force');
 
       const desktop = await run(clientSh, '[System.Environment]::GetFolderPath("Desktop")');

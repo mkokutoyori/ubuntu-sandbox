@@ -188,6 +188,7 @@ function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
     ObjectClass: 'user', Department: u.department, Title: u.title, EmailAddress: u.emailAddress,
     PasswordLastSet: (u.passwordLastSet ? new Date(u.passwordLastSet) : '') as unknown as PSValue,
     ServicePrincipalNames: [...u.servicePrincipalNames],
+    ProfilePath: u.profilePath, HomeDirectory: u.homeDirectory, HomeDrive: u.homeDrive,
   };
 }
 function groupToPSObject(g: AdGroupInfo): Record<string, PSValue> {
@@ -412,17 +413,20 @@ function hashtableProp(ctx: CmdletContext, argKey: string, propName: string): st
 export class SetADUserCmdlet implements ICmdlet {
   readonly name = 'set-aduser';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Enabled', 'DisplayName', 'AccountPassword', 'Department', 'Title', 'Add', 'Remove', 'Credential'] as const;
+  readonly parameters = ['Identity', 'Enabled', 'DisplayName', 'AccountPassword', 'Department', 'Title', 'Add', 'Remove', 'Credential', 'ProfilePath', 'HomeDirectory', 'HomeDrive'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Set-ADUser');
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Set-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
-    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string } = {};
+    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string } = {};
     if (ctx.named['enabled'] !== undefined) opts.enabled = ctx.named['enabled'] === true;
     if (ctx.named['displayname'] !== undefined) opts.fullName = psValueToString(ctx.named['displayname']);
     if (ctx.named['department'] !== undefined) opts.department = psValueToString(ctx.named['department']);
     if (ctx.named['title'] !== undefined) opts.title = psValueToString(ctx.named['title']);
+    if (ctx.named['profilepath'] !== undefined) opts.profilePath = psValueToString(ctx.named['profilepath']);
+    if (ctx.named['homedirectory'] !== undefined) opts.homeDirectory = psValueToString(ctx.named['homedirectory']);
+    if (ctx.named['homedrive'] !== undefined) opts.homeDrive = psValueToString(ctx.named['homedrive']);
     const password = securePasswordOf(ctx, 'accountpassword');
     if (password !== undefined) opts.password = password;
     const addSpns = hashtableProp(ctx, 'add', 'ServicePrincipalNames');
@@ -439,7 +443,8 @@ export class SetADUserCmdlet implements ICmdlet {
     if (opts.enabled === true) audit?.accountEnabled(identity, subject);
     else if (opts.enabled === false) audit?.accountDisabled(identity, subject);
     if (opts.password !== undefined) audit?.passwordReset(identity, subject);
-    if (opts.fullName !== undefined || opts.department !== undefined || opts.title !== undefined || opts.addSpns || opts.removeSpns) {
+    if (opts.fullName !== undefined || opts.department !== undefined || opts.title !== undefined || opts.addSpns || opts.removeSpns
+      || opts.profilePath !== undefined || opts.homeDirectory !== undefined || opts.homeDrive !== undefined) {
       audit?.accountChanged(identity, subject);
     }
     return null;

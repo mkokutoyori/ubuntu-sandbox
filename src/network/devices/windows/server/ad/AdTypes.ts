@@ -23,6 +23,10 @@ export interface AdUser {
   passwordLastSet: string;
   passwordNeverExpires: boolean;
   servicePrincipalNames: string[];
+  /** Roaming profile / redirected home folder (real LDAP `profilePath`/`homeDirectory`/`homeDrive` attributes, PRD AD roaming-profiles gap). */
+  profilePath: string;
+  homeDirectory: string;
+  homeDrive: string;
 }
 
 /**

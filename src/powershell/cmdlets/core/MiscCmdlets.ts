@@ -65,6 +65,30 @@ export class NewObjectCmdlet implements ICmdlet {
         InheritedObjectType: psValueToString(args[5] ?? '00000000-0000-0000-0000-000000000000'),
       } as Record<string, PSValue>;
     }
+    // Real .NET FileSystemAccessRule has two commonly-used overloads: the
+    // short (identity, fileSystemRights, accessControlType) and the long
+    // (identity, fileSystemRights, inheritanceFlags, propagationFlags,
+    // accessControlType) — disambiguate on arg count like the real ctor
+    // overload resolution would.
+    if (tname.includes('filesystemaccessrule')) {
+      const args = newObjectCtorArgs(ctx);
+      if (args.length <= 3) {
+        return {
+          IdentityReference: psValueToString(args[0] ?? ''),
+          FileSystemRights: psValueToString(args[1] ?? ''),
+          InheritanceFlags: 'None',
+          PropagationFlags: 'None',
+          AccessControlType: psValueToString(args[2] ?? 'Allow'),
+        } as Record<string, PSValue>;
+      }
+      return {
+        IdentityReference: psValueToString(args[0] ?? ''),
+        FileSystemRights: psValueToString(args[1] ?? ''),
+        InheritanceFlags: psValueToString(args[2] ?? 'None'),
+        PropagationFlags: psValueToString(args[3] ?? 'None'),
+        AccessControlType: psValueToString(args[4] ?? 'Allow'),
+      } as Record<string, PSValue>;
+    }
     // psobject / pscustomobject (and the generic fallback) honour -Property,
     // which seeds the new object's NoteProperties from a hashtable.
     const prop = ctx.named['property'];

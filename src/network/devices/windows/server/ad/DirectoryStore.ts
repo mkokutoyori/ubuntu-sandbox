@@ -485,17 +485,31 @@ export class DirectoryStore {
    * an Enforced domain-level link still applies even when the computer's
    * own OU has inheritance blocked — real AD's "Enforced wins over
    * blocked inheritance" rule.
+   *
+   * `userSam`, when given, additionally folds in GPOs linked to the
+   * logged-on user's own OU — real AD's User Configuration settings
+   * (folder redirection, HKCU registry policy, …) resolve against the
+   * USER object's location, independently of where the computer object
+   * sits (this simulator doesn't model Loopback Processing, so there's
+   * no computer-OU override of that for now).
    */
-  resultantSetOfPolicy(computerName?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
+  resultantSetOfPolicy(computerName?: string, userSam?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
     let ouEntry: DirectoryEntry | null = null;
     if (computerName) {
       const computer = this.findComputerEntry(computerName);
       if (computer) ouEntry = this.tree.getByDn(computer.dn.slice(1));
     }
+    let userOuEntry: DirectoryEntry | null = null;
+    if (userSam) {
+      const user = this.findUserEntry(userSam);
+      if (user) userOuEntry = this.tree.getByDn(user.dn.slice(1));
+    }
     const inheritanceBlocked = ouEntry ? firstOf(ouEntry.attributes.get('gpoptions')) === '1' : false;
     const domainLinks = this.linkedGposFor(this.tree.getRootDn()).filter(l => l.enabled && (l.enforced || !inheritanceBlocked));
     const ouLinks = ouEntry ? this.linkedGposFor(ouEntry.dn).filter(l => l.enabled) : [];
-    const ordered = [...domainLinks, ...ouLinks].sort((a, b) => a.order - b.order).map(l => l.gpo);
+    const userOuLinks = (userOuEntry && userOuEntry.dn.join(',') !== ouEntry?.dn.join(','))
+      ? this.linkedGposFor(userOuEntry.dn).filter(l => l.enabled) : [];
+    const ordered = [...domainLinks, ...ouLinks, ...userOuLinks].sort((a, b) => a.order - b.order).map(l => l.gpo);
     const merged: GpoSettings = {};
     for (const gpo of ordered) {
       if (gpo.settings.accountPolicy !== undefined) merged.accountPolicy = { ...merged.accountPolicy, ...gpo.settings.accountPolicy };
@@ -733,10 +747,13 @@ export class DirectoryStore {
       department: firstOf(entry.attributes.get('department')),
       title: firstOf(entry.attributes.get('title')),
       servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
+      profilePath: firstOf(entry.attributes.get('profilepath')),
+      homeDirectory: firstOf(entry.attributes.get('homedirectory')),
+      homeDrive: firstOf(entry.attributes.get('homedrive')),
     };
   }
 
-  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): DirOpResult {
+  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): DirOpResult {
     const entry = this.findUserEntry(sam);
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
     if (opts.actingSam) {
@@ -763,6 +780,9 @@ export class DirectoryStore {
     if (opts.title !== undefined) changes.push({ op: 'replace', type: 'title', values: opts.title ? [opts.title] : [] });
     if (opts.addSpns && opts.addSpns.length > 0) changes.push({ op: 'add', type: 'servicePrincipalName', values: opts.addSpns });
     if (opts.removeSpns && opts.removeSpns.length > 0) changes.push({ op: 'delete', type: 'servicePrincipalName', values: opts.removeSpns });
+    if (opts.profilePath !== undefined) changes.push({ op: 'replace', type: 'profilePath', values: opts.profilePath ? [opts.profilePath] : [] });
+    if (opts.homeDirectory !== undefined) changes.push({ op: 'replace', type: 'homeDirectory', values: opts.homeDirectory ? [opts.homeDirectory] : [] });
+    if (opts.homeDrive !== undefined) changes.push({ op: 'replace', type: 'homeDrive', values: opts.homeDrive ? [opts.homeDrive] : [] });
     this.tree.modifyEntry(entry.dn, changes);
     return { ok: true, message: '' };
   }

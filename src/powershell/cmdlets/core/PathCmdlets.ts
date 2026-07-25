@@ -744,6 +744,12 @@ function stripAdPathPrefix(path: string): string {
   return path.replace(/^ad:\\?/i, '').replace(/^\\+/, '');
 }
 
+function isTruthyPSValue(v: PSValue): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') return v.toLowerCase() !== 'false' && v !== '';
+  return Boolean(v);
+}
+
 export class GetAclCmdlet implements ICmdlet {
   readonly name = 'get-acl';
   readonly parameters = ['Path', 'LiteralPath', 'InputObject', 'Audit', 'Filter', 'Include', 'Exclude'] as const;
@@ -782,17 +788,40 @@ export class GetAclCmdlet implements ICmdlet {
       ctx.emitError(`Get-Acl : Cannot retrieve ACL for '${path}'.`);
       return null;
     }
-    return {
+    const accessArr: PSValue[] = acl.acl.map(a => ({
+      FileSystemRights:  a.permissions.join(', '),
+      AccessControlType: a.type === 'allow' ? 'Allow' : 'Deny',
+      IdentityReference: a.principal,
+      IsInherited:       false,
+    } as unknown as PSValue));
+    const result: Record<string, PSValue> = {
       Path:  path,
       Owner: acl.owner,
       Group: 'BUILTIN\\Administrators',
-      Access: acl.acl.map(a => ({
-        FileSystemRights:  a.permissions.join(', '),
-        AccessControlType: a.type === 'allow' ? 'Allow' : 'Deny',
-        IdentityReference: a.principal,
-        IsInherited:       false,
-      })) as PSValue,
-    } as Record<string, PSValue>;
+      Access: accessArr as PSValue,
+      AreAccessRulesProtected: false,
+      AddAccessRule: ((rule: PSValue) => { accessArr.push(rule); return null; }) as unknown as PSValue,
+      // Real .NET FileSystemSecurity.SetAccessRule replaces any existing
+      // rule(s) for the same identity + access type instead of appending
+      // a duplicate, unlike AddAccessRule.
+      SetAccessRule: ((rule: PSValue) => {
+        const rec = rule as unknown as Record<string, PSValue>;
+        const identity = psValueToString(rec['IdentityReference'] ?? '');
+        const type = psValueToString(rec['AccessControlType'] ?? 'Allow');
+        const idx = accessArr.findIndex(a => {
+          const ar = a as unknown as Record<string, PSValue>;
+          return psValueToString(ar['IdentityReference'] ?? '') === identity
+            && psValueToString(ar['AccessControlType'] ?? 'Allow') === type;
+        });
+        if (idx >= 0) accessArr[idx] = rule; else accessArr.push(rule);
+        return null;
+      }) as unknown as PSValue,
+      SetAccessRuleProtection: ((isProtected: PSValue) => {
+        result['AreAccessRulesProtected'] = isTruthyPSValue(isProtected);
+        return null;
+      }) as unknown as PSValue,
+    };
+    return result;
   }
 }
 
@@ -806,7 +835,7 @@ export class SetAclCmdlet implements ICmdlet {
     if (/^ad:/i.test(path)) {
       const ad = ctx.providers.ad;
       if (!ad) { ctx.emitError("Set-Acl : Cannot find drive. A drive with the name 'AD' does not exist."); return null; }
-      const aclObj = ctx.named['aclobject'];
+      const aclObj = ctx.named['aclobject'] ?? ctx.positional[1];
       if (typeof aclObj !== 'object' || aclObj === null || Array.isArray(aclObj)) {
         ctx.emitError("Set-Acl : Cannot process argument because the value of argument 'AclObject' is not valid.");
         return null;
@@ -829,7 +858,31 @@ export class SetAclCmdlet implements ICmdlet {
       if (!res.ok) ctx.emitError(`Set-Acl : ${res.message}`);
       return null;
     }
-    throw new PSRuntimeError('Set-Acl is not recognized in this provider context');
+    const fs = ctx.providers.filesystem;
+    if (!fs) { ctx.emitError("Set-Acl : Cannot find drive. A drive with the name 'C' does not exist."); return null; }
+    if (!path) { ctx.emitError("Set-Acl : Cannot bind argument to parameter 'Path' because it is an empty string."); return null; }
+    if (!fs.exists(path)) { ctx.emitError(`Set-Acl : Cannot find path '${path}' because it does not exist.`); return null; }
+    const aclObj = ctx.named['aclobject'] ?? ctx.positional[1];
+    if (typeof aclObj !== 'object' || aclObj === null || Array.isArray(aclObj)) {
+      ctx.emitError("Set-Acl : Cannot process argument because the value of argument 'AclObject' is not valid.");
+      return null;
+    }
+    const rec = aclObj as Record<string, PSValue>;
+    if (rec['AreAccessRulesProtected'] !== undefined) {
+      fs.setAclProtected(path, isTruthyPSValue(rec['AreAccessRulesProtected']));
+    }
+    const access = rec['Access'];
+    const accessArr = Array.isArray(access) ? access : [];
+    for (const a of accessArr) {
+      const rule = a as unknown as Record<string, PSValue>;
+      const principal = psValueToString(rule['IdentityReference'] ?? '');
+      if (!principal) continue;
+      const rightsRaw = psValueToString(rule['FileSystemRights'] ?? '');
+      const permissions = rightsRaw.split(',').map(s => s.trim()).filter(Boolean);
+      const type = psValueToString(rule['AccessControlType'] ?? 'Allow') === 'Deny' ? 'deny' as const : 'allow' as const;
+      fs.addAce(path, { principal, type, permissions });
+    }
+    return null;
   }
 }
 

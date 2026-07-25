@@ -118,4 +118,5 @@ export class SimulatedFileSystem implements IFileSystemProvider {
   getAcl(_path: string) { return null; }
   setOwner(_path: string, _owner: string): boolean { return false; }
   addAce(_path: string, _ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean { return false; }
+  setAclProtected(_path: string, _isProtected: boolean): boolean { return false; }
 }
