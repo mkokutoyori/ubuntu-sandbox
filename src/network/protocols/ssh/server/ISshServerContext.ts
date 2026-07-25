@@ -7,6 +7,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
 import type { ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
@@ -57,6 +58,13 @@ export interface ILinuxShell {
    * session (docs/PRD-SSH-Unification.md §4bis B2).
    */
   isNested?(): boolean;
+  /**
+   * Open an editor for `commandLine` on this channel, or return null
+   * when the line opens none. The engine runs here, against the real
+   * filesystem this shell already acts on — permissions, swap files and
+   * `:!cmd` are the remote's own (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  openEditor?(commandLine: string): EditorSession | null;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
   dispose?(): void;
 }

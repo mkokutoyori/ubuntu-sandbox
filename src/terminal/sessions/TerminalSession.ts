@@ -31,6 +31,7 @@ import { TerminalAsyncRuntime } from '@/terminal/async';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
+import type { RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/types';
@@ -86,6 +87,18 @@ export type InputMode =
   | { type: 'booting' }
   | { type: 'reverse-search' }
   | { type: 'editor'; editorType: 'nano' | 'vi' | 'vim'; filePath: string; absolutePath: string; content: string; isNewFile: boolean }
+  /**
+   * An editor whose buffer lives on the far side of an SSH channel: the
+   * engine runs on the remote, and `controller` is the proxy the overlay
+   * drives instead of a local engine
+   * (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  | {
+      type: 'remote-editor';
+      editorType: 'nano' | 'vi' | 'vim';
+      filePath: string;
+      controller: RemoteVimController | RemoteNanoController;
+    }
   /**
    * Terminal is read-only because the underlying device is unreachable
    * (powered off, removed). Reason carries a short human label rendered by

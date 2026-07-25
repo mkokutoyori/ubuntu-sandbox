@@ -216,6 +216,40 @@ Reste ouvert sous B2 : `lsnrctl` n'a pas d'adaptateur `IShell`
 enregistré, donc il continue de s'exécuter comme une commande unique et
 non comme un REPL.
 
+### 4bis.4 B3 : le moteur d'édition tourne là où est le fichier
+
+Mesure préalable : un aller-retour sur le fil n'est **pas** synchrone
+(la réponse arrive au tick suivant), donc un `EditorFsContext` distant
+synchrone était exclu — il aurait fallu mentir sur le résultat des
+écritures. Le moteur tourne donc côté serveur, sur la session shell du
+canal, et seuls les frappes et un écran sérialisable traversent le fil :
+
+    client → serveur  { op: 'editor_open', data: '<ligne>' }
+    client → serveur  { op: 'editor_key' | 'editor_paste' | 'editor_cursor' }
+    serveur → client  { op: 'editor_view', view }
+    client → serveur  { op: 'editor_close' }
+
+Même forme d'extensibilité que B2 : `registerEditorSession` lie un
+moteur à un nom d'éditeur, `parseEditorLaunch` est le seul endroit qui
+sait quelles lignes ouvrent un éditeur et ce que valent `-v`, `-l`,
+`+LIGNE,COL`. Un futur moteur, c'est une entrée dans chacun.
+
+Côté rendu, les overlays n'ont pas été dupliquées : `VimEditor` /
+`NanoEditor` acceptent un `driver` optionnel — exactement la surface
+qu'elles lisaient déjà sur un moteur local — et les deux fonctions de
+vue pures appelées avec arguments (`:set list` de vim, colonnes
+d'affichage de nano) vivent dans `editorRender.ts`, partagées.
+
+Vérifié de bout en bout : les permissions, les fichiers d'échange et
+`:!cmd` sont ceux du distant (un `:w` dans `/etc/` sous un compte non
+privilégié rend le refus du distant et ne laisse aucun fichier), et un
+test Playwright édite puis enregistre un fichier sur `PC2` en vérifiant
+qu'aucun fichier n'apparaît sur `PC1`.
+
+Reste ouvert sous B3 : les éditeurs ne sont ouverts sur le fil que
+depuis une session Linux ; les hôtes Windows et les CLI vendeurs n'ont
+pas d'éditeur à exposer.
+
 ## 5. Hors périmètre
 
 - Le retrait effectif des chemins clients en mémoire (étape 2) et le
