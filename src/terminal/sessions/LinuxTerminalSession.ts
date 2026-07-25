@@ -909,8 +909,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
     let targetLabel = parsed.targetStr;
     const results: PingResult[] = [];
+    // Real ping reports the wall time of the whole run in its summary.
+    const pingStartedAt = Date.now();
     const emitStats = (ctx: AsyncJobContext) => {
-      for (const line of formatPingStats(targetLabel, results.length, results)) ctx.sink.line(line);
+      for (const line of formatPingStats(targetLabel, results.length, results, Date.now() - pingStartedAt)) ctx.sink.line(line);
     };
 
     if (parsed.v6) {
