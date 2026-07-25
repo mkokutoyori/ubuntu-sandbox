@@ -48,10 +48,17 @@ export interface StpPortGuards {
   portFast: boolean;
   bpduGuard: boolean;
   rootGuard: boolean;
+  /** `spanning-tree bpdufilter enable` — hard per-port override, independent of portfast state. */
+  bpduFilter: boolean;
+  /** `spanning-tree guard loop` — hard per-port override, independent of the `loopguard default` global. */
+  loopGuard: boolean;
 }
 
 export function defaultPortGuards(): StpPortGuards {
-  return { portFast: false, bpduGuard: false, rootGuard: false };
+  return {
+    portFast: false, bpduGuard: false, rootGuard: false,
+    bpduFilter: false, loopGuard: false,
+  };
 }
 
 export interface StpConfig {

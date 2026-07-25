@@ -1419,15 +1419,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const agent = this.d().getStpAgent();
       const head = a[0] ?? '';
       const isGuardRoot = head === 'guard' && a[1] === 'root';
+      const isGuardLoop = head === 'guard' && a[1] === 'loop';
       const isBpduGuard = head === 'bpduguard';
+      const isBpduFilter = head === 'bpdufilter';
       const isPortFast = head === 'portfast';
       for (const i of ifs) {
         if (isPortFast) {
           agent.setPortFast(i, a[1] !== 'disable');
         } else if (isBpduGuard) {
           agent.setPortBpduGuard(i, a[1] === 'enable');
+        } else if (isBpduFilter) {
+          agent.setPortBpduFilter(i, a[1] === 'enable');
         } else if (isGuardRoot) {
           agent.setPortRootGuard(i, true);
+        } else if (isGuardLoop) {
+          agent.setPortLoopGuard(i, true);
         }
         const l = this.ifStp.get(i) ?? [];
         l.push(`spanning-tree ${args.join(' ')}`.trim());
@@ -1443,6 +1449,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const i of ifs) {
         if (a[0] === 'portfast') agent.setPortFast(i, false);
         else if (a[0] === 'bpduguard') agent.setPortBpduGuard(i, false);
+        else if (a[0] === 'bpdufilter') agent.setPortBpduFilter(i, false);
+        else if (a[0] === 'guard' && a[1] === 'loop') agent.setPortLoopGuard(i, false);
         else if (a[0] === 'guard') agent.setPortRootGuard(i, false);
       }
       return '';

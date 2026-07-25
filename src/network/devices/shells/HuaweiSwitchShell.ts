@@ -2269,6 +2269,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.applyToStpAgent(ag => ag.setPortBpduGuard(port, true));
       } else if (a[0] === 'bpdu-protection' && a[1] === 'disable') {
         this.applyToStpAgent(ag => ag.setPortBpduGuard(port, false));
+      } else if (a[0] === 'bpdu-filter' && a[1] === 'enable') {
+        this.applyToStpAgent(ag => ag.setPortBpduFilter(port, true));
+      } else if (a[0] === 'bpdu-filter' && a[1] === 'disable') {
+        this.applyToStpAgent(ag => ag.setPortBpduFilter(port, false));
+      } else if (a[0] === 'root-protection') {
+        this.applyToStpAgent(ag => ag.setPortRootGuard(port, true));
+      } else if (a[0] === 'loop-protection') {
+        this.applyToStpAgent(ag => ag.setPortLoopGuard(port, true));
       }
       return '';
     });
@@ -2739,6 +2747,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
       } else if (this.mode === 'vlan' && this.selectedVlan !== null) {
         this.vlanDesc.delete(this.selectedVlan);
       }
+      return '';
+    }
+
+    if (args[0].toLowerCase() === 'stp' && this.selectedInterface) {
+      const port = this.selectedInterface;
+      const sub = (args[1] ?? '').toLowerCase();
+      if (sub === 'edged-port') this.applyToStpAgent(ag => ag.setPortFast(port, false));
+      else if (sub === 'bpdu-protection') this.applyToStpAgent(ag => ag.setPortBpduGuard(port, false));
+      else if (sub === 'bpdu-filter') this.applyToStpAgent(ag => ag.setPortBpduFilter(port, false));
+      else if (sub === 'root-protection') this.applyToStpAgent(ag => ag.setPortRootGuard(port, false));
+      else if (sub === 'loop-protection') this.applyToStpAgent(ag => ag.setPortLoopGuard(port, false));
       return '';
     }
 

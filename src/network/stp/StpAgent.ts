@@ -38,6 +38,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   private pathcostMethod: 'short' | 'long' = 'short';
   private readonly guards = new Map<string, StpPortGuards>();
   private readonly rootInconsistent = new Set<string>();
+  private readonly loopInconsistent = new Set<string>();
   private readonly portFastLost = new Set<string>();
   private readonly advertising = new Set<string>();
   private readonly instances = new Map<number, StpVlanInstance>();
@@ -75,6 +76,34 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   forwardDelaySec(vlan: number): number { return this.getVlanForwardDelaySec(vlan); }
   maxAgeSec(vlan: number): number { return this.getVlanMaxAgeSec(vlan); }
   isRootInconsistent(portName: string): boolean { return this.rootInconsistent.has(portName); }
+  isLoopInconsistent(portName: string): boolean { return this.loopInconsistent.has(portName); }
+
+  setLoopInconsistent(portName: string, on: boolean): void {
+    const changed = on ? !this.loopInconsistent.has(portName) : this.loopInconsistent.delete(portName);
+    if (on) this.loopInconsistent.add(portName);
+    if (!changed) return;
+    this.getBus().publish({
+      topic: 'stp.loop-guard.changed',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        port: portName, state: on ? 'inconsistent' : 'consistent',
+      },
+    });
+    if (on) {
+      Logger.warn(this.host.id, 'stp:loop-guard',
+        `${this.host.name}: Loop Guard blocking ${portName} (BPDUs stopped arriving on a non-designated port)`);
+    }
+  }
+
+  /** Real IOS: Loop Guard only ever operates on point-to-point, non-edge ports. */
+  isLoopGuardActive(portName: string): boolean {
+    const g = this.getPortGuards(portName);
+    if (g.loopGuard) return true;
+    if (!this.config.loopGuardGlobal) return false;
+    if (g.rootGuard) return false;
+    if (this.isPortFastOperational(portName)) return false;
+    return this.isPointToPoint(portName);
+  }
   onInstanceForwardState(key: number, portName: string, state: StpForwardState): void {
     if (state === 'forwarding') {
       this.forwardingTransitionCounts.set(portName, (this.forwardingTransitionCounts.get(portName) ?? 0) + 1);
@@ -380,6 +409,37 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     this.getPortGuards(portName).rootGuard = on;
   }
 
+  setPortBpduFilter(portName: string, on: boolean): void {
+    this.getPortGuards(portName).bpduFilter = on;
+  }
+
+  setPortLoopGuard(portName: string, on: boolean): void {
+    this.getPortGuards(portName).loopGuard = on;
+    if (on || !this.loopInconsistent.has(portName)) return;
+    // Guard removed while the port was being held loop-inconsistent: real
+    // IOS drops the condition immediately and lets the port reconverge
+    // normally rather than staying blocked with no guard left to justify it.
+    this.setLoopInconsistent(portName, false);
+    for (const inst of this.instances.values()) inst.forgetPort(portName);
+    this.recomputeOnTopologyChange();
+  }
+
+  /**
+   * Real IOS: `bpdufilter enable` on an interface unconditionally suppresses
+   * BPDU tx/rx on that port (dangerous if misused — no automatic recovery).
+   * `portfast bpdufilter default` only filters while the port is still
+   * PortFast-operational; the moment it hears a BPDU it loses that status
+   * (handleFrame) and this naturally stops filtering from then on.
+   */
+  isBpduFilterHardEnabled(portName: string): boolean {
+    return this.guards.get(portName)?.bpduFilter === true;
+  }
+
+  isBpduFilterEffective(portName: string): boolean {
+    if (this.isBpduFilterHardEnabled(portName)) return true;
+    return this.config.bpduFilterGlobal && this.isPortFastOperational(portName);
+  }
+
   setBpduGuardGlobal(on: boolean): void {
     this.config.bpduGuardGlobal = on;
   }
@@ -459,6 +519,10 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (!payload || payload.type !== 'stp') return;
     const port = this.host.getPort(portName);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
+    // Hard `bpdufilter enable`: the port drops every BPDU it receives, full
+    // stop — unlike the portfast-driven "default" mode, there is no
+    // automatic recovery baked into this override in real IOS either.
+    if (this.isBpduFilterHardEnabled(portName)) return;
     this.bpduReceivedCounts.set(portName, (this.bpduReceivedCounts.get(portName) ?? 0) + 1);
 
     const g = this.getPortGuards(portName);
@@ -518,6 +582,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       ageMs: Date.now(),
     };
     inst.setPortInfo(portName, info);
+    // A BPDU arrived on this port again — whatever kept it loop-inconsistent
+    // (its neighbor's transmit path was down) is resolved.
+    this.setLoopInconsistent(portName, false);
 
     if (g.rootGuard) {
       const myRoot = inst.getRootBridge();
@@ -705,6 +772,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   private sendBpdu(portName: string, key = 1): void {
     const port = this.host.getPort(portName);
     if (!port) return;
+    if (this.isBpduFilterEffective(portName)) return;
     const adKey = this.vkey(key, portName);
     if (this.advertising.has(adKey)) return;
     const inst = this.instanceForKey(key);
@@ -785,10 +853,21 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   protected override onPortLinkDown(portName: string): void {
     const portFast = this.isPortFastOperational(portName);
     this.portFastLost.delete(portName);
+    this.loopInconsistent.delete(portName);
     let wasActive = false;
-    for (const inst of this.instances.values()) {
+    for (const [, inst] of this.instances) {
+      const wasRootPort = inst.getRootPort() === portName;
       if (inst.forgetPort(portName).wasActive) wasActive = true;
       inst.runElection();
+      // UplinkFast: a non-root switch whose root port just died fails over
+      // to an already-known backup port immediately instead of waiting out
+      // the normal listening/learning delay — real IOS's headline benefit
+      // of the feature. (The CAM-flush multicast burst that also speeds up
+      // upstream MAC learning is not modeled — out of scope for this pass.)
+      if (this.config.uplinkFast && wasRootPort && !inst.isRoot()) {
+        const newRootPort = inst.getRootPort();
+        if (newRootPort) inst.jumpToForwarding(newRootPort);
+      }
     }
     if (wasActive && !portFast && this.config.enabled) {
       this.notifyTopologyChange();
