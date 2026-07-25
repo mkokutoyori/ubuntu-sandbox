@@ -10,6 +10,9 @@
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
+import {
+  getHuaweiRoutingExtras, getHuaweiVrrpService, getSwitchSecurityService,
+} from '../../../equipment/RouterServiceCapabilities';
 import { IPAddress } from '../../../core/types';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
@@ -641,7 +644,7 @@ export function displayCurrentConfig(
     }
   }
 
-  const routingExtras = (router as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+  const routingExtras = getHuaweiRoutingExtras(router);
   if (routingExtras) {
     const rl = routingExtras.asRunningConfigLines();
     if (rl.length > 0) { lines.push('#'); lines.push(...rl); }
@@ -992,7 +995,7 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
 
   lines.push(...renderHuaweiInterfaceExtras(router, port, portName));
 
-  const vrrp = (router as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+  const vrrp = getHuaweiVrrpService(router);
   if (vrrp) lines.push(...vrrp.asInterfaceRunningConfigLines(portName));
 
   lines.push('#');
@@ -1189,7 +1192,7 @@ export function registerDisplayCommands(
   });
 
   trie.register('display dhcp snooping configuration', 'Display DHCP snooping configuration', () => {
-    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    const sw = getSwitchSecurityService(getRouter());
     if (!sw) return 'Info: DHCP snooping is not configured';
     const enabled = sw.isDhcpSnoopingEnabled();
     const vlans = sw.getDhcpSnoopingVlans();
@@ -1206,7 +1209,7 @@ export function registerDisplayCommands(
   });
 
   trie.register('display arp anti-attack configuration', 'Display ARP anti-attack configuration', () => {
-    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    const sw = getSwitchSecurityService(getRouter());
     if (!sw) return 'Info: ARP anti-attack is not configured';
     const policies = sw.getArpAntiAttackPolicies();
     if (policies.length === 0) return 'Info: ARP anti-attack is not configured';
@@ -1216,7 +1219,7 @@ export function registerDisplayCommands(
   });
 
   trie.register('display ip source check user-bind configuration', 'Display IP source guard configuration', () => {
-    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    const sw = getSwitchSecurityService(getRouter());
     if (!sw) return 'Info: IP source guard is not configured';
     const enabled = sw.isIpSourceGuardEnabled();
     const bindings = sw.getIpSourceGuardBindings();
@@ -1271,7 +1274,7 @@ export function registerDisplayCommands(
   });
 
   trie.register('display vrrp', 'Display VRRP groups', () => {
-    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+    const svc = getHuaweiVrrpService(getRouter());
     const groups = svc?.list() ?? [];
     if (groups.length === 0) return 'Info: No VRRP backup group is configured.';
     return groups.map(g => [
@@ -1286,14 +1289,14 @@ export function registerDisplayCommands(
     ].filter(Boolean).join('\n')).join('\n');
   });
   trie.registerGreedy('display vrrp interface', 'Display VRRP on interface', (args) => {
-    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+    const svc = getHuaweiVrrpService(getRouter());
     const ifName = args.join(' ');
     const groups = svc?.list().filter(g => g.ifName === ifName) ?? [];
     if (groups.length === 0) return `Info: No VRRP group on ${ifName}`;
     return groups.map(g => `VRID ${g.vrid}: state=${huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state} virtual-ip=${g.virtualIps.join(',')}`).join('\n');
   });
   trie.register('display vrrp statistics', 'Display VRRP statistics', () => {
-    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+    const svc = getHuaweiVrrpService(getRouter());
     const groups = svc?.list() ?? [];
     if (groups.length === 0) return 'Info: No VRRP groups';
     return groups.map(g => `${g.ifName} | VRID ${g.vrid} | Adv sent: 0 received: 0 | Track triggers: ${g.trackEntries.length}`).join('\n');
@@ -1339,7 +1342,7 @@ export function registerDisplayCommands(
   trie.registerGreedy('display traffic policy', 'Display traffic policies', () => 'Info: No traffic policies configured');
 
   trie.register('display vrrp brief', 'Display VRRP brief', () => {
-    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+    const svc = getHuaweiVrrpService(getRouter());
     const groups = svc?.list() ?? [];
     const states = groups.map(g => huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state);
     const master = states.filter(s => s === 'Master').length;
@@ -1468,7 +1471,7 @@ export function registerDisplayCommands(
   });
 
   trie.registerGreedy('display bgp peer', 'Display BGP peers', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const bgp = ex?.getBgp();
     if (!bgp) return 'Info: BGP is not running.';
     // Peering/session state comes from the real BGPEngine (same engine
@@ -1496,7 +1499,7 @@ export function registerDisplayCommands(
   });
 
   trie.registerGreedy('display bgp routing-table', 'Display BGP routing table', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const bgp = ex?.getBgp();
     if (!bgp) return 'Info: BGP is not running.';
     // Real Loc-RIB (learned + originated routes), not just the
@@ -1522,13 +1525,13 @@ export function registerDisplayCommands(
   });
 
   trie.register('display bgp group', 'Display BGP peer groups', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const bgp = ex?.getBgp();
     if (!bgp || bgp.groups.size === 0) return 'Info: No BGP peer groups configured.';
     return [...bgp.groups.values()].map(g => `Group ${g.name}: kind=${g.kind ?? 'unspecified'} AS=${bgp.asn}`).join('\n');
   });
   trie.register('display bgp network', 'Display BGP advertised networks', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const bgp = ex?.getBgp();
     if (!bgp || bgp.networks.length === 0) return 'Info: No BGP advertised networks.';
     return bgp.networks.map(n => `  ${n.ip}/${n.mask}`).join('\n');
@@ -1537,7 +1540,7 @@ export function registerDisplayCommands(
   trie.register('display bgp ipv6 peer', 'Display BGP IPv6 peers', () => 'Info: IPv6 BGP not running.');
 
   trie.register('display isis brief', 'Display IS-IS brief', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const all = ex?.listIsis() ?? [];
     if (all.length === 0) return 'Info: IS-IS is not enabled.';
     return all.map(p => [
@@ -1548,22 +1551,22 @@ export function registerDisplayCommands(
     ].join('\n')).join('\n');
   });
   trie.register('display isis interface', 'Display IS-IS interfaces', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'Interface           Type   IPv4 State Level     Cost                MTU\n(no IS-IS-enabled interfaces)';
   });
   trie.register('display isis lsdb', 'Display IS-IS LSDB', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'LSPID                 Seq Num     Checksum    Holdtime   Length   ATT/P/OL\n(no LSPs)';
   });
   trie.register('display isis peer', 'Display IS-IS peers', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'System ID         Interface          Circuit ID         State HoldTime Type     PRI\n(no peers established)';
   });
   trie.register('display isis route', 'Display IS-IS routing table', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'Route information for ISIS\n  No routes installed';
   });

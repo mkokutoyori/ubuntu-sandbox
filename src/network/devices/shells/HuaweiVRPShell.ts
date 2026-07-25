@@ -91,6 +91,7 @@ import {
   buildHuaweiVxlanInterfaceCommands, registerHuaweiVxlanDisplayCommands,
 } from './huawei/HuaweiVxlanCommands';
 import { collectListeningSockets } from '../router/management/SocketInventory';
+import { getVrrpAgent } from '../../equipment/RouterServiceCapabilities';
 
 function renderHuaweiTcpStatus(router: Router): string {
   const tcp = collectListeningSockets(router).filter((s) => s.protocol === 'tcp');
@@ -2486,7 +2487,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (isNaN(vrid)) return 'Error: Invalid VRID';
       const svc = this.r().getHuaweiVrrpService();
       const g = svc.ensure(ifName, vrid);
-      const agent = (this.r() as unknown as { getVrrpAgent?: () => import('../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+      const agent = getVrrpAgent(this.r());
       agent?.ensureGroup(ifName, vrid);
       let i = vridIdx + 1;
       const sub = args[i]?.toLowerCase();

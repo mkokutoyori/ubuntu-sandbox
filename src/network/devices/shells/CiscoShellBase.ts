@@ -46,6 +46,9 @@ import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
+import {
+  getManagementService, getSnmpService, getSnmpAgent, getNtpAgent,
+} from '../../equipment/RouterServiceCapabilities';
 import type {
   CommandInteractionPlan,
   InteractionPlanContext,
@@ -524,12 +527,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected syncSnmpAgent(): void {
-    const dev = this.d() as unknown as {
-      getSnmpAgent?: () => import('@/network/snmp/SnmpAgent').SnmpAgent;
-      getSnmpService?: () => import('../router/management/SnmpService').SnmpService;
-    };
-    const agent = dev.getSnmpAgent?.();
-    const svc = dev.getSnmpService?.();
+    const agent = getSnmpAgent(this.d());
+    const svc = getSnmpService(this.d());
     if (!agent || !svc) return;
     agent.setContact(svc.getContact());
     agent.setLocation(svc.getLocation());
@@ -1141,8 +1140,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show processes cpu history', 'Display CPU history', () =>
       showProcessesCpu());
     trie.register('show clock detail', 'Display clock with source', () => {
-      const dev = this.cs() as unknown as { getNtpAgent?: () => { isSynced: () => boolean; getConfig: () => { sourceInterface: string; refIdentifier: string } } };
-      const ntp = dev.getNtpAgent?.();
+      const ntp = getNtpAgent(this.cs());
       const synced = ntp?.isSynced() ?? false;
       const source = synced ? `NTP (${ntp?.getConfig().refIdentifier})` : 'No time source';
       return [
@@ -1648,7 +1646,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);
       if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      const agent = getNtpAgent(this.d());
       agent?.addServer(target, args[1]?.toLowerCase() === 'prefer');
       return '';
     });
@@ -1656,11 +1654,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);
       if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-      const dev = this.d() as unknown as {
-        getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent;
-        _recordUnhandledConfigLine?: (line: string) => void;
-      };
-      const agent = dev.getNtpAgent?.();
+      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
+      const agent = getNtpAgent(this.d());
       if (agent) agent.addServer(target, args[1]?.toLowerCase() === 'prefer');
       else dev._recordUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
       return '';
@@ -1671,15 +1666,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('no sntp server', 'Remove SNTP server', (args) => {
-      const dev = this.d() as unknown as { _removeUnhandledConfigLine?: (l: string) => void; getNtpAgent?: () => { removeServer?: (ip: string) => void } };
-      const agent = dev.getNtpAgent?.();
+      const dev = this.d() as unknown as { _removeUnhandledConfigLine?: (l: string) => void };
+      const agent = getNtpAgent(this.d());
       if (agent?.removeServer && args[0]) agent.removeServer(args[0]);
       dev._removeUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
       return '';
     });
     this.privilegedTrie.register('show sntp', 'Show SNTP', () => {
-      const dev = this.d() as unknown as { getUnhandledConfigLines?: () => readonly string[]; getNtpAgent?: () => { getConfig?: () => { associations?: Map<string, unknown> } } };
-      const agent = dev.getNtpAgent?.();
+      const dev = this.d() as unknown as { getUnhandledConfigLines?: () => readonly string[] };
+      const agent = getNtpAgent(this.d());
       if (agent?.getConfig) {
         const cfg = agent.getConfig();
         if (cfg.associations && cfg.associations.size > 0) {
@@ -2008,14 +2003,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('ip name-server', 'Configure DNS name servers', (args) => {
       if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
       for (const s of args) if (!isValidIPv4(s)) return CISCO_ERRORS.INVALID_INPUT;
-      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
-      const mgmt = dev.getManagementService?.();
+      const mgmt = getManagementService(this.d());
       if (mgmt) for (const s of args) if (!mgmt.nameServers.includes(s)) mgmt.nameServers.push(s);
       return '';
     });
     this.configTrie.registerGreedy('no ip name-server', 'Clear DNS name servers', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
-      const mgmt = dev.getManagementService?.();
+      const mgmt = getManagementService(this.d());
       if (mgmt) {
         if (args.length === 0) mgmt.nameServers.length = 0;
         else for (const s of args) {
@@ -2026,14 +2019,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.register('ip domain-lookup', 'Enable DNS lookups', () => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
-      const mgmt = dev.getManagementService?.();
+      const mgmt = getManagementService(this.d());
       if (mgmt) mgmt.ipDomainLookupEnabled = true;
       return '';
     });
     this.configTrie.register('no ip domain-lookup', 'Disable DNS lookups', () => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
-      const mgmt = dev.getManagementService?.();
+      const mgmt = getManagementService(this.d());
       if (mgmt) mgmt.ipDomainLookupEnabled = false;
       return '';
     });
@@ -2139,28 +2130,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const dev = this.d() as unknown as {
-        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
-        _setDomainName?: (name: string) => void;
-      };
-      const mgmt = dev.getManagementService?.();
+      const dev = this.d() as unknown as { _setDomainName?: (name: string) => void };
+      const mgmt = getManagementService(this.d());
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[0];
       else dev._setDomainName?.(args[0]);
       return '';
     });
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
       if (args[0]?.toLowerCase() !== 'name' || !args[1]) return '';
-      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
-      const mgmt = dev.getManagementService?.();
+      const mgmt = getManagementService(this.d());
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[1];
       return '';
     });
     this.configTrie.registerGreedy('no ip domain-name', 'Clear domain name', () => {
-      const dev = this.d() as unknown as {
-        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
-        _setDomainName?: (name: string) => void;
-      };
-      const mgmt = dev.getManagementService?.();
+      const dev = this.d() as unknown as { _setDomainName?: (name: string) => void };
+      const mgmt = getManagementService(this.d());
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = '';
       else dev._setDomainName?.('');
       return '';
@@ -2249,7 +2233,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const a = args.map(s => s.toLowerCase());
       if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
       if ((a[0] === 'server' || a[0] === 'peer') && !a[1]) return CISCO_ERRORS.INCOMPLETE;
-      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      const agent = getNtpAgent(this.d());
       if (!agent) return '';
       if (a[0] === 'server' && a[1]) {
         const target = a[1];
@@ -2282,15 +2266,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.configTrie.registerGreedy('no ntp', 'Remove NTP config', (args) => {
       const a = args.map(s => s.toLowerCase());
-      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      const agent = getNtpAgent(this.d());
       if (!agent) return '';
       if (a[0] === 'server' && a[1]) agent.removeServer(a[1]);
       else if (a[0] === 'master') { agent.setServerMode(false); agent.setLocalStratum(16); }
       return '';
     });
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {
-      const dev = this.d() as unknown as { getSnmpService?: () => import('../router/management/SnmpService').SnmpService };
-      const svc = dev.getSnmpService?.();
+      const svc = getSnmpService(this.d());
       if (!svc) return '';
       svc.configure(args);
       this.syncSnmpAgent();
@@ -2298,8 +2281,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configTrie.registerGreedy('clock timezone', 'Set timezone', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
-      const mgmt = dev.getManagementService?.();
+      const mgmt = getManagementService(this.d());
       if (mgmt && args[0] && args[1]) {
         const offsetHrs = parseInt(args[1], 10);
         const offsetMin = parseInt(args[2] ?? '0', 10);
@@ -2310,8 +2292,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('clock summer-time', 'Configure daylight saving time', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
-      const mgmt = dev.getManagementService?.();
+      const mgmt = getManagementService(this.d());
       if (mgmt && args[0]) {
         const cfg = mgmt.getClock();
         cfg.summerTimezone = args[0];
@@ -2337,8 +2318,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Management commands missing on BOTH switch & router → shared here
     // (DRY). Recognised; the sim has no AAA/crypto datapath.
     this.configTrie.registerGreedy('aaa', 'AAA configuration', (args, raw) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
-      const mgmt = dev.getManagementService?.();
+      const mgmt = getManagementService(this.d());
       if (mgmt) (mgmt as unknown as { recordRaw: (f: string, l: string) => void }).recordRaw('aaa', raw ?? `aaa ${args.join(' ')}`);
       return '';
     });
@@ -2514,11 +2494,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', (args, raw) => {
-      const dev = this.d() as unknown as {
-        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
-        _recordUnhandledConfigLine?: (l: string) => void;
-      };
-      const mgmt = dev.getManagementService?.();
+      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      const mgmt = getManagementService(this.d());
       const ssh = mgmt?.getSsh();
       const head = args[0]?.toLowerCase();
       if (!ssh) {
