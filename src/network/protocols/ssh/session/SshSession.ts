@@ -130,6 +130,18 @@ export class SshSession implements ISshSession {
       return propagateErr(authResult);
     }
 
+    // Follow our own transport from here on. A session that does not
+    // notice its socket dying reports itself connected forever, which
+    // pushes every consumer into probing with a fresh handshake just to
+    // find out — and that is what made a remote log an accept/close
+    // pair per command.
+    conn.onClose?.((reason) => {
+      if (this._state.kind === 'connected') {
+        this.transition(disconnected(reason || 'connection closed'));
+      }
+      this.conn = null;
+    });
+
     const sessionId = `${opts.user}@${opts.host}:${opts.port}#${Date.now()}`;
     this.transition(connected(opts.user, opts.host, sessionId));
 

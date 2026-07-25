@@ -181,6 +181,8 @@ export interface AdUserInfo {
   sam: string; upn: string; dn: string; sid: string; enabled: boolean; memberOf: string[]; fullName: string;
   department: string; title: string; emailAddress: string; passwordLastSet: string; passwordNeverExpires: boolean;
   servicePrincipalNames: string[];
+  /** Roaming profile (`ProfilePath`), redirected home folder (`HomeDirectory`/`HomeDrive`) — real LDAP `profilePath`/`homeDirectory`/`homeDrive` attributes, PRD AD roaming-profiles gap. */
+  profilePath: string; homeDirectory: string; homeDrive: string;
 }
 
 /** A raw AD object of any class — `Get-ADObject`/`Set-ADObject`/`Restore-ADObject` (PRD AD Recycle Bin). See `AdGenericObject` in `AdTypes.ts` for the rationale of exposing raw attributes rather than a fixed shape. */
@@ -224,7 +226,7 @@ export interface IAdProvider {
   newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
   listUsers(): AdUserInfo[];
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult;
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult;
   removeUser(identity: string): AdOpResult;
   /** Every user/computer object carrying at least one SPN — for cross-object duplicate-SPN detection (`Get-ADObject -Filter {ServicePrincipalName -like "*"}`). */
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }>;
@@ -957,6 +959,8 @@ export interface IFileSystemProvider {
   setOwner(path: string, owner: string): boolean;
   /** Add an ACE (Access Control Entry) to a path. Returns true on success. */
   addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean;
+  /** Enable/disable inheritance (real NTFS `SetAccessRuleProtection`/`icacls /inheritance:r`). Returns true on success. */
+  setAclProtected(path: string, isProtected: boolean): boolean;
 }
 
 export interface IRegistryProvider {

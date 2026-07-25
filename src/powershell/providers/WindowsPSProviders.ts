@@ -182,7 +182,27 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     return this.fs().setOwner(this.abs(path), owner);
   }
   addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean {
-    return this.fs().addACE(this.abs(path), { ...ace });
+    const abs = this.abs(path);
+    const ok = this.fs().addACE(abs, { ...ace });
+    if (ok) {
+      this.pc.getBus().publish({
+        topic: 'windows.filesystem.acl-changed',
+        payload: {
+          deviceId: this.pc.id,
+          path: abs,
+          identity: ace.principal,
+          permissions: ace.permissions.join(', '),
+          changedBy: this.pc.getUserManager().currentUser,
+        },
+      });
+    }
+    return ok;
+  }
+  setAclProtected(path: string, isProtected: boolean): boolean {
+    const e = this.fs().resolve(this.abs(path));
+    if (!e) return false;
+    e.aclProtected = isProtected;
+    return true;
   }
 
   private abs(p: string): string {
@@ -579,9 +599,10 @@ class WindowsAdAdapter implements IAdProvider {
       sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
       department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
       passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
+      profilePath: u.profilePath, homeDirectory: u.homeDirectory, homeDrive: u.homeDrive,
     } : null;
   }
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult {
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult {
     const store = this.requireStore('Set-ADUser');
     const denied = this.requireAdmin('Set-ADUser');
     if (denied) return denied;
@@ -592,6 +613,7 @@ class WindowsAdAdapter implements IAdProvider {
       sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
       department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
       passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
+      profilePath: u.profilePath, homeDirectory: u.homeDirectory, homeDrive: u.homeDrive,
     }));
   }
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {

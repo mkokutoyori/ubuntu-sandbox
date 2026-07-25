@@ -198,6 +198,15 @@ function parseRegistryPath(path: string): ParsedRegPath | null {
   } else if (up.startsWith('HKCU:\\') || up.startsWith('HKCU:')) {
     hive = 'HKCU';
     rest = p.slice(up.startsWith('HKCU:\\') ? 6 : 5);
+  } else if (up.startsWith('HKLM\\')) {
+    // GPO key strings (e.g. Set-GPRegistryValue -Key) conventionally omit
+    // the PSDrive colon real interactive `Get-Item`/`Set-ItemProperty`
+    // paths require — same hive, no drive semantics involved.
+    hive = 'HKLM';
+    rest = p.slice(5);
+  } else if (up.startsWith('HKCU\\')) {
+    hive = 'HKCU';
+    rest = p.slice(5);
   } else if (up.startsWith('HKEY_LOCAL_MACHINE\\')) {
     hive = 'HKLM';
     rest = p.slice('HKEY_LOCAL_MACHINE\\'.length);

@@ -1013,6 +1013,19 @@ export class PSRuntime {
       },
       getfolderpath: (folder: PSValue) => {
         const which = String(folder).toLowerCase();
+        // Real Windows expands %VAR% in "Shell Folders" values (they're
+        // stored as REG_EXPAND_SZ) at read time, not when the GPO writes
+        // them — same convention here.
+        const expand = (raw: string) => raw.replace(/%([^%]+)%/g, (m, name: string) => lookup(name) || m);
+        const shellFolder = (valueName: string): string | null => {
+          const reg = this.providers.registry;
+          const vals = reg?.getItemPropertyValues?.(
+            'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders');
+          const raw = vals?.[valueName];
+          return raw !== undefined ? expand(String(raw)) : null;
+        };
+        if (which.includes('desktop'))                                  return shellFolder('Desktop') ?? `${lookup('USERPROFILE')}\\Desktop`;
+        if (which.includes('mydocuments') || which === 'personal')      return shellFolder('Personal') ?? `${lookup('USERPROFILE')}\\Documents`;
         if (which.includes('userprofile') || which.includes('user'))    return lookup('USERPROFILE');
         if (which.includes('appdata'))                                  return lookup('APPDATA');
         if (which.includes('local'))                                    return lookup('LOCALAPPDATA');

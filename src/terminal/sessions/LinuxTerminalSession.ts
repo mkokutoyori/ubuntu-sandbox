@@ -73,6 +73,7 @@ import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
+import { transportLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 import {
@@ -2957,7 +2958,10 @@ export class LinuxTerminalSession extends TerminalSession {
         this.activeSubShell = new SshInteractiveSubShell(
           session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
           promptHost, linuxRemoteDevice ?? undefined,
-          this.remoteLivenessProbe(host),
+          // Liveness of an OPEN session is read from its own socket, not
+          // provoked with a fresh handshake — otherwise every command
+          // would make the remote log an accept/close pair.
+          transportLiveness(session),
         );
         this._inputBuf = '';
         this.notify();
@@ -3799,6 +3803,10 @@ export class LinuxTerminalSession extends TerminalSession {
    * that opened the session — so an interactive remote shell notices a
    * pulled cable instead of going on driving the remote in memory
    * (docs/PRD-Link-State.md §3.3).
+   */
+  /**
+   * Reachability BEFORE connecting — this one is a genuine probe,
+   * because running `ssh` really does open a connection.
    */
   private remoteLivenessProbe(host: string): (() => boolean) | undefined {
     const probe = (this.device as unknown as {

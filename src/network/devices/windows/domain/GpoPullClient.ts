@@ -61,7 +61,7 @@ function mergeSettings(target: GpoSettings, source: GpoSettings): void {
   }
 }
 
-export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership, hostname: string): GpoPullResult {
+export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership, hostname: string, userSam?: string): GpoPullResult {
   const conn = dialLdap(tcpStack, membership.dcAddress);
   if (!conn.ok || !conn.client) {
     return { ok: false, message: 'The processing of Group Policy failed because of lack of network connectivity to a domain controller.', appliedGpoNames: [], settings: {} };
@@ -115,6 +115,23 @@ export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership
 
   applyLinksFrom(rootDn, ouBlocked);
   if (parentDn) applyLinksFrom(parentDn, false);
+
+  // User Configuration policy (folder redirection, HKCU registry policy, …)
+  // resolves against the logged-on user's own OU, independently of the
+  // computer's placement (this simulator doesn't model Loopback Processing).
+  if (userSam) {
+    const userSearch = ldap.search(rootDn, 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: userSam }, []);
+    const userDn = userSearch.entries[0]?.dn;
+    if (userDn) {
+      const userParentDn = userDn.split(',').slice(1).join(',');
+      if (userParentDn && userParentDn.toLowerCase() !== rootDn.toLowerCase()
+          && userParentDn.toLowerCase() !== (parentDn ?? '').toLowerCase()) {
+        const userOuResult = ldap.search(userParentDn, 'base', { kind: 'present', attr: 'objectClass' }, ['gPOptions']);
+        const userOuBlocked = userOuResult.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'gpoptions')?.values[0] === '1';
+        applyLinksFrom(userParentDn, userOuBlocked);
+      }
+    }
+  }
 
   ldap.unbind();
   return { ok: true, message: '', appliedGpoNames: applied.sort((a, b) => a.order - b.order).map(a => a.name), settings: merged };
