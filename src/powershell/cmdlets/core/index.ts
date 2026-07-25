@@ -136,7 +136,7 @@ import {
   NewADTrustCmdlet, GetADTrustCmdlet,
 } from './ActiveDirectoryCmdlets';
 import {
-  InstallAdcsCertificationAuthorityCmdlet, GetCATemplateCmdlet, GetCertificateCmdlet,
+  InstallAdcsCertificationAuthorityCmdlet, GetCATemplateCmdlet, AddCATemplateCmdlet, GetCertificateCmdlet,
 } from './AdcsCmdlets';
 import { AddComputerCmdlet, RemoveComputerCmdlet, RenameComputerCmdlet, TestComputerSecureChannelCmdlet, InstallADServiceAccountCmdlet, TestADServiceAccountCmdlet } from './ComputerCmdlets';
 import {
@@ -585,6 +585,7 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());
   registry.register(new GetCATemplateCmdlet());
+  registry.register(new AddCATemplateCmdlet());
 
   // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
   registry.register(new AddDnsServerPrimaryZoneCmdlet());

@@ -2535,6 +2535,10 @@ class WindowsAdcsAdapter implements IAdcsProvider {
     return this.requireRole('Get-CATemplate').listTemplates();
   }
 
+  addTemplate(name: string): AdcsOpResult {
+    return this.requireRole('Add-CATemplate').addTemplate(name);
+  }
+
   getCertificate(templateName: string, dnsName: string, requestedEku?: string): CertificateRequestResultInfo {
     const res = this.requireRole('Get-Certificate').submitRequest(`CN=${dnsName}`, templateName, { requestedEku });
     if (!res.ok) return { ok: false, message: res.message };

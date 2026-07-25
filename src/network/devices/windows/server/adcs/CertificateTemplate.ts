@@ -26,4 +26,8 @@ export const DEFAULT_CERT_TEMPLATES: readonly CertTemplateDef[] = [
     name: 'ComputerSigned', displayName: 'Computer',
     eku: ['serverAuth', 'clientAuth'], validityDays: 365,
   },
+  {
+    name: 'SmartcardLogonV2', displayName: 'Smartcard Logon',
+    eku: ['clientAuth', 'smartcardLogon'], validityDays: 365,
+  },
 ] as const;

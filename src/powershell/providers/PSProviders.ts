@@ -688,6 +688,8 @@ export interface IAdcsProvider {
   installCA(caCommonName: string): AdcsOpResult;
   /** `Get-CATemplate` — every certificate template this CA can issue against. */
   listTemplates(): CaTemplateInfo[];
+  /** `Add-CATemplate -TemplateName <name>` — publishes a known template to this CA. */
+  addTemplate(name: string): AdcsOpResult;
   /** `Get-Certificate -Template <name> -DnsName <subject>` — submits and retrieves a new certificate (this simulator's `certreq -submit` never leaves a request "Pending", so enrollment is synchronous). */
   getCertificate(templateName: string, subject: string, requestedEku?: string): CertificateRequestResultInfo;
 }

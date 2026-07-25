@@ -122,6 +122,7 @@ import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
+import { cmdDsregcmd } from './windows/WinDsregcmd';
 import { WindowsCertStore } from './windows/CertStore';
 import { DFSR_PORT, DfsrServerHandler } from './windows/server/dfs/DfsReplicationGroup';
 import { WindowsRdpConfig } from './windows/WindowsRdpConfig';
@@ -2156,6 +2157,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           : res.message;
       }
       case 'gpresult': return this.cmdGpresult();
+      case 'dsregcmd': {
+        const whfb = this.registry.getItemPropertyValues('HKLM\\SOFTWARE\\Policies\\Microsoft\\PassportForWork');
+        const helloEnabledByPolicy = Number(whfb?.['Enabled'] ?? 0) === 1;
+        return cmdDsregcmd({
+          domainJoined: this.domainMembership !== null,
+          domainNetbiosName: this.domainMembership?.netbiosName ?? null,
+          domainDnsName: this.domainMembership?.dnsName ?? null,
+          hostname: this.getHostname(),
+          currentUser: this.userMgr.currentUser,
+          helloEnabledByPolicy,
+        }, args);
+      }
       case 'iisreset': {
         const iis = this.getIisRole();
         if (!iis) return "'iisreset' is not recognized as an internal or external command,\noperable program or batch file.";

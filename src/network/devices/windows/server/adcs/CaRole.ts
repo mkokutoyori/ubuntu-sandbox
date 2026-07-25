@@ -74,6 +74,26 @@ export class WindowsAdcsRole {
   }
 
   /**
+   * `Add-CATemplate -TemplateName <name>` — publishes a template to this
+   * CA so it starts issuing against it. Every template in this simulator's
+   * fixed catalog is already unconditionally issuable (`submitRequest`
+   * matches by name against the whole catalog, no separate "published"
+   * set — PRD §2.2: no template versioning/ACLs), so this only needs to
+   * validate the name is real, matching real AD CS's rejection of an
+   * unknown template.
+   */
+  addTemplate(name: string): AdcsOpResult {
+    if (!this.ca) {
+      return { ok: false, message: 'Add-CATemplate : The Certification Authority is not installed on this computer.' };
+    }
+    const t = this.templates.find(t => t.name.toLowerCase() === name.toLowerCase());
+    if (!t) {
+      return { ok: false, message: `Add-CATemplate : Cannot find a certificate template with name '${name}'.` };
+    }
+    return { ok: true, message: `Add-CATemplate : Template '${t.name}' added to the CA.` };
+  }
+
+  /**
    * `certreq -submit`/`certutil -submit` — issues a certificate against
    * `templateName`, delegating the actual signing to the underlying
    * `CertificateAuthority`. A `requestedEku` outside the template's allowed
