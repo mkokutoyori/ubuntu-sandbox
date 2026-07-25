@@ -185,7 +185,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Networking
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
-  'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
+  'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump', 'tc',
   'iptables', 'iptables-save', 'iptables-restore',
   'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd', 'netfilter-persistent',
   // Editors
