@@ -362,6 +362,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getACLEngine: () => this.aclEngine,
       getIPv6Engine: () => this.ipv6Engine,
       getIPv6AccessLists: () => this.ipv6AccessLists,
+      getBfdAgent: () => this.getBfdAgent(),
     });
     this.dynamicRouting = new RouterDynamicRouting({
       id: this.id,
@@ -3494,6 +3495,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** @internal Used by CLI shells */
   _enableOSPFv3(processId: number = 1): void { this.ospfIntegration.enableOSPFv3(processId); }
+
+  /** Overridden by vendor subclasses that actually own a BfdAgent. */
+  getBfdAgent(): import('../bfd/BfdAgent').BfdAgent | undefined { return undefined; }
 
   /** @internal */
   _getOSPFEngineInternal() { return this.ospfIntegration.getOSPFEngine(); }

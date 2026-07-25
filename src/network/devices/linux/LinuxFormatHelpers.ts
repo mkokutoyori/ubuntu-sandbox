@@ -89,7 +89,13 @@ export function formatPingHeader(target: IPAddress, size: number = 56, hostname?
   return `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
 }
 
-/** One `ping` reply line for a single probe, or null when the probe produced no line. */
+/** True when the probe failed with an ICMP error rather than by timing out. */
+export function isIcmpErrorResult(r: PingResult): boolean {
+  return !r.success && !!r.error
+    && /unreachable|Time to live exceeded/i.test(r.error);
+}
+
+/** One `ping` reply line for a single probe. Every probe produces one. */
 export function formatPingReplyLine(r: PingResult, size: number = 56): string | null {
   if (r.success) {
     const replySize = size + 8; // data size + ICMP header
@@ -105,17 +111,39 @@ export function formatPingReplyLine(r: PingResult, size: number = 56): string | 
       return `From ${match ? match[1] : 'unknown'} icmp_seq=${r.seq} Destination Host Unreachable`;
     }
   }
-  return null;
+  // A probe that simply never came back. Saying so beats printing
+  // nothing: a silent gap between the last reply and the summary is
+  // exactly what a pulled cable used to look like.
+  return `Request timeout for icmp_seq ${r.seq}`;
 }
 
-/** The trailing `--- statistics ---` block shared by block and streaming ping. */
-export function formatPingStats(targetStr: string, count: number, results: PingResult[]): string[] {
+/**
+ * The trailing `--- statistics ---` block shared by block and streaming
+ * ping. `elapsedMs` is the wall time of the run, which real ping always
+ * reports; probes that failed with an ICMP error are counted separately
+ * from plain losses, the way `+N errors` does.
+ */
+export function formatPingStats(
+  targetStr: string,
+  count: number,
+  results: PingResult[],
+  elapsedMs?: number,
+): string[] {
   const received = results.filter(r => r.success);
+  const errors = results.filter(isIcmpErrorResult).length;
   const failed = count - received.length;
+  const loss = count === 0 ? 0 : Math.round((failed / count) * 100);
+  const summary = [
+    `${count} packets transmitted`,
+    `${received.length} received`,
+    ...(errors > 0 ? [`+${errors} errors`] : []),
+    `${loss}% packet loss`,
+    ...(elapsedMs === undefined ? [] : [`time ${Math.round(elapsedMs)}ms`]),
+  ].join(', ');
   const lines = [
     '',
     `--- ${targetStr} ping statistics ---`,
-    `${count} packets transmitted, ${received.length} received, ${count === 0 ? 0 : Math.round((failed / count) * 100)}% packet loss`,
+    summary,
   ];
   if (received.length > 0) {
     const rtts = received.map(r => r.rttMs);

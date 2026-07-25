@@ -300,6 +300,7 @@ export function buildOSPFViewCommands(
   });
 
   trie.registerGreedy('bfd all-interfaces enable', 'Enable BFD on all OSPF interfaces', (_args) => {
+    ctx.r()._getOSPFExtraConfig().bfdAllInterfaces = true;
     return '';
   });
 
@@ -609,6 +610,9 @@ export function registerOSPFInterfaceCommands(
   });
 
   trie.registerGreedy('ospf bfd enable', 'Enable BFD on OSPF interface', (_args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    setPendingOspfIf(ifName, { bfd: true });
     return '';
   });
 

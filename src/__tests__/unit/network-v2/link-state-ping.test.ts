@@ -83,9 +83,23 @@ describe('interactive/streaming ping across a mid-stream unplug (docs/PRD-Link-S
   }, 30000);
 });
 
-describe('a genuinely dropped packet is still silent (P3 — no over-reporting)', () => {
-  it('a plain timeout with the link intact renders nothing, like real ping', () => {
+describe('a dropped packet is reported, not swallowed', () => {
+  // This used to assert silence, matching Linux ping's own habit of
+  // printing nothing for a timeout. That silence is what made a pulled
+  // cable look like a frozen terminal: replies stop, nothing explains
+  // why, and only the summary hints at it. Every probe now says what
+  // happened to it, and a timeout is distinguished from the ICMP error
+  // an unreachable local link produces.
+  it('a plain timeout names the sequence it lost', () => {
     const r: PingResult = { success: false, rttMs: 0, ttl: 0, seq: 1, bytes: 0, fromIP: '', error: 'timeout' };
-    expect(formatPingReplyLine(r, 56)).toBeNull();
+    expect(formatPingReplyLine(r, 56)).toBe('Request timeout for icmp_seq 1');
+  });
+
+  it('an unreachable local link still reports the ICMP error instead', () => {
+    const r: PingResult = {
+      success: false, rttMs: 0, ttl: 0, seq: 2, bytes: 0, fromIP: '',
+      error: 'Destination unreachable from 10.0.9.1',
+    };
+    expect(formatPingReplyLine(r, 56)).toBe('From 10.0.9.1 icmp_seq=2 Destination Host Unreachable');
   });
 });
