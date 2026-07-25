@@ -36,12 +36,47 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     clearAll,
     isConnecting,
     cancelConnecting,
-    connectionSource
+    connectionSource,
+    selectedDeviceId,
+    selectedConnectionId,
   } = useNetworkStore();
 
   const devices = getDevices();
 
   const activePackets = useActivePackets();
+
+  // Screen-reader status line: the canvas had no non-visual feedback for
+  // add/remove/select/connect — a keyboard/AT user got no confirmation an
+  // action actually happened (rapport 09 audit). Diffing against the
+  // previous render's counts/selection keeps this to real state changes,
+  // not a message on every re-render.
+  const [announcement, setAnnouncement] = useState('');
+  const prevDeviceCount = useRef(devices.length);
+  const prevConnectionCount = useRef(connections.length);
+  const prevSelectedDeviceId = useRef(selectedDeviceId);
+  const prevSelectedConnectionId = useRef(selectedConnectionId);
+
+  useEffect(() => {
+    if (devices.length > prevDeviceCount.current) {
+      const added = devices[devices.length - 1];
+      setAnnouncement(added ? `${added.name} added to canvas` : 'Device added to canvas');
+    } else if (devices.length < prevDeviceCount.current) {
+      setAnnouncement('Device removed from canvas');
+    } else if (connections.length > prevConnectionCount.current) {
+      setAnnouncement('Devices connected');
+    } else if (connections.length < prevConnectionCount.current) {
+      setAnnouncement('Connection removed');
+    } else if (selectedDeviceId && selectedDeviceId !== prevSelectedDeviceId.current) {
+      const selected = devices.find(d => d.id === selectedDeviceId);
+      if (selected) setAnnouncement(`${selected.name} selected`);
+    } else if (selectedConnectionId && selectedConnectionId !== prevSelectedConnectionId.current) {
+      setAnnouncement('Connection selected');
+    }
+    prevDeviceCount.current = devices.length;
+    prevConnectionCount.current = connections.length;
+    prevSelectedDeviceId.current = selectedDeviceId;
+    prevSelectedConnectionId.current = selectedConnectionId;
+  }, [devices, connections.length, selectedDeviceId, selectedConnectionId]);
 
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
@@ -178,7 +213,16 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     : null;
 
   return (
-    <div className="relative flex-1 overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div
+      role="application"
+      aria-label="Network topology canvas"
+      className="relative flex-1 overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"
+    >
+      {/* Screen-reader-only status announcements for add/remove/select/connect. */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
+
       {/* Grid background */}
       <div
         className="absolute inset-0 opacity-20"
@@ -302,6 +346,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           onClick={() => setZoom(zoom - 0.1)}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
           disabled={zoom <= 0.25}
+          aria-label="Zoom out"
         >
           <ZoomOut className="w-4 h-4 text-white/70" />
         </button>
@@ -312,6 +357,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           onClick={() => setZoom(zoom + 0.1)}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
           disabled={zoom >= 2}
+          aria-label="Zoom in"
         >
           <ZoomIn className="w-4 h-4 text-white/70" />
         </button>
@@ -319,6 +365,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         <button
           onClick={() => { setZoom(1); setPan(0, 0); }}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
+          aria-label="Reset zoom and pan"
         >
           <Maximize2 className="w-4 h-4 text-white/70" />
         </button>

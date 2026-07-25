@@ -50,8 +50,42 @@ export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
   const midpointInfo = getConnectionMidpointInfo(connection);
   const adjustedMidY = midY + curveFactor * 0.2;
 
+  const connectionLabel =
+    `${connection.type} cable: ${sourceDevice.name} ${connection.sourceInterfaceId} ` +
+    `to ${targetDevice.name} ${connection.targetInterfaceId}${isSelected ? ', selected' : ''}`;
+
+  // A plain SVG shape has no way to receive keyboard focus or announce
+  // itself to a screen reader, so a cable could only be selected/deleted
+  // by clicking (rapport 09 audit). tabIndex + role make the whole <g> a
+  // real focus stop; Enter selects (same as click) and Delete/Backspace
+  // removes it, mirroring NetworkDevice's keyboard handling.
+  const handleKeyDown = (e: React.KeyboardEvent<SVGGElement>) => {
+    switch (e.key) {
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        selectConnection(connection.id);
+        break;
+      case 'Delete':
+      case 'Backspace':
+        e.preventDefault();
+        removeConnection(connection.id);
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
-    <g className="group">
+    <g
+      className="group focus-visible:outline-none"
+      role="button"
+      tabIndex={0}
+      aria-label={connectionLabel}
+      aria-pressed={isSelected}
+      onFocus={() => selectConnection(connection.id)}
+      onKeyDown={handleKeyDown}
+    >
       {/* Invisible wider path for easier clicking */}
       <path
         d={path}

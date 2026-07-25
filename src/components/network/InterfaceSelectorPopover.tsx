@@ -60,6 +60,16 @@ export function InterfaceSelectorPopover({
 }: InterfaceSelectorPopoverProps) {
   const [selectedType, setSelectedType] = useState<ConnectionType>(preselectedType || 'ethernet');
   const popoverRef = useRef<HTMLDivElement>(null);
+  const firstFocusableRef = useRef<HTMLButtonElement>(null);
+
+  // The popover used to open with focus left wherever it was (on the
+  // "Connect" button, several DOM nodes away), so a keyboard user had no
+  // indication it appeared at all short of reading the whole page
+  // (rapport 09 audit). Move focus in on mount; NetworkDevice/Canvas
+  // restore focus sensibly once onCancel/onSelect closes it.
+  useEffect(() => {
+    firstFocusableRef.current?.focus();
+  }, []);
 
   // Build interface list with availability info
   const filterType = isSource ? undefined : preselectedType;
@@ -101,6 +111,9 @@ export function InterfaceSelectorPopover({
   return (
     <div
       ref={popoverRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Select ${isSource ? 'source' : 'target'} interface on ${deviceName}`}
       className="fixed z-50 animate-in fade-in slide-in-from-top-2 duration-150"
       style={{ left: position.x, top: position.y }}
       onClick={(e) => e.stopPropagation()}
@@ -114,14 +127,16 @@ export function InterfaceSelectorPopover({
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <div className="flex items-center gap-2">
-            <Cable className="w-4 h-4 text-primary" />
+            <Cable className="w-4 h-4 text-primary" aria-hidden="true" />
             <span className="text-sm font-medium text-white/90">
               {isSource ? 'Source' : 'Target'}: {deviceName}
             </span>
           </div>
           <button
+            ref={firstFocusableRef}
             onClick={onCancel}
             className="p-1 hover:bg-white/10 rounded transition-colors"
+            aria-label="Cancel interface selection"
           >
             <X className="w-3.5 h-3.5 text-white/50" />
           </button>

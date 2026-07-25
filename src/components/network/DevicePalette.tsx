@@ -6,16 +6,40 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
 import { DEVICE_CATEGORIES, isFullyImplemented } from '@/network';
 import { DeviceIcon } from './DeviceIcon';
+import { useNetworkStore } from '@/store/networkStore';
 import { cn } from '@/lib/utils';
 
 const LIMITED_SIMULATION_HINT =
   'Limited simulation: this device currently behaves as a generic substitute ' +
   '(vendor-specific features are not implemented yet).';
 
+/** Grid cascade so keyboard/click-added devices don't stack exactly on top of each other. */
+const ADD_GRID_COLS = 6;
+const ADD_GRID_STEP = 90;
+const ADD_GRID_ORIGIN = { x: 160, y: 140 };
+
 export function DevicePalette() {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(
     DEVICE_CATEGORIES.map(c => c.id)
   );
+  const addDevice = useNetworkStore(s => s.addDevice);
+  const getDevices = useNetworkStore(s => s.getDevices);
+  const selectDevice = useNetworkStore(s => s.selectDevice);
+
+  // Keyboard/click equivalent of dragging a device onto the canvas — the
+  // only way to add a device used to be HTML5 drag-and-drop, which is
+  // unreachable without a pointer (rapport 09 audit).
+  const addDeviceViaKeyboard = (type: (typeof DEVICE_CATEGORIES)[number]['devices'][number]['type']) => {
+    const count = getDevices().length;
+    const col = count % ADD_GRID_COLS;
+    const row = Math.floor(count / ADD_GRID_COLS);
+    const device = addDevice(
+      type,
+      ADD_GRID_ORIGIN.x + col * ADD_GRID_STEP,
+      ADD_GRID_ORIGIN.y + row * ADD_GRID_STEP,
+    );
+    selectDevice(device.id);
+  };
 
   const toggleCategory = (id: string) => {
     setExpandedCategories(prev =>
@@ -37,6 +61,7 @@ export function DevicePalette() {
           <div key={category.id} className="rounded-lg overflow-hidden">
             <button
               onClick={() => toggleCategory(category.id)}
+              aria-expanded={expandedCategories.includes(category.id)}
               className={cn(
                 "w-full flex items-center gap-2 px-3 py-2 text-sm",
                 "hover:bg-white/5 transition-colors rounded-lg",
@@ -44,9 +69,9 @@ export function DevicePalette() {
               )}
             >
               {expandedCategories.includes(category.id) ? (
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className="w-4 h-4" aria-hidden="true" />
               ) : (
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
               )}
               <span className="font-medium">{category.name}</span>
             </button>
@@ -54,21 +79,25 @@ export function DevicePalette() {
             {expandedCategories.includes(category.id) && (
               <div className="pl-2 pb-2 space-y-1">
                 {category.devices.map(device => (
-                  <div
+                  <button
                     key={device.type}
+                    type="button"
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('deviceType', device.type);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
+                    onClick={() => addDeviceViaKeyboard(device.type)}
+                    aria-label={`Add ${device.name} to canvas${!isFullyImplemented(device.type) ? ' (limited simulation)' : ''}`}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg cursor-grab",
+                      "w-full flex items-center gap-3 px-3 py-2 rounded-lg cursor-grab text-left",
                       "bg-white/5 hover:bg-white/10 border border-transparent",
                       "hover:border-white/20 transition-all group",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
                       "active:cursor-grabbing active:scale-95"
                     )}
                   >
-                    <GripVertical className="w-3 h-3 text-muted-foreground/50 group-hover:text-muted-foreground" />
+                    <GripVertical className="w-3 h-3 text-muted-foreground/50 group-hover:text-muted-foreground" aria-hidden="true" />
                     <DeviceIcon type={device.type} size={20} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-foreground/90 truncate">
@@ -90,7 +119,7 @@ export function DevicePalette() {
                         Limited
                       </span>
                     )}
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
