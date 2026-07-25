@@ -46,6 +46,23 @@ async function buildHuaweiLan(): Promise<{ pc: LinuxPC; huawei: HuaweiRouter }> 
   return { pc, huawei };
 }
 
+async function buildRouterToRouterLan(): Promise<{ huawei: HuaweiRouter; cisco: CiscoRouter }> {
+  const huawei = new HuaweiRouter('huawei1', 0, 0);
+  const cisco = new CiscoRouter('cisco1', 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
+  new Cable('c1').connect(huawei.getPorts()[0], sw.getPorts()[0]);
+  new Cable('c2').connect(cisco.getPorts()[0], sw.getPorts()[1]);
+  for (const cmd of [
+    'system-view', 'interface GigabitEthernet0/0/0',
+    `ip address ${HUAWEI_IP} ${MASK}`, 'undo shutdown', 'quit', 'quit',
+  ]) await huawei.executeCommand(cmd);
+  for (const cmd of [
+    'enable', 'configure terminal', 'interface GigabitEthernet0/0',
+    `ip address ${CISCO_IP} ${MASK}`, 'no shutdown', 'end',
+  ]) await cisco.executeCommand(cmd);
+  return { huawei, cisco };
+}
+
 function listenerPorts(router: CiscoRouter | HuaweiRouter): number[] {
   return (router as unknown as { getTcpStack: () => { listListeners: () => Array<{ localPort: number }> } })
     .getTcpStack().listListeners().map(l => l.localPort);
@@ -140,5 +157,36 @@ describe('telnet toward a router VTY travels the wire', () => {
     expect(listenerPorts(huawei)).not.toContain(23);
     const out = await pc.executeCommand(`telnet ${HUAWEI_IP}`);
     expect(out).toMatch(/Connection refused/);
+  });
+});
+
+describe('outbound telnet FROM a Huawei router follows the real topology', () => {
+  it('reaches a cabled router with default transport', async () => {
+    const { huawei, cisco } = await buildRouterToRouterLan();
+    expect(listenerPorts(cisco)).toContain(23);
+
+    const out = await huawei.executeCommand(`telnet ${CISCO_IP}`);
+
+    expect(out).toMatch(/Connected to/);
+    expect(out).not.toMatch(/Error: Failed to connect/);
+  });
+
+  it('reports failure when the remote vty only accepts ssh', async () => {
+    const { huawei, cisco } = await buildRouterToRouterLan();
+    for (const cmd of [
+      'enable', 'configure terminal', 'line vty 0 4', 'transport input ssh', 'end',
+    ]) await cisco.executeCommand(cmd);
+
+    const out = await huawei.executeCommand(`telnet ${CISCO_IP}`);
+
+    expect(out).toMatch(/Error: Failed to connect to the remote host\./);
+  });
+
+  it('reports failure when there is no route to the target', async () => {
+    const { huawei } = await buildRouterToRouterLan();
+
+    const out = await huawei.executeCommand('telnet 192.0.2.1');
+
+    expect(out).toMatch(/Error: Failed to connect to the remote host\./);
   });
 });

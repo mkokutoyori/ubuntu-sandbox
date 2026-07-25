@@ -1360,6 +1360,10 @@ export class LinuxCommandExecutor {
    * device's incoming-VTY auth verdict decides whether the session is accepted
    * (a line that mandates a password but has none set is refused, matching
    * IOS "Password required, but none set").
+   *
+   * On success this prints the banner and returns — it does not push a
+   * nested interactive session the way `ssh` does (see the Telnet note in
+   * CLAUDE.md's Terminal emulation section).
    */
   private runTelnetClient(args: string[]): { output: string; exitCode: number } {
     const positional = args.filter(a => !a.startsWith('-'));
