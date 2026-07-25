@@ -205,7 +205,7 @@ describe('DirectoryStore — groups', () => {
     const s = store();
     s.newGroup('Engineers');
     const sams = s.listGroups().map(g => g.sam).sort();
-    expect(sams).toEqual(['Domain Admins', 'Domain Computers', 'Domain Users', 'Engineers'].sort());
+    expect(sams).toEqual(['Domain Admins', 'Domain Computers', 'Domain Users', 'Engineers', 'Event Log Readers'].sort());
   });
 });
 
