@@ -88,6 +88,57 @@ describe('the wire carries the remote prompt (docs/PRD-SSH-Unification.md §4 #2
   }, 30000);
 });
 
+describe('the prompt uses the real home from the filesystem, never a guessed path (A1)', () => {
+  async function shellAs(
+    user: string, password: string, addOpts: object = { m: true, s: '/bin/bash' },
+  ): Promise<ISshShellChannel> {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const srv = new LinuxPC('linux-pc', 'PC2');
+    pc.getPorts()[0].configureIP(new IPAddress('10.0.3.1'), MASK);
+    srv.getPorts()[0].configureIP(new IPAddress('10.0.3.2'), MASK);
+    new Cable('c1').connect(pc.getPorts()[0], srv.getPorts()[0]);
+    const um = (srv as unknown as { executor: { userMgr: {
+      useradd: (u: string, o?: object) => void;
+      getUser: (u: string) => { home: string } | undefined;
+      setPassword: (u: string, p: string) => void;
+    } } }).executor.userMgr;
+    if (!um.getUser(user)) um.useradd(user, addOpts);
+    um.setPassword(user, password);
+    return openWireShell(pc, '10.0.3.2', user, password);
+  }
+
+  it('a custom home is collapsed to ~, proving the path comes from passwd', async () => {
+    const channel = await shellAs('svc', 'admin', { m: true, d: '/opt/svcdata', s: '/bin/bash' });
+    const res = await channel.runLine('pwd') as { stdout: string; prompt?: string };
+    expect(res.stdout.trim()).toBe('/opt/svcdata');
+    expect(res.prompt).toContain('svc@');
+    expect(res.prompt).toContain(':~');
+    expect(res.prompt).not.toContain('/home/svc');
+  }, 30000);
+
+  it('the directory the prompt collapses really exists on disk', async () => {
+    const channel = await shellAs('svc', 'admin', { m: true, d: '/opt/svcdata', s: '/bin/bash' });
+    const listed = await channel.runLine('ls -d /opt/svcdata') as { stdout: string; exitCode: number };
+    expect(listed.exitCode).toBe(0);
+    expect(listed.stdout).toContain('/opt/svcdata');
+  }, 30000);
+
+  it('a user whose home was never created lands in / like real Linux, not a phantom ~', async () => {
+    const channel = await shellAs('nohome', 'admin', { s: '/bin/bash' });
+    const res = await channel.runLine('pwd') as { stdout: string; prompt?: string };
+    expect(res.stdout.trim()).toBe('/');
+    expect(res.prompt).toContain('nohome@');
+    expect(res.prompt).toContain(':/');
+    expect(res.prompt).not.toContain(':~');
+  }, 30000);
+
+  it('that missing home is genuinely absent from the filesystem', async () => {
+    const channel = await shellAs('nohome', 'admin', { s: '/bin/bash' });
+    const listed = await channel.runLine('ls -d /home/nohome') as { stdout: string; stderr: string };
+    expect(`${listed.stdout}${listed.stderr}`).toContain('No such file or directory');
+  }, 30000);
+});
+
 describe('the prompt contract stays optional (docs/PRD-SSH-Unification.md §4 #1, A1)', () => {
   it('a Cisco router still answers show commands over the wire', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');

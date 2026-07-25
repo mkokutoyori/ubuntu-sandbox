@@ -332,7 +332,12 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (this.device instanceof LinuxMachine) {
       const device = this.device;
       const interactive = opts?.interactive ?? false;
-      const session = device.openShellSession({ user: userCtx.username, cwd });
+      // An account can exist in /etc/passwd with no home on disk
+      // (`useradd` without -m). Real sshd reports "Could not chdir to home
+      // directory" and starts the session in `/` rather than in a
+      // directory that isn't there.
+      const startCwd = this.vfs.exists(cwd) ? cwd : '/';
+      const session = device.openShellSession({ user: userCtx.username, cwd: startCwd });
       return {
         execute: async (line: string) => {
           const stdout = await device.executeCommandInSession(line, session, { color: interactive });
@@ -340,11 +345,14 @@ export class LinuxSshServerContext implements ISshServerContext {
           return { stdout, stderr: '', exitCode };
         },
         getPrompt: () => {
-          const home = `/home/${userCtx.username}`;
+          // The authenticated user's real home from /etc/passwd — never a
+          // guessed `/home/<name>`, which would be wrong for root (/root)
+          // and for any account with a custom home.
+          const home = userCtx.homeDirectory;
           const shortCwd = session.cwd === home ? '~'
             : session.cwd.startsWith(`${home}/`) ? `~${session.cwd.slice(home.length)}`
             : session.cwd;
-          return `${userCtx.username}@${device.getSshHostname()}:${shortCwd}$ `;
+          return `${userCtx.username}@${device.getSshHostname()}:${shortCwd}${userCtx.isRoot() ? '#' : '$'} `;
         },
         // A persistent shell channel ends by hanging up (real terminal
         // close); a one-shot exec ran its single command to completion,
