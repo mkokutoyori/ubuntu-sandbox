@@ -43,6 +43,65 @@ export class AddComputerCmdlet implements ICmdlet {
   }
 }
 
+/** `Remove-Computer -UnjoinDomainCredential <cred>` (docs/PRD-Netdom.md §2.1 P4) — same underlying primitive as `netdom remove` (`IComputerProvider.remove()`), a real LDAP `DelRequest` against the DC. */
+export class RemoveComputerCmdlet implements ICmdlet {
+  readonly name = 'remove-computer';
+  readonly displayName = 'Remove-Computer';
+  readonly aliases = [] as const;
+  readonly parameters = ['UnjoinDomainCredential', 'WorkgroupName', 'Restart', 'Force', 'PassThru'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const computer = ctx.providers.computer;
+    if (!computer) {
+      ctx.emitError('Remove-Computer : The term \'Remove-Computer\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      return null;
+    }
+    if (!computer.getDomainInfo()) {
+      ctx.emitError('Remove-Computer : Computer failed to be un-joined from the domain: This computer is not currently joined to a domain.');
+      return null;
+    }
+    const credentialRaw = ctx.named['unjoindomaincredential'] !== undefined ? psValueToString(ctx.named['unjoindomaincredential']) : '';
+    if (!credentialRaw) {
+      ctx.emitError('Remove-Computer : Cannot process command because of one or more missing mandatory parameters: UnjoinDomainCredential.');
+      return null;
+    }
+    const credential = parseCredentialArg(credentialRaw);
+    const res = computer.remove(credential);
+    if (!res.ok) { ctx.emitError(`Remove-Computer : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+/** `Rename-Computer -NewName <Name> [-DomainCredential <cred>]` (docs/PRD-Netdom.md §2.1 P5) — same underlying primitive as `netdom renamecomputer` (`IComputerProvider.rename()`): renames locally and, if domain-joined, the AD computer object too. */
+export class RenameComputerCmdlet implements ICmdlet {
+  readonly name = 'rename-computer';
+  readonly displayName = 'Rename-Computer';
+  readonly aliases = [] as const;
+  readonly parameters = ['NewName', 'DomainCredential', 'LocalCredential', 'Restart', 'Force', 'PassThru'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const computer = ctx.providers.computer;
+    if (!computer) {
+      ctx.emitError('Rename-Computer : The term \'Rename-Computer\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      return null;
+    }
+    const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[0] ?? '');
+    if (!newName) {
+      ctx.emitError('Rename-Computer : Cannot process command because of one or more missing mandatory parameters: NewName.');
+      return null;
+    }
+    const credentialRaw = ctx.named['domaincredential'] !== undefined ? psValueToString(ctx.named['domaincredential']) : '';
+    const credential = credentialRaw ? parseCredentialArg(credentialRaw) : undefined;
+    if (computer.getDomainInfo() && !credential) {
+      ctx.emitError('Rename-Computer : Cannot process command because of one or more missing mandatory parameters: DomainCredential.');
+      return null;
+    }
+    const res = computer.rename(newName, credential);
+    if (!res.ok) { ctx.emitError(`Rename-Computer : ${res.message}`); return null; }
+    return null;
+  }
+}
+
 export class TestComputerSecureChannelCmdlet implements ICmdlet {
   readonly name = 'test-computersecurechannel';
   readonly displayName = 'Test-ComputerSecureChannel';

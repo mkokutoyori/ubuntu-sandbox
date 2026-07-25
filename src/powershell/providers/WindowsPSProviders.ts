@@ -2022,14 +2022,7 @@ class WindowsComputerAdapter implements IComputerProvider {
   }
 
   testSecureChannel(): boolean {
-    const membership = this.device().getDomainMembership();
-    if (!membership) return false;
-    const conn = dialLdap(this.pc.getTcpStack(), membership.dcAddress);
-    if (!conn.ok || !conn.client) return false;
-    const sam = `${this.pc.getHostname()}$`;
-    const bind = conn.client.bind(sam, membership.machineSecret);
-    conn.client.unbind();
-    return bind.ok;
+    return this.pc.testSecureChannel();
   }
 
   installServiceAccount(identity: string): AdOpResult {
@@ -2059,6 +2052,14 @@ class WindowsComputerAdapter implements IComputerProvider {
   testServiceAccount(identity: string): boolean {
     const sam = identity.endsWith('$') ? identity : `${identity}$`;
     return this.device().hasServiceAccountInstalled(sam);
+  }
+
+  remove(credential: { username: string; password: string }): AdOpResult {
+    return this.pc.removeFromDomain(credential.username, credential.password);
+  }
+
+  rename(newName: string, credential?: { username: string; password: string }): AdOpResult {
+    return this.pc.renameComputer(newName, credential);
   }
 }
 

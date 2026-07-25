@@ -109,6 +109,253 @@ describe('netdom join — cmd-level equivalent of Add-Computer', () => {
   });
 });
 
+describe('netdom verify — cmd-level equivalent of Test-ComputerSecureChannel (docs/PRD-Netdom.md §2.1 P1)', () => {
+  it('fails honestly on a machine that has never joined a domain', async () => {
+    const { client } = await buildLan();
+    const out = await client.executeCmdCommand('netdom verify CLIENT1');
+    expect(out).toMatch(/failed to complete successfully/i);
+    expect(out).not.toMatch(/command completed successfully/i);
+  });
+
+  it('succeeds on a freshly joined, reachable machine', async () => {
+    const { client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const out = await client.executeCmdCommand('netdom verify CLIENT1');
+    expect(out).toMatch(/command completed successfully/i);
+    expect(out).toMatch(/has been verified/i);
+  });
+
+  it('fails when the DC is unreachable after a successful join', async () => {
+    const { client, cClient } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    cClient.disconnect();
+    const out = await client.executeCmdCommand('netdom verify CLIENT1');
+    expect(out).toMatch(/failed to complete successfully/i);
+  });
+
+  it('fails with ERROR_NO_SUCH_DOMAIN when /Domain: names a domain this machine is not joined to', async () => {
+    const { client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const out = await client.executeCmdCommand('netdom verify CLIENT1 /Domain:other.local');
+    expect(out).toMatch(/ERROR_NO_SUCH_DOMAIN/);
+    expect(out).toMatch(/failed to complete successfully/i);
+  });
+
+  it('Test-ComputerSecureChannel (PowerShell) agrees with netdom verify (cmd) — same underlying primitive', async () => {
+    const { client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const psOut = await run(ps(client), 'Test-ComputerSecureChannel');
+    const cmdOut = await client.executeCmdCommand('netdom verify CLIENT1');
+    expect(psOut.trim()).toBe('True');
+    expect(cmdOut).toMatch(/command completed successfully/i);
+  });
+});
+
+describe('netdom reset/resetpwd — secure-channel secret rotation (docs/PRD-Netdom.md §2.1 P2/P3)', () => {
+  it('netdom reset genuinely rotates the machine secret on both sides', async () => {
+    const { dc, client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const oldSecret = client.getDomainMembership()!.machineSecret;
+    const out = await client.executeCmdCommand('netdom reset CLIENT1 /Domain:lab.local /UserO:Administrator /PasswordO:P@ssw0rd');
+    expect(out).toMatch(/command completed successfully/i);
+    const newSecret = client.getDomainMembership()!.machineSecret;
+    expect(newSecret).not.toBe(oldSecret);
+    expect(dc.getDirectoryStore()!.getComputer('CLIENT1')!.machineSecret).toBe(newSecret);
+    // The old secret no longer binds; verify (which uses the freshly-stored local secret) still succeeds.
+    expect(await client.executeCmdCommand('netdom verify CLIENT1')).toMatch(/command completed successfully/i);
+  });
+
+  it('netdom reset fails with a bad admin credential and leaves the secret untouched', async () => {
+    const { client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const oldSecret = client.getDomainMembership()!.machineSecret;
+    const out = await client.executeCmdCommand('netdom reset CLIENT1 /Domain:lab.local /UserO:Administrator /PasswordO:wrongpassword');
+    expect(out).toMatch(/failed to complete successfully/i);
+    expect(client.getDomainMembership()!.machineSecret).toBe(oldSecret);
+  });
+
+  it('netdom reset fails cleanly on a machine that was never joined', async () => {
+    const { client } = await buildLan();
+    const out = await client.executeCmdCommand('netdom reset CLIENT1 /Domain:lab.local /UserO:Administrator /PasswordO:P@ssw0rd');
+    expect(out).toMatch(/not joined to a domain/i);
+  });
+
+  it('netdom resetpwd targets an explicit /Server: and rotates the same underlying secret', async () => {
+    const { dc, client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const out = await client.executeCmdCommand('netdom resetpwd /Server:192.168.40.10 /UserD:Administrator /PasswordD:P@ssw0rd');
+    expect(out).toMatch(/command completed successfully/i);
+    expect(dc.getDirectoryStore()!.getComputer('CLIENT1')!.machineSecret).toBe(client.getDomainMembership()!.machineSecret);
+  });
+});
+
+describe('netdom remove / Remove-Computer — unjoin (docs/PRD-Netdom.md §2.1 P4)', () => {
+  it('netdom remove deletes the DC-side computer account and returns the machine to a workgroup', async () => {
+    const { dc, client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    expect(dc.getDirectoryStore()!.getComputer('CLIENT1')).not.toBeNull();
+    const out = await client.executeCmdCommand('netdom remove CLIENT1 /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd');
+    expect(out).toMatch(/command completed successfully/i);
+    expect(client.getDomainMembership()).toBeNull();
+    expect(dc.getDirectoryStore()!.getComputer('CLIENT1')).toBeNull();
+  });
+
+  it('a machine can rejoin under the same name after netdom remove, with no leftover conflict', async () => {
+    const { dc, client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    await client.executeCmdCommand('netdom remove CLIENT1 /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd');
+    const out = await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    expect(out).toMatch(/successfully joined/i);
+    expect(dc.getDirectoryStore()!.getComputer('CLIENT1')).not.toBeNull();
+  });
+
+  it('netdom remove fails cleanly on a machine that was never joined', async () => {
+    const { client } = await buildLan();
+    const out = await client.executeCmdCommand('netdom remove CLIENT1 /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd');
+    expect(out).toMatch(/not joined to a domain/i);
+  });
+
+  it('Remove-Computer (PowerShell) produces the same effect as netdom remove (cmd)', async () => {
+    const { dc, member } = await buildLan();
+    await run(ps(member), 'Add-Computer -DomainName lab.local -Credential "Administrator:P@ssw0rd" -Server 192.168.40.10');
+    const out = await run(ps(member), 'Remove-Computer -UnjoinDomainCredential "Administrator:P@ssw0rd"');
+    expect(out).toBe('');
+    expect(member.getDomainMembership()).toBeNull();
+    expect(dc.getDirectoryStore()!.getComputer('SRV1')).toBeNull();
+  });
+
+  it('Remove-Computer fails on a machine that is not domain-joined', async () => {
+    const { member } = await buildLan();
+    const out = await run(ps(member), 'Remove-Computer -UnjoinDomainCredential "Administrator:P@ssw0rd"');
+    expect(out).toMatch(/not currently joined to a domain/i);
+  });
+});
+
+describe('netdom renamecomputer/computername + Rename-Computer (docs/PRD-Netdom.md §2.1 P5/P6)', () => {
+  it('netdom renamecomputer renames the machine locally and its AD computer object (SPN/sAMAccountName)', async () => {
+    const { dc, client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const out = await client.executeCmdCommand('netdom renamecomputer CLIENT1 /NewName:CLIENT1B /UserD:Administrator /PasswordD:P@ssw0rd');
+    expect(out).toMatch(/command completed successfully/i);
+    expect(client.getHostname()).toBe('CLIENT1B');
+    expect(dc.getDirectoryStore()!.getComputer('CLIENT1')).toBeNull();
+    const renamed = dc.getDirectoryStore()!.getComputer('CLIENT1B');
+    expect(renamed).not.toBeNull();
+    expect(renamed!.servicePrincipalNames).toContain('HOST/CLIENT1B');
+  });
+
+  it('netdom renamecomputer fails cleanly with a bad credential, leaving both sides unchanged', async () => {
+    const { dc, client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const out = await client.executeCmdCommand('netdom renamecomputer CLIENT1 /NewName:CLIENT1B /UserD:Administrator /PasswordD:wrongpassword');
+    expect(out).toMatch(/failed to complete successfully/i);
+    expect(client.getHostname()).toBe('CLIENT1');
+    expect(dc.getDirectoryStore()!.getComputer('CLIENT1')).not.toBeNull();
+  });
+
+  it('a workgroup (non-domain-joined) machine can be renamed locally with no credential', async () => {
+    const { member } = await buildLan();
+    const out = await member.executeCmdCommand('netdom renamecomputer SRV1 /NewName:SRV1B');
+    expect(out).toMatch(/command completed successfully/i);
+    expect(member.getHostname()).toBe('SRV1B');
+  });
+
+  it('netdom computername /Enumerate reports the current primary name', async () => {
+    const { client } = await buildLan();
+    const out = await client.executeCmdCommand('netdom computername CLIENT1 /Enumerate');
+    expect(out).toMatch(/CLIENT1/);
+    expect(out).toMatch(/command completed successfully/i);
+  });
+
+  it('netdom computername /MakePrimary produces the same effect as renamecomputer', async () => {
+    const { dc, client } = await buildLan();
+    await client.executeCmdCommand('netdom join /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const out = await client.executeCmdCommand('netdom computername CLIENT1 /MakePrimary:CLIENT1C /UserD:Administrator /PasswordD:P@ssw0rd');
+    expect(out).toMatch(/command completed successfully/i);
+    expect(client.getHostname()).toBe('CLIENT1C');
+    expect(dc.getDirectoryStore()!.getComputer('CLIENT1C')).not.toBeNull();
+  });
+
+  it('Rename-Computer (PowerShell) produces the same effect as netdom renamecomputer (cmd)', async () => {
+    const { dc, member } = await buildLan();
+    await run(ps(member), 'Add-Computer -DomainName lab.local -Credential "Administrator:P@ssw0rd" -Server 192.168.40.10');
+    const out = await run(ps(member), 'Rename-Computer -NewName SRV1B -DomainCredential "Administrator:P@ssw0rd"');
+    expect(out).toBe('');
+    expect(member.getHostname()).toBe('SRV1B');
+    expect(dc.getDirectoryStore()!.getComputer('SRV1B')).not.toBeNull();
+  });
+
+  it('Rename-Computer requires -DomainCredential when domain-joined', async () => {
+    const { member } = await buildLan();
+    await run(ps(member), 'Add-Computer -DomainName lab.local -Credential "Administrator:P@ssw0rd" -Server 192.168.40.10');
+    const out = await run(ps(member), 'Rename-Computer -NewName SRV1B');
+    expect(out).toMatch(/missing mandatory parameters: DomainCredential/i);
+    expect(member.getHostname()).toBe('SRV1');
+  });
+});
+
+describe('netdom query pdc/dc/dclist/ou — extension of query fsmo (docs/PRD-Netdom.md §2.1 P7)', () => {
+  it('netdom query pdc reports the domain PDC Emulator FQDN', async () => {
+    const { dc } = await buildLan();
+    const out = await dc.executeCmdCommand('netdom query pdc');
+    expect(out).toMatch(/DC1\.lab\.local/i);
+    expect(out).toMatch(/command completed successfully/i);
+  });
+
+  it('netdom query dc / dclist list the same domain controllers as Get-ADDomainController', async () => {
+    const { dc } = await buildLan();
+    const dcOut = await dc.executeCmdCommand('netdom query dc');
+    const dclistOut = await dc.executeCmdCommand('netdom query dclist');
+    const psOut = await run(ps(dc), '(Get-ADDomainController -Filter *).Name');
+    expect(dcOut).toContain('DC1');
+    expect(dclistOut).toContain('DC1');
+    expect(psOut.trim()).toBe('DC1');
+  });
+
+  it('netdom query ou lists the same OUs as Get-ADOrganizationalUnit (Domain Controllers OU present by default)', async () => {
+    const { dc } = await buildLan();
+    const out = await dc.executeCmdCommand('netdom query ou');
+    expect(out).toMatch(/OU=Domain Controllers/i);
+    expect(out).toMatch(/command completed successfully/i);
+    const psOut = await run(ps(dc), '(Get-ADOrganizationalUnit -Filter *).DistinguishedName');
+    expect(psOut).toMatch(/OU=Domain Controllers/i);
+  });
+
+  it('netdom query pdc/dc/ou fail cleanly on a machine that is not a domain controller', async () => {
+    const { client } = await buildLan();
+    expect(await client.executeCmdCommand('netdom query pdc')).toMatch(/not a domain controller/i);
+    expect(await client.executeCmdCommand('netdom query dc')).toMatch(/not a domain controller/i);
+    expect(await client.executeCmdCommand('netdom query ou')).toMatch(/not a domain controller/i);
+  });
+});
+
+describe('netdom add — pre-stages a computer account without joining (docs/PRD-Netdom.md §2.1 P8)', () => {
+  it('pre-creates the account without changing this machine\'s own domain membership', async () => {
+    const { dc, client } = await buildLan();
+    const out = await client.executeCmdCommand('netdom add PRESTAGED1 /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    expect(out).toMatch(/command completed successfully/i);
+    expect(dc.getDirectoryStore()!.getComputer('PRESTAGED1')).not.toBeNull();
+    expect(client.getDomainMembership()).toBeNull();
+    expect(client.getHostname()).toBe('CLIENT1');
+  });
+
+  it('a machine can later join under the pre-staged name with no conflict', async () => {
+    const { dc, client } = await buildLan();
+    await client.executeCmdCommand('netdom add PRESTAGED1 /Domain:lab.local /UserD:Administrator /PasswordD:P@ssw0rd /Server:192.168.40.10');
+    const out = await client.executeCmdCommand('netdom renamecomputer CLIENT1 /NewName:PRESTAGED1');
+    expect(out).toMatch(/command completed successfully/i);
+    expect(client.getHostname()).toBe('PRESTAGED1');
+    void dc;
+  });
+
+  it('fails with a bad admin credential', async () => {
+    const { dc, client } = await buildLan();
+    const out = await client.executeCmdCommand('netdom add PRESTAGED1 /Domain:lab.local /UserD:Administrator /PasswordD:wrongpassword /Server:192.168.40.10');
+    expect(out).toMatch(/failed to complete successfully/i);
+    expect(dc.getDirectoryStore()!.getComputer('PRESTAGED1')).toBeNull();
+  });
+});
+
 describe('Domain logon — LAB\\alice / alice@lab.local, validated over the real network', () => {
   it('succeeds with the correct password and populates the domain session', async () => {
     const { member } = await buildLan();

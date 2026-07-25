@@ -243,6 +243,24 @@ export class SshInteractiveSubShell implements ISubShell {
     return this.channel.complete(line);
   }
 
+  /** True when `?` is a help key on this remote rather than a plain character. */
+  supportsInlineHelp(): boolean {
+    if (this.nestedHop) return this.nestedHop.supportsInlineHelp();
+    return this.channel.supportsInlineHelp();
+  }
+
+  /**
+   * The help the device would print for `<line>?`, without consuming the
+   * line the user is composing or changing the CLI mode.
+   */
+  async inlineHelpAsync(line: string): Promise<string[]> {
+    if (this.nestedHop) return this.nestedHop.inlineHelpAsync(line);
+    if (this.inFlight) return [];
+    const result = await this.run(`${line}?`);
+    const text = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+    return text.split('\n').filter((l) => l.length > 0);
+  }
+
   /** Ctrl+D exits the sub-shell. */
   handleKey(e: KeyEvent): boolean {
     if (this.nestedHop) return this.nestedHop.handleKey(e);

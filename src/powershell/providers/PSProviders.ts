@@ -434,6 +434,20 @@ export interface IComputerProvider {
   installServiceAccount(identity: string): AdOpResult;
   /** `Test-ADServiceAccount -Identity <gMSA|sMSA>` — true only if `Install-ADServiceAccount` already succeeded on this machine. */
   testServiceAccount(identity: string): boolean;
+  /**
+   * `Remove-Computer`/`netdom remove` (docs/PRD-Netdom.md §2.1 P4) —
+   * deletes this machine's computer account on the DC via a real LDAP
+   * `DelRequest` and returns the machine to a workgroup. Real AD
+   * deletes the object outright rather than disabling it.
+   */
+  remove(credential: { username: string; password: string }): AdOpResult;
+  /**
+   * `Rename-Computer`/`netdom renamecomputer` (docs/PRD-Netdom.md §2.1
+   * P5) — renames this machine locally and, if domain-joined, its AD
+   * computer object too (real LDAP `ModifyDNRequest`+`ModifyRequest`).
+   * `credential` is required when domain-joined, optional in a workgroup.
+   */
+  rename(newName: string, credential?: { username: string; password: string }): AdOpResult;
 }
 
 // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────

@@ -187,6 +187,8 @@ export class DirectoryStore {
   }
   getTrust(remoteRealm: string): TrustRecord | null { return this.trustRegistry.getTrust(remoteRealm); }
   listTrusts(): TrustInfo[] { return this.trustRegistry.listTrusts(); }
+  removeTrust(remoteRealm: string): TrustOpResult { return this.trustRegistry.removeTrust(remoteRealm); }
+  resetTrustSecret(remoteRealm: string, newInterrealmKey: string): TrustOpResult { return this.trustRegistry.resetTrustSecret(remoteRealm, newInterrealmKey); }
 
   /** The domain root's DN — the default `New-GPLink -Target` for a domain-wide policy (Default Domain Policy). */
   getDomainDn(): string { return formatDN(this.tree.getRootDn()); }
