@@ -1,6 +1,7 @@
 import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
+import { renderListLine, type ListChars } from './editorRender';
 
 export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
 export type VimVariant = 'vim' | 'vi';
@@ -426,17 +427,11 @@ export class VimEngine {
    *  load time, so any \r left here is genuine corruption to surface). */
   renderListLine(line: string): string {
     if (!this.listModeEnabled) return line;
-    const trailStart = this.listCharsCfg.trail ? line.trimEnd().length : line.length;
-    let out = '';
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '\t') out += this.listCharsCfg.tab;
-      else if (ch === '\r') out += '^M';
-      else if (ch === ' ' && i >= trailStart && this.listCharsCfg.trail) out += this.listCharsCfg.trail;
-      else out += ch;
-    }
-    return out + this.listCharsCfg.eol;
+    return renderListLine(line, this.listCharsCfg);
   }
+
+  /** `:set listchars` as it stands — carried in the view for a remote renderer. */
+  get listChars(): ListChars { return { ...this.listCharsCfg }; }
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
   /** Text register content, `null` if empty/unset. Named registers, the unnamed register ("), and "/. */

@@ -68,6 +68,9 @@ import {
   hostKeyYes,
 } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
 
 /** Mirrors LinuxInteractionPlanner.ts's MAX_SU_ATTEMPTS (real su retries 3x). */
 const MAX_SU_ATTEMPTS = 3;
@@ -266,6 +269,25 @@ export class SshInteractiveSubShell implements ISubShell {
     const result = await this.run(`${line}?`);
     const text = `${result.stdout ?? ''}${result.stderr ?? ''}`;
     return text.split('\n').filter((l) => l.length > 0);
+  }
+
+  /**
+   * Ask the remote to open an editor for `line`. Resolves with the first
+   * screen when it did, or null when the line opens none — the engine
+   * and the file both stay on the remote
+   * (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  async openRemoteEditor(line: string): Promise<EditorView | null> {
+    if (this.nestedHop) return this.nestedHop.openRemoteEditor(line);
+    if (this.inFlight) return null;
+    if (!parseEditorLaunch(line)) return null;
+    return this.channel.openEditor(line);
+  }
+
+  /** The channel an open remote editor exchanges keys and screens over. */
+  editorTransport(): RemoteEditorTransport {
+    if (this.nestedHop) return this.nestedHop.editorTransport();
+    return this.channel;
   }
 
   /** Ctrl+D exits the sub-shell. */

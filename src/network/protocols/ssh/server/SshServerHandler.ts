@@ -518,6 +518,19 @@ export class SshServerHandler {
           break;
         }
 
+        case 'editor_paste':
+        case 'editor_cursor': {
+          const channelId = parsed.channelId as number;
+          const editor = channels.get(channelId)?.editor;
+          const view = parsed.op === 'editor_paste'
+            ? editor?.applyPaste?.(typeof parsed.data === 'string' ? parsed.data : '')
+            : editor?.moveCursorToDisplayOffset?.(
+                typeof parsed.offset === 'number' ? parsed.offset : 0,
+              );
+          conn.write(JSON.stringify({ op: 'editor_view', channelId, view: view ?? null }));
+          break;
+        }
+
         case 'editor_close': {
           const channelId = parsed.channelId as number;
           const info = channels.get(channelId);

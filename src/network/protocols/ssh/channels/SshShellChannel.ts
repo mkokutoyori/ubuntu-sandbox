@@ -126,6 +126,26 @@ export class SshShellChannel
     });
   }
 
+  pasteIntoEditor(text: string): Promise<EditorView | null> {
+    if (!this._isOpen) return Promise.resolve(null);
+    return new Promise<EditorView | null>((resolve) => {
+      this.pendingEditor = resolve;
+      this.conn.write(
+        JSON.stringify({ op: 'editor_paste', channelId: this.channelId, data: text }),
+      );
+    });
+  }
+
+  moveEditorCursor(offset: number): Promise<EditorView | null> {
+    if (!this._isOpen) return Promise.resolve(null);
+    return new Promise<EditorView | null>((resolve) => {
+      this.pendingEditor = resolve;
+      this.conn.write(
+        JSON.stringify({ op: 'editor_cursor', channelId: this.channelId, offset }),
+      );
+    });
+  }
+
   closeEditor(): void {
     if (!this._isOpen) return;
     this.conn.write(JSON.stringify({ op: 'editor_close', channelId: this.channelId }));

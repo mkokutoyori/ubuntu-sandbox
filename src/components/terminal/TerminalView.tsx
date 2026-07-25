@@ -17,6 +17,10 @@
 import React, { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
+import type {
+  RemoteNanoController,
+  RemoteVimController,
+} from '@/terminal/editors/RemoteEditorController';
 import type { TerminalSession, OutputLine, InputMode, TerminalTheme } from '@/terminal/sessions/TerminalSession';
 import type { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
@@ -180,6 +184,36 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     el.addEventListener('keydown', handler);
     return () => el.removeEventListener('keydown', handler);
   }, [session]);
+
+  // An editor whose buffer lives on the remote: the very same overlays,
+  // driven by a proxy over the SSH channel instead of a local engine
+  // (docs/PRD-SSH-Unification.md §4bis B3).
+  if (session.currentInputMode.type === 'remote-editor') {
+    const remote = session.currentInputMode;
+    const done = () => session.foreground.editorExit(remote.controller.savedOnExit);
+    return (
+      <div className="h-full w-full flex flex-col">
+        {remote.editorType === 'nano' ? (
+          <NanoEditor
+            filePath={remote.filePath}
+            initialContent=""
+            isNewFile={false}
+            driver={remote.controller as RemoteNanoController}
+            onExit={done}
+          />
+        ) : (
+          <VimEditor
+            filePath={remote.filePath}
+            initialContent=""
+            isNewFile={false}
+            editorName={remote.editorType === 'vi' ? 'vi' : 'vim'}
+            driver={remote.controller as RemoteVimController}
+            onExit={done}
+          />
+        )}
+      </div>
+    );
+  }
 
   if (session.currentInputMode.type === 'editor') {
     const editorMode = session.currentInputMode;

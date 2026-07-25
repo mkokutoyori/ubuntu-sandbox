@@ -9,8 +9,11 @@
  */
 
 import type { EditorFsContext } from './EditorFsContext';
+import type { NanoMode, PendingReplaceMatch } from './NanoEngine';
+import type { PendingSubstMatch, PendingSwapRecovery, VimMode, VimVariant } from './VimEngine';
 import type { EditorKeyInput } from './EditorKeyInput';
 import type { EditorName } from './editorLaunch';
+import type { ListChars } from './editorRender';
 
 export interface EditorViewBase {
   readonly filePath: string;
@@ -26,8 +29,8 @@ export interface EditorViewBase {
 
 export interface VimEditorView extends EditorViewBase {
   readonly kind: 'vim';
-  readonly variant: 'vi' | 'vim';
-  readonly mode: string;
+  readonly variant: VimVariant;
+  readonly mode: VimMode;
   readonly content: string;
   readonly message: string;
   readonly commandLineText: string;
@@ -39,13 +42,15 @@ export interface VimEditorView extends EditorViewBase {
   readonly isRecordingMacro: boolean;
   readonly recordingMacroName: string | null;
   readonly pendingBinaryWarning: string | null;
-  readonly pendingSubstMatch: unknown;
-  readonly pendingSwapRecovery: unknown;
+  readonly pendingSubstMatch: PendingSubstMatch | null;
+  readonly pendingSwapRecovery: PendingSwapRecovery | null;
+  /** `:set listchars` — the renderer applies it, so `:set list` works remotely. */
+  readonly listChars: ListChars;
 }
 
 export interface NanoEditorView extends EditorViewBase {
   readonly kind: 'nano';
-  readonly mode: string;
+  readonly mode: NanoMode;
   readonly statusMessage: string;
   readonly helpText: string;
   readonly displayContent: string;
@@ -59,7 +64,7 @@ export interface NanoEditorView extends EditorViewBase {
   readonly regexSearchEnabled: boolean;
   readonly replaceSearchQuery: string;
   readonly replaceWithText: string;
-  readonly pendingReplaceMatch: unknown;
+  readonly pendingReplaceMatch: PendingReplaceMatch | null;
 }
 
 export type EditorView = VimEditorView | NanoEditorView;
@@ -71,6 +76,10 @@ export type EditorView = VimEditorView | NanoEditorView;
 export interface EditorSession {
   readonly view: EditorView;
   applyKey(key: EditorKeyInput): EditorView;
+  /** Clipboard paste, where the engine treats it as more than keystrokes. */
+  applyPaste?(text: string): EditorView;
+  /** Click-to-position, in rendered columns. */
+  moveCursorToDisplayOffset?(offset: number): EditorView;
   close(): void;
 }
 

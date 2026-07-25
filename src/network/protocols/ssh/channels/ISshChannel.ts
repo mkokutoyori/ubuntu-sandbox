@@ -71,6 +71,10 @@ export interface ISshShellChannel extends ISshChannel {
   openEditor(commandLine: string): Promise<EditorView | null>;
   /** Feed one keystroke to the open editor and get the fresh screen. */
   sendEditorKey(key: EditorKeyInput): Promise<EditorView | null>;
+  /** Clipboard paste into the open editor. */
+  pasteIntoEditor(text: string): Promise<EditorView | null>;
+  /** Click-to-position inside the open editor, in rendered columns. */
+  moveEditorCursor(offset: number): Promise<EditorView | null>;
   /** Abandon the editor session without waiting for its own exit key. */
   closeEditor(): void;
   /**

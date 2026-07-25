@@ -52,6 +52,7 @@ function vimSession(variant: 'vi' | 'vim', seed: EditorSessionSeed): EditorSessi
     pendingBinaryWarning: engine.pendingBinaryWarning,
     pendingSubstMatch: engine.pendingSubstMatch,
     pendingSwapRecovery: engine.pendingSwapRecovery,
+    listChars: engine.listChars,
   });
   return {
     get view() { return view(); },
@@ -98,6 +99,8 @@ function nanoSession(seed: EditorSessionSeed): EditorSession {
   return {
     get view() { return view(); },
     applyKey: (key) => { engine.applyKey(key); return view(); },
+    applyPaste: (text) => { engine.applyPaste(text); return view(); },
+    moveCursorToDisplayOffset: (offset) => { engine.moveCursorToDisplayOffset(offset); return view(); },
     close: () => { if (!engine.exited) engine.applyKey({ key: 'x', ctrl: true }); },
   };
 }
