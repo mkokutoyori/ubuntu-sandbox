@@ -38,6 +38,8 @@ const HOST_KEY_PUB_PATH = `${SSH_DIR}\\ssh_host_ed25519_key.pub`;
 
 export interface WindowsShellExecutor {
   executeCmdCommand(line: string): Promise<string>;
+  /** Current cmd working directory — rendered as the `C:\…>` prompt. */
+  getCwd?(): string;
 }
 
 /**
@@ -125,6 +127,7 @@ export class WindowsSshServerContext implements ISshServerContext {
           exitCode: looksLikeError ? 1 : 0,
         };
       },
+      getPrompt: exec.getCwd ? () => `${exec.getCwd!()}>` : undefined,
     };
   }
 
