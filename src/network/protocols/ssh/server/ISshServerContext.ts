@@ -50,6 +50,13 @@ export interface ILinuxShell {
    * (docs/PRD-SSH-Unification.md §3.1).
    */
   getPrompt?(): string;
+  /**
+   * True while a sub-shell launched on this channel (SQL*Plus, RMAN,
+   * PowerShell, a future psql) owns the input. The client uses it to
+   * know that `exit` pops that interpreter rather than closing the SSH
+   * session (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  isNested?(): boolean;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
   dispose?(): void;
 }

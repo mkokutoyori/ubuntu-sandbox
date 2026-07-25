@@ -99,6 +99,12 @@ export interface SshVtyShell {
   getPrompt(): string;
   /** Tab candidates for the shell's current CLI mode. */
   getCompletions?(line: string): string[];
+  /**
+   * True while a sub-shell pushed on this channel owns the input, so the
+   * client knows `exit` pops that interpreter instead of closing the SSH
+   * session (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  isNested?(): boolean;
 }
 
 export interface SshExecTarget {

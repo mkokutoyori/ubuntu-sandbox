@@ -48,9 +48,9 @@ async function buildLan(): Promise<{ dc: WindowsServer; srvSiem: WindowsServer; 
   await run(ps(dc), 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
 
   srvSiem.setCurrentUser('Administrator');
-  await run(ps(srvSiem), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "SRV-SIEM" -Force');
+  await run(ps(srvSiem), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "SRV-SIEM" -Server 192.168.10.10 -Force');
   client.setCurrentUser('Administrator');
-  await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Force');
+  await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Server 192.168.10.10 -Force');
 
   return { dc, srvSiem, client };
 }
@@ -142,6 +142,7 @@ describe('Scénario 18 — Windows Event Forwarding centralisé (mandeng.lan)', 
     it('wecutil cs crée l\'abonnement Mandeng-Security-Events à partir du fichier XML', async () => {
       const { srvSiem } = await buildLan();
       const sh = ps(srvSiem);
+      await run(sh, 'New-Item -ItemType Directory -Path "C:\\Subscriptions" -Force | Out-Null');
       await run(sh, `'${subscriptionXml.replace(/'/g, "''")}' | Out-File "C:\\Subscriptions\\Mandeng-Security.xml" -Encoding UTF8`);
       const out = await srvSiem.executeCmdCommand('wecutil cs "C:\\Subscriptions\\Mandeng-Security.xml"');
       expect(out).not.toMatch(/not recognized/i);
@@ -154,6 +155,7 @@ describe('Scénario 18 — Windows Event Forwarding centralisé (mandeng.lan)', 
     it('Get-WinEvent -LogName ForwardedEvents liste les événements collectés avec le MachineName de la source', async () => {
       const { dc, srvSiem, client } = await buildLan();
       const sh = ps(srvSiem);
+      await run(sh, 'New-Item -ItemType Directory -Path "C:\\Subscriptions" -Force | Out-Null');
       await run(sh, `'${subscriptionXml.replace(/'/g, "''")}' | Out-File "C:\\Subscriptions\\Mandeng-Security.xml" -Encoding UTF8`);
       await srvSiem.executeCmdCommand('wecutil cs "C:\\Subscriptions\\Mandeng-Security.xml"');
 

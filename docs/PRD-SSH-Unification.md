@@ -192,6 +192,30 @@ Tant que B1-B3 ne sont pas faits, le nombre de drivers clients reste à
 quatre. Les réduire prématurément échangerait de la dette d'architecture
 contre de la perte de fonctionnalité — un mauvais échange.
 
+### 4bis.3 B2 : l'empilement est piloté par l'enregistrement du shell
+
+Un interpréteur n'est plus déclaré à deux endroits (une table de
+déclencheurs dans `LinuxBashShell`, un aiguillage dans le serveur SSH).
+`ShellFactory.register(kind, ctor, { launcher, launchableFrom })` porte
+désormais la ligne de commande qui l'ouvre ; `launcherKindFor(line,
+from)` répond à la question « cette ligne ouvre-t-elle un REPL ? », et
+les deux consommateurs — le terminal local (`LinuxBashShell`) et la pile
+serveur (`SubShellStack`, utilisée par `LinuxSshServerContext`) — la
+posent au même endroit. Ajouter `python3`, `psql` ou `mysql` se réduit
+donc à écrire l'adaptateur `IShell` et à l'enregistrer avec son
+`launcher` : prompt, complétion, `exit` et passage sur le fil SSH
+suivent sans toucher au terminal ni au serveur.
+
+Corollaire côté client : `exit` n'appartient plus au client. Le serveur
+publie `nested` à chaque réponse `shell_input` (`ILinuxShell.isNested`,
+`SshVtyShell.isNested`) ; tant qu'un interpréteur est empilé,
+`SshInteractiveSubShell` laisse passer `exit` sur le fil au lieu de
+fermer la session — seul l'`exit` du shell de login la termine.
+
+Reste ouvert sous B2 : `lsnrctl` n'a pas d'adaptateur `IShell`
+enregistré, donc il continue de s'exécuter comme une commande unique et
+non comme un REPL.
+
 ## 5. Hors périmètre
 
 - Le retrait effectif des chemins clients en mémoire (étape 2) et le

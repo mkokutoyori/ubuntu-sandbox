@@ -170,6 +170,7 @@ export class SshShellChannel
         exitCode:
           typeof parsed.exitCode === 'number' ? parsed.exitCode : 0,
         prompt: typeof parsed.prompt === 'string' ? parsed.prompt : undefined,
+        nested: parsed.nested === true,
       };
       this.pendingLine?.(result);
       this.pendingLine = null;

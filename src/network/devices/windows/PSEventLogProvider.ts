@@ -122,6 +122,14 @@ export class PSEventLogProvider {
     this.bus = bus;
     this.deviceId = deviceId;
   }
+  /** Windows Event Forwarding hook (PRD-Wecutil.md §2.1 P4) — called with
+   *  every freshly-written entry so the owning device can dial any
+   *  collector with a matching active subscription. `ForwardedEvents`
+   *  itself is excluded so a received event is never re-forwarded. */
+  private forwarder: ((logName: string, entry: EventLogEntry) => void) | null = null;
+  attachForwarder(fn: (logName: string, entry: EventLogEntry) => void): void {
+    this.forwarder = fn;
+  }
   private logs: Map<string, EventLogMetadata>;
   /** Per-instance RecordId counter (see RECORD_ID_BASE note above). */
   private recordId = RECORD_ID_BASE;
@@ -259,7 +267,7 @@ export class PSEventLogProvider {
     if (!this.logs.has(key)) return `Write-EventLog : Cannot open log "${logName}". The log does not exist.`;
     const meta = this.logs.get(key)!;
     const ts = new Date();
-    meta.entries.push({
+    const entry: EventLogEntry = {
       index: this.nextIndex(),
       timeGenerated: ts,
       entryType,
@@ -268,8 +276,10 @@ export class PSEventLogProvider {
       category: '(0)',
       message,
       data,
-    });
+    };
+    meta.entries.push(entry);
     this.materialize();
+    if (this.forwarder && key !== 'forwardedevents') this.forwarder(meta.logName, entry);
     if (this.bus && this.deviceId) {
       const sevMap: Record<EntryType, { name: 'informational' | 'warnings' | 'errors' | 'critical' | 'notifications'; num: number }> = {
         Information: { name: 'informational', num: 6 },

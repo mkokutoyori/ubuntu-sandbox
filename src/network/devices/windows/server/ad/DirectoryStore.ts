@@ -291,6 +291,13 @@ export class DirectoryStore {
     this.createGroupEntry('Domain Admins', 'Global', this.usersOuDn);
     this.createGroupEntry('Domain Users', 'Global', this.usersOuDn);
     this.createGroupEntry('Domain Computers', 'Global', this.usersOuDn);
+    // Built-in group backing WEF/WEC (PRD-Wecutil.md §2.1 P2) — a
+    // collector's machine account must be a member so it can read the
+    // event logs of the sources it forwards from. Distinct from the
+    // same-named *local* group already seeded by WindowsUserManager
+    // (S-1-5-32-573) — `Add-ADGroupMember`/`Get-ADGroupMember` only ever
+    // consult this directory-backed one.
+    this.createGroupEntry('Event Log Readers', 'Global', this.usersOuDn);
 
     this.createUserEntry('Administrator', { password: adminPassword, fullName: 'Administrator', containerDn: this.usersOuDn });
     this.addGroupMember('Domain Admins', 'Administrator');
@@ -1201,7 +1208,12 @@ export class DirectoryStore {
   }
 
   private findComputerEntry(name: string): DirectoryEntry | null {
-    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'cn', value: name })
+    // `cn` holds the bare machine name, but callers resolving a group
+    // member identity (PRD-Wecutil.md §2.1 P2) pass the real
+    // `sAMAccountName` form ("<Name>$", precedent §1.3) — strip the
+    // trailing `$` before searching so both forms resolve.
+    const cn = name.endsWith('$') ? name.slice(0, -1) : name;
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'cn', value: cn })
       .filter(e => hasObjectClass(e, 'computer') && !isSoftDeleted(e));
     return entry ?? null;
   }

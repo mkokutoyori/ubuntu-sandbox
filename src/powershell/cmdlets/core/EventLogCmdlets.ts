@@ -227,6 +227,13 @@ export class GetWinEventCmdlet implements ICmdlet {
       ctx.emitError('No events were found that match the specified selection criteria.');
       return [];
     }
+    // MachineName (docs/PRD-Wecutil.md §2.1 P4): the real source machine
+    // for an entry received via Windows Event Forwarding
+    // (`data.MachineName`, set by `WindowsPC.receiveForwardedEvent`), or
+    // this device's own hostname for every other (non-forwarded) log —
+    // a real Get-WinEvent always exposes this property, not just on
+    // ForwardedEvents.
+    const localHostname = ctx.providers.network?.getHostname() ?? '';
     return entries.map(e => ({
       LogName:        logName,
       Id:             e.eventId,
@@ -235,6 +242,7 @@ export class GetWinEventCmdlet implements ICmdlet {
       TimeCreated:    e.timeGenerated,
       Message:        e.message,
       RecordId:       e.index,
+      MachineName:    e.data?.MachineName ?? localHostname,
       ToXml:          () => buildEventXml(e),
     } as Record<string, PSValue>)) as PSValue;
   }

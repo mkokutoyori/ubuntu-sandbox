@@ -45,16 +45,56 @@ export interface ShellSpawnArgs {
 
 export type ShellConstructor = (args: ShellSpawnArgs & { context: ShellContext }) => IShell;
 
+/**
+ * Optional metadata describing how a shell kind is *reached* from
+ * another shell. Declaring it here — next to the constructor — is what
+ * makes a new interpreter (python3, psql, mysql, …) work everywhere at
+ * once: the console terminal, the SSH server's own sub-shell stack and
+ * any future host all ask the factory the same question instead of
+ * carrying their own launcher tables.
+ */
+export interface ShellRegistration {
+  /**
+   * Command line that execs this interpreter from a parent shell, e.g.
+   * `/^psql\b/i`. Omit for shells that are only ever the primary.
+   */
+  readonly launcher?: RegExp;
+  /**
+   * Kinds of parent shell the launcher is recognised in — `['bash']` for
+   * POSIX tools, `['cmd']` for Windows ones. Omit to match any parent.
+   */
+  readonly launchableFrom?: readonly string[];
+}
+
 export class ShellFactory {
   private static readonly registry: Map<string, ShellConstructor> = new Map();
+  private static readonly launchers: Map<string, ShellRegistration> = new Map();
 
   /** Register a Shell implementation under its `kind` identifier. */
-  static register(kind: string, ctor: ShellConstructor): void {
+  static register(kind: string, ctor: ShellConstructor, meta?: ShellRegistration): void {
     this.registry.set(kind, ctor);
+    if (meta?.launcher) this.launchers.set(kind, meta);
+    else this.launchers.delete(kind);
+  }
+
+  /**
+   * The kind of shell `line` launches when typed at a `from` prompt, or
+   * null when it launches none. Both the local terminal and the SSH
+   * server route sub-shell entry through this, so the two can never
+   * drift apart on which commands open a REPL.
+   */
+  static launcherKindFor(line: string, from: string): string | null {
+    const trimmed = line.trim();
+    for (const [kind, meta] of this.launchers) {
+      if (!meta.launcher?.test(trimmed)) continue;
+      if (meta.launchableFrom && !meta.launchableFrom.includes(from)) continue;
+      return kind;
+    }
+    return null;
   }
 
   /** Clear the registry — primarily for tests. */
-  static reset(): void { this.registry.clear(); }
+  static reset(): void { this.registry.clear(); this.launchers.clear(); }
 
   /** True if a shell of that kind has been registered. */
   static has(kind: string): boolean { return this.registry.has(kind); }

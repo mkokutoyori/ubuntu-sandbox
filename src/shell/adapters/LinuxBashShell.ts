@@ -156,17 +156,6 @@ export class LinuxBashShell extends AbstractShell {
     return dev.getCompletions ? dev.getCompletions(line) : [];
   }
 
-  /**
-   * Sub-shell launchers a real bash recognises by exec'ing the binary.
-   * Each entry maps the bare command line (after trimming flags) to the
-   * child-shell kind we should push.
-   */
-  private static readonly SUBSHELL_TRIGGERS: ReadonlyMap<RegExp, string> = new Map([
-    [/^sqlplus\b/i,  'sqlplus'],
-    [/^rman\b/i,     'rman'],
-    [/^lsnrctl\b/i,  'lsnrctl'],
-  ]);
-
   protected async dispatch(line: string): Promise<ShellLineResult> {
     const readIntercept = await this.tryInteractiveRead(line);
     if (readIntercept) return readIntercept;
@@ -176,28 +165,27 @@ export class LinuxBashShell extends AbstractShell {
     // adapter for that interpreter pointed at the same device, so the
     // user lands in the child's real prompt instead of a single-shot
     // command transcript.
-    for (const [pattern, kind] of LinuxBashShell.SUBSHELL_TRIGGERS) {
-      if (pattern.test(line)) {
-        const child = ShellFactory.tryCreateChild(kind, {
-          device: this.device,
-          user: this.user,
-          parent: this,
-          launchLine: line,
-        });
-        if (child) {
-          // Some adapters (SqlPlusShell, RmanShell) expose `isReady` and
-          // refuse to be pushed against a device that lacks the backing
-          // service. Mirror real bash by emitting "command not found".
-          const ready = (child as unknown as { isReady?: boolean }).isReady;
-          if (ready === false) {
-            child.dispose();
-            return { output: [`bash: ${kind}: command not found`] };
-          }
-          return { output: [], childShell: child };
+    const subShellKind = ShellFactory.launcherKindFor(line, this.kind);
+    if (subShellKind) {
+      const child = ShellFactory.tryCreateChild(subShellKind, {
+        device: this.device,
+        user: this.user,
+        parent: this,
+        launchLine: line,
+      });
+      if (child) {
+        // Some adapters (SqlPlusShell, RmanShell) expose `isReady` and
+        // refuse to be pushed against a device that lacks the backing
+        // service. Mirror real bash by emitting "command not found".
+        const ready = (child as unknown as { isReady?: boolean }).isReady;
+        if (ready === false) {
+          child.dispose();
+          return { output: [`bash: ${subShellKind}: command not found`] };
         }
-        // Fall through if no adapter is registered — print the legacy
-        // device output (banner / error) like the simulator did before.
+        return { output: [], childShell: child };
       }
+      // Fall through if no adapter is registered — print the legacy
+      // device output (banner / error) like the simulator did before.
     }
 
     // ssh launch intercept: shared helper resolves the target. Handles

@@ -78,6 +78,7 @@ import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
 import { SmbServerHandler } from './windows/server/smb/SmbServer';
 import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient';
 import { WinRmServerHandler } from './windows/server/winrm/WinRmServer';
+import { parseSubscriptionXml, type WecSubscription } from './windows/server/wec/WecSubscription';
 import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { selfSignedLdapCert } from './windows/server/ad/ldap/ldapStartTls';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
@@ -104,7 +105,9 @@ import { ClusterSignalStore } from './windows/server/cluster/observables';
 import { ClusterSignalRefreshActor } from './windows/server/cluster/actors/ClusterSignalRefreshActor';
 import { DfsSignalStore } from './windows/server/dfs/observables';
 import { DfsSignalRefreshActor } from './windows/server/dfs/actors/DfsSignalRefreshActor';
-import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
+import { dialWinRm, type WinRmDialResult, pushForwardedEvent } from './windows/server/winrm/WinRmClient';
+import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
+import type { EventLogEntry } from './windows/PSEventLogProvider';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
 import { logonDomainUser } from './windows/domain/DomainLogonClient';
@@ -309,6 +312,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private svcMgr: WindowsServiceManager;
   /** Process manager (process table, PIDs, kill, tree) */
   private procMgr: WindowsProcessManager;
+  /** Windows Event Collector subscriptions (PRD-Wecutil.md §2.1 P3) — keyed by SubscriptionId, populated by `wecutil cs`. */
+  private wecSubscriptions: Map<string, WecSubscription> = new Map();
 
   // ── Per-device transitional state (Phase 4 relocation) ──────────────────
   // These maps + provider instances used to live as private fields on
@@ -401,6 +406,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
+    this.eventLog.attachForwarder((logName, entry) => this.tryForwardMatchingEvent(logName, entry));
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
@@ -820,7 +826,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** Build a WinRmServerHandler ready to be hooked onto a TcpConnection (one per accept). */
   getWinRmServerHandler(): WinRmServerHandler {
-    return new WinRmServerHandler({ userMgr: this.userMgr, domainAuth: (u, p) => this.tryDomainAuth(u, p) });
+    return new WinRmServerHandler({
+      userMgr: this.userMgr,
+      domainAuth: (u, p) => this.tryDomainAuth(u, p),
+      wec: { receiveForwardedEvent: (subscriptionId, sourceMachine, event) => this.receiveForwardedEvent(subscriptionId, sourceMachine, event) },
+    });
   }
 
   // ─── Domain join / logon (PRD-Windows-Server.md §5 P6) ──────────────
@@ -2121,6 +2131,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       case 'klist':   return cmdKlist({ ticketCache: this.kerberosTicketCache });
       case 'netdom':  return this.cmdNetdom(args);
+      case 'wecutil': return this.cmdWecutil(args);
       case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
       case 'certreq': return cmdCertreq({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
       case 'certutil': return cmdCertutil({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
@@ -2829,6 +2840,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     execute(rawInput: string): Promise<string>;
     getPrompt(): string;
     getCompletions(line: string): string[];
+    isNested(): boolean;
   } | null {
     let stack: CrossVendorRemoteShell;
     try {
@@ -2844,6 +2856,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       execute: async (rawInput: string) => (await stack.processLine(rawInput)).output.join('\n'),
       getPrompt: () => stack.getPrompt(),
       getCompletions: (line: string) => [...stack.getCompletions(line)],
+      isNested: () => stack.topKind !== 'cmd',
     };
   }
   setCwd(path: string): void { this.cwd = path; }
@@ -3268,6 +3281,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       getCurrentUser: () => this.userMgr.currentUser,
       setCurrentUser: (name) => this.setCurrentUser(name),
       executeCmdCommand: (command) => this.executeCmdCommand(command),
+      onLogon: (userName) => {
+        this.getBus().publish({
+          topic: 'windows.account.logon',
+          payload: { deviceId: this.id, account: userName, success: true, logonType: 2 },
+        });
+      },
     };
   }
 
@@ -3341,6 +3360,231 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /** `netdom join`/`netdom trust`/`netdom verify` — cmd-level equivalents of `Add-Computer -DomainName`/`New-ADTrust`/`Test-ComputerSecureChannel`, same real wire dialogue underneath. */
+  /**
+   * A collector-side lookup (docs/PRD-Wecutil.md §2.1 P4): the first
+   * `Enabled` `SourceInitiated` subscription whose `Query` matches
+   * `(logName, eventId)`, provided `Wecsvc` is actually running — never
+   * a match against a subscription nobody would currently service.
+   */
+  findMatchingActiveWecSubscription(logName: string, eventId: number): WecSubscription | null {
+    if (this.svcMgr.getService('Wecsvc')?.state !== 'Running') return null;
+    for (const sub of this.wecSubscriptions.values()) {
+      if (!sub.enabled) continue;
+      if (sub.query.logName && sub.query.logName.toLowerCase() !== logName.toLowerCase()) continue;
+      if (sub.query.eventIds.length > 0 && !sub.query.eventIds.includes(eventId)) continue;
+      return sub;
+    }
+    return null;
+  }
+
+  /**
+   * Collector-side landing point for a real `wecPush` (docs/PRD-Wecutil.md
+   * §2.1 P4), invoked by `WinRmServerHandler` once the pushing source has
+   * authenticated. Materializes into this device's own `ForwardedEvents`
+   * log with `MachineName` set to the real source, via the same
+   * `writeEventLog()` every other event on this device already goes
+   * through (no second, forwarding-only code path).
+   */
+  receiveForwardedEvent(subscriptionId: string, sourceMachine: string, event: {
+    eventId: number; timeGenerated: string; message: string; sourceLogName: string;
+  }): { ok: boolean; message: string } {
+    const sub = this.wecSubscriptions.get(subscriptionId);
+    if (!sub || !sub.enabled) return { ok: false, message: `The specified subscription "${subscriptionId}" does not exist or is disabled.` };
+    this.eventLog.writeEventLog(
+      sub.logFile, event.sourceLogName, event.eventId, 'Information',
+      event.message, { MachineName: sourceMachine },
+    );
+    return { ok: true, message: '' };
+  }
+
+  /**
+   * Source-side hook (docs/PRD-Wecutil.md §2.1 P4), fired after every
+   * local `writeEventLog()`: finds domain-joined collectors reachable on
+   * the network with a matching active subscription and pushes the event
+   * to each, by a real dial per event (§1.3 — same one-shot pattern as
+   * `Send-MailMessage`). A local write never blocks on this — exactly
+   * like real Windows, which never fails a local audit write because a
+   * forwarding collector happens to be unreachable.
+   *
+   * Discovery of "which machines are collectors" and their IP is an
+   * in-process `EquipmentRegistry` scan (the same established precedent
+   * ARP/DNS/`netdom query dc` already use) rather than a simulation of
+   * the GPO `SubscriptionManager` push that would normally tell a real
+   * source where to forward — out of scope, documented in
+   * docs/PRD-Wecutil.md §2.2.
+   */
+  private tryForwardMatchingEvent(logName: string, entry: EventLogEntry): void {
+    if (!this.domainMembership) return;
+    const myRealm = this.domainMembership.dnsName.toLowerCase();
+    for (const eq of EquipmentRegistry.getInstance().getAll()) {
+      if (eq === this || !(eq instanceof WindowsPC)) continue;
+      const collectorMembership = eq.getDomainMembership();
+      if (!collectorMembership || collectorMembership.dnsName.toLowerCase() !== myRealm) continue;
+      const sub = eq.findMatchingActiveWecSubscription(logName, entry.eventId);
+      if (!sub) continue;
+      const collectorIp = eq.getPorts().map(p => p.getIPAddress()).find((ip): ip is IPAddress => ip !== null);
+      if (!collectorIp) continue;
+      pushForwardedEvent({
+        tcpStack: this.getTcpStack(),
+        targetIp: collectorIp.toString(),
+        // UPN form ("<hostname>$@<realm>") — `tryDomainAuth`'s
+        // `parseDomainQualifiedUser` requires an explicit domain
+        // qualifier (NetBIOS\ or @dns); a bare "<hostname>$" isn't a
+        // recognized form even though it's a valid Kerberos principal.
+        username: `${this.hostname}$@${this.domainMembership.dnsName}`,
+        password: this.domainMembership.machineSecret,
+        subscriptionId: sub.subscriptionId,
+        sourceMachine: this.hostname,
+        event: { eventId: entry.eventId, timeGenerated: entry.timeGenerated.toISOString(), message: entry.message, sourceLogName: logName },
+      });
+    }
+  }
+
+  /**
+   * `wecutil` (docs/PRD-Wecutil.md) — Windows Event Collector CLI.
+   * P1: `qc` only. P3 adds `cs`/`gs`/`ds`/`es`/`rs`/`ss`.
+   */
+  private cmdWecutil(args: string[]): string {
+    const sub = (args[0] ?? '').toLowerCase();
+    const rest = args.slice(1);
+    if (sub === 'qc') return this.cmdWecutilQc(rest);
+    if (sub === 'cs') return this.cmdWecutilCs(rest);
+    if (sub === 'gs') return this.cmdWecutilGs(rest);
+    if (sub === 'ds') return this.cmdWecutilDs(rest);
+    if (sub === 'es') return this.cmdWecutilEs();
+    if (sub === 'rs') return this.cmdWecutilRs(rest);
+    if (sub === 'ss') return this.cmdWecutilSs(rest);
+    return `wecutil: '${sub || ''}' is not a valid sub-command. Valid sub-commands are: es, gs, gr, ss, cs, rs, ds, qc.`;
+  }
+
+  /**
+   * `wecutil cs <path>` (docs/PRD-Wecutil.md §2.1 P3) — reads the
+   * subscription XML from this machine's own filesystem (the file a
+   * prior `Out-File`/`scp` already wrote there) and registers it in
+   * `wecSubscriptions`, keyed by `SubscriptionId`.
+   */
+  private cmdWecutilCs(args: string[]): string {
+    const path = args[0];
+    if (!path) return 'wecutil: cs: missing <FilePath>.';
+    const abs = this.fs.normalizePath(path, this.getCwd());
+    const read = this.fs.readFile(abs);
+    if (!read.ok || read.content === undefined) {
+      return `Error querying for the source file (Error = 2). File "${path}"`;
+    }
+    const parsed = parseSubscriptionXml(read.content);
+    if (!parsed.ok) return `wecutil: ${parsed.error}`;
+    if (this.wecSubscriptions.has(parsed.subscription.subscriptionId)) {
+      return `Subscription "${parsed.subscription.subscriptionId}" already exists.`;
+    }
+    this.wecSubscriptions.set(parsed.subscription.subscriptionId, parsed.subscription);
+    // Real Wecsvc auto-starts on the first configured subscription
+    // (Microsoft docs) rather than requiring a separate `wecutil qc`
+    // first — mirrored here so `cs` alone is enough to make the
+    // subscription observably Active (§1.3 same effect as `qc`, §2.1 P1).
+    // Real `wecutil qc`/`cs` also enables the WinRM HTTP listener the
+    // subscription is pushed over (Microsoft docs: "enabling the ability
+    // to receive HTTP requests") — without it, a source's real dial to
+    // this collector's port 5985 would be refused at negotiate.
+    this.svcMgr.setStartType('Wecsvc', 'Automatic', true);
+    this.svcMgr.startService('Wecsvc', true);
+    this.winrm.enable();
+    return `Subscription "${parsed.subscription.subscriptionId}" created successfully.`;
+  }
+
+  /**
+   * `wecutil gs <SubscriptionId>` — a subscription is `Active` only when
+   * it is `Enabled` *and* `Wecsvc` is actually running (§2.1 P1/P3) —
+   * never a status independent of the real service state.
+   */
+  private cmdWecutilGs(args: string[]): string {
+    const id = args[0];
+    if (!id) return 'wecutil: gs: missing <SubscriptionId>.';
+    const sub = this.wecSubscriptions.get(id);
+    if (!sub) return `The specified subscription "${id}" does not exist.`;
+    const wecsvcRunning = this.svcMgr.getService('Wecsvc')?.state === 'Running';
+    const active = sub.enabled && wecsvcRunning;
+    const status = active ? 'Active' : 'Disabled';
+    return [
+      `Subscription Id: ${sub.subscriptionId}`,
+      `SubscriptionType: ${sub.subscriptionType}`,
+      `Description: ${sub.description}`,
+      `Enabled: ${sub.enabled}`,
+      `Status: ${status}`,
+      `RunTimeStatus: ${active ? 'Active' : 'Disabled'}`,
+      `LogFile: ${sub.logFile}`,
+    ].join('\n');
+  }
+
+  private cmdWecutilDs(args: string[]): string {
+    const id = args[0];
+    if (!id) return 'wecutil: ds: missing <SubscriptionId>.';
+    if (!this.wecSubscriptions.has(id)) return `The specified subscription "${id}" does not exist.`;
+    this.wecSubscriptions.delete(id);
+    return '';
+  }
+
+  private cmdWecutilEs(): string {
+    return [...this.wecSubscriptions.keys()].join('\n');
+  }
+
+  /**
+   * `wecutil rs <SubscriptionId>` — real `wecutil` retries delivery of
+   * queued-but-undelivered events. This simulator pushes each event
+   * synchronously, by real dial, the moment it is generated (§1.3 —
+   * same one-shot-dial pattern as `Send-MailMessage`) — there is never a
+   * pending queue to retry, so `rs` is an honest no-op, not a silent
+   * fake success (docs/PRD-Wecutil.md §2.2, same treatment as
+   * `repadmin /queue`).
+   */
+  private cmdWecutilRs(args: string[]): string {
+    const id = args[0];
+    if (!id) return 'wecutil: rs: missing <SubscriptionId>.';
+    if (!this.wecSubscriptions.has(id)) return `The specified subscription "${id}" does not exist.`;
+    return `No events are queued for retry on subscription "${id}" (this simulator forwards synchronously — see PRD-Wecutil.md §2.2).`;
+  }
+
+  /**
+   * `wecutil ss <SubscriptionId> [/e:true|false] [/l:<LogFile>]` — only
+   * the enabled toggle and log-file target are supported (§2.2, the rest
+   * of the real flag surface is out of scope).
+   */
+  private cmdWecutilSs(args: string[]): string {
+    const id = args[0];
+    if (!id) return 'wecutil: ss: missing <SubscriptionId>.';
+    const sub = this.wecSubscriptions.get(id);
+    if (!sub) return `The specified subscription "${id}" does not exist.`;
+    for (const arg of args.slice(1)) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) continue;
+      const key = m[1].toLowerCase();
+      if (key === 'e') sub.enabled = m[2].toLowerCase() === 'true';
+      else if (key === 'l') sub.logFile = m[2];
+    }
+    return '';
+  }
+
+  /**
+   * `wecutil qc [/q|/quiet]` (docs/PRD-Wecutil.md §2.1 P1) — sets Wecsvc
+   * to Automatic and starts it, the exact same two effects a plain
+   * `Set-Service -StartupType Automatic; Start-Service` already produce
+   * generically (§1.3) — no duplicate service-state logic here.
+   */
+  private cmdWecutilQc(_args: string[]): string {
+    const isAdmin = this.userMgr.isCurrentUserAdmin();
+    if (!isAdmin) return 'Access is denied.\nThe command failed to complete successfully.';
+    this.svcMgr.setStartType('Wecsvc', 'Automatic', isAdmin);
+    const err = this.svcMgr.startService('Wecsvc', isAdmin);
+    if (err && !err.includes('already running')) {
+      return `${err}\nThe command failed to complete successfully.`;
+    }
+    this.winrm.enable();
+    return [
+      'Windows Event Collector service was configured to start automatically with the Wecsvc service.',
+      'The subscriptions store has been created.',
+      'Windows Event Collector service is now configured correctly.',
+    ].join('\n');
+  }
+
   private cmdNetdom(args: string[]): string {
     const sub = args[0]?.toLowerCase();
     if (sub === 'trust') return this.cmdNetdomTrust(args.slice(1));

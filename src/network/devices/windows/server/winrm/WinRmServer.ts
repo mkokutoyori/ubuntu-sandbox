@@ -22,6 +22,14 @@ export interface WinRmServerContext {
   userMgr: WindowsUserManager;
   /** Domain-account fallback (PRD-Windows-Server.md §5 P6) — see `SmbServerContext.domainAuth`. */
   domainAuth?: (username: string, password: string) => { ok: boolean; sam: string; groups: string[] } | null;
+  /** Windows Event Collector (PRD-Wecutil.md §2.1 P4) — absent on a
+   *  machine that isn't acting as a collector, so `wecPush` answers an
+   *  honest error rather than a silent fake success. */
+  wec?: {
+    receiveForwardedEvent(subscriptionId: string, sourceMachine: string, event: {
+      eventId: number; timeGenerated: string; message: string; sourceLogName: string;
+    }): { ok: boolean; message: string };
+  };
 }
 
 export class WinRmServerHandler {
@@ -29,6 +37,7 @@ export class WinRmServerHandler {
 
   register(conn: TcpConnection): void {
     const reply = (msg: Record<string, unknown>) => conn.write(JSON.stringify(msg));
+    let authenticated = false;
 
     conn.onData((data) => {
       let parsed: Record<string, unknown>;
@@ -46,11 +55,29 @@ export class WinRmServerHandler {
         const account = this.ctx.userMgr.getUser(username);
         const localOk = account?.enabled && this.ctx.userMgr.checkPassword(username, password);
         const domainOk = !localOk && this.ctx.domainAuth?.(username, password)?.ok;
-        if (!localOk && !domainOk) {
+        authenticated = Boolean(localOk || domainOk);
+        if (!authenticated) {
           reply({ ok: false, message: 'The user name or password is incorrect.' });
           return;
         }
         reply({ ok: true });
+        return;
+      }
+
+      if (op === 'wecPush') {
+        if (!authenticated) {
+          reply({ ok: false, message: 'Access is denied.' });
+          return;
+        }
+        if (!this.ctx.wec) {
+          reply({ ok: false, message: 'The Windows Event Collector service is not available on this computer.' });
+          return;
+        }
+        const subscriptionId = String(parsed.subscriptionId ?? '');
+        const sourceMachine = String(parsed.sourceMachine ?? '');
+        const event = parsed.event as { eventId: number; timeGenerated: string; message: string; sourceLogName: string };
+        const res = this.ctx.wec.receiveForwardedEvent(subscriptionId, sourceMachine, event);
+        reply(res);
       }
     });
   }
