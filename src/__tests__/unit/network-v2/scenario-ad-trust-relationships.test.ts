@@ -41,7 +41,7 @@ async function buildTwoDomainsAndClient(): Promise<{ dc: WindowsServer; dcParten
   new Cable('c-client').connect(client.getPorts()[0], sw.getPorts()[2]);
   const mask = new SubnetMask('255.255.255.0');
   dc.getPorts()[0].configureIP(new IPAddress('192.168.10.10'), mask);
-  dcPartenaire.getPorts()[0].configureIP(new IPAddress('192.168.50.10'), mask);
+  dcPartenaire.getPorts()[0].configureIP(new IPAddress('192.168.10.20'), mask);
   client.getPorts()[0].configureIP(new IPAddress('192.168.10.30'), mask);
 
   dc.setCurrentUser('Administrator');
@@ -66,13 +66,13 @@ describe('Scénario 16 — trust relationships entre mandeng.lan et partenaire.l
   describe('établissement de l\'approbation', () => {
     it('Test-NetConnection vers DC-PARTENAIRE.partenaire.local sur le port 389 (LDAP) réussit', async () => {
       const { dc } = await buildTwoDomainsAndClient();
-      const out = await run(ps(dc), 'Test-NetConnection -ComputerName "192.168.50.10" -Port 389');
+      const out = await run(ps(dc), 'Test-NetConnection -ComputerName "192.168.10.20" -Port 389');
       expect(out).toMatch(/TcpTestSucceeded\s*:\s*True/);
     });
 
     it('New-ADTrust établit une approbation bidirectionnelle depuis mandeng.lan vers partenaire.local', async () => {
       const { dc } = await buildTwoDomainsAndClient();
-      const out = await run(ps(dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.50.10"');
+      const out = await run(ps(dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.10.20"');
       expect(out).not.toMatch(/ERROR/i);
     });
   });
@@ -80,7 +80,7 @@ describe('Scénario 16 — trust relationships entre mandeng.lan et partenaire.l
   describe('vérification de l\'approbation', () => {
     async function labWithTrust(): Promise<{ dc: WindowsServer; dcPartenaire: WindowsServer; client: WindowsPC }> {
       const lab = await buildTwoDomainsAndClient();
-      await run(ps(lab.dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.50.10"');
+      await run(ps(lab.dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.10.20"');
       return lab;
     }
 
@@ -116,7 +116,7 @@ describe('Scénario 16 — trust relationships entre mandeng.lan et partenaire.l
   describe('accès aux ressources cross-domaine', () => {
     async function labWithTrustAndGroup(): Promise<{ dc: WindowsServer }> {
       const { dc, dcPartenaire, client } = await buildTwoDomainsAndClient();
-      await run(ps(dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.50.10"');
+      await run(ps(dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.10.20"');
       void dcPartenaire;
       void client;
       return { dc };
@@ -140,7 +140,7 @@ describe('Scénario 16 — trust relationships entre mandeng.lan et partenaire.l
 
     it('l\'authentification cross-domaine de user-partenaire génère un EventID 4769 avec TargetDomainName = PARTENAIRE sur DC01', async () => {
       const { dc } = await buildTwoDomainsAndClient().then(async (lab) => {
-        await run(ps(lab.dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.50.10"');
+        await run(ps(lab.dc), 'New-ADTrust -Target "partenaire.local" -Direction Bidirectional -Credential "Administrator:DSRM@Partenaire2025!" -Server "192.168.10.20"');
         const clientSh = ps(lab.client);
         await run(clientSh, 'cmd');
         await run(clientSh, 'runas /user:partenaire.local\\user-partenaire whoami');
