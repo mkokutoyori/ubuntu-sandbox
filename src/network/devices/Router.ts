@@ -210,6 +210,8 @@ export interface IPv6ACL {
 export abstract class Router extends Equipment implements CredentialAuthenticator {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
+  /** Round-robin cursor across genuinely tied (same prefix/AD/metric) ECMP candidates in lookupRoute(). */
+  private ecmpCursor = 0;
   private arpTable: Map<string, ARPEntry> = new Map();
   protected ipv6AccessLists: IPv6ACL[] = [];
 
@@ -884,8 +886,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // updates) — a router does not hello on every packet it forwards.
     if (this.dynamicRouting?.hasActive()) this.dynamicRouting.refresh();
 
-    let bestRoute: RouteEntry | null = null;
+    // ECMP: collect every route genuinely tied for best (same prefix
+    // length, AD, and metric) instead of freezing on whichever happened
+    // to be inserted first, so equal-cost paths actually get used.
+    let candidates: RouteEntry[] = [];
     let bestPrefix = -1;
+    let bestAd = Infinity;
+    let bestMetric = Infinity;
     const destInt = destIP.toUint32();
 
     for (const route of this.routingTable) {
@@ -902,19 +909,23 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const maskInt = route.mask.toUint32();
       const prefix = route.mask.toCIDR();
 
-      if ((destInt & maskInt) === (netInt & maskInt)) {
-        if (prefix > bestPrefix) {
-          bestPrefix = prefix;
-          bestRoute = route;
-        } else if (prefix === bestPrefix && bestRoute) {
-          if (route.ad < bestRoute.ad ||
-              (route.ad === bestRoute.ad && route.metric < bestRoute.metric)) {
-            bestRoute = route;
-          }
-        }
+      if ((destInt & maskInt) !== (netInt & maskInt)) continue;
+
+      if (prefix > bestPrefix
+        || (prefix === bestPrefix && route.ad < bestAd)
+        || (prefix === bestPrefix && route.ad === bestAd && route.metric < bestMetric)) {
+        bestPrefix = prefix;
+        bestAd = route.ad;
+        bestMetric = route.metric;
+        candidates = [route];
+      } else if (prefix === bestPrefix && route.ad === bestAd && route.metric === bestMetric) {
+        candidates.push(route);
       }
     }
-    return bestRoute;
+
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+    return candidates[this.ecmpCursor++ % candidates.length];
   }
 
   private findInterfaceForIP(targetIP: IPAddress): Port | null {

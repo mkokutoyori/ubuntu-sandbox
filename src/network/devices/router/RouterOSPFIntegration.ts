@@ -1582,8 +1582,6 @@ export class RouterOSPFIntegration {
     for (const route of routes) {
       const network = route.network || route.destination;
       const mask = route.mask;
-      const iface = route.iface || route.interface || '';
-      const nextHop = route.nextHop;
 
       if (!network || !mask) continue;
 
@@ -1625,20 +1623,35 @@ export class RouterOSPFIntegration {
         }
       }
 
-      const entry: any = {
-        network: new IPAddress(network),
-        mask: new SubnetMask(mask),
-        nextHop: nextHop ? new IPAddress(nextHop) : null,
-        iface,
-        type: 'ospf' as any,
-        ad: 110,
-        metric: route.cost ?? 0,
-      };
-      if (route.routeType) entry.routeType = route.routeType;
-      if (route._metricType) entry._metricType = route._metricType;
-      if (route._isDefault) entry._isDefault = route._isDefault;
-      if (route._isStubDefault) entry._isStubDefault = route._isStubDefault;
-      this.ctx.pushRoute(entry);
+      // ECMP: mergeRoutesByDestination() may have computed several
+      // equal-cost paths (route.nextHops/route.ifaces, parallel arrays,
+      // always including the primary route.nextHop/route.iface at index
+      // 0) — install one RIB entry per path instead of collapsing to
+      // just the primary, so Router.lookupRoute has more than one to
+      // pick from for real multipath forwarding.
+      const nextHops: Array<string | undefined> =
+        route.nextHops?.length ? route.nextHops : [route.nextHop];
+      const ifaces: Array<string | undefined> =
+        route.ifaces?.length ? route.ifaces : [route.iface || route.interface || ''];
+
+      for (let i = 0; i < nextHops.length; i++) {
+        const nextHop = nextHops[i];
+        const iface = ifaces[i] ?? ifaces[0] ?? '';
+        const entry: any = {
+          network: new IPAddress(network),
+          mask: new SubnetMask(mask),
+          nextHop: nextHop ? new IPAddress(nextHop) : null,
+          iface,
+          type: 'ospf' as any,
+          ad: 110,
+          metric: route.cost ?? 0,
+        };
+        if (route.routeType) entry.routeType = route.routeType;
+        if (route._metricType) entry._metricType = route._metricType;
+        if (route._isDefault) entry._isDefault = route._isDefault;
+        if (route._isStubDefault) entry._isStubDefault = route._isStubDefault;
+        this.ctx.pushRoute(entry);
+      }
     }
   }
 
