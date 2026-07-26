@@ -32,8 +32,13 @@ const flush = async () => {
 };
 
 async function line(term: TerminalSession, text: string): Promise<void> {
-  const fg = term.foreground as unknown as { setInputBuf: (v: string) => void; handleKey: (e: unknown) => void };
-  fg.setInputBuf(text);
+  const fg = term.foreground as unknown as {
+    setInput: (v: string) => void; setInputBuf: (v: string) => void; handleKey: (e: unknown) => void;
+  };
+  // At a root prompt the view writes the console buffer; the sub-shell
+  // buffer is what it fills once a sub-shell owns the keyboard. Driving
+  // both at the root would take a dispatch branch the user cannot reach.
+  fg.setInput(text);
   fg.handleKey(key('Enter'));
   await flush();
 }

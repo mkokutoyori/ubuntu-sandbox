@@ -139,6 +139,7 @@ export class WindowsCmdShell extends AbstractShell {
       defaultUser: this.user,
       knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIpCmd(this.device),
+      sourceDevice: this.device,
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
       wireProbe: wireProbeFor(this.device),
     });
@@ -197,7 +198,7 @@ export class WindowsCmdShell extends AbstractShell {
     for (;;) {
       const pw = await this.input.password(promptText);
       if (pw === null) return { output: [] };
-      const finalised = finalisePendingAuth(auth, pw);
+      const finalised = await finalisePendingAuth(auth, pw);
       if (finalised.kind === 'refused') {
         return { output: finalised.message.split('\n') };
       }
@@ -219,7 +220,7 @@ export class WindowsCmdShell extends AbstractShell {
   async handleInput(value: string): Promise<ShellLineResult> {
     const auth = this.pendingSshAuth;
     if (!auth) return { output: [] };
-    const finalised = finalisePendingAuth(auth, value);
+    const finalised = await finalisePendingAuth(auth, value);
     if (finalised.kind === 'refused') {
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
