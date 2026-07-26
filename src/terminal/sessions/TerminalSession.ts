@@ -496,14 +496,21 @@ export abstract class TerminalSession {
     env?: Record<string, string>,
     opts?: { quiet?: boolean },
   ): void {
-    child.prepareAsRemoteUser(user);
+    // The remote's own spelling of the account, so the child's prompt and
+    // home match what the device actually holds — `ssh user@host` on a
+    // box whose account is `User` lands in `C:\Users\User`, the same as
+    // over the wire.
+    const account = (child.device as unknown as {
+      resolveAccountName?: (n: string) => string | undefined;
+    }).resolveAccountName?.(user) ?? user;
+    child.prepareAsRemoteUser(account);
     if (env) child.applyRemoteEnv(env);
     child._remoteLabel = hostLabel;
     const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
     const sourceHost = this.device.getHostname?.() ?? '';
     const banner = opts?.quiet
-      ? this.composeLoginBanner(child.device, user, sourceIp, sourceHost, true)
-      : this.composeLoginBanner(child.device, user, sourceIp, sourceHost, false);
+      ? this.composeLoginBanner(child.device, account, sourceIp, sourceHost, true)
+      : this.composeLoginBanner(child.device, account, sourceIp, sourceHost, false);
     child.attachAsChildOf(this);
     for (const line of banner) child.addLine(line);
   }

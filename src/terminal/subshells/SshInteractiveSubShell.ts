@@ -471,27 +471,23 @@ export class SshInteractiveSubShell implements ISubShell {
     // Every line of output — streamed chunks and the final one-shot merged
     // reply alike — already reached the terminal via emit()/onProgress
     // above; `output` only needs to carry it when nobody wanted progress.
-    if (onProgress) {
-      return {
-        output: [], exit: false, prompt: this.getPrompt(),
-        clearScreen: this.serverClearedScreen,
-        // The remote may be waiting on a value (the password for an
-        // `ssh` it started itself). Dropping it here left every hop
-        // past a vendor frame unreachable: the line echoed, nothing
-        // asked, nothing failed.
-        pendingInput: this.serverPendingInput ?? undefined,
-      };
-    }
+    //
+    // Both cases go through the SAME tail on purpose. An early return for
+    // the onProgress case is what silently dropped first the remote's
+    // pendingInput and then its sessionEnded: whatever the remote reports
+    // has to survive regardless of how the caller consumes output.
+    const output = onProgress ? [] : (collected.length ? collected : ['']);
+
     if (this.serverEndedSession) {
       this.session.disconnect();
       return {
-        output: [...collected, `Connection to ${this.remoteHost} closed.`],
+        output: [...output, `Connection to ${this.remoteHost} closed.`],
         exit: true,
         prompt: '',
       };
     }
     return {
-      output: collected.length ? collected : [''],
+      output,
       exit: false,
       prompt: this.getPrompt(),
       clearScreen: this.serverClearedScreen,

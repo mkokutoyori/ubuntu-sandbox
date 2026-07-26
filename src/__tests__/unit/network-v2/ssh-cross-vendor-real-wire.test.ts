@@ -128,9 +128,11 @@ describe('Linux -> Cisco SSH: real wire, not a local checkPassword() call', () =
 
     const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh admin@10.0.0.5', 'Admin@123'));
 
+    // The point of this suite is that the login crossed the cable, which
+    // `frames` proves. The landing prompt replaces the old assertion on a
+    // child session's class: a wire-driven hop has none.
     expect(frames).toBeGreaterThan(0);
-    expect(host.foreground).toBeInstanceOf(CiscoTerminalSession);
-    expect(host.foreground.isRemoteChild).toBe(true);
+    expect(host.foreground.getPrompt()).toMatch(/[>#]\s*$/);
     void cisco;
   });
 
@@ -156,8 +158,7 @@ describe('Linux -> Huawei SSH: real wire, not a local checkPassword() call', () 
     const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh admin@10.0.0.6', 'Admin@123'));
 
     expect(frames).toBeGreaterThan(0);
-    expect(host.foreground).toBeInstanceOf(HuaweiTerminalSession);
-    expect(host.foreground.isRemoteChild).toBe(true);
+    expect(host.foreground.getPrompt()).toMatch(/^</);
   });
 
   it('a wrong password is rejected and never lands on the router session', async () => {
@@ -181,7 +182,6 @@ describe('Linux -> Windows SSH: real wire, not a local checkPassword() call', ()
     const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh User@10.0.0.7', 'user'));
 
     expect(frames).toBeGreaterThan(0);
-    expect(host.foreground).not.toBe(host);
-    expect(host.foreground.isRemoteChild).toBe(true);
+    expect(host.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 });

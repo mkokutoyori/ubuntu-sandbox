@@ -326,9 +326,9 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     // Test harness convention: WindowsPC accepts any password for the
     // default 'user' account.
     await winSshLogin(t, 'ssh user@10.0.0.5', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
   });
 
   // ── #12 — Nested cmd from PowerShell ───────────────────────────
@@ -339,7 +339,7 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     await winSshLogin(t, 'ssh user@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     await typeSub(t, 'cmd');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'exit');
     // Back to PowerShell after one exit.
     expect(t.foreground.getPrompt()).toMatch(/^PS /);
@@ -460,18 +460,18 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     if (t.foreground.currentInputMode.type === 'password') {
       t.setPasswordBuf('user'); t.handleKey(key('Enter')); await flush();
     }
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     // L3 → L4 nested powershell on the remote
     await typeSub(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
     // L4 → L5 nested cmd from remote powershell
     await typeSub(t, 'cmd');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     // Unwind: cmd → PS → ssh-cmd → PS → cmd
     await typeSub(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/^PS /);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/^PS /);
     await typeSub(t, 'exit');
@@ -489,7 +489,7 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     expect(topShellKind(t)).toBe('ssh-remote');
     // L2→L3 ssh from remote bash into winB
     await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     // L3→L4 powershell on winB
     await typeSub(t, 'powershell');
     expect(t.foreground.getPrompt()).toMatch(/^PS /);
@@ -500,7 +500,7 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     await typeSub(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/^PS /);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'exit');
@@ -557,7 +557,7 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     // L2→L3 ssh from remote bash into winB cmd
     await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     // L3→L4 ssh from remote cmd into Huawei
     await typeSshSub(t, 'ssh admin@10.0.0.7', 'Admin@123');
     expect(t.foreground.getPrompt()).toMatch(/^<HW>/);
@@ -568,7 +568,7 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     expect(t.foreground.getPrompt()).toMatch(/^<HW>/);
     // Pop the whole stack.
     await typeSub(t, 'quit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'exit');
@@ -1439,7 +1439,7 @@ describe('Root-cause shell/session integrity', () => {
 
     await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
 
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
 
     expect(t.foreground.getPrompt()).not.toMatch(/@linuxSrv/);
 
@@ -1460,7 +1460,7 @@ describe('Root-cause shell/session integrity', () => {
 
     await typeSub(t, 'powershell');
 
-    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
 
     // powershell-native alias
     await typeSub(t, 'gcm');
@@ -1541,7 +1541,7 @@ describe('Root-cause shell/session integrity', () => {
     expect(t.foreground.getPrompt()).toMatch(/^PS /);
 
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
 
     await typeSub(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
@@ -1636,7 +1636,7 @@ describe('Root-cause shell/session integrity', () => {
 
     // L3 win
     await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
 
     // L4 PS
     await typeSub(t, 'powershell');

@@ -278,16 +278,37 @@ plutôt que de livrer 6 régressions. Les capacités ci-dessus sont
 conservées : elles n'enlèvent rien et sont ce dont la bascule aura
 besoin.
 
-Ce qui manque pour finir B4, mesuré et non supposé :
+### 4bis.6 B4 : la bascule est faite pour les sessions d'origine Linux
 
-1. Le mot de sortie d'un vendeur ne termine pas encore la session sur le
-   fil dans tous les cas. `Router.createVtyShell` déduit la déconnexion
-   d'un verbe de sortie qui ne change pas le prompt ; côté Cisco la
-   mesure confirme que ça marche, côté Huawei `quit` en vue utilisateur
-   ne déclenche pas encore.
-2. Un `ssh` imbriqué depuis un saut vendeur n'a pas de frame à empiler :
-   `SshInteractiveSubShell.startNestedHop` exige une `LinuxMachine`. Le
-   distant doit pousser lui-même le saut suivant côté serveur.
+Les deux points restants ci-dessus avaient **la même cause**, trouvée en
+corrigeant un bug signalé à l'usage : le passthrough générique de
+`SshInteractiveSubShell` avait un retour anticipé pour le cas
+`onProgress` — celui que le terminal emprunte toujours — qui jetait
+d'abord le `pendingInput` du distant, puis son `sessionEnded`. Le saut
+imbriqué depuis une frame vendeur n'échouait donc pas : il ne demandait
+rien. Les deux chemins de retour sont maintenant fusionnés, ce qui
+supprime la classe de bug plutôt que ses deux instances.
+
+Un troisième écart est apparu à la bascule : le fil publie le nom
+canonique du compte (`C:\Users\User`), le bypass ré-affichait la casse
+tapée (`C:\Users\user`). Le fil a raison — un profil Windows porte
+l'orthographe du compte. `ShellFactory` et `adoptRemoteChild` résolvent
+désormais le compte via `resolveAccountName`, donc les deux chemins
+s'accordent.
+
+État : **le terminal Linux pilote tous les vendeurs sur le fil**, sans
+régression (mêmes 3 échecs préexistants qu'avant la bascule, 33 tests
+e2e SSH au vert). Sept assertions portaient sur l'architecture du bypass
+(`foreground instanceof <Vendeur>TerminalSession`) : elles portent
+maintenant sur le comportement (le prompt du vendeur, le hostname du
+petit-fils), puisqu'un saut piloté par le fil n'a pas de session enfant
+locale dont être une instance.
+
+Reste pour clore B4 : les terminaux d'origine **Windows**
+(`WindowsTerminalSession`) et **CLI vendeur** (`CLITerminalSession`)
+utilisent encore `createSessionForDevice` + `adoptRemoteChild`. Les
+basculer suit la même recette, désormais éprouvée ; `CrossVendorRemoteShell`
+ne pourra être replié qu'ensuite.
 
 ## 5. Hors périmètre
 
