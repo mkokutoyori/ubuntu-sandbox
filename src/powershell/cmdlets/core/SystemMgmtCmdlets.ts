@@ -15,6 +15,7 @@ import type {
 } from '@/powershell/providers/PSProviders';
 import { LICENSE_STATUS_CODE } from '@/network/devices/windows/licensing/LicensingState';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { SubnetMask } from '@/network/core/types';
 
 function requireTasks(ctx: CmdletContext): IScheduledTaskProvider {
   if (!ctx.providers.scheduledTasks) {
@@ -333,6 +334,69 @@ export class GetCimInstanceCmdlet implements ICmdlet {
         PartialProductKey: key ? key.slice(-5) : '',
         LicenseStatus: LICENSE_STATUS_CODE[state],
       } as Record<string, PSValue>] as PSValue;
+    }
+    // Win32_NetworkAdapter → forward to the Network provider.
+    if (className === 'win32_networkadapter') {
+      const net = ctx.providers.network;
+      if (!net) throw new PSRuntimeError('Get-CimInstance Win32_NetworkAdapter is not recognized in this context');
+      return net.getAdapters().map(a => ({
+        Name:              a.name,
+        NetConnectionID:   a.name,
+        Description:       a.displayName,
+        Index:             a.ifIndex,
+        InterfaceIndex:    a.ifIndex,
+        MACAddress:        a.macAddress,
+        Speed:             a.linkSpeed,
+        NetEnabled:        a.status.toLowerCase() === 'up',
+        NetConnectionStatus: a.status.toLowerCase() === 'up' ? 2 : 7,
+      } as Record<string, PSValue>)) as PSValue;
+    }
+    // Win32_NetworkAdapterConfiguration → join adapter + IP + DNS + gateway,
+    // all already real on the Network provider (used by Get-NetAdapter/
+    // Get-NetIPAddress); this class is just a per-adapter merge of them.
+    if (className === 'win32_networkadapterconfiguration') {
+      const net = ctx.providers.network;
+      if (!net) throw new PSRuntimeError('Get-CimInstance Win32_NetworkAdapterConfiguration is not recognized in this context');
+      const gateway = net.getDefaultGateway();
+      return net.getAdapters().map(a => {
+        const ips = net.getIPAddresses(a.name);
+        return {
+          Description:      a.displayName,
+          Index:            a.ifIndex,
+          InterfaceIndex:   a.ifIndex,
+          MACAddress:       a.macAddress,
+          IPEnabled:        ips.length > 0,
+          DHCPEnabled:      net.isDHCPConfigured(a.name),
+          IPAddress:        ips.map(ip => ip.ipAddress),
+          IPSubnet:         ips.map(ip => SubnetMask.fromCIDR(ip.prefixLength).toString()),
+          DefaultIPGateway: gateway ? [gateway] : [],
+          DNSServerSearchOrder: net.getDnsServers(a.name),
+        } as Record<string, PSValue>;
+      }) as PSValue;
+    }
+    // Win32_UserAccount / Win32_Group → forward to the User provider.
+    if (className === 'win32_useraccount') {
+      const users = ctx.providers.users;
+      if (!users) throw new PSRuntimeError('Get-CimInstance Win32_UserAccount is not recognized in this context');
+      return users.listUsers().map(u => ({
+        Name:        u.name,
+        FullName:    u.fullName,
+        Description: u.description,
+        SID:         u.sid,
+        Disabled:    !u.enabled,
+        PasswordRequired: u.passwordRequired,
+        LocalAccount: true,
+      } as Record<string, PSValue>)) as PSValue;
+    }
+    if (className === 'win32_group') {
+      const users = ctx.providers.users;
+      if (!users) throw new PSRuntimeError('Get-CimInstance Win32_Group is not recognized in this context');
+      return users.listGroups().map(g => ({
+        Name:        g.name,
+        Description: g.description,
+        SID:         g.sid,
+        LocalAccount: true,
+      } as Record<string, PSValue>)) as PSValue;
     }
     // Other classes — defer to the legacy executor (it has a wider catalog).
     throw new PSRuntimeError(`Get-CimInstance ${className} is not recognized in this provider context`);
