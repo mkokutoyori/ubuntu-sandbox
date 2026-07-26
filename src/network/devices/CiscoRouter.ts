@@ -164,6 +164,14 @@ export class CiscoRouter extends Router {
     });
     this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus());
     this.pimAgent = new PimAgent(hostBase, () => this.getBus());
+    this.getBus().subscribe('igmp.group.joined', (e) => {
+      if (e.payload.deviceId !== this.id) return;
+      this.pimAgent.joinGroup(e.payload.groupAddress, e.payload.iface);
+    });
+    this.getBus().subscribe('igmp.group.left', (e) => {
+      if (e.payload.deviceId !== this.id) return;
+      this.pimAgent.leaveGroup(e.payload.groupAddress, e.payload.iface);
+    });
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());

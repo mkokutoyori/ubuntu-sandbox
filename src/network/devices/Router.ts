@@ -76,6 +76,7 @@ import {
   IPv6Address, IPv6Packet,
 } from '../core/types';
 import type { IIPv4Route } from '../core/interfaces';
+import { ipv4MulticastToMac } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
@@ -1280,12 +1281,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // plane and MUST never be forwarded, RFC 1112/4541)
     const destIP = ipPkt.destinationIP;
     const isBroadcast = destIP.toString() === '255.255.255.255';
-    const destFirstOctet = Number(destIP.toString().split('.')[0] ?? 0);
-    const isMulticast = destFirstOctet >= 224 && destFirstOctet <= 239;
+    const destOctets = destIP.toString().split('.').map(Number);
+    const isMulticast = destOctets[0] >= 224 && destOctets[0] <= 239;
+    const isLinkLocalMulticast = destOctets[0] === 224 && destOctets[1] === 0 && destOctets[2] === 0;
 
-    if (isBroadcast || isMulticast) {
-      // Broadcast/multicast packet — deliver locally, never forward
+    if (isBroadcast || isLinkLocalMulticast) {
+      // Broadcast/link-local-multicast packet — deliver locally, never forward
       this.handleLocalDelivery(inPort, ipPkt);
+      return;
+    }
+    if (isMulticast) {
+      // Globally/admin-scoped multicast (224.0.1.0-239.255.255.255) —
+      // real PIM-routed application traffic, RFC 1112 §6.4.
+      this.forwardMulticast(inPort, ipPkt);
       return;
     }
     for (const [, port] of this.ports) {
@@ -1801,6 +1809,46 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     } else {
       for (const frag of outgoingFragments) this.queueAndResolve(frag, route.iface, nextHopIP, outPort);
+    }
+  }
+
+  /**
+   * Replicate globally/admin-scoped multicast data (224.0.1.0-239.255.255.255)
+   * out the (*,G) OIL built by PimAgent from IGMP membership and downstream
+   * PIM Joins. Drops silently (no PIM/no matching mroute/RPF failure) —
+   * strictly no worse than the previous always-drop behavior.
+   */
+  private forwardMulticast(inPort: string, ipPkt: IPv4Packet): void {
+    const pimAgent = this.getPimAgent();
+    if (!pimAgent) return;
+    const group = ipPkt.destinationIP.toString();
+    const mroute = pimAgent.getMroute(group);
+    if (!mroute || mroute.outgoingInterfaces.size === 0) return;
+
+    const rpfIface = mroute.incomingInterface ?? this.lookupRoute(ipPkt.sourceIP)?.iface;
+    if (rpfIface && rpfIface !== inPort) {
+      Logger.info(this.id, 'router:mcast-rpf-fail',
+        `${this.name}: RPF failure for ${ipPkt.sourceIP} → ${group} on ${inPort} (expected ${rpfIface})`);
+      return;
+    }
+
+    const newTTL = ipPkt.ttl - 1;
+    if (newTTL <= 0) return;
+
+    const fwdPkt: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
+    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+    const dstMAC = new MACAddress(ipv4MulticastToMac(group));
+
+    for (const oif of mroute.outgoingInterfaces) {
+      if (oif === inPort) continue;
+      const outPort = this.ports.get(oif);
+      if (!outPort || !outPort.getIsUp() || !outPort.isConnected()) continue;
+      this.counters.ipForwDatagrams++;
+      this.counters.ifOutOctets += fwdPkt.totalLength;
+      this.sendFrame(oif, {
+        srcMAC: outPort.getMAC(), dstMAC,
+        etherType: ETHERTYPE_IPV4, payload: fwdPkt,
+      });
     }
   }
 
@@ -3498,6 +3546,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** Overridden by vendor subclasses that actually own a BfdAgent. */
   getBfdAgent(): import('../bfd/BfdAgent').BfdAgent | undefined { return undefined; }
+
+  /** Overridden by vendor subclasses that actually own a PimAgent. */
+  getPimAgent(): import('../pim/PimAgent').PimAgent | undefined { return undefined; }
 
   /** @internal */
   _getOSPFEngineInternal() { return this.ospfIntegration.getOSPFEngine(); }
