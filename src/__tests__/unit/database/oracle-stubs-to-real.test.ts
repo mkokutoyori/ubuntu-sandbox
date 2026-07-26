@@ -47,8 +47,8 @@ describe('ANALYZE updates LAST_ANALYZED', () => {
     expect(before).not.toMatch(/2026/);
     run(sh, 'ANALYZE TABLE hr.t COMPUTE STATISTICS;');
     const after = run(sh, "SELECT last_analyzed FROM dba_tables WHERE owner='HR' AND table_name='T';");
-    // Oracle's default NLS_DATE_FORMAT is DD-MON-YY (e.g. 19-MAY-26).
-    expect(after).toMatch(/\d{2}-[A-Z]{3}-\d{2}|\d{4}-\d{2}-\d{2}/);
+    // Oracle's default NLS_DATE_FORMAT is DD-MON-RR (e.g. 19-MAY-26).
+    expect(after).toMatch(/\d{2}-[A-Z]{3}-\d{2}/);
     sh.dispose();
   });
 });

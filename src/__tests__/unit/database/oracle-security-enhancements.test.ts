@@ -106,7 +106,7 @@ describe('SYS.USER_HISTORY$ password history', () => {
     sh.processLine("ALTER USER SCOTT IDENTIFIED BY tiger2;");
     sh.processLine("ALTER USER SCOTT IDENTIFIED BY tiger3;");
     const out = run(sh, 'SELECT USER#, PASSWORD_DATE FROM SYS.USER_HISTORY$;');
-    expect(out).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+    expect(out).toMatch(/\d{2}-[A-Z]{3}-\d{2}/);
     sh.dispose();
   });
 });

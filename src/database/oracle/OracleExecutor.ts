@@ -1146,7 +1146,14 @@ export class OracleExecutor extends BaseExecutor {
     for (const item of stmt.columns) {
       const colName = item.alias || this.exprToString(item.expr);
       const value = this.evaluateExpression(item.expr, [], []);
-      columns.push({ name: colName, dataType: parseOracleType('VARCHAR2', 4000) });
+      // SYSDATE/CURRENT_DATE bare (no TO_CHAR) must render via
+      // NLS_DATE_FORMAT, not the internal storage string — same pseudo-
+      // column type tagging as expandSelectItems() for table-based SELECTs.
+      const pseudoName = item.expr.type === 'Identifier' ? item.expr.name.toUpperCase() : null;
+      const dataType = (pseudoName === 'SYSDATE' || pseudoName === 'CURRENT_DATE') ? parseOracleType('DATE')
+        : (pseudoName === 'SYSTIMESTAMP' || pseudoName === 'CURRENT_TIMESTAMP') ? parseOracleType('TIMESTAMP')
+        : parseOracleType('VARCHAR2', 4000);
+      columns.push({ name: colName, dataType });
       row.push(value);
     }
 
@@ -4266,7 +4273,13 @@ export class OracleExecutor extends BaseExecutor {
             const displayName = table ? `${table}.${name}` : name;
             throw new OracleError(904, `"${displayName}": invalid identifier`);
           }
-          result.push({ name: item.alias || name, colIndex: -1, dataType: parseOracleType('VARCHAR2'), expr: item.expr });
+          // SYSDATE/CURRENT_DATE are DATE-typed pseudo-columns — tag them
+          // as such so the renderer applies NLS_DATE_FORMAT instead of
+          // printing the internal YYYY-MM-DD HH:MM:SS storage string.
+          const pseudoType = (name === 'SYSDATE' || name === 'CURRENT_DATE') ? 'DATE'
+            : (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') ? 'TIMESTAMP'
+            : 'VARCHAR2';
+          result.push({ name: item.alias || name, colIndex: -1, dataType: parseOracleType(pseudoType), expr: item.expr });
         }
       } else {
         const alias = item.alias || this.exprToString(item.expr);

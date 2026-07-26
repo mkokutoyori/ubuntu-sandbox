@@ -72,7 +72,7 @@ describe('DBMS_STATS', () => {
     const out = run(sh, "SELECT TABLE_NAME, NUM_ROWS, LAST_ANALYZED FROM DBA_TAB_STATISTICS WHERE TABLE_NAME='STATS_T';");
     expect(out).toMatch(/STATS_T/);
     expect(out).toMatch(/\s3\s/);
-    expect(out).toMatch(/\d{4}-\d{2}-\d{2}T/);
+    expect(out).toMatch(/\d{2}-[A-Z]{3}-\d{2}/);
     sh.dispose();
   });
 

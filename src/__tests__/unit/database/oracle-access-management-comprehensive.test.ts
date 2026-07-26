@@ -1342,7 +1342,7 @@ describe('23. Cross-cutting metadata views', () => {
 describe('24. SYSDATE / TIMESTAMP arithmetic across views', () => {
   it.each<Case>([
     // SYSDATE / SYSTIMESTAMP — current date markers (year >= 2024).
-    { sql: 'SELECT SYSDATE FROM dual;',                                                                want: /\b20\d{2}\b/ },
+    { sql: 'SELECT SYSDATE FROM dual;',                                                                want: /\d{2}-[A-Z]{3}-\d{2}/ },
     { sql: 'SELECT SYSDATE - 1 AS yesterday FROM dual;',                                                want: /\b20\d{2}\b/ },
     { sql: 'SELECT SYSTIMESTAMP FROM dual;',                                                            want: /\b20\d{2}\b/ },
     // Comparing DATE columns with SYSDATE arithmetic must NOT raise ORA-01722.

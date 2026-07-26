@@ -1,4 +1,5 @@
 import type { ResultSet } from '../../engine/executor/ResultSet';
+import { coerceDateValue, formatDateWithPattern } from '../functions/dateSupport';
 
 export interface ColumnFormat {
   name: string;
@@ -16,6 +17,8 @@ export interface RenderSettings {
   underline: string;
   nullDisplay: string;
   wrap: boolean;
+  /** NLS_DATE_FORMAT — applied to DATE columns with no explicit TO_CHAR/COLUMN format. */
+  dateFormat: string;
 }
 
 interface RenderColumn {
@@ -24,9 +27,8 @@ interface RenderColumn {
   numeric: boolean;
   sourceIndex: number;
   format?: string;
+  isDate: boolean;
 }
-
-const ORACLE_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 export class QueryResultRenderer {
   constructor(
@@ -64,19 +66,20 @@ export class QueryResultRenderer {
       if (fmt?.noprint) return;
 
       const numeric = this.isNumericColumn(result, i);
+      const isDate = col.dataType?.baseType === 'DATE';
       const header = fmt?.heading ?? displayName;
 
       let width = fmt?.width ?? 0;
       if (!width) {
         width = header.length;
         for (const row of result.rows) {
-          const len = this.renderValue(row[i], fmt?.format, numeric).length;
+          const len = this.renderValue(row[i], fmt?.format, numeric, isDate).length;
           if (len > width) width = len;
         }
       }
       width = Math.max(1, Math.min(width, this.settings.linesize));
 
-      plan.push({ header, width, numeric, sourceIndex: i, format: fmt?.format });
+      plan.push({ header, width, numeric, sourceIndex: i, format: fmt?.format, isDate });
     });
     return plan;
   }
@@ -104,7 +107,7 @@ export class QueryResultRenderer {
   }
 
   private renderCell(value: unknown, col: RenderColumn): string[] {
-    const text = this.renderValue(value, col.format, col.numeric);
+    const text = this.renderValue(value, col.format, col.numeric, col.isDate);
     if (text.length <= col.width) return [text];
     if (col.numeric) return ['#'.repeat(col.width)];
     if (!this.settings.wrap) return [text.slice(0, col.width)];
@@ -115,20 +118,17 @@ export class QueryResultRenderer {
     return chunks;
   }
 
-  private renderValue(value: unknown, format: string | undefined, numeric: boolean): string {
+  private renderValue(value: unknown, format: string | undefined, numeric: boolean, isDate: boolean): string {
     if (value === null || value === undefined) return this.settings.nullDisplay;
-    if (value instanceof Date) return this.formatDate(value);
+    if (isDate && !format) {
+      const d = value instanceof Date ? value : coerceDateValue(value);
+      if (d) return formatDateWithPattern(d, this.settings.dateFormat);
+    }
+    if (value instanceof Date) return formatDateWithPattern(value, this.settings.dateFormat);
     if (numeric && format && typeof value === 'number' && this.isNumericMask(format)) {
       return this.applyNumericMask(value, format);
     }
     return String(value);
-  }
-
-  private formatDate(value: Date): string {
-    const d = value.getDate().toString().padStart(2, '0');
-    const m = ORACLE_MONTHS[value.getMonth()];
-    const y = (value.getFullYear() % 100).toString().padStart(2, '0');
-    return `${d}-${m}-${y}`;
   }
 
   private isNumericColumn(result: ResultSet, index: number): boolean {
