@@ -37,6 +37,10 @@ import type { RemoteNanoController, RemoteVimController } from '@/terminal/edito
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/types';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
+import { createRemoteEditorController } from '@/terminal/editors/RemoteEditorController';
+import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -567,6 +571,54 @@ export abstract class TerminalSession {
     this.detachFromHost();
     this.dispose();
     return true;
+  }
+
+  /**
+   * An editor typed inside a remote session opens where the file is —
+   * on the remote — and only the keystrokes and the screen cross the
+   * wire. Hosted here rather than in one vendor's session: which shell
+   * typed `vim` says nothing about where the buffer lives
+   * (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  protected tryOpenRemoteEditor(line: string): boolean {
+    const sub = this.activeShell as unknown as {
+      openRemoteEditor?: (l: string) => Promise<EditorView | null>;
+      editorTransport?: () => RemoteEditorTransport;
+    } | null;
+    if (!sub?.openRemoteEditor || !sub.editorTransport) return false;
+    if (!parseEditorLaunch(line)) return false;
+
+    void sub.openRemoteEditor(line).then((view) => {
+      if (!view) return;
+      const launch = parseEditorLaunch(line)!;
+      const controller = createRemoteEditorController(
+        sub.editorTransport!(),
+        view,
+        () => this.onRemoteEditorUpdate(),
+      );
+      this.inputMode = {
+        type: 'remote-editor',
+        editorType: launch.editor,
+        filePath: view.filePath,
+        controller,
+      };
+      this.notify();
+    });
+    return true;
+  }
+
+  /**
+   * A fresh screen arrived from the remote editor. Re-render, and hand
+   * the prompt back to the SSH session once the engine has exited.
+   */
+  protected onRemoteEditorUpdate(): void {
+    const mode = this.inputMode;
+    if (mode.type !== 'remote-editor') { this.notify(); return; }
+    if (mode.controller.exited) {
+      this.inputMode = { type: 'normal' };
+      this.addLine(this.getPrompt());
+    }
+    this.notify();
   }
 
   /**
