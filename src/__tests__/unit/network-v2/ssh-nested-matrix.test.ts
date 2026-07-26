@@ -156,34 +156,35 @@ describe('SSH is a transparent transport for every host vendor', () => {
       await waitFor(host, (l) => l.some((t) => /ping statistics/.test(t)));
     });
 
-    it('Linux -> Win lands on a real WindowsTerminalSession', async () => {
+    it('Linux -> Win lands on a real Windows prompt', async () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
       await sshLogin(host, 'ssh User@10.0.0.1', 'user');
-      expect(host.foreground).not.toBe(host);
-      expect(host.foreground).toBeInstanceOf(WindowsTerminalSession);
-      expect(host.foreground.isRemoteChild).toBe(true);
+    // Asserted through the prompt rather than the class of a child
+    // session: a Linux-origin hop is driven over the wire now, so there
+    // is no local vendor TerminalSession to be an instance of. What must
+    // hold is that the session behaves like that vendor's terminal
+    // (docs/PRD-SSH-Unification.md §4bis B4).
+      expect(host.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
     });
 
-    it('Linux -> Cisco lands on a real CiscoTerminalSession', async () => {
+    it('Linux -> Cisco lands on a real IOS prompt', async () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
       await sshLogin(host, 'ssh admin@10.0.0.5', 'Admin@123');
-      expect(host.foreground).not.toBe(host);
-      expect(host.foreground).toBeInstanceOf(CiscoTerminalSession);
-      expect(host.foreground.isRemoteChild).toBe(true);
+      // Behaviour, not class: over the wire there is no local vendor
+      // TerminalSession to instantiate, so the IOS prompt is the proof.
+      expect(host.foreground.getPrompt()).toMatch(/[>#]\s*$/);
     });
 
-    it('Linux -> Huawei lands on a real HuaweiTerminalSession', async () => {
+    it('Linux -> Huawei lands on a real VRP prompt', async () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
       await sshLogin(host, 'ssh admin@10.0.0.6', 'Admin@123');
-      expect(host.foreground).not.toBe(host);
-      expect(host.foreground).toBeInstanceOf(HuaweiTerminalSession);
-      expect(host.foreground.isRemoteChild).toBe(true);
+      expect(host.foreground.getPrompt()).toMatch(/^</);
     });
   });
 

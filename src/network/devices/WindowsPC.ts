@@ -2851,6 +2851,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getCwd(): string { return this.cwd; }
 
   /**
+   * The account's own spelling for a login name. Windows logins are
+   * case-insensitive, but the profile directory and the prompt carry the
+   * canonical casing — so `ssh user@host` belongs in `C:\\Users\\User`.
+   * Returns undefined for a name no account matches, leaving the caller's
+   * own fallback in place.
+   */
+  resolveAccountName(name: string): string | undefined {
+    return this.userMgr.getUser(name)?.name;
+  }
+
+  /**
    * A stacked CLI session for one SSH channel — cmd at the bottom, with
    * `powershell` and friends pushed on top. The stack lives here, on the
    * server side of the wire, so an SSH client only ever exchanges lines
