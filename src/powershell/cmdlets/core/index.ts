@@ -184,8 +184,11 @@ import {
   TestServiceHealthCmdlet, TestMailflowCmdlet,
 } from './ExchangeCmdlets';
 import {
-  NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
-  NewDfsReplicationGroupCmdlet, SyncDfsReplicationGroupCmdlet,
+  NewDfsnRootCmdlet, GetDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet,
+  GetDfsnFolderCmdlet, GetDfsnFolderTargetCmdlet, SetDfsnFolderTargetCmdlet,
+  NewDfsReplicationGroupCmdlet, GetDfsReplicationGroupCmdlet, SyncDfsReplicationGroupCmdlet,
+  AddDfsrMemberCmdlet, GetDfsrMemberCmdlet, NewDfsReplicatedFolderCmdlet, AddDfsrConnectionCmdlet,
+  SetDfsrMembershipCmdlet, GetDfsrMembershipCmdlet, GetDfsrStateCmdlet,
 } from './DfsCmdlets';
 import {
   EnableRemoteDesktopCmdlet, DisableRemoteDesktopCmdlet, GetRDUserSessionCmdlet, LogoffRdSessionCmdlet,
@@ -648,11 +651,22 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
 
   // ── DFS Namespaces + DFSR (PRD-Windows-Server-Advanced.md §5 P16) ──────────
   registry.register(new NewDfsnRootCmdlet());
+  registry.register(new GetDfsnRootCmdlet());
   registry.register(new NewDfsnFolderCmdlet());
   registry.register(new NewDfsnFolderTargetCmdlet());
   registry.register(new GetDfsnFolderCmdlet());
+  registry.register(new GetDfsnFolderTargetCmdlet());
+  registry.register(new SetDfsnFolderTargetCmdlet());
   registry.register(new NewDfsReplicationGroupCmdlet());
+  registry.register(new GetDfsReplicationGroupCmdlet());
   registry.register(new SyncDfsReplicationGroupCmdlet());
+  registry.register(new AddDfsrMemberCmdlet());
+  registry.register(new GetDfsrMemberCmdlet());
+  registry.register(new NewDfsReplicatedFolderCmdlet());
+  registry.register(new AddDfsrConnectionCmdlet());
+  registry.register(new SetDfsrMembershipCmdlet());
+  registry.register(new GetDfsrMembershipCmdlet());
+  registry.register(new GetDfsrStateCmdlet());
 
   // ── RDS session management (PRD-Windows-Server-Advanced.md §5 P17) ─────────
   registry.register(new GetRDUserSessionCmdlet());

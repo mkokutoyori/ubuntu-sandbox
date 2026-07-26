@@ -58,6 +58,10 @@ async function buildLan(): Promise<{ dc: WindowsServer; dc2: WindowsServer; srvF
   client.setCurrentUser('Administrator');
   await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Force');
 
+  await run(ps(dc), 'Install-WindowsFeature -Name FS-DFS-Namespace, FS-DFS-Replication -IncludeManagementTools');
+  await run(ps(dc2), 'Install-WindowsFeature -Name FS-DFS-Namespace, FS-DFS-Replication -IncludeManagementTools');
+  await run(ps(srvFichiers), 'Install-WindowsFeature -Name FS-FileServer, FS-DFS-Namespace, FS-DFS-Replication -IncludeManagementTools');
+
   return { dc, dc2, srvFichiers, client };
 }
 

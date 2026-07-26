@@ -164,8 +164,28 @@ export interface DfsOpResult { ok: boolean; message: string }
  * `DFSR` service (PRD-Windows-Server-Advanced.md §5 P16): owns this
  * server's own membership in each replication group it's part of.
  */
+/** One replication group's admin-side topology — real DFSR management (`New-DfsReplicationGroup`/`Add-DfsrMember`/`New-DfsReplicatedFolder`/`Add-DfsrConnection`/`Set-DfsrMembership`) is directory-driven: an admin defines membership/topology centrally (normally in AD) before any member ever touches a content path — distinct from `newGroup()`/`sync()` above, which model a single server's own local participation once that topology already exists. Since every test/caller in this simulator manages a group's topology from one admin session, tracking it here (on whichever server that session is connected to) is equivalent to a real directory-backed store without needing one. */
+interface DfsrAdminGroupState {
+  readonly name: string;
+  description: string;
+  readonly members: Set<string>;
+  readonly memberDisplay: Map<string, string>;
+  readonly folders: Set<string>;
+  readonly folderDisplay: Map<string, string>;
+  readonly connections: Array<{ source: string; destination: string }>;
+  /** Keyed by `folderNameLower|computerNameLower`. */
+  readonly memberships: Map<string, { contentPath: string; primaryMember: boolean }>;
+}
+
+export interface DfsrGroupInfo { readonly name: string; readonly description: string }
+export interface DfsrMembershipInfo {
+  readonly computerName: string; readonly folderName: string;
+  readonly contentPath: string; readonly primaryMember: boolean;
+}
+
 export class WindowsDfsrRole {
   private readonly groups = new Map<string, DfsReplicatedFolder>();
+  private readonly adminGroups = new Map<string, DfsrAdminGroupState>();
 
   constructor(
     private readonly host: EndHost,
@@ -182,6 +202,85 @@ export class WindowsDfsrRole {
     if (this.groups.has(key)) return { ok: false, message: `New-DfsReplicationGroup : A replication group named "${groupName}" already exists.` };
     this.groups.set(key, new DfsReplicatedFolder(this.fs, contentPath));
     return { ok: true, message: '' };
+  }
+
+  /** `New-DfsReplicationGroup -GroupName <name> [-Description <text>]` — the real cmdlet signature (no `-ContentPath`): defines the group's admin topology, populated afterwards by `Add-DfsrMember`/`New-DfsReplicatedFolder`/`Set-DfsrMembership`. */
+  registerAdminGroup(groupName: string, description: string): DfsOpResult {
+    const key = groupName.toLowerCase();
+    if (this.adminGroups.has(key)) return { ok: false, message: `New-DfsReplicationGroup : A replication group named "${groupName}" already exists.` };
+    this.adminGroups.set(key, {
+      name: groupName, description, members: new Set(), memberDisplay: new Map(),
+      folders: new Set(), folderDisplay: new Map(), connections: [], memberships: new Map(),
+    });
+    return { ok: true, message: '' };
+  }
+
+  getAdminGroup(groupName: string): DfsrGroupInfo | null {
+    const g = this.adminGroups.get(groupName.toLowerCase());
+    return g ? { name: g.name, description: g.description } : null;
+  }
+
+  /** `Add-DfsrMember -GroupName <name> -ComputerName <name[]>`. */
+  addMembers(groupName: string, computerNames: string[]): DfsOpResult {
+    const g = this.adminGroups.get(groupName.toLowerCase());
+    if (!g) return { ok: false, message: `Add-DfsrMember : A replication group named "${groupName}" does not exist.` };
+    for (const c of computerNames) g.memberDisplay.set(c.toLowerCase(), c);
+    for (const c of computerNames) g.members.add(c.toLowerCase());
+    return { ok: true, message: '' };
+  }
+
+  listMembers(groupName: string): string[] {
+    const g = this.adminGroups.get(groupName.toLowerCase());
+    return g ? [...g.memberDisplay.values()] : [];
+  }
+
+  /** `New-DfsReplicatedFolder -GroupName <name> -FolderName <name>` — the real cmdlet, distinct from the single implicit folder `newGroup()`'s `-ContentPath` models. */
+  newReplicatedFolder(groupName: string, folderName: string): DfsOpResult {
+    const g = this.adminGroups.get(groupName.toLowerCase());
+    if (!g) return { ok: false, message: `New-DfsReplicatedFolder : A replication group named "${groupName}" does not exist.` };
+    const key = folderName.toLowerCase();
+    if (g.folders.has(key)) return { ok: false, message: `New-DfsReplicatedFolder : A replicated folder named "${folderName}" already exists in group "${groupName}".` };
+    g.folders.add(key);
+    g.folderDisplay.set(key, folderName);
+    return { ok: true, message: '' };
+  }
+
+  /** `Add-DfsrConnection -GroupName <name> -SourceComputerName <a> -DestinationComputerName <b>`. */
+  addConnection(groupName: string, source: string, destination: string): DfsOpResult {
+    const g = this.adminGroups.get(groupName.toLowerCase());
+    if (!g) return { ok: false, message: `Add-DfsrConnection : A replication group named "${groupName}" does not exist.` };
+    if (!g.members.has(source.toLowerCase())) return { ok: false, message: `Add-DfsrConnection : "${source}" is not a member of replication group "${groupName}".` };
+    if (!g.members.has(destination.toLowerCase())) return { ok: false, message: `Add-DfsrConnection : "${destination}" is not a member of replication group "${groupName}".` };
+    g.connections.push({ source, destination });
+    return { ok: true, message: '' };
+  }
+
+  /** `Set-DfsrMembership -GroupName <name> -FolderName <name> -ComputerName <name> -ContentPath <path> -PrimaryMember <bool>`. */
+  setMembership(
+    groupName: string, folderName: string, computerName: string, contentPath: string, primaryMember: boolean,
+  ): DfsOpResult {
+    const g = this.adminGroups.get(groupName.toLowerCase());
+    if (!g) return { ok: false, message: `Set-DfsrMembership : A replication group named "${groupName}" does not exist.` };
+    if (!g.folders.has(folderName.toLowerCase())) return { ok: false, message: `Set-DfsrMembership : A replicated folder named "${folderName}" does not exist in group "${groupName}".` };
+    if (!g.members.has(computerName.toLowerCase())) return { ok: false, message: `Set-DfsrMembership : "${computerName}" is not a member of replication group "${groupName}".` };
+    g.memberships.set(`${folderName.toLowerCase()}|${computerName.toLowerCase()}`, { contentPath, primaryMember });
+    return { ok: true, message: '' };
+  }
+
+  listMemberships(groupName: string, folderName: string): DfsrMembershipInfo[] {
+    const g = this.adminGroups.get(groupName.toLowerCase());
+    if (!g) return [];
+    const out: DfsrMembershipInfo[] = [];
+    const folderKey = folderName.toLowerCase();
+    for (const [key, state] of g.memberships) {
+      const [fk, ck] = key.split('|');
+      if (fk !== folderKey) continue;
+      out.push({
+        computerName: g.memberDisplay.get(ck) ?? ck, folderName: g.folderDisplay.get(fk) ?? fk,
+        contentPath: state.contentPath, primaryMember: state.primaryMember,
+      });
+    }
+    return out;
   }
 
   /** `Sync-DfsReplicationGroup -GroupName <name> -PartnerServer <address>` — one manually-triggered DFSR pull cycle (no scheduled/automatic replication modeled, per PRD §2.2 scope, mirroring `replicateFrom`'s own AD replication convention). */
