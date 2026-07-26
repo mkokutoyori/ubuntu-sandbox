@@ -1380,10 +1380,14 @@ export class OracleExecutor extends BaseExecutor {
 
   /**
    * Acquire row-level TX locks for a `… FOR UPDATE` over a single table.
-   * NOWAIT on a row another session holds raises ORA-00054; SKIP LOCKED
-   * drops those rows from the result; a plain FOR UPDATE returns the row
-   * (the synchronous simulator cannot block-and-wait). Rows are keyed by
-   * primary key when present, else by full content. Self re-locks are fine.
+   * SKIP LOCKED drops a conflicting row from the result; NOWAIT, WAIT n,
+   * and a plain FOR UPDATE all deny immediately instead of blocking real
+   * Oracle would wait indefinitely (plain) or up to n seconds (WAIT n)
+   * for the holder to commit/rollback, but this simulator's execution
+   * engine is synchronous and cannot suspend a statement mid-flight, so
+   * denying is the honest simplification over silently granting a lock
+   * two sessions would both believe they hold. Rows are keyed by primary
+   * key when present, else by full content. Self re-locks are fine.
    */
   private lockForUpdateRows(
     ref: import('../engine/parser/ASTNode').TableRef,
@@ -1407,11 +1411,10 @@ export class OracleExecutor extends BaseExecutor {
       const holder = lm.rowLockHolder(schema, table, key);
       if (holder !== undefined && holder !== sessionId) {
         if (forUpdate.wait === 'SKIP_LOCKED') continue;
-        if (forUpdate.wait === 'NOWAIT') {
-          throw new OracleError(54, 'resource busy and acquire with NOWAIT specified or timeout expired');
+        if (typeof forUpdate.wait === 'number') {
+          throw new OracleError(30006, 'resource busy; acquire with WAIT timeout expired');
         }
-        out.push(row); // plain FOR UPDATE: cannot block — return without stealing the lock
-        continue;
+        throw new OracleError(54, 'resource busy and acquire with NOWAIT specified or timeout expired');
       }
       // FOR UPDATE opens a transaction; COMMIT/ROLLBACK is what releases
       // the row locks (via the transaction.* events the lock actor hears).
