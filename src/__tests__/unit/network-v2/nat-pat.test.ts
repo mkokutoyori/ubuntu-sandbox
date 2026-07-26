@@ -915,19 +915,19 @@ describe('Group 12: hit/miss counters', () => {
     engine.resetCounters();
   });
 
-  it('12.1 first outbound packet → missCount += 1', () => {
+  it('12.1 first outbound packet → hitCount += 1 (a new translation is a successful outcome, not a Miss)', () => {
     const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
     engine.translateOutbound(pkt, 'outside', 'inside');
-    expect(engine.getCounters().misses).toBe(1);
-    expect(engine.getCounters().hits).toBe(0);
+    expect(engine.getCounters().misses).toBe(0);
+    expect(engine.getCounters().hits).toBe(1);
   });
 
-  it('12.2 second outbound same 5-tuple → hitCount += 1', () => {
+  it('12.2 second outbound same 5-tuple → hitCount += 1 again', () => {
     const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
     engine.translateOutbound(pkt, 'outside', 'inside');
     engine.translateOutbound(pkt, 'outside', 'inside');
-    expect(engine.getCounters().misses).toBe(1);
-    expect(engine.getCounters().hits).toBe(1);
+    expect(engine.getCounters().misses).toBe(0);
+    expect(engine.getCounters().hits).toBe(2);
   });
 
   it('12.3 inbound reply to existing session → hitCount += 1', () => {

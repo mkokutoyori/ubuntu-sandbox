@@ -843,13 +843,16 @@ export function showInterfacesSummary(router: Router): string {
 /** `show ip interface` (all, verbose) — real per-port L3 state. */
 export function showIpInterfaceAll(router: Router): string {
   const blocks: string[] = [];
+  const nat = router._getNATEngine();
   for (const [name, port] of router._getPortsInternal()) {
     const up = port.getIsUp();
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
+    const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
+      : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
     blocks.push([
       `${name} is ${up ? 'up' : 'administratively down'}, ` +
-        `line protocol is ${up && port.isConnected() ? 'up' : 'down'}`,
+        `line protocol is ${up && port.isConnected() ? 'up' : 'down'}${natTag}`,
       ip
         ? `  Internet address is ${ip}${mask ? `/${mask.toCIDR()}` : ''}`
         : '  Internet protocol processing disabled',

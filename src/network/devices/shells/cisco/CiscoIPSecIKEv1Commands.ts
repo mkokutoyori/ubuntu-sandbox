@@ -749,6 +749,7 @@ export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellC
       engine.setDebug('ipsec', false);
       engine.setDebug('ikev2', false);
     }
+    ctx.r()._getNATEngine().setDebugEnabled(false);
     return 'All possible debugging has been turned off';
   });
 

@@ -16,6 +16,7 @@ import { IPAddress, IPv4Packet, computeIPv4Checksum, IP_PROTO_ICMP, IP_PROTO_TCP
 import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
 import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/ip';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { Logger } from '../../core/Logger';
 import {
   NATSignalStore,
   makeReadonlyNATObservables,
@@ -37,6 +38,8 @@ export interface NatStaticEntry {
   isNetwork?: boolean;
   prefixLen?: number;
   rawConfig?: string;
+  /** Number of packets this static mapping has translated (`show ip nat statistics`'s per-entry refcount). */
+  hitCount?: number;
 }
 
 export interface NatOutsideStatic {
@@ -79,9 +82,14 @@ export interface NatSession {
   // Outside global (destination) address — completes the 4-tuple (RFC 2663 §3.6)
   outsideIP: string;
   outsidePort: number;
+  /** Last-used time — refreshed on every hit (used both for "use:" and staleness). */
   timestamp: number;
+  /** First-created time — set once, never refreshed (used for "create:"). */
+  createdAt: number;
   // TCP state machine (undefined for UDP/ICMP)
   tcpState?: NatTcpState;
+  /** Inside interface (possibly a dot1q subinterface) this session was created on. */
+  inIface?: string;
 }
 
 /** Per-protocol session timeout config (milliseconds). */
@@ -94,6 +102,10 @@ export interface NatTimeouts {
   udp: number;
   /** ICMP session. Default 60 s. */
   icmp: number;
+  /** DNS session. Default 60 s. */
+  dns: number;
+  /** TCP FIN/RST (session closing). Default 60 s. */
+  finrst: number;
 }
 
 /** Result of a NAT translation lookup (for show ip nat translations) */
@@ -103,6 +115,12 @@ export interface NatTranslationEntry {
   insideGlobal: string;
   outsideLocal: string;
   outsideGlobal: string;
+  /** Session-backed entries only: real create/last-use/timeout for `show ip nat translations verbose`. */
+  createdAtMs?: number;
+  lastUsedMs?: number;
+  timeoutMs?: number;
+  /** Inside (possibly dot1q subinterface) this session was created on. */
+  inputIface?: string;
 }
 
 // ─── NATEngine ───────────────────────────────────────────────────────────────
@@ -138,12 +156,16 @@ export class NATEngine {
     tcpHalfOpen:     30_000,   // 30 s  — RFC 6146 §4
     udp:            300_000,   // 5 min — RFC 4787 REQ-5
     icmp:            60_000,   // 60 s  — common practice
+    dns:             60_000,   // 60 s  — IOS default
+    finrst:          60_000,   // 60 s  — IOS default
   };
 
   // Hit/miss counters (RFC 2663 §4)
   private hitCount = 0;
   private missCount = 0;
   private expiredCount = 0;
+  /** High-water mark of `getTranslationCount()`, for `show ip nat statistics`'s "Peak translations". */
+  private peakTranslationCount = 0;
   private maxEntries: number | null = null;
   setMaxEntries(n: number | null): void { this.maxEntries = n; }
   getMaxEntries(): number | null { return this.maxEntries; }
@@ -232,6 +254,7 @@ export class NATEngine {
       if (globalPortClash) return { ok: false, reason: 'global-port-already-mapped' };
     }
     this.staticEntries.push(entry);
+    this.updatePeak();
     return { ok: true };
   }
 
@@ -294,6 +317,7 @@ export class NATEngine {
       globalIP: opts.globalIP, globalPort: opts.globalPort,
       outsideIP: opts.outsideIP, outsidePort: opts.outsidePort,
       timestamp: Date.now(),
+      createdAt: Date.now(),
       tcpState: opts.protocol === IP_PROTO_TCP ? 'syn-seen' : undefined,
     };
     const key = makeKey4(opts.protocol, opts.insideIP, opts.insidePort, opts.outsideIP, opts.outsidePort);
@@ -389,16 +413,25 @@ export class NATEngine {
 
       if (!entry.protocol) {
         this.hitCount++;
+        entry.hitCount = (entry.hitCount ?? 0) + 1;
         return rewriteDestIP(pkt, entry.localIP);
       }
 
       const entryProto = entry.protocol === 'tcp' ? IP_PROTO_TCP : IP_PROTO_UDP;
       if (proto === entryProto && dstPort === entry.globalPort) {
         this.hitCount++;
+        entry.hitCount = (entry.hitCount ?? 0) + 1;
         return rewriteDestIP(pkt, entry.localIP, entry.localPort);
       }
     }
 
+    // A packet arriving on an INSIDE interface that matched no hairpin
+    // candidate above isn't a NAT miss at all — it's just ordinary
+    // inside-to-outside traffic that `translateOutbound()` will translate
+    // once it's actually routed out. Only genuinely inbound (from outside)
+    // traffic that found no reverse session and no static entry is a real
+    // "Miss" (an unsolicited/unmapped packet we can't translate).
+    if (!isOutside) return null;
     this.missCount++;
     return null;
   }
@@ -407,9 +440,25 @@ export class NATEngine {
    * POSTROUTING / SNAT:
    * Called when a packet is about to leave on an outside interface.
    * Returns a modified packet (with translated src) or null if no translation.
+   *
+   * `opts.isHairpin` relaxes the "egress must be an outside interface" rule
+   * for NAT hairpinning (RFC 5382 §5): an inside host reaching another
+   * inside host through that host's own public/static NAT address gets
+   * routed back out an INSIDE interface (the hairpin turn), yet still needs
+   * its source rewritten so the reply routes back through this device —
+   * real IOS applies PAT/overload here despite neither interface being
+   * "outside". `opts.aclMatchPkt`, when given, is evaluated against the ACL
+   * instead of `pkt` — for a hairpin flow `pkt`'s destination has already
+   * been DNAT-rewritten to the inside server's real address, but the
+   * operator's ACL (e.g. `permit ip <inside-net> host <public-ip>`) is
+   * written against the address the client actually targeted.
    */
-  translateOutbound(pkt: IPv4Packet, outIface: string, inIface: string): IPv4Packet | null {
-    if (!this.outsideIfaces.has(outIface)) return null;
+  translateOutbound(
+    pkt: IPv4Packet, outIface: string, inIface: string,
+    opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
+  ): IPv4Packet | null {
+    const isHairpin = opts?.isHairpin ?? false;
+    if (!this.outsideIfaces.has(outIface) && !isHairpin) return null;
     // Only translate traffic originating from inside
     if (!this.insideIfaces.has(inIface)) return null;
 
@@ -442,6 +491,7 @@ export class NATEngine {
         const translated = translateNetworkOffset(srcIP, entry);
         if (translated) {
           this.hitCount++;
+          entry.hitCount = (entry.hitCount ?? 0) + 1;
           const key = makeKey(proto, srcIP, srcPort);
           if (!this.sessions.has(key)) {
             const session: NatSession = {
@@ -450,24 +500,32 @@ export class NATEngine {
               globalIP: translated, globalPort: srcPort,
               outsideIP: dstIP, outsidePort: dstPort,
               timestamp: Date.now(),
+              createdAt: Date.now(),
+              inIface,
             };
             this.sessions.set(key, session);
             this.reverseSessions.set(makeKey(proto, translated, srcPort), session);
+            this.updatePeak();
           }
           return rewriteSrcIP(pkt, translated);
         }
       } else if (entry.localIP === srcIP) {
         this.hitCount++;
+        entry.hitCount = (entry.hitCount ?? 0) + 1;
         return rewriteSrcIP(pkt, entry.globalIP);
       }
     }
 
     // 2. Dynamic rules
     for (const rule of this.dynamicRules) {
-      if (!this.matchACL(rule.aclId, srcIP, pkt)) continue;
+      if (!this.matchACL(rule.aclId, srcIP, opts?.aclMatchPkt ?? pkt)) continue;
 
       if (rule.type === 'overload') {
-        const globalIP = this.getIfaceIPFn?.(outIface) ?? null;
+        // Prefer the interface the operator actually named in
+        // `ip nat inside source list <acl> interface <if> overload` — for a
+        // hairpin flow `outIface` is the INSIDE egress port, not the public
+        // interface whose address the translation must use.
+        const globalIP = this.getIfaceIPFn?.(rule.interfaceName ?? outIface) ?? null;
         if (!globalIP) continue;
 
         // Session key includes dst for 4-tuple uniqueness (RFC 5382)
@@ -484,12 +542,19 @@ export class NATEngine {
             globalIP, globalPort,
             outsideIP: dstIP, outsidePort: dstPort,
             timestamp: Date.now(),
+            createdAt: Date.now(),
             tcpState: proto === IP_PROTO_TCP ? 'syn-seen' : undefined,
+            inIface,
           };
           this.sessions.set(sessionKey, session);
           const revKey = makeKey(proto, globalIP, globalPort);
           this.reverseSessions.set(revKey, session);
-          this.missCount++;
+          // A new dynamic translation is a successful outcome (RFC 2663 §4
+          // "Hits" also covers newly-created entries) — only a packet that
+          // never gets translated at all is a genuine "Miss".
+          this.hitCount++;
+          this.updatePeak();
+          this.debugLog(`s=${srcIP}->${globalIP}, d=${dstIP} [${session.globalPort}]`);
           this.getBus().publish({
             topic: 'nat.session.created',
             payload: {
@@ -506,6 +571,7 @@ export class NATEngine {
           session.timestamp = Date.now();
           if (proto === IP_PROTO_TCP) updateTcpState(session, pkt, 'out');
           this.hitCount++;
+          this.debugLog(`s=${srcIP}->${session.globalIP}, d=${dstIP} [${session.globalPort}]`);
           if (oldTcp !== session.tcpState && session.tcpState !== undefined) {
             this.getBus().publish({
               topic: 'nat.tcp.state-changed',
@@ -531,7 +597,9 @@ export class NATEngine {
         if (!session) {
           const poolIP = this.allocatePoolAddress(pool, srcIP);
           if (poolIP === null) {
-            this.missCount++;
+            // Exhausted for this rule — try the next dynamic rule rather
+            // than counting a Miss here; the final `missCount++` below
+            // covers the case where no rule at all can translate the packet.
             continue;
           }
           session = {
@@ -540,11 +608,14 @@ export class NATEngine {
             globalIP: poolIP, globalPort: srcPort,
             outsideIP: dstIP, outsidePort: dstPort,
             timestamp: Date.now(),
+            createdAt: Date.now(),
+            inIface,
           };
           this.sessions.set(sessionKey, session);
           const revKey = makeKey(proto, poolIP, srcPort);
           this.reverseSessions.set(revKey, session);
-          this.missCount++;
+          this.hitCount++;
+          this.updatePeak();
           this.getBus().publish({
             topic: 'nat.session.created',
             payload: {
@@ -607,6 +678,10 @@ export class NATEngine {
         insideGlobal: `${session.globalIP}:${session.globalPort}`,
         outsideLocal: outside,
         outsideGlobal: outside,
+        createdAtMs: session.createdAt,
+        lastUsedMs: session.timestamp,
+        timeoutMs: this.sessionTimeout(session),
+        inputIface: session.inIface,
       });
     }
 
@@ -624,6 +699,29 @@ export class NATEngine {
     return this.sessions.size + this.staticEntries.length;
   }
 
+  /** Update the high-water mark after a translation is added. */
+  private updatePeak(): void {
+    const n = this.getTranslationCount();
+    if (n > this.peakTranslationCount) this.peakTranslationCount = n;
+  }
+
+  /** Highest `getTranslationCount()` ever observed (`show ip nat statistics`'s "Peak translations"). */
+  getPeakTranslationCount(): number { return this.peakTranslationCount; }
+
+  // ─── debug ip nat ──────────────────────────────────────────────────
+  private debugEnabled = false;
+  setDebugEnabled(v: boolean): void { this.debugEnabled = v; }
+  isDebugEnabled(): boolean { return this.debugEnabled; }
+  /**
+   * One line per translated packet, IOS `debug ip nat` format.
+   * Uses `Logger.warn` (not `.info`) because `show logging`'s buffer only
+   * retains warn/error-level events — the same mechanism already used for
+   * IPsec's `debug crypto ipsec` anti-replay traces.
+   */
+  private debugLog(line: string): void {
+    if (this.debugEnabled) Logger.warn(this.deviceId, 'nat:debug', `NAT*: ${line}`);
+  }
+
   clearTranslations(): void {
     this.sessions.clear();
     this.reverseSessions.clear();
@@ -632,6 +730,24 @@ export class NATEngine {
   clearDynamicTranslations(): void {
     this.sessions.clear();
     this.reverseSessions.clear();
+  }
+
+  /**
+   * `clear ip nat translation tcp|udp <local-ip> <local-port> <global-ip>
+   * <global-port>` — removes only the ONE session identified. The
+   * global (ip, port) pair is the true unique key for a PAT/overload
+   * entry (RFC 3022), so that's what's used to find it; `localIP`/
+   * `localPort` are not required to also match; other active sessions
+   * are left untouched.
+   */
+  clearTranslation(proto: number, globalIP: string, globalPort: number): boolean {
+    const revKey = makeKey(proto, globalIP, globalPort);
+    const session = this.reverseSessions.get(revKey);
+    if (!session) return false;
+    const key = makeKey4(proto, session.localIP, session.localPort, session.outsideIP, session.outsidePort);
+    this.sessions.delete(key);
+    this.reverseSessions.delete(revKey);
+    return true;
   }
 
   /**
