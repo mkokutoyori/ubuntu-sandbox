@@ -1551,10 +1551,6 @@ export class LinuxTerminalSession extends TerminalSession {
 
     this.pushHistory(typed);
 
-    // A command typed on a remote whose link has since been pulled never
-    // reaches it — the session is already dead (docs/PRD-Link-State.md §3.3).
-    if (this.breakRemoteSessionIfLinkLost()) return;
-
     // Intercept `tail -f` / `tail -F` — open a streaming follow on the
     // VFS through the unified async runtime; appended bytes flow into the
     // terminal until Ctrl+C cancels the foreground job.
