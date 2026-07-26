@@ -197,7 +197,6 @@ export class LinuxTerminalSession extends TerminalSession {
    * connection layer (host-key prompts, password prompts) to the terminal's
    * key-handling pipeline. Non-null only while an SSH connection is in progress.
    */
-  private pendingSshIO: QueuedTerminalIO | null = null;
 
   /**
    * Per-terminal shell session (allocated on Linux machines). Holds the
@@ -701,71 +700,6 @@ export class LinuxTerminalSession extends TerminalSession {
    * Key handler used while a reactive SSH IO prompt is active.
    * Submits input on Enter, cancels on Ctrl+C, suppresses history navigation.
    */
-  private handleSshIOKey(e: KeyEvent): boolean {
-    if (!this.pendingSshIO?.isWaitingForInput) return false;
-
-    if (e.key === 'Enter') {
-      const isPassword = this.inputMode.type === 'password';
-      const val = isPassword ? this._passwordBuf : this._inputBuf;
-      if (isPassword) this._passwordBuf = '';
-      else this._inputBuf = '';
-      // Echo the prompt (+ the non-secret answer) into scrollback so the
-      // SSH host-key / password dialogs leave a trace in history once
-      // submitted. Without this the prompt vanishes the moment the user
-      // hits Enter, which doesn't match OpenSSH's terminal-style flow.
-      // Passwords are intentionally not echoed.
-      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
-        const promptText = (this.inputMode as { promptText: string }).promptText;
-        if (promptText) {
-          this.addLine(isPassword ? promptText : `${promptText}${val}`);
-        }
-      }
-      // endPrompt() is called inside submitInput → resets inputMode + notify
-      this.pendingSshIO.submitInput(val);
-      return true;
-    }
-
-    // Suppress history navigation during SSH prompts
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') return true;
-
-    if (e.key === 'c' && e.ctrlKey) {
-      this._passwordBuf = '';
-      this._inputBuf = '';
-      // cancel() resolves readInput with '' → SSH layer treats it as abort
-      this.pendingSshIO.cancel();
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Build a QueuedTerminalIO wired to this session's addLine / inputMode.
-   * The SSH layer calls readInput() which suspends on a Promise; the terminal
-   * resolves it via handleSshIOKey → submitInput().
-   */
-  private createSshTerminalIO(): QueuedTerminalIO {
-    const io = new QueuedTerminalIO({
-      writeLine: (text, type) => this.addLine(text, type),
-      beginPrompt: (prompt, secret) => {
-        if (secret) {
-          this._passwordBuf = '';
-          this.inputMode = { type: 'password', promptText: prompt };
-        } else {
-          this._inputBuf = '';
-          this.inputMode = { type: 'interactive-text', promptText: prompt };
-        }
-        this.notify();
-      },
-      endPrompt: () => {
-        this.inputMode = { type: 'normal' };
-        this.notify();
-      },
-    });
-    this.pendingSshIO = io;
-    return io;
-  }
-
   protected handleModeKey(_e: KeyEvent): boolean {
     // All mode handling is done in the overridden handleKey above
     return false;

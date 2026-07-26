@@ -30,6 +30,7 @@ import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
+import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import type { RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
@@ -566,6 +567,80 @@ export abstract class TerminalSession {
     this.detachFromHost();
     this.dispose();
     return true;
+  }
+
+  /**
+   * Reactive SSH IO for the connection phase, shared by every vendor:
+   * the SSH layer suspends on `readInput()`, the terminal resolves it
+   * from the keyboard. Password and host-key dialogs therefore look the
+   * same whichever shell typed `ssh` — there is one client, so there is
+   * one prompt flow (docs/PRD-SSH-Unification.md §4bis).
+   */
+  protected pendingSshIO: QueuedTerminalIO | null = null;
+
+  protected handleSshIOKey(e: KeyEvent): boolean {
+    if (!this.pendingSshIO?.isWaitingForInput) return false;
+
+    if (e.key === 'Enter') {
+      const isPassword = this.inputMode.type === 'password';
+      const val = isPassword ? this._passwordBuf : this._inputBuf;
+      if (isPassword) this._passwordBuf = '';
+      else this._inputBuf = '';
+      // Echo the prompt (+ the non-secret answer) into scrollback so the
+      // SSH host-key / password dialogs leave a trace in history once
+      // submitted. Without this the prompt vanishes the moment the user
+      // hits Enter, which doesn't match OpenSSH's terminal-style flow.
+      // Passwords are intentionally not echoed.
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        const promptText = (this.inputMode as { promptText: string }).promptText;
+        if (promptText) {
+          this.addLine(isPassword ? promptText : `${promptText}${val}`);
+        }
+      }
+      // endPrompt() is called inside submitInput → resets inputMode + notify
+      this.pendingSshIO.submitInput(val);
+      return true;
+    }
+
+    // Suppress history navigation during SSH prompts
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') return true;
+
+    if (e.key === 'c' && e.ctrlKey) {
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      // cancel() resolves readInput with '' → SSH layer treats it as abort
+      this.pendingSshIO.cancel();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Build a QueuedTerminalIO wired to this session's addLine / inputMode.
+   * The SSH layer calls readInput() which suspends on a Promise; the terminal
+   * resolves it via handleSshIOKey → submitInput().
+   */
+  protected createSshTerminalIO(): QueuedTerminalIO {
+    const io = new QueuedTerminalIO({
+      writeLine: (text, type) => this.addLine(text, type),
+      beginPrompt: (prompt, secret) => {
+        if (secret) {
+          this._passwordBuf = '';
+          this.inputMode = { type: 'password', promptText: prompt };
+        } else {
+          this._inputBuf = '';
+          this.inputMode = { type: 'interactive-text', promptText: prompt };
+        }
+        this.notify();
+      },
+      endPrompt: () => {
+        this.inputMode = { type: 'normal' };
+        this.notify();
+      },
+    });
+    this.pendingSshIO = io;
+    return io;
   }
 
   /**
