@@ -203,9 +203,22 @@ export interface AdAccessRuleInfo {
 export interface AdGroupInfo {
   sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; category: 'Security' | 'Distribution'; members: string[];
 }
-export interface AdComputerInfo { name: string; dn: string; enabled: boolean; servicePrincipalNames: string[] }
+export interface AdComputerInfo {
+  name: string; dn: string; enabled: boolean; servicePrincipalNames: string[];
+  /** The site this DC is (explicitly or IP-derived) assigned to — undefined for a plain (non-DC) computer object. */
+  site?: string | null;
+  /** This DC's resolved IPv4 address — undefined for a plain (non-DC) computer object. */
+  ipv4Address?: string | null;
+}
 export interface AdOrgUnitInfo { name: string; dn: string; gpLinks: string[] }
 export interface AdOpResult { ok: boolean; message: string }
+export interface AdSubnetInfo { cidr: string; dn: string; site: string; description: string }
+export type AdSiteLinkTransport = 'IP' | 'SMTP';
+export interface AdSiteLinkInfo {
+  name: string; dn: string; sitesIncluded: string[]; cost: number;
+  replicationFrequencyInMinutes: number; interSiteTransportProtocol: AdSiteLinkTransport; description: string;
+}
+export interface AdUpToDatenessVectorRowInfo { server: string; usnFilter: number; lastReplicationSuccess: string }
 
 export interface IAdProvider {
   /** `Install-ADDSForest` — promotes this server to a new forest's first DC. Fails if already promoted. */
@@ -267,12 +280,35 @@ export interface IAdProvider {
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null;
   listOrganizationalUnits(): AdOrgUnitInfo[];
 
-  /** `New-ADReplicationSite` (PRD-Windows-Server-Advanced.md §5 P6). */
-  newReplicationSite(name: string): AdOpResult;
+  /** `New-ADReplicationSite -Name <name> [-Description <text>]` (PRD-Windows-Server-Advanced.md §5 P6). */
+  newReplicationSite(name: string, description?: string): AdOpResult;
+  /** `Set-ADReplicationSite -Identity <old> -Name <new>`. */
+  renameReplicationSite(identity: string, newName: string): AdOpResult;
   /** `Get-ADReplicationSite` (no `-Identity`: every site this DC knows about). */
   listReplicationSites(): AdSiteInfo[];
-  /** `New-ADReplicationSubnet -Name <cidr> -Site <site>`. */
-  newReplicationSubnet(cidr: string, siteName: string): AdOpResult;
+  /** `New-ADReplicationSubnet -Name <cidr> -Site <site> [-Description <text>]`. */
+  newReplicationSubnet(cidr: string, siteName: string, description?: string): AdOpResult;
+  /** `Get-ADReplicationSubnet -Filter *`. */
+  listReplicationSubnets(): AdSubnetInfo[];
+
+  /** `New-ADReplicationSiteLink -Name <name> -SitesIncluded <sites> [-Cost <n>] [-ReplicationFrequencyInMinutes <n>] [-InterSiteTransportProtocol IP|SMTP] [-Description <text>]` — bookkeeping only, no scheduling/cost enforcement (PRD-Repadmin.md §0.2, same "no KCC" boundary as `/kcc`/`/istg`). */
+  newReplicationSiteLink(
+    name: string, sitesIncluded: string[],
+    opts?: { cost?: number; replicationFrequencyInMinutes?: number; transport?: AdSiteLinkTransport; description?: string },
+  ): AdOpResult;
+  /** `Get-ADReplicationSiteLink -Filter *`. */
+  listReplicationSiteLinks(): AdSiteLinkInfo[];
+  /** `Get-ADReplicationSiteLink -Identity <name>`. */
+  getReplicationSiteLink(name: string): AdSiteLinkInfo | null;
+  /** `Set-ADReplicationSiteLink -Identity <name> [-Cost <n>] [-ReplicationFrequencyInMinutes <n>] [-SitesIncluded <sites>] [-Description <text>]`. */
+  setReplicationSiteLink(
+    name: string, patch: { cost?: number; replicationFrequencyInMinutes?: number; sitesIncluded?: string[]; description?: string },
+  ): AdOpResult;
+
+  /** `Move-ADDirectoryServer -Identity <dc> -Site <site>` — explicit admin override of a DC's site membership. */
+  moveDirectoryServer(identity: string, siteName: string): AdOpResult;
+  /** `Get-ADReplicationUpToDatenessVectorTable -Target <dc>` — this DC's own view of how caught-up it is with each partner it has ever successfully pulled from. */
+  listUpToDatenessVector(): AdUpToDatenessVectorRowInfo[];
 
   /** `New-ADAttribute` (PRD-Windows-Server-Advanced.md §5 P7, RFC 4512 §4). */
   newAttribute(schema: AdAttributeSchemaInfo): AdOpResult;

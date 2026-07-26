@@ -73,7 +73,7 @@ import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
-import { transportLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { transportLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 import {
@@ -197,7 +197,6 @@ export class LinuxTerminalSession extends TerminalSession {
    * connection layer (host-key prompts, password prompts) to the terminal's
    * key-handling pipeline. Non-null only while an SSH connection is in progress.
    */
-  private pendingSshIO: QueuedTerminalIO | null = null;
 
   /**
    * Per-terminal shell session (allocated on Linux machines). Holds the
@@ -701,71 +700,6 @@ export class LinuxTerminalSession extends TerminalSession {
    * Key handler used while a reactive SSH IO prompt is active.
    * Submits input on Enter, cancels on Ctrl+C, suppresses history navigation.
    */
-  private handleSshIOKey(e: KeyEvent): boolean {
-    if (!this.pendingSshIO?.isWaitingForInput) return false;
-
-    if (e.key === 'Enter') {
-      const isPassword = this.inputMode.type === 'password';
-      const val = isPassword ? this._passwordBuf : this._inputBuf;
-      if (isPassword) this._passwordBuf = '';
-      else this._inputBuf = '';
-      // Echo the prompt (+ the non-secret answer) into scrollback so the
-      // SSH host-key / password dialogs leave a trace in history once
-      // submitted. Without this the prompt vanishes the moment the user
-      // hits Enter, which doesn't match OpenSSH's terminal-style flow.
-      // Passwords are intentionally not echoed.
-      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
-        const promptText = (this.inputMode as { promptText: string }).promptText;
-        if (promptText) {
-          this.addLine(isPassword ? promptText : `${promptText}${val}`);
-        }
-      }
-      // endPrompt() is called inside submitInput → resets inputMode + notify
-      this.pendingSshIO.submitInput(val);
-      return true;
-    }
-
-    // Suppress history navigation during SSH prompts
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') return true;
-
-    if (e.key === 'c' && e.ctrlKey) {
-      this._passwordBuf = '';
-      this._inputBuf = '';
-      // cancel() resolves readInput with '' → SSH layer treats it as abort
-      this.pendingSshIO.cancel();
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Build a QueuedTerminalIO wired to this session's addLine / inputMode.
-   * The SSH layer calls readInput() which suspends on a Promise; the terminal
-   * resolves it via handleSshIOKey → submitInput().
-   */
-  private createSshTerminalIO(): QueuedTerminalIO {
-    const io = new QueuedTerminalIO({
-      writeLine: (text, type) => this.addLine(text, type),
-      beginPrompt: (prompt, secret) => {
-        if (secret) {
-          this._passwordBuf = '';
-          this.inputMode = { type: 'password', promptText: prompt };
-        } else {
-          this._inputBuf = '';
-          this.inputMode = { type: 'interactive-text', promptText: prompt };
-        }
-        this.notify();
-      },
-      endPrompt: () => {
-        this.inputMode = { type: 'normal' };
-        this.notify();
-      },
-    });
-    this.pendingSshIO = io;
-    return io;
-  }
-
   protected handleModeKey(_e: KeyEvent): boolean {
     // All mode handling is done in the overridden handleKey above
     return false;
@@ -3796,24 +3730,16 @@ export class LinuxTerminalSession extends TerminalSession {
    * editors open on the remote, tab completion uses the remote VFS.
    */
   /**
-   * A probe that re-tests the path to `host` from THIS device — the one
-   * that opened the session — so an interactive remote shell notices a
-   * pulled cable instead of going on driving the remote in memory
-   * (docs/PRD-Link-State.md §3.3).
-   */
-  /**
-   * Reachability BEFORE connecting — this one is a genuine probe,
-   * because running `ssh` really does open a connection.
+   * Is there a usable path to `host` from THIS device, before `ssh`
+   * connects. Read off the cabled topology rather than dialled: the
+   * connection `ssh` is about to open is the one that settles the
+   * question, and a throwaway handshake before it made the server log an
+   * accept/close pair for a connection no client ever had
+   * (docs/PRD-Link-State.md §2.1 P6).
    */
   private remoteLivenessProbe(host: string): (() => boolean) | undefined {
-    const probe = (this.device as unknown as {
-      tcpConnectOutcome?: (ip: IPAddress, port: number) => string;
-    }).tcpConnectOutcome;
-    if (typeof probe !== 'function') return undefined;
-    const device = this.device;
-    const ip = IPAddress.tryParse(host);
-    if (!ip) return undefined;
-    return () => probe.call(device, ip, 22) === 'open';
+    if (!IPAddress.tryParse(host)) return undefined;
+    return peerLiveness(this.device, host);
   }
 
   pushRemoteDevice(

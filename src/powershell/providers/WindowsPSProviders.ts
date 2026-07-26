@@ -59,6 +59,7 @@ import type {
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
+  AdSubnetInfo, AdSiteLinkInfo, AdUpToDatenessVectorRowInfo,
   AdKdsRootKeyInfo, AdServiceAccountInfo,
   AdGenericObjectInfo, AdOptionalFeatureInfo,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
@@ -415,7 +416,36 @@ class WindowsAdAdapter implements IAdProvider {
 
   listDomainControllers(): AdComputerInfo[] {
     const store = this.requireStore('Get-ADDomainController');
-    return store.listDomainControllers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames }));
+    const selfName = this.pc.getHostname().toLowerCase();
+    const selfIface = this.pc.getInterfaces().find(p => p.getIPAddress() !== null);
+    const selfIp = selfIface?.getIPAddress()?.toString() ?? null;
+    return store.listDomainControllers().map(c => {
+      // The local DC's own address is always known directly; every other
+      // DC's is read from its recorded site assignment (`ipForDc` —
+      // DNS isn't replicated between DCs here, see forest/sites.ts header).
+      const ip = c.name.toLowerCase() === selfName ? selfIp : store.ipForDc(c.name);
+      const site = store.siteForDc(c.name) ?? (ip ? store.siteForIp(ip) : null);
+      return { name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames, site, ipv4Address: ip };
+    });
+  }
+
+  /** `Get-ADReplicationUpToDatenessVectorTable -Target <dc>` — this (local) DC's own view of how far it has absorbed each replication partner's changes: one row per partner it has ever successfully pulled from, keyed by that partner's own USN as last observed here (`highestKnownUsnFor`, the same source `repadmin`'s `usnForInvocation` reads). */
+  listUpToDatenessVector(): AdUpToDatenessVectorRowInfo[] {
+    const store = this.requireStore('Get-ADReplicationUpToDatenessVectorTable');
+    const server = this.pc as WindowsServer;
+    const byPartnerInvocation = new Map<string, { partnerAddress: string; remoteInvocationId: string; lastSuccess: number }>();
+    for (const e of server.getReplicationSignals().log.get()) {
+      if ((e.direction ?? 'inbound') !== 'inbound' || !e.ok || !e.remoteInvocationId) continue;
+      const existing = byPartnerInvocation.get(e.remoteInvocationId);
+      if (!existing || e.timestamp > existing.lastSuccess) {
+        byPartnerInvocation.set(e.remoteInvocationId, { partnerAddress: e.partnerAddress, remoteInvocationId: e.remoteInvocationId, lastSuccess: e.timestamp });
+      }
+    }
+    return [...byPartnerInvocation.values()].map(entry => ({
+      server: store.dcForIp(entry.partnerAddress) ?? entry.partnerAddress,
+      usnFilter: store.highestKnownUsnFor(entry.remoteInvocationId),
+      lastReplicationSuccess: new Date(entry.lastSuccess * 1000).toUTCString(),
+    }));
   }
 
   listReplicationConnections(): AdReplicationConnectionInfo[] {
@@ -758,21 +788,70 @@ class WindowsAdAdapter implements IAdProvider {
     return this.requireStore('Get-ADOrganizationalUnit').listOrgUnits().map(ou => ({ name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] }));
   }
 
-  newReplicationSite(name: string): AdOpResult {
+  newReplicationSite(name: string, description?: string): AdOpResult {
     const store = this.requireStore('New-ADReplicationSite');
     const denied = this.requireAdmin('New-ADReplicationSite');
     if (denied) return denied;
-    return store.newSite(name);
+    const res = store.newSite(name, description ?? '');
+    if (res.ok) store.ensureDefaultSiteLink();
+    return res;
+  }
+  renameReplicationSite(identity: string, newName: string): AdOpResult {
+    const store = this.requireStore('Set-ADReplicationSite');
+    const denied = this.requireAdmin('Set-ADReplicationSite');
+    if (denied) return denied;
+    return store.renameSite(identity, newName);
   }
   listReplicationSites(): AdSiteInfo[] {
     const store = this.requireStore('Get-ADReplicationSite');
     return store.listSites();
   }
-  newReplicationSubnet(cidr: string, siteName: string): AdOpResult {
+  newReplicationSubnet(cidr: string, siteName: string, description?: string): AdOpResult {
     const store = this.requireStore('New-ADReplicationSubnet');
     const denied = this.requireAdmin('New-ADReplicationSubnet');
     if (denied) return denied;
-    return store.newSubnet(cidr, siteName);
+    return store.newSubnet(cidr, siteName, description ?? '');
+  }
+  listReplicationSubnets(): AdSubnetInfo[] {
+    const store = this.requireStore('Get-ADReplicationSubnet');
+    return store.listSubnets();
+  }
+
+  newReplicationSiteLink(
+    name: string, sitesIncluded: string[],
+    opts?: { cost?: number; replicationFrequencyInMinutes?: number; transport?: 'IP' | 'SMTP'; description?: string },
+  ): AdOpResult {
+    const store = this.requireStore('New-ADReplicationSiteLink');
+    const denied = this.requireAdmin('New-ADReplicationSiteLink');
+    if (denied) return denied;
+    return store.newSiteLink(name, sitesIncluded, opts);
+  }
+  listReplicationSiteLinks(): AdSiteLinkInfo[] {
+    const store = this.requireStore('Get-ADReplicationSiteLink');
+    return store.listSiteLinks();
+  }
+  getReplicationSiteLink(name: string): AdSiteLinkInfo | null {
+    const store = this.requireStore('Get-ADReplicationSiteLink');
+    return store.getSiteLink(name);
+  }
+  setReplicationSiteLink(
+    name: string, patch: { cost?: number; replicationFrequencyInMinutes?: number; sitesIncluded?: string[]; description?: string },
+  ): AdOpResult {
+    const store = this.requireStore('Set-ADReplicationSiteLink');
+    const denied = this.requireAdmin('Set-ADReplicationSiteLink');
+    if (denied) return denied;
+    return store.setSiteLink(name, patch);
+  }
+
+  moveDirectoryServer(identity: string, siteName: string): AdOpResult {
+    this.requireStore('Move-ADDirectoryServer');
+    const denied = this.requireAdmin('Move-ADDirectoryServer');
+    if (denied) return denied;
+    const server = this.pc as WindowsServer;
+    if (typeof server.moveDirectoryServer !== 'function') {
+      return { ok: false, message: 'Move-ADDirectoryServer : This computer cannot manage directory server sites.' };
+    }
+    return server.moveDirectoryServer(identity, siteName);
   }
 
   newAttribute(schema: AdAttributeSchemaInfo): AdOpResult {

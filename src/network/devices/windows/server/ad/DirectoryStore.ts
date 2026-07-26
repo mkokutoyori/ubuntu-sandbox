@@ -15,7 +15,7 @@
  * genuine LDAP client.
  */
 
-import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
+import { DirectoryTree, type DirectoryEntry, type EntryReplMeta, type Modification } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
 import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, GpoRegistryValue, GpoLinkInfo, AdFineGrainedPasswordPolicy, AdAccessRule, AdGenericObject, AdServiceAccount } from './AdTypes';
@@ -24,7 +24,7 @@ import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
 } from './replication/HighWatermarkVector';
-import { SiteRegistry, type SiteOpResult, type SiteInfo } from './forest/sites';
+import { SiteRegistry, type SiteOpResult, type SiteInfo, type SubnetInfo, type SiteLinkInfo, type SiteLinkTransport } from './forest/sites';
 import { SchemaValidator } from './schema/SchemaValidator';
 import { SchemaPartition, seedDefaultSchema } from './schema/SchemaPartition';
 import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schema/SchemaValidator';
@@ -174,11 +174,77 @@ export class DirectoryStore {
 
   // ─── Sites (PRD-Windows-Server-Advanced.md §5 P6) ──────────────────────
 
-  newSite(name: string): SiteOpResult { return this.sites.newSite(name); }
+  newSite(name: string, description = ''): SiteOpResult { return this.sites.newSite(name, description); }
+  /** `Set-ADReplicationSite -Identity <old> -Name <new>` — also repoints every DC whose `site` attribute (assignServerToSite, below) held the old name, since that's a plain string copy, not a DN reference the rename would otherwise fix up on its own. */
+  renameSite(oldName: string, newName: string): SiteOpResult {
+    const res = this.sites.renameSite(oldName, newName);
+    if (!res.ok) return res;
+    for (const dc of this.listDomainControllers()) {
+      if (this.siteForDc(dc.name) === oldName) this.assignServerToSite(dc.name, newName);
+    }
+    return res;
+  }
   listSites(): SiteInfo[] { return this.sites.listSites(); }
-  newSubnet(cidr: string, siteName: string): SiteOpResult { return this.sites.newSubnet(cidr, siteName); }
+  getSite(name: string): SiteInfo | null { return this.sites.getSite(name); }
+  newSubnet(cidr: string, siteName: string, description = ''): SiteOpResult { return this.sites.newSubnet(cidr, siteName, description); }
+  listSubnets(): SubnetInfo[] { return this.sites.listSubnets(); }
   /** The name of the site whose subnet contains `ip`, or null if none does (§2.2 scope — no fallback-site guessing). */
   siteForIp(ip: string): string | null { return this.sites.siteForIp(ip); }
+
+  /** `New-ADReplicationSiteLink`/`Get`/`Set` — bookkeeping only, cost/frequency/schedule are stored and reported, never consulted to pace or route replication (PRD-Repadmin.md §0.2, same "no KCC" boundary as `/kcc`). */
+  ensureDefaultSiteLink(): void { this.sites.ensureDefaultSiteLink(); }
+  newSiteLink(
+    name: string, sitesIncluded: string[],
+    opts?: { cost?: number; replicationFrequencyInMinutes?: number; transport?: SiteLinkTransport; description?: string },
+  ): SiteOpResult { return this.sites.newSiteLink(name, sitesIncluded, opts); }
+  listSiteLinks(): SiteLinkInfo[] { return this.sites.listSiteLinks(); }
+  getSiteLink(name: string): SiteLinkInfo | null { return this.sites.getSiteLink(name); }
+  setSiteLink(
+    name: string, patch: { cost?: number; replicationFrequencyInMinutes?: number; sitesIncluded?: string[]; description?: string },
+  ): SiteOpResult { return this.sites.setSiteLink(name, patch); }
+
+  /**
+   * `Move-ADDirectoryServer -Identity <dc> -Site <site>` — explicit admin
+   * override of a DC's site membership, independent of `siteForIp` (real
+   * AD's own reason this cmdlet exists — see forest/sites.ts header).
+   *
+   * Stored as `site`/`ipAddress` attributes directly on the DC's own
+   * computer-account entry (already reliably replicated — every
+   * `Get-ADDomainController` test depends on that) rather than as a
+   * separate `CN=Servers,CN=<site>,...` structural entry that would need
+   * moving between sites: this simulator has no tombstone/deletion
+   * replication (PRD-Repadmin.md §0.2 point 2 — permanent, not a gap to
+   * close here), so a delete+add "move" would hard-delete on the
+   * originating DC only, leaving a stale duplicate on every DC that
+   * independently created its own copy (e.g. a DC's initial
+   * self-assignment at promotion) — an attribute REPLACE on one
+   * already-shared entry has no such split-brain failure mode.
+   */
+  assignServerToSite(dcName: string, siteName: string, ipAddress?: string): SiteOpResult {
+    if (!this.sites.siteExists(siteName)) return { ok: false, message: `Cannot find a site named "${siteName}".` };
+    const entry = this.findComputerEntry(dcName);
+    if (!entry) return { ok: false, message: `Cannot find a domain controller named "${dcName}".` };
+    const changes: Modification[] = [{ op: 'replace', type: 'site', values: [siteName] }];
+    if (ipAddress) changes.push({ op: 'replace', type: 'ipAddress', values: [ipAddress] });
+    this.tree.modifyEntry(entry.dn, changes);
+    return { ok: true, message: '' };
+  }
+
+  /** The site `dcName` is explicitly assigned to (via promotion-time auto-assignment or `Move-ADDirectoryServer`), or `null` if never assigned. */
+  siteForDc(dcName: string): string | null {
+    return firstOf(this.findComputerEntry(dcName)?.attributes.get('site')) || null;
+  }
+
+  /** The IP address recorded for `dcName` at its last `assignServerToSite` call (§ above — a pragmatic stand-in for DNS, which isn't replicated between DCs here), or `null`. */
+  ipForDc(dcName: string): string | null {
+    return firstOf(this.findComputerEntry(dcName)?.attributes.get('ipaddress')) || null;
+  }
+
+  /** The DC name whose recorded address is `ip`, or `null`. */
+  dcForIp(ip: string): string | null {
+    const dc = this.listDomainControllers().find(c => this.ipForDc(c.name) === ip);
+    return dc?.name ?? null;
+  }
 
   // ─── Trusts (PRD-Windows-Server-Advanced.md §5 P9) ─────────────────────
 

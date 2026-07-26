@@ -16,6 +16,8 @@ export interface ReplicationPullCompletedPayload extends ReplicationDcRef {
   partnerAddress: string;
   applied: number;
   siteRelation: 'intra-site' | 'inter-site';
+  /** PRD-Repadmin.md P2: the partner's invocationID, when the puller got a real reply — carried through so a `ReplicationSignalStore`-backed reader (e.g. `Get-ADReplicationUpToDatenessVectorTable`) can look up `DirectoryStore.highestKnownUsnFor` the same way `/showrepl` already does from the raw log. */
+  remoteInvocationId?: string;
 }
 
 export interface ReplicationPullFailedPayload extends ReplicationDcRef {

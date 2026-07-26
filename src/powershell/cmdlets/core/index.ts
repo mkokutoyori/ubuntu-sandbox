@@ -125,7 +125,10 @@ import {
   AddKdsRootKeyCmdlet, GetKdsRootKeyCmdlet, NewADServiceAccountCmdlet, GetADServiceAccountCmdlet,
   SetADServiceAccountCmdlet, AddADComputerServiceAccountCmdlet,
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
-  NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
+  NewADReplicationSiteCmdlet, SetADReplicationSiteCmdlet, GetADReplicationSiteCmdlet,
+  NewADReplicationSubnetCmdlet, GetADReplicationSubnetCmdlet,
+  NewADReplicationSiteLinkCmdlet, GetADReplicationSiteLinkCmdlet, SetADReplicationSiteLinkCmdlet,
+  MoveADDirectoryServerCmdlet, GetADReplicationUpToDatenessVectorTableCmdlet,
   GetADReplicationConnectionCmdlet, GetADReplicationFailureCmdlet,
   GetADDefaultDomainPasswordPolicyCmdlet, SetADDefaultDomainPasswordPolicyCmdlet,
   NewADFineGrainedPasswordPolicyCmdlet, AddADFineGrainedPasswordPolicySubjectCmdlet,
@@ -495,8 +498,15 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   // -Discover form must work from a plain domain-joined client).
   registry.register(new RemoveADDomainControllerCmdlet());
   registry.register(new NewADReplicationSiteCmdlet());
+  registry.register(new SetADReplicationSiteCmdlet());
   registry.register(new GetADReplicationSiteCmdlet());
   registry.register(new NewADReplicationSubnetCmdlet());
+  registry.register(new GetADReplicationSubnetCmdlet());
+  registry.register(new NewADReplicationSiteLinkCmdlet());
+  registry.register(new GetADReplicationSiteLinkCmdlet());
+  registry.register(new SetADReplicationSiteLinkCmdlet());
+  registry.register(new MoveADDirectoryServerCmdlet());
+  registry.register(new GetADReplicationUpToDatenessVectorTableCmdlet());
   registry.register(new GetADReplicationConnectionCmdlet());
   registry.register(new GetADReplicationFailureCmdlet());
   registry.register(new GetADDefaultDomainPasswordPolicyCmdlet());

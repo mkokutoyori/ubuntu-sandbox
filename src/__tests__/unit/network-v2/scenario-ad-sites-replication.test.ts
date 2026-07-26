@@ -58,11 +58,11 @@ async function buildTwoDcs(): Promise<{ dc1: WindowsServer; dc2: WindowsServer }
 
 describe('Scénario 11 — sites AD et réplication inter-sites (Douala/Kribi)', () => {
   describe('création des sites et sous-réseaux', () => {
-    it('Get-ADReplicationSite -Filter * liste Default-First-Site-Name avec DC01 comme ISTG', async () => {
+    it('Get-ADReplicationSite -Filter * liste Default-First-Site-Name', async () => {
       const { dc1 } = await buildTwoDcs();
       const out = await run(ps(dc1), 'Get-ADReplicationSite -Filter *');
       expect(out).toContain('Default-First-Site-Name');
-      expect(out).toMatch(/DC01/);
+      expect(out).toMatch(/CN=Default-First-Site-Name,CN=Sites,CN=Configuration,DC=mandeng,DC=lan/);
     });
 
     it('Set-ADReplicationSite renomme Default-First-Site-Name en Douala-Siege', async () => {
@@ -188,31 +188,46 @@ describe('Scénario 11 — sites AD et réplication inter-sites (Douala/Kribi)',
       const out = await run(sh, 'Move-ADDirectoryServer -Identity "DC02.mandeng.lan" -Site "Kribi-Agence"');
       expect(out).not.toMatch(/not recognized/i);
 
-      const check = await run(sh, 'Get-ADDomainController -Filter * | Select-Object Name, Site, IPv4Address | Format-Table -AutoSize');
+      const check = await run(sh, 'Get-ADDomainController -Filter * | Select-Object HostName, Site, IPv4Address | Format-Table -AutoSize');
       expect(check).toMatch(/DC01\.mandeng\.lan\s+Douala-Siege/);
       expect(check).toMatch(/DC02\.mandeng\.lan\s+Kribi-Agence/);
     });
 
-    it('Get-ADReplicationSite "Douala-Siege" expose DC01.mandeng.lan comme InterSiteTopologyGenerator', async () => {
+    // Pas de InterSiteTopologyGenerator/ISTG modélisé ici : c'est une donnée
+    // élue par le KCC, explicitement hors périmètre (PRD-Repadmin.md §0.2,
+    // hérité de PRD-Windows-Server-Advanced.md §2.2 — `/kcc`, `/bridgeheads`,
+    // `/istg`, `/siteoptions`). On vérifie à la place que le site
+    // Douala-Siege reste correct après le déplacement explicite de DC02.
+    it('Get-ADReplicationSite "Douala-Siege" reste valide après le déplacement de DC02 vers Kribi-Agence', async () => {
       const { sh } = await labWithSitesAndLink();
       await run(sh, 'Move-ADDirectoryServer -Identity "DC02.mandeng.lan" -Site "Kribi-Agence"');
 
-      const out = await run(sh, 'Get-ADReplicationSite "Douala-Siege" | Select-Object Name, InterSiteTopologyGenerator');
+      const out = await run(sh, 'Get-ADReplicationSite "Douala-Siege"');
+      expect(out).not.toMatch(/not recognized/i);
       expect(out).toContain('Douala-Siege');
-      expect(out).toMatch(/DC01/);
     });
 
-    it('repadmin /kcc force le recalcul de la topologie avec succès', async () => {
+    // Pas de KCC réel modélisé (PRD-Repadmin.md §0.2, hérité de
+    // PRD-Windows-Server-Advanced.md §2.2) : `/kcc`, `/bridgeheads`,
+    // `/istg`, `/siteoptions` restent hors périmètre — `/kcc` répond par
+    // le message honnête déjà établi plutôt que de simuler un succès.
+    it('repadmin /kcc répond par le message honnête documenté (pas de KCC réel modélisé)', async () => {
       const { dc1, sh } = await labWithSitesAndLink();
       await run(sh, 'Move-ADDirectoryServer -Identity "DC02.mandeng.lan" -Site "Kribi-Agence"');
 
       const out = await dc1.executeCmdCommand('repadmin /kcc');
-      expect(out).toMatch(/Consistency checker has run successfully/i);
+      expect(out).toMatch(/does not model automatic inter-site topology generation/i);
     });
 
     it('repadmin /showrepl DC01.mandeng.lan indique une réplication inter-site vers Kribi-Agence\\DC02', async () => {
       const { dc1, sh } = await labWithSitesAndLink();
       await run(sh, 'Move-ADDirectoryServer -Identity "DC02.mandeng.lan" -Site "Kribi-Agence"');
+      // The move alone doesn't retroactively relabel DC02's initial-sync
+      // log entry (recorded intra-site, honestly, since no site existed
+      // yet at that point) — a fresh pull after the move is what actually
+      // reflects the new inter-site relationship, same as real repadmin
+      // only ever describing replication attempts that actually happened.
+      dc1.replicateFrom('192.168.10.11');
 
       const out = await dc1.executeCmdCommand('repadmin /showrepl DC01.mandeng.lan');
       expect(out).toMatch(/Kribi-Agence\\DC02/);
