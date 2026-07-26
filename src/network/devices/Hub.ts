@@ -25,10 +25,13 @@ export class Hub extends Equipment {
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     Logger.debug(this.id, 'hub:repeat', `${this.name}: repeating frame from ${portName} to all other ports`);
 
-    // Flood to all ports except source
+    // Flood to all ports except source. Each port gets its own top-level
+    // frame object — sendFrame() hands the reference straight to the
+    // receiving device's handleFrame(), so N ports sharing one object
+    // would let one receiver's mutation leak into every other repeat.
     for (const [name] of this.ports) {
       if (name !== portName) {
-        this.sendFrame(name, frame);
+        this.sendFrame(name, { ...frame });
       }
     }
   }

@@ -2091,7 +2091,7 @@ export abstract class Switch extends Equipment {
       for (const dest of dests) {
         const p = this.getPort(dest);
         if (!p || !p.getIsUp() || !p.isConnected()) continue;
-        super.sendFrame(dest, frame);
+        super.sendFrame(dest, { ...frame });
       }
     } finally {
       this.mirrorReentrant = false;
@@ -2236,7 +2236,11 @@ export abstract class Switch extends Equipment {
       const { dot1q, ...untagged } = tagged;
       return untagged;
     }
-    return frame;
+    // Still a fresh top-level object — floodFrame() calls this once per
+    // egress port, and sendFrame() hands the returned object all the way
+    // to the receiving device's handleFrame(); returning `frame` itself
+    // here would alias the very same object across every flooded port.
+    return { ...frame };
   }
 
   /** Push the QinQ S-VLAN outer tag (EtherType 0x88a8); any existing `dot1q` (customer C-VLAN tag) is left untouched underneath it. */
@@ -2254,7 +2258,7 @@ export abstract class Switch extends Equipment {
       const { outerDot1q, ...rest } = tagged;
       return rest;
     }
-    return frame;
+    return { ...frame };
   }
 
   // ─── MAC Aging Process ────────────────────────────────────────────

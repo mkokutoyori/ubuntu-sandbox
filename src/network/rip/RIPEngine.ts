@@ -78,7 +78,7 @@ export interface RIPConfig {
    * the interface keeps learning routes, it just stays silent.
    */
   passiveInterfaces: Set<string>;
-  redistribute: Map<RIPRedistSource, { metric?: number }>;
+  redistribute: Map<RIPRedistSource, { metric?: number; routePolicy?: string }>;
   defaultMetric: number | null;
   defaultInformationOriginate: boolean;
 }
@@ -112,6 +112,8 @@ export interface RIPCallbacks {
    * (RFC 1058). Defaults to 2 when absent.
    */
   getRipVersion?(): 1 | 2;
+  /** Evaluate a `route-policy` referenced by `import-route ... route-policy <name>`. */
+  evaluateRoutePolicy?(name: string, network: IPAddress, mask: SubnetMask): 'permit' | 'deny' | null;
 }
 
 // ─── Default Config ─────────────────────────────────────────────────
@@ -313,8 +315,8 @@ export class RIPEngine implements IProtocolEngine {
     return this.config.passiveInterfaces.has(iface);
   }
 
-  setRedistribution(source: RIPRedistSource, metric?: number): void {
-    this.config.redistribute.set(source, { metric });
+  setRedistribution(source: RIPRedistSource, metric?: number, routePolicy?: string): void {
+    this.config.redistribute.set(source, { metric, routePolicy });
   }
 
   removeRedistribution(source: RIPRedistSource): void {
@@ -438,7 +440,7 @@ export class RIPEngine implements IProtocolEngine {
   }
 
   private advertisableMetric(
-    route: { network: IPAddress; type: string; metric: number },
+    route: { network: IPAddress; mask: SubnetMask; type: string; metric: number },
   ): number | null {
     const isDefaultPrefix = route.network.toUint32() === 0;
     if (isDefaultPrefix) {
@@ -451,17 +453,19 @@ export class RIPEngine implements IProtocolEngine {
       case 'connected': {
         if (this.coveredByNetworkStatement(route.network)) return 1;
         const redist = this.config.redistribute.get('connected');
-        return redist ? Math.min(redist.metric ?? 1, RIP_METRIC_INFINITY) : null;
+        if (!redist || this.redistributionDenied(redist.routePolicy, route)) return null;
+        return Math.min(redist.metric ?? 1, RIP_METRIC_INFINITY);
       }
       case 'static': {
         const redist = this.config.redistribute.get('static');
-        return redist ? Math.min(redist.metric ?? 1, RIP_METRIC_INFINITY) : null;
+        if (!redist || this.redistributionDenied(redist.routePolicy, route)) return null;
+        return Math.min(redist.metric ?? 1, RIP_METRIC_INFINITY);
       }
       case 'ospf':
       case 'eigrp':
       case 'bgp': {
         const redist = this.config.redistribute.get(route.type);
-        if (!redist) return null;
+        if (!redist || this.redistributionDenied(redist.routePolicy, route)) return null;
         const metric = redist.metric ?? this.config.defaultMetric;
         return metric === null || metric === undefined
           ? null : Math.min(metric, RIP_METRIC_INFINITY);
@@ -469,6 +473,14 @@ export class RIPEngine implements IProtocolEngine {
       default:
         return null;
     }
+  }
+
+  private redistributionDenied(
+    routePolicy: string | undefined,
+    route: { network: IPAddress; mask: SubnetMask },
+  ): boolean {
+    if (!routePolicy || !this.callbacks.evaluateRoutePolicy) return false;
+    return this.callbacks.evaluateRoutePolicy(routePolicy, route.network, route.mask) === 'deny';
   }
 
   private sendUpdate(outIface: string): void {

@@ -30,6 +30,7 @@ import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
+import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import type { RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
@@ -536,24 +537,21 @@ export abstract class TerminalSession {
 
   /**
    * True when the remote this session is attached to is still reachable
-   * over the wire. Probed from the parent — the machine that opened the
-   * session — through the very same TCP path the login used, so pulling
-   * a cable is noticed rather than assumed away. A session that is not a
-   * remote child, or whose label is not an address we can probe, is
-   * always reported alive (docs/PRD-Link-State.md §3.3).
+   * from the parent — the machine that opened the session. Read off the
+   * cabled topology, never by opening a connection: a real ssh client
+   * holds its channel and learns from the next write, so handshaking per
+   * command would make the server log an accept/close pair for every
+   * line the user types. A session that is not a remote child, or whose
+   * label is not an address we can place, is always reported alive
+   * (docs/PRD-Link-State.md §3.3).
    */
   protected isRemoteLinkAlive(): boolean {
     const parent = this._parent;
     const label = this._remoteLabel;
     if (parent === null || label === null) return true;
     const host = label.includes('@') ? label.slice(label.indexOf('@') + 1) : label;
-    const probe = (parent.device as unknown as {
-      tcpConnectOutcome?: (ip: unknown, port: number) => string;
-    }).tcpConnectOutcome;
-    if (typeof probe !== 'function') return true;
-    const ip = IPAddress.tryParse(host);
-    if (!ip) return true;
-    return probe.call(parent.device, ip, 22) === 'open';
+    if (!IPAddress.tryParse(host)) return true;
+    return peerLiveness(parent.device, host)();
   }
 
   /**
@@ -568,6 +566,26 @@ export abstract class TerminalSession {
     this.detachFromHost();
     this.dispose();
     return true;
+  }
+
+  /**
+   * The single seam every Enter goes through, whatever vendor shell is
+   * driving. Link loss is a property of the transport, not of the shell
+   * behind it, so it is settled here once instead of in each vendor's
+   * `onEnter()` — a new interpreter inherits the behaviour by existing.
+   * The typed line is echoed first: the terminal is on the client side,
+   * so it shows what was typed before the write fails.
+   */
+  private dispatchEnter(): void | Promise<void> {
+    if (this._parent !== null && !this.isRemoteLinkAlive()) {
+      const typed = this.input || this._inputBuf;
+      this.addEchoLine(this.getPrompt(), typed);
+      this.input = '';
+      this._inputBuf = '';
+      this.breakRemoteSessionIfLinkLost();
+      return;
+    }
+    return this.onEnter();
   }
 
   endRemoteSession(): boolean {
@@ -653,7 +671,7 @@ export abstract class TerminalSession {
 
   /** Submit the current line and await its execution (paste serialisation). */
   private async submitPastedLine(): Promise<void> {
-    const result = this.onEnter();
+    const result = this.dispatchEnter();
     if (result && typeof (result as { then?: unknown }).then === 'function') {
       await result;
     }
@@ -1095,7 +1113,7 @@ export abstract class TerminalSession {
   protected handleNormalKey(e: KeyEvent): boolean {
     // Enter → execute command
     if (e.key === 'Enter') {
-      this.onEnter();
+      this.dispatchEnter();
       return true;
     }
 
@@ -1158,7 +1176,7 @@ export abstract class TerminalSession {
     if (e.key === 'Enter') {
       this.acceptReverseSearch();
       // Execute the accepted command
-      this.onEnter();
+      this.dispatchEnter();
       return true;
     }
 

@@ -16,6 +16,7 @@
  */
 
 import { isPathReachable } from '@/network/devices/linux/network/HostLookup';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 /** Anything that knows whether its own transport is still up. */
 export interface LiveTransport {
@@ -38,4 +39,27 @@ export function transportLiveness(session: LiveTransport): () => boolean {
  */
 export function pathLiveness(sourceIp: string, peerIp: string): () => boolean {
   return () => isPathReachable(sourceIp, peerIp);
+}
+
+/** First address configured on any of a device's ports, if it has one. */
+export function firstConfiguredIp(dev: Equipment): string | undefined {
+  for (const port of dev.getPorts()) {
+    const ip = port.getIPAddress?.();
+    if (ip) return ip.toString();
+  }
+  return undefined;
+}
+
+/**
+ * Liveness of a peer reached from `sourceDevice`, for callers that hold
+ * the two endpoints rather than a socket. Same topology question as
+ * `pathLiveness`, with the source address resolved off the device.
+ * A device with no address, or a peer that is not an address we can
+ * place on the topology, is reported alive — absence of evidence is not
+ * a dead link.
+ */
+export function peerLiveness(sourceDevice: Equipment, peerHost: string): () => boolean {
+  const sourceIp = firstConfiguredIp(sourceDevice);
+  if (!sourceIp) return () => true;
+  return pathLiveness(sourceIp, peerHost);
 }
