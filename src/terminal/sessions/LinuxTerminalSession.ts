@@ -3448,47 +3448,6 @@ export class LinuxTerminalSession extends TerminalSession {
    * Returns false when the line is not an editor invocation at all, so
    * the caller runs it as a normal command.
    */
-  private tryOpenRemoteEditor(line: string): boolean {
-    const sub = this.activeSubShell as {
-      openRemoteEditor?: (l: string) => Promise<EditorView | null>;
-      editorTransport?: () => RemoteEditorTransport;
-    } | null;
-    if (!sub?.openRemoteEditor || !sub.editorTransport) return false;
-    if (!parseEditorLaunch(line)) return false;
-
-    void sub.openRemoteEditor(line).then((view) => {
-      if (!view) return;
-      const launch = parseEditorLaunch(line)!;
-      const controller = createRemoteEditorController(
-        sub.editorTransport!(),
-        view,
-        () => this.onRemoteEditorUpdate(),
-      );
-      this.inputMode = {
-        type: 'remote-editor',
-        editorType: launch.editor,
-        filePath: view.filePath,
-        controller,
-      };
-      this.notify();
-    });
-    return true;
-  }
-
-  /**
-   * A fresh screen arrived from the remote editor. Re-render, and hand
-   * the prompt back to the SSH session once the engine has exited.
-   */
-  private onRemoteEditorUpdate(): void {
-    const mode = this.inputMode;
-    if (mode.type !== 'remote-editor') { this.notify(); return; }
-    if (mode.controller.exited) {
-      this.inputMode = { type: 'normal' };
-      this.addLine(this.getPrompt());
-    }
-    this.notify();
-  }
-
   /**
    * Generic sub-shell key handler.
    * Works for SQL*Plus and any future ISubShell implementations.

@@ -55,4 +55,14 @@ describe('SELECT … FOR UPDATE takes row-level locks across sessions', () => {
     sql(a, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE');
     expect(tryRun(a, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE NOWAIT')).toBe('OK');
   });
+
+  it('a PLAIN FOR UPDATE (no wait clause) on an already-locked row is denied, not silently granted', () => {
+    sql(a, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE');
+    expect(tryRun(b, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE')).toMatch(/ORA-00054/);
+  });
+
+  it('FOR UPDATE WAIT n on an already-locked row times out immediately with ORA-30006', () => {
+    sql(a, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE');
+    expect(tryRun(b, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE WAIT 10')).toMatch(/ORA-30006/);
+  });
 });

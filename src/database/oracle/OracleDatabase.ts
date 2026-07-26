@@ -982,6 +982,9 @@ export class OracleDatabase implements SqlCommandHost {
         sess?.setCurrentSchema?.(stmt.value);
       } else if (stmt.param === 'CONTAINER') {
         return this.switchSessionContainer(ctx, stmt.value);
+      } else if (stmt.param === 'NLS_DATE_FORMAT') {
+        const sess = ctx.session as { nlsDateFormat?: string } | undefined;
+        if (sess) sess.nlsDateFormat = stmt.value;
       }
     }
     return emptyResult('Session altered.');

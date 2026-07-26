@@ -786,6 +786,7 @@ export class SQLPlusSession {
   }
 
   private formatQueryResult(result: ResultSet): string[] {
+    const session = this.executor?.getContext().session as { nlsDateFormat?: string } | undefined;
     const renderer = new QueryResultRenderer(
       {
         heading: this.settings.heading,
@@ -795,6 +796,7 @@ export class SQLPlusSession {
         underline: this.settings.underline,
         nullDisplay: this.settings.null_display,
         wrap: this.settings.wrap,
+        dateFormat: session?.nlsDateFormat ?? 'DD-MON-RR',
       },
       this.columnFormats,
     );
