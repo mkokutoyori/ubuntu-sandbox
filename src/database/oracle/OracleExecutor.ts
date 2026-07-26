@@ -586,6 +586,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'UpdateStatement':
       case 'DeleteStatement': {
         if (statement.table.dbLink) return this.executeRemoteDml(statement);
+        this.acquireDmlTableLock(statement.table);
         if (statement.type === 'InsertStatement') return this.executeInsert(statement);
         if (statement.type === 'UpdateStatement') return this.executeUpdate(statement);
         return this.executeDelete(statement);
@@ -1376,6 +1377,22 @@ export class OracleExecutor extends BaseExecutor {
       if (candidates) return candidates;
     }
     return null;
+  }
+
+  /**
+   * TM lock for ordinary DML, taken before the statement touches storage
+   * (previously only acquired after the fact, reactively, off the
+   * oracle.dml.executed event — see LockActor). A real conflicting table
+   * lock now denies the statement outright instead of writing through
+   * regardless; see LockManager.acquireDmlLock.
+   */
+  private acquireDmlTableLock(ref: import('../engine/parser/ASTNode').TableRef): void {
+    const schema = this.resolveSchema(ref.schema);
+    const table = ref.name.toUpperCase();
+    if (!this.storage.getTableMeta(schema, table)) return;
+    const sessionId = this._sessionId || '0';
+    const sid = parseInt(sessionId, 10) || 0;
+    this.instance.lockManager.acquireDmlLock({ sessionId, sid, schema, table, txId: sid });
   }
 
   /**

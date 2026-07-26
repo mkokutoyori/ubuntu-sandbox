@@ -20,16 +20,9 @@ export class LockActor {
       };
 
     this.subs.push(
-      this.bus.subscribe('oracle.dml.executed', scoped<{
-        deviceId: string; sessionId: string; schema: string; table: string;
-      }>((p) => {
-        if (!p.table) return;
-        const sid = parseInt(p.sessionId, 10) || 0;
-        this.lockManager.acquireDmlLock({
-          sessionId: p.sessionId, sid, schema: p.schema, table: p.table, txId: sid,
-        });
-      })),
-
+      // TM lock acquisition for DML now happens synchronously, before the
+      // statement touches storage (OracleExecutor.acquireDmlTableLock) —
+      // this actor only handles release, which is correctly reactive.
       this.bus.subscribe('oracle.transaction.committed', scoped<{
         deviceId: string; sessionId: string; txId: number;
       }>((p) => {
