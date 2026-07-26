@@ -1844,8 +1844,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const newTTL = ipPkt.ttl - 1;
     if (newTTL <= 0) return;
 
-    const fwdPkt: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
-    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+    const fwdPktBase: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
+    fwdPktBase.headerChecksum = computeIPv4Checksum(fwdPktBase);
     const dstMAC = new MACAddress(ipv4MulticastToMac(group));
 
     for (const oif of mroute.outgoingInterfaces) {
@@ -1853,10 +1853,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const outPort = this.ports.get(oif);
       if (!outPort || !outPort.getIsUp() || !outPort.isConnected()) continue;
       this.counters.ipForwDatagrams++;
-      this.counters.ifOutOctets += fwdPkt.totalLength;
+      this.counters.ifOutOctets += fwdPktBase.totalLength;
+      // Each OIF gets its own packet object — sendFrame() hands the same
+      // reference all the way to the receiving device's handleFrame(), so
+      // sharing one object across multiple egress ports would let one
+      // receiver's in-place mutation (or a future one) leak into another's.
       this.sendFrame(oif, {
         srcMAC: outPort.getMAC(), dstMAC,
-        etherType: ETHERTYPE_IPV4, payload: fwdPkt,
+        etherType: ETHERTYPE_IPV4, payload: { ...fwdPktBase },
       });
     }
   }

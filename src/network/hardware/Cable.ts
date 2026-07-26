@@ -48,6 +48,7 @@ export interface CableOptions {
 export interface CableStats {
   framesTransmitted: number;
   framesLost: number;
+  framesCorrupted: number;
 }
 
 export interface CableInfo {
@@ -59,6 +60,7 @@ export interface CableInfo {
   isUp: boolean;
   isConnected: boolean;
   packetLossRate: number;
+  corruptionRate: number;
   stats: CableStats;
 }
 
@@ -91,7 +93,8 @@ export class Cable {
   private readonly lengthMeters: number;
   private readonly spec: CableSpec;
   private packetLossRate: number = 0;
-  private stats: CableStats = { framesTransmitted: 0, framesLost: 0 };
+  private corruptionRate: number = 0;
+  private stats: CableStats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0 };
 
   /** Reactive bus override (Phase 3 — defaults to singleton). */
   private busOverride: IEventBus | null = null;
@@ -262,10 +265,27 @@ export class Cable {
     Logger.info(this.id, 'cable:loss-rate', `Cable ${this.id}: packet loss rate set to ${(rate * 100).toFixed(1)}%`);
   }
 
+  getCorruptionRate(): number { return this.corruptionRate; }
+
+  /**
+   * Simulated FCS/CRC failure rate — no byte-level frame encoding exists to
+   * corrupt, so this models the receiver-side effect directly: the frame
+   * silently fails to arrive (like a real NIC discarding a bad-FCS frame
+   * before it ever reaches the driver) and the receiving port's `errorsIn`
+   * counter increments, distinct from a generic simulated loss.
+   */
+  setCorruptionRate(rate: number): void {
+    if (rate < 0 || rate > 1) {
+      throw new Error(`Invalid corruption rate: ${rate}. Must be between 0 and 1.`);
+    }
+    this.corruptionRate = rate;
+    Logger.info(this.id, 'cable:corruption-rate', `Cable ${this.id}: corruption rate set to ${(rate * 100).toFixed(1)}%`);
+  }
+
   getStats(): Readonly<CableStats> { return { ...this.stats }; }
 
   resetStats(): void {
-    this.stats = { framesTransmitted: 0, framesLost: 0 };
+    this.stats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0 };
   }
 
   // ─── Link State ────────────────────────────────────────────────
@@ -322,6 +342,20 @@ export class Cable {
     }
 
     const targetPort = (fromPort === this.portA) ? this.portB : this.portA;
+
+    // Simulate FCS/CRC failure — the frame never reaches the receiver's
+    // handleFrame(), same as a real NIC discarding a bad-FCS frame before
+    // the driver ever sees it, but tracked distinctly from generic loss.
+    if (this.corruptionRate > 0 && this.rng() < this.corruptionRate) {
+      this.stats.framesCorrupted++;
+      targetPort.incrementErrorsIn();
+      Logger.debug(this.id, 'cable:corrupted', `Cable ${this.id}: frame corrupted (simulated FCS failure)`);
+      this.getBus().publish({
+        topic: 'cable.frame.lost',
+        payload: { cableId: this.id, reason: 'fcs-corrupted' },
+      });
+      return false;
+    }
 
     // A send arriving at depth 0 opens a fresh cascade.
     if (Cable.deliveryDepth === 0) Cable.cascadeFrames = 0;
@@ -390,6 +424,7 @@ export class Cable {
       isUp: this.isUp,
       isConnected: this.isConnected(),
       packetLossRate: this.packetLossRate,
+      corruptionRate: this.corruptionRate,
       stats: { ...this.stats },
     };
   }
