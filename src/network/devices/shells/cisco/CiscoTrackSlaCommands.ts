@@ -205,6 +205,8 @@ export function buildTrackSlaConfig(
       if (op) {
         op.type = type;
         op.target = args.find((a) => /\d+\.\d+\.\d+\.\d+/.test(a)) ?? args[0] ?? null;
+        const srcIdx = args.indexOf('source-interface');
+        op.sourceInterface = srcIdx >= 0 ? args[srcIdx + 1] ?? null : null;
       }
       return '';
     };

@@ -523,16 +523,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /**
    * True when a routing-table entry's egress interface can actually carry
    * traffic. Virtual interfaces (Tunnel, Loopback) need no cable; a
-   * physical one needs carrier, so a route over a severed link is neither
-   * used for forwarding nor shown by `show ip route`, exactly as IOS drops
-   * it when the line protocol goes down (docs/PRD-Link-State.md §2.1 P7).
+   * physical one needs full operational state (line, admin, and carrier
+   * all up — `Port.isOperationallyUp()`), so a route over a severed link
+   * OR an administratively shut interface is neither used for forwarding
+   * nor shown by `show ip route`, exactly as IOS drops it when the line
+   * protocol goes down (docs/PRD-Link-State.md §2.1 P7, §3.1).
    */
   isRouteInterfaceUsable(iface: string): boolean {
     if (/^(Tunnel|Loopback)/i.test(iface)) return true;
     const dotIdx = iface.indexOf('.');
     const physIface = dotIdx > 0 ? iface.slice(0, dotIdx) : iface;
     const port = this.ports.get(physIface);
-    return !port || port.hasCarrier();
+    return !port || port.isOperationallyUp();
+  }
+
+  /**
+   * `ip route ... track <N>` resolver — injected by the CLI shell layer,
+   * which owns the real `TrackRepository`/`IpSlaRepository` state (same
+   * pattern as `ACLEngine.setTimeRangeResolver` above: Router doesn't own
+   * this config, just consults it). Wired fresh on every command
+   * (`CiscoIOSShell.execute`), since the shell instance — not a fixed
+   * router reference — is what's stable across a device's lifetime.
+   */
+  private routeTrackResolver: ((trackId: string) => boolean) | null = null;
+  setRouteTrackResolver(fn: ((trackId: string) => boolean) | null): void { this.routeTrackResolver = fn; }
+  /** Whether a `track <id>`-conditioned route is currently usable — true when the route has no track condition, or no resolver is wired yet (no track/IP-SLA config exists). */
+  isRouteTrackUp(trackId: string | undefined): boolean {
+    if (!trackId) return true;
+    if (!this.routeTrackResolver) return true;
+    return this.routeTrackResolver(trackId);
   }
 
   private _setupPortMonitoring(): void {
@@ -933,6 +952,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         }
         continue;
       }
+      if (!this.isRouteTrackUp(route.track)) continue;
 
       const netInt = route.network.toUint32();
       const maskInt = route.mask.toUint32();

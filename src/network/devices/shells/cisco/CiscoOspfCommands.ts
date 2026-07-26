@@ -2218,7 +2218,7 @@ function showIpRouteAll(router: Router): string {
   router._ospfAutoConverge();
   router.convergeDynamicRouting();
   const rt = bestRoutesPerPrefix(
-    ((router as any).routingTable as any[]).filter((r) => router.isRouteInterfaceUsable(r.iface)),
+    ((router as any).routingTable as any[]).filter((r) => router.isRouteInterfaceUsable(r.iface) && router.isRouteTrackUp(r.track)),
   );
   const lines: string[] = ['Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area',
     '       O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP',
@@ -2330,6 +2330,7 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   let best: any = null;
   let bestLen = -1;
   for (const r of rt) {
+    if (!router.isRouteInterfaceUsable(r.iface) || !router.isRouteTrackUp(r.track)) continue;
     const netStr = r.network.toString();
     const maskStr = r.mask.toString();
     const cidr = maskToCIDR(maskStr);
