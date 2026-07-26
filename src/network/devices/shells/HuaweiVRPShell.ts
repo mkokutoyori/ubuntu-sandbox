@@ -2767,7 +2767,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
           const m = parseInt(args[cIdx + 1], 10);
           if (!Number.isNaN(m)) metric = m;
         }
-        getRouter().ripSetRedistribution(source, metric);
+        let routePolicy: string | undefined;
+        const rpIdx = args.findIndex((tk) => tk.toLowerCase() === 'route-policy');
+        if (rpIdx >= 0 && args[rpIdx + 1] !== undefined) routePolicy = args[rpIdx + 1];
+        getRouter().ripSetRedistribution(source, metric, routePolicy);
       }
       return '';
     });

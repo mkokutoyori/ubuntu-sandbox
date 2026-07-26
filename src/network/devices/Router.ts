@@ -338,6 +338,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getRipVersion: () => this._ripVersion,
       getBus: () => this.getBus(),
       getScheduler: () => this.getRouterScheduler(),
+      evaluateRoutePolicy: (name, network, mask) => {
+        const rp = this.routePolicyStore.get(name);
+        if (!rp) return null;
+        return rp.evaluate(
+          { network: network.toString(), prefixLength: mask.toCIDR() },
+          this.ipPrefixListStore,
+        ).action;
+      },
     });
     this.ipv6Engine = new IPv6DataPlane({
       id: this.id,
@@ -364,6 +372,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getIPv6Engine: () => this.ipv6Engine,
       getIPv6AccessLists: () => this.ipv6AccessLists,
       getBfdAgent: () => this.getBfdAgent(),
+      getIpPrefixListStore: () => this.ipPrefixListStore,
     });
     this.dynamicRouting = new RouterDynamicRouting({
       id: this.id,
@@ -1037,7 +1046,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
   ripSetPassiveInterface(iface: string) { this.ripEngine.setPassiveInterface(iface); }
   ripRemovePassiveInterface(iface: string) { this.ripEngine.removePassiveInterface(iface); }
-  ripSetRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg, metric?: number) { this.ripEngine.setRedistribution(source, metric); }
+  ripSetRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg, metric?: number, routePolicy?: string) { this.ripEngine.setRedistribution(source, metric, routePolicy); }
   ripRemoveRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg) { this.ripEngine.removeRedistribution(source); }
   ripSetDefaultMetric(metric: number | null) { this.ripEngine.setDefaultMetric(metric); }
   ripSetDefaultInformationOriginate(on: boolean) { this.ripEngine.setDefaultInformationOriginate(on); }

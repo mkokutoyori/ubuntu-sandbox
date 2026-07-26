@@ -216,8 +216,14 @@ export function buildOSPFViewCommands(
   trie.registerGreedy('filter-policy', 'Filter routes in routing updates', (args) => {
     if (args.length < 2) return 'Error: Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
-    const direction = args[1].toLowerCase();
-    extra.distributeList = { aclId: args[0], direction: direction === 'export' ? 'out' : direction === 'import' ? 'in' : (direction as 'in' | 'out') };
+    const isIpPrefix = args[0].toLowerCase() === 'ip-prefix';
+    const filterArg = isIpPrefix ? args[1] : args[0];
+    const direction = (isIpPrefix ? args[2] : args[1])?.toLowerCase();
+    if (!direction) return 'Error: Incomplete command.';
+    extra.distributeList = {
+      ...(isIpPrefix ? { prefixListName: filterArg } : { aclId: filterArg }),
+      direction: direction === 'export' ? 'out' : direction === 'import' ? 'in' : (direction as 'in' | 'out'),
+    };
     return '';
   });
 

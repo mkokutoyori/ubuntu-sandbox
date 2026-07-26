@@ -44,7 +44,7 @@ export interface OSPFExtraConfig {
   areaDefaultCost: Map<string, number>;
   areaAuthentication: Map<string, 'simple' | 'message-digest' | 'null'>;
   shamLinks?: Map<string, { areaId: string; source: string; destination: string }>;
-  distributeList?: { aclId: string; direction: 'in' | 'out' };
+  distributeList?: { aclId?: string; prefixListName?: string; direction: 'in' | 'out' };
   defaultInfoMetricType?: number;
   pendingIfConfig: Map<string, {
     cost?: number; priority?: number;
@@ -85,6 +85,7 @@ export interface OSPFRouterContext {
   getIPv6Engine(): IPv6DataPlane;
   getIPv6AccessLists(): import('../Router').IPv6ACL[] | undefined;
   getBfdAgent?(): BfdAgent | undefined;
+  getIpPrefixListStore?(): import('./policy/IpPrefixList').IpPrefixListStore;
 }
 
 // ─── OSPF Integration Engine ────────────────────────────────────
@@ -1416,6 +1417,52 @@ export class RouterOSPFIntegration {
   }
 
   /**
+   * `filter-policy { <acl> | ip-prefix <name> } { import | export }`
+   * (Huawei) — evaluated against a candidate route's network/mask.
+   * `import` gates installRoutes() (routes learned via OSPF into the RIB);
+   * `export` gates originateRedistributedRoutes() (routes redistributed
+   * from another source into OSPF). No per-protocol scoping: one filter
+   * applies to every redistributed source, matching the single-value
+   * `distributeList` config shape.
+   */
+  private isFilteredByDistributeList(network: string, mask: string, direction: 'in' | 'out'): boolean {
+    const distList = this.extraConfig.distributeList;
+    if (!distList || distList.direction !== direction) return false;
+
+    if (distList.prefixListName) {
+      const list = this.ctx.getIpPrefixListStore?.()?.get(distList.prefixListName, 'ipv4');
+      if (!list) return false;
+      // No matching entry is an implicit deny, same as a real ip-prefix list.
+      return list.evaluate(network, new SubnetMask(mask).toCIDR()) !== 'permit';
+    }
+
+    if (distList.aclId) {
+      const acl = this.ctx.getACLEngine().getAccessListsInternal().find(
+        (a: any) => a.id === parseInt(distList.aclId ?? '', 10) || a.name === distList.aclId
+      );
+      if (!acl) return false;
+      let matched = false;
+      let action: 'permit' | 'deny' = 'deny';
+      for (const entry of acl.entries) {
+        const srcIP = entry.srcIP?.toString() || '0.0.0.0';
+        const srcWild = entry.srcWildcard?.toString() || '255.255.255.255';
+        if (srcIP === 'any' || (srcIP === '0.0.0.0' && srcWild === '255.255.255.255')) {
+          action = entry.action; matched = true; break;
+        }
+        const netNum = this.ipToNum(network);
+        const aclNum = this.ipToNum(srcIP);
+        const wildNum = this.ipToNum(srcWild);
+        if ((netNum & ~wildNum) === (aclNum & ~wildNum)) {
+          action = entry.action; matched = true; break;
+        }
+      }
+      return !matched || action === 'deny';
+    }
+
+    return false;
+  }
+
+  /**
    * Self-originate real Type-5/Type-7 LSAs for this router's own
    * redistribution config (`redistribute static/connected/rip`,
    * `default-information originate`). OSPFEngine.redistributeExternalRoute()
@@ -1449,6 +1496,7 @@ export class RouterOSPFIntegration {
       for (const rt of this.ctx.getRoutingTable()) {
         if (rt.type !== 'static') continue;
         if (rt.network.toString() === '0.0.0.0') continue;
+        if (this.isFilteredByDistributeList(rt.network.toString(), rt.mask.toString(), 'out')) continue;
         this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), 20, metricType);
       }
     }
@@ -1458,6 +1506,7 @@ export class RouterOSPFIntegration {
       const metric = extra.redistributeRip.metric ?? 20;
       for (const rt of this.ctx.getRoutingTable()) {
         if (rt.type !== 'rip') continue;
+        if (this.isFilteredByDistributeList(rt.network.toString(), rt.mask.toString(), 'out')) continue;
         this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), metric, metricType);
       }
     }
@@ -1466,6 +1515,7 @@ export class RouterOSPFIntegration {
       for (const rt of this.ctx.getRoutingTable()) {
         if (rt.type !== 'connected') continue;
         if (this.ospfEngine.getInterface(rt.iface)) continue; // already an OSPF interface
+        if (this.isFilteredByDistributeList(rt.network.toString(), rt.mask.toString(), 'out')) continue;
         this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), 20, 2);
       }
     }
@@ -1613,8 +1663,6 @@ export class RouterOSPFIntegration {
     // Remove old OSPF routes
     this.ctx.setRoutingTable(this.ctx.getRoutingTable().filter(r => r.type !== 'ospf'));
 
-    const distList = this.extraConfig.distributeList;
-
     for (const route of routes) {
       const network = route.network || route.destination;
       const mask = route.mask;
@@ -1630,34 +1678,7 @@ export class RouterOSPFIntegration {
       if (existing) continue;
 
       // Apply distribute-list inbound filtering
-      if (distList && distList.direction === 'in') {
-        const acl = this.ctx.getACLEngine().getAccessListsInternal().find(
-          (a: any) => a.id === parseInt(distList.aclId) || a.name === distList.aclId
-        );
-        if (acl) {
-          let matched = false;
-          let action: 'permit' | 'deny' = 'deny';
-          for (const entry of acl.entries) {
-            const srcIP = entry.srcIP?.toString() || '0.0.0.0';
-            const srcWild = entry.srcWildcard?.toString() || '255.255.255.255';
-            if (srcIP === 'any' || srcIP === '0.0.0.0' && srcWild === '255.255.255.255') {
-              action = entry.action;
-              matched = true;
-              break;
-            }
-            const netNum = this.ipToNum(network);
-            const aclNum = this.ipToNum(srcIP);
-            const wildNum = this.ipToNum(srcWild);
-            if ((netNum & ~wildNum) === (aclNum & ~wildNum)) {
-              action = entry.action;
-              matched = true;
-              break;
-            }
-          }
-          if (matched && action === 'deny') continue;
-          if (!matched) continue;
-        }
-      }
+      if (this.isFilteredByDistributeList(network, mask, 'in')) continue;
 
       // ECMP: mergeRoutesByDestination() may have computed several
       // equal-cost paths (route.nextHops/route.ifaces, parallel arrays,

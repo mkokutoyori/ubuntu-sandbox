@@ -30,6 +30,7 @@ export interface RIPRouterContext {
   readonly name: string;
   getPorts(): Map<string, Port>;
   getRoutingTable(): RouteEntry[];
+  evaluateRoutePolicy?(name: string, network: IPAddress, mask: SubnetMask): 'permit' | 'deny' | null;
   setRoutingTable(table: RouteEntry[]): void;
   pushRoute(route: RouteEntry): void;
   sendFrame(iface: string, frame: EthernetFrame): void;
@@ -56,6 +57,9 @@ export class RouterRIPEngine {
       updateRoute: (network, mask, route) =>
         this.updateInRib(network, mask, route),
       getRipVersion: () => ctx.getRipVersion?.() ?? 2,
+      evaluateRoutePolicy: ctx.evaluateRoutePolicy
+        ? (name, network, mask) => ctx.evaluateRoutePolicy!(name, network, mask)
+        : undefined,
     });
     if (ctx.getBus) this.engine.setEventBus(ctx.getBus());
     if (ctx.getScheduler) this.engine.setScheduler(ctx.getScheduler());
@@ -93,8 +97,8 @@ export class RouterRIPEngine {
     this.engine.removePassiveInterface(iface);
   }
 
-  setRedistribution(source: RIPRedistSource, metric?: number): void {
-    this.engine.setRedistribution(source, metric);
+  setRedistribution(source: RIPRedistSource, metric?: number, routePolicy?: string): void {
+    this.engine.setRedistribution(source, metric, routePolicy);
   }
 
   removeRedistribution(source: RIPRedistSource): void {
