@@ -2731,6 +2731,17 @@ export class PSRuntime {
         }
       }
 
+      // System.DirectoryServices.ActiveDirectorySchedule — accepted for
+      // `Set-ADReplicationSiteLink -ReplicationSchedule`, but no schedule-window
+      // grid is stored (PRD-Repadmin.md §0.2 — no KCC-adjacent scheduling
+      // modeled): SetSchedule/SetDailySchedule are real, callable no-ops rather
+      // than an absent method that would misparse the call site.
+      if (rec['__type__'] === 'ActiveDirectorySchedule') {
+        switch (member) {
+          case 'setschedule': case 'setdailyschedule': return () => null;
+        }
+      }
+
       // User-defined class: look up methods and inherited members
       const typeName = rec['__type__'];
       if (typeof typeName === 'string') {

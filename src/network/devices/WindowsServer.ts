@@ -332,6 +332,8 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.directoryStore.ensureDefaultSiteLink();
+    this.directoryStore.assignServerToSite(this.getHostname(), DEFAULT_SITE_NAME, this.getInterfaces().find(p => p.getIPAddress() !== null)?.getIPAddress()?.toString());
     const forest = createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
     forest.initializeFsmoRoles(this.getHostname());
     this.directoryStore.initializeDomainFsmoRoles(this.getHostname());
@@ -1031,6 +1033,8 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.directoryStore.ensureDefaultSiteLink();
+    this.directoryStore.assignServerToSite(this.getHostname(), DEFAULT_SITE_NAME, this.getInterfaces().find(p => p.getIPAddress() !== null)?.getIPAddress()?.toString());
     this.provisionSysvol(newDomainDnsName);
     this.registerDcServices();
     if (opts.installDns !== false) this.roleManager.install('DNS');
@@ -1278,6 +1282,19 @@ export class WindowsServer extends WindowsPC {
     if (!promote.ok) {
       return { ok: false, message: `Install-ADDSDomainController : ${promote.message}` };
     }
+    /**
+     * Real DCPromo places a new replica DC in whichever site's subnet
+     * matches its own IP (already known from the source DC's replicated
+     * Sites/Subnets, just pulled above) — falling back to
+     * `Default-First-Site-Name` when no subnet matches yet, exactly like
+     * a brand-new forest's first DC. `Move-ADDirectoryServer` exists for
+     * an admin to correct this afterwards (§forest/sites.ts header).
+     */
+    const iface = this.getInterfaces().find(p => p.getIPAddress() !== null);
+    const ownIp = iface?.getIPAddress()?.toString() ?? null;
+    // Default-First-Site-Name always already exists at this point — replicated in above from the source DC, which created it at its own promotion.
+    const initialSite = (ownIp ? store.siteForIp(ownIp) : null) ?? DEFAULT_SITE_NAME;
+    store.assignServerToSite(this.getHostname(), initialSite, ownIp ?? undefined);
     this.directoryStore = store;
     this.provisionSysvol(domainName);
     this.registerDcServices();
@@ -1294,6 +1311,28 @@ export class WindowsServer extends WindowsPC {
      * this simulator's DCs all do) just stays unaware until it next pulls.
      */
     notifySyncNow(this.getTcpStack(), sourceDcAddress);
+    return { ok: true, message: '' };
+  }
+
+  /**
+   * `Move-ADDirectoryServer -Identity <dc> -Site <site>` — explicit admin
+   * override of a DC's site membership (PRD-Windows-Server-Advanced.md
+   * §5 P6), independent of `siteForIp`'s subnet-derived guess — real
+   * AD's own reason this cmdlet exists: catching up a DC whose address
+   * doesn't (or no longer) matches any subnet object of the site it's
+   * actually meant to serve.
+   */
+  moveDirectoryServer(identity: string, siteName: string): AdDsOpResult {
+    if (!this.directoryStore) {
+      return { ok: false, message: 'Move-ADDirectoryServer : This computer is not a domain controller.' };
+    }
+    const dcName = identity.split('.')[0];
+    const dcs = this.directoryStore.listDomainControllers();
+    if (!dcs.some(d => d.name.toLowerCase() === dcName.toLowerCase())) {
+      return { ok: false, message: `Move-ADDirectoryServer : Cannot find an object with identity: '${identity}'.` };
+    }
+    const res = this.directoryStore.assignServerToSite(dcName, siteName);
+    if (!res.ok) return { ok: false, message: `Move-ADDirectoryServer : ${res.message}` };
     return { ok: true, message: '' };
   }
 

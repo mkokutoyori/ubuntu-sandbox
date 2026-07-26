@@ -691,9 +691,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       inboundReplDisabled: this.ntdsOptions.has('DISABLE_INBOUND_REPL'),
     });
 
+    // Explicit site assignment (Move-ADDirectoryServer) takes precedence
+    // over the subnet-derived guess for both ends, same precedence as
+    // `resolveIpToSite`/`Get-ADDomainController` (forest/sites.ts header).
     const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
-    const ownSite = ownIp ? store.siteForIp(ownIp) : null;
-    const partnerSite = store.siteForIp(partnerIp);
+    const ownSite = store.siteForDc(this.getHostname()) ?? (ownIp ? store.siteForIp(ownIp) : null);
+    const partnerDcName = store.dcForIp(partnerIp);
+    const partnerSite = (partnerDcName ? store.siteForDc(partnerDcName) : null) ?? store.siteForIp(partnerIp);
     const siteRelation: 'intra-site' | 'inter-site' =
       ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
     const logEntry: ReplicationLogEntry = {
@@ -707,7 +711,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
             topic: 'replication.pull.completed',
             payload: {
               deviceId: this.getHostname(), invocationId: store.getInvocationId(), partnerAddress: partnerIp,
-              applied: result.applied, siteRelation,
+              applied: result.applied, siteRelation, remoteInvocationId: result.responderInvocationId,
             },
           }
         : {
@@ -2098,8 +2102,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           knownDcFqdns: store.listDomainControllers()
             .filter(c => c.name.toLowerCase() !== this.hostname.toLowerCase())
             .map(c => `${c.name}.${store.dnsName}`),
-          resolveIpToName: (ip) => this.reverseLookupClient(ip),
-          resolveIpToSite: (ip) => store.siteForIp(ip),
+          // `dcForIp` (recorded at site-assignment time) is tried before
+          // the hosts-file reverse lookup — DNS isn't replicated between
+          // DCs here, so a partner's name is otherwise unresolvable
+          // unless a hosts entry happens to exist (forest/sites.ts header).
+          resolveIpToName: (ip) => store.dcForIp(ip) ?? this.reverseLookupClient(ip),
+          // A DC's explicit site assignment (Move-ADDirectoryServer) takes
+          // precedence over the subnet-derived guess — matching real AD's
+          // own reason that cmdlet exists (forest/sites.ts header).
+          // `dcForIp` looks the partner up by its recorded address rather
+          // than DNS (unreliable cross-DC here — same header).
+          resolveIpToSite: (ip) => {
+            const dcName = store.dcForIp(ip);
+            const explicit = dcName ? store.siteForDc(dcName) : null;
+            return explicit ?? store.siteForIp(ip);
+          },
           pullFrom: (ip) => this.replicateFrom(ip),
           pushTo: (ip) => notifySyncNow(this.getTcpStack(), ip),
           resolveNameToIp,

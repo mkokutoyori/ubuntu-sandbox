@@ -30,6 +30,7 @@ export class ReplicationSignalRefreshActor {
         const entry: ReplicationLogEntry = {
           timestamp: Math.floor(Date.now() / 1000), partnerAddress: e.payload.partnerAddress,
           applied: e.payload.applied, ok: true, siteRelation: e.payload.siteRelation, direction: 'inbound',
+          remoteInvocationId: e.payload.remoteInvocationId,
         };
         this.store.recordPull(entry);
       }),

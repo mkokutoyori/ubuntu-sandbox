@@ -89,13 +89,17 @@ describe('AD Sites — replication log annotates intra-/inter-site', () => {
     expect(log[log.length - 1].siteRelation).toBe('intra-site');
   });
 
-  it('logs "inter-site" once each DC is assigned (via subnet) to a distinct site', async () => {
+  it('logs "inter-site" once each DC is explicitly moved (Move-ADDirectoryServer) to a distinct site', async () => {
     const { dc1, dc2 } = await buildTwoDcs();
     await run(ps(dc1), 'New-ADReplicationSite -Name Branch-Office');
     await run(ps(dc1), 'New-ADReplicationSubnet -Name "192.168.80.0/24" -Site Default-First-Site-Name');
     await run(ps(dc1), 'New-ADReplicationSubnet -Name "192.168.81.0/24" -Site Branch-Office');
+    // A DC's site membership is explicit/sticky at promotion — a subnet
+    // defined afterwards doesn't retroactively move an already-promoted
+    // DC (that's exactly what Move-ADDirectoryServer is for in real AD).
+    await run(ps(dc1), 'Move-ADDirectoryServer -Identity DC2.lab.local -Site Branch-Office');
 
-    dc2.replicateFrom('192.168.80.10'); // pulls the new site/subnet definitions too
+    dc2.replicateFrom('192.168.80.10'); // pulls the new site/subnet/server definitions too
     const log = dc2.getReplicationLog();
     expect(log[log.length - 1].siteRelation).toBe('inter-site');
   });

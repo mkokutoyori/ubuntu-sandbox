@@ -17,6 +17,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo,
+  AdSubnetInfo, AdSiteLinkInfo,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
   AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdGenericObjectInfo,
   AdServiceAccountInfo,
@@ -326,8 +327,17 @@ export class RemoveADDomainControllerCmdlet implements ICmdlet {
   }
 }
 
+/** The domain's DNS name from a `DC=...,DC=...` distinguished name suffix — e.g. `mandeng.lan` from `CN=DC01,OU=Domain Controllers,DC=mandeng,DC=lan`. */
+function dnsNameFromDn(dn: string): string {
+  return dn.split(',').filter(rdn => rdn.toUpperCase().startsWith('DC=')).map(rdn => rdn.slice(3)).join('.');
+}
+
 function dcToPSObject(c: AdComputerInfo): Record<string, PSValue> {
-  return { Name: c.name, HostName: c.name, Enabled: c.enabled, DistinguishedName: c.dn };
+  const dnsName = dnsNameFromDn(c.dn);
+  return {
+    Name: c.name, HostName: dnsName ? `${c.name}.${dnsName}` : c.name, Enabled: c.enabled, DistinguishedName: c.dn,
+    Site: c.site ?? null, IPv4Address: c.ipv4Address ?? null,
+  };
 }
 
 // ── New/Get/Set/Remove-ADUser ────────────────────────────────────────────────
@@ -1112,15 +1122,31 @@ export class GetADOrganizationalUnitCmdlet implements ICmdlet {
 }
 
 // ── Sites (PRD-Windows-Server-Advanced.md §5 P6) ────────────────────────────
+// No ISTG/KCC data is exposed anywhere in this section — real AD's
+// `InterSiteTopologyGenerator`/`/kcc`/`/istg`/`/bridgeheads` are all
+// explicitly out of scope (PRD-Repadmin.md §0.2, inherited from
+// PRD-Windows-Server-Advanced.md §2.2): replication partners and site
+// membership are declared explicitly (`Move-ADDirectoryServer`), never
+// automatically computed/elected.
 
 function siteToPSObject(s: AdSiteInfo): Record<string, PSValue> {
   return { Name: s.name, DistinguishedName: s.dn };
 }
 
+/** `-Identity` that also accepts a piped `Get-ADReplicationSite` object (its `.Name`). */
+function pipedSiteIdentity(ctx: CmdletContext): string {
+  const identity = identityOf(ctx);
+  if (identity) return identity;
+  if (ctx.pipeInput !== null && typeof ctx.pipeInput === 'object' && !Array.isArray(ctx.pipeInput)) {
+    return psValueToString((ctx.pipeInput as Record<string, PSValue>)['Name'] ?? '');
+  }
+  return '';
+}
+
 export class NewADReplicationSiteCmdlet implements ICmdlet {
   readonly name = 'new-adreplicationsite';
   readonly aliases = [] as const;
-  readonly parameters = ['Name'] as const;
+  readonly parameters = ['Name', 'Description'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADReplicationSite');
@@ -1129,11 +1155,32 @@ export class NewADReplicationSiteCmdlet implements ICmdlet {
       ctx.emitError('New-ADReplicationSite : Cannot process command because of one or more missing mandatory parameters: Name.');
       return null;
     }
-    const res = ad.newReplicationSite(name);
+    const description = ctx.named['description'] !== undefined ? psValueToString(ctx.named['description']) : undefined;
+    const res = ad.newReplicationSite(name, description);
     if (!res.ok) { ctx.emitError(`New-ADReplicationSite : ${res.message}`); return null; }
     const sites = ad.listReplicationSites();
     const created = sites.find(s => s.name.toLowerCase() === name.toLowerCase());
     return created ? siteToPSObject(created) : null;
+  }
+}
+
+/** `Set-ADReplicationSite -Identity <old> -Name <new>` — the only settable field this simulator models (site descriptions/options aren't separately mutable beyond creation). */
+export class SetADReplicationSiteCmdlet implements ICmdlet {
+  readonly name = 'set-adreplicationsite';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Name'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADReplicationSite');
+    const identity = pipedSiteIdentity(ctx);
+    const newName = ctx.named['name'] !== undefined ? psValueToString(ctx.named['name']) : '';
+    if (!identity || !newName) {
+      ctx.emitError('Set-ADReplicationSite : Cannot process command because of one or more missing mandatory parameters: Identity Name.');
+      return null;
+    }
+    const res = ad.renameReplicationSite(identity, newName);
+    if (!res.ok) { ctx.emitError(`Set-ADReplicationSite : ${res.message}`); return null; }
+    return null;
   }
 }
 
@@ -1153,10 +1200,14 @@ export class GetADReplicationSiteCmdlet implements ICmdlet {
   }
 }
 
+function subnetToPSObject(s: AdSubnetInfo): Record<string, PSValue> {
+  return { Name: s.cidr, DistinguishedName: s.dn, Site: s.site, Description: s.description };
+}
+
 export class NewADReplicationSubnetCmdlet implements ICmdlet {
   readonly name = 'new-adreplicationsubnet';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'Site'] as const;
+  readonly parameters = ['Name', 'Site', 'Description'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADReplicationSubnet');
@@ -1170,9 +1221,144 @@ export class NewADReplicationSubnetCmdlet implements ICmdlet {
       ctx.emitError('New-ADReplicationSubnet : Cannot process command because of one or more missing mandatory parameters: Site.');
       return null;
     }
-    const res = ad.newReplicationSubnet(cidr, site);
+    const description = ctx.named['description'] !== undefined ? psValueToString(ctx.named['description']) : undefined;
+    const res = ad.newReplicationSubnet(cidr, site, description);
     if (!res.ok) { ctx.emitError(`New-ADReplicationSubnet : ${res.message}`); return null; }
     return null;
+  }
+}
+
+export class GetADReplicationSubnetCmdlet implements ICmdlet {
+  readonly name = 'get-adreplicationsubnet';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Filter'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADReplicationSubnet');
+    const subnets = ad.listReplicationSubnets();
+    const identity = identityOf(ctx);
+    if (!identity || identity === '*') return subnets.map(subnetToPSObject);
+    const match = subnets.find(s => s.cidr.toLowerCase() === identity.toLowerCase());
+    if (!match) { ctx.emitError(`Get-ADReplicationSubnet : Cannot find an object with identity: '${identity}'.`); return null; }
+    return subnetToPSObject(match);
+  }
+}
+
+// ── Site links — bookkeeping only (PRD-Repadmin.md §0.2): cost/frequency/
+// transport/schedule are stored and reported exactly as an admin set them,
+// never consulted to actually pace or route replication. ─────────────────
+
+function siteLinkToPSObject(l: AdSiteLinkInfo): Record<string, PSValue> {
+  return {
+    Name: l.name, DistinguishedName: l.dn, SitesIncluded: [...l.sitesIncluded],
+    Cost: l.cost, ReplicationFrequencyInMinutes: l.replicationFrequencyInMinutes,
+    InterSiteTransportProtocol: l.interSiteTransportProtocol, Description: l.description,
+  };
+}
+
+function sitesIncludedOf(ctx: CmdletContext): string[] {
+  const raw = ctx.named['sitesincluded'];
+  if (raw === undefined) return [];
+  return Array.isArray(raw) ? raw.map(psValueToString) : [psValueToString(raw)];
+}
+
+export class NewADReplicationSiteLinkCmdlet implements ICmdlet {
+  readonly name = 'new-adreplicationsitelink';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'SitesIncluded', 'Cost', 'ReplicationFrequencyInMinutes', 'InterSiteTransportProtocol', 'Description'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADReplicationSiteLink');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    const sitesIncluded = sitesIncludedOf(ctx);
+    if (!name || sitesIncluded.length === 0) {
+      ctx.emitError('New-ADReplicationSiteLink : Cannot process command because of one or more missing mandatory parameters: Name SitesIncluded.');
+      return null;
+    }
+    const cost = ctx.named['cost'] !== undefined ? Number(ctx.named['cost']) : undefined;
+    const replicationFrequencyInMinutes = ctx.named['replicationfrequencyinminutes'] !== undefined ? Number(ctx.named['replicationfrequencyinminutes']) : undefined;
+    const transportRaw = ctx.named['intersitetransportprotocol'] !== undefined ? psValueToString(ctx.named['intersitetransportprotocol']) : undefined;
+    const transport = transportRaw === 'SMTP' ? 'SMTP' as const : transportRaw === 'IP' ? 'IP' as const : undefined;
+    const description = ctx.named['description'] !== undefined ? psValueToString(ctx.named['description']) : undefined;
+    const res = ad.newReplicationSiteLink(name, sitesIncluded, { cost, replicationFrequencyInMinutes, transport, description });
+    if (!res.ok) { ctx.emitError(`New-ADReplicationSiteLink : ${res.message}`); return null; }
+    const link = ad.getReplicationSiteLink(name);
+    return link ? siteLinkToPSObject(link) : null;
+  }
+}
+
+export class GetADReplicationSiteLinkCmdlet implements ICmdlet {
+  readonly name = 'get-adreplicationsitelink';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Filter'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADReplicationSiteLink');
+    const identity = identityOf(ctx);
+    if (!identity || identity === '*') return ad.listReplicationSiteLinks().map(siteLinkToPSObject);
+    const link = ad.getReplicationSiteLink(identity);
+    if (!link) { ctx.emitError(`Get-ADReplicationSiteLink : Cannot find an object with identity: '${identity}'.`); return null; }
+    return siteLinkToPSObject(link);
+  }
+}
+
+/** `Set-ADReplicationSiteLink -Identity <name> [-Cost] [-ReplicationFrequencyInMinutes] [-SitesIncluded] [-Description] [-ReplicationSchedule]` — `-ReplicationSchedule` is accepted (an `ActiveDirectorySchedule` object, see `MiscCmdlets.ts`'s `New-Object` branch) but nothing here stores a schedule grid; no window enforcement is modeled (PRD-Repadmin.md §0.2). */
+export class SetADReplicationSiteLinkCmdlet implements ICmdlet {
+  readonly name = 'set-adreplicationsitelink';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Cost', 'ReplicationFrequencyInMinutes', 'SitesIncluded', 'Description', 'ReplicationSchedule'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADReplicationSiteLink');
+    const identity = identityOf(ctx);
+    if (!identity) {
+      ctx.emitError('Set-ADReplicationSiteLink : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    const patch: { cost?: number; replicationFrequencyInMinutes?: number; sitesIncluded?: string[]; description?: string } = {};
+    if (ctx.named['cost'] !== undefined) patch.cost = Number(ctx.named['cost']);
+    if (ctx.named['replicationfrequencyinminutes'] !== undefined) patch.replicationFrequencyInMinutes = Number(ctx.named['replicationfrequencyinminutes']);
+    if (ctx.named['sitesincluded'] !== undefined) patch.sitesIncluded = sitesIncludedOf(ctx);
+    if (ctx.named['description'] !== undefined) patch.description = psValueToString(ctx.named['description']);
+    const res = ad.setReplicationSiteLink(identity, patch);
+    if (!res.ok) { ctx.emitError(`Set-ADReplicationSiteLink : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+// ── Move-ADDirectoryServer (PRD-Windows-Server-Advanced.md §5 P6) ──────────
+
+export class MoveADDirectoryServerCmdlet implements ICmdlet {
+  readonly name = 'move-addirectoryserver';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Site'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Move-ADDirectoryServer');
+    const identity = identityOf(ctx);
+    const site = ctx.named['site'] !== undefined ? psValueToString(ctx.named['site']) : '';
+    if (!identity || !site) {
+      ctx.emitError('Move-ADDirectoryServer : Cannot process command because of one or more missing mandatory parameters: Identity Site.');
+      return null;
+    }
+    const res = ad.moveDirectoryServer(identity, site);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+// ── Get-ADReplicationUpToDatenessVectorTable (PRD-Windows-Server-Advanced.md §5 P12) ──
+
+export class GetADReplicationUpToDatenessVectorTableCmdlet implements ICmdlet {
+  readonly name = 'get-adreplicationuptodatenessvectortable';
+  readonly aliases = [] as const;
+  readonly parameters = ['Target'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADReplicationUpToDatenessVectorTable');
+    return ad.listUpToDatenessVector().map(row => ({
+      Server: row.server, UsnFilter: row.usnFilter, LastReplicationSuccess: row.lastReplicationSuccess,
+    }) as Record<string, PSValue>) as PSValue;
   }
 }
 

@@ -54,6 +54,14 @@ export class NewObjectCmdlet implements ICmdlet {
       const user = psValueToString(args[0] ?? '');
       return { UserName: user, Password: null } as Record<string, PSValue>;
     }
+    if (tname.includes('activedirectoryschedule')) {
+      // `Set-ADReplicationSiteLink -ReplicationSchedule` accepts one of these — no
+      // schedule-window enforcement is modeled (PRD-Repadmin.md §0.2, same "no
+      // KCC" boundary as `/kcc`), so `SetSchedule(...)` (dispatched in PSRuntime's
+      // getMember for `__type__ === 'ActiveDirectorySchedule'`) is a real callable
+      // no-op rather than a silently-absent method that would misparse the call.
+      return { __type__: 'ActiveDirectorySchedule' } as unknown as PSValue;
+    }
     if (tname.includes('activedirectoryaccessrule')) {
       const args = newObjectCtorArgs(ctx);
       return {
