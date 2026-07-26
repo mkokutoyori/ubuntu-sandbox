@@ -73,7 +73,7 @@ import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
-import { transportLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { transportLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 import {
@@ -3796,24 +3796,16 @@ export class LinuxTerminalSession extends TerminalSession {
    * editors open on the remote, tab completion uses the remote VFS.
    */
   /**
-   * A probe that re-tests the path to `host` from THIS device — the one
-   * that opened the session — so an interactive remote shell notices a
-   * pulled cable instead of going on driving the remote in memory
-   * (docs/PRD-Link-State.md §3.3).
-   */
-  /**
-   * Reachability BEFORE connecting — this one is a genuine probe,
-   * because running `ssh` really does open a connection.
+   * Is there a usable path to `host` from THIS device, before `ssh`
+   * connects. Read off the cabled topology rather than dialled: the
+   * connection `ssh` is about to open is the one that settles the
+   * question, and a throwaway handshake before it made the server log an
+   * accept/close pair for a connection no client ever had
+   * (docs/PRD-Link-State.md §2.1 P6).
    */
   private remoteLivenessProbe(host: string): (() => boolean) | undefined {
-    const probe = (this.device as unknown as {
-      tcpConnectOutcome?: (ip: IPAddress, port: number) => string;
-    }).tcpConnectOutcome;
-    if (typeof probe !== 'function') return undefined;
-    const device = this.device;
-    const ip = IPAddress.tryParse(host);
-    if (!ip) return undefined;
-    return () => probe.call(device, ip, 22) === 'open';
+    if (!IPAddress.tryParse(host)) return undefined;
+    return peerLiveness(this.device, host);
   }
 
   pushRemoteDevice(
