@@ -41,7 +41,8 @@ export class RoleManager {
 
   private find(name: string): WindowsFeatureDef | undefined {
     const lower = name.toLowerCase();
-    return this.catalog.find(f => f.name.toLowerCase() === lower);
+    return this.catalog.find(f =>
+      f.name.toLowerCase() === lower || f.aliases?.some(a => a.toLowerCase() === lower));
   }
 
   private toView(f: WindowsFeatureDef): WindowsFeatureView {

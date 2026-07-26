@@ -909,8 +909,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
     let targetLabel = parsed.targetStr;
     const results: PingResult[] = [];
+    // Real ping reports the wall time of the whole run in its summary.
+    const pingStartedAt = Date.now();
     const emitStats = (ctx: AsyncJobContext) => {
-      for (const line of formatPingStats(targetLabel, results.length, results)) ctx.sink.line(line);
+      for (const line of formatPingStats(targetLabel, results.length, results, Date.now() - pingStartedAt)) ctx.sink.line(line);
     };
 
     if (parsed.v6) {
@@ -2939,13 +2941,12 @@ export class LinuxTerminalSession extends TerminalSession {
       session.disconnect();
     };
 
-    // Linux↔Linux is driven over the real, authenticated SSH channel.
-    // Vendor targets still take the in-memory path below: flipping them
-    // to the wire is measured, not hypothetical, and the remaining gap
-    // is recorded in docs/PRD-SSH-Unification.md §4bis.5 — a vendor's
-    // own exit word does not yet end the session over the wire, and a
-    // nested `ssh` typed inside a vendor hop has no frame to push.
-    const wireRemoteDevice = linuxRemoteDevice;
+    // Every vendor is driven over the real, authenticated SSH channel.
+    // The server shells became stateful (A2/A3), publish their prompt
+    // and completion (A1/B1), stack their own sub-shells (B2), host
+    // their own editors (B3) and raise their own challenges (B4), so
+    // one client driver is left (docs/PRD-SSH-Unification.md §4bis).
+    const wireRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
     if (wireRemoteDevice) {
       const channelResult = session.openShellChannel();
       if (isOk(channelResult)) {

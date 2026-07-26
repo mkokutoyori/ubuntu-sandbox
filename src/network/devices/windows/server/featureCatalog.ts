@@ -25,6 +25,16 @@ export interface WindowsFeatureDef {
   readonly psModule?: string;
   /** Companion tool feature installed when `-IncludeManagementTools` is passed. */
   readonly managementToolsFeature?: string;
+  /**
+   * Other real Windows feature names that resolve to this same entry —
+   * e.g. real admins install ADCS by its actual role-service names
+   * (`ADCS-Cert-Authority`/`ADCS-Web-Enrollment`), not the umbrella
+   * `AD-Certificate` role name this simulator's minimal catalog tracks
+   * install state under (PRD §2.2 non-objectifs: no full role-service
+   * tree). Installing under any alias marks the canonical `name` as
+   * installed, matching real `Get-WindowsFeature` grouping.
+   */
+  readonly aliases?: readonly string[];
 }
 
 export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
@@ -60,6 +70,7 @@ export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
   {
     name: 'AD-Certificate', displayName: 'Active Directory Certificate Services',
     services: ['CertSvc'], psModule: 'ADCSDeployment',
+    aliases: ['ADCS-Cert-Authority', 'ADCS-Web-Enrollment'],
   },
   {
     name: 'FS-DFS-Namespace', displayName: 'DFS Namespaces',

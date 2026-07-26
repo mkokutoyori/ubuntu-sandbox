@@ -100,8 +100,9 @@ describe('SSH from inside a remote session works recursively', () => {
     await host.init?.();
     await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
     await sshFromHost(host, 'ssh User@10.0.0.4', 'user');
-    expect(host.foreground).toBeInstanceOf(WindowsTerminalSession);
-    expect(host.foreground.device.getName()).toBe('winB');
+    // What matters is that the grandchild really answers as winB — the
+    // hop is driven over the wire, so there is no local child session to
+    // be an instance of (docs/PRD-SSH-Unification.md §4bis B4).
     runOnForeground(host, 'hostname');
     await waitFor(host, (l) => l.some((t) => t === 'winB'));
     expect(texts(host)).toContain('winB');

@@ -56,8 +56,13 @@ const healthCheckScript = [
   'function Invoke-ADHealthCheck {',
   '  param([string]$Domain = "mandeng.lan", [string]$ReportPath = "C:\\ADHealthReports", [int]$ReplicationLagWarningMinutes = 60)',
   '  $Report = [System.Collections.Generic.List[PSCustomObject]]::new()',
-  '  $Alerts = [System.Collections.Generic.List[string]]::new()',
-  '  $Score = 100',
+  // Add-Finding (nested below) mutates these via the $script: scope
+  // modifier — real PowerShell scoping means that only reaches a
+  // variable that was *itself* declared in script scope, so the
+  // initial assignment must use the same prefix or the decrements
+  // silently land on an unrelated script-scope variable.
+  '  $script:Alerts = [System.Collections.Generic.List[string]]::new()',
+  '  $script:Score = 100',
   '  function Add-Finding($Category, $Check, $Status, $Details, $Severity) {',
   '    $Report.Add([PSCustomObject]@{ Categorie = $Category; Verification = $Check; Statut = $Status; Details = $Details; Severite = $Severity })',
   '    if ($Severity -eq "CRITICAL") { $script:Score -= 20; $script:Alerts.Add("CRITIQUE: $Check - $Details") }',
@@ -132,6 +137,16 @@ describe('Scénario 20 — supervision AD : santé, réplication et alertes (man
     it('une panne de réplication (câble DC01↔DC02 débranché) fait chuter le score de 20 points avec une alerte CRITICAL', async () => {
       const { dc1, cDc2 } = await buildTwoDcs();
       cDc2.disconnect();
+
+      // This simulator has no background replication scheduler ticking on
+      // its own (see WindowsPC.ts's replicationLog doc comment) — a real
+      // DC's own periodic replication would have already recorded the
+      // outage by the time an admin runs a health check, so force the
+      // pull attempt explicitly (same as repadmin /replicate would) to
+      // get a real failure into the replication log. Using DC02's IP
+      // directly (not its DNS name) since name resolution for an
+      // unreachable DC's own hostname is itself a separate, unrelated gap.
+      await dc1.executeCmdCommand('repadmin /replicate DC01 192.168.10.11 DC=mandeng,DC=lan');
 
       const sh = ps(dc1);
       await run(sh, healthCheckScript);

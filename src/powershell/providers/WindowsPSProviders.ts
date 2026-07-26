@@ -73,6 +73,7 @@ import type {
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
+  DfsReferralPriorityClassInfo, DfsrGroupInfoView, DfsrMembershipInfoView,
   IRdpProvider, RdpOpResult, RdpSessionInfo,
   IClusterProvider, ClusterOpResult, ClusterNodeInfo, ClusterPeerInfo, ClusterGroupInfo,
   IWsusProvider, WsusOpResult, WsusUpdateInfo, WsusApprovalActionInfo,
@@ -2494,15 +2495,24 @@ class WindowsDfsAdapter implements IDfsProvider {
     return role;
   }
 
-  newDfsnRoot(namespacePath: string): DfsOpResult { return this.requireNamespaceRole('New-DfsnRoot').newRoot(namespacePath); }
-  newDfsnFolder(namespacePath: string, folderName: string, target: DfsTargetInfo): DfsOpResult {
-    return this.requireNamespaceRole('New-DfsnFolder').newFolder(namespacePath, folderName, [target]);
+  newDfsnRoot(namespacePath: string, options?: { type?: 'Standalone' | 'DomainV1' | 'DomainV2'; description?: string; target?: DfsTargetInfo }): DfsOpResult {
+    return this.requireNamespaceRole('New-DfsnRoot').newRoot(namespacePath, options);
+  }
+  getDfsnRoot(namespacePath: string) { return this.requireNamespaceRole('Get-DfsnRoot').getRoot(namespacePath); }
+  newDfsnFolder(namespacePath: string, folderName: string, target: DfsTargetInfo, description?: string): DfsOpResult {
+    return this.requireNamespaceRole('New-DfsnFolder').newFolder(namespacePath, folderName, [target], description);
   }
   addDfsnFolderTarget(namespacePath: string, folderName: string, target: DfsTargetInfo): DfsOpResult {
     return this.requireNamespaceRole('New-DfsnFolderTarget').addFolderTarget(namespacePath, folderName, target);
   }
+  setDfsnFolderTargetPriority(namespacePath: string, folderName: string, serverAddress: string, priorityClass: DfsReferralPriorityClassInfo): DfsOpResult {
+    return this.requireNamespaceRole('Set-DfsnFolderTarget').setFolderTargetPriority(namespacePath, folderName, serverAddress, priorityClass);
+  }
   getDfsnFolder(namespacePath: string, folderName: string): DfsFolderInfo | null {
     return this.requireNamespaceRole('Get-DfsnFolder').getFolder(namespacePath, folderName);
+  }
+  listDfsnFolders(namespacePath: string): DfsFolderInfo[] {
+    return this.requireNamespaceRole('Get-DfsnFolder').listFolders(namespacePath);
   }
 
   newDfsReplicationGroup(groupName: string, contentPath: string): DfsOpResult {
@@ -2510,6 +2520,30 @@ class WindowsDfsAdapter implements IDfsProvider {
   }
   syncDfsReplicationGroup(groupName: string, partnerAddress: string): DfsrSyncResultInfo {
     return this.requireDfsrRole('Sync-DfsReplicationGroup').sync(groupName, partnerAddress);
+  }
+  registerDfsrAdminGroup(groupName: string, description: string): DfsOpResult {
+    return this.requireDfsrRole('New-DfsReplicationGroup').registerAdminGroup(groupName, description);
+  }
+  getDfsrAdminGroup(groupName: string) {
+    return this.requireDfsrRole('Get-DfsReplicationGroup').getAdminGroup(groupName);
+  }
+  addDfsrMembers(groupName: string, computerNames: string[]): DfsOpResult {
+    return this.requireDfsrRole('Add-DfsrMember').addMembers(groupName, computerNames);
+  }
+  listDfsrMembers(groupName: string): string[] {
+    return this.requireDfsrRole('Get-DfsrMember').listMembers(groupName);
+  }
+  newDfsReplicatedFolderAdmin(groupName: string, folderName: string): DfsOpResult {
+    return this.requireDfsrRole('New-DfsReplicatedFolder').newReplicatedFolder(groupName, folderName);
+  }
+  addDfsrConnection(groupName: string, source: string, destination: string): DfsOpResult {
+    return this.requireDfsrRole('Add-DfsrConnection').addConnection(groupName, source, destination);
+  }
+  setDfsrMembership(groupName: string, folderName: string, computerName: string, contentPath: string, primaryMember: boolean): DfsOpResult {
+    return this.requireDfsrRole('Set-DfsrMembership').setMembership(groupName, folderName, computerName, contentPath, primaryMember);
+  }
+  listDfsrMemberships(groupName: string, folderName: string) {
+    return this.requireDfsrRole('Get-DfsrMembership').listMemberships(groupName, folderName);
   }
 }
 
@@ -2533,6 +2567,10 @@ class WindowsAdcsAdapter implements IAdcsProvider {
 
   listTemplates(): CaTemplateInfo[] {
     return this.requireRole('Get-CATemplate').listTemplates();
+  }
+
+  addTemplate(name: string): AdcsOpResult {
+    return this.requireRole('Add-CATemplate').addTemplate(name);
   }
 
   getCertificate(templateName: string, dnsName: string, requestedEku?: string): CertificateRequestResultInfo {

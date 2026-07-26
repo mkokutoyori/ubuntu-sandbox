@@ -49,6 +49,11 @@ async function buildLan(): Promise<{ dc: WindowsServer; client: WindowsPC }> {
   await run(ps(dc), 'New-ADUser -Name "Jean Admin" -SamAccountName jadmin -AccountPassword (ConvertTo-SecureString "User@Mandeng2025!" -AsPlainText -Force) -Enabled $true');
 
   client.setCurrentUser('Administrator');
+  // Add-Computer needs the client's DNS resolver already pointed at the
+  // domain (this simulator has no dynamic-DNS registration for a promoted
+  // DC yet) — seed the hosts file the same way a real DHCP-assigned DNS
+  // server would already know it.
+  await run(ps(client), 'Add-Content -Path "C:\\Windows\\System32\\drivers\\etc\\hosts" -Value "192.168.10.10 mandeng.lan`n192.168.10.10 DC01.mandeng.lan"');
   await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -OUPath "OU=Postes,OU=Ordinateurs,OU=Mandeng,DC=mandeng,DC=lan" -NewName "PC-WIN-01" -Force');
 
   return { dc, client };

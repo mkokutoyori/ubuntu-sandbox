@@ -70,6 +70,27 @@ export class GetCATemplateCmdlet implements ICmdlet {
   }
 }
 
+// ── Add-CATemplate ───────────────────────────────────────────────────────
+
+export class AddCATemplateCmdlet implements ICmdlet {
+  readonly name = 'add-catemplate';
+  readonly displayName = 'Add-CATemplate';
+  readonly aliases = [] as const;
+  readonly parameters = ['TemplateName', 'Force'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const adcs = requireAdcs(ctx, 'Add-CATemplate');
+    const templateName = psValueToString(ctx.named['templatename'] ?? ctx.positional[0] ?? '');
+    if (!templateName) {
+      ctx.emitError('Add-CATemplate : Cannot process command because of one or more missing mandatory parameters: TemplateName.');
+      return null;
+    }
+    const res = adcs.addTemplate(templateName);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
 // ── Get-Certificate ──────────────────────────────────────────────────────
 
 export class GetCertificateCmdlet implements ICmdlet {

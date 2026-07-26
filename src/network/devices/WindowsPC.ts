@@ -122,6 +122,7 @@ import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
+import { cmdDsregcmd } from './windows/WinDsregcmd';
 import { WindowsCertStore } from './windows/CertStore';
 import { DFSR_PORT, DfsrServerHandler } from './windows/server/dfs/DfsReplicationGroup';
 import { WindowsRdpConfig } from './windows/WindowsRdpConfig';
@@ -2156,6 +2157,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           : res.message;
       }
       case 'gpresult': return this.cmdGpresult();
+      case 'dsregcmd': {
+        const whfb = this.registry.getItemPropertyValues('HKLM\\SOFTWARE\\Policies\\Microsoft\\PassportForWork');
+        const helloEnabledByPolicy = Number(whfb?.['Enabled'] ?? 0) === 1;
+        return cmdDsregcmd({
+          domainJoined: this.domainMembership !== null,
+          domainNetbiosName: this.domainMembership?.netbiosName ?? null,
+          domainDnsName: this.domainMembership?.dnsName ?? null,
+          hostname: this.getHostname(),
+          currentUser: this.userMgr.currentUser,
+          helloEnabledByPolicy,
+        }, args);
+      }
       case 'iisreset': {
         const iis = this.getIisRole();
         if (!iis) return "'iisreset' is not recognized as an internal or external command,\noperable program or batch file.";
@@ -2836,6 +2849,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getFileSystem(): WindowsFileSystem { return this.fs; }
   getPortsMap(): Map<string, Port> { return this.ports; }
   getCwd(): string { return this.cwd; }
+
+  /**
+   * The account's own spelling for a login name. Windows logins are
+   * case-insensitive, but the profile directory and the prompt carry the
+   * canonical casing — so `ssh user@host` belongs in `C:\\Users\\User`.
+   * Returns undefined for a name no account matches, leaving the caller's
+   * own fallback in place.
+   */
+  resolveAccountName(name: string): string | undefined {
+    return this.userMgr.getUser(name)?.name;
+  }
 
   /**
    * A stacked CLI session for one SSH channel — cmd at the bottom, with

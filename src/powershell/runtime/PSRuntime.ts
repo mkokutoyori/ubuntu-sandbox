@@ -772,6 +772,14 @@ export class PSRuntime {
   private execAssignment(node: PSAssignmentStatement, env: PSEnvironment): PSValue {
     const rhs = this.evalExpr(node.value, env);
 
+    // `$null = <expr>` (and, less commonly, `$true =`/`$false =`) is the
+    // idiomatic PowerShell way to discard a cmdlet's return value — the
+    // parser resolves these automatic variables to LiteralExpression nodes
+    // (see parsePrimaryExpression), so the assignment target here never
+    // carries a variable name to write to. Real PowerShell silently
+    // discards the write rather than erroring or actually mutating $null.
+    if (node.target.type === 'LiteralExpression') return rhs;
+
     if (node.target.type === 'IndexExpression' || node.target.type === 'MemberExpression') {
       const result = this.computeAssignResult(node, rhs, env);
       this.writeTarget(node.target, result, env);

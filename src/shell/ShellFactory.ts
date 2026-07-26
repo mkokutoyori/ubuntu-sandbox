@@ -128,12 +128,17 @@ export class ShellFactory {
       getHostname?: () => string;
       getCwd?: () => string;
       getOSType?: () => string;
+      resolveAccountName?: (name: string) => string | undefined;
     };
     const hostname = dev.getHostname?.() ?? 'remote';
-    const cwd = args.cwd ?? this.defaultCwdFor(dev, args.user);
-    const creds = args.user === 'root'
+    // Logins are case-insensitive but a profile directory carries the
+    // account's own spelling, so `ssh user@host` must land in the `User`
+    // profile — the same prompt the remote publishes over the wire.
+    const user = dev.resolveAccountName?.(args.user) ?? args.user;
+    const cwd = args.cwd ?? this.defaultCwdFor(dev, user);
+    const creds = user === 'root'
       ? ShellContext.rootCredentials()
-      : ShellContext.userCredentials(args.user);
+      : ShellContext.userCredentials(user);
     const ctx = new ShellContext(hostname, creds, cwd, args.env ?? {});
     return ctx;
   }

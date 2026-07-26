@@ -688,6 +688,8 @@ export interface IAdcsProvider {
   installCA(caCommonName: string): AdcsOpResult;
   /** `Get-CATemplate` — every certificate template this CA can issue against. */
   listTemplates(): CaTemplateInfo[];
+  /** `Add-CATemplate -TemplateName <name>` — publishes a known template to this CA. */
+  addTemplate(name: string): AdcsOpResult;
   /** `Get-Certificate -Template <name> -DnsName <subject>` — submits and retrieves a new certificate (this simulator's `certreq -submit` never leaves a request "Pending", so enrollment is synchronous). */
   getCertificate(templateName: string, subject: string, requestedEku?: string): CertificateRequestResultInfo;
 }
@@ -704,24 +706,55 @@ export interface IPkiProvider {
 // ── DFS Namespaces + DFSR (PRD-Windows-Server-Advanced.md §5 P16) ──────────
 
 export interface DfsOpResult { ok: boolean; message: string }
-export interface DfsTargetInfo { serverAddress: string; shareName: string }
-export interface DfsFolderInfo { namespacePath: string; folderName: string; targets: readonly DfsTargetInfo[] }
+export type DfsReferralPriorityClassInfo =
+  | 'GlobalHigh' | 'SiteCostNormal' | 'GlobalLow' | 'SiteCostHigh' | 'SiteCostLow';
+export interface DfsTargetInfo { serverAddress: string; shareName: string; referralPriorityClass: DfsReferralPriorityClassInfo }
+export type DfsNamespaceTypeInfo = 'Standalone' | 'DomainV1' | 'DomainV2';
+export interface DfsRootInfo { namespacePath: string; type: DfsNamespaceTypeInfo; description: string; targets: readonly DfsTargetInfo[] }
+export interface DfsFolderInfo { namespacePath: string; folderName: string; description: string; targets: readonly DfsTargetInfo[] }
 export interface DfsrSyncResultInfo { ok: boolean; error?: string; applied: number }
+export interface DfsrGroupInfoView { readonly name: string; readonly description: string }
+export interface DfsrMembershipInfoView {
+  readonly computerName: string; readonly folderName: string;
+  readonly contentPath: string; readonly primaryMember: boolean;
+}
 
 export interface IDfsProvider {
-  /** `New-DfsnRoot -Path <namespacePath>`. */
-  newDfsnRoot(namespacePath: string): DfsOpResult;
-  /** `New-DfsnFolder -Path <namespacePath\folderName> -TargetPath <\\server\share>`. */
-  newDfsnFolder(namespacePath: string, folderName: string, target: DfsTargetInfo): DfsOpResult;
+  /** `New-DfsnRoot -Path <namespacePath> [-Type Standalone|DomainV1|DomainV2] [-TargetPath <\\server\share>] [-Description <text>]`. */
+  newDfsnRoot(namespacePath: string, options?: { type?: DfsNamespaceTypeInfo; description?: string; target?: DfsTargetInfo }): DfsOpResult;
+  /** `Get-DfsnRoot -Path <namespacePath>`. */
+  getDfsnRoot(namespacePath: string): DfsRootInfo | null;
+  /** `New-DfsnFolder -Path <namespacePath\folderName> -TargetPath <\\server\share> [-Description <text>]`. */
+  newDfsnFolder(namespacePath: string, folderName: string, target: DfsTargetInfo, description?: string): DfsOpResult;
   /** `New-DfsnFolderTarget` — adds another target to an existing folder. */
   addDfsnFolderTarget(namespacePath: string, folderName: string, target: DfsTargetInfo): DfsOpResult;
+  /** `Set-DfsnFolderTarget -ReferralPriorityClass <class>`. */
+  setDfsnFolderTargetPriority(namespacePath: string, folderName: string, serverAddress: string, priorityClass: DfsReferralPriorityClassInfo): DfsOpResult;
   /** `Get-DfsnFolder` — the folder's current targets (this simulator's referral resolution). */
   getDfsnFolder(namespacePath: string, folderName: string): DfsFolderInfo | null;
+  /** `Get-DfsnFolder -Path <namespacePath>\*` — every folder under a namespace. */
+  listDfsnFolders(namespacePath: string): DfsFolderInfo[];
 
   /** `New-DfsReplicationGroup -GroupName <name> -ContentPath <localPath>` — this server's own membership. */
   newDfsReplicationGroup(groupName: string, contentPath: string): DfsOpResult;
   /** `Sync-DfsReplicationGroup -GroupName <name> -PartnerServer <address>` — one manually-triggered DFSR pull cycle. */
   syncDfsReplicationGroup(groupName: string, partnerAddress: string): DfsrSyncResultInfo;
+  /** `New-DfsReplicationGroup -GroupName <name> [-Description <text>]` — real signature (admin topology, no ContentPath). */
+  registerDfsrAdminGroup(groupName: string, description: string): DfsOpResult;
+  /** `Get-DfsReplicationGroup -GroupName <name>`. */
+  getDfsrAdminGroup(groupName: string): DfsrGroupInfoView | null;
+  /** `Add-DfsrMember -GroupName <name> -ComputerName <name[]>`. */
+  addDfsrMembers(groupName: string, computerNames: string[]): DfsOpResult;
+  /** `Get-DfsrMember -GroupName <name>`. */
+  listDfsrMembers(groupName: string): string[];
+  /** `New-DfsReplicatedFolder -GroupName <name> -FolderName <name>`. */
+  newDfsReplicatedFolderAdmin(groupName: string, folderName: string): DfsOpResult;
+  /** `Add-DfsrConnection -GroupName <name> -SourceComputerName <a> -DestinationComputerName <b>`. */
+  addDfsrConnection(groupName: string, source: string, destination: string): DfsOpResult;
+  /** `Set-DfsrMembership -GroupName <name> -FolderName <name> -ComputerName <name> -ContentPath <path> -PrimaryMember <bool>`. */
+  setDfsrMembership(groupName: string, folderName: string, computerName: string, contentPath: string, primaryMember: boolean): DfsOpResult;
+  /** `Get-DfsrMembership -GroupName <name> -FolderName <name>`. */
+  listDfsrMemberships(groupName: string, folderName: string): DfsrMembershipInfoView[];
 }
 
 // ── RDP (PRD-Windows-Server-Advanced.md §5 P17) ─────────────────────────────
