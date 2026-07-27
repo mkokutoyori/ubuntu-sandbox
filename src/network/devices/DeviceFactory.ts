@@ -15,6 +15,8 @@ import { GenericSwitch } from './GenericSwitch';
 import { Hub } from './Hub';
 import { CiscoRouter } from './CiscoRouter';
 import { HuaweiRouter } from './HuaweiRouter';
+// eslint-disable-next-line no-restricted-imports -- the factory resets the registry it fills; it is not a device discovering peers
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 const deviceCounters: Map<string, number> = new Map();
 
@@ -86,5 +88,5 @@ export function isFullyImplemented(type: DeviceType): boolean {
 
 export function resetDeviceCounters(): void {
   deviceCounters.clear();
-  Equipment.clearRegistry();
+  EquipmentRegistry.getInstance().clear();
 }

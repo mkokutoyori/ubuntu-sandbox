@@ -6,6 +6,7 @@
  * See docs/DESIGN-DEVICE-STATE-INSPECTION.md (Lot A).
  */
 import { Equipment } from '@/network/equipment/Equipment';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Port } from '@/network/hardware/Port';
 import type { DeviceType } from '@/network/core/types';
 import type {
@@ -46,7 +47,7 @@ function peerOf(port: Port): { dev: InspectableDevice; portName: string } | null
   const b = cable.getPortB();
   const peerPort = a === port ? b : a;
   if (!peerPort) return null;
-  const dev = Equipment.getById(peerPort.getEquipmentId());
+  const dev = EquipmentRegistry.getInstance().getById(peerPort.getEquipmentId());
   if (!dev) return null;
   return { dev: dev as unknown as InspectableDevice, portName: peerPort.getName() };
 }

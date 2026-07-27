@@ -20,6 +20,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   parseSshArgs,
   parseProxyJumpSpec,
@@ -40,7 +41,7 @@ describe('SSH LAN — ProxyJump (`ssh -J`)', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
     term = new LinuxTerminalSession('term-1', lan.pc1);

@@ -27,6 +27,8 @@ import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
 import type { BfdAgent } from '../../bfd/BfdAgent';
+// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P3, docs/PRD-Frame-Only-Refactor.md)
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 // ─── OSPF Extra Config Type ─────────────────────────────────────
 
@@ -687,7 +689,7 @@ export class RouterOSPFIntegration {
           queue.push(remoteOSPF);
         } else {
           // Switch/Hub — find all other routers connected to it
-          const remoteEquip = Equipment.getById(remoteId);
+          const remoteEquip = EquipmentRegistry.getInstance().getById(remoteId);
           if (!remoteEquip) continue;
           for (const swPort of remoteEquip.getPorts()) {
             if (swPort === remotePort) continue;
@@ -792,7 +794,7 @@ export class RouterOSPFIntegration {
           visited.add(remoteId);
           queue.push(remoteOSPF);
         } else {
-          const remoteEquip = Equipment.getById(remoteId);
+          const remoteEquip = EquipmentRegistry.getInstance().getById(remoteId);
           if (!remoteEquip) continue;
           for (const swPort of remoteEquip.getPorts()) {
             if (swPort === remotePort) continue;
@@ -823,7 +825,7 @@ export class RouterOSPFIntegration {
     if (remoteOSPF?.ospfv3Engine) {
       candidates.push({ ospf: remoteOSPF, port: remotePort });
     } else {
-      const remoteEquip = Equipment.getById(remoteEquipId);
+      const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
       if (!remoteEquip) return candidates;
       for (const swPort of remoteEquip.getPorts()) {
         if (swPort === remotePort) continue;
@@ -1177,7 +1179,7 @@ export class RouterOSPFIntegration {
       // Through switch
       const remoteEquipId = remotePort.getEquipmentId();
       if (!RouterOSPFIntegration.getByEquipmentId(remoteEquipId)) {
-        const remoteEquip = Equipment.getById(remoteEquipId);
+        const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
         if (!remoteEquip) continue;
         for (const swPort of remoteEquip.getPorts()) {
           if (swPort === remotePort) continue;
@@ -1213,7 +1215,7 @@ export class RouterOSPFIntegration {
       const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
       if (!remotePort) continue;
       const remoteEquipId = remotePort.getEquipmentId();
-      const remoteEquip = Equipment.getById(remoteEquipId);
+      const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
 
       const tryAdd = (peer: RouterOSPFIntegration, rPort: Port) => {
         if (visited.has(peer.ctx.id) || !peer.ospfv3Engine) return;
@@ -1259,7 +1261,7 @@ export class RouterOSPFIntegration {
           const currIface = curr.ospfv3Engine?.getInterface(pn);
           queue.push({ peer: re, nextHop, iface, cost: cost + (currIface?.cost ?? 1) });
         } else {
-          const equip = Equipment.getById(rid);
+          const equip = EquipmentRegistry.getInstance().getById(rid);
           if (!equip) continue;
           for (const swPort of equip.getPorts()) {
             if (swPort === rp) continue;
@@ -1550,7 +1552,7 @@ export class RouterOSPFIntegration {
 
       // Check through switch
       if (!RouterOSPFIntegration.getByEquipmentId(remoteEquipId)) {
-        const remoteEquip = Equipment.getById(remoteEquipId);
+        const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
         if (!remoteEquip) continue;
         for (const swPort of remoteEquip.getPorts()) {
           if (swPort === remotePort) continue;
@@ -1606,7 +1608,7 @@ export class RouterOSPFIntegration {
       if (remoteOSPF) {
         tryAdd(remoteOSPF, remotePort);
       } else {
-        const remoteEquip = Equipment.getById(remoteEquipId);
+        const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
         if (!remoteEquip) continue;
         for (const swPort of remoteEquip.getPorts()) {
           if (swPort === remotePort) continue;
@@ -1637,7 +1639,7 @@ export class RouterOSPFIntegration {
           const currIface = curr.ospfEngine?.getInterface(pn);
           queue.push({ peer: re, nextHop, iface, cost: cost + (currIface?.cost ?? 1) });
         } else {
-          const equip = Equipment.getById(rid);
+          const equip = EquipmentRegistry.getInstance().getById(rid);
           if (!equip) continue;
           for (const swPort of equip.getPorts()) {
             if (swPort === rp) continue;

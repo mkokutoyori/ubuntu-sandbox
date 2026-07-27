@@ -42,6 +42,7 @@ import {
   PC2_IP,
 } from './ssh-lan-fixtures';
 import { isOk } from '@/network/protocols/ssh/Result';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 describe('SSH LAN — PTY shell channel (`ssh -t`)', () => {
   let lan: SshLan;
@@ -50,7 +51,7 @@ describe('SSH LAN — PTY shell channel (`ssh -t`)', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
   });

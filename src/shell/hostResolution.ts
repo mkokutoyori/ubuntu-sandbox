@@ -6,9 +6,10 @@
  */
 
 import { Equipment } from '@/network/equipment/Equipment';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 export function findEquipmentByIp(targetIp: string): Equipment | null {
-  const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] }).getAllEquipment();
+  const all = EquipmentRegistry.getInstance().getAll();
   for (const eq of all) {
     const portsObj = (eq as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
     if (!portsObj) continue;
@@ -25,7 +26,7 @@ export function findEquipmentByIp(targetIp: string): Equipment | null {
 }
 
 export function findEquipmentByHostname(hostname: string): Equipment | null {
-  const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] }).getAllEquipment();
+  const all = EquipmentRegistry.getInstance().getAll();
   for (const eq of all) {
     const dev = eq as unknown as { getHostname?: () => string };
     if (typeof dev.getHostname === 'function' && dev.getHostname() === hostname) {

@@ -25,6 +25,7 @@ import {
   parseSshArgs,
 } from '@/terminal/sessions/sshArgs';
 import { SshDynamicForwarder } from '@/network/protocols/ssh/SshDynamicForwarder';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   buildLan,
   assignIps,
@@ -39,7 +40,7 @@ describe('SSH LAN — dynamic forwarding (`ssh -D`)', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
   });

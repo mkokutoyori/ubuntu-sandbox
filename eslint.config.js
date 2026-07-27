@@ -28,4 +28,28 @@ export default tseslint.config(
       }],
     },
   },
+  // A device learns about another device from the frames it receives, never
+  // from a walk of the global equipment graph. The registry stays reachable
+  // from the code that owns it and from read-only inspection tooling; every
+  // other file under src/network has to go through the wire.
+  // See docs/PRD-Frame-Only-Refactor.md.
+  {
+    files: ["src/network/**/*.{ts,tsx}"],
+    ignores: [
+      "src/network/equipment/**",
+      "src/network/devices/inspection/**",
+    ],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [
+          {
+            group: ["**/equipment/EquipmentRegistry", "**/EquipmentRegistry"],
+            message:
+              "A device must discover its peers from real frames, not from the global registry. " +
+              "See docs/PRD-Frame-Only-Refactor.md.",
+          },
+        ],
+      }],
+    },
+  },
 );

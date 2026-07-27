@@ -107,6 +107,7 @@ import { ClusterSignalRefreshActor } from './windows/server/cluster/actors/Clust
 import { DfsSignalStore } from './windows/server/dfs/observables';
 import { DfsSignalRefreshActor } from './windows/server/dfs/actors/DfsSignalRefreshActor';
 import { dialWinRm, type WinRmDialResult, pushForwardedEvent } from './windows/server/winrm/WinRmClient';
+// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P6, docs/PRD-Frame-Only-Refactor.md)
 import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import type { EventLogEntry } from './windows/PSEventLogProvider';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';

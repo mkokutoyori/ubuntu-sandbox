@@ -69,6 +69,9 @@ import { PkiKeyPair } from '../pki/PkiKeyPair';
 import { verificationToIkeReason } from './IkeCertAuthConfig';
 import type { X509Certificate } from '../pki/X509Certificate';
 import { DdnsResolver } from './DdnsResolver';
+// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P4, docs/PRD-Frame-Only-Refactor.md)
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+
 
 // Forward reference — resolved at runtime to avoid circular imports
 type Router = import('../devices/Router').Router;
@@ -3812,7 +3815,7 @@ export class IPSecEngine implements IProtocolEngine {
   // ── Static helpers ─────────────────────────────────────────────
 
   static findRouterByIP(ip: string): Router | null {
-    for (const equip of Equipment.getAllEquipment()) {
+    for (const equip of EquipmentRegistry.getInstance().getAll()) {
       if (!(equip as any)._getIPSecEngineInternal) continue; // not a Router
       const ports = (equip as any)._getPortsInternal?.();
       if (!ports) continue;
@@ -3824,7 +3827,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   static findEquipmentByIP(ip: string): Equipment | null {
-    for (const equip of Equipment.getAllEquipment()) {
+    for (const equip of EquipmentRegistry.getInstance().getAll()) {
       const ports = (equip as any)._getPortsInternal?.() || (equip as any).getPorts?.();
       if (!ports) continue;
       for (const [, port] of (ports instanceof Map ? ports : new Map())) {

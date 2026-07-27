@@ -24,6 +24,7 @@ import {
   matchHashedHost,
 } from '@/network/protocols/ssh/SshPureUtils';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   buildLan,
   assignIps,
@@ -40,7 +41,7 @@ describe('SSH gap-analysis remediations (P5/P8/P9)', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
   });

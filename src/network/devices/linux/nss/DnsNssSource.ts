@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P6, docs/PRD-Frame-Only-Refactor.md)
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType } from '@/network/dns/wire/RRType';
