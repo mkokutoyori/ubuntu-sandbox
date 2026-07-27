@@ -31,6 +31,13 @@ import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { buildConnection, type Connection } from './networkStore';
 
+/** Surfaced by Save/Export UI (rapport 09, item #55) so the user knows
+ *  this before it happens, not after. Kept in sync with the capture
+ *  list in the header comment above: anything not listed there. */
+export const TOPOLOGY_SAVE_CAVEATS =
+  "Terminal sessions, in-progress editors, and live TCP/SSH connections are not included — they close when this topology is loaded. " +
+  "Dynamic state (DHCP leases, OSPF/BGP-learned routes) reconverges from config after loading rather than being restored directly.";
+
 // ── Export schema ──
 
 interface TopologyRouteExport {

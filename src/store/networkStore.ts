@@ -97,6 +97,27 @@ export interface NetworkDeviceUI {
   instance: Equipment;
 }
 
+/**
+ * Undo/redo history (rapport 09 audit, item #54) — covers exactly the 5
+ * graph-shape actions the audit names: add/remove device, add/remove
+ * connection, move. Restoring a removed device keeps the SAME Equipment
+ * instance alive (see doRestoreDevice) rather than recreating it, since
+ * a device's CLI-configured state (IPs, routes, users, …) lives entirely
+ * on that object — there is no separate "config" struct to snapshot.
+ * Deliberately out of scope: `updateDevice` (rename/hostname/power —
+ * not named by the audit, and "undo a power toggle" is ambiguous once
+ * other commands may have run since); `clearAll`/Import/Open, which
+ * already bypass these actions via direct `setState` and instead clear
+ * the history stacks (a fresh document resets undo history, same as
+ * most editors).
+ */
+export type HistoryCommand =
+  | { kind: 'addDevice'; device: Equipment }
+  | { kind: 'removeDevice'; device: Equipment; connections: Connection[] }
+  | { kind: 'move'; deviceId: string; from: { x: number; y: number }; to: { x: number; y: number } }
+  | { kind: 'addConnection'; connection: Connection }
+  | { kind: 'removeConnection'; connection: Connection };
+
 interface NetworkState {
   deviceInstances: Map<string, Equipment>;
   connections: Connection[];
@@ -109,12 +130,18 @@ interface NetworkState {
   zoom: number;
   panX: number;
   panY: number;
+  historyPast: HistoryCommand[];
+  historyFuture: HistoryCommand[];
 
   // Device actions
   addDevice: (type: DeviceType, x: number, y: number) => NetworkDeviceUI;
   removeDevice: (id: string) => void;
   updateDevice: (id: string, updates: { name?: string; hostname?: string; isPoweredOn?: boolean; x?: number; y?: number }) => void;
   moveDevice: (id: string, x: number, y: number) => void;
+  /** Records one undo-able move for a gesture already applied via moveDevice
+   *  (drag) or about to be applied by the caller (keyboard nudge) — see
+   *  each call site for which. A no-op if `from`/`to` are equal. */
+  commitMove: (id: string, from: { x: number; y: number }, to: { x: number; y: number }) => void;
   selectDevice: (id: string | null) => void;
   getDevice: (id: string) => Equipment | undefined;
   getDevices: () => NetworkDeviceUI[];
@@ -138,6 +165,10 @@ interface NetworkState {
   // View actions
   setZoom: (zoom: number) => void;
   setPan: (x: number, y: number) => void;
+
+  // History
+  undo: () => void;
+  redo: () => void;
 
   // Utility
   clearSelection: () => void;
@@ -219,6 +250,184 @@ function deviceToUI(device: Equipment): NetworkDeviceUI {
   };
 }
 
+/** Reconnect a previously-disconnected connection's cable to the same
+ *  (device, interface) pair it originally used — a no-op if either
+ *  device or port is gone (e.g. also removed since). */
+function reconnectCable(connection: Connection, deviceInstances: Map<string, Equipment>): boolean {
+  const source = deviceInstances.get(connection.sourceDeviceId);
+  const target = deviceInstances.get(connection.targetDeviceId);
+  if (!source || !target) return false;
+  const sourcePort = source.getPort(connection.sourceInterfaceId);
+  const targetPort = target.getPort(connection.targetInterfaceId);
+  if (!sourcePort || !targetPort) return false;
+  connection.cable.connect(sourcePort, targetPort);
+  return true;
+}
+
+type SetFn = (partial: Partial<NetworkState> | ((state: NetworkState) => Partial<NetworkState>)) => void;
+type GetFn = () => NetworkState;
+
+function pushHistory(set: SetFn, cmd: HistoryCommand): void {
+  set(state => ({
+    historyPast: [...state.historyPast, cmd],
+    historyFuture: [],
+  }));
+}
+
+/** Mechanics shared by the public actions and undo/redo — no history
+ *  bookkeeping here, callers decide what (if anything) to record. */
+function doAddDevice(device: Equipment, set: SetFn): void {
+  set(state => {
+    const newInstances = new Map(state.deviceInstances);
+    newInstances.set(device.getId(), device);
+    return { deviceInstances: newInstances };
+  });
+}
+
+function doRemoveDevice(id: string, get: GetFn, set: SetFn): { device: Equipment; connections: Connection[] } | null {
+  const state = get();
+  const device = state.deviceInstances.get(id);
+  if (!device) return null;
+
+  const connectionsToRemove = state.connections.filter(
+    c => c.sourceDeviceId === id || c.targetDeviceId === id
+  );
+  for (const conn of connectionsToRemove) {
+    conn.cable.disconnect();
+  }
+
+  // Notify the rest of the system BEFORE the device disappears from the
+  // store, so subscribers (TerminalManager, supervisors) can read final
+  // state. We emit `device.removed` (user-initiated) alongside the bus's
+  // own `device.deregistered`, which the registry will fire below.
+  getDefaultEventBus().publish({
+    topic: 'device.removed',
+    payload: {
+      id: device.getId(),
+      name: device.getName(),
+      wasPoweredOn: device.getIsPoweredOn(),
+    },
+  });
+  // Power-down side effects (services, supervisors) before dropping the
+  // registry entry so dependent listeners observe a clean shutdown.
+  if (device.getIsPoweredOn()) {
+    try { device.powerOff(); } catch { /* never block removal */ }
+  }
+  EquipmentRegistry.getInstance().deregister(id);
+
+  set(state => {
+    const newInstances = new Map(state.deviceInstances);
+    newInstances.delete(id);
+
+    return {
+      deviceInstances: newInstances,
+      connections: state.connections.filter(
+        c => c.sourceDeviceId !== id && c.targetDeviceId !== id
+      ),
+      selectedDeviceId: state.selectedDeviceId === id ? null : state.selectedDeviceId,
+    };
+  });
+
+  return { device, connections: connectionsToRemove };
+}
+
+/** Undo of remove (or redo of add): re-registers the SAME instance (its
+ *  CLI-configured state was never destroyed, only detached) and
+ *  reconnects any cables that were disconnected as a side effect of the
+ *  removal. Comes back powered off and with no terminal sessions — see
+ *  the HistoryCommand doc comment. */
+function doRestoreDevice(device: Equipment, connections: Connection[], get: GetFn, set: SetFn): void {
+  EquipmentRegistry.getInstance().register(device);
+  set(state => {
+    const newInstances = new Map(state.deviceInstances);
+    newInstances.set(device.getId(), device);
+    return { deviceInstances: newInstances };
+  });
+  const restored = connections.filter(conn => reconnectCable(conn, get().deviceInstances));
+  if (restored.length > 0) {
+    set(state => ({ connections: [...state.connections, ...restored] }));
+  }
+}
+
+function doAddConnection(connection: Connection, set: SetFn): void {
+  set(state => ({ connections: [...state.connections, connection] }));
+}
+
+function doRemoveConnection(id: string, get: GetFn, set: SetFn): Connection | null {
+  const conn = get().connections.find(c => c.id === id);
+  if (!conn) return null;
+  conn.cable.disconnect();
+  set(state => ({
+    connections: state.connections.filter(c => c.id !== id),
+    selectedConnectionId: state.selectedConnectionId === id ? null : state.selectedConnectionId,
+  }));
+  return conn;
+}
+
+function doRestoreConnection(connection: Connection, get: GetFn, set: SetFn): void {
+  if (!reconnectCable(connection, get().deviceInstances)) return;
+  set(state => ({ connections: [...state.connections, connection] }));
+}
+
+function applyCommand(cmd: HistoryCommand, direction: 'undo' | 'redo', get: GetFn, set: SetFn): void {
+  switch (cmd.kind) {
+    case 'addDevice':
+      if (direction === 'undo') doRemoveDevice(cmd.device.getId(), get, set);
+      else doRestoreDevice(cmd.device, [], get, set);
+      break;
+    case 'removeDevice':
+      if (direction === 'undo') doRestoreDevice(cmd.device, cmd.connections, get, set);
+      else doRemoveDevice(cmd.device.getId(), get, set);
+      break;
+    case 'move': {
+      const device = get().deviceInstances.get(cmd.deviceId);
+      if (device) {
+        const pos = direction === 'undo' ? cmd.from : cmd.to;
+        device.setPosition(pos.x, pos.y);
+        set(state => ({ revision: state.revision + 1 }));
+      }
+      break;
+    }
+    case 'addConnection':
+      if (direction === 'undo') doRemoveConnection(cmd.connection.id, get, set);
+      else doRestoreConnection(cmd.connection, get, set);
+      break;
+    case 'removeConnection':
+      if (direction === 'undo') doRestoreConnection(cmd.connection, get, set);
+      else doRemoveConnection(cmd.connection.id, get, set);
+      break;
+  }
+}
+
+/**
+ * Bridges autonomous device/link changes (a port going down on a dead-
+ * interval timeout, a DHCP lease expiring, ...) into a `revision` bump so
+ * the canvas/properties panel pick them up without any zustand action
+ * having run first (rapport 09, item #56). Scoped to the handful of
+ * topics that actually change a rendered field (`isUp`, `ipAddress`) —
+ * NOT `subscribeAll`, which also carries per-frame traffic events and
+ * would reintroduce the re-render storm item #52 removed.
+ *
+ * Re-checked (cheap reference compare) on every `getDevices()` call
+ * rather than subscribed once at module load: tests reset the default
+ * EventBus between runs (`__setDefaultEventBus(null)`, see
+ * `setupGlobalState.ts`), and a one-time subscription at import time
+ * would silently go dead against the discarded bus.
+ */
+const AUTONOMOUS_REVISION_TOPICS = ['port.link.up', 'port.link.down', 'port.config.ip-changed'] as const;
+let subscribedBus: ReturnType<typeof getDefaultEventBus> | null = null;
+let unsubscribeAutonomousEvents: (() => void) | null = null;
+
+function ensureAutonomousEventBridge(): void {
+  const bus = getDefaultEventBus();
+  if (bus === subscribedBus) return;
+  unsubscribeAutonomousEvents?.();
+  subscribedBus = bus;
+  const bump = () => useNetworkStore.setState(state => ({ revision: state.revision + 1 }));
+  const unsubs = AUTONOMOUS_REVISION_TOPICS.map(topic => bus.subscribe(topic, bump));
+  unsubscribeAutonomousEvents = () => unsubs.forEach(u => u());
+}
+
 export const useNetworkStore = create<NetworkState>((set, get) => ({
   deviceInstances: new Map(),
   connections: [],
@@ -230,64 +439,19 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   zoom: 1,
   panX: 0,
   panY: 0,
+  historyPast: [],
+  historyFuture: [],
 
   addDevice: (type, x, y) => {
     const device = createDevice(type, x, y);
-
-    set(state => {
-      const newInstances = new Map(state.deviceInstances);
-      newInstances.set(device.getId(), device);
-      return { deviceInstances: newInstances };
-    });
-
+    doAddDevice(device, set);
+    pushHistory(set, { kind: 'addDevice', device });
     return deviceToUI(device);
   },
 
   removeDevice: (id) => {
-    const state = get();
-    const device = state.deviceInstances.get(id);
-
-    // Disconnect all cables involving this device
-    const connectionsToRemove = state.connections.filter(
-      c => c.sourceDeviceId === id || c.targetDeviceId === id
-    );
-    for (const conn of connectionsToRemove) {
-      conn.cable.disconnect();
-    }
-
-    // Notify the rest of the system BEFORE the device disappears from the
-    // store, so subscribers (TerminalManager, supervisors) can read final
-    // state. We emit `device.removed` (user-initiated) alongside the bus's
-    // own `device.deregistered`, which the registry will fire below.
-    if (device) {
-      getDefaultEventBus().publish({
-        topic: 'device.removed',
-        payload: {
-          id: device.getId(),
-          name: device.getName(),
-          wasPoweredOn: device.getIsPoweredOn(),
-        },
-      });
-      // Power-down side effects (services, supervisors) before dropping the
-      // registry entry so dependent listeners observe a clean shutdown.
-      if (device.getIsPoweredOn()) {
-        try { device.powerOff(); } catch { /* never block removal */ }
-      }
-      EquipmentRegistry.getInstance().deregister(id);
-    }
-
-    set(state => {
-      const newInstances = new Map(state.deviceInstances);
-      newInstances.delete(id);
-
-      return {
-        deviceInstances: newInstances,
-        connections: state.connections.filter(
-          c => c.sourceDeviceId !== id && c.targetDeviceId !== id
-        ),
-        selectedDeviceId: state.selectedDeviceId === id ? null : state.selectedDeviceId,
-      };
-    });
+    const result = doRemoveDevice(id, get, set);
+    if (result) pushHistory(set, { kind: 'removeDevice', device: result.device, connections: result.connections });
   },
 
   updateDevice: (id, updates) => {
@@ -320,6 +484,11 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     }
   },
 
+  commitMove: (id, from, to) => {
+    if (from.x === to.x && from.y === to.y) return;
+    pushHistory(set, { kind: 'move', deviceId: id, from, to });
+  },
+
   selectDevice: (id) => {
     set({ selectedDeviceId: id, selectedConnectionId: null });
   },
@@ -329,6 +498,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   },
 
   getDevices: () => {
+    ensureAutonomousEventBridge();
     const state = get();
     const devices: NetworkDeviceUI[] = [];
     let unchanged = devicesArraySnapshot.length === state.deviceInstances.size;
@@ -364,25 +534,15 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       sourceDevice, sourceInterfaceId, targetDevice, targetInterfaceId, type);
     if (!connection) return null;
 
-    set(state => ({
-      connections: [...state.connections, connection],
-    }));
+    doAddConnection(connection, set);
+    pushHistory(set, { kind: 'addConnection', connection });
 
     return connection;
   },
 
   removeConnection: (id) => {
-    set(state => {
-      const conn = state.connections.find(c => c.id === id);
-      if (conn) {
-        conn.cable.disconnect();
-      }
-
-      return {
-        connections: state.connections.filter(c => c.id !== id),
-        selectedConnectionId: state.selectedConnectionId === id ? null : state.selectedConnectionId,
-      };
-    });
+    const conn = doRemoveConnection(id, get, set);
+    if (conn) pushHistory(set, { kind: 'removeConnection', connection: conn });
   },
 
   selectConnection: (id) => {
@@ -425,6 +585,28 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     set({ panX: x, panY: y });
   },
 
+  undo: () => {
+    const state = get();
+    const cmd = state.historyPast[state.historyPast.length - 1];
+    if (!cmd) return;
+    applyCommand(cmd, 'undo', get, set);
+    set(state => ({
+      historyPast: state.historyPast.slice(0, -1),
+      historyFuture: [...state.historyFuture, cmd],
+    }));
+  },
+
+  redo: () => {
+    const state = get();
+    const cmd = state.historyFuture[state.historyFuture.length - 1];
+    if (!cmd) return;
+    applyCommand(cmd, 'redo', get, set);
+    set(state => ({
+      historyFuture: state.historyFuture.slice(0, -1),
+      historyPast: [...state.historyPast, cmd],
+    }));
+  },
+
   clearSelection: () => {
     set({ selectedDeviceId: null, selectedConnectionId: null });
   },
@@ -458,6 +640,10 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       selectedConnectionId: null,
       isConnecting: false,
       connectionSource: null,
+      // A cleared canvas has nothing to undo back to — same "loading a
+      // new document resets undo history" rule Import/Open follow.
+      historyPast: [],
+      historyFuture: [],
     });
   },
 }));

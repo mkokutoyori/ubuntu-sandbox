@@ -130,7 +130,7 @@ export interface SshExecTarget {
    * those that do not fall back to the one-shot `runSshCommandSync` path
    * (docs/PRD-SSH-Unification.md §3.2).
    */
-  createVtyShell?(): SshVtyShell | null;
+  createVtyShell?(user?: string): SshVtyShell | null;
 
   /** Reactive bus the target publishes SSH lifecycle events on. */
   getSshEventBus?(): IEventBus;

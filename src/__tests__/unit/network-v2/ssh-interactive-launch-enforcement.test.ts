@@ -86,7 +86,7 @@ describe('ssh interactif (terminal réel) — chroot / ForceCommand', () => {
     const { client, server } = await buildLab();
     await provisionChroot(server);
     const auth = await pendingAuthFor(`ssh sftponly@${SERVER_IP}`, client);
-    const finalised = finalisePendingAuth(auth, 'secret');
+    const finalised = await finalisePendingAuth(auth, 'secret');
     expect(finalised.kind).toBe('refused');
     if (finalised.kind !== 'refused') throw new Error('unreachable');
     expect(finalised.message).toMatch(/sftp connections only/i);
@@ -96,7 +96,7 @@ describe('ssh interactif (terminal réel) — chroot / ForceCommand', () => {
     // `alice` est preseedée sur tout LinuxServer fraîchement créé, mot de passe "alice".
     const { client } = await buildLab();
     const auth = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    const finalised = finalisePendingAuth(auth, 'alice');
+    const finalised = await finalisePendingAuth(auth, 'alice');
     expect(finalised.kind).toBe('success');
     if (finalised.kind !== 'success') throw new Error('unreachable');
     finalised.shell.dispose();
@@ -113,7 +113,7 @@ describe('ssh interactif (terminal réel) — détection MITM par changement de 
   it('première connexion interactive enregistre la clé serveur dans le known_hosts réel (VFS)', async () => {
     const { client, server } = await buildLab();
     const auth = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    const finalised = finalisePendingAuth(auth, 'alice');
+    const finalised = await finalisePendingAuth(auth, 'alice');
     expect(finalised.kind).toBe('success');
     if (finalised.kind !== 'success') throw new Error('unreachable');
     finalised.shell.dispose();
@@ -127,7 +127,7 @@ describe('ssh interactif (terminal réel) — détection MITM par changement de 
     const { client, server } = await buildLab();
 
     const first = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    const firstAuth = finalisePendingAuth(first, 'alice');
+    const firstAuth = await finalisePendingAuth(first, 'alice');
     expect(firstAuth.kind).toBe('success');
     if (firstAuth.kind === 'success') firstAuth.shell.dispose();
 
@@ -135,7 +135,7 @@ describe('ssh interactif (terminal réel) — détection MITM par changement de 
     await server.executeCommand('ssh-keygen -A');
 
     const second = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    const finalised = finalisePendingAuth(second, 'alice');
+    const finalised = await finalisePendingAuth(second, 'alice');
     expect(finalised.kind).toBe('refused');
     if (finalised.kind !== 'refused') throw new Error('unreachable');
     expect(finalised.message).toMatch(/WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!/);
@@ -145,19 +145,19 @@ describe('ssh interactif (terminal réel) — détection MITM par changement de 
     const { client, server } = await buildLab();
 
     const first = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    const firstAuth = finalisePendingAuth(first, 'alice');
+    const firstAuth = await finalisePendingAuth(first, 'alice');
     if (firstAuth.kind === 'success') firstAuth.shell.dispose();
 
     await server.executeCommand('rm -f /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub');
     await server.executeCommand('ssh-keygen -A');
 
     const blockedAuth = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    expect(finalisePendingAuth(blockedAuth, 'alice').kind).toBe('refused');
+    expect((await finalisePendingAuth(blockedAuth, 'alice')).kind).toBe('refused');
 
     await client.executeCommand(`ssh-keygen -R ${SERVER_IP}`);
 
     const retryAuth = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    const retry = finalisePendingAuth(retryAuth, 'alice');
+    const retry = await finalisePendingAuth(retryAuth, 'alice');
     expect(retry.kind).toBe('success');
     if (retry.kind === 'success') retry.shell.dispose();
   });

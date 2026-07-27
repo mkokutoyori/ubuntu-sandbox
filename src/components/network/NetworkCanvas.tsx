@@ -137,11 +137,16 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    setMousePos({
-      x: (e.clientX - rect.left) / zoom,
-      y: (e.clientY - rect.top) / zoom
-    });
+    // mousePos only feeds the elastic connection-drawing line below —
+    // updating it on every idle mouse movement re-rendered the whole
+    // canvas subtree for no visible effect (rapport 09 audit).
+    if (isConnecting) {
+      const rect = canvas.getBoundingClientRect();
+      setMousePos({
+        x: (e.clientX - rect.left) / zoom,
+        y: (e.clientY - rect.top) / zoom
+      });
+    }
 
     if (!isPanning) return;
     const gesture = panGestureRef.current;
@@ -154,7 +159,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     if (!gesture || gesture.moved || !gesture.fromBackground) {
       setPan(e.clientX - startPan.x, e.clientY - startPan.y);
     }
-  }, [isPanning, startPan, zoom, setPan]);
+  }, [isConnecting, isPanning, startPan, zoom, setPan]);
 
   const handleMouseUp = useCallback(() => {
     const gesture = panGestureRef.current;

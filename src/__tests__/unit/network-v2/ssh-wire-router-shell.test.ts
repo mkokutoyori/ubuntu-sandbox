@@ -53,7 +53,10 @@ async function ciscoLab(): Promise<{ pc: LinuxPC; r: CiscoRouter }> {
   await r.executeCommand('enable');
   await r.executeCommand('configure terminal');
   await r.executeCommand('hostname R1');
-  await r.executeCommand('username admin privilege 15 secret adminpw');
+  // Level 1 on purpose: these tests watch the session move from user
+  // EXEC to privileged and back, and a privilege-15 account is already
+  // in privileged EXEC the moment it lands, as on real IOS.
+  await r.executeCommand('username admin privilege 1 secret adminpw');
   await r.executeCommand('end');
   return { pc, r };
 }

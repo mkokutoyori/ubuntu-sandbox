@@ -56,7 +56,7 @@ async function cisco(): Promise<CiscoRouter> {
   await r.executeCommand('enable');
   await r.executeCommand('configure terminal');
   await r.executeCommand('hostname R1');
-  await r.executeCommand('username admin privilege 15 secret adminpw');
+  await r.executeCommand('username admin privilege 1 secret adminpw');
   await r.executeCommand('end');
   return r;
 }
