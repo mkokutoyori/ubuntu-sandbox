@@ -14,7 +14,10 @@
  *   Phase 2 — trafic applicatif normal.
  *   Phase 3 — attaque : ré-injection de trames ESP capturées côté R1.
  *   Phase 4 — rupture : `clear crypto sa` + `clear crypto isakmp` +
- *             shutdown Gi0/1 sur R1 → tunnel démoli, PC1 en timeout.
+ *             shutdown Gi0/1 sur R1 → tunnel démoli, R1 n'a plus aucune
+ *             route vers PC2 et répond immédiatement à PC1 par un ICMP
+ *             Destination Unreachable (pas un timeout : un routeur réel
+ *             sans route ne fait pas patienter l'émetteur).
  *   Phase 5 — rétablissement : `no shutdown` + ping → nouvelle IKE +
  *             nouvelle Phase 2 avec un SPI différent.
  *
@@ -24,7 +27,7 @@
  *   - horodatage monotone ;
  *   - filtrage par équipement ET par classe d'événement ;
  *   - le tampon `show logging` du routeur restitue IKE/IPSEC ;
- *   - la coupure PC1 (`host.icmp.echo-timeout`) tombe dans la fenêtre
+ *   - la coupure PC1 (`host.icmp.echo-failed`) tombe dans la fenêtre
  *     temporelle de la destruction de la SA côté R1 ;
  *   - la reconstruction chronologique est possible en une passe.
  */
@@ -324,19 +327,24 @@ describe('Scenario 10 — cross-equipment log audit for incident reconstruction'
     });
   });
 
-  describe('10.H — cross-layer correlation (Cisco IKE-delete ↔ PC ICMP-timeout)', () => {
-    it('PC1 host.icmp.echo-timeout during rupture falls in the R1 SA-delete window', () => {
+  describe('10.H — cross-layer correlation (Cisco IKE-delete ↔ PC ICMP-unreachable)', () => {
+    it('PC1 host.icmp.echo-failed during rupture falls in the R1 SA-delete window', () => {
+      // R1's own WAN interface (the only path to 192.168.2.0/24) is shut, so
+      // its RIB has no matching route at all — R1 immediately answers PC1
+      // with ICMP Destination Unreachable, exactly as a real router would
+      // when it has no route for a destination, rather than black-holing the
+      // packet into a client-side timeout.
       const timeline = fixture.timeline;
-      const pcTimeouts = fixture.rows.filter((r) =>
-        r.topic === 'host.icmp.echo-timeout' && r.source === fixture.pc1.getId()
+      const pcFailures = fixture.rows.filter((r) =>
+        r.topic === 'host.icmp.echo-failed' && r.source === fixture.pc1.getId()
         && r.timestamp >= timeline.phase4 && r.timestamp <= timeline.phase5);
       const ikeDeletes = fixture.rows.filter((r) =>
         r.topic === 'ipsec.ike.sa-deleted' && r.payload.deviceId === fixture.r1.getId()
         && r.timestamp >= timeline.phase4 && r.timestamp <= timeline.phase5);
 
       expect(ikeDeletes.length).toBeGreaterThan(0);
-      expect(pcTimeouts.length).toBeGreaterThan(0);
-      for (const to of pcTimeouts) {
+      expect(pcFailures.length).toBeGreaterThan(0);
+      for (const to of pcFailures) {
         expect(to.timestamp).toBeGreaterThanOrEqual(ikeDeletes[0].timestamp);
       }
     });

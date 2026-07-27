@@ -386,6 +386,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getTcpStack: () => this.tcpv2,
     });
     this.shell = this.createShell();
+    // Wire the logging buffer to this device's own bus up front — without
+    // this, `show logging` stays empty for every domain event (OSPF, HSRP,
+    // NAT debug, …) until something happens to call the internal
+    // `getLoggingConfig()` accessor first, which no real CLI command does.
+    this.shell.attachLoggingToBus?.(this.getBus(), this.id);
+    this.natEngine.setDeviceId(this.id, this.name);
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? ({ type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any);
       // Undefined ACL = no interesting traffic, so require an explicit permit.
@@ -523,16 +529,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /**
    * True when a routing-table entry's egress interface can actually carry
    * traffic. Virtual interfaces (Tunnel, Loopback) need no cable; a
-   * physical one needs carrier, so a route over a severed link is neither
-   * used for forwarding nor shown by `show ip route`, exactly as IOS drops
-   * it when the line protocol goes down (docs/PRD-Link-State.md §2.1 P7).
+   * physical one needs full operational state (line, admin, and carrier
+   * all up — `Port.isOperationallyUp()`), so a route over a severed link
+   * OR an administratively shut interface is neither used for forwarding
+   * nor shown by `show ip route`, exactly as IOS drops it when the line
+   * protocol goes down (docs/PRD-Link-State.md §2.1 P7, §3.1).
    */
   isRouteInterfaceUsable(iface: string): boolean {
     if (/^(Tunnel|Loopback)/i.test(iface)) return true;
     const dotIdx = iface.indexOf('.');
     const physIface = dotIdx > 0 ? iface.slice(0, dotIdx) : iface;
     const port = this.ports.get(physIface);
-    return !port || port.hasCarrier();
+    return !port || port.isOperationallyUp();
+  }
+
+  /**
+   * `ip route ... track <N>` resolver — injected by the CLI shell layer,
+   * which owns the real `TrackRepository`/`IpSlaRepository` state (same
+   * pattern as `ACLEngine.setTimeRangeResolver` above: Router doesn't own
+   * this config, just consults it). Wired fresh on every command
+   * (`CiscoIOSShell.execute`), since the shell instance — not a fixed
+   * router reference — is what's stable across a device's lifetime.
+   */
+  private routeTrackResolver: ((trackId: string) => boolean) | null = null;
+  setRouteTrackResolver(fn: ((trackId: string) => boolean) | null): void { this.routeTrackResolver = fn; }
+  /** Whether a `track <id>`-conditioned route is currently usable — true when the route has no track condition, or no resolver is wired yet (no track/IP-SLA config exists). */
+  isRouteTrackUp(trackId: string | undefined): boolean {
+    if (!trackId) return true;
+    if (!this.routeTrackResolver) return true;
+    return this.routeTrackResolver(trackId);
   }
 
   private _setupPortMonitoring(): void {
@@ -933,6 +958,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         }
         continue;
       }
+      if (!this.isRouteTrackUp(route.track)) continue;
 
       const netInt = route.network.toUint32();
       const maskInt = route.mask.toUint32();
@@ -1279,7 +1305,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    // NAT PREROUTING (DNAT): rewrite destination before routing decision
+    // NAT PREROUTING (DNAT): rewrite destination before routing decision.
+    // Keep the pre-DNAT packet too — a hairpin flow needs it both to detect
+    // the hairpin turn later and to evaluate the operator's NAT ACL against
+    // the address the client actually targeted (see `forwardPacket`).
+    const originalPkt = ipPkt;
     const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
     if (natInbound) ipPkt = natInbound;
 
@@ -1349,7 +1379,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     // C.2: Not for us → forward via FIB
-    this.forwardPacket(inPort, ipPkt);
+    this.forwardPacket(inPort, ipPkt, originalPkt);
   }
 
   /**
@@ -1652,7 +1682,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Forward an IPv4 packet to the next hop.
    * Implements the full RFC 1812 forwarding pipeline.
    */
-  private forwardPacket(inPort: string, ipPkt: IPv4Packet): void {
+  private forwardPacket(inPort: string, ipPkt: IPv4Packet, originalPkt: IPv4Packet = ipPkt): void {
     if (!this._ipRoutingEnabled) {
       Logger.info(this.id, 'router:ip-routing-disabled',
         `${this.name}: IP routing is disabled, dropping packet from ${ipPkt.sourceIP} to ${ipPkt.destinationIP}`);
@@ -1726,8 +1756,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    // NAT POSTROUTING (SNAT/PAT): rewrite source before sending
-    const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort);
+    // NAT POSTROUTING (SNAT/PAT): rewrite source before sending.
+    // Hairpin (RFC 5382 §5): the destination was DNAT'd above and the route
+    // for it points back out a non-outside interface — still needs SNAT so
+    // the reply routes back through this device, and the ACL must be
+    // evaluated against the client's original (pre-DNAT) target.
+    const isHairpin = !this.natEngine.isOutsideInterface(route.iface)
+      && originalPkt.destinationIP.toString() !== fwdPkt.destinationIP.toString();
+    const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort,
+      isHairpin ? { isHairpin: true, aclMatchPkt: originalPkt } : undefined);
     if (natOutbound) {
       // FTP ALG (§2.1.10): rewrite any PORT/PASV-embedded address surviving
       // in the payload, and open a pinhole for the data channel it names.

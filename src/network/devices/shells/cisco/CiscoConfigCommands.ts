@@ -905,6 +905,14 @@ export function cmdIpRoute(router: Router, args: string[]): string {
   if (nextHopStr && !isValidIPv4(nextHopStr)) {
     return "% Invalid input detected at '^' marker.";
   }
+  // `track <N>` — extracted before the AD-token scan below so its numeric
+  // argument is never mistaken for the administrative distance.
+  let trackId: string | undefined;
+  const trackIdx = rest.indexOf('track');
+  if (trackIdx >= 0 && rest[trackIdx + 1]) {
+    trackId = rest[trackIdx + 1];
+    rest = rest.slice(0, trackIdx).concat(rest.slice(trackIdx + 2));
+  }
   // Optional administrative distance (RFC: 1-255).
   let ad: number | undefined;
   const adTok = rest.find((t) => /^\d+$/.test(t));
@@ -921,8 +929,9 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     vrfs.set(vrfName, list);
     return '';
   }
-  const opts: { preference?: number; iface?: string } = {};
+  const opts: { preference?: number; iface?: string; track?: string } = {};
   if (ad !== undefined) opts.preference = ad;
+  if (trackId !== undefined) opts.track = trackId;
   if (outIface) {
     opts.iface = outIface;
     const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
@@ -933,7 +942,7 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     if (netStr === '0.0.0.0' && maskStr === '0.0.0.0') {
       return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
     }
-    return router.addStaticRoute(network, mask, nextHop, 0, ad !== undefined ? opts : undefined)
+    return router.addStaticRoute(network, mask, nextHop, 0, (ad !== undefined || trackId !== undefined) ? opts : undefined)
       ? '' : '% Next-hop is not reachable';
   }
   return '% Incomplete command.';

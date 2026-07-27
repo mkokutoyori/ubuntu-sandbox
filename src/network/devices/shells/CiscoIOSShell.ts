@@ -287,6 +287,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getOSType(): string { return 'cisco-ios'; }
 
   execute(router: Router, rawInput: string): string | Promise<string> {
+    router.setRouteTrackResolver((trackId) =>
+      this.track.state(router, this.ipsla, parseInt(trackId, 10)) === 'Up');
     this.attachDebugSource((router as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void } }).getDebugService?.());
     if (rawInput.trim() === '' && !this.isCollectingBanner()) return this.drainDebugConsole();
     return this.executeOnDevice(router, rawInput);

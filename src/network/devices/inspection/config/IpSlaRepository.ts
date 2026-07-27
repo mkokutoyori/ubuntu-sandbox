@@ -15,6 +15,7 @@ export interface SlaOperation {
   id: number;
   type: SlaType;
   target: string | null;
+  sourceInterface: string | null;
   frequency: number;        // seconds (default 60, real IOS default)
   scheduled: boolean;
   responder: boolean;
@@ -22,16 +23,27 @@ export interface SlaOperation {
 
 function ipReachable(router: Router, ip: string | null): boolean {
   if (!ip) return false;
-  // Connected/own address?
+  // Connected/own address? (a router always answers for its own configured
+  // address, even while that interface is down — real IOS self-pings are
+  // handled locally, never actually sent out the wire.)
   for (const p of router._getPortsInternal().values()) {
     if (p.getIPAddress() && String(p.getIPAddress()) === ip) return true;
   }
-  // Covered by any route in the REAL routing table?
+  // Covered by any route in the REAL routing table, whose outgoing
+  // interface (when the route names one) must actually be able to carry
+  // traffic — a route left in the RIB by an admin-down interface doesn't
+  // make its subnet reachable (the IP SLA probe this backs, e.g. `icmp-echo
+  // ... source-interface Gi0/1`, can't actually go out a shut interface).
   const addr = IPAddress.tryParse(ip);
   if (!addr) return false;
   for (const r of router.getRoutingTable()) {
     const net = IPAddress.tryParse(String(r.network));
-    if (net && addr.networkAddress(r.mask).equals(net.networkAddress(r.mask))) return true;
+    if (!net || !addr.networkAddress(r.mask).equals(net.networkAddress(r.mask))) continue;
+    if (r.iface) {
+      const port = router._getPortsInternal().get(r.iface);
+      if (port && !port.isOperationallyUp()) continue;
+    }
+    return true;
   }
   return false;
 }
@@ -60,7 +72,7 @@ export class IpSlaRepository {
   ensure(id: number): SlaOperation {
     let op = this.ops.get(id);
     if (!op) {
-      op = { id, type: 'unknown', target: null, frequency: 60,
+      op = { id, type: 'unknown', target: null, sourceInterface: null, frequency: 60,
         scheduled: false, responder: false };
       this.ops.set(id, op);
     }
@@ -79,7 +91,15 @@ export class IpSlaRepository {
   /** Real reachability of op <id> via the routing table. */
   reachable(router: Router, id: number): boolean {
     const op = this.ops.get(id);
-    return op ? ipReachable(router, op.target) : false;
+    if (!op) return false;
+    // `source-interface` pins the probe to a specific egress interface —
+    // a real device cannot source packets from one that's down/shut,
+    // regardless of what any other route in the table might say.
+    if (op.sourceInterface) {
+      const port = router._getPortsInternal().get(op.sourceInterface);
+      if (!port || !port.isOperationallyUp()) return false;
+    }
+    return ipReachable(router, op.target);
   }
 
   state(router: Router, id: number): 'Active' | 'Pending' {
