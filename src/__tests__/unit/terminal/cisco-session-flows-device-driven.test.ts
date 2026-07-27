@@ -63,6 +63,15 @@ describe('Cisco UI terminal flows execute the real device commands', () => {
     await flush();
   }
 
+  /**
+   * Read NVRAM from the console. The UI session is a separate line, so its
+   * enable does not carry over — `show startup-config` is privilege 15.
+   */
+  async function startupConfig(): Promise<string> {
+    await router.executeCommand('enable');
+    return router.executeCommand('show startup-config');
+  }
+
   /** Configure a hostname and save, so startup-config has content. */
   async function seedStartupConfig(): Promise<void> {
     await type('enable');
@@ -77,14 +86,14 @@ describe('Cisco UI terminal flows execute the real device commands', () => {
   it('erase startup-config really erases the NVRAM (UI path = vty path)', async () => {
     await seedStartupConfig();
 
-    let out = await router.executeCommand('show startup-config');
+    let out = await startupConfig();
     expect(out).toContain('hostname SAVED-R1');
 
     await type('erase startup-config');
     await type(''); // [confirm]
     await flush();
 
-    out = await router.executeCommand('show startup-config');
+    out = await startupConfig();
     expect(out).not.toContain('hostname SAVED-R1');
   });
 
@@ -97,7 +106,7 @@ describe('Cisco UI terminal flows execute the real device commands', () => {
     await type('');
     await flush();
 
-    const out = await router.executeCommand('show startup-config');
+    const out = await startupConfig();
     expect(out).toContain('hostname UI-SAVE');
   });
 
@@ -110,7 +119,7 @@ describe('Cisco UI terminal flows execute the real device commands', () => {
     await type('');
     await flush();
 
-    const out = await router.executeCommand('show startup-config');
+    const out = await startupConfig();
     expect(out).toContain('hostname ABBREV-SAVE');
   });
 
@@ -125,7 +134,7 @@ describe('Cisco UI terminal flows execute the real device commands', () => {
 
     // Reaching the save (via the abbreviated form) proves the flow drove
     // the device command rather than swallowing it.
-    const out = await router.executeCommand('show startup-config');
+    const out = await startupConfig();
     expect(out).toContain('hostname PARTIAL-SAVE');
   });
 });

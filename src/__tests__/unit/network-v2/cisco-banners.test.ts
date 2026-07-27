@@ -128,6 +128,7 @@ describe('Scénario 3 — capture interactive multi-lignes de "banner <kind> <d�
 
     expect(session.currentInputMode.type).toBe('normal');
     await type(session, 'end');
+    await r.executeCommand('enable');
     const rc = await r.executeCommand('show running-config');
     expect(rc).toContain('AVERTISSEMENT : SYSTEME PRIVE');
     expect(rc).toContain('Acces non autorise interdit.');
@@ -146,6 +147,7 @@ describe('Scénario 3 — capture interactive multi-lignes de "banner <kind> <d�
     // Stayed synchronous -- no interactive capture triggered.
     expect(session.currentInputMode.type).toBe('normal');
     await type(session, 'end');
+    await r.executeCommand('enable');
     const rc = await r.executeCommand('show running-config');
     expect(rc).toContain('WELCOME');
   });
@@ -170,6 +172,7 @@ describe('Scénario 3 — capture interactive multi-lignes de "banner <kind> <d�
     expect(session.currentInputMode.type).toBe('normal');
 
     await type(session, 'end');
+    await r.executeCommand('enable');
     const rc = await r.executeCommand('show running-config');
     expect(rc).toContain('Authentification requise.');
     expect(rc).toContain('Bienvenue, acces autorise.');

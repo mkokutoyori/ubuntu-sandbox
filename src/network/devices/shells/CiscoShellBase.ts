@@ -635,6 +635,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.registerDeviceCommands();
     this.privilegedTrie.importMissingFrom(this.userTrie);
     this.privilegedTrie.copySubtreeChildrenInto('show', this.userTrie, PRIVILEGED_ONLY_SHOW);
+    this.userTrie.pruneSubtreeChildren('show', PRIVILEGED_ONLY_SHOW);
     this.applyCanonicalDescriptions();
   }
 

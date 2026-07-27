@@ -114,8 +114,10 @@ describe('sessions are isolated like real VTY lines (docs/PRD-SSH-Unification.md
     expect((await b.runLine('show clock') as Reply).prompt).toContain('>');
     expect((await a.runLine('hostname R42') as Reply).prompt).toContain('(config)#');
 
-    // …yet the device config a changed is the one b sees.
+    // …yet the device config a changed is the one b sees, once b enables
+    // (show running-config is privilege 15, so b cannot read it from >).
     expect(r.getHostname()).toBe('R42');
+    await b.runLine('enable');
     expect((await b.runLine('show running-config') as Reply).stdout).toContain('hostname R42');
   }, 30000);
 

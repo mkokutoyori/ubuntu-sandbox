@@ -152,10 +152,16 @@ export class CommandTrie {
   /**
    * Copy the children of a top-level keyword node (e.g. all `show <x>`
    * sub-commands) from this trie into a target trie's same keyword node,
-   * skipping a denylist and never overwriting existing children. Models
-   * Cisco's "most show commands are privilege-1": the privileged trie's
-   * show family is mirrored into user EXEC except the genuinely priv-15
-   * entries.
+   * skipping a denylist. Models Cisco's "most show commands are
+   * privilege-1": the privileged trie's show family is mirrored into user
+   * EXEC except the genuinely priv-15 entries.
+   *
+   * A keyword the target already has is merged, not skipped: a partial
+   * registration such as `show interfaces counters errors` leaves a bare
+   * `interfaces` node with no action, which otherwise masked the whole
+   * privileged subtree behind it. The merge is strictly additive — an
+   * action is adopted only where the target has none, so a deliberate
+   * user-EXEC override still wins.
    */
   copySubtreeChildrenInto(keyword: string, target: CommandTrie, deny: ReadonlySet<string>): void {
     const src = this.root.children.get(keyword.toLowerCase());
@@ -163,7 +169,38 @@ export class CommandTrie {
     if (!src || !dst) return;
     for (const [k, node] of src.children) {
       if (deny.has(k)) continue;
-      if (!dst.children.has(k)) dst.children.set(k, node);
+      const existing = dst.children.get(k);
+      if (!existing) dst.children.set(k, node);
+      else CommandTrie.mergeNodeInto(node, existing);
+    }
+  }
+
+  /**
+   * Drop named children of a top-level keyword node. Paired with
+   * `copySubtreeChildrenInto` so its denylist is enforced whatever the
+   * device registered by hand: the router registers `show running-config`
+   * on the user trie directly, which no amount of care during mirroring
+   * can undo.
+   */
+  pruneSubtreeChildren(keyword: string, deny: ReadonlySet<string>): void {
+    const node = this.root.children.get(keyword.toLowerCase());
+    if (!node) return;
+    for (const k of deny) node.children.delete(k);
+  }
+
+  /** Fill the gaps of `dst` from `src`, never overwriting what `dst` defines. */
+  private static mergeNodeInto(src: CommandNode, dst: CommandNode): void {
+    if (!dst.action && src.action) {
+      dst.action = src.action;
+      dst.greedy = src.greedy;
+      dst._hintOnly = false;
+      if (dst.params.length === 0) dst.params = src.params;
+      if (dst.description === dst.keyword) dst.description = src.description;
+    }
+    for (const [k, child] of src.children) {
+      const existing = dst.children.get(k);
+      if (!existing) dst.children.set(k, child);
+      else CommandTrie.mergeNodeInto(child, existing);
     }
   }
 
