@@ -299,6 +299,20 @@ export function computeEspIcv(cryptoKeys: SACryptoKeys, esp: ESPPacket): string 
   return bytesToHex(hmac(hash, hexToBytes(cryptoKeys.espAuthKey), utf8ToBytes(espIcvMessage(esp))));
 }
 
+function ikeEncryptionLabel(enc: string): string {
+  const e = enc.toLowerCase();
+  if (e.includes('gcm')) return 'AES-GCM';
+  if (e.includes('aes')) return 'AES-CBC';
+  if (e.includes('3des')) return '3DES-CBC';
+  if (e.includes('des')) return 'DES-CBC';
+  return enc.toUpperCase();
+}
+
+function ikeKeyLength(enc: string): number | null {
+  const m = /(\d{3})/.exec(enc);
+  return m ? Number(m[1]) : null;
+}
+
 /** True when the SA negotiated AES-GCM (combined encryption + authentication). */
 function espIsGcm(espEncAlgorithm: string): boolean {
   return /^aes-gcm/.test(espEncAlgorithm);
@@ -1094,6 +1108,17 @@ export class IPSecEngine implements IProtocolEngine {
 
   setReplayWindowSize(size: number): void {
     this.replayWindowSize = size;
+  }
+
+  private debugEmitFn?: (kind: 'isakmp' | 'ipsec', line: string) => void;
+  setDebugEmitter(fn: (kind: 'isakmp' | 'ipsec', line: string) => void): void { this.debugEmitFn = fn; }
+
+  private dbgIsakmp(line: string): void {
+    if (this.debugIsakmp) this.debugEmitFn?.('isakmp', line);
+  }
+
+  private dbgIpsec(line: string): void {
+    if (this.debugIpsec) this.debugEmitFn?.('ipsec', line);
   }
 
   setDebug(type: 'isakmp' | 'ipsec' | 'ikev2', enabled: boolean): void {
@@ -2461,10 +2486,25 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     if (!sa) {
+      const localProxy = entry.aclName ? this.describeProxy(entry, 'local') : null;
+      const remoteProxy = entry.aclName ? this.describeProxy(entry, 'remote') : null;
+      this.dbgIpsec(`IPSEC(sa_request): ,`);
+      this.dbgIpsec(`  (key eng. msg.) OUTBOUND local= ${this.getLocalIP(egressIface) ?? '?'}, remote= ${peerIP},`);
+      this.dbgIpsec(`    local_proxy= ${localProxy ?? pkt.sourceIP.toString() + '/255.255.255.255/0/0'} (type=4)`);
+      this.dbgIpsec(`    remote_proxy= ${remoteProxy ?? pkt.destinationIP.toString() + '/255.255.255.255/0/0'} (type=4)`);
+      this.dbgIpsec(`IPSEC(key_engine): got a queue event with 1 KMI message(s)`);
       const ok = this.negotiateTunnel(peerIP, entry, egressIface);
       if (!ok) return null;
       sa = this.getBestIPSecSA(peerIP);
       if (!sa) return null;
+      this.dbgIpsec(`IPSEC(initialize_sas): ,`);
+      this.dbgIpsec(`IPSEC(create_sa): sa created,`);
+      this.dbgIpsec(`  (sa) sa_dest= ${peerIP}, sa_proto= 50,`);
+      this.dbgIpsec(`  sa_spi= 0x${sa.spiOut.toString(16).toUpperCase()} (0x${sa.spiOut.toString(16).toUpperCase()}),`);
+      this.dbgIpsec(`  sa_trans= ${(entry.transformSets.map((n) => this.transformSets.get(n)?.transforms.join(' ')).filter(Boolean)[0]) ?? 'esp-aes esp-sha-hmac'}`);
+      (this.router as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
+        .getLoggingConfig?.()?.append('notifications', 'crypto',
+          `Crypto tunnel is UP. Peer ${peerIP}:500 Id: ${peerIP}`, true, 'SESSION_STATUS');
     }
 
     // Wrap in ESP (or AH for AH-only)
@@ -3371,12 +3411,37 @@ export class IPSecEngine implements IProtocolEngine {
       };
     }
     this.pendingIke.set(peerIP, { entry, egressIface, localIP, apparentSrcIP, spiInitIn, offer });
+    this.dbgIsakmp(`ISAKMP:(0): SA request profile is (NULL)`);
+    this.dbgIsakmp(`ISAKMP: Created a peer struct for ${peerIP}, peer port 500`);
+    this.dbgIsakmp(`ISAKMP:(0): Processing SA payload.  message ID = 0`);
+    for (const [i, pol] of policies.entries()) {
+      this.dbgIsakmp(`ISAKMP:(0): Checking ISAKMP transform ${i + 1} against priority ${pol.priority} policy`);
+      this.dbgIsakmp(`ISAKMP:      encryption ${ikeEncryptionLabel(pol.encryption)}`);
+      const kl = ikeKeyLength(pol.encryption);
+      if (kl) this.dbgIsakmp(`ISAKMP:      keylength of ${kl}`);
+      this.dbgIsakmp(`ISAKMP:      hash ${pol.hash.toUpperCase()}`);
+      this.dbgIsakmp(`ISAKMP:      auth ${pol.auth}`);
+      this.dbgIsakmp(`ISAKMP:      default group ${pol.group}`);
+    }
     this.router._sendIkeUdp(peerIP, offer);
     this.pendingIke.delete(peerIP);
     const up = version === 2
       ? this.ikev2SADB.get(peerIP)?.status === 'READY'
       : this.ikeSADB.get(peerIP)?.status === 'QM_IDLE';
-    if (up) return true;
+    if (up) {
+      this.dbgIsakmp(`ISAKMP:(0): atts are acceptable. Next payload is 0`);
+      this.dbgIsakmp(`ISAKMP:(1001): processing KE payload`);
+      this.dbgIsakmp(`ISAKMP:(1001): processing NONCE payload`);
+      this.dbgIsakmp(`ISAKMP:(1001): SKEYID state generated`);
+      this.dbgIsakmp(`ISAKMP:(1001): SA has been authenticated with ${peerIP}`);
+      this.dbgIsakmp(`ISAKMP:(1001): Old State = IKE_I_MM_NO_STATE  New State = IKE_I_MM_SA_SETUP`);
+      this.dbgIsakmp(`ISAKMP:(1001): Old State = IKE_I_MM_SA_SETUP  New State = IKE_I_MM_KEY_EXCH`);
+      this.dbgIsakmp(`ISAKMP:(1001): Old State = IKE_I_MM_KEY_EXCH  New State = IKE_P1_COMPLETE, QM_IDLE`);
+      return true;
+    }
+    this.dbgIsakmp(`ISAKMP:(0): atts are NOT acceptable. Next payload is 0`);
+    this.dbgIsakmp(`ISAKMP:(0): no offers accepted!`);
+    this.dbgIsakmp(`ISAKMP:(0): phase 1 SA policy not acceptable!`);
     this.createFailedIKESA(peerIP, egressIface, 'IKE negotiation failed');
     return false;
   }
@@ -3432,17 +3497,43 @@ export class IPSecEngine implements IProtocolEngine {
       if (!chosenIkev2) { this.rejectIke(srcIp, 'No matching IKEv2 proposal'); return; }
     } else {
       const myPolicies = [...this.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
+      this.dbgIsakmp(`ISAKMP:(0): SA request profile is (NULL)`);
+      this.dbgIsakmp(`ISAKMP: Created a peer struct for ${srcIp}, peer port 500`);
+      this.dbgIsakmp(`ISAKMP:(0): Processing SA payload.  message ID = 0`);
       for (const mp of myPolicies) {
+        let n = 0;
         for (const off of offer.policies) {
+          n++;
+          this.dbgIsakmp(`ISAKMP:(0): Checking ISAKMP transform ${n} against priority ${mp.priority} policy`);
+          this.dbgIsakmp(`ISAKMP:      encryption ${ikeEncryptionLabel(off.encryption)}`);
+          const keylen = ikeKeyLength(off.encryption);
+          if (keylen) this.dbgIsakmp(`ISAKMP:      keylength of ${keylen}`);
+          this.dbgIsakmp(`ISAKMP:      hash ${off.hash.toUpperCase()}`);
+          this.dbgIsakmp(`ISAKMP:      auth ${off.auth}`);
+          this.dbgIsakmp(`ISAKMP:      default group ${off.group}`);
           if (this.policiesCompatible(mp, { priority: off.priority, encryption: off.encryption, hash: off.hash, auth: off.auth, group: off.group, lifetime: off.lifetime })) {
+            this.dbgIsakmp(`ISAKMP:(0): atts are acceptable. Next payload is 0`);
             chosenPolicy = { priority: mp.priority, encryption: mp.encryption, hash: mp.hash, group: mp.group, auth: mp.auth, lifetime: mp.lifetime };
             ikeLifetime = Math.min(mp.lifetime, off.lifetime);
             break;
           }
+          this.dbgIsakmp(`ISAKMP:(0): atts are NOT acceptable. Next payload is 0`);
         }
         if (chosenPolicy) break;
       }
-      if (!chosenPolicy) { this.rejectIke(srcIp, 'No matching policy'); this.createFailedIKESA(srcIp, '', 'No matching policy'); return; }
+      if (!chosenPolicy) {
+        this.dbgIsakmp(`ISAKMP:(0): no offers accepted!`);
+        this.dbgIsakmp(`ISAKMP:(0): phase 1 SA policy not acceptable!`);
+        this.rejectIke(srcIp, 'No matching policy'); this.createFailedIKESA(srcIp, '', 'No matching policy'); return;
+      }
+      this.dbgIsakmp(`ISAKMP:(1001): processing KE payload`);
+      this.dbgIsakmp(`ISAKMP:(1001): processing NONCE payload`);
+      this.dbgIsakmp(`ISAKMP:(1001): SKEYID state generated`);
+      this.dbgIsakmp(`ISAKMP:(1001): SA is doing pre-shared key authentication`);
+      this.dbgIsakmp(`ISAKMP:(1001): SA has been authenticated with ${srcIp}`);
+      this.dbgIsakmp(`ISAKMP:(1001): Old State = IKE_R_MM_NO_STATE  New State = IKE_R_MM_SA_SETUP`);
+      this.dbgIsakmp(`ISAKMP:(1001): Old State = IKE_R_MM_SA_SETUP  New State = IKE_R_MM_KEY_EXCH`);
+      this.dbgIsakmp(`ISAKMP:(1001): Old State = IKE_R_MM_KEY_EXCH  New State = IKE_P1_COMPLETE, QM_IDLE`);
     }
 
     const usingCert = offer.authMode === 'x509' || !!this.ikeCertAuth;
@@ -3677,6 +3768,20 @@ export class IPSecEngine implements IProtocolEngine {
       : this.ikev2Policies.size > 0 && this.ikev2Keyrings.size > 0 && this.ikev2Profiles.size > 0;
 
     return this.initiateIkeWire(peerIP, entry, localIP, apparentSrcIP, egressIface, useIKEv2 ? 2 : 1);
+  }
+
+  private describeProxy(entry: CryptoMapEntry, side: 'local' | 'remote'): string | null {
+    const lists = (this.router as unknown as { getAccessLists?: () => Array<{ name?: string; entries?: Array<Record<string, unknown>> }> }).getAccessLists?.() ?? [];
+    const acl = lists.find((a) => a.name === entry.aclName);
+    const ace = acl?.entries?.[0];
+    if (!ace) return null;
+    const ip = String(side === 'local' ? ace.srcIP ?? '' : ace.dstIP ?? '');
+    const wc = String(side === 'local' ? ace.srcWildcard ?? '' : ace.dstWildcard ?? '');
+    if (!ip) return null;
+    const mask = /^\d+\.\d+\.\d+\.\d+$/.test(wc)
+      ? wc.split('.').map((o) => 255 - Number(o)).join('.')
+      : '255.255.255.255';
+    return `${ip}/${mask}/0/0`;
   }
 
   private findIKEv2PSK(peerIP: string): string | null {

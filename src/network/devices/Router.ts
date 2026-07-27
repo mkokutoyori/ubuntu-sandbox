@@ -2809,6 +2809,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this._getDHCPServerInternal().setDebugEmitter((line) => svc.emitLine('ip.dhcp.server', line));
       svc.setAclFilterEvaluator((aclName, line) => this.debugLineMatchesAcl(aclName, line));
       svc.setCategoryRenderer('ip.dhcp.server', () => this._getDHCPServerInternal().formatDebugShow());
+      this.ipsecEngine?.setDebugEmitter((kind, line) => {
+        svc.emitLine(kind === 'ipsec' ? 'crypto.ipsec' : 'crypto.isakmp', line);
+      });
     }
     this._debugService.attachToBus(this.getBus(), this.id);
     return this._debugService;
@@ -3626,6 +3629,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!this.ipsecEngine) {
       this.ipsecEngine = new IPSecEngine(this);
       this.ipsecEngine.setEventBus(this.getBus());
+      const svc = this._debugService;
+      if (svc) {
+        this.ipsecEngine.setDebugEmitter((kind, line) => {
+          svc.emitLine(kind === 'ipsec' ? 'crypto.ipsec' : 'crypto.isakmp', line);
+        });
+      }
     }
     return this.ipsecEngine;
   }

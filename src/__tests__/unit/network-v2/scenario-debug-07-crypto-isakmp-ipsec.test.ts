@@ -82,7 +82,8 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       `permit ip ${reseauLocal} 0.0.0.255 ${reseauDistant} 0.0.0.255`, 'exit',
       'crypto map CMAP-VPN 10 ipsec-isakmp',
       `set peer ${peer}`, 'set transform-set TS-MANDENG', 'match address VPN-TRAFFIC', 'exit',
-      `interface ${wan}`, 'crypto map CMAP-VPN', 'end',
+      `interface ${wan}`, 'crypto map CMAP-VPN', 'exit',
+      `ip route ${reseauDistant} 255.255.255.0 ${peer}`, 'end',
     ];
     for (const c of commandes) await r.executeCommand(c);
   }
@@ -175,9 +176,11 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       expect(lignes.some((l) => /phase 1 SA policy not acceptable!/i.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : le debug devrait détailler les attributs proposés par le voisin', async () => {
+    it('le debug détaille les attributs proposés par le voisin', async () => {
       await run('debug crypto isakmp');
-      await traficInteressant();
+      // Le siège n'inspecte la proposition du voisin que lorsqu'il est
+      // répondeur : c'est Kribi qui initie, avec sa politique AES-128 / groupe 2.
+      await pcKribi.executeCommand('ping -c 2 -W 1 192.168.10.101');
 
       expect(lignes.some((l) => /encryption AES-CBC/i.test(l))).toBe(true);
       expect(lignes.some((l) => /keylength of 128/i.test(l))).toBe(true);
