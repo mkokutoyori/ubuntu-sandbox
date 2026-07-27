@@ -1,7 +1,7 @@
 # PRD — VTP (VLAN Trunking Protocol, propriétaire Cisco)
 
-**Version** : 1.0
-**Date** : 2026-07-07
+**Version** : 2.0 (v1.0 : 2026-07-07)
+**Date** : 2026-07-27
 **Projet** : Ubuntu Sandbox — simulateur réseau navigateur
 **Auteur** : Claude (agent), à la demande de l'utilisateur
 **Références normatives** :
@@ -16,24 +16,27 @@
 
 ## 0. Contexte et portée du document
 
-Ce PRD documente **le protocole de synchronisation de la base VLAN entre
-commutateurs Cisco** : les modes server/client/transparent, le numéro de
-révision de configuration, l'authentification par mot de passe de domaine,
-l'annonce périodique et sur événement, le relais transparent, et le VTP
-pruning. Il **consomme** deux fondations déjà couvertes ailleurs dans ce
-trio de PRD : la base VLAN elle-même (`docs/PRD-VLAN.md` — VTP ne fait que
-synchroniser ce qui y est décrit : `createVLAN`/`deleteVLAN`/`renameVLAN`) et
-l'encapsulation 802.1Q (`docs/PRD-802.1Q.md` — VTP ne circule que sur des
-ports trunk, donc taggés). Il ne redéfinit ni l'un ni l'autre.
+**Ce qui a changé depuis la v1.0 de ce PRD (2026-07-07) : les cinq objectifs
+qu'elle proposait ont tous été livrés entre-temps**, confirmé par relecture
+complète du code actuel et de l'historique git :
 
-Cette analyse est issue d'une lecture complète de `src/network/vtp/types.ts`,
-`src/network/vtp/VtpAgent.ts` (244 lignes), de son intégration dans
-`src/network/devices/CiscoSwitch.ts` (câblage `VtpHost`) et des méthodes
-d'intégration définies dans `src/network/devices/Switch.ts`
-(`_vtpListVlans`/`_vtpApplyVlans`/`_vtpIsTrunkPort`, l. 1838-1871), ainsi que
-de `GAP.md` §2.5 (qui qualifie déjà le moteur VTP/DTP de « complet et
-fidèle », un jugement que ce PRD affine avec un examen plus fin de la
-fidélité au protocole réel, cf. §1.3).
+| Objectif v1.0 | Commit | État |
+|---|---|---|
+| Summary/Subset distincts + Advertisement Request | `3839a50e` | Livré |
+| VTP pruning réel (filtrage de flood) | `227e8332` | Livré |
+| VTP v3 (plage étendue + Primary Server) | `02f74eb7` | Livré (hors propagation Private VLAN, cf. §1.3 item 4) |
+| MD5 réel sur le fil | `1ac63d39` | Livré (algorithme réel ; construction byte-exacte du condensé encore non vérifiée, cf. §1.3 item 2) |
+| — | `7b6e43dd`, `29e2e716` | Correctifs de synchronisation additionnels (config-change immédiat, VLAN précédant l'affectation de domaine) |
+
+Cette v2.0 **remplace l'analyse de gaps et les objectifs de la v1.0** (devenus
+obsolètes puisque livrés) par une relecture à nouveau complète du moteur
+actuel (`VtpAgent.ts`, passé de 244 à 481 lignes) et identifie ce qui reste
+réellement à faire : trois résidus de fidélité protocolaire, plus une
+opportunité nouvellement débloquée (propagation d'une base MST — cf. §1.3
+item 3 et §0.1). Le périmètre général du document ne change pas : il
+continue de documenter **le protocole de synchronisation de la base VLAN
+entre commutateurs Cisco**, en consommant sans les redéfinir la base VLAN
+(`docs/PRD-VLAN.md`) et l'encapsulation 802.1Q (`docs/PRD-802.1Q.md`).
 
 ### 0.1 Chaîne de dépendances entre PRDs
 
@@ -48,24 +51,32 @@ PRD-VLAN.md (segmentation L2 : base VLAN, access/trunk, PVST+, SVI)
    ▼  base VLAN locale à synchroniser entre commutateurs d'un même domaine
 PRD-VTP.md (synchronisation de la base VLAN entre commutateurs Cisco)  ◄── VOUS ÊTES ICI
       dépend de PRD-VLAN.md pour la base VLAN à synchroniser
-      (`_vtpListVlans`/`_vtpApplyVlans`), et de PRD-802.1Q.md pour la
-      condition d'émission (`_vtpIsTrunkPort` — VTP ne circule que sur
+      (`vtpListVlans`/`vtpApplyVlans`), et de PRD-802.1Q.md pour la
+      condition d'émission (`vtpIsTrunkPort` — VTP ne circule que sur
       des ports trunk taggés 802.1Q)
 ```
 
-Ce PRD a **deux dépendances entrantes non bloquantes** : la base VLAN de
-`PRD-VLAN.md` (déjà complète, cf. son §1.2 — aucune phase de ce PRD n'attend
-une phase de `PRD-VLAN.md`) et l'encodage 802.1Q de `PRD-802.1Q.md` (déjà
-fonctionnel pour la détection de trunk). Aucune dépendance vers TLS/QUIC —
-VTP est un protocole de contrôle L2 propriétaire, sans rapport avec le
-transport chiffré ou applicatif. Le moteur DTP (négociation dynamique de
-trunk), bien qu'adjacent et déjà solide selon `GAP.md` §2.5, n'a pas de PRD
-dédié dans ce trio et n'est mentionné ici que comme dépendance amont
-(`_vtpIsTrunkPort` lit l'état opérationnel du port, qu'il ait été fixé
-statiquement ou négocié par DTP — indifférent du point de vue de VTP).
+**Dépendance levée depuis la v1.0** : la v1.0 excluait explicitement la
+propagation d'une base MST par VTP v3 « car MSTP lui-même est hors périmètre
+… Cette exclusion tombe automatiquement si un futur PRD dédié au moteur
+STP/MSTP est écrit et livré » (`docs/PRD-VLAN.md §1.3 item 6`, cité alors).
+**Les deux conditions sont désormais réunies** : le moteur MSTP est
+réellement implémenté (`StpAgent` consomme pour de vrai le mode `'mstp'` et
+une `MstRegion`, cf. `docs/PRD-STP.md §0.1`), et ce PRD dédié existe
+(`docs/PRD-STP.md`). L'exclusion tombe donc, cf. §1.3 item 3 et §2.1 — cette
+v2.0 en fait un objectif à part entière plutôt qu'un non-objectif.
 
-Aucune ligne de code n'est écrite dans le cadre de ce document — il sert de
-base à la planification et à la revue avant le premier commit TDD.
+**Dépendance toujours non levée** : la propagation des associations Private
+VLAN (Phase 4c de la v1.0) reste bloquée sur `docs/PRD-VLAN.md` §2.1.2 —
+confirmé par cet audit : aucune notion de Private VLAN n'existe encore nulle
+part dans le moteur VLAN (`grep` exhaustif sans résultat). Reste documentée
+en §1.3 item 4 comme dépendance externe non résolue, pas comme un objectif
+de cette v2.0.
+
+Aucune dépendance vers TLS/QUIC — VTP est un protocole de contrôle L2
+propriétaire, sans rapport avec le transport chiffré ou applicatif. Le
+moteur DTP (négociation dynamique de trunk) reste hors périmètre de ce PRD
+(§2.2), mentionné uniquement comme dépendance amont non bloquante.
 
 ---
 
@@ -75,246 +86,199 @@ base à la planification et à la revue avant le premier commit TDD.
 
 | Fichier | Rôle actuel |
 |---|---|
-| `src/network/vtp/types.ts` | Types : `VtpMode` (server/client/transparent/off), `VtpVersion` (1/2/3), `VtpMessageType` (summary/subset/request/join), `VtpFrame`, `VtpConfig`, `hashPassword()` (hash maison, pas MD5 réel) |
-| `src/network/vtp/VtpAgent.ts` | Moteur réactif : gestion des modes, révision, annonce périodique (300 s) et sur événement (changement de config/VLAN local, link-up, relais transparent), authentification domaine+mot de passe, application du diff VLAN entrant |
-| `src/network/devices/CiscoSwitch.ts` (l. 86-91) | Câblage `VtpHost` : seule classe qui instancie `VtpAgent` |
-| `src/network/devices/Switch.ts` (l. 1838-1871) | `_vtpListVlans`/`_vtpApplyVlans`/`_vtpIsTrunkPort` — l'intégration réelle avec la base VLAN et l'état trunk, définie dans la classe de base (donc techniquement héritable par tout vendor, mais seul Cisco l'active) |
+| `src/network/vtp/types.ts` (59 lignes) | Types : `VtpMode`, `VtpVersion`, `VtpMessageType` (`summary`/`subset`/`request`/`join` — les 4 valeurs sont maintenant réellement distinguées, cf. §1.2), `VtpFrame` (avec `interestVlans`, `primaryClaim`), `VtpConfig` (avec `pruning`, `primaryServer`), `hashPassword()` — **MD5 réel** via `md5Hex()` de `src/crypto/hash/md5.ts` |
+| `src/network/vtp/VtpAgent.ts` (481 lignes, contre 244 en v1.0) | Moteur réactif complet : Summary/Subset distincts, Advertisement Request au link-up/changement de config, pruning réel (suivi d'intérêt par port via `messageType: 'join'`), élection de Primary Server v3, plage VLAN étendue conditionnelle à la version |
+| `src/network/vtp/events.ts` (47 lignes) | Topics bus : `vtp.mode.changed`, `vtp.domain.changed`, `vtp.frame.received/sent`, `vtp.db.synced` |
+| `src/network/devices/CiscoSwitch.ts` | Câblage `VtpHost` — seule classe qui instancie `VtpAgent` (Huawei toujours sans équivalent, cf. §1.2) |
+| `src/network/devices/Switch.ts:1996` | `floodFrame()` interroge réellement `getVtpAgentOrNull()?.isVlanPruned(portName, vlan)` avant d'inclure un trunk dans le scope de flood — le pruning n'est plus un champ décoratif |
+| 5 fichiers de tests (975 lignes) | `vtp-protocol.test.ts` (442 l.), `vtp-pruning.test.ts` (138 l.), `vtp-v3-primary-server.test.ts` (201 l.), `vtp-md5-password.test.ts` (67 l.), `vtp-config-change-sync.test.ts` (127 l.), plus `debug/cisco-l2/cisco-l2-03-trunk-dtp-vtp.debug.test.ts` |
 
 ### 1.2 Ce qui est déjà réel et solide (à ne pas casser)
 
-- **Modes server/client/transparent/off** avec la sémantique correcte :
-  transparent relaie sans traiter ni faire progresser sa propre révision
-  (`revision` remise à 0 en passant en transparent) ; off ignore tout.
-- **Numéro de révision comme source de vérité** : une trame entrante n'est
-  appliquée à la base locale que si `payload.revision > this.config.revision`
-  — évite qu'une annonce périmée écrase un état plus récent, comportement
-  Cisco réel.
-- **Authentification par domaine + mot de passe** : rejet explicite
-  (`domain-mismatch`/`password-mismatch`) avant toute application, publié sur
-  le bus (`vtp.frame.received` avec `accepted`/`rejectReason`) — observable et
-  testable.
-- **Apprentissage passif du domaine** : un switch sans domaine configuré
-  adopte le premier domaine annoncé reçu sur un trunk, comme un vrai switch
-  VTP client/server « vierge ».
-- **Relais transparent réel** : `forwardOnTrunks()` réémet la trame VTP telle
-  quelle sur tous les autres trunks sans la traiter, y compris protection
-  anti-boucle simple (`advertising` Set évitant la réémission immédiate sur
-  le port d'où la trame émane pendant l'envoi en cours).
-- **Annonce déclenchée par les bons événements** : changement de mode vers
-  server, changement de domaine, bump de révision sur modification VLAN
-  locale, link-up d'un port trunk (`onPortLinkUp`) — couvre les cas réels où
-  un vrai switch Cisco émettrait une annonce.
-- **Diff VLAN appliqué proprement** : `_vtpApplyVlans` calcule
-  ajouts/suppressions/renommages en une passe, retourne `{added, removed}`
-  publié sur le bus (`vtp.db.synced`) — traçabilité complète.
-- **VTP volontairement absent côté Huawei** (pas de `VtpHost` sur
-  `HuaweiSwitch`) — conforme à la réalité (VTP est propriétaire Cisco), pas
-  un défaut.
+Repris de la v1.0 (toujours vrai) :
 
-### 1.3 Gap analysis — limites vérifiées
+- Modes server/client/transparent/off avec la sémantique correcte
+  (transparent relaie sans traiter, révision remise à 0 ; off ignore tout).
+- Numéro de révision comme source de vérité pour l'application d'une trame
+  entrante.
+- Authentification par domaine + mot de passe, rejet explicite publié sur le
+  bus (`vtp.frame.received` avec `accepted`/`rejectReason`).
+- Apprentissage passif du domaine par un switch vierge.
+- Relais transparent réel avec protection anti-boucle simple.
+- VTP volontairement absent côté Huawei (conforme à la réalité, pas un
+  défaut).
+
+**Nouveau depuis la v1.0, vérifié par cet audit** :
+
+- **Summary et Subset Advertisement réellement distincts.**
+  `sendSummaryAndSubset()` (`VtpAgent.ts:396-407`) émet une trame `summary`
+  (`vlans: []`, uniquement domaine/révision/`primaryClaim` éventuel) suivie
+  immédiatement d'une trame `subset` (`vlans` complète). En réception
+  (`handleFrame`, l. 188-229), un `summary` seul ne met à jour que
+  `lastSummaryDomain`/`lastSummaryRevision`, jamais la base VLAN locale ; un
+  `subset` est ignoré comme orphelin (log `vtp:orphan-subset`) s'il ne
+  correspond pas à un `summary` déjà vu de même domaine/révision — exactement
+  la remédiation proposée par la v1.0 item 1.
+- **Advertisement Request réellement émise et traitée.** Un client (ou
+  server) envoie `messageType: 'request'` au link-up d'un trunk
+  (`onPortLinkUp`) et sur changement de mode/domaine
+  (`requestSyncOnTrunks`) ; un server qui la reçoit répond immédiatement par
+  sa séquence summary+subset complète (`handleRequest` →
+  `sendSummaryAndSubset(portName, 'request-reply')`), sans attendre le
+  cycle périodique de 300 s. L'ambiguïté que la v1.0 laissait ouverte entre
+  `'request'` et `'join'` a été tranchée par l'implémentation : `'request'`
+  sert exclusivement à la resynchronisation, `'join'` sert exclusivement à
+  la propagation d'intérêt VLAN pour le pruning (point distinct, voir
+  ci-dessous) — un choix de conception cohérent, pas une confusion.
+- **VTP pruning fonctionnellement réel.** Chaque port trunk annonce son
+  intérêt VLAN agrégé (`aggregatedInterest`/`sendJoin`, propagé par
+  `messageType: 'join'`) ; `isVlanPruned(portName, vlan)`
+  (`VtpAgent.ts:108-114`) renvoie vrai si le pruning est actif, le VLAN est
+  dans la plage éligible par défaut (2-1001), et le pair sur ce port n'a
+  manifesté aucun intérêt pour ce VLAN. `Switch.floodFrame()`
+  (`Switch.ts:1996`) consulte réellement cette méthode avant d'inclure un
+  trunk dans le scope de flood — le gap le plus visible fonctionnellement
+  de la v1.0 est fermé.
+- **VTP v3 : plage étendue et élection de Primary Server, tous deux réels.**
+  `allowsExtendedRangeVlans()`/`filterVlansForVersion()` conditionnent
+  l'acceptation des VLAN 1006-4094 à `version === 3` (ou mode
+  transparent/off, qui échappe par nature à la synchronisation) ;
+  `becomePrimary(force)` implémente une élection explicite avec résolution
+  de conflit par révision puis par le drapeau `force`
+  (`considerPrimaryClaim`, `VtpAgent.ts:260-269`), propagée par gossip via
+  le champ `primaryClaim` porté par chaque `summary` ultérieure une fois
+  qu'un primaire est connu.
+- **MD5 réel remplaçant le hash maison.** `hashPassword()` (`types.ts:56-59`)
+  appelle `md5Hex()` (`src/crypto/hash/md5.ts`), confirmé par
+  `vtp-md5-password.test.ts` (digest 32 hex, effet avalanche, authentification
+  serveur/client de bout en bout).
+
+### 1.3 Gap analysis — limites vérifiées (v2.0)
 
 | # | Limite | Comparé à | Sévérité |
 |---|---|---|---|
-| 1 | **`VtpMessageType` déclare 4 valeurs (`summary`/`subset`/`request`/`join`) mais une seule est jamais réellement produite ou distinguée.** `sendSummaryAndSubset()` fixe systématiquement `messageType: 'summary'` quel que soit le motif (`'periodic'`, `'config-change'`, `'local-vlan-change'`, `'relay'`, `'link-up'` — tous encodés dans un `reason` texte séparé, jamais dans `messageType`), et `handleFrame()` **ne discrimine jamais sur `payload.messageType`** : toute trame VTP acceptée est traitée de façon identique (comparaison de révision + application des VLAN), qu'elle soit labellisée summary, subset, request ou join. Sur un vrai réseau VTP, une *Summary Advertisement* ne porte **aucune donnée VLAN** (seulement domaine/révision/nombre de *Subset Advertisements* à suivre) — elle sert à détecter qu'une mise à jour existe, pas à la transporter ; les VLAN eux-mêmes voyagent dans une ou plusieurs *Subset Advertisement* distinctes qui suivent immédiatement. Ici, une seule trame « summary » porte toujours la liste complète des VLAN — le format sur le fil ne serait pas reconnaissable par un vrai analyseur VTP (Wireshark décoderait un Summary Advertisement Cisco réel sans champ VLAN). | Format VTPv1/v2 réel (Summary Advertisement ≠ porteur de VLAN ; Subset Advertisement porteur de VLAN) | Élevée (fidélité au format réel) |
-| 2 | **Aucune *Advertisement Request* n'est jamais émise.** Un client VTP réel qui vient de rejoindre un domaine (ou dont la révision est en retard) envoie une *Advertisement Request* pour obtenir une resynchronisation immédiate ; ici, `onPortLinkUp` ne déclenche une émission que côté **server** (`sendSummaryAndSubset` sur link-up), jamais côté client — un client fraîchement connecté attend jusqu'à 300 s (le prochain cycle périodique du serveur) avant de voir la base VLAN se synchroniser, au lieu d'un rafraîchissement quasi immédiat. | Comportement VTP réel (Advertisement Request au link-up/reset) | Moyenne |
-| 3 | **VTP pruning est un champ de configuration 100% no-op.** `VtpConfig.pruning` (défaut `false`) est settable/affichable (`vtp pruning`, `show vtp status`) mais **n'est lu nulle part** dans `Switch.floodFrame()`/`forwardToPort()` — le flood broadcast/unknown-unicast traverse tous les trunks où le VLAN figure dans `trunkAllowedVlans`, indépendamment de la présence réelle de ports actifs de ce VLAN en aval. C'est le gap le plus visible fonctionnellement : activer le pruning ne change strictement rien au comportement observable. | VTP Pruning réel (réduction du flood sur les trunks où le VLAN n'a pas de port actif en aval) | Élevée (impact fonctionnel direct) |
-| 4 | **Aucune différenciation de comportement entre versions 1/2/3.** `VtpVersion` accepte `1 | 2 | 3` et le champ est stocké/affiché, mais rien dans `VtpAgent` ne varie selon la version : pas de spécificités v2 (support Token Ring, hors périmètre légitime de ce simulateur), pas de spécificités v3 (plage VLAN étendue 1006-4094, concept de *Primary Server* avec élection/prise de contrôle explicite, support des VLAN privés dans la synchronisation, format de base de données opaque). Le champ `version` est aujourd'hui **purement déclaratif**. | Cisco VTP v1/v2/v3 (comportements distincts par version) | Moyenne |
-| 5 | **`hashPassword()` est un hash maison (FNV-like), pas le MD5 réel utilisé par VTP sur le fil.** Documenté comme simplification assumée (comme le sont d'autres simplifications similaires dans d'autres PRD de ce dépôt, ex. ISN TCP) plutôt qu'un bug : le comportement *logique* (authentification accepte/rejette selon domaine+mot de passe) est correct, seul le format binaire du condensé diffère d'un vrai VTP MD5. Pertinent seulement si une fidélité byte-exacte de capture `tcpdump` est visée pour VTP (aujourd'hui non testée à ce niveau, contrairement à 802.1Q — cf. `PRD-802.1Q.md` §1.2). | MD5 réel (VTP utilise un condensé MD5 du mot de passe + contenu de la trame) | Faible |
-| 6 | **VTP n'a pas d'équivalent côté Huawei** — confirmé **conforme à la réalité**, pas un gap (VTP est propriétaire Cisco). Mentionné ici uniquement pour clore explicitement la question dans ce PRD, sans action proposée. | — | (positif, aucune action) |
+| 1 | **Les champs du Summary Advertisement ne sont pas tous fidèles au format réel.** Le champ `updater` (`VtpFrame.updater`) porte l'**adresse MAC** du switch (`config.updaterMac`, alimentée par l'adresse système) alors qu'un vrai VTP Summary Advertisement porte dans son champ *Updater Identity* une **adresse IP** (typiquement celle de l'interface de gestion ou du plus petit VLAN actif). Il n'existe par ailleurs aucun champ *Update Timestamp* (horodatage de la dernière mise à jour, présent sur le fil réel) ni de compteur *Followers* annonçant combien de Subset Advertisements vont suivre — ici, `sendSummaryAndSubset` envoie toujours exactement un seul `subset` portant la totalité de la base VLAN, sans jamais fragmenter sur plusieurs trames même pour une base volumineuse. | Format Summary Advertisement réel (Updater Identity = IP, Update Timestamp, Followers count + fragmentation en plusieurs Subset Advertisements) | Moyenne (fidélité de champ, sans impact fonctionnel observable dans ce simulateur tant qu'aucune base ne dépasse la taille d'un seul Subset) |
+| 2 | **La construction byte-exacte du condensé MD5 n'est pas vérifiée face au fil réel.** L'algorithme est désormais un vrai MD5 (résout l'item 5 de la v1.0), mais `hashPassword()` le calcule sur `${domain}|${password}` — une construction choisie pour ce simulateur, pas confirmée identique à l'agencement exact que Cisco transmet (domaine/révision/mot de passe combinés dans un ordre et un padding précis). Aucune suite de capture (`tcpdump`) dédiée à VTP n'existe encore pour vérifier cette fidélité au niveau trame, contrairement à ce qui existe déjà pour 802.1Q (`docs/PRD-802.1Q.md §1.2`). | Construction MD5 réelle sur le fil VTP | Faible (pertinent seulement si une fidélité de capture byte-exacte est visée) |
+| 3 | **Propagation d'une base MST via VTP v3 — exclusion de la v1.0 désormais levée, jamais implémentée.** `VtpFrame`/`VtpVlanEntry` ne portent aucune notion d'instance MSTI ni de mapping VLAN↔instance ; rien dans `VtpAgent` ne distingue une base VLAN standard d'une base MST opaque. La v1.0 excluait ce point explicitement en attendant qu'un PRD dédié au moteur STP/MSTP existe et que MSTP soit réellement implémenté — les deux conditions sont maintenant réunies (`docs/PRD-STP.md`, MSTP réel dans `StpAgent`) — cf. §0.1. | VTP v3 « MST database » (type de base opaque dédié à la config MST) | Moyenne (nouvellement éligible, pas encore un gap « urgent » puisque l'exclusion vient tout juste de tomber) |
+| 4 | **Propagation des associations Private VLAN — toujours bloquée, sans changement depuis la v1.0.** Confirmé par cet audit : aucune notion de Private VLAN n'existe nulle part dans le moteur VLAN actuel. Reste une dépendance externe réelle et non résolue vers `docs/PRD-VLAN.md` §2.1.2 (Phase 2a), pas un gap à corriger dans ce PRD tant que cette phase n'est pas livrée. | VTP v3 Private VLAN propagation | (dépendance externe non résolue, sans action possible ici) |
+| 5 | **VTP n'a pas d'équivalent côté Huawei** — confirmé conforme à la réalité (VTP est propriétaire Cisco), pas un gap. Inchangé depuis la v1.0. | — | (positif, aucune action) |
 
 ---
 
 ## 2. Objectifs
 
-### 2.1 Objectifs de ce PRD (remédiation proposée, non encore engagée)
+### 2.1 Objectifs de cette v2.0 (remédiation proposée, non encore engagée)
 
-1. **Distinguer réellement Summary et Subset Advertisement (item 1).**
-   `sendSummaryAndSubset()` doit émettre **deux trames distinctes** : une
-   *Summary* (`messageType: 'summary'`, `vlans: []` — pas de payload VLAN,
-   uniquement domaine/révision) suivie immédiatement d'une ou plusieurs
-   *Subset* (`messageType: 'subset'`, portant la liste des VLAN). Côté
-   réception, `handleFrame()` doit discriminer sur `messageType` :
-   - `summary` seule met à jour la connaissance du domaine/de la révision
-     annoncée par le pair mais ne touche pas la base VLAN locale ;
-   - `subset` applique effectivement le diff VLAN, mais seulement si une
-     `summary` récente a déjà annoncé une révision supérieure (évite
-     d'accepter un `subset` orphelin/rejoué).
-   Cette phase est la plus structurante : elle aligne le format sur le fil
-   avec le protocole réel, ce qui est un préalable naturel avant d'ajouter
-   les *Request*/*Join* (item 2) qui s'insèrent dans cet échange
-   summary→subset.
-2. **Advertisement Request au link-up côté client (item 2).** Un switch en
-   mode client (ou server) dont la révision est possiblement en retard émet
-   une trame `messageType: 'request'` au link-up d'un port trunk ; le pair
-   qui la reçoit répond immédiatement par sa séquence summary+subset complète
-   (sans attendre le prochain cycle périodique), réutilisant le
-   `messageType: 'join'` existant dans le type comme signal de « je viens de
-   rejoindre, resynchronise-moi » si sa sémantique s'avère plus appropriée en
-   conception détaillée que `'request'` — à trancher lors de l'implémentation
-   en confirmant l'usage réel Cisco des deux valeurs.
-3. **VTP pruning réel (item 3, priorité la plus visible fonctionnellement).**
-   Ajouter le suivi, par VLAN et par trunk, de la présence d'au moins un port
-   actif de ce VLAN quelque part en aval du trunk (propagé via les mêmes
-   annonces VTP — un champ additionnel dans le *Subset Advertisement* listant
-   les VLAN pour lesquels le switch annonceur a un intérêt actif). Dans
-   `Switch.floodFrame()`, un trunk marqué « pruné » pour un VLAN donné
-   (aucun intérêt en aval ET pruning activé localement ET VLAN dans la plage
-   éligible par défaut 2-1001) n'est simplement pas inclus dans le scope de
-   flood pour ce VLAN. VLAN 1 et VLAN de gestion restent toujours non
-   pruning-éligibles par défaut, comme sur un vrai switch Cisco.
-4. **VTP version 3 complet (item 4).** Portée pleine des aspects v3
-   pertinents pour ce simulateur (Token Ring/v2 exclu — technologie obsolète
-   sans pertinence pédagogique, seule exclusion légitime) :
-   - **Plage VLAN étendue** (1006-4094 en plus de la plage classique) —
-     propagée par VTP v3 au même titre que la plage standard.
-   - **Concept de *Primary Server*** avec commande `vtp primary [force]`
-     déclenchant une élection explicite (le serveur avec la révision la plus
-     haute et/ou priorité annoncée gagne, résolution de conflit en cas
-     d'égalité), remplaçant la simple comparaison de révision symétrique
-     utilisée aujourd'hui par tous les modes.
-   - **Propagation des associations Private VLAN** dans la base VTP v3 : une
-     fois `docs/PRD-VLAN.md` §2.1.2 (Phase 2a, Private VLAN Cisco) livrée, le
-     couple (VLAN primaire, VLAN(s) secondaire(s), rôle) doit voyager dans le
-     même mécanisme de synchronisation que la base VLAN standard — c'est une
-     fonctionnalité v3 réelle (VTP v3 a été introduit en partie pour ce
-     besoin), pas une extension inventée pour ce PRD. Dépendance réelle et
-     assumée vers `docs/PRD-VLAN.md`, à séquencer après elle.
-   - **Hors périmètre, par frontière de protocole et non par minimalisme** :
-     la propagation d'une base MST (« MST database », type de base opaque
-     v3 dédié aux instances MSTP) reste exclue, car MSTP lui-même est hors
-     périmètre de ce trio de PRD (`docs/PRD-VLAN.md` §1.3 item 6) — il serait
-     incohérent de synchroniser une base pour un moteur qui n'existe pas
-     encore. Cette exclusion tombe automatiquement si un futur PRD dédié au
-     moteur STP/MSTP est écrit et livré.
-5. **Hash MD5 réel sur le fil (item 5).** Remplacer `hashPassword()` par un
-   vrai MD5 (condensé du mot de passe de domaine, format binaire conforme à
-   ce qu'un vrai VTP transmettrait) — livré comme fonctionnalité complète de
-   ce PRD, pas une amélioration facultative reportée : la fidélité byte-exacte
-   du format sur le fil est le même standard déjà appliqué à 802.1Q
-   (`docs/PRD-802.1Q.md` §1.2, sérialisation TCI testée par capture) et doit
-   être également atteint pour VTP. Cette phase inclut la création d'une
-   suite de capture dédiée (`tcpdump`/décodage de trame VTP), qui n'existe
-   pas encore, plutôt que d'attendre qu'un besoin futur la justifie.
+1. **Fidélité des champs du Summary Advertisement (item 1).** Remplacer
+   `updater: string` porteur d'une MAC par une véritable adresse IP
+   (résolue depuis l'interface de gestion ou, à défaut, la plus petite VLAN
+   SVI active du switch — cohérent avec le comportement Cisco réel) ; ajouter
+   un champ *Update Timestamp* horodatant la dernière incrémentation de
+   révision ; ajouter un compteur *Followers* dans le `summary` et fragmenter
+   l'émission du `subset` en plusieurs trames numérotées dès que la base VLAN
+   dépasse un seuil réaliste (à définir en conception détaillée, par exemple
+   par lots de ~40 VLAN comme l'ordre de grandeur réel d'un Subset
+   Advertisement) — testable même si la plupart des labs de ce simulateur
+   ne dépasseront jamais un seul lot.
+2. **Propagation d'une base MST via VTP v3 (item 3, objectif nouvellement
+   débloqué).** Étendre `VtpFrame` d'un type de base alternatif (« MST
+   database », distinct de la base VLAN standard, conformément à la
+   sémantique v3 réelle où les deux bases voyagent indépendamment) portant
+   la configuration de région MST (nom, révision, table
+   instance→VLAN — la même structure que `MstRegion` déjà définie côté
+   moteur STP, `docs/PRD-STP.md §4`) ; `VtpAgent` la synchronise entre
+   switches du même domaine VTP exactement comme la base VLAN standard
+   (comparaison de révision, application côté client), et `StpAgent`
+   consomme le résultat pour mettre à jour sa propre `MstRegion` locale.
+   Dépendance interne à ce PRD vers `docs/PRD-STP.md` (le champ nom/révision/
+   table d'instances de `MstRegion` doit exister côté moteur STP, ce qui est
+   déjà le cas — `docs/PRD-STP.md §4` documente le type actuel).
+3. **Construction MD5 byte-exacte + suite de capture dédiée (item 2, reporté
+   depuis la v1.0, toujours pertinent).** Vérifier/aligner la construction
+   du condensé sur l'agencement réel des champs VTP (domaine, révision, mot
+   de passe) et créer la suite de capture qui n'existe toujours pas
+   (`tcpdump-vtp-frame-capture.test.ts`, sur le modèle de
+   `tcpdump-byte-slice-vlan-filters.test.ts` côté 802.1Q).
 
 ### 2.2 Hors périmètre (explicitement exclu)
 
 - Support Token Ring (VTP v2) — technologie obsolète, aucune pertinence
-  pédagogique pour ce simulateur.
-- Propagation d'une base MST via VTP v3 — frontière de protocole avec le
-  moteur STP/MSTP, lui-même hors périmètre de ce trio (cf. item 4
-  ci-dessus), pas une réduction de la portée VTP elle-même.
+  pédagogique pour ce simulateur. Inchangé depuis la v1.0.
+- **Propagation des associations Private VLAN** — dépendance externe réelle
+  et non résolue vers `docs/PRD-VLAN.md` §2.1.2 (Phase 2a), cf. §1.3 item 4 ;
+  tombera automatiquement dès que cette phase sera livrée, comme pour l'item
+  MST de la v1.0.
 - DTP (négociation dynamique de trunk) — déjà solide selon `GAP.md` §2.5,
   aucune action proposée dans ce PRD, mentionné uniquement comme dépendance
   amont non bloquante (§0.1).
-- Toute extension Huawei de VTP — confirmé sans équivalent réel (item 6 du
-  gap analysis) ; ce PRD ne propose délibérément aucun développement
-  Huawei ici, contrairement aux deux autres PRD de ce trio.
+- Toute extension Huawei de VTP — confirmé sans équivalent réel (§1.3 item
+  5) ; ce PRD ne propose délibérément aucun développement Huawei ici.
 
 ---
 
 ## 3. Plan de remédiation détaillé
 
-### Phase 1 — Summary/Subset distincts (item 2.1.1)
+### Phase 1 — Fidélité des champs Summary Advertisement (item 2.1.1)
 
-- **Fichiers touchés** : `VtpAgent.ts` (`sendSummaryAndSubset` scindée en
-  deux émissions), `types.ts` (inchangé — les types existent déjà).
-- **Non-régression** : le comportement observable côté application de VLAN
-  (le diff finit par être appliqué) doit rester identique une fois les deux
-  trames reçues — seul le format sur le fil et le séquencement changent.
-- **Tests** : extension de `vtp-protocol.test.ts` — vérifier qu'une
-  `summary` seule ne modifie jamais la base VLAN locale, qu'un `subset`
-  orphelin (sans `summary` précédente à révision supérieure) est ignoré.
+- **Fichiers touchés** : `types.ts` (`VtpFrame` : `updater` devient une
+  adresse IP, nouveaux champs `updateTimestamp`, `followers`),
+  `VtpAgent.ts` (`sendSummaryAndSubset` calcule et fragmente si nécessaire).
+- **Non-régression** : le comportement observable côté application VLAN
+  (le diff finit par être appliqué) ne doit pas changer pour toute base
+  tenant dans un seul lot — cas de tous les tests existants aujourd'hui.
+- **Tests** : extension de `vtp-protocol.test.ts` (champ `updater` au format
+  IP, présence d'un timestamp), nouveau cas de fragmentation dans un fichier
+  dédié si le volume de VLAN testé dépasse le seuil choisi.
 
-### Phase 2 — Advertisement Request au link-up (item 2.1.2)
+### Phase 2 — Propagation de base MST via VTP v3 (item 2.1.2)
 
-- **Fichiers touchés** : `VtpAgent.ts` (`onPortLinkUp`, nouveau handler pour
-  `messageType: 'request'`/`'join'` reçu).
-- **Tests** : nouveau cas dans `vtp-protocol.test.ts` — un client qui vient
-  de connecter un trunk reçoit sa mise à jour VLAN sans attendre 300 s.
+- **Fichiers touchés** : `types.ts` (nouveau type de base MST dans
+  `VtpFrame` ou variante de message dédiée), `VtpAgent.ts` (synchronisation
+  de la base MST en parallèle de la base VLAN standard), interface
+  `VtpHost`/câblage `CiscoSwitch.ts` (accès à la `MstRegion` du `StpAgent`
+  local pour lecture/écriture par VTP).
+- **Tests** : nouveau fichier `vtp-v3-mst-database.test.ts` — deux switches
+  en mode server/client, région MST configurée sur le server, vérifier que
+  le client adopte la même région (nom/révision/table d'instances) après
+  synchronisation VTP, sans reconfiguration manuelle.
 
-### Phase 3 — VTP pruning réel (item 2.1.3)
+### Phase 3 — MD5 byte-exact + capture dédiée (item 2.1.3)
 
-- **Fichiers touchés** : `VtpAgent.ts` (annonce d'intérêt VLAN dans le
-  *Subset*), `Switch.ts` (`floodFrame()` — filtrage des trunks prunés par
-  VLAN), `VtpConfig` (probablement une nouvelle structure de suivi d'intérêt
-  par trunk, à concevoir en détail).
-- **Tests** : nouveau fichier `vtp-pruning.test.ts` — topologie à 3 switches
-  en chaîne, VLAN sans port actif sur le switch du bout, vérifier que le
-  flood ne traverse pas le trunk du milieu vers le switch du bout une fois le
-  pruning actif des deux côtés ; régression complète sur `vtp-protocol.test.ts`
-  et `vlan-advanced.test.ts` (le flood normal, non pruné, ne doit pas changer).
-
-### Phase 4 — VTP v3 complet (item 2.1.4)
-
-Scindée en trois volets, le troisième dépendant explicitement d'un autre PRD :
-
-- **Phase 4a — plage VLAN étendue** : `types.ts` (validation 1006-4094
-  conditionnelle à `version === 3`), `VtpAgent`/`_vtpApplyVlans` (accepter le
-  diff sur la plage étendue).
-- **Phase 4b — élection de serveur primaire** : `VtpAgent.ts` (état
-  `primaryServer`, commande `vtp primary [force]`, résolution de conflit par
-  révision puis par priorité annoncée).
-- **Phase 4c — propagation des associations Private VLAN** (dépendance
-  explicite et bloquante vers `docs/PRD-VLAN.md` §2.1.2 Phase 2a) : extension
-  de `VtpFrame`/`VtpVlanEntry` pour porter le couple (VLAN primaire, VLAN
-  secondaire, rôle), consommé par `_vtpApplyVlans` pour recréer la
-  configuration Private VLAN sur les switches clients.
-- **Tests** : nouveau fichier `vtp-v3-primary-server.test.ts` (4a+4b) +
-  `vtp-v3-private-vlan-propagation.test.ts` (4c, ne peut être écrit qu'une
-  fois `docs/PRD-VLAN.md` Phase 2a livrée).
-
-### Phase 5 — MD5 réel sur le fil (item 2.1.5)
-
-- **Fichiers touchés** : `types.ts` (`hashPassword` remplacé par un vrai
-  MD5), `VtpFrame` (format du condensé conforme).
-- **Tests** : cette phase inclut la création de la suite de capture qui
-  n'existe pas encore — nouveau fichier
-  `tcpdump-vtp-frame-capture.test.ts` (pendant VTP de
-  `tcpdump-byte-slice-vlan-filters.test.ts` côté 802.1Q), vérifiant que le
-  condensé MD5 apparaît correctement dans la trame capturée.
+- **Fichiers touchés** : `types.ts` (`hashPassword` aligné sur l'agencement
+  réel des champs si un écart est confirmé en conception détaillée).
+- **Tests** : nouveau fichier `tcpdump-vtp-frame-capture.test.ts`, pendant
+  VTP de `tcpdump-byte-slice-vlan-filters.test.ts` côté 802.1Q.
 
 ---
 
 ## 4. Exigences de non-régression
 
-Toute correction reste **additive et testée**. Suite déjà verte à ne pas
-régresser : `vtp-protocol.test.ts` (306 lignes) et, par ricochet, toute suite
-qui exerce indirectement un switch en mode VTP server/client
-(`debug/cisco-l2/cisco-l2-03-trunk-dtp-vtp.debug.test.ts`). La Phase 1 est un
-préalable naturel à la Phase 2 (le message `request`/`join` s'insère dans
-l'échange summary→subset qu'elle établit). La Phase 4c dépend explicitement
-de `docs/PRD-VLAN.md` Phase 2a (Private VLAN Cisco) — c'est une dépendance
-inter-PRD réelle à respecter dans l'ordonnancement global des deux PRD, pas
-une simple suggestion d'ordre. Les Phases 3, 4a, 4b et 5 sont par ailleurs
-indépendantes entre elles et de la Phase 2.
+Suite déjà verte à ne pas régresser (975 lignes, 5 fichiers) :
+`vtp-protocol.test.ts`, `vtp-pruning.test.ts`, `vtp-v3-primary-server.test.ts`,
+`vtp-md5-password.test.ts`, `vtp-config-change-sync.test.ts`, et par
+ricochet `debug/cisco-l2/cisco-l2-03-trunk-dtp-vtp.debug.test.ts`. La Phase 1
+(fidélité des champs) est indépendante des Phases 2 et 3. La Phase 2
+(base MST) dépend du modèle `MstRegion` déjà défini par `docs/PRD-STP.md`
+mais ne dépend d'aucune phase de ce dernier PRD n'étant pas encore livrée —
+elle peut démarrer dès aujourd'hui. La Phase 3 reste indépendante des deux
+autres.
 
 ---
 
 ## 5. Risques
 
-- **Risque principal** : la Phase 1 change le nombre de trames échangées par
-  cycle d'annonce (une summary + N subsets au lieu d'une trame unique) — tout
-  test existant qui compte le nombre exact de trames VTP émises devra être
-  révisé consciemment, pas silencieusement laissé à casser. Auditer
-  `vtp-protocol.test.ts` avant d'écrire le code de cette phase pour recenser
-  ces assertions.
-- **Risque secondaire** : la Phase 3 (pruning) modifie `floodFrame()`, une
-  fonction déjà partagée avec la Phase 2 de `PRD-VLAN.md` (Private VLAN) et
-  la Phase 3 de `PRD-VLAN.md` (VACL) — si ces PRD sont implémentés en
-  parallèle, l'ordre d'application des filtres (PVLAN, VACL, pruning VTP)
-  dans `floodFrame()` doit être explicitement fixé et testé (voir l'ordre
-  proposé dans `docs/PRD-VLAN.md` §5) pour éviter qu'un filtre masque
-  silencieusement le comportement d'un autre.
-- **Risque de séquencement inter-PRD** : la Phase 4c (propagation Private
-  VLAN par VTP v3) ne peut pas être développée avant `docs/PRD-VLAN.md`
-  Phase 2a — si l'équipe qui planifie l'implémentation traite les trois PRD
-  de ce trio comme des chantiers strictement parallèles et indépendants,
-  cette dépendance précise doit être signalée explicitement en amont pour
-  éviter un blocage découvert tardivement.
-- **Risque de charge de travail sous-estimée** : le passage d'un VTP v3
-  « minimal » (plage étendue seule) à un VTP v3 complet (élection de serveur
-  primaire + propagation Private VLAN) et d'un hash simplifié à un vrai MD5
-  avec suite de capture dédiée représente un volume de travail sensiblement
-  plus grand que la version initiale de ce PRD — assumé explicitement ici,
-  cf. le même risque documenté dans `docs/PRD-802.1Q.md` §5 et
-  `docs/PRD-VLAN.md` §5 pour les deux autres PRD de ce trio.
+- **Risque principal (Phase 1)** : changer le type du champ `updater` d'une
+  MAC vers une IP peut casser tout test existant qui l'inspecte directement
+  (`vtp-config-change-sync.test.ts` en particulier, qui exerce la
+  synchronisation de près) — auditer ces assertions avant d'écrire le code
+  de cette phase.
+- **Risque secondaire (Phase 2)** : la synchronisation d'une base MST par
+  VTP touche à la fois `VtpAgent` et `StpAgent` — deux moteurs déjà chacun
+  bien testés séparément (975 lignes côté VTP, 17 fichiers côté STP selon
+  `docs/PRD-STP.md §0`) ; toute suite de non-régression pour cette phase doit
+  couvrir les deux côtés du câblage, pas seulement l'émission/réception VTP.
+- **Risque de récurrence** : cette v2.0 elle-même deviendra périmée si de
+  nouveaux commits ferment les items 1-3 sans mise à jour du document — le
+  même phénomène qui a rendu la v1.0 obsolète en trois semaines. Revérifier
+  l'état du code avant toute nouvelle itération de ce PRD plutôt que de
+  supposer sa validité continue.
