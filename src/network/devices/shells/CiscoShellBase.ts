@@ -29,7 +29,7 @@ import {
   registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
 } from './cisco/CiscoArpCommands';
 import {
-  showClock, showUsers, showInventory, showProcessesCpu,
+  showClock, showUsers, showInventory, showProcessesCpu, showProcessesMemory,
   showMemoryStatistics, showFlash, showPrivilege,
   showCdp, showLldp, showSnmp, showSnmpCommunity, showSnmpHost,
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
@@ -1139,6 +1139,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showProcessesCpu());
     trie.registerGreedy('show processes cpu history', 'Display CPU history', () =>
       showProcessesCpu());
+    trie.registerGreedy('show processes memory', 'Display per-process memory', () =>
+      showProcessesMemory());
+    trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () => {
+      const rows = ['Port           Align-Err   FCS-Err  Xmit-Err   Rcv-Err UnderSize OutDiscards'];
+      for (const name of this.d().getPortNames()) {
+        const c = this.d().getPort(name)?.getCounters();
+        const inErr = c?.errorsIn ?? 0;
+        const outErr = c?.errorsOut ?? 0;
+        rows.push(
+          `${name.padEnd(15)}` +
+          `${String(0).padStart(9)}${String(inErr).padStart(10)}` +
+          `${String(outErr).padStart(10)}${String(inErr).padStart(10)}` +
+          `${String(0).padStart(10)}${String(0).padStart(12)}`,
+        );
+      }
+      return rows.join('\n');
+    });
     trie.register('show clock detail', 'Display clock with source', () => {
       const ntp = getNtpAgent(this.cs());
       const synced = ntp?.isSynced() ?? false;
@@ -1597,6 +1614,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('no debug eigrp', 'Disable EIGRP debug', (_args) =>
       debugSvc()?.disable('ip.eigrp') ?? '');
     const genericDebug = () => (this.d() as unknown as { getDebugService?: () => { enable(c: string): string; disable(c: string): string } }).getDebugService?.();
+    this.privilegedTrie.registerGreedy('debug interface', 'Debug interface state changes', (args) => {
+      const svc = genericDebug();
+      const iface = args.join(' ').trim();
+      if (!svc) return `Interface ${iface} debugging is on`;
+      svc.enable('interface', iface || undefined);
+      return `Interface ${iface} debugging is on`;
+    });
+    this.privilegedTrie.registerGreedy('no debug interface', 'Disable interface debug', () =>
+      genericDebug()?.disable('interface') ?? '');
     this.privilegedTrie.registerGreedy('debug lldp', 'Debug LLDP', () => genericDebug()?.enable('lldp.packets') ?? 'LLDP packets debugging is on');
     this.privilegedTrie.registerGreedy('debug cdp', 'Debug CDP', () => genericDebug()?.enable('cdp.packets') ?? 'CDP packets debugging is on');
     this.privilegedTrie.registerGreedy('no debug lldp', 'Disable LLDP debug', () => genericDebug()?.disable('lldp.packets') ?? '');
@@ -2464,16 +2490,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
       return '';
     });
+    const applyServiceTimestamps = (args: string[], on: boolean): void => {
+      const a = args.map((s) => s.toLowerCase());
+      if (a[0] !== 'timestamps') return;
+      this.attachLoggingToDevice(this.d());
+      this.logging.timestamps = on && a.includes('datetime');
+      this.logging.timestampsMsec = on && a.includes('msec');
+    };
     this.configTrie.registerGreedy('service', 'Service configuration', (args) => {
       const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
       const name = args.join(' ');
       if (name) dev._setServiceFlag?.(name, true);
+      applyServiceTimestamps(args, true);
       return '';
     });
     this.configTrie.registerGreedy('no service', 'Disable a service', (args) => {
       const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
       const name = args.join(' ');
       if (name) dev._setServiceFlag?.(name, false);
+      applyServiceTimestamps(args, false);
       return '';
     });
     this.configTrie.registerGreedy('no username', 'Remove a local user', (args) => {

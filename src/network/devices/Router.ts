@@ -580,6 +580,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _setupPortMonitoring(): void {
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
+        this.syncRouteDebug();
         if (state === 'up') {
           this._ospfAutoConverge();
         } else {
@@ -926,9 +927,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.routingTable.length < before;
   }
 
-  removeDefaultRoute(): boolean {
+  removeDefaultRoute(nextHop?: IPAddress): boolean {
     const before = this.routingTable.length;
-    this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+    this.routingTable = this.routingTable.filter(r =>
+      r.type !== 'default' || (nextHop !== undefined && String(r.nextHop) !== String(nextHop)));
     return this.routingTable.length < before;
   }
 
@@ -936,7 +938,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     nextHop: IPAddress, metric: number = 0,
     opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'iface'>>,
   ): boolean {
-    this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+    this.routingTable = this.routingTable.filter(r =>
+      r.type !== 'default' || String(r.nextHop) !== String(nextHop));
     const iface = this.findInterfaceForIP(nextHop);
     const ifaceName = opts?.iface ?? (iface ? iface.getName() : '');
 
@@ -946,7 +949,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       nextHop,
       iface: ifaceName,
       type: 'default',
-      ad: 1,
+      ad: opts?.preference ?? 1,
       metric,
       preference: opts?.preference,
       tag: opts?.tag,
@@ -2141,7 +2144,45 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
-    return this.shell.execute(this, command);
+    const out = await this.shell.execute(this, command);
+    this.syncRouteDebug();
+    return out;
+  }
+
+  private _routeDebugSnapshot: Map<string, string> | null = null;
+
+  private routeKey(r: RouteEntry): string {
+    return `${r.network}/${r.mask.toCIDR()}`;
+  }
+
+  syncRouteDebug(): void {
+    const svc = this._debugService;
+    if (!svc) return;
+    const best = new Map<string, RouteEntry>();
+    for (const r of this.routingTable) {
+      if (r.iface && this.ports.get(r.iface)?.getIsUp() === false) continue;
+      if (r.iface && this.ports.get(r.iface)?.isConnected() === false) continue;
+      const key = this.routeKey(r);
+      const prev = best.get(key);
+      if (!prev || r.ad < prev.ad || (r.ad === prev.ad && r.metric < prev.metric)) best.set(key, r);
+    }
+    const current = new Map<string, string>();
+    for (const [key, r] of best) {
+      current.set(key, r.nextHop ? String(r.nextHop) : r.iface);
+    }
+    const previous = this._routeDebugSnapshot;
+    this._routeDebugSnapshot = current;
+    if (!previous) return;
+    for (const [key, via] of previous) {
+      if (!current.has(key)) svc.emitLine('ip.routing', `RT: del ${key.split('/')[0]} via ${via}`);
+    }
+    for (const [key, via] of current) {
+      if (!previous.has(key)) svc.emitLine('ip.routing', `RT: add ${key.split('/')[0]} via ${via}`);
+      else if (previous.get(key) !== via) {
+        svc.emitLine('ip.routing', `RT: del ${key.split('/')[0]} via ${previous.get(key)}`);
+        svc.emitLine('ip.routing', `RT: add ${key.split('/')[0]} via ${via}`);
+      }
+    }
   }
 
   getPrompt(): string {
@@ -2759,6 +2800,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.natEngine.setDebugEmitter((line) => svc.emitLine('ip.nat', line));
       this._getDHCPServerInternal().setDebugEmitter((line) => svc.emitLine('ip.dhcp.server', line));
       svc.setAclFilterEvaluator((aclName, line) => this.debugLineMatchesAcl(aclName, line));
+      svc.setCategoryRenderer('ip.dhcp.server', () => this._getDHCPServerInternal().formatDebugShow());
     }
     this._debugService.attachToBus(this.getBus(), this.id);
     return this._debugService;

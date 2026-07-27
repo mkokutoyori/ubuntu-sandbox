@@ -1311,7 +1311,7 @@ function showIpOspf(router: Router): string {
   return lines.join('\n');
 }
 
-function showIpOspfNeighbor(router: Router): string {
+export function showIpOspfNeighbor(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '% OSPF is not configured';
 

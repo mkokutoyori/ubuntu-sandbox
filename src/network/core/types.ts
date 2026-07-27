@@ -1456,6 +1456,8 @@ export interface PortCounters {
   errorsOut: number;
   dropsIn: number;
   dropsOut: number;
+  /** Frames discarded on receipt because of a bad FCS (IOS `show interfaces` CRC counter). */
+  crcErrorsIn?: number;
 }
 
 export interface PortInfo {

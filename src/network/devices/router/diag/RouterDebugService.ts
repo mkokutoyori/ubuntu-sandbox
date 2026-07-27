@@ -21,6 +21,7 @@ export type DebugCategory =
   | 'ip.udp'
   | 'ip.nat'
   | 'ip.arp'
+  | 'interface'
   | 'ip.dhcp.server'
   | 'ip.ssh'
   | 'ip.nhrp'
@@ -87,6 +88,11 @@ export class RouterDebugService implements TerminalDebugSource {
   }
 
   private aclMatchFn?: (aclName: string, line: string) => boolean;
+  private readonly categoryRenderers = new Map<DebugCategory, () => string>();
+
+  setCategoryRenderer(category: DebugCategory, render: () => string): void {
+    this.categoryRenderers.set(category, render);
+  }
 
   setAclFilterEvaluator(fn: (aclName: string, line: string) => boolean): void {
     this.aclMatchFn = fn;
@@ -177,6 +183,17 @@ export class RouterDebugService implements TerminalDebugSource {
         this.emit('ip.icmp', `ICMP: ${kind} ${dir}, src ${ip.src}, dst ${ip.dst}`);
       }
     };
+    this.broadcast.track(bus.subscribe('port.link.up', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as { portName?: string };
+      this.emit('interface', `${p.portName ?? '?'} came back up`);
+    }));
+    this.broadcast.track(bus.subscribe('port.link.down', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as { portName?: string };
+      this.emit('interface', `${p.portName ?? '?'} went down`);
+      this.emit('interface', `${p.portName ?? '?'} keepalive timer expired`);
+    }));
     this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as { frame: unknown; portName?: string };
@@ -217,6 +234,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.udp': return 'IP UDP';
       case 'ip.nat': return 'IP NAT';
       case 'ip.arp': return 'ARP packet';
+      case 'interface': return 'Interface';
       case 'ip.dhcp.server': return 'IP DHCP server';
       case 'ip.ssh': return 'SSH';
       case 'ip.nhrp': return 'NHRP';
@@ -240,7 +258,12 @@ export class RouterDebugService implements TerminalDebugSource {
   format(): string {
     if (this.flags.size === 0) return 'No debug flags are enabled';
     return this.list()
-      .map(f => `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}`)
+      .map(f => {
+        const custom = this.categoryRenderers.get(f.category);
+        if (custom) return custom();
+        if (f.category === 'interface' && f.scope) return `Interface ${f.scope} debugging is on`;
+        return `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}`;
+      })
       .join('\n');
   }
 }

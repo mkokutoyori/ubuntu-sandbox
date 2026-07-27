@@ -160,6 +160,7 @@ export class Port {
     bytesIn: 0, bytesOut: 0,
     errorsIn: 0, errorsOut: 0,
     dropsIn: 0, dropsOut: 0,
+    crcErrorsIn: 0,
   };
 
   // ─── Link state observers ───────────────────────────────────────
@@ -599,11 +600,13 @@ export class Port {
       framesIn: 0, framesOut: 0,
       bytesIn: 0, bytesOut: 0,
       errorsIn: 0, errorsOut: 0,
+      crcErrorsIn: 0,
       dropsIn: 0, dropsOut: 0,
     };
   }
 
   incrementErrorsIn(): void { this.counters.errorsIn++; }
+  incrementCrcErrorsIn(): void { this.counters.errorsIn++; this.counters.crcErrorsIn = (this.counters.crcErrorsIn ?? 0) + 1; }
   incrementErrorsOut(): void { this.counters.errorsOut++; }
 
   // ─── Link State ────────────────────────────────────────────────

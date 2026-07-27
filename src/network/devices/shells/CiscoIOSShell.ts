@@ -59,6 +59,9 @@ import {
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
+import { showProcessesCpu } from './cisco/CiscoCommonShow';
+import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands';
+import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands,
@@ -834,8 +837,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerPolicyShow(trie, this.policy);
 
     // `show logging` — projects the real LoggingConfig (router).
-    trie.registerGreedy('show logging', 'Display syslog state', () =>
-      this.logging.render());
+    trie.registerGreedy('show logging', 'Display syslog state', (args) =>
+      /^count$/i.test(args[0] ?? '') ? this.logging.renderCount() : this.logging.render(), ['count']);
 
     // `show tech-support` — real aggregation of the key show outputs.
     trie.register('show tech-support', 'Aggregate diagnostic output', () => {
@@ -849,6 +852,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         section('show ip route', Show.showIpRoute(r)),
         section('show interfaces', Show.showInterfacesAll(r)),
         section('show ip protocols', Show.showIpProtocols(r)),
+        section('show processes cpu', showProcessesCpu()),
+        section('show ip nat translations', showNATTranslations(getRouter())),
+        section('show ip nat statistics', showNATStatistics(getRouter())),
+        section('show ip ospf neighbor', showIpOspfNeighbor(getRouter())),
+        section('show ip dhcp binding', getRouter()._getDHCPServerInternal().formatBindingsShow()),
         section('show logging', this.logging.render()),
       ].join('\n\n');
     });

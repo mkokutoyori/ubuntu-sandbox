@@ -37,8 +37,9 @@ export class LoggingConfig {
   sourceInterface: string | null = null;
   sequenceNumbers = false;
   timestamps = false;
+  timestampsMsec = false;
   readonly hosts: string[] = [];
-  private readonly messages: Array<{ ts: number; severity: Severity; tag: string; text: string }> = [];
+  private readonly messages: Array<{ ts: number; severity: Severity; tag: string; text: string; mnemonic?: string }> = [];
 
   clearBuffer(): void { this.messages.length = 0; }
   private nextSeq = 0;
@@ -58,12 +59,20 @@ export class LoggingConfig {
     return event.slice(0, colon).replace(/[^a-z0-9_]/gi, '_').toLowerCase();
   }
 
-  private formatEntry(severity: Severity, tag: string, text: string, ts: number): string {
+  private formatEntry(severity: Severity, tag: string, text: string, ts: number, mnemonic?: string): string {
     const sevNum = this.SEVERITY_ORDER[severity];
     const prefix = this.timestamps
-      ? `${new Date(ts).toISOString().slice(5, 19).replace('T', ' ')}: `
+      ? `${this.formatTimestamp(ts)}: `
       : '';
-    return `${prefix}%${tag.toUpperCase()}-${sevNum}-${severity.toUpperCase()}: ${text}`;
+    const mnem = (mnemonic ?? severity).toUpperCase();
+    return `${prefix}%${tag.toUpperCase()}-${sevNum}-${mnem}: ${text}`;
+  }
+
+  private formatTimestamp(ts: number): string {
+    const d = new Date(ts);
+    const base = d.toISOString().slice(5, 19).replace('T', ' ');
+    if (!this.timestampsMsec) return base;
+    return `${base}.${String(d.getMilliseconds()).padStart(3, '0')}`;
   }
 
   subscribeMonitor(listener: SyslogLineListener): () => void {
@@ -87,14 +96,14 @@ export class LoggingConfig {
    * which have no `log`-topic equivalent) keep the default `true` so
    * `device.syslog.entry` remains their only forwarding path.
    */
-  append(severity: Severity, tag: string, text: string, republish: boolean = true): void {
+  append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
     if (!this.enabled) return;
     const ts = Date.now();
     if (this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
-      this.fanMonitor(this.formatEntry(severity, tag, text, ts));
+      this.fanMonitor(this.formatEntry(severity, tag, text, ts, mnemonic));
     }
     if (this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.bufferedSeverity]) return;
-    this.messages.push({ ts, severity, tag, text });
+    this.messages.push({ ts, severity, tag, text, mnemonic });
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
     this.nextSeq++;
@@ -149,12 +158,16 @@ export class LoggingConfig {
       bus.subscribeWhere('port.link.up', isOurs, (e) => {
         const p = e.payload;
         this.append('errors', 'link',
-          `Interface ${p.portName}, changed state to up`);
+          `Interface ${p.portName}, changed state to up`, true, 'UPDOWN');
+        this.append('notifications', 'lineproto',
+          `Line protocol on Interface ${p.portName}, changed state to up`, true, 'UPDOWN');
       }),
       bus.subscribeWhere('port.link.down', isOurs, (e) => {
         const p = e.payload;
         this.append('errors', 'link',
-          `Interface ${p.portName}, changed state to down`);
+          `Interface ${p.portName}, changed state to down`, true, 'UPDOWN');
+        this.append('notifications', 'lineproto',
+          `Line protocol on Interface ${p.portName}, changed state to down`, true, 'UPDOWN');
       }),
       bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload;
@@ -791,6 +804,30 @@ export class LoggingConfig {
   }
 
   /** `show logging` projection of the real configured state. */
+  renderCount(): string {
+    const tally = new Map<string, { count: number; last: number }>();
+    for (const m of this.messages) {
+      const sevNum = this.SEVERITY_ORDER[m.severity];
+      const key = `${m.tag.toUpperCase()}-${sevNum}-${(m.mnemonic ?? m.severity).toUpperCase()}`;
+      const prev = tally.get(key);
+      if (prev) { prev.count++; prev.last = m.ts; }
+      else tally.set(key, { count: 1, last: m.ts });
+    }
+    const lines = ['Facility           Message Name              Sev Occur   Last Time'];
+    let total = 0;
+    for (const [key, v] of [...tally.entries()].sort((a, b) => b[1].count - a[1].count)) {
+      const [facility, sev, mnem] = key.split('-');
+      total += v.count;
+      const stamp = new Date(v.last).toISOString().slice(5, 19).replace('T', ' ');
+      lines.push(
+        `${facility.padEnd(19)}${mnem.padEnd(26)}${sev.padStart(3)}${String(v.count).padStart(6)}   ${stamp}`,
+      );
+    }
+    lines.push('');
+    lines.push(`Total: ${total}`);
+    return lines.join('\n');
+  }
+
   render(): string {
     const lvl = (s: Severity) => `level ${s}`;
     const lines = [
@@ -820,7 +857,7 @@ export class LoggingConfig {
       lines.push('Log Buffer (' + this.bufferedSize + ' bytes):');
       lines.push('');
       for (const m of this.messages) {
-        lines.push(this.formatEntry(m.severity, m.tag, m.text, m.ts));
+        lines.push(this.formatEntry(m.severity, m.tag, m.text, m.ts, m.mnemonic));
       }
     }
     return lines.join('\n');

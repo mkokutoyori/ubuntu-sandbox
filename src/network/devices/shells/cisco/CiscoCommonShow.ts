@@ -164,8 +164,15 @@ export function showProcessesCpu(): string {
     ' PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process',
     '   1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager',
     '   2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter',
+    '   5           0         0      0  0.00%  0.00%  0.00%   0 IP Input',
+    '  55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input',
+    ' 130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine',
+    ' 178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive',
+    ' 201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router',
+    ' 240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree',
   ].join('\n');
 }
+
 
 /** `show memory statistics` — head/total/used/free. */
 export function showMemoryStatistics(profile: CiscoChassisProfile = 'switch-c3560'): string {

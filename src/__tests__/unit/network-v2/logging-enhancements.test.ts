@@ -287,8 +287,8 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     port.setUp(false);
 
     const out = await Promise.resolve(r.executeCommand('show logging'));
-    expect(out).toMatch(/%LINK-3-ERRORS:.+GigabitEthernet0\/0.+state to up/);
-    expect(out).toMatch(/%LINK-3-ERRORS:.+GigabitEthernet0\/0.+state to down/);
+    expect(out).toMatch(/%LINK-3-UPDOWN:.+GigabitEthernet0\/0.+state to up/);
+    expect(out).toMatch(/%LINK-3-UPDOWN:.+GigabitEthernet0\/0.+state to down/);
   });
 
   it('a TCP segment dropped for no-listener lands as a warning', async () => {

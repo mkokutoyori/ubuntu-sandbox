@@ -121,7 +121,7 @@ function formatArpTimeout(totalSec: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-export function showInterface(router: { _getPortsInternal: () => Map<string, import('../../../hardware/Port').Port> }, ifName: string): string {
+export function showInterface(router: { _getPortsInternal: () => Map<string, import('../../../hardware/Port').Port>; getInterfaceDescription?: (n: string) => string | undefined }, ifName: string): string {
   const ports = router._getPortsInternal();
   const port = ports.get(ifName);
   if (!port) {
@@ -151,6 +151,9 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
   const lines = [
     `${ifName} is ${status}, line protocol is ${lineProto}`,
   ];
+
+  const descr = router.getInterfaceDescription?.(ifName) || port.getDescriptionText?.();
+  if (descr) lines.push(`  Description: ${descr}`);
 
   if (isTunnel) {
     lines.push(`  Hardware is Tunnel`);
@@ -206,7 +209,7 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
     lines.push(`     ${c.framesIn} packets input, ${c.bytesIn} bytes, 0 no buffer`);
     lines.push(`     Received 0 broadcasts (0 multicasts)`);
     lines.push(`     0 runts, 0 giants, 0 throttles`);
-    lines.push(`     ${c.errorsIn} input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored`);
+    lines.push(`     ${c.errorsIn} input errors, ${c.crcErrorsIn ?? 0} CRC, 0 frame, 0 overrun, 0 ignored`);
     lines.push(`     ${c.framesOut} packets output, ${c.bytesOut} bytes, 0 underruns`);
     lines.push(`     ${c.errorsOut} output errors, 0 collisions, 0 interface resets`);
     lines.push(`     ${c.dropsIn} input drops, ${c.dropsOut} output drops`);
@@ -329,6 +332,12 @@ export function showRunningConfig(router: Router): string {
     if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
     if (!port.getIsUp()) lines.push(` shutdown`);
+    if (!port.isNegotiationAuto?.()) {
+      const sp = port.getSpeed?.();
+      if (sp) lines.push(` speed ${sp}`);
+      const dx = port.getDuplex?.();
+      if (dx) lines.push(` duplex ${dx}`);
+    }
     const helpers = dhcp.getHelperAddresses(name);
     for (const h of helpers) {
       lines.push(` ip helper-address ${h}`);

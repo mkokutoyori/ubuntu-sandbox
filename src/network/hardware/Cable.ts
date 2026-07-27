@@ -348,7 +348,7 @@ export class Cable {
     // the driver ever sees it, but tracked distinctly from generic loss.
     if (this.corruptionRate > 0 && this.rng() < this.corruptionRate) {
       this.stats.framesCorrupted++;
-      targetPort.incrementErrorsIn();
+      targetPort.incrementCrcErrorsIn();
       Logger.debug(this.id, 'cable:corrupted', `Cable ${this.id}: frame corrupted (simulated FCS failure)`);
       this.getBus().publish({
         topic: 'cable.frame.lost',

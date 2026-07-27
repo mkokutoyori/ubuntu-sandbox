@@ -454,6 +454,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     // itself — `duplex auto` resolves to full, the realistic result on a
     // modern switched link.
     port.setDuplex(a === 'half' ? 'half' : 'full');
+    if (a !== 'auto') port.setNegotiationAuto(false);
     return '';
   });
   trie.registerGreedy('speed', 'Set interface speed', (args) => {
@@ -463,6 +464,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
     if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
     try { port.setSpeed(parseInt(args[0], 10)); } catch { return "% Invalid input detected at '^' marker."; }
+    port.setNegotiationAuto(false);
     return '';
   });
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
@@ -940,7 +942,8 @@ export function cmdIpRoute(router: Router, args: string[]): string {
   if (nextHopStr) {
     const nextHop = new IPAddress(nextHopStr);
     if (netStr === '0.0.0.0' && maskStr === '0.0.0.0') {
-      return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
+      return router.setDefaultRoute(nextHop, 0, ad !== undefined ? { preference: ad } : undefined)
+        ? '' : '% Next-hop is not reachable';
     }
     return router.addStaticRoute(network, mask, nextHop, 0, (ad !== undefined || trackId !== undefined) ? opts : undefined)
       ? '' : '% Next-hop is not reachable';
@@ -961,7 +964,7 @@ export function cmdNoIpRoute(router: Router, args: string[]): string {
     const mask = new SubnetMask(args[1]);
     const nextHop = args[2] && isDottedIp(args[2]) ? new IPAddress(args[2]) : undefined;
     if (args[0] === '0.0.0.0' && args[1] === '0.0.0.0') {
-      return router.removeDefaultRoute() ? '' : '% Route not found';
+      return router.removeDefaultRoute(nextHop) ? '' : '% Route not found';
     }
     return router.removeStaticRoute(network, mask, nextHop) ? '' : '% Route not found';
   } catch (e: any) {
