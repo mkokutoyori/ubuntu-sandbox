@@ -3,6 +3,7 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type VtpConfig, type VtpFrame, type VtpMode, type VtpVersion, type VtpVlanEntry,
+  type VtpMstRegionPayload,
   createDefaultVtpConfig, hashPassword,
   ETHERTYPE_VTP, VTP_MULTICAST_MAC,
 } from './types';
@@ -24,6 +25,8 @@ export interface VtpHost {
    *  or failing that the lowest-numbered active VLAN SVI) — '0.0.0.0' if
    *  none is configured. */
   vtpUpdaterIdentity(): string;
+  vtpGetMstRegion(): VtpMstRegionPayload;
+  vtpApplyMstRegion(region: VtpMstRegionPayload): void;
 }
 
 const PRUNING_ELIGIBLE_MIN = 2;
@@ -58,6 +61,9 @@ export class VtpAgent extends ReactiveAgentBase {
   private readonly peerInterest = new Map<string, Set<number>>();
   private knownPrimary: { updater: string; revision: number } | null = null;
   private hasSyncedDatabase = false;
+  private lastMstSummaryRevision: number | null = null;
+  private lastMstSummaryDomain: string | null = null;
+  private hasSyncedMstDatabase = false;
 
   constructor(
     private readonly host: VtpHost,
@@ -143,6 +149,12 @@ export class VtpAgent extends ReactiveAgentBase {
     this.bumpRevision();
   }
 
+  onLocalMstChange(): void {
+    if (this.config.mode !== 'server' || !this.config.domain || this.config.version !== 3) return;
+    this.config.mstDatabaseRevision += 1;
+    this.advertiseMstDatabase('local-mst-change');
+  }
+
   runningConfigGlobalLines(): string[] {
     const out: string[] = [];
     if (this.config.domain) out.push(`vtp domain ${this.config.domain}`);
@@ -205,6 +217,11 @@ export class VtpAgent extends ReactiveAgentBase {
 
     if (this.config.mode !== 'server' && this.config.mode !== 'client') return;
 
+    if (payload.database === 'mst') {
+      this.handleMstFrame(portName, payload);
+      return;
+    }
+
     if (payload.messageType === 'summary') {
       if (this.lastSummaryDomain !== payload.domain || this.lastSummaryRevision !== payload.revision) {
         this.pendingSubsetParts.clear();
@@ -264,9 +281,50 @@ export class VtpAgent extends ReactiveAgentBase {
     }
   }
 
+  private handleMstFrame(portName: string, payload: VtpFrame): void {
+    if (this.config.version !== 3) return;
+
+    if (payload.messageType === 'summary') {
+      if (this.lastMstSummaryDomain !== payload.domain || this.lastMstSummaryRevision !== payload.revision) {
+        this.lastMstSummaryDomain = payload.domain;
+        this.lastMstSummaryRevision = payload.revision;
+      }
+      return;
+    }
+
+    if (payload.messageType !== 'subset' || !payload.mstRegion) return;
+
+    if (this.lastMstSummaryDomain !== payload.domain || this.lastMstSummaryRevision !== payload.revision) {
+      Logger.warn(this.host.id, 'vtp:orphan-mst-subset',
+        `${this.host.name}: ignoring orphan MST Subset Advertisement (rev ${payload.revision}, no matching Summary) on ${portName}`);
+      return;
+    }
+
+    const isFreshJoin = this.config.mode === 'client' && !this.hasSyncedMstDatabase;
+    if (payload.revision > this.config.mstDatabaseRevision || (isFreshJoin && payload.revision === this.config.mstDatabaseRevision)) {
+      const oldRev = this.config.mstDatabaseRevision;
+      this.host.vtpApplyMstRegion(payload.mstRegion);
+      this.config.mstDatabaseRevision = payload.revision;
+      this.hasSyncedMstDatabase = true;
+      this.getBus().publish({
+        topic: 'vtp.mst.synced',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          port: portName,
+          oldRevision: oldRev, newRevision: payload.revision,
+          mstName: payload.mstRegion.name,
+        },
+      });
+      Logger.info(this.host.id, 'vtp:mst-sync',
+        `${this.host.name}: VTP MST db ← ${payload.domain} rev ${payload.revision} on ${portName}`);
+      if (this.config.mode === 'server') this.advertiseMstDatabase('relay');
+    }
+  }
+
   private handleRequest(portName: string): void {
     if (this.config.mode !== 'server' || !this.config.domain) return;
     this.sendSummaryAndSubset(portName, 'request-reply');
+    if (this.config.version === 3) this.advertiseMstDatabase('request-reply', portName);
   }
 
   becomePrimary(force: boolean): { ok: boolean; message: string } {
@@ -424,6 +482,7 @@ export class VtpAgent extends ReactiveAgentBase {
     if (!this.config.domain) return;
     if (this.config.mode === 'server') {
       this.sendSummaryAndSubset(portName, 'trunk-up');
+      if (this.config.version === 3) this.sendMstSummaryAndSubset(portName, 'trunk-up');
       this.sendVtpFrame(portName, 'request', [], 'trunk-up');
     } else if (this.config.mode === 'client') {
       this.sendVtpFrame(portName, 'request', [], 'trunk-up');
@@ -457,21 +516,24 @@ export class VtpAgent extends ReactiveAgentBase {
     vlans: VtpVlanEntry[],
     reason: string,
     fragment?: { followers?: number; sequenceNumber?: number },
+    mst?: { revision: number; region?: VtpMstRegionPayload },
   ): void {
     const port = this.host.getPort(portName);
     if (!port) return;
+    const revision = mst ? mst.revision : this.config.revision;
     const payload: VtpFrame = {
       type: 'vtp', version: this.config.version,
       messageType,
       domain: this.config.domain,
-      revision: this.config.revision,
+      revision,
       updater: this.config.lastUpdaterIdentity,
       updateTimestamp: this.config.lastUpdateTimestamp,
       passwordHash: hashPassword(this.config.domain, this.config.password),
       vlans,
+      ...(mst ? { database: 'mst' as const, ...(mst.region ? { mstRegion: mst.region } : {}) } : {}),
       ...(messageType === 'summary' ? { followers: fragment?.followers ?? 1 } : {}),
       ...(messageType === 'subset' ? { sequenceNumber: fragment?.sequenceNumber ?? 1 } : {}),
-      ...(messageType === 'summary' && this.knownPrimary
+      ...(messageType === 'summary' && this.knownPrimary && !mst
         ? { primaryClaim: { ...this.knownPrimary, forced: false } }
         : {}),
     };
@@ -489,9 +551,35 @@ export class VtpAgent extends ReactiveAgentBase {
         port: portName,
         messageType: `${messageType}:${reason}`,
         domain: this.config.domain,
-        revision: this.config.revision,
+        revision,
       },
     });
+  }
+
+  private sendMstSummaryAndSubset(portName: string, reason: string): void {
+    if (this.advertising.has(portName)) return;
+    const port = this.host.getPort(portName);
+    if (!port) return;
+    this.advertising.add(portName);
+    try {
+      const region = this.host.vtpGetMstRegion();
+      const revision = this.config.mstDatabaseRevision;
+      this.sendVtpFrame(portName, 'summary', [], reason, { followers: 1 }, { revision });
+      this.sendVtpFrame(portName, 'subset', [], reason, { sequenceNumber: 1 }, { revision, region });
+    } finally {
+      this.advertising.delete(portName);
+    }
+  }
+
+  private advertiseMstDatabase(reason: string, onlyPort?: string): void {
+    if (!this.config.enabled || this.config.mode !== 'server' || !this.config.domain) return;
+    for (const port of this.host.getPorts()) {
+      const name = port.getName();
+      if (onlyPort && name !== onlyPort) continue;
+      if (!this.host.vtpIsTrunkPort(name)) continue;
+      if (!port.getIsUp() || !port.isConnected()) continue;
+      this.sendMstSummaryAndSubset(name, reason);
+    }
   }
 
   private forwardOnTrunks(ingress: string, frame: EthernetFrame): void {
@@ -513,6 +601,7 @@ export class VtpAgent extends ReactiveAgentBase {
     this.scheduleInterval('summary', () => {
       if (this.config.mode === 'server' && this.config.domain) {
         this.advertiseAllTrunks('periodic');
+        if (this.config.version === 3) this.advertiseMstDatabase('periodic');
       }
     }, 300_000);
   }
@@ -523,6 +612,7 @@ export class VtpAgent extends ReactiveAgentBase {
     if (!this.config.domain) return;
     if (this.config.mode === 'server') {
       this.sendSummaryAndSubset(portName, 'link-up');
+      if (this.config.version === 3) this.sendMstSummaryAndSubset(portName, 'link-up');
     } else if (this.config.mode === 'client') {
       this.sendVtpFrame(portName, 'request', [], 'link-up');
     }

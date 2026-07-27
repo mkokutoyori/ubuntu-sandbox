@@ -94,6 +94,13 @@ export class CiscoSwitch extends Switch {
       vtpIsTrunkPort: (n) => this._vtpIsTrunkPort(n),
       vtpLocalInterest: () => this._vtpLocalInterest(),
       vtpUpdaterIdentity: () => this._vtpUpdaterIdentity(),
+      vtpGetMstRegion: () => {
+        const region = this.stpAgent.getMstRegion();
+        return { name: region.name, revision: region.revision, instances: [...region.instances] };
+      },
+      vtpApplyMstRegion: (region) => {
+        this.stpAgent.applyMstRegion(region.name, region.revision, region.instances);
+      },
     }, () => this.getBus(), baseMac);
     this.udldAgent = new UdldAgent({
       ...hostBase,

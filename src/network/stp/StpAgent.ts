@@ -310,6 +310,13 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     this.mstRegion.instances.delete(instanceId);
     this.recomputeOnTopologyChange();
   }
+  applyMstRegion(name: string, revision: number, instances: [number, string][]): void {
+    this.mstRegion.name = name;
+    this.mstRegion.revision = revision;
+    this.mstRegion.instances.clear();
+    for (const [id, vlans] of instances) this.mstRegion.instances.set(id, vlans);
+    this.recomputeOnTopologyChange();
+  }
 
   isTopologyChangeActive(): boolean { return this.tcFlagActive; }
 

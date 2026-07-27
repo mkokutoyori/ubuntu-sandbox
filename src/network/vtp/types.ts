@@ -14,10 +14,25 @@ export interface VtpVlanEntry {
   type: 'ethernet';
 }
 
+/** v3 only: which independently-revisioned database a summary/subset frame
+ *  carries. Absent (or 'vlan') is today's standard VLAN database. */
+export type VtpDatabase = 'vlan' | 'mst';
+
+/** Wire shape of an MST region config (`docs/PRD-STP.md §4`'s `MstRegion`,
+ *  with its `instances: Map<number, string>` flattened to tuples). */
+export interface VtpMstRegionPayload {
+  name: string;
+  revision: number;
+  instances: [number, string][];
+}
+
 export interface VtpFrame extends NetworkPdu {
   type: 'vtp';
   version: VtpVersion;
   messageType: VtpMessageType;
+  /** Present only on a v3 MST-database summary/subset; `revision` below is
+   *  then that database's own counter, independent of the VLAN database's. */
+  database?: VtpDatabase;
   domain: string;
   revision: number;
   /** Updater Identity — the IP of whoever last changed the shared VLAN
@@ -35,6 +50,8 @@ export interface VtpFrame extends NetworkPdu {
    *  diff once all of them have arrived (real VTP's own reassembly rule). */
   sequenceNumber?: number;
   vlans: VtpVlanEntry[];
+  /** Subset only, `database === 'mst'`: the MST region being synced. */
+  mstRegion?: VtpMstRegionPayload;
   interestVlans?: number[];
   primaryClaim?: { updater: string; revision: number; forced: boolean };
 }
@@ -57,6 +74,10 @@ export interface VtpConfig {
   /** Epoch ms paired with `lastUpdaterIdentity`. */
   lastUpdateTimestamp: number;
   primaryServer: boolean;
+  /** v3 only: independent revision counter for the MST database, distinct
+   *  from both `revision` (the VLAN database's) and `MstRegion.revision`
+   *  (the operator-set MST config revision, transported as data). */
+  mstDatabaseRevision: number;
 }
 
 export function createDefaultVtpConfig(systemMac: string): VtpConfig {
@@ -72,6 +93,7 @@ export function createDefaultVtpConfig(systemMac: string): VtpConfig {
     lastUpdaterIdentity: '0.0.0.0',
     lastUpdateTimestamp: 0,
     primaryServer: false,
+    mstDatabaseRevision: 0,
   };
 }
 

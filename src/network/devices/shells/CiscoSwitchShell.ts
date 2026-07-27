@@ -1459,14 +1459,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // config-mst sub-mode
     this.configMstTrie.registerGreedy('name', 'Set MST region name', (a) => {
-      this.stpAgentOf(this.d())?.setMstName(a.join(' ')); return '';
+      this.stpAgentOf(this.d())?.setMstName(a.join(' '));
+      this.d().getVtpAgent().onLocalMstChange();
+      return '';
     });
     this.configMstTrie.registerGreedy('revision', 'Set MST revision', (a) => {
-      const n = parseInt(a[0], 10); if (!isNaN(n)) this.stpAgentOf(this.d())?.setMstRevision(n); return '';
+      const n = parseInt(a[0], 10);
+      if (!isNaN(n)) {
+        this.stpAgentOf(this.d())?.setMstRevision(n);
+        this.d().getVtpAgent().onLocalMstChange();
+      }
+      return '';
     });
     this.configMstTrie.registerGreedy('instance', 'Map VLANs to an MST instance', (a) => {
       const id = parseInt(a[0], 10);
-      if (!isNaN(id)) this.stpAgentOf(this.d())?.mapMstInstance(id, a.slice(1).join(' '));
+      if (!isNaN(id)) {
+        this.stpAgentOf(this.d())?.mapMstInstance(id, a.slice(1).join(' '));
+        this.d().getVtpAgent().onLocalMstChange();
+      }
       return '';
     });
     this.configMstTrie.register('show current', 'Show current MST config', () =>
@@ -1488,6 +1498,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const inst = parseInt(args[1], 10);
         if (!isNaN(inst)) ag?.unmapMstInstance(inst);
       }
+      this.d().getVtpAgent().onLocalMstChange();
       return '';
     });
     this.configMstTrie.registerGreedy('abort', 'Abort MST changes', () => {
