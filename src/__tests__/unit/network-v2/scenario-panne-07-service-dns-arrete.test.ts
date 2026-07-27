@@ -131,14 +131,22 @@ chmod +x /tmp/impact-dns.sh`);
       expect(out).toMatch(/no servers could be reached|timed out|NXDOMAIN|SERVFAIL|connection refused/i);
     }, LONG);
 
-    it('gap confirmé : `dig` continue de résoudre alors que le service DNS est arrêté', async () => {
-      // `nslookup` détecte correctement l'arrêt du service (test ci-dessus),
-      // mais `dig +short` renvoie toujours l'adresse — il ne passe donc pas
-      // par le même chemin de résolution sur le fil.
+    it('`dig +short` ne rend plus aucune adresse une fois le service arrêté', async () => {
       dns.dnsService.stop();
       const out = await run('dig +short dc01.mandeng.lan @192.168.10.10');
-      expect(out.trim()).toBe('');
+      // `+short` supprime la bannière et les lignes de commentaire ; il
+      // reste le diagnostic, que dig écrit sur stderr et qu'un terminal
+      // affiche donc bel et bien. Ce qui compte : plus aucune adresse.
+      expect(out).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+      expect(out).toContain('no servers could be reached');
     }, LONG);
+
+    // Gap connu, non couvert ici : `dig` n'implémente que `run()`, qui rend
+    // la vue tty (stdout et stderr fusionnés). Séparer les deux flux et
+    // porter le vrai code de sortie (9 quand aucun serveur ne répond)
+    // demande aussi `runWithStatusSync` — le pont script est synchrone et
+    // ne peut pas attendre une promesse. Sans lui, `dig +short ... >
+    // fichier` capture le diagnostic, et `$?` reste 0.
 
     it('l\'accès par IP directe continue de fonctionner', async () => {
       dns.dnsService.stop();

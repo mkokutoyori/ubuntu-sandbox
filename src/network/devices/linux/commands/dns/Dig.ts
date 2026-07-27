@@ -37,6 +37,8 @@ export const digCommand: LinuxCommand = {
     '  name          The domain name to look up.\n' +
     '  type          The query type (A, AAAA, MX, NS, etc.).',
 
+  // Typed at a prompt: the tty shows stdout and stderr together, so the
+  // merged form is the faithful one here.
   run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     return executeDig(
       args,
@@ -45,4 +47,5 @@ export const digCommand: LinuxCommand = {
       (path) => ctx.executor.readFile(path),
     );
   },
+
 };

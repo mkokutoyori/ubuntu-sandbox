@@ -180,6 +180,16 @@ export class SshInteractiveSubShell implements ISubShell {
   private cwd: string;
   /** True while a runLine() call is outstanding (streaming or not). */
   private inFlight = false;
+  /**
+   * Resolves when the outstanding runLine() settles. A streaming job
+   * prints its last line (a ping's statistics, say) before its call
+   * returns, so the operator sees a finished command and types the next
+   * one while `inFlight` is still true. Holding the promise lets that
+   * line wait its turn instead of being swallowed.
+   */
+  private inFlightRun: Promise<void> | null = null;
+  /** Set once Ctrl+C has been forwarded for the outstanding job. */
+  private interruptSent = false;
   /** Set while `su`'s password broker is waiting on handleInput(). */
   /**
    * A command the remote will only run once we hand it one password —
@@ -346,6 +356,7 @@ export class SshInteractiveSubShell implements ISubShell {
   interruptForeground(): boolean {
     if (this.nestedHop) return this.nestedHop.interruptForeground();
     if (!this.inFlight) return false;
+    this.interruptSent = true;
     this.channel.sendSignal('SIGINT');
     return true;
   }
@@ -366,11 +377,18 @@ export class SshInteractiveSubShell implements ISubShell {
     }
 
     if (this.inFlight) {
-      // Mirror the local terminal's hasForegroundAsyncJob guard: a
-      // streaming job (e.g. ping) already owns this channel's one
-      // outstanding runLine() slot — swallow Enter as a blank line
-      // rather than racing a second runLine() call against it.
-      return done([''], this.getPrompt());
+      // A job that has been interrupted is on its way out: let the line
+      // wait for it rather than dropping it, or the first command typed
+      // after Ctrl+C would silently do nothing.
+      if (this.interruptSent && this.inFlightRun) {
+        await this.inFlightRun.catch(() => undefined);
+      } else {
+        // Mirror the local terminal's hasForegroundAsyncJob guard: a
+        // streaming job (e.g. ping) already owns this channel's one
+        // outstanding runLine() slot — swallow Enter as a blank line
+        // rather than racing a second runLine() call against it.
+        return done([''], this.getPrompt());
+      }
     }
 
     const trimmed = line.trim();
@@ -463,10 +481,15 @@ export class SshInteractiveSubShell implements ISubShell {
     };
     const off = this.channel.onData(emit);
     this.inFlight = true;
+    this.interruptSent = false;
+    const running = this.run(trimmed);
+    this.inFlightRun = running.then(() => undefined, () => undefined);
     try {
-      await this.run(trimmed);
+      await running;
     } finally {
       this.inFlight = false;
+      this.interruptSent = false;
+      this.inFlightRun = null;
       off();
     }
     // Every line of output — streamed chunks and the final one-shot merged

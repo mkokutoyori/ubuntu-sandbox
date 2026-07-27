@@ -147,8 +147,18 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
   return groups;
 }
 
-function noServersLine(banner: string): string {
-  return `; <<>> DiG <<>> ${banner}\n;; connection timed out; no servers could be reached`;
+/** The one diagnostic dig writes to stderr when no server answered. */
+export const DIG_NO_SERVERS = ';; connection timed out; no servers could be reached';
+
+/**
+ * What a terminal shows when nothing answered. `+short` suppresses the
+ * banner and every comment line from stdout, but the diagnostic is a
+ * stderr line: a tty still displays it, `2>/dev/null` or a capture does
+ * not. `digStreams()` is what separates the two for callers that care.
+ */
+function noServersLine(banner: string, short = false): string {
+  if (short) return DIG_NO_SERVERS;
+  return `; <<>> DiG <<>> ${banner}\n${DIG_NO_SERVERS}`;
 }
 
 function shortOutput(answers: readonly ResourceRecord<ResourceRecordData>[]): string {
@@ -342,7 +352,7 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
     : invocation.domain;
 
   if (!invocation.server || !isIpLiteral(invocation.server)) {
-    return noServersLine(banner);
+    return noServersLine(banner, invocation.short);
   }
 
   if (invocation.trace) {
@@ -365,7 +375,7 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
     );
     if (message) break;
   }
-  if (!message) return noServersLine(banner);
+  if (!message) return noServersLine(banner, invocation.short);
 
   // RFC 1035 §4.2.1 — real dig retries TC=1 over TCP by default.
   if (message.flags.tc && !options.tcp) {
