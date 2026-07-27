@@ -65,7 +65,7 @@ async function buildHuaweiLan(): Promise<{ pc: LinuxPC; huawei: HuaweiRouter }> 
 async function openInteractiveSession(pc: LinuxPC, ip: string): Promise<IShell> {
   const attempt = await tryInterpretSshLaunch(`ssh ${ROUTER_SSH_USER}@${ip}`, launchOpts(pc));
   expect(attempt?.kind).toBe('pending');
-  const finalised = finalisePendingAuth(
+  const finalised = await finalisePendingAuth(
     (attempt as { pendingAuth: Parameters<typeof finalisePendingAuth>[0] }).pendingAuth,
     ROUTER_SSH_PASSWORD,
   );

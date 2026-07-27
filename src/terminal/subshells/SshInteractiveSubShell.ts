@@ -81,7 +81,7 @@ function shQuote(value: string): string {
 }
 
 /** Minimal in-process equivalent of LinuxTerminalSession's findLinuxMachineByIp(). */
-function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
+export function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
   const all = (Equipment as unknown as { getAllEquipment: () => unknown[] }).getAllEquipment();
   for (const eq of all) {
     if (!(eq instanceof LinuxMachine)) continue;

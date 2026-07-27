@@ -18,11 +18,14 @@ import { IPAddress } from '@/network/core/types';
 import { isCredentialAuthenticator } from '@/network/equipment/HostCapabilities';
 import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
-import { CrossVendorRemoteShell } from './CrossVendorRemoteShell';
+import { WireRemoteShell } from './WireRemoteShell';
+import { openWireSshShell } from '@/terminal/ssh/wireSshLogin';
+import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
+import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
 import { readForceCommand } from '@/network/devices/linux/network/LinuxSshClient';
-import { pathLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { transportLiveness } from '@/network/protocols/ssh/sessionLiveness';
 
 /** Tokenise an ssh command line into flags, optional value, user/host, and remaining argv. */
 interface ParsedSshLine {
@@ -117,6 +120,9 @@ export interface PendingSshAuth {
   /** Source IP / hostname propagated for auth.log + last-login records. */
   sourceIp?: string;
   sourceHostname?: string;
+  /** Local account the client runs as — picks which known_hosts store
+   *  the connection reads and writes. */
+  sourceUser?: string;
   /** The launching device — see {@link SshLaunchOptions.sourceDevice}. */
   sourceDevice?: Equipment;
   /** Carried across the password round-trip so the established session
@@ -260,6 +266,7 @@ export async function tryInterpretSshLaunch(
         knownHostsTracker: opts.knownHostsTracker,
         sourceIp: opts.sourceIp,
         sourceHostname: opts.sourceHostname,
+        sourceUser: opts.defaultUser,
         sourceDevice: opts.sourceDevice,
         wireProbe: opts.wireProbe,
       },
@@ -281,6 +288,7 @@ export async function tryInterpretSshLaunch(
       knownHostsTracker: opts.knownHostsTracker,
       sourceIp: opts.sourceIp,
       sourceHostname: opts.sourceHostname,
+      sourceUser: opts.defaultUser,
       sourceDevice: opts.sourceDevice,
       wireProbe: opts.wireProbe,
     },
@@ -356,10 +364,10 @@ function checkKnownHosts(auth: PendingSshAuth): 'changed' | 'ok' | 'unsupported'
  * (host-key change, ForceCommand=internal-sftp) before handing back a
  * live interactive shell.
  */
-export function finalisePendingAuth(
+export async function finalisePendingAuth(
   auth: PendingSshAuth,
   password: string,
-): FinaliseAuthOutcome {
+): Promise<FinaliseAuthOutcome> {
   if (!verifyCredentials(auth.target, auth.user, password)) {
     auth.attempts++;
     // Best-effort: record the failure for auth.log realism -- this is also
@@ -379,9 +387,13 @@ export function finalisePendingAuth(
     return { kind: 'bad-password' };
   }
 
+  // known_hosts is compared once, here: this check reads the target's
+  // real host key and records it on first connection, so the connection
+  // below is told not to repeat it rather than have two verdicts.
   if (checkKnownHosts(auth) === 'changed') {
     return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
   }
+
   const forced = readForceCommand(
     auth.target as unknown as Parameters<typeof readForceCommand>[0],
     auth.user, auth.sourceIp, auth.sourceHostname,
@@ -408,42 +420,80 @@ export function finalisePendingAuth(
       close: (id: string, reason?: string) => unknown;
     };
   }).getSshSessionRegistry?.();
+  if (!auth.sourceDevice) {
+    // Without the device that typed `ssh` there is nothing to connect
+    // FROM. Dialling the target from itself would look fine and prove
+    // nothing, so the launch fails instead.
+    return {
+      kind: 'refused',
+      message: `ssh: connect to host ${auth.host} port ${auth.port}: Network is unreachable`,
+    };
+  }
+
+  // The credentials were accepted, so open the connection they belong to
+  // and drive the remote over it. Its prompt, completion, sub-shells,
+  // editors and challenges are answered by the server on this channel
+  // rather than reproduced locally.
+  // The line is taken only once the connection is really up, so a login
+  // that fails on the wire does not hold one.
+  const outcome = await openWireSshShell({
+    device: auth.sourceDevice,
+    localUser: auth.sourceUser ?? auth.user,
+    user: auth.user,
+    host: auth.host,
+    port: auth.port,
+    io: silentConnectIo(),
+    password,
+    strict: 'no',
+  });
+  if (outcome.kind !== 'connected') {
+    if (outcome.kind === 'host-key-changed') {
+      return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
+    }
+    if (outcome.kind === 'auth-failed') return { kind: 'bad-password' };
+    if (outcome.kind === 'cancelled') return { kind: 'refused', message: '' };
+    return { kind: 'refused', message: outcome.message };
+  }
+
   const session = registry?.open({
     user: auth.user,
     fromIp: clientIp,
     fromHost: auth.sourceHostname,
     peerPort: clientPort,
   }) ?? null;
-  const shell = new CrossVendorRemoteShell({
+
+  const promptHost = (auth.target as unknown as { getSshHostname?: () => string })
+    .getSshHostname?.() ?? auth.host;
+  const wire = new SshInteractiveSubShell(
+    outcome.session, outcome.channel, auth.user, auth.host,
+    `/home/${auth.user}`,
+    () => outcome.session.disconnect(),
+    promptHost, findLinuxMachineByIp(auth.host) ?? undefined,
+    transportLiveness(outcome.session),
+  );
+  const shell = new WireRemoteShell({
     device: auth.target,
     user: auth.user,
     remoteHost: auth.host,
     primaryKind: auth.primaryKind,
+    wire,
     sshConnection,
     sshClient,
-    probeAlive: livenessProbeFor(auth),
     onClose: () => { if (session) registry?.close(session.id, 'logout'); },
   });
   return { kind: 'success', shell, banner };
 }
 
 /**
- * Re-probe the established session's transport on the same wire that
- * opened it. Returns undefined when the launcher had no probe to begin
- * with, leaving such sessions exactly as they were.
+ * The password is already in hand at this point, so the connection needs
+ * no keyboard: anything the SSH layer would ask goes nowhere.
  */
-function livenessProbeFor(auth: PendingSshAuth): (() => boolean) | undefined {
-  const probe = auth.wireProbe;
-  if (!probe) return undefined;
-  const host = IPAddress.isValid(auth.host) ? auth.host : firstConfiguredIp(auth.target);
-  if (!host) return undefined;
-  const source = auth.sourceIp ?? firstConfiguredIp(auth.sourceDevice ?? auth.target);
-  if (!source) return undefined;
-  // This push holds no socket of its own, so liveness is read from the
-  // cabled topology rather than provoked with a handshake: re-probing
-  // per command made the remote log an accept/close pair every time
-  // (src/network/protocols/ssh/sessionLiveness.ts).
-  return pathLiveness(source, host);
+function silentConnectIo(): QueuedTerminalIO {
+  return new QueuedTerminalIO({
+    writeLine: () => undefined,
+    beginPrompt: () => undefined,
+    endPrompt: () => undefined,
+  });
 }
 
 function firstConfiguredIp(dev: Equipment): string | undefined {

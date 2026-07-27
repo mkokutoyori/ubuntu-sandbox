@@ -57,6 +57,8 @@ export type WireSshLoginOutcome =
   | { kind: 'connected'; session: SshSession; channel: ReturnType<SshSession['openShellChannel']> extends { value: infer C } ? C : never }
   | { kind: 'unreachable'; message: string }
   | { kind: 'rejected'; message: string }
+  /** The host presented a key that differs from the stored one. */
+  | { kind: 'host-key-changed' }
   /** Authentication failed — already reported to the user by the SSH layer. */
   | { kind: 'auth-failed' }
   | { kind: 'cancelled' };
@@ -130,7 +132,8 @@ export async function openWireSshShell(
     if (errKind === 'CONNECTION_REFUSED') {
       return { kind: 'unreachable', message: `ssh: connect to host ${req.host} port ${req.port}: No route to host` };
     }
-    if (errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED') {
+    if (errKind === 'HOST_KEY_CHANGED') return { kind: 'host-key-changed' };
+    if (errKind === 'HOST_KEY_REJECTED') {
       return { kind: 'rejected', message: 'Host key verification failed.' };
     }
     return { kind: 'rejected', message: `${req.user}@${req.host}: Permission denied (publickey,password).` };
