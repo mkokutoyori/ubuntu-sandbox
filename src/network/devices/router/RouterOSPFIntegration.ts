@@ -18,6 +18,7 @@ import {
   createIPv4Packet,
 } from '../../core/types';
 import { Equipment } from '../../equipment/Equipment';
+import { resolveAcrossTransparentDevices } from '../../equipment/TopologyWalk';
 import { ipv4MulticastToMac } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { OSPFEngine } from '../../ospf/OSPFEngine';
@@ -655,7 +656,8 @@ export class RouterOSPFIntegration {
     this.ospfEngine.neighborEvent(ospfIface, neighbor, 'KillNbr');
   }
 
-  /** Collect all OSPF routers in the domain via BFS through cables/switches */
+  /** Collect all OSPF routers in the domain — BFS through cables,
+   *  transparently crossing any number of chained switches/hubs. */
   private collectOSPFDomain(): RouterOSPFIntegration[] {
     const visited = new Set<string>();
     const queue: RouterOSPFIntegration[] = [this];
@@ -665,7 +667,6 @@ export class RouterOSPFIntegration {
     while (queue.length > 0) {
       const current = queue.shift()!;
       allPeers.push(current);
-
       if (!current.ospfEngine) continue;
 
       for (const [, port] of current.ctx.getPorts()) {
@@ -673,31 +674,15 @@ export class RouterOSPFIntegration {
         if (!cable) continue;
         const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
         if (!remotePort) continue;
-        const remoteId = remotePort.getEquipmentId();
 
-        if (visited.has(remoteId)) continue;
-        const remoteOSPF = RouterOSPFIntegration.getByEquipmentId(remoteId);
-        if (remoteOSPF?.ospfEngine) {
-          visited.add(remoteId);
-          queue.push(remoteOSPF);
-        } else {
-          // Switch/Hub — find all other routers connected to it
-          const remoteEquip = Equipment.getById(remoteId);
-          if (!remoteEquip) continue;
-          for (const swPort of remoteEquip.getPorts()) {
-            if (swPort === remotePort) continue;
-            const swCable = swPort.getCable();
-            if (!swCable) continue;
-            const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-            if (!otherEnd) continue;
-            const otherId = otherEnd.getEquipmentId();
-            if (visited.has(otherId)) continue;
-            const otherOSPF = RouterOSPFIntegration.getByEquipmentId(otherId);
-            if (otherOSPF?.ospfEngine) {
-              visited.add(otherId);
-              queue.push(otherOSPF);
-            }
-          }
+        const found = resolveAcrossTransparentDevices(
+          remotePort,
+          e => !!RouterOSPFIntegration.getByEquipmentId(e.getId())?.ospfEngine,
+        );
+        for (const { device } of found) {
+          if (visited.has(device.getId())) continue;
+          visited.add(device.getId());
+          queue.push(RouterOSPFIntegration.getByEquipmentId(device.getId())!);
         }
       }
     }
@@ -779,60 +764,28 @@ export class RouterOSPFIntegration {
         if (!cable) continue;
         const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
         if (!remotePort) continue;
-        const remoteId = remotePort.getEquipmentId();
-        if (visited.has(remoteId)) continue;
 
-        const remoteOSPF = RouterOSPFIntegration.getByEquipmentId(remoteId);
-        if (remoteOSPF?.ospfv3Engine) {
-          visited.add(remoteId);
-          queue.push(remoteOSPF);
-        } else {
-          const remoteEquip = Equipment.getById(remoteId);
-          if (!remoteEquip) continue;
-          for (const swPort of remoteEquip.getPorts()) {
-            if (swPort === remotePort) continue;
-            const swCable = swPort.getCable();
-            if (!swCable) continue;
-            const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-            if (!otherEnd) continue;
-            const otherId = otherEnd.getEquipmentId();
-            if (visited.has(otherId)) continue;
-            const otherOSPF = RouterOSPFIntegration.getByEquipmentId(otherId);
-            if (otherOSPF?.ospfv3Engine) {
-              visited.add(otherId);
-              queue.push(otherOSPF);
-            }
-          }
+        const found = resolveAcrossTransparentDevices(
+          remotePort,
+          e => !!RouterOSPFIntegration.getByEquipmentId(e.getId())?.ospfv3Engine,
+        );
+        for (const { device } of found) {
+          if (visited.has(device.getId())) continue;
+          visited.add(device.getId());
+          queue.push(RouterOSPFIntegration.getByEquipmentId(device.getId())!);
         }
       }
     }
     return allPeers;
   }
 
-  /** Collect candidate OSPFv3 routers connected to a remote port */
+  /** Collect candidate OSPFv3 routers connected to a remote port —
+   *  transparently crossing any number of chained switches/hubs. */
   private collectV3CandidateRouters(remotePort: Port): Array<{ ospf: RouterOSPFIntegration; port: Port }> {
-    const candidates: Array<{ ospf: RouterOSPFIntegration; port: Port }> = [];
-    const remoteEquipId = remotePort.getEquipmentId();
-    const remoteOSPF = RouterOSPFIntegration.getByEquipmentId(remoteEquipId);
-
-    if (remoteOSPF?.ospfv3Engine) {
-      candidates.push({ ospf: remoteOSPF, port: remotePort });
-    } else {
-      const remoteEquip = Equipment.getById(remoteEquipId);
-      if (!remoteEquip) return candidates;
-      for (const swPort of remoteEquip.getPorts()) {
-        if (swPort === remotePort) continue;
-        const swCable = swPort.getCable();
-        if (!swCable) continue;
-        const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-        if (!otherEnd) continue;
-        const otherOSPF = RouterOSPFIntegration.getByEquipmentId(otherEnd.getEquipmentId());
-        if (otherOSPF?.ospfv3Engine) {
-          candidates.push({ ospf: otherOSPF, port: otherEnd });
-        }
-      }
-    }
-    return candidates;
+    return resolveAcrossTransparentDevices(
+      remotePort,
+      e => !!RouterOSPFIntegration.getByEquipmentId(e.getId())?.ospfv3Engine,
+    ).map(({ device, port }) => ({ ospf: RouterOSPFIntegration.getByEquipmentId(device.getId())!, port }));
   }
 
   /** Form OSPFv3 neighbor adjacency via the engine FSM (Down→Init→ExStart→Full) */
@@ -1527,39 +1480,19 @@ export class RouterOSPFIntegration {
   private findNextHopTo(target: RouterOSPFIntegration): { nextHop: string; iface: string; cost: number } | null {
     if (!this.ospfEngine) return null;
 
-    // Direct neighbor?
+    // Direct neighbor? — transparently crosses any number of switches/hubs.
     for (const [portName, port] of this.ctx.getPorts()) {
       const cable = port.getCable();
       if (!cable) continue;
       const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
       if (!remotePort) continue;
-      const remoteEquipId = remotePort.getEquipmentId();
 
-      if (remoteEquipId === target.ctx.id) {
-        const remoteIP = remotePort.getIPAddress()?.toString();
+      const hit = resolveAcrossTransparentDevices(remotePort, e => e.getId() === target.ctx.id)[0];
+      if (hit) {
+        const remoteIP = hit.port.getIPAddress()?.toString();
         if (remoteIP) {
           const localIface = this.ospfEngine.getInterface(portName);
           return { nextHop: remoteIP, iface: portName, cost: localIface?.cost ?? 1 };
-        }
-      }
-
-      // Check through switch
-      if (!RouterOSPFIntegration.getByEquipmentId(remoteEquipId)) {
-        const remoteEquip = Equipment.getById(remoteEquipId);
-        if (!remoteEquip) continue;
-        for (const swPort of remoteEquip.getPorts()) {
-          if (swPort === remotePort) continue;
-          const swCable = swPort.getCable();
-          if (!swCable) continue;
-          const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-          if (!otherEnd) continue;
-          if (otherEnd.getEquipmentId() === target.ctx.id) {
-            const remoteIP = otherEnd.getIPAddress()?.toString();
-            if (remoteIP) {
-              const localIface = this.ospfEngine.getInterface(portName);
-              return { nextHop: remoteIP, iface: portName, cost: localIface?.cost ?? 1 };
-            }
-          }
         }
       }
     }
@@ -1586,32 +1519,18 @@ export class RouterOSPFIntegration {
       if (!cable) continue;
       const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
       if (!remotePort) continue;
-      const remoteEquipId = remotePort.getEquipmentId();
 
-      const tryAdd = (peer: RouterOSPFIntegration, rPort: Port) => {
-        if (visited.has(peer.ctx.id) || !peer.ospfEngine) return;
-        const remoteIP = rPort.getIPAddress()?.toString();
-        if (!remoteIP) return;
-        const localIface = this.ospfEngine!.getInterface(portName);
+      const found = resolveAcrossTransparentDevices(
+        remotePort, e => !!RouterOSPFIntegration.getByEquipmentId(e.getId()),
+      );
+      for (const { device, port: viaPort } of found) {
+        const peer = RouterOSPFIntegration.getByEquipmentId(device.getId())!;
+        if (visited.has(peer.ctx.id) || !peer.ospfEngine) continue;
+        const remoteIP = viaPort.getIPAddress()?.toString();
+        if (!remoteIP) continue;
+        const localIface = this.ospfEngine.getInterface(portName);
         visited.add(peer.ctx.id);
         queue.push({ peer, nextHop: remoteIP, iface: portName, cost: localIface?.cost ?? 1 });
-      };
-
-      const remoteOSPF = RouterOSPFIntegration.getByEquipmentId(remoteEquipId);
-      if (remoteOSPF) {
-        tryAdd(remoteOSPF, remotePort);
-      } else {
-        const remoteEquip = Equipment.getById(remoteEquipId);
-        if (!remoteEquip) continue;
-        for (const swPort of remoteEquip.getPorts()) {
-          if (swPort === remotePort) continue;
-          const swCable = swPort.getCable();
-          if (!swCable) continue;
-          const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-          if (!otherEnd) continue;
-          const otherOSPF = RouterOSPFIntegration.getByEquipmentId(otherEnd.getEquipmentId());
-          if (otherOSPF) tryAdd(otherOSPF, otherEnd);
-        }
       }
     }
 
@@ -1624,31 +1543,16 @@ export class RouterOSPFIntegration {
         if (!cable) continue;
         const rp = cable.getPortA() === p ? cable.getPortB() : cable.getPortA();
         if (!rp) continue;
-        const rid = rp.getEquipmentId();
-        if (visited.has(rid)) continue;
-        const re = RouterOSPFIntegration.getByEquipmentId(rid);
-        if (re?.ospfEngine) {
-          visited.add(rid);
+
+        const found = resolveAcrossTransparentDevices(
+          rp, e => !!RouterOSPFIntegration.getByEquipmentId(e.getId())?.ospfEngine,
+        );
+        for (const { device } of found) {
+          if (visited.has(device.getId())) continue;
+          const re = RouterOSPFIntegration.getByEquipmentId(device.getId())!;
+          visited.add(device.getId());
           const currIface = curr.ospfEngine?.getInterface(pn);
           queue.push({ peer: re, nextHop, iface, cost: cost + (currIface?.cost ?? 1) });
-        } else {
-          const equip = Equipment.getById(rid);
-          if (!equip) continue;
-          for (const swPort of equip.getPorts()) {
-            if (swPort === rp) continue;
-            const swCable = swPort.getCable();
-            if (!swCable) continue;
-            const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-            if (!otherEnd) continue;
-            const oid = otherEnd.getEquipmentId();
-            if (visited.has(oid)) continue;
-            const oe = RouterOSPFIntegration.getByEquipmentId(oid);
-            if (oe?.ospfEngine) {
-              visited.add(oid);
-              const currIface = curr.ospfEngine?.getInterface(pn);
-              queue.push({ peer: oe, nextHop, iface, cost: cost + (currIface?.cost ?? 1) });
-            }
-          }
         }
       }
     }
