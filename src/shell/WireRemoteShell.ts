@@ -98,12 +98,14 @@ export class WireRemoteShell implements IShell {
   }
 
   async processLine(line: string): Promise<ShellLineResult> {
-    if (this.finished) return { output: [], exit: true };
+    // The session ends exactly once. Reporting `exit` again on a later
+    // call would unwind a second frame — the one that launched `ssh`.
+    if (this.finished) return { output: [] };
     return this.adapt(await this.wire.processLine(line));
   }
 
   async handleInput(value: string): Promise<ShellLineResult> {
-    if (this.finished) return { output: [], exit: true };
+    if (this.finished) return { output: [] };
     return this.adapt(await this.wire.handleInput(value));
   }
 

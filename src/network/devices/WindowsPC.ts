@@ -2891,6 +2891,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     isNested(): boolean;
     lastClearedScreen(): boolean;
     lastPendingInput(): { kind: 'password' | 'text'; promptText: string } | null;
+    lastEndedSession(): boolean;
     handleInput(value: string): Promise<string>;
   } | null {
     let stack: CrossVendorRemoteShell;
@@ -2908,10 +2909,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // than silently dropped (docs/PRD-SSH-Unification.md §4bis B4).
     let cleared = false;
     let pending: { kind: 'password' | 'text'; promptText: string } | null = null;
-    const absorb = (result: { output: readonly string[]; clearScreen?: boolean;
+    // `exit` at the bottom cmd logs the channel out. The exit word is the
+    // remote's own, so the remote is what says the session is over — a
+    // client cannot tell that from the text alone.
+    let ended = false;
+    const absorb = (result: { output: readonly string[]; clearScreen?: boolean; exit?: boolean;
       pendingInput?: { kind: 'password' | 'text'; promptText: string } }) => {
       cleared = result.clearScreen === true;
       pending = result.pendingInput ?? null;
+      ended = result.exit === true;
       return result.output.join('\n');
     };
     return {
@@ -2919,9 +2925,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       handleInput: async (value: string) => absorb(await stack.handleInput(value)),
       getPrompt: () => stack.getPrompt(),
       getCompletions: (line: string) => [...stack.getCompletions(line)],
-      isNested: () => stack.topKind !== 'cmd',
+      isNested: () => stack.depth > 1,
       lastClearedScreen: () => cleared,
       lastPendingInput: () => pending,
+      lastEndedSession: () => ended,
     };
   }
   setCwd(path: string): void { this.cwd = path; }

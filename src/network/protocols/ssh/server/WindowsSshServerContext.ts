@@ -125,6 +125,7 @@ export class WindowsSshServerContext implements ISshServerContext {
             exitCode: 0,
             clearScreen: vty.lastClearedScreen?.() ?? false,
             pendingInput: vty.lastPendingInput?.() ?? undefined,
+            sessionEnded: vty.lastEndedSession?.() ?? false,
           };
         },
         provideInput: vty.handleInput
@@ -136,6 +137,7 @@ export class WindowsSshServerContext implements ISshServerContext {
                 exitCode: 0,
                 clearScreen: vty.lastClearedScreen?.() ?? false,
                 pendingInput: vty.lastPendingInput?.() ?? undefined,
+                sessionEnded: vty.lastEndedSession?.() ?? false,
               };
             }
           : undefined,
