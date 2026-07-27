@@ -227,8 +227,17 @@ describe('Group 2: Functional — DORA Process', () => {
       await router.executeCommand('ip dhcp excluded-address 192.168.10.1 192.168.10.10');
       await router.executeCommand('end');
       
-      // Connect all devices
-      // ... connection code ...
+      // Cable the lab: without a segment to broadcast on, no client can
+      // reach the server (docs/PRD-Frame-Only-Refactor.md P5).
+      new Cable('mc0').connect(router.getPorts()[0], switch1.getPorts()[0]);
+      new Cable('mc1').connect(pc1.getPorts()[0], switch1.getPorts()[1]);
+      new Cable('mc2').connect(pc2.getPorts()[0], switch1.getPorts()[2]);
+      new Cable('mc3').connect(pc3.getPorts()[0], switch1.getPorts()[3]);
+      for (const cmd of [
+        'enable', 'configure terminal',
+        `interface ${router.getPortNames()[0]}`,
+        'ip address 192.168.10.1 255.255.255.0', 'no shutdown', 'end',
+      ]) await router.executeCommand(cmd);
       
       // Request IPs simultaneously
       const promises = [
@@ -266,10 +275,16 @@ describe('Group 2: Functional — DORA Process', () => {
 
       const router = new CiscoRouter('DHCP-Server');
       const pc = new LinuxPC('linux-pc', 'PC1');
+      new Cable('rc1').connect(pc.getPorts()[0], router.getPorts()[0]);
 
       // Configure DHCP with short lease for testing
       await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
+      await router.executeCommand(`interface ${router.getPortNames()[0]}`);
+      await router.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await router.executeCommand('no shutdown');
+      await router.executeCommand('exit');
+      await router.executeCommand('ip dhcp excluded-address 10.0.0.1');
       await router.executeCommand('ip dhcp pool TEST');
       await router.executeCommand('network 10.0.0.0 255.255.255.0');
       await router.executeCommand('lease 0 0 30'); // 30 seconds lease

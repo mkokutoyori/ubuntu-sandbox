@@ -35,6 +35,7 @@ async function configureCentralDhcpRouter(router: CiscoRouter, gwIp: string) {
     'interface GigabitEthernet0/0',
     'ip address 10.0.100.1 255.255.255.0',
     'no shutdown', 'exit',
+    'ip route 10.0.10.0 255.255.255.0 10.0.100.2',
     'ip dhcp excluded-address 10.0.10.1 10.0.10.99',
     'ip dhcp pool VLAN10',
     'network 10.0.10.0 255.255.255.0',
@@ -63,6 +64,15 @@ describe('Cisco L3 switch — ip helper-address relays DHCP to a central server'
       'interface Vlan10',
       'ip address 10.0.10.1 255.255.255.0',
       'ip helper-address 10.0.100.1',
+      'no shutdown', 'exit',
+      // A relay reaches its helper through its own forwarding table, so
+      // the uplink needs a routed interface in the helper's subnet —
+      // exactly what real hardware requires.
+      'vlan 100', 'exit',
+      'interface GigabitEthernet0/1',
+      'switchport mode access', 'switchport access vlan 100', 'exit',
+      'interface Vlan100',
+      'ip address 10.0.100.2 255.255.255.0',
       'no shutdown', 'exit',
       'end',
     ]) await sw.executeCommand(cmd);
@@ -122,7 +132,7 @@ describe('Huawei L3 switch — dhcp select relay + dhcp relay server-ip', () => 
 
     for (const cmd of [
       'system-view',
-      'vlan batch 10',
+      'vlan batch 10 100',
       'interface GigabitEthernet0/0/1',
       'port link-type access', 'port default vlan 10', 'quit',
       'interface Vlanif10',
@@ -130,7 +140,12 @@ describe('Huawei L3 switch — dhcp select relay + dhcp relay server-ip', () => 
       'undo shutdown',
       'dhcp select relay',
       'dhcp relay server-ip 10.0.100.1',
-      'quit', 'quit',
+      'quit',
+      'interface GigabitEthernet0/0/2',
+      'port link-type access', 'port default vlan 100', 'quit',
+      'interface Vlanif100',
+      'ip address 10.0.100.2 255.255.255.0',
+      'undo shutdown', 'quit', 'quit',
     ]) await sw.executeCommand(cmd);
 
     await configureCentralDhcpRouter(router, '10.0.10.1');

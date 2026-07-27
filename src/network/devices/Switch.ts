@@ -344,6 +344,7 @@ export abstract class Switch extends Equipment {
       ?? this._glbpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? null,
     isDhcpRelayInfoEnabled: () => this.dhcpServer.isRelayInformationOptionEnabled(),
+    getDhcpServer: () => this.dhcpServer,
     recordArp: (dir, op) => this.arpStats.record(dir, op),
   });
 

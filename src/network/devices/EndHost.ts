@@ -19,8 +19,6 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
-// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P5/P6, docs/PRD-Frame-Only-Refactor.md)
-import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -1041,101 +1039,22 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
-   * Auto-discover DHCP servers reachable through the network topology.
-   * Traverses cables and switches to find Routers with DHCP servers,
-   * and falls back to scanning all Equipment instances (simulator convenience).
+   * Kept as the entry point `dhclient` / `ipconfig /renew` call before a
+   * lease request, but it no longer discovers anything: a client finds
+   * its server by the broadcast DISCOVER it puts on the wire, and a
+   * server several L3 hops away by the relay agent that unicasts that
+   * DISCOVER to its `ip helper-address`. Both are real frame paths.
+   *
+   * It used to walk the global equipment registry instead — resolving
+   * the cabled neighbour, then every helper address, then (for an
+   * uncabled host) every device in the simulation — and hand the client
+   * a direct object handle to the server. That let a client hold a lease
+   * from a server it had no physical path to.
+   *
+   * docs/PRD-Frame-Only-Refactor.md P5.
    */
   autoDiscoverDHCPServers(): void {
     this.dhcpClient.clearServers();
-    const visited = new Set<string>();
-
-    // Helper: check if an Equipment is a Router with a DHCP server
-    const tryRegisterRouter = (equip: Equipment) => {
-      if (visited.has(equip.getId())) return;
-      visited.add(equip.getId());
-      // Use duck-typing to check for getDHCPServer method (avoids circular import of Router)
-      const router = equip as any;
-      if (typeof router.getDHCPServer === 'function') {
-        const dhcpServer: DHCPServer = router.getDHCPServer();
-        if (dhcpServer && dhcpServer.isEnabled()) {
-          // Find a configured IP to use as server identifier. Physical
-          // port IPs cover routers; L3 switches expose IPs only through
-          // their Vlanif SVIs (their physical ports stay L2), so fall
-          // back to the SVI list when no port carries an address.
-          const routerPorts = equip.getPorts();
-          let serverIP = '0.0.0.0';
-          for (const rPort of routerPorts) {
-            const ip = rPort.getIPAddress();
-            if (ip) { serverIP = ip.toString(); break; }
-          }
-          if (serverIP === '0.0.0.0' && typeof router.getSvis === 'function') {
-            const svis = router.getSvis() as { ip?: { toString(): string } }[];
-            const sviIp = svis.find((s) => s.ip)?.ip?.toString();
-            if (sviIp) serverIP = sviIp;
-          }
-          this.dhcpClient.registerServer(dhcpServer, serverIP);
-        }
-      }
-    };
-
-    // Strategy 1: Traverse physical topology from our ports
-    for (const [, port] of this.ports) {
-      const cable = port.getCable();
-      if (!cable) continue;
-      const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
-      if (!remotePort) continue;
-      const remoteId = remotePort.getEquipmentId();
-      const remoteEquip = EquipmentRegistry.getInstance().getById(remoteId);
-      if (!remoteEquip) continue;
-
-      // Direct connection to a Router
-      tryRegisterRouter(remoteEquip);
-
-      // If connected to a Switch, traverse through the switch's other ports.
-      // We can't rely on the DeviceType string alone (test fixtures often
-      // pass arbitrary ids as the type), so also duck-type by the SVI
-      // surface — any L2/L3 switch in the simulator exposes getSvis.
-      const remoteType = remoteEquip.getDeviceType();
-      const looksLikeSwitch =
-        remoteType.includes('switch')
-        || typeof (remoteEquip as unknown as { getSvis?: unknown }).getSvis === 'function';
-      if (looksLikeSwitch) {
-        // DHCP relay (ip helper-address / dhcp relay server-ip): even
-        // when the upstream DHCP server is several L3 hops away, the
-        // L3 switch's SVI explicitly points clients at it. Resolve each
-        // helper IP to its hosting Equipment and register its server.
-        const helperBearer = remoteEquip as unknown as {
-          getDhcpHelpersForIngressPort?: (port: string) => string[];
-        };
-        const helpers = helperBearer.getDhcpHelpersForIngressPort?.(remotePort.getName()) ?? [];
-        for (const helperIp of helpers) {
-          for (const candidate of EquipmentRegistry.getInstance().getAll()) {
-            if (candidate.getPorts().some((p) => p.getIPAddress()?.toString() === helperIp)) {
-              tryRegisterRouter(candidate);
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Strategy 2: Fallback — scan all Equipment instances.
-    //
-    // This is a pure unit-test convenience for hosts that were never cabled
-    // into a topology. A host that HAS at least one cabled interface must never
-    // reach a DHCP server it cannot physically touch: real DHCP relies on a
-    // broadcast on the local segment (already attempted first over the wire) or
-    // a configured relay (ip helper-address). Letting a cabled host pull a lease
-    // from a globally-scanned server would break subnet isolation — exactly the
-    // god-mode shortcut this refactoring is removing. So the global scan is
-    // gated on the host being entirely uncabled.
-    const hasCabledInterface = [...this.ports.values()].some((p) => p.getCable());
-    if (!hasCabledInterface && this.dhcpClient['connectedServers'].length === 0) {
-      for (const equip of EquipmentRegistry.getInstance().getAll()) {
-        if (equip === this) continue;
-        tryRegisterRouter(equip);
-      }
-    }
   }
 
   // ─── Routing Table Management ──────────────────────────────────

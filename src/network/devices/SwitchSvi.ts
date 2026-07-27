@@ -7,6 +7,8 @@ import {
 import { Logger } from '../core/Logger';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
+import type { DHCPServer } from '../dhcp/DHCPServer';
+import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
 
 /** A Switched Virtual Interface. Exists (IP-less) once `interface Vlan N` is
  *  entered; gains an address on `ip address`. */
@@ -49,6 +51,11 @@ export interface SviHost {
   fhrpVipArpOwner?(vlanIf: string, targetIp: string, requesterIp: string): string | null;
   /** RFC 3046 Option 82 insertion on relay, shared with the box's DHCP server config. */
   isDhcpRelayInfoEnabled?(): boolean;
+  /**
+   * The box's own DHCP server, when it is serving its VLANs rather than
+   * relaying them. Absent on a pure L2 switch.
+   */
+  getDhcpServer?(): DHCPServer | undefined;
   recordArp?(dir: 'rx' | 'tx', op: 'request' | 'reply'): void;
 }
 
@@ -257,11 +264,12 @@ export class SwitchSvi {
       // DHCP relay: a client's DISCOVER/REQUEST is broadcast (dstMAC is not
       // ours), so this runs ahead of the forUs gate below — same treatment
       // as a broadcast ARP request, answered/relayed but still flooded.
-      if (!forUs && ip.protocol === IP_PROTO_UDP && svi.helperAddresses.length > 0) {
+      if (!forUs && ip.protocol === IP_PROTO_UDP) {
         const udp = ip.payload as UDPPacket | undefined;
         const dhcp = udp?.type === 'udp' ? udp.payload : undefined;
         if (udp?.destinationPort === 67 && dhcp instanceof DHCPPacket && dhcp.op === 1) {
-          this.relayDhcpToHelpers(svi, dhcp);
+          if (svi.helperAddresses.length > 0) this.relayDhcpToHelpers(svi, dhcp);
+          else this.serveDhcpOnVlan(svi, dhcp);
         }
       }
 
@@ -324,6 +332,30 @@ export class SwitchSvi {
         etherType: ETHERTYPE_IPV4, payload: relayed,
       });
     }
+  }
+
+  /**
+   * The switch is the DHCP server for this VLAN (no `ip helper-address`):
+   * answer the client's broadcast on the VLAN it came in on, running the
+   * same RFC 2131 server path a router does.
+   */
+  private serveDhcpOnVlan(svi: SviInterface, pkt: DHCPPacket): void {
+    const server = this.host.getDhcpServer?.();
+    if (!server || !server.isEnabled() || !svi.ip) return;
+    const reply = buildDhcpServerReply(pkt, {
+      server,
+      localGatewayIP: svi.ip.toString(),
+    });
+    if (!reply) return;
+    reply.giaddr = pkt.giaddr;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: 67, destinationPort: 68, length: 8 + 300, checksum: 0, payload: reply,
+    };
+    const out = createIPv4Packet(svi.ip, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + 300);
+    this.host.egressOnVlan(svi.vlan, {
+      srcMAC: this.host.getBridgeMac(), dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4, payload: out,
+    });
   }
 
   /** A relayed OFFER/ACK/NAK addressed back to one of our SVIs (giaddr): strip Option 82 and broadcast it onto the client's own VLAN. */

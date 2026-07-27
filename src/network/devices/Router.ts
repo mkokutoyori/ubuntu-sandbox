@@ -83,6 +83,7 @@ import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
 import type { DHCPDiscoverParams, DHCPOfferResult } from '../dhcp/types';
 import { DHCPv6Server } from '../dhcpv6/DHCPv6Server';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
@@ -2437,105 +2438,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private serveDhcpOnWire(inPort: string, pkt: DHCPPacket): void {
     const giaddr = pkt.giaddr !== '0.0.0.0' ? pkt.giaddr : undefined;
     const option82 = pkt.getOption(82) as { circuitId: string; remoteId: string } | undefined;
-    const type = pkt.getMessageType();
     if (option82) {
       this.getBus().publish({
         topic: 'dhcp.server.option82-received',
         payload: {
           deviceId: this.id, hostname: this.getHostname(),
-          messageType: type, clientMac: pkt.chaddr,
+          messageType: pkt.getMessageType(), clientMac: pkt.chaddr,
           giaddr: giaddr ?? null,
           circuitId: option82.circuitId, remoteId: option82.remoteId,
         },
       });
     }
-    let reply: DHCPPacket | null = null;
-    if (type === 'DHCPDISCOVER') {
-      const localGatewayIP = giaddr ? undefined : this.ports.get(inPort)?.getIPAddress()?.toString();
-      const discoverParams: DHCPDiscoverParams = {
-        clientMAC: pkt.chaddr, xid: pkt.xid,
-        clientIdentifier: pkt.chaddr, parameterRequestList: [],
-        giaddr, localGatewayIP,
-      };
-      let offer = this.dhcpServer.processDiscover(discoverParams);
-      if (offer && this.dhcpServer.getPingPacketCount() > 0) {
-        let attemptsLeft = 4;
-        while (offer && attemptsLeft > 0 && this.isCandidateAddressInUse(new IPAddress(offer.ip))) {
-          this.dhcpServer.addConflict(offer.ip, 'ping');
-          this.dhcpServer.cancelPendingOffer(offer.ip);
-          const next = this.dhcpServer.processDiscover(discoverParams);
-          offer = (next && next.ip !== offer.ip) ? next : null;
-          attemptsLeft--;
-        }
-      }
-      if (!offer) return;
-      reply = this.buildDhcpOfferPacket(pkt, offer);
-    } else if (type === 'DHCPREQUEST') {
-      const requested = String(pkt.getOption(50) ?? pkt.ciaddr);
-      const serverId = String(pkt.getOption(54) ?? '');
-      const result = this.dhcpServer.processRequestWithNak({
-        clientMAC: pkt.chaddr, xid: pkt.xid,
-        requestedIP: requested, clientIdentifier: pkt.chaddr,
-        serverIdentifier: serverId, giaddr,
-      } as never);
-      if (!result) return;
-      if (result.type === 'NAK' || !result.binding) {
-        reply = DHCPPacket.createNak(pkt.chaddr, pkt.xid,
-          result.serverIdentifier, result.message ?? 'requested address not available');
-      } else {
-        const pool = this.dhcpServer.getPool(result.binding.poolName);
-        reply = DHCPPacket.createAck(pkt.chaddr, pkt.xid,
-          result.binding.ipAddress, result.serverIdentifier, {
-            mask: pool?.mask ?? '255.255.255.0',
-            router: pool?.defaultRouter ?? '0.0.0.0',
-            dns: pool?.dnsServers ?? [],
-            domainName: pool?.domainName ?? undefined,
-            leaseDuration: pool?.leaseDuration ?? 86400,
-            renewalTime: pool?.renewalTime,
-            rebindingTime: pool?.rebindingTime,
-            nextServer: pool?.nextServer,
-            bootfile: pool?.bootfile,
-            netbiosServers: pool?.netbiosServers,
-            netbiosNodeType: pool?.netbiosNodeType,
-            rawOptions: pool?.options,
-          });
-      }
-    } else if (type === 'DHCPDECLINE') {
-      this.dhcpServer.processDecline({
-        clientMAC: pkt.chaddr,
-        declinedIP: String(pkt.getOption(50) ?? ''),
-        serverIdentifier: String(pkt.getOption(54) ?? ''),
-        clientIdentifier: pkt.chaddr,
-      });
-      return;
-    } else if (type === 'DHCPRELEASE') {
-      this.dhcpServer.processRelease({
-        clientMAC: pkt.chaddr,
-        clientIP: pkt.ciaddr,
-        serverIdentifier: String(pkt.getOption(54) ?? ''),
-        clientIdentifier: pkt.chaddr,
-      });
-      return;
-    }
+    const reply = buildDhcpServerReply(pkt, {
+      server: this.dhcpServer,
+      localGatewayIP: this.ports.get(inPort)?.getIPAddress()?.toString(),
+      isAddressInUse: (ip) => this.isCandidateAddressInUse(new IPAddress(ip)),
+    });
     if (!reply) return;
     this.dispatchDhcpReply(inPort, pkt, reply, option82, giaddr);
-  }
-
-  private buildDhcpOfferPacket(pkt: DHCPPacket, offer: DHCPOfferResult): DHCPPacket {
-    return DHCPPacket.createOffer(pkt.chaddr, pkt.xid, offer.ip,
-      offer.serverIdentifier, {
-        mask: offer.pool.mask ?? '255.255.255.0',
-        router: offer.pool.defaultRouter ?? '0.0.0.0',
-        dns: offer.pool.dnsServers,
-        domainName: offer.pool.domainName ?? undefined,
-        leaseDuration: offer.pool.leaseDuration ?? 86400,
-        renewalTime: offer.renewalTime, rebindingTime: offer.rebindingTime,
-        nextServer: offer.pool.nextServer,
-        bootfile: offer.pool.bootfile,
-        netbiosServers: offer.pool.netbiosServers,
-        netbiosNodeType: offer.pool.netbiosNodeType,
-        rawOptions: offer.pool.options,
-      });
   }
 
   private dispatchDhcpReply(
