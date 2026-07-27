@@ -75,13 +75,17 @@ describe('NSS dns source over UDP/53', () => {
     expect(out).toContain('webserver');
   });
 
-  it('the legacy topology fallback only serves never-cabled fixtures', async () => {
+  it('an uncabled host resolves nothing either — there is no resolver to ask', async () => {
     const { pc, srv } = buildLab({ cabled: false });
     srv.setHostname('zonebox');
+    await setResolver(pc);
 
     const out = await pc.executeCommand('getent hosts zonebox');
 
-    expect(out).toContain('10.0.1.10');
+    expect(
+      out,
+      'a hostname is resolved by querying a nameserver, never by reading the simulation',
+    ).not.toContain('10.0.1.10');
   });
 
   it('a cabled host without a nameserver resolves nothing (frame-only)', async () => {

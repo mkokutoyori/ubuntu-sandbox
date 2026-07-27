@@ -23,6 +23,8 @@ export interface WindowsSftpClientOpts {
   readonly stdin?: string;
   readonly sourceHostname: string;
   readonly sourceIp: string;
+  /** The machine running `sftp` (docs/PRD-Frame-Only-Refactor.md P6). */
+  readonly sourceDevice?: object | null;
   readonly sourceUser: string;
   readonly sourceHome: string;
   readonly localFs: WindowsFileSystem;
@@ -61,7 +63,7 @@ export async function runWindowsSftpClient(opts: WindowsSftpClientOpts): Promise
     return { output: `sftp: ${probe.output.replace(/^ssh:\s*/, '')}`, exitCode: probe.exitCode };
   }
 
-  const found = findHostByAddress(host, { readFile: () => null });
+  const found = findHostByAddress(host, { readFile: () => null }, opts.sourceDevice as never);
   const remoteFs = resolveRemoteSftpFs(found?.device);
   if (!remoteFs) {
     return { output: `sftp: ${host}: no route to host`, exitCode: 1 };

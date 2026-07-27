@@ -98,6 +98,11 @@ export interface IpLinkOpsContext {
 }
 
 export interface IpNetworkContext {
+  /**
+   * The machine these commands run on, so a neighbour lookup follows the
+   * cable plant from here (docs/PRD-Frame-Only-Refactor.md P6).
+   */
+  getLocalDevice?(): object | null;
   getInterfaceNames(): string[];
   getInterfaceInfo(name: string): IpInterfaceInfo | null;
   /** Stable ifindex for an interface, assigned once, never recomputed from list position. */
@@ -1330,7 +1335,7 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
       r => r.type === 'connected' && isInSubnet(addr!, r.network, r.cidr),
     );
     if (route) {
-      const found = findHostByAddress(addr);
+      const found = findHostByAddress(addr, undefined, ctx.getLocalDevice?.() as never);
       if (!found || found.poweredOff || found.interfaceDown) {
         if (opts.json) return toJsonText([{ dst: addr, dev: route.iface, state: ['FAILED'] }], opts.pretty);
         return `${addr} dev ${route.iface}  FAILED`;

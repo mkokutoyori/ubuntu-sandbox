@@ -1731,11 +1731,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (!sourceIp) return `Trying ${display} ...\n% Destination unreachable; no source interface for outbound Telnet`;
 
-    const remote = findHostByAddress(host);
+    const remote = findHostByAddress(host, undefined, this.d() as never);
     if (!remote || remote.poweredOff || remote.interfaceDown) {
       return `Trying ${display} ...\n% Connection timed out; remote host not responding`;
     }
-    if (!isPathReachable(sourceIp, remote.ip)) {
+    if (!isPathReachable(sourceIp, remote.ip, this.d() as never)) {
       return `Trying ${display} ...\n% Destination unreachable; gateway or route not found`;
     }
     if (!this.remoteAcceptsTelnet(remote.device, port)) {
@@ -1830,7 +1830,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Read the remote machine's host key via the topology registry. */
   private lookupRemoteSshHostKey(host: string): { keyType: string; publicKey: string } | null {
-    const found = findHostByAddress(host) as { device?: { getSshHostKey?: () => { type: string; publicKey: string } } } | null;
+    const found = findHostByAddress(host, undefined, this.d() as never) as { device?: { getSshHostKey?: () => { type: string; publicKey: string } } } | null;
     const hk = found?.device?.getSshHostKey?.();
     return hk ? { keyType: hk.type, publicKey: hk.publicKey } : null;
   }

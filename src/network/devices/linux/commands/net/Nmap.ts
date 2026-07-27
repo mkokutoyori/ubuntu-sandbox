@@ -2,7 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { Equipment } from '../../../../equipment/Equipment';
 import { IPAddress } from '../../../../core/types';
-import { findHostByAddress } from '../../network/HostLookup';
+import { findHostByAddress, localDeviceOf } from '../../network/HostLookup';
 import {
   grabBanner,
   grabListenerProcess,
@@ -39,7 +39,7 @@ function buildProbes(ctx: LinuxCommandContext, noDns: boolean): HostProbes {
   const cache = new Map<string, ReturnType<typeof findHostByAddress>>();
   const resolve = (target: string) => {
     if (!cache.has(target)) {
-      cache.set(target, findHostByAddress(target, { readFile: (p) => vfs.readFile(p) }));
+      cache.set(target, findHostByAddress(target, { readFile: (p) => vfs.readFile(p) }, localDeviceOf(ctx)));
     }
     return cache.get(target) ?? null;
   };

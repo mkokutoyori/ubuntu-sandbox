@@ -17,7 +17,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress } from '../../../../core/types';
-import { findHostByAddress, transitTcpAclVerdict } from '../../network/HostLookup';
+import { findHostByAddress, transitTcpAclVerdict, localDeviceOf } from '../../network/HostLookup';
 import { grabBanner as grabRemoteBanner } from './ServiceBannerGrab';
 import { makeArgCompleter } from '../completionHelpers';
 
@@ -136,7 +136,7 @@ export const ncCommand: LinuxCommand = {
       // Connectionless: there is no handshake to probe, so this just puts a
       // real datagram on the wire — including whatever ICMP error a closed
       // remote port or unreachable host elicits, exactly like real `nc -u`.
-      const found = findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) });
+      const found = findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) }, localDeviceOf(ctx));
       if (!found) return `nc: getaddrinfo for host "${host}" port ${port}: Name or service not known`;
       if (found.poweredOff || found.interfaceDown) {
         return `nc: connect to ${host} port ${port} (udp) failed: No route to host`;
@@ -171,8 +171,8 @@ export const ncCommand: LinuxCommand = {
       if (fwd && fwd.kind === 'local' && fwd.destHost && fwd.destPort) {
         const originIp = forwarding.getOrigin(port);
         if (originIp) {
-          const sshServer = findHostByAddress(originIp);
-          const dest = findHostByAddress(fwd.destHost, { readFile: (p) => ctx.executor.vfs.readFile(p) });
+          const sshServer = findHostByAddress(originIp, undefined, localDeviceOf(ctx));
+          const dest = findHostByAddress(fwd.destHost, { readFile: (p) => ctx.executor.vfs.readFile(p) }, localDeviceOf(ctx));
           if (!sshServer || !dest) {
             return `nc: connect to ${host} port ${port} (tcp) failed: No route to host`;
           }
@@ -194,7 +194,7 @@ export const ncCommand: LinuxCommand = {
       }
     }
 
-    const found = findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) });
+    const found = findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) }, localDeviceOf(ctx));
     if (!found) {
       return `nc: getaddrinfo for host "${host}" port ${port}: Name or service not known`;
     }
@@ -202,7 +202,7 @@ export const ncCommand: LinuxCommand = {
       return `nc: connect to ${found.ip} port ${port} (tcp) failed: No route to host`;
     }
 
-    if (transitTcpAclVerdict(sourceIp, found.ip, port) === 'deny') {
+    if (transitTcpAclVerdict(sourceIp, found.ip, port, new Date(), localDeviceOf(ctx)) === 'deny') {
       if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`;
       return '';
     }

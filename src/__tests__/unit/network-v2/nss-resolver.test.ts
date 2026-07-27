@@ -127,28 +127,31 @@ describe('NSS — lookup dispatch', () => {
   });
 
   it('falls through `files NOTFOUND → dns SUCCESS` with default actions', () => {
-    const pc2 = new LinuxPC('pc2');
-    pc2.setEventBus(bus);
-    pc2.setHostname('pc2'); // override the LINUX_PC_PROFILE default
-    // Provision an IP on pc2 so the DNS source returns SUCCESS.
-    const port = pc2.getPorts()[0];
-    if (port) {
-      pc2.configureInterface(
-        port.getName(),
-        new IPAddress('10.0.0.42'),
-        new SubnetMask('255.255.255.0'),
-      );
-    }
-    // Sanity probes: pc2 is registered, alive, and has the hostname.
-    const all = EquipmentRegistry.getInstance().getAll();
-    expect(all.some(d => d.getId() === pc2.getId())).toBe(true);
-    expect(pc2.getIsPoweredOn()).toBe(true);
-    expect(pc2.getHostname()).toBe('pc2');
-    expect(port?.getIPAddress()?.toString()).toBe('10.0.0.42');
+    // What is under test is the dispatch chain, not DNS itself, so the
+    // second source is a stub that simply answers. It used to be the
+    // real `dns` source answering from a scan of every device in the
+    // simulation (docs/PRD-Frame-Only-Refactor.md P6).
+    const answering = {
+      name: 'dns',
+      gethostbyname: () => ({
+        status: 'SUCCESS' as const,
+        entry: [{
+          canonicalName: 'pc2', addressFamily: 2 as const,
+          address: '10.0.0.42', aliases: [],
+        }],
+      }),
+    };
+    const nss = new NameServiceSwitch(
+      pc.executor.vfs,
+      new Map([
+        ['files', pc.executor.filesNss],
+        ['dns', answering as never],
+      ]),
+    );
 
     // Files has no entry for pc2 (hostname is 'localhost' in /etc/hosts);
-    // default action map: NOTFOUND=continue → DNS source consulted.
-    const r = pc.executor.nss.lookup('hosts', s => s.gethostbyname?.('pc2'));
+    // default action map: NOTFOUND=continue → the next source is consulted.
+    const r = nss.lookup('hosts', s => s.gethostbyname?.('pc2'));
     expect(r.status).toBe('SUCCESS');
   });
 

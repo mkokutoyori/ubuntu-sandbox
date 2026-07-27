@@ -37,8 +37,10 @@ export function transportLiveness(session: LiveTransport): () => boolean {
  * cmd` job). Answered from the cabled topology rather than a handshake,
  * so it costs no connection and no server-side log line.
  */
-export function pathLiveness(sourceIp: string, peerIp: string): () => boolean {
-  return () => isPathReachable(sourceIp, peerIp);
+export function pathLiveness(
+  sourceIp: string, peerIp: string, from?: Equipment | null,
+): () => boolean {
+  return () => isPathReachable(sourceIp, peerIp, from as never);
 }
 
 /** First address configured on any of a device's ports, if it has one. */
@@ -61,5 +63,5 @@ export function firstConfiguredIp(dev: Equipment): string | undefined {
 export function peerLiveness(sourceDevice: Equipment, peerHost: string): () => boolean {
   const sourceIp = firstConfiguredIp(sourceDevice);
   if (!sourceIp) return () => true;
-  return pathLiveness(sourceIp, peerHost);
+  return pathLiveness(sourceIp, peerHost, sourceDevice);
 }

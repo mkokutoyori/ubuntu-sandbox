@@ -107,7 +107,10 @@ import { ClusterSignalRefreshActor } from './windows/server/cluster/actors/Clust
 import { DfsSignalStore } from './windows/server/dfs/observables';
 import { DfsSignalRefreshActor } from './windows/server/dfs/actors/DfsSignalRefreshActor';
 import { dialWinRm, type WinRmDialResult, pushForwardedEvent } from './windows/server/winrm/WinRmClient';
-// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P6, docs/PRD-Frame-Only-Refactor.md)
+// WEC collector discovery is an explicit non-objective of
+// docs/PRD-Frame-Only-Refactor.md §2.2, inherited from docs/PRD-Wecutil.md
+// §2.2. Not pending work.
+// eslint-disable-next-line no-restricted-imports
 import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import type { EventLogEntry } from './windows/PSEventLogProvider';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
@@ -1592,6 +1595,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     return runWindowsSshClient({
       args,
+      sourceDevice: this,
       sourceHostname: this.hostname,
       sourceIp,
       sourceUser: user,
@@ -1632,6 +1636,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return runWindowsSftpClient({
       args,
       stdin,
+      sourceDevice: this,
       sourceHostname: this.hostname,
       sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
       sourceUser: user,

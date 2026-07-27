@@ -1051,7 +1051,7 @@ export class LinuxCommandExecutor {
         }
         stdin = body;
       }
-      const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
+      const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
       const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
       let remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
       if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
@@ -1166,7 +1166,7 @@ export class LinuxCommandExecutor {
     let remoteFs = wireFs;
     let found: ReturnType<typeof findHostByAddress> = null;
     if (!remoteFs) {
-      found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
+      found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
       remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUser);
     }
     if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
@@ -1234,7 +1234,7 @@ export class LinuxCommandExecutor {
    * ScpSession surface "no route to host" the same way OpenSSH does.
    */
   private resolveRemoteSftpFs(host: string, asUser?: string): ISftpFileSystem | null {
-    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
     return this.resolveRemoteSftpFsFromDevice(found?.device, asUser);
   }
 
@@ -1376,15 +1376,15 @@ export class LinuxCommandExecutor {
     if (!sourceIp || sourceIp === '127.0.0.1') {
       return { output: `telnet: connect to address ${host}: Network is unreachable`, exitCode: 1 };
     }
-    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
     if (!found) {
       return { output: `telnet: could not resolve ${host}/${port}: Name or service not known`, exitCode: 1 };
     }
     // Resolve the device that actually owns the address over the cable plant.
     // The static registry can hold several fixtures sharing an IP; only the
     // cable-reachable one answers, and its VTY config governs the verdict.
-    const reachable = findReachableHost(sourceIp, found.ip);
-    if (found.poweredOff || found.interfaceDown || (!reachable && !isPathReachable(sourceIp, found.ip))) {
+    const reachable = findReachableHost(sourceIp, found.ip, this.localDevice as never);
+    if (found.poweredOff || found.interfaceDown || (!reachable && !isPathReachable(sourceIp, found.ip, this.localDevice as never))) {
       return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
     }
 
@@ -1435,7 +1435,7 @@ export class LinuxCommandExecutor {
     dst: { ip: string; port: number },
   ): void {
     this.captureLog.captureTcpHandshake(src, dst);
-    const remote = findHostByAddress(dst.ip, { readFile: (p) => this.vfs.readFile(p) });
+    const remote = findHostByAddress(dst.ip, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
     const remoteCap = (remote?.device as unknown as { executor?: { captureLog?: PacketCaptureLog } } | undefined)
       ?.executor?.captureLog;
     if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
@@ -1491,7 +1491,7 @@ export class LinuxCommandExecutor {
     }
     const host = positional[0];
     if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
-    const found = findHostByAddress(host);
+    const found = findHostByAddress(host, undefined, this.localDevice as never);
     if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
     const hostKey = this.sshHostKeyProbe?.(found.ip, port) ?? null;
     if (!hostKey) return { output: `# ${host} no host key`, exitCode: 1 };
@@ -1643,7 +1643,7 @@ export class LinuxCommandExecutor {
     }
     const remoteUser = parsed[1] ?? this.userMgr.currentUser;
     const host = parsed[2];
-    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
     if (!found || found.poweredOff || found.interfaceDown) {
       return {
         output: `/usr/bin/ssh-copy-id: ERROR: ssh: connect to host ${host} port 22: No route to host`,

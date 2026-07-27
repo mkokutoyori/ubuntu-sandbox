@@ -7,7 +7,10 @@
  * on the topology answers to that address.
  */
 
-// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P6, docs/PRD-Frame-Only-Refactor.md)
+// The no-`from` fallback below serves the UI/terminal/shell layer, which
+// docs/PRD-Frame-Only-Refactor.md §2.2 allows to enumerate the topology.
+// Every caller inside src/network passes a source device.
+// eslint-disable-next-line no-restricted-imports
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { HostsFile } from '../../HostsFile';
@@ -26,10 +29,22 @@ import { IPAddress, IP_PROTO_TCP, IP_PROTO_UDP, createIPv4Packet } from '@/netwo
  * included. This is the topology as it is actually wired: a port hands
  * back the device it belongs to, and a cable hands back its far end.
  *
- * With no `from`, there is nothing to walk from and the global registry
- * is the only answer left — the remaining callers that cannot name a
- * source device yet (docs/PRD-Frame-Only-Refactor.md P6).
+ * With no `from` there is nothing to walk from, and the global registry
+ * is the only answer left. That path is for the outside world — the UI,
+ * terminal and shell layers §2.2 permits to enumerate the topology; no
+ * caller under `src/network` takes it any more.
  */
+/**
+ * The machine a Linux command is running on, when its context can name
+ * one. Lets a command anchor its host lookup to its own place in the
+ * topology (docs/PRD-Frame-Only-Refactor.md P6).
+ */
+export function localDeviceOf(
+  ctx: { executor?: { getLocalDevice?: () => object | null } },
+): Equipment | null {
+  return (ctx.executor?.getLocalDevice?.() ?? null) as Equipment | null;
+}
+
 export function reachableDevices(from?: Equipment | null): Equipment[] {
   if (!from) return EquipmentRegistry.getInstance().getAll();
   const seen = new Map<string, Equipment>([[from.getId(), from]]);

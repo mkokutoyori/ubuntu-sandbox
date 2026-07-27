@@ -105,6 +105,15 @@ export function buildIpCtx(
   netns?: IpNetnsContext,
 ): IpNetworkContext {
   return {
+    // Any local port answers this: a port belongs to the machine that
+    // owns it, so there is nothing further to inject.
+    getLocalDevice(): object | null {
+      for (const [, port] of net.getPorts()) {
+        const owner = (port as unknown as { getOwner?: () => object | null }).getOwner?.();
+        if (owner) return owner;
+      }
+      return null;
+    },
     getInterfaceNames(): string[] {
       return [...net.getPorts().keys()];
     },

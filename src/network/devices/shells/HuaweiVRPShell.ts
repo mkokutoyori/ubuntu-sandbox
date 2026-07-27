@@ -698,11 +698,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
     if (!sourceIp) return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
 
-    const remote = findHostByAddress(host);
+    const remote = findHostByAddress(host, undefined, this.routerRef as never);
     if (!remote || remote.poweredOff || remote.interfaceDown) {
       return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
     }
-    if (!isPathReachable(sourceIp, remote.ip)) {
+    if (!isPathReachable(sourceIp, remote.ip, this.routerRef as never)) {
       return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
     }
     if (!this.remoteAcceptsTelnet(remote.device, port)) {

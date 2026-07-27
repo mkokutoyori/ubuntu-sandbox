@@ -1,5 +1,3 @@
-// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P6, docs/PRD-Frame-Only-Refactor.md)
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType } from '@/network/dns/wire/RRType';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
@@ -20,21 +18,15 @@ export class DnsNssSource implements INssSource {
 
   private wire: DnsWireStubResolver | null = null;
 
-  private isCabled: (() => boolean) | null = null;
-
   setWireResolver(resolver: DnsWireStubResolver | null): void {
     this.wire = resolver;
   }
 
-  setCabledProbe(probe: (() => boolean) | null): void {
-    this.isCabled = probe;
-  }
-
-  /** Cabled hosts resolve over the wire only; the registry scan stays
-   *  available for never-cabled test fixtures (refactor-frame-only.md V1). */
-  private legacyScanAllowed(): boolean {
-    return !(this.isCabled?.() ?? false);
-  }
+  /**
+   * Kept so existing callers still compile; the answer no longer changes
+   * anything, since names are resolved by asking a resolver or not at all.
+   */
+  setCabledProbe(_probe: (() => boolean) | null): void {}
 
   gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
     const servers = this.wire?.nameservers() ?? [];
@@ -49,8 +41,10 @@ export class DnsNssSource implements INssSource {
       }
       return last;
     }
-    if (!this.legacyScanAllowed()) return NOTFOUND();
-    return this.legacyScanByName(name, family);
+    // With no nameserver configured there is no answer. Reading every
+    // device in the simulation to match a hostname was the old fallback
+    // (docs/PRD-Frame-Only-Refactor.md P6).
+    return NOTFOUND();
   }
 
   gethostbyaddr(addr: string): NssResult<NssHostEntry> {
@@ -58,8 +52,7 @@ export class DnsNssSource implements INssSource {
     if (this.wire && servers.length > 0) {
       return this.wirePtrLookup(servers, addr);
     }
-    if (!this.legacyScanAllowed()) return NOTFOUND();
-    return this.legacyScanByAddr(addr);
+    return NOTFOUND();
   }
 
   enumHosts(): NssEnumResult<NssHostEntry> {
@@ -126,59 +119,4 @@ export class DnsNssSource implements INssSource {
     };
   }
 
-  private legacyScanByName(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
-    const needle = name.toLowerCase();
-    const short = needle.split('.')[0];
-    const matches: NssHostEntry[] = [];
-
-    for (const dev of EquipmentRegistry.getInstance().getAll()) {
-      if (!dev.getIsPoweredOn()) continue;
-      const rawHostname = dev.getHostname?.();
-      if (typeof rawHostname !== 'string' || !rawHostname) continue;
-      const hostname = rawHostname.toLowerCase();
-      if (hostname !== needle && hostname !== short) continue;
-
-      for (const port of dev.getPorts()) {
-        const ip = port.getIPAddress();
-        if (!ip) continue;
-        const ipStr = ip.toString();
-        const af: 2 | 10 = ipStr.includes(':') ? 10 : 2;
-        if (family && af !== family) continue;
-        matches.push({
-          canonicalName: hostname,
-          addressFamily: af,
-          address: ipStr,
-          aliases: hostname === needle ? [] : [needle],
-        });
-      }
-    }
-
-    if (matches.length) return { status: 'SUCCESS', entry: matches };
-    return NOTFOUND();
-  }
-
-  private legacyScanByAddr(addr: string): NssResult<NssHostEntry> {
-    for (const dev of EquipmentRegistry.getInstance().getAll()) {
-      if (!dev.getIsPoweredOn()) continue;
-      const rawHostname = dev.getHostname?.();
-      if (typeof rawHostname !== 'string' || !rawHostname) continue;
-      const hostname = rawHostname;
-      for (const port of dev.getPorts()) {
-        const ip = port.getIPAddress();
-        if (!ip) continue;
-        if (ip.toString() === addr) {
-          return {
-            status: 'SUCCESS',
-            entry: {
-              canonicalName: hostname,
-              addressFamily: addr.includes(':') ? 10 : 2,
-              address: addr,
-              aliases: [],
-            },
-          };
-        }
-      }
-    }
-    return NOTFOUND();
-  }
 }

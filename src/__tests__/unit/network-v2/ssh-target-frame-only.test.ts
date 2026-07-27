@@ -9,6 +9,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -70,6 +72,35 @@ describe('an ssh target is resolved by following the cables', () => {
       out,
       'no cable leads there, so ssh must fail rather than reach it anyway',
     ).toMatch(/No route to host|Connection|refused|timed out|Could not resolve/i);
+  }, 30000);
+
+  it('a Windows client reaches the same target with the registry trapped', async () => {
+    const { sw } = await lan();
+    const win = new WindowsPC('windows-pc', 'WIN1', 0, 0);
+    win.getPorts()[0].configureIP(new IPAddress('192.168.4.30'), MASK);
+    new Cable('c3').connect(win.getPorts()[0], sw.getPorts()[2]);
+    makeRegistryUnusable();
+
+    const out = await win.executeCommand('ssh alice@192.168.4.20 hostname');
+    expect(out).not.toMatch(/Could not resolve/);
+  }, 30000);
+
+  it('a Cisco router resolves its telnet target the same way', async () => {
+    const { sw } = await lan();
+    const r = new CiscoRouter('R1', 0, 0);
+    new Cable('c4').connect(r.getPorts()[0], sw.getPorts()[3]);
+    for (const cmd of [
+      'enable', 'configure terminal',
+      `interface ${r.getPortNames()[0]}`,
+      'ip address 192.168.4.40 255.255.255.0', 'no shutdown', 'end',
+    ]) await r.executeCommand(cmd);
+    makeRegistryUnusable();
+
+    const out = await r.executeCommand('telnet 192.168.4.20');
+    expect(
+      out,
+      'the target is reachable over the wire, so the failure must not be a resolution one',
+    ).not.toMatch(/remote host not responding/);
   }, 30000);
 
   it('a port knows the device it belongs to, which is what replaces the registry', async () => {

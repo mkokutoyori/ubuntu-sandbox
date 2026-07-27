@@ -27,6 +27,11 @@ export interface WinSshClientOpts {
   sourceHostname: string;
   /** Local IP — the "from" address of the connection. */
   sourceIp: string;
+  /**
+   * The machine running `ssh`. The target is resolved by walking the
+   * cable plant from here (docs/PRD-Frame-Only-Refactor.md P6).
+   */
+  sourceDevice?: object | null;
   /** Local user invoking `ssh` (the default remote user). */
   sourceUser: string;
   /** Optional NTFS filesystem — needed to persist known_hosts on first connect. */
@@ -147,7 +152,7 @@ export async function runWindowsSshClient(
   // A loopback target resolves to this very machine — look it up by the
   // local source IP, which the topology registry knows.
   const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-  const found = findHostByAddress(isLoopback ? opts.sourceIp : host);
+  const found = findHostByAddress(isLoopback ? opts.sourceIp : host, undefined, opts.sourceDevice as never);
   if (!found) {
     return {
       output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,

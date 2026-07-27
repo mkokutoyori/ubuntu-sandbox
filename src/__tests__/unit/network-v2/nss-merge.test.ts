@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { LinuxServer } from '@/network/devices/LinuxServer';
+import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { IPAddress, SubnetMask } from '@/network/core/types';
@@ -14,6 +16,7 @@ async function getent(pc: LinuxPC, args: string): Promise<{ output: string; exit
 
 describe('nss hosts [SUCCESS=merge]', () => {
   let pc: LinuxPC;
+  let dns: LinuxServer;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
@@ -28,15 +31,26 @@ describe('nss hosts [SUCCESS=merge]', () => {
     (pc as any).executor.userMgr.currentUid = 0;
     (pc as any).executor.userMgr.currentUser = 'root';
 
-    const peer = new LinuxPC('peer');
-    peer.setEventBus(bus);
-    peer.setHostname('dual');
-    peer.powerOn();
-    peer.configureInterface(peer.getPorts()[0].getName(),
-      new IPAddress('10.0.0.6'), new SubnetMask('255.255.255.0'));
+    // The `dns` source answers from a real zone reached over UDP/53, not
+    // from a scan of the simulation (docs/PRD-Frame-Only-Refactor.md P6).
+    dns = new LinuxServer('linux-server', 'DNS1');
+    dns.setEventBus(bus);
+    dns.powerOn();
+    pc.configureInterface(pc.getPorts()[0].getName(),
+      new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    dns.configureInterface(dns.getPorts()[0].getName(),
+      new IPAddress('10.0.0.53'), new SubnetMask('255.255.255.0'));
+    new Cable('c1').connect(pc.getPorts()[0], dns.getPorts()[0]);
+    dns.dnsService.addRecord({ name: 'dual', type: 'A', value: '10.0.0.6', ttl: 3600 });
+    dns.dnsService.start();
   });
 
+  const useResolver = async () => {
+    await pc.executeCommand(`sudo sh -c 'echo "nameserver 10.0.0.53" > /etc/resolv.conf'`);
+  };
+
   it('aggregates files + dns addresses when [SUCCESS=merge] is set', async () => {
+    await useResolver();
     await pc.executeCommand('echo "10.0.0.5 dual" >> /etc/hosts');
     await pc.executeCommand('echo "hosts: files [SUCCESS=merge] dns" > /etc/nsswitch.conf');
 
@@ -48,6 +62,7 @@ describe('nss hosts [SUCCESS=merge]', () => {
   });
 
   it('without merge, files wins and dns is not consulted', async () => {
+    await useResolver();
     await pc.executeCommand('echo "10.0.0.5 dual" >> /etc/hosts');
     await pc.executeCommand('echo "hosts: files dns" > /etc/nsswitch.conf');
 
@@ -57,6 +72,7 @@ describe('nss hosts [SUCCESS=merge]', () => {
   });
 
   it('merge still returns the single source that answers', async () => {
+    await useResolver();
     await pc.executeCommand('echo "hosts: files [SUCCESS=merge] dns" > /etc/nsswitch.conf');
 
     const r = await getent(pc, 'hosts dual');
