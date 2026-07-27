@@ -106,7 +106,7 @@ describe('Scénario 4 (debug) — debug ip ospf', () => {
       expect(out).toMatch(/Dead 120/);
     });
 
-    it('gap confirmé : un hello interval divergent devrait empêcher l\'adjacence', async () => {
+    it('un hello interval divergent devrait empêcher l\'adjacence', async () => {
       // R1 passe à 30 s alors que R2 reste à 10 s : un vrai IOS refuse
       // l'adjacence et la sort de l'état FULL.
       await run('configure terminal');
@@ -119,7 +119,7 @@ describe('Scénario 4 (debug) — debug ip ospf', () => {
       expect(out).not.toMatch(/FULL/);
     }, LONG);
 
-    it('gap confirmé : `debug ip ospf events` devrait signaler le mismatch de hello', async () => {
+    it('`debug ip ospf events` devrait signaler le mismatch de hello', async () => {
       await run('debug ip ospf events');
       await run('configure terminal');
       await run(`interface ${g1}`);
@@ -132,7 +132,7 @@ describe('Scénario 4 (debug) — debug ip ospf', () => {
   });
 
   describe('progression des états d\'adjacence', () => {
-    it('gap confirmé : `debug ip ospf adj` devrait tracer la montée jusqu\'à FULL', async () => {
+    it('`debug ip ospf adj` devrait tracer la montée jusqu\'à FULL', async () => {
       await run('debug ip ospf adj');
 
       // Faire retomber puis remonter l'adjacence.
@@ -152,7 +152,7 @@ describe('Scénario 4 (debug) — debug ip ospf', () => {
       expect(out).toMatch(/Router Link States|Link ID/i);
     }, LONG);
 
-    it('gap confirmé : `debug ip ospf lsa-generation` devrait produire des lignes de génération', async () => {
+    it('`debug ip ospf lsa-generation` devrait produire des lignes de génération', async () => {
       await run('debug ip ospf lsa-generation');
       await run('configure terminal');
       await run(`interface ${g1}`);

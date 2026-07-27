@@ -964,16 +964,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return false;
   }
 
-  runShowCommandSync(cmdPart: string): string {
+  runShowCommandSync(device: TDevice, cmdPart: string): string {
     const previousMode = this.mode;
     const previousLevel = this.currentPrivilegeLevel;
+    const previousDevice = this.deviceRef;
     this.mode = 'privileged';
     this.currentPrivilegeLevel = 15;
+    this.deviceRef = device;
     try {
       return this.executeOnTrie(cmdPart);
     } finally {
       this.mode = previousMode;
       this.currentPrivilegeLevel = previousLevel;
+      this.deviceRef = previousDevice;
     }
   }
 

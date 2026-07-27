@@ -60,11 +60,11 @@ describe('Scénario 8 (debug) — debug arp', () => {
   const run = (cmd: string): Promise<string> => rtr.executeCommand(cmd);
 
   describe('activation de debug arp', () => {
-    it('gap confirmé : `debug arp` devrait s\'annoncer « ARP packet debugging is on »', async () => {
+    it('`debug arp` devrait s\'annoncer « ARP packet debugging is on »', async () => {
       expect(await run('debug arp')).toContain('ARP packet debugging is on');
     });
 
-    it('gap confirmé : `debug arp` devrait apparaître dans `show debugging`', async () => {
+    it('`debug arp` devrait apparaître dans `show debugging`', async () => {
       await run('debug arp');
       expect(await run('show debugging')).toMatch(/ARP packet debugging is on/);
     });
@@ -104,14 +104,14 @@ describe('Scénario 8 (debug) — debug arp', () => {
       expect(lignes.some((l) => l.includes(g0))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : les MAC devraient être au format Cisco pointé (aaaa.bbbb.cccc)', async () => {
+    it('les MAC devraient être au format Cisco pointé (aaaa.bbbb.cccc)', async () => {
       await run('debug arp');
       await resolutionFraiche();
 
       expect(lignes.some((l) => /[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}/i.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : la MAC destination d\'une requête devrait être 0000.0000.0000 (inconnue)', async () => {
+    it('la MAC destination d\'une requête devrait être 0000.0000.0000 (inconnue)', async () => {
       await run('debug arp');
       await resolutionFraiche();
 
@@ -148,7 +148,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
       expect(lignes.some((l) => /IP ARP: rcvd req src 192\.168\.10\.254/.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : une IP dupliquée devrait journaliser %IP-4-DUPADDR', async () => {
+    it('une IP dupliquée devrait journaliser %IP-4-DUPADDR', async () => {
       await provoquerLeConflit();
 
       const logs = await run('show logging');
@@ -156,7 +156,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
       expect(logs).toMatch(/Duplicate address 192\.168\.10\.254/);
     }, LONG);
 
-    it('gap confirmé : le message %IP-4-DUPADDR devrait nommer l\'interface et la MAC fautive', async () => {
+    it('le message %IP-4-DUPADDR devrait nommer l\'interface et la MAC fautive', async () => {
       await provoquerLeConflit();
 
       const logs = await run('show logging');
@@ -164,7 +164,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
       expect(logs).toMatch(/sourced by [0-9a-f.:]+/i);
     }, LONG);
 
-    it('gap confirmé : le poste en conflit devrait être localisable via la table MAC du switch', async () => {
+    it('le poste en conflit devrait être localisable via la table MAC du switch', async () => {
       await provoquerLeConflit();
       const mac = usurpateur.getPort('eth0')!.getMAC().toString();
 
@@ -176,7 +176,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
   });
 
   describe('ARP gratuit non sollicité (ARP spoofing)', () => {
-    it('gap confirmé : un ARP gratuit devrait apparaître avec IP source = IP destination', async () => {
+    it('un ARP gratuit devrait apparaître avec IP source = IP destination', async () => {
       await run('debug arp');
       usurpateur.configureInterface('eth0', new IPAddress('192.168.10.254'), new SubnetMask('255.255.255.0'));
       await usurpateur.executeCommand('sudo arping -c 1 -U -I eth0 192.168.10.254');

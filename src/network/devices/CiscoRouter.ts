@@ -492,8 +492,13 @@ export class CiscoRouter extends Router {
       return { output: `${filtered.join('\n')}\n`, exitCode: 0 };
     }
     if (/^show\s+\S/i.test(cmd)) {
-      const shell = (this as unknown as { shell?: { runShowCommandSync?: (c: string) => string } }).shell;
-      const out = shell?.runShowCommandSync?.(cmd);
+      const shell = (this as unknown as { shell?: { runShowCommandSync?: (d: unknown, c: string) => string } }).shell;
+      let out: string | undefined;
+      try {
+        out = shell?.runShowCommandSync?.(this, cmd);
+      } catch {
+        out = undefined;
+      }
       if (out && !out.includes('Invalid input') && !out.includes('Incomplete command')) {
         return { output: `${out}\n`, exitCode: 0 };
       }

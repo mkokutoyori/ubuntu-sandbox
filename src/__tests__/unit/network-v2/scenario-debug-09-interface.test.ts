@@ -60,38 +60,38 @@ describe('Scénario 9 (debug) — debug interface', () => {
   }
 
   describe('activation de debug interface', () => {
-    it('gap confirmé : `debug interface <interface>` n\'est pas accepté', async () => {
+    it('`debug interface <interface>` est accepté', async () => {
       const out = await run(`debug interface ${wan}`);
       expect(out).not.toContain('Invalid input');
     });
 
-    it('gap confirmé : `debug interface <interface>` devrait s\'annoncer actif', async () => {
+    it('`debug interface <interface>` devrait s\'annoncer actif', async () => {
       expect(await run(`debug interface ${wan}`))
         .toMatch(new RegExp(`Interface ${wan} debugging is on`));
     });
 
-    it('gap confirmé : le debug interface devrait apparaître dans `show debugging`', async () => {
+    it('le debug interface devrait apparaître dans `show debugging`', async () => {
       await run(`debug interface ${wan}`);
       expect(await run('show debugging')).toMatch(/Interface .* debugging is on/);
     });
   });
 
   describe('cycle down/up du lien', () => {
-    it('gap confirmé : la chute du lien devrait produire une ligne `went down`', async () => {
+    it('la chute du lien devrait produire une ligne `went down`', async () => {
       await run(`debug interface ${wan}`);
       lienWan.disconnect();
 
       expect(lignes.some((l) => new RegExp(`${wan} went down`).test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : le retour du lien devrait produire une ligne `came back up`', async () => {
+    it('le retour du lien devrait produire une ligne `came back up`', async () => {
       await run(`debug interface ${wan}`);
       flapDuLien();
 
       expect(lignes.some((l) => new RegExp(`${wan} came back up`).test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : un keepalive expiré devrait être tracé', async () => {
+    it('un keepalive expiré devrait être tracé', async () => {
       await run('configure terminal');
       await run(`interface ${wan}`);
       await run('keepalive 5');
@@ -112,7 +112,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
       expect(await run('show ip interface brief')).toMatch(new RegExp(`${wan}\\s+203\\.0\\.113\\.1\\s+YES\\s+\\w+\\s+down`));
     }, LONG);
 
-    it('gap confirmé : la transition de lien devrait journaliser %LINK-3-UPDOWN', async () => {
+    it('la transition de lien devrait journaliser %LINK-3-UPDOWN', async () => {
       flapDuLien();
 
       const logs = await run('show logging');
@@ -120,7 +120,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
       expect(logs).toMatch(new RegExp(`Interface ${wan}, changed state to down`));
     }, LONG);
 
-    it('gap confirmé : la remontée du protocole de ligne devrait journaliser %LINEPROTO-5-UPDOWN', async () => {
+    it('la remontée du protocole de ligne devrait journaliser %LINEPROTO-5-UPDOWN', async () => {
       flapDuLien();
 
       const logs = await run('show logging');
@@ -137,7 +137,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
       expect(out).toMatch(/MTU 1500 bytes, BW 1000000 Kbit/);
     });
 
-    it('gap confirmé : `show interfaces` devrait rappeler la description configurée', async () => {
+    it('`show interfaces` devrait rappeler la description configurée', async () => {
       expect(await run(`show interfaces ${wan}`)).toContain('LIEN-WAN-FAI');
     });
 
@@ -154,7 +154,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
       expect(await run(`show interfaces ${wan}`)).toMatch(/interface resets/);
     });
 
-    it('gap confirmé : un câble corrompant les trames devrait incrémenter le compteur CRC', async () => {
+    it('un câble corrompant les trames devrait incrémenter le compteur CRC', async () => {
       lienWan.setCorruptionRate(1);
       await fai.executeCommand('ping -c 3 -W 1 203.0.113.1');
 
@@ -164,13 +164,13 @@ describe('Scénario 9 (debug) — debug interface', () => {
       expect(Number(crc![1])).toBeGreaterThan(0);
     }, LONG);
 
-    it('gap confirmé : `show interfaces <if> | include error|CRC` filtre les lignes d\'erreur', async () => {
+    it('`show interfaces <if> | include error|CRC` filtre les lignes d\'erreur', async () => {
       const out = await run(`show interfaces ${wan} | include error|CRC`);
       expect(out).toMatch(/CRC/);
       expect(out).not.toMatch(/Encapsulation ARPA/);
     });
 
-    it('gap confirmé : `show interfaces counters errors` n\'est pas accepté', async () => {
+    it('`show interfaces counters errors` est accepté', async () => {
       expect(await run('show interfaces counters errors')).not.toContain('Invalid input');
     });
   });
@@ -192,7 +192,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
       expect(vitesse).not.toContain('Invalid input');
     });
 
-    it('gap confirmé : le duplex forcé devrait apparaître dans la configuration courante', async () => {
+    it('le duplex forcé devrait apparaître dans la configuration courante', async () => {
       await run('configure terminal');
       await run(`interface ${wan}`);
       await run('duplex full');
@@ -210,7 +210,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
       expect(await run(`clear counters ${wan}`)).not.toContain('Invalid input');
     });
 
-    it('gap confirmé : après `clear counters`, les compteurs de paquets repartent de zéro', async () => {
+    it('après `clear counters`, les compteurs de paquets repartent de zéro', async () => {
       await fai.executeCommand('ping -c 3 -W 1 203.0.113.1');
       expect(await run(`show interfaces ${wan}`)).not.toMatch(/\b0 packets input\b/);
 

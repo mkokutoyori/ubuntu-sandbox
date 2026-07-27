@@ -79,13 +79,13 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(out).toMatch(/PID\s+Runtime\(ms\)\s+Invoked\s+uSecs\s+5Sec\s+1Min\s+5Min\s+TTY\s+Process/);
     });
 
-    it('gap confirmé : les processus clés du diagnostic devraient être listés (IP Input, OSPF Router, Crypto Engine)', async () => {
+    it('les processus clés du diagnostic devraient être listés (IP Input, OSPF Router, Crypto Engine)', async () => {
       const out = await run('show processes cpu sorted');
       expect(out).toMatch(/IP Input/);
       expect(out).toMatch(/OSPF Router|Crypto Engine/);
     });
 
-    it('gap confirmé : `show processes cpu sorted | head -20` limite la sortie à 20 lignes', async () => {
+    it('`show processes cpu sorted | head -20` limite la sortie à 20 lignes', async () => {
       const out = await run('show processes cpu sorted | head -20');
       expect(out).not.toContain('Invalid input');
       expect(out.split('\n').length).toBeLessThanOrEqual(20);
@@ -100,7 +100,7 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(cpu).toBeLessThanOrEqual(100);
     });
 
-    it('gap confirmé : `show processes memory sorted` complète l\'évaluation avant debug', async () => {
+    it('`show processes memory sorted` complète l\'évaluation avant debug', async () => {
       const out = await run('show processes memory sorted');
       expect(out).not.toContain('Invalid input');
       expect(out).toMatch(/Processor Pool Total|Holding/i);
@@ -116,11 +116,11 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(out).toMatch(/Buffer logging: level/);
     });
 
-    it('gap confirmé : `logging buffered 1000000 debug` devrait redimensionner le buffer annoncé', async () => {
+    it('`logging buffered 1000000 debug` devrait redimensionner le buffer annoncé', async () => {
       expect(await run('show logging')).toMatch(/Buffer logging: level debugging, 1000000 bytes/);
     });
 
-    it('gap confirmé : `service timestamps debug datetime msec` devrait horodater le buffer à la milliseconde', async () => {
+    it('`service timestamps debug datetime msec` devrait horodater le buffer à la milliseconde', async () => {
       lienWan.connect(rtr.getPort(wan)!, admin.getPort('eth0')!);
       lienWan.disconnect();
 
@@ -128,7 +128,7 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(out).toMatch(/\d{2}:\d{2}:\d{2}\.\d{3}/);
     }, LONG);
 
-    it('gap confirmé : le motif de flap du lien WAN est traçable via `show logging | include LINK-3-UPDOWN`', async () => {
+    it('le motif de flap du lien WAN est traçable via `show logging | include LINK-3-UPDOWN`', async () => {
       for (let i = 0; i < 3; i++) {
         lienWan.connect(rtr.getPort(wan)!, admin.getPort('eth0')!);
         lienWan.disconnect();
@@ -144,7 +144,7 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(out).not.toMatch(/Syslog logging: enabled/);
     });
 
-    it('gap confirmé : `show logging count` devrait produire un décompte par message', async () => {
+    it('`show logging count` devrait produire un décompte par message', async () => {
       const out = await run('show logging count');
       expect(out).toMatch(/Facility\s+Message Name\s+Sev\s+Occur|Total: \d+/i);
     });
@@ -165,14 +165,14 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(out).toMatch(/uptime is/);
     }, LONG);
 
-    it('gap confirmé : `show tech-support` devrait couvrir les processus, le NAT et les adjacences OSPF', async () => {
+    it('`show tech-support` devrait couvrir les processus, le NAT et les adjacences OSPF', async () => {
       const out = await run('show tech-support');
       expect(out).toContain('show processes cpu');
       expect(out).toContain('show ip nat translations');
       expect(out).toContain('show ip ospf neighbor');
     }, LONG);
 
-    it('gap confirmé : `show tech-support | redirect <cible>` n\'est pas accepté', async () => {
+    it('`show tech-support | redirect <cible>` est accepté', async () => {
       const out = await run('show tech-support | redirect tftp://192.168.99.10/tech-support-20250701.txt');
       expect(out).not.toContain('Invalid input');
     }, LONG);
@@ -193,7 +193,7 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(out.trim().length).toBeGreaterThan(0);
     }, LONG);
 
-    it('gap confirmé : `show clock detail` situe les événements dans le temps', async () => {
+    it('`show clock detail` situe les événements dans le temps', async () => {
       const out = await run('show clock detail');
       expect(out).not.toContain('Invalid input');
       expect(out).toMatch(/\d{2}:\d{2}:\d{2}/);
@@ -344,7 +344,7 @@ tail -20 "$DIAG_DIR/show_logging.txt"
       expect(version).toMatch(/Cisco IOS Software/);
     }, LONG);
 
-    it('gap confirmé : la collecte SSH devrait aussi remplir show ip route / show interfaces / show arp', async () => {
+    it('la collecte SSH remplit show ip route / show interfaces / show arp', async () => {
       await ecrireLeScript();
       await shell(`bash ${CHEMIN}`);
 
@@ -353,7 +353,7 @@ tail -20 "$DIAG_DIR/show_logging.txt"
       expect(await shell('cat /tmp/cisco-diag/show_arp.txt')).toMatch(/Protocol\s+Address/);
     }, LONG);
 
-    it('gap confirmé : la collecte SSH devrait remplir show processes cpu sorted', async () => {
+    it('la collecte SSH remplit show processes cpu sorted', async () => {
       await ecrireLeScript();
       await shell(`bash ${CHEMIN}`);
 
@@ -361,20 +361,20 @@ tail -20 "$DIAG_DIR/show_logging.txt"
         .toMatch(/CPU utilization for five seconds/);
     }, LONG);
 
-    it('gap confirmé : le rapport rapide devrait extraire la ligne d\'utilisation CPU', async () => {
+    it('le rapport rapide devrait extraire la ligne d\'utilisation CPU', async () => {
       await ecrireLeScript();
       const out = await shell(`bash ${CHEMIN}`);
 
       expect(out).toMatch(/CPU utilization for five seconds/);
     }, LONG);
 
-    it('gap confirmé : le rapport rapide devrait extraire les derniers logs collectés', async () => {
+    it('le rapport rapide extrait les derniers logs collectés', async () => {
       await ecrireLeScript();
       const out = await shell(`bash ${CHEMIN}`);
 
       const idx = out.indexOf('-- DERNIERS LOGS');
       expect(idx).toBeGreaterThan(-1);
-      expect(out.slice(idx)).toMatch(/Syslog logging|%[A-Z]+-\d-/);
+      expect(out.slice(idx)).toMatch(/Syslog logging|%[A-Z_]+-\d-/);
     }, LONG);
 
     it('le script se termine avec un code de sortie nul', async () => {

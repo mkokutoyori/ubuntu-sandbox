@@ -63,7 +63,7 @@ describe('Scénario 5 (debug) — debug spanning-tree', () => {
   });
 
   describe('transitions d\'état des ports', () => {
-    it('gap confirmé : le raccordement d\'un switch devrait tracer les transitions d\'état', async () => {
+    it('le raccordement d\'un switch devrait tracer les transitions d\'état', async () => {
       await run('debug spanning-tree events');
       new Cable('lien-intrus').connect(sw.getPort('FastEthernet0/3')!, intrus.getPort('FastEthernet0/1')!);
 
@@ -83,7 +83,7 @@ describe('Scénario 5 (debug) — debug spanning-tree', () => {
       expect(out).toMatch(/Fa0\/3/);
     }, LONG);
 
-    it('gap confirmé : `debug spanning-tree bpdu` devrait exposer le Bridge ID reçu', async () => {
+    it('`debug spanning-tree bpdu` devrait exposer le Bridge ID reçu', async () => {
       await run('debug spanning-tree bpdu');
       new Cable('lien-intrus').connect(sw.getPort('FastEthernet0/3')!, intrus.getPort('FastEthernet0/1')!);
 
@@ -117,7 +117,7 @@ describe('Scénario 5 (debug) — debug spanning-tree', () => {
       expect(out).not.toContain('Invalid input');
     });
 
-    it('gap confirmé : BPDU Guard devrait err-disable le port à réception d\'un BPDU', async () => {
+    it('BPDU Guard devrait err-disable le port à réception d\'un BPDU', async () => {
       await run('configure terminal');
       await run('interface FastEthernet0/3');
       await run('spanning-tree portfast');
@@ -132,7 +132,7 @@ describe('Scénario 5 (debug) — debug spanning-tree', () => {
       expect(status).toMatch(/Fa0\/3\s+(err-disabled|disabled|notconnect)/);
     }, LONG);
 
-    it('gap confirmé : le déclenchement de BPDU Guard devrait journaliser %SPANTREE-2-BLOCK_BPDUGUARD', async () => {
+    it('le déclenchement de BPDU Guard devrait journaliser %SPANTREE-2-BLOCK_BPDUGUARD', async () => {
       await run('configure terminal');
       await run('interface FastEthernet0/3');
       await run('spanning-tree portfast');

@@ -82,17 +82,17 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
   }
 
   describe('activation du debug NAT', () => {
-    it('gap confirmé : `debug ip nat` s\'annonce actif mais n\'apparaît pas dans `show debugging`', async () => {
+    it('`debug ip nat` s\'annonce actif et apparaît dans `show debugging`', async () => {
       expect(await run('debug ip nat')).toContain('IP NAT debugging is on');
       expect(await run('show debugging')).toMatch(/NAT debugging is on/);
     });
 
-    it('gap confirmé : `debug ip nat detailed` n\'est pas accepté', async () => {
+    it('`debug ip nat detailed` est accepté', async () => {
       const out = await run('debug ip nat detailed');
       expect(out).not.toContain('Invalid input');
     });
 
-    it('gap confirmé : `debug ip nat <acl>` (filtre) n\'est pas accepté', async () => {
+    it('`debug ip nat <acl>` (filtre) est accepté', async () => {
       await run('configure terminal');
       await run('ip access-list standard NAT-DEBUG');
       await run('10 permit 192.168.10.105');
@@ -113,7 +113,7 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
       expect(trad).toContain('203.0.113.1');
     }, LONG);
 
-    it('gap confirmé : un paquet traduit devrait produire une ligne `NAT*: s=…->…`', async () => {
+    it('un paquet traduit devrait produire une ligne `NAT*: s=…->…`', async () => {
       await natAvecMasqueCorrect();
       await run('debug ip nat');
       await interne.executeCommand('ping -c 2 203.0.113.50');
@@ -121,7 +121,7 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
       expect(lignes.some((l) => /NAT\*: s=192\.168\.10\.101->203\.0\.113\.1/.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : `debug ip nat` devrait produire au moins une ligne lors d\'un flux traduit', async () => {
+    it('`debug ip nat` devrait produire au moins une ligne lors d\'un flux traduit', async () => {
       await natAvecMasqueCorrect();
       await run('debug ip nat');
       await interne.executeCommand('ping -c 2 203.0.113.50');

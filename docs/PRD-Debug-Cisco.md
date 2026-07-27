@@ -1,10 +1,10 @@
 # PRD — Chaîne de debug Cisco IOS (`debug …` / `show debugging` / `undebug all`)
 
-> **État : implémenté.** Les lots 1 à 9 sont livrés. Les 10 scénarios de
-> debug sont passés de **75 rouges à 2**. Les deux restants (`G15`, collecte
-> SSH non interactive) relèvent de la couche SSH et non de la chaîne de
-> debug — voir §2.2. Ce document est conservé comme analyse de référence :
-> le tableau §1.3 décrit l'état **avant** correction.
+> **État : implémenté.** Les lots 1 à 9 sont livrés, ainsi que `G15`
+> (collecte SSH non interactive) initialement classé non-objectif. Les 10
+> scénarios de debug sont passés de **75 rouges à 0** (173/173). Ce
+> document est conservé comme analyse de référence : le tableau §1.3
+> décrit l'état **avant** correction.
 
 
 ## 0. Contexte et portée

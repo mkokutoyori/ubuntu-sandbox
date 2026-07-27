@@ -64,7 +64,7 @@ describe('Scénario 6 (debug) — debug ip dhcp server', () => {
       expect(await run('debug ip dhcp server packet')).toMatch(/DHCP server packet debugging is on/i);
     });
 
-    it('gap confirmé : les debugs DHCP devraient apparaître dans `show debugging`', async () => {
+    it('les debugs DHCP devraient apparaître dans `show debugging`', async () => {
       await run('debug ip dhcp server events');
       const out = await run('show debugging');
       expect(out).toMatch(/DHCP/i);
@@ -79,7 +79,7 @@ describe('Scénario 6 (debug) — debug ip dhcp server', () => {
       expect(bindings).toMatch(/192\.168\.10\.\d+/);
     }, LONG);
 
-    it('gap confirmé : `debug ip dhcp server events` devrait tracer DISCOVER/OFFER/REQUEST/ACK', async () => {
+    it('`debug ip dhcp server events` devrait tracer DISCOVER/OFFER/REQUEST/ACK', async () => {
       await run('debug ip dhcp server events');
       await client.executeCommand('sudo dhclient eth0');
 
@@ -89,7 +89,7 @@ describe('Scénario 6 (debug) — debug ip dhcp server', () => {
       expect(lignes.some((l) => /DHCPACK/i.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : `debug ip dhcp server packet` devrait exposer chaddr et yiaddr', async () => {
+    it('`debug ip dhcp server packet` devrait exposer chaddr et yiaddr', async () => {
       await run('debug ip dhcp server packet');
       await client.executeCommand('sudo dhclient eth0');
 
@@ -99,7 +99,7 @@ describe('Scénario 6 (debug) — debug ip dhcp server', () => {
   });
 
   describe('état du pool et des baux', () => {
-    it('gap confirmé : `show ip dhcp pool` devrait exposer Total addresses / Leased addresses', async () => {
+    it('`show ip dhcp pool` devrait exposer Total addresses / Leased addresses', async () => {
       const out = await run('show ip dhcp pool');
       expect(out).toMatch(/LAN-MANDENG/);
       expect(out).toMatch(/[Tt]otal addresses|Leased/);
@@ -132,7 +132,7 @@ describe('Scénario 6 (debug) — debug ip dhcp server', () => {
       expect(out).not.toContain('Invalid input');
     });
 
-    it('gap confirmé : une adresse déjà utilisée devrait être détectée et marquée en conflit', async () => {
+    it('une adresse déjà utilisée devrait être détectée et marquée en conflit', async () => {
       // Un poste porte statiquement une adresse du pool : un vrai serveur
       // DHCP Cisco la ping avant attribution et la marque « in conflict ».
       const squatteur = new LinuxPC('linux-pc', 'squatteur', 0, 0);

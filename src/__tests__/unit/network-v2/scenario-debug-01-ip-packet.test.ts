@@ -86,7 +86,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
       expect(await run('debug ip packet detail')).toMatch(/detail/i);
     });
 
-    it('gap confirmé : `debug ip packet <ACL>` (filtre par ACL) n\'est pas accepté', async () => {
+    it('`debug ip packet <ACL>` (filtre par ACL) est accepté', async () => {
       await run('configure terminal');
       await run('ip access-list extended DEBUG-FILTER');
       await run('10 permit ip host 192.168.10.101 host 192.168.10.20');
@@ -121,7 +121,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
       expect(lignes).toHaveLength(0);
     }, LONG);
 
-    it('gap confirmé : la ligne devrait porter la taille réelle (`len 84`) et l\'interface', async () => {
+    it('la ligne devrait porter la taille réelle (`len 84`) et l\'interface', async () => {
       await run('debug ip packet');
       await pc.executeCommand('ping -c 1 192.168.10.254');
 
@@ -159,7 +159,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
   });
 
   describe('paquet non routable', () => {
-    it('gap confirmé : une destination sans route devrait produire `unroutable`', async () => {
+    it('une destination sans route devrait produire `unroutable`', async () => {
       await run('debug ip packet');
       await pc.executeCommand('ping -c 2 10.50.0.1');
 
@@ -168,7 +168,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
   });
 
   describe('désactivation du debug', () => {
-    it('gap confirmé : `undebug all` annonce la coupure mais ne vide pas `show debugging`', async () => {
+    it('`undebug all` annonce la coupure et vide `show debugging`', async () => {
       await run('debug ip packet');
       await run('debug arp');
       expect(await run('show debugging')).toContain('IP packet debugging is on');
@@ -177,7 +177,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
       expect(await run('show debugging')).not.toContain('IP packet debugging is on');
     });
 
-    it('gap confirmé : après `undebug all`, des lignes continuent d\'être émises', async () => {
+    it('après `undebug all`, plus aucune ligne n\'est émise', async () => {
       await run('debug ip packet');
       await pc.executeCommand('ping -c 1 192.168.10.254');
       const avant = lignes.length;

@@ -112,11 +112,11 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       expect(await run('debug crypto ipsec')).toContain('Crypto IPSEC debugging is on');
     });
 
-    it('gap confirmé : `debug crypto isakmp detail` n\'est pas accepté', async () => {
+    it('`debug crypto isakmp detail` est accepté', async () => {
       expect(await run('debug crypto isakmp detail')).not.toContain('Invalid input');
     });
 
-    it('gap confirmé : les debugs crypto devraient apparaître dans `show debugging`', async () => {
+    it('les debugs crypto devraient apparaître dans `show debugging`', async () => {
       await run('debug crypto isakmp');
       await run('debug crypto ipsec');
       expect(await run('show debugging')).toMatch(/Crypto (ISAKMP|IPSEC) debugging is on/);
@@ -154,21 +154,21 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
   });
 
   describe('mismatch de politique Phase 1', () => {
-    it('gap confirmé : `debug crypto isakmp` devrait tracer la vérification des transformes', async () => {
+    it('`debug crypto isakmp` devrait tracer la vérification des transformes', async () => {
       await run('debug crypto isakmp');
       await traficInteressant();
 
       expect(lignes.some((l) => /Checking ISAKMP transform 1 against priority 10 policy/i.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : le mismatch devrait produire `atts are NOT acceptable`', async () => {
+    it('le mismatch devrait produire `atts are NOT acceptable`', async () => {
       await run('debug crypto isakmp');
       await traficInteressant();
 
       expect(lignes.some((l) => /atts are NOT acceptable/i.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : le mismatch devrait produire `no offers accepted!` et `phase 1 SA policy not acceptable!`', async () => {
+    it('le mismatch devrait produire `no offers accepted!` et `phase 1 SA policy not acceptable!`', async () => {
       await run('debug crypto isakmp');
       await traficInteressant();
 
@@ -190,7 +190,7 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
   });
 
   describe('progression des états IKE', () => {
-    it('gap confirmé : la Phase 1 devrait progresser MM_NO_STATE → MM_SA_SETUP → MM_KEY_EXCH → QM_IDLE', async () => {
+    it('la Phase 1 devrait progresser MM_NO_STATE → MM_SA_SETUP → MM_KEY_EXCH → QM_IDLE', async () => {
       await run('debug crypto isakmp');
       await corrigerPolitiqueKribi();
       await run('clear crypto isakmp sa');
@@ -202,7 +202,7 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       expect(trace).toMatch(/QM_IDLE/);
     }, LONG);
 
-    it('gap confirmé : le debug devrait tracer les payloads KE et NONCE puis `SKEYID state generated`', async () => {
+    it('le debug devrait tracer les payloads KE et NONCE puis `SKEYID state generated`', async () => {
       await run('debug crypto isakmp');
       await corrigerPolitiqueKribi();
       await run('clear crypto isakmp sa');
@@ -215,7 +215,7 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
   });
 
   describe('Phase 2 — debug crypto ipsec', () => {
-    it('gap confirmé : `debug crypto ipsec` devrait tracer `IPSEC(sa_request)` avec les proxies local/distant', async () => {
+    it('`debug crypto ipsec` devrait tracer `IPSEC(sa_request)` avec les proxies local/distant', async () => {
       await run('debug crypto ipsec');
       await corrigerPolitiqueKribi();
       await traficInteressant();
@@ -225,7 +225,7 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       expect(lignes.some((l) => /remote_proxy=\s*192\.168\.30\.0/.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : la création de SA devrait exposer sa_spi, sa_proto= 50 (ESP) et sa_trans', async () => {
+    it('la création de SA devrait exposer sa_spi, sa_proto= 50 (ESP) et sa_trans', async () => {
       await run('debug crypto ipsec');
       await corrigerPolitiqueKribi();
       await traficInteressant();
@@ -257,7 +257,7 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       expect(await run('clear crypto sa')).not.toContain('Invalid input');
     });
 
-    it('gap confirmé : après correction, `show crypto isakmp sa` devrait afficher QM_IDLE ACTIVE', async () => {
+    it('après correction, `show crypto isakmp sa` devrait afficher QM_IDLE ACTIVE', async () => {
       await corrigerPolitiqueKribi();
       await run('clear crypto isakmp sa');
       await traficInteressant();
@@ -268,7 +268,7 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       expect(out).toMatch(/ACTIVE/);
     }, LONG);
 
-    it('gap confirmé : après correction, `show crypto ipsec sa` devrait compter les paquets chiffrés', async () => {
+    it('après correction, `show crypto ipsec sa` devrait compter les paquets chiffrés', async () => {
       await corrigerPolitiqueKribi();
       await run('clear crypto isakmp sa');
       await traficInteressant();
@@ -278,7 +278,7 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       expect(out).toMatch(/#pkts encrypt:\s*[1-9]/);
     }, LONG);
 
-    it('gap confirmé : la montée du tunnel devrait journaliser %CRYPTO-5-SESSION_STATUS', async () => {
+    it('la montée du tunnel devrait journaliser %CRYPTO-5-SESSION_STATUS', async () => {
       await corrigerPolitiqueKribi();
       await run('clear crypto isakmp sa');
       await traficInteressant();

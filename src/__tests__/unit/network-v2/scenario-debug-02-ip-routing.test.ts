@@ -59,7 +59,7 @@ describe('Scénario 2 (debug) — debug ip routing', () => {
   });
 
   describe('ajout d\'une route statique', () => {
-    it('gap confirmé : l\'ajout d\'une route devrait produire une ligne `RT: add`', async () => {
+    it('l\'ajout d\'une route devrait produire une ligne `RT: add`', async () => {
       await run('debug ip routing');
       await run('configure terminal');
       await run('ip route 192.168.30.0 255.255.255.0 192.168.10.101');
@@ -79,7 +79,7 @@ describe('Scénario 2 (debug) — debug ip routing', () => {
   });
 
   describe('suppression d\'une route statique', () => {
-    it('gap confirmé : la suppression devrait produire une ligne `RT: del`', async () => {
+    it('la suppression devrait produire une ligne `RT: del`', async () => {
       await run('configure terminal');
       await run('ip route 192.168.30.0 255.255.255.0 192.168.10.101');
       await run('end');
@@ -114,7 +114,7 @@ describe('Scénario 2 (debug) — debug ip routing', () => {
       expect(await run('show ip route')).not.toContain('192.168.10.0/24');
     });
 
-    it('gap confirmé : la chute du lien devrait produire une ligne `RT: del` de la route connectée', async () => {
+    it('la chute du lien devrait produire une ligne `RT: del` de la route connectée', async () => {
       await run('debug ip routing');
       lien.disconnect();
 
@@ -123,7 +123,7 @@ describe('Scénario 2 (debug) — debug ip routing', () => {
   });
 
   describe('route flottante — basculement par distance administrative', () => {
-    it('gap confirmé : une route par défaut statique devrait s\'installer, puis basculer sur la flottante', async () => {
+    it('une route par défaut statique devrait s\'installer, puis basculer sur la flottante', async () => {
       await run('configure terminal');
       await run('ip route 0.0.0.0 0.0.0.0 192.168.10.101');
       await run('ip route 0.0.0.0 0.0.0.0 192.168.10.102 10');
@@ -140,7 +140,7 @@ describe('Scénario 2 (debug) — debug ip routing', () => {
       expect(apres).toMatch(/0\.0\.0\.0|default/i);
     });
 
-    it('gap confirmé : le basculement devrait produire un `RT: del` suivi d\'un `RT: add`', async () => {
+    it('le basculement devrait produire un `RT: del` suivi d\'un `RT: add`', async () => {
       await run('configure terminal');
       await run('ip route 0.0.0.0 0.0.0.0 192.168.10.101');
       await run('ip route 0.0.0.0 0.0.0.0 192.168.10.102 10');
