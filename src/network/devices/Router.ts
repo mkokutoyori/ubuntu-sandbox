@@ -540,7 +540,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const dotIdx = iface.indexOf('.');
     const physIface = dotIdx > 0 ? iface.slice(0, dotIdx) : iface;
     const port = this.ports.get(physIface);
-    return !port || port.isOperationallyUp();
+    if (!port) return true;
+    // A port that has never had a cable at all is a fixture built without
+    // a cable plant (unit tests exercising CLI/RIB behavior in isolation),
+    // not a real severed link — judge it on line/admin state alone, same
+    // "never wired" vs "unplugged" distinction Port.wasEverCabled() exists
+    // for (docs/PRD-Link-State.md §2.1 P6). Once a cable HAS been attached,
+    // full operational state (including carrier) is required as before.
+    if (!port.wasEverCabled()) return port.getIsUp() && !port.isAdminDown();
+    return port.isOperationallyUp();
   }
 
   /**
