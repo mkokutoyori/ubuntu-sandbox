@@ -664,10 +664,19 @@ export class LinuxUserManager {
   isAccountLockedOut(username: string): boolean {
     const account = this.users.get(username);
     if (!account) return false;
-    return this.passwordPolicy.lockout.shouldLockOut(
+    const lockout = this.passwordPolicy.lockout;
+    const stillLocked = lockout.shouldLockOut(
       account.failedLoginCount,
       account.uid === 0,
+      account.lastFailedLoginAt,
     );
+    // unlock_time elapsed — pam_faillock clears the tally itself, not just
+    // the gate, so a later failure starts counting from zero again.
+    if (!stillLocked && account.failedLoginCount >= lockout.deny) {
+      account.failedLoginCount = 0;
+      account.lastFailedLoginAt = null;
+    }
+    return stillLocked;
   }
 
   passwdStatus(username: string): string {
