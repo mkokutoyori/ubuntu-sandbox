@@ -105,6 +105,14 @@ export class CrossVendorRemoteShell implements IShell {
   /** True once the primary has exited and the SSH session is over. */
   get isFinished(): boolean { return this.stack.length === 0; }
 
+  /**
+   * How many shells are stacked, login shell included. Nesting is a
+   * question of depth, not of kind: `cmd` launched from `powershell`
+   * launched from `cmd` is two levels deep even though the top and the
+   * bottom are the same interpreter.
+   */
+  get depth(): number { return this.stack.length; }
+
   getPrompt(): string {
     // After the primary pops, the wrapper has no more shells to drive;
     // surface an empty prompt so the host terminal can render its own.
