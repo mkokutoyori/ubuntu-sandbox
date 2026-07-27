@@ -71,42 +71,59 @@ describe('Scénario 8 (debug) — debug arp', () => {
   });
 
   describe('cycle ARP nominal', () => {
-    it('gap confirmé : une requête ARP traversant un switch devrait produire une ligne `rcvd req`', async () => {
-      await run('debug arp');
+    /**
+     * Le routeur émet un ARP gratuit réel à la configuration de `ip address`
+     * (vérifié sur le bus : trame 0x0806 op=request), que le poste apprend.
+     * Le premier ping n'a donc besoin d'aucune résolution : il faut vider le
+     * cache pour observer un vrai cycle ARP, comme le ferait un technicien.
+     */
+    async function resolutionFraiche(): Promise<void> {
+      await pc.executeCommand('sudo ip -s -s neigh flush all');
       await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+    }
+
+    it('une requête ARP reçue produit une ligne `rcvd req` avec IP et MAC source', async () => {
+      await run('debug arp');
+      await resolutionFraiche();
 
       expect(lignes.some((l) => /IP ARP: rcvd req src 192\.168\.10\.101/.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : la réponse ARP émise devrait produire une ligne `sent rep` avec la MAC du routeur', async () => {
+    it('la réponse ARP émise produit une ligne `sent rep` avec la MAC du routeur', async () => {
       await run('debug arp');
-      await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      await resolutionFraiche();
 
       expect(lignes.some((l) => /IP ARP: sent rep src 192\.168\.10\.254/.test(l))).toBe(true);
       expect(lignes.some((l) => /sent rep .*dst 192\.168\.10\.101/.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : la ligne de debug devrait mentionner l\'interface de réception', async () => {
+    it('la ligne de debug mentionne l\'interface de réception', async () => {
       await run('debug arp');
-      await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      await resolutionFraiche();
 
       expect(lignes.some((l) => l.includes(g0))).toBe(true);
     }, LONG);
 
     it('gap confirmé : les MAC devraient être au format Cisco pointé (aaaa.bbbb.cccc)', async () => {
       await run('debug arp');
-      await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      await resolutionFraiche();
 
       expect(lignes.some((l) => /[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}/i.test(l))).toBe(true);
     }, LONG);
 
     it('gap confirmé : la MAC destination d\'une requête devrait être 0000.0000.0000 (inconnue)', async () => {
       await run('debug arp');
-      await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      await resolutionFraiche();
 
       const requetes = lignes.filter((l) => /rcvd req/.test(l));
       expect(requetes.length).toBeGreaterThan(0);
       expect(requetes.some((l) => /dst 192\.168\.10\.254 0000\.0000\.0000/.test(l))).toBe(true);
+    }, LONG);
+
+    it('l\'ARP gratuit du routeur à la configuration de `ip address` peuple le cache du poste', async () => {
+      const neigh = await pc.executeCommand('ip neigh show');
+      expect(neigh).toContain('192.168.10.254');
+      expect(neigh).toMatch(/REACHABLE/);
     }, LONG);
 
     it('le cache ARP du routeur se peuple après la résolution', async () => {
