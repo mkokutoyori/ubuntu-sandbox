@@ -1,6 +1,5 @@
-// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P8, docs/PRD-Frame-Only-Refactor.md)
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { subscribeWireSegments, wireSegmentToCapturedPacket, type WireSegment } from './WireCaptureBus';
+import { reachableDevices } from './HostLookup';
 import { PacketCaptureLog } from './PacketCaptureLog';
 
 interface HostLike {
@@ -25,9 +24,7 @@ function asExecCapture(d: unknown): PacketCaptureLog | undefined {
 }
 
 function portOwner(port: unknown): unknown {
-  const equipId = (port as { getEquipmentId?: () => string }).getEquipmentId?.();
-  if (!equipId) return null;
-  return EquipmentRegistry.getInstance().getById(equipId);
+  return (port as { getOwner?: () => object | null }).getOwner?.() ?? null;
 }
 
 function peerOf(port: { getCable: () => { getPortA: () => unknown; getPortB: () => unknown } | null }): unknown {
@@ -43,8 +40,8 @@ function ipOf(port: { getIPAddress: () => unknown }): string {
   return v == null ? '' : String(v);
 }
 
-function findHostByIp(ip: string): unknown {
-  for (const d of EquipmentRegistry.getInstance().getAll()) {
+function findHostByIp(ip: string, scope: unknown[]): unknown {
+  for (const d of scope) {
     const h = d as HostLike;
     if (typeof h.getPorts !== 'function') continue;
     for (const p of h.getPorts()) {
@@ -77,13 +74,16 @@ export function ensureCaptureRouterInstalled(): void {
 
 function dispatch(seg: WireSegment): void {
   const pkt = wireSegmentToCapturedPacket(seg);
+  // A capture only sees what crosses the wire it is attached to, so the
+  // candidates are the devices cabled to whoever emitted this segment.
+  const scope = reachableDevices(seg.srcDevice as never);
 
-  const srcHost = findHostByIp(seg.srcIp);
-  const dstHost = findHostByIp(seg.dstIp);
+  const srcHost = findHostByIp(seg.srcIp, scope);
+  const dstHost = findHostByIp(seg.dstIp, scope);
   asExecCapture(srcHost)?.capture(pkt);
   if (dstHost !== srcHost) asExecCapture(dstHost)?.capture(pkt);
 
-  for (const dev of EquipmentRegistry.getInstance().getAll()) {
+  for (const dev of scope) {
     const sw = dev as SwitchLike;
     const mirror = sw.getPortMirror?.();
     if (!mirror) continue;

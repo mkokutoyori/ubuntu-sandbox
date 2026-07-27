@@ -9,6 +9,13 @@ export interface WireSegment {
   readonly seq: number;
   readonly ack: number;
   readonly payload: Uint8Array;
+  /**
+   * The machine that put this segment on the wire. Lets the capture
+   * router deliver it by walking the topology from there instead of
+   * scanning every device for a matching address
+   * (docs/PRD-Frame-Only-Refactor.md P8).
+   */
+  readonly srcDevice?: object | null;
 }
 
 type Listener = (seg: WireSegment) => void;

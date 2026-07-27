@@ -1444,19 +1444,19 @@ export class LinuxCommandExecutor {
   private emitSshWire(srcIp: string, srcPort: number, dstIp: string, dstPort: number): void {
     ensureCaptureRouterInstalled();
     const enc = new TextEncoder();
-    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: enc.encode('SSH-2.0-OpenSSH_8.9 LinuxSimulator\r\n') });
-    publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 1, ack: 35, payload: enc.encode('SSH-2.0-OpenSSH_8.9 Client\r\n') });
+    publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: enc.encode('SSH-2.0-OpenSSH_8.9 LinuxSimulator\r\n') });
+    publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 1, ack: 35, payload: enc.encode('SSH-2.0-OpenSSH_8.9 Client\r\n') });
     const kex = new Uint8Array(384);
     for (let i = 0; i < kex.length; i++) kex[i] = Math.floor(Math.random() * 256);
-    publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 30, ack: 35, payload: kex });
-    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 35, ack: 30 + kex.length, payload: kex });
+    publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 30, ack: 35, payload: kex });
+    publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 35, ack: 30 + kex.length, payload: kex });
     const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
     let seq = 30 + kex.length;
     for (const line of stdin.split('\n')) {
       void line;
       const cipher = new Uint8Array(64 + Math.floor(Math.random() * 64));
       for (let i = 0; i < cipher.length; i++) cipher[i] = Math.floor(Math.random() * 256);
-      publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq, ack: 35, payload: cipher });
+      publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq, ack: 35, payload: cipher });
       seq += cipher.length;
     }
   }
@@ -1467,13 +1467,13 @@ export class LinuxCommandExecutor {
     const srcPort = 49152 + Math.floor(Math.random() * 1000);
     const enc = new TextEncoder();
     const iac = new Uint8Array([0xff, 0xfd, 0x18, 0xff, 0xfd, 0x20, 0xff, 0xfd, 0x23]);
-    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: iac });
-    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 10, ack: 1, payload: enc.encode('login: ') });
+    publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: iac });
+    publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 10, ack: 1, payload: enc.encode('login: ') });
     let seq = 1;
     for (const raw of stdin.split('\n')) {
       const line = raw + '\n';
       if (!line.trim() && !line.includes('\n')) continue;
-      publishWireSegment({
+      publishWireSegment({ srcDevice: this.localDevice,
         srcIp, srcPort, dstIp, dstPort,
         flags: 'P.', seq, ack: 1,
         payload: enc.encode(line),

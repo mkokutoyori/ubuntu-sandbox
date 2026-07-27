@@ -2118,7 +2118,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       const output = await topo.pc1.executeCommand('traceroute -n 10.0.2.10');
-      expect(output).toContain('10.0.12.1');
+      // Each hop is the address that answered — R1's LAN side, then the
+      // far end of each WAN link. A router's other interfaces never
+      // appear: nothing on the path ever announced them.
+      expect(output).toMatch(/ 1 {2}10\.0\.1\.1/);
+      expect(output).toMatch(/ 2 {2}10\.0\.12\.2/);
+      expect(output).toMatch(/ 3 {2}10\.0\.23\.3/);
+      expect(output).not.toContain('10.0.12.1');
     });
 
     it('276. should support showing round-trip times (RTT) details in traceroute outputs across WAN links', async () => {

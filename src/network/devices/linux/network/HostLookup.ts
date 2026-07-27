@@ -12,8 +12,8 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { HostsFile } from '../../HostsFile';
 import type { Port } from '@/network/hardware/Port';
-import type { IPv4Packet, TCPPacket } from '@/network/core/types';
-import { IPAddress, IP_PROTO_TCP, createIPv4Packet } from '@/network/core/types';
+import type { IPv4Packet, TCPPacket, UDPPacket } from '@/network/core/types';
+import { IPAddress, IP_PROTO_TCP, IP_PROTO_UDP, createIPv4Packet } from '@/network/core/types';
 
 /**
  * BFS reachability across the physical topology: starting from any port
@@ -30,7 +30,7 @@ import { IPAddress, IP_PROTO_TCP, createIPv4Packet } from '@/network/core/types'
  * is the only answer left — the remaining callers that cannot name a
  * source device yet (docs/PRD-Frame-Only-Refactor.md P6).
  */
-function topologyDevices(from?: Equipment | null): Equipment[] {
+export function reachableDevices(from?: Equipment | null): Equipment[] {
   if (!from) return EquipmentRegistry.getInstance().getAll();
   const seen = new Map<string, Equipment>([[from.getId(), from]]);
   const queue: Equipment[] = [from];
@@ -53,7 +53,7 @@ export function isPathReachable(srcIp: string, dstIp: string, from?: Equipment |
   if (srcIp === dstIp) return true;
   if (!srcIp || srcIp === '127.0.0.1' || srcIp.startsWith('169.254.')) return true;
   const startPorts: Port[] = [];
-  for (const dev of topologyDevices(from)) {
+  for (const dev of reachableDevices(from)) {
     for (const port of dev.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && ip.toString() === srcIp) startPorts.push(port);
@@ -81,7 +81,7 @@ export function isPathReachable(srcIp: string, dstIp: string, from?: Equipment |
  */
 export function findReachableHost(srcIp: string, dstIp: string, from?: Equipment | null): Equipment | null {
   const startPorts: Port[] = [];
-  for (const dev of topologyDevices(from)) {
+  for (const dev of reachableDevices(from)) {
     for (const port of dev.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && ip.toString() === srcIp) startPorts.push(port);
@@ -147,9 +147,31 @@ export function transitTcpAclVerdict(
   now: Date = new Date(),
   from?: Equipment | null,
 ): 'permit' | 'deny' {
+  return transitAclVerdict(srcIp, dstIp, dstPort, 'tcp', now, from);
+}
+
+/**
+ * Same walk for a UDP probe — what a `traceroute` datagram meets on its
+ * way out. Only routers actually on the path get a say, which is the
+ * whole point: an ACL on some unrelated device denies nothing.
+ */
+export function transitUdpAclVerdict(
+  srcIp: string, dstIp: string, dstPort: number,
+  now: Date = new Date(),
+  from?: Equipment | null,
+): 'permit' | 'deny' {
+  return transitAclVerdict(srcIp, dstIp, dstPort, 'udp', now, from);
+}
+
+function transitAclVerdict(
+  srcIp: string, dstIp: string, dstPort: number,
+  proto: 'tcp' | 'udp',
+  now: Date,
+  from?: Equipment | null,
+): 'permit' | 'deny' {
   if (srcIp === dstIp) return 'permit';
   const startPorts: Port[] = [];
-  for (const dev of topologyDevices(from)) {
+  for (const dev of reachableDevices(from)) {
     for (const port of dev.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && ip.toString() === srcIp) startPorts.push(port);
@@ -157,7 +179,9 @@ export function transitTcpAclVerdict(
   }
   if (startPorts.length === 0) return 'permit';
 
-  const synth = synthSynPacket(srcIp, dstIp, dstPort);
+  const synth = proto === 'tcp'
+    ? synthSynPacket(srcIp, dstIp, dstPort)
+    : synthUdpPacket(srcIp, dstIp, dstPort);
   const visited = new Set<string>();
   const queue: Port[] = [...startPorts];
   while (queue.length > 0) {
@@ -198,6 +222,20 @@ export function transitTcpAclVerdict(
     }
   }
   return 'permit';
+}
+
+function synthUdpPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Packet {
+  const udp: UDPPacket = {
+    type: 'udp',
+    sourcePort: 49152,
+    destinationPort: dstPort,
+    length: 8,
+    checksum: 0,
+    payload: null,
+  };
+  return createIPv4Packet(
+    new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_UDP, 64, udp, 8,
+  );
 }
 
 function synthSynPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Packet {
@@ -250,7 +288,7 @@ export function findHostByAddress(
   resolverVfs?: { readFile: (p: string) => string | null },
   from?: Equipment | null,
 ): RemoteHost | null {
-  const candidates = topologyDevices(from);
+  const candidates = reachableDevices(from);
   const target = addressOrName.trim();
   if (!target) return null;
 

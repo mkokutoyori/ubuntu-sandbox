@@ -6,6 +6,7 @@ import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
 import { icmpCodeAnnotation } from '../../LinuxFormatHelpers';
 import { makeArgCompleter } from '../completionHelpers';
+import { transitUdpAclVerdict } from '../../network/HostLookup';
 
 const TRACEROUTE_VERSION = 'Modern traceroute for Linux, version 2.1.0 (iputils-s20221126)';
 
@@ -236,20 +237,6 @@ async function formatNumericOutput(target: IPAddress, hops: TracerouteHop[]): Pr
     return ` 1  ${target}  *`;
   }
   const lines = hops.map(formatNumericHopLine);
-  try {
-    const { EquipmentRegistry } = await import('@/network/equipment/EquipmentRegistry');
-    const seen = new Set<string>();
-    for (const hop of hops) {
-      if (!hop.ip || seen.has(hop.ip)) continue;
-      seen.add(hop.ip);
-      for (const dev of EquipmentRegistry.getInstance().getAll()) {
-        const ips = dev.getPorts().map(p => p.getIPAddress()).filter((x): x is NonNullable<typeof x> => !!x).map(x => x.toString());
-        if (ips.includes(hop.ip)) {
-          for (const ip of ips) if (ip !== hop.ip) lines.push(` ${hop.hop}  ${ip}  0.000`);
-        }
-      }
-    }
-  } catch { /* ignore */ }
   return lines.join('\n');
 }
 
@@ -326,7 +313,10 @@ export const tracerouteCommand: LinuxCommand = {
     const probeTimeoutMs = Math.min(parsed.waitMs, 100);
     const effectiveMaxHops = Math.min(parsed.maxHops, 8);
     let hops: TracerouteHop[];
-    if (parsed.method === 'udp' && await anyRouterDeniesTracerouteUdp(parsed.firstTtl)) {
+    const srcIp = ctx.net.getPorts && [...ctx.net.getPorts().values()]
+      .map((p) => p.getIPAddress()?.toString()).find((a): a is string => !!a);
+    if (parsed.method === 'udp'
+        && tracerouteUdpDenied(ctx, srcIp ?? '', targetIP.toString(), parsed.port ?? 33434)) {
       hops = [];
       for (let i = parsed.firstTtl; i <= Math.min(3, effectiveMaxHops); i++) {
         hops.push({ hop: i, timeout: true, probes: [] });
@@ -406,25 +396,19 @@ export const tracerouteCommand: LinuxCommand = {
   },
 };
 
-async function anyRouterDeniesTracerouteUdp(_firstTtl: number): Promise<boolean> {
-  try {
-    const { EquipmentRegistry } = await import('@/network/equipment/EquipmentRegistry');
-    for (const dev of EquipmentRegistry.getInstance().getAll()) {
-      const getAcls = (dev as unknown as { getAccessLists?: () => Array<{ entries: Array<{ action: string; protocol?: string; dstPortSpec?: { op: string; port: number; endPort?: number } }> }> }).getAccessLists;
-      if (typeof getAcls !== 'function') continue;
-      for (const acl of getAcls.call(dev)) {
-        for (const e of acl.entries) {
-          if (e.action !== 'deny' || e.protocol !== 'udp') continue;
-          if (e.dstPortSpec?.op === 'range') {
-            const start = e.dstPortSpec.port;
-            const end = e.dstPortSpec.endPort ?? start;
-            if (start <= 33434 && end >= 33534) return true;
-          }
-        }
-      }
-    }
-  } catch { /* ignore */ }
-  return false;
+/**
+ * Does a router the probe actually crosses deny the traceroute UDP
+ * range? Evaluated by walking the path from this machine, so an ACL on
+ * a device that is not on the route has no effect — which used to be
+ * the case, because every device in the simulation was inspected
+ * (docs/PRD-Frame-Only-Refactor.md P7).
+ */
+function tracerouteUdpDenied(
+  ctx: LinuxCommandContext, srcIp: string, dstIp: string, basePort: number,
+): boolean {
+  if (!srcIp) return false;
+  const from = (ctx.executor as unknown as { getLocalDevice?: () => object | null }).getLocalDevice?.();
+  return transitUdpAclVerdict(srcIp, dstIp, basePort, new Date(), from as never) === 'deny';
 }
 
 function reverseLookup(ctx: LinuxCommandContext, ip: string): string | null {
