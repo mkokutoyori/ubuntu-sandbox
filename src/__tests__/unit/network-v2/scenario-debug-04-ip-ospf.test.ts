@@ -125,6 +125,7 @@ describe('Scénario 4 (debug) — debug ip ospf', () => {
       await run(`interface ${g1}`);
       await run('ip ospf hello-interval 30');
       await run('end');
+      await run('show ip ospf neighbor');
 
       expect(lignes.some((l) => /hello interval mismatch/i.test(l))).toBe(true);
     }, LONG);

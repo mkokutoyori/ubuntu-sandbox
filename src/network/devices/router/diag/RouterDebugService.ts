@@ -127,6 +127,13 @@ export class RouterDebugService implements TerminalDebugSource {
       const p = e.payload;
       this.emit('ip.ospf.spf', `OSPF: Running ${p.kind} SPF (run ${p.runIndex}), ${p.routesCount} routes, runtime ${p.runtimeMs}ms`);
     }));
+    this.broadcast.track(bus.subscribe('ospf.lsa.installed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as { areaId?: string; lsa?: { lsType?: number; linkStateId?: string; advertisingRouter?: string; sequenceNumber?: number } };
+      const h = p.lsa ?? {};
+      this.emit('ip.ospf.lsa-generation',
+        `OSPF: Generate LSA type ${h.lsType ?? '?'}, LSID ${h.linkStateId ?? '?'}, adv rtr ${h.advertisingRouter ?? '?'}, area ${p.areaId ?? '?'}, seq 0x${(h.sequenceNumber ?? 0).toString(16).toUpperCase()}`);
+    }));
     this.broadcast.track(bus.subscribe('ospf.hello.send-requested', (e) => {
       if (!mine(e.payload)) return;
       this.emit('ip.ospf.hello', `OSPF: Send hello packet on ${e.payload.iface}`);

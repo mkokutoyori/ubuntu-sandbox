@@ -1164,8 +1164,22 @@ export class OSPFEngine implements IProtocolEngine {
     if (iface.networkType === 'broadcast') {
       if (hello.networkMask !== iface.mask) return;
     }
-    if (hello.helloInterval !== iface.helloInterval) return;
-    if (hello.deadInterval !== iface.deadInterval) return;
+    if (hello.helloInterval !== iface.helloInterval || hello.deadInterval !== iface.deadInterval) {
+      const mismatched = hello.helloInterval !== iface.helloInterval ? 'hello' : 'dead';
+      this.getBus().publish({
+        topic: 'ospf.interface.state-changed',
+        payload: {
+          ...this.routerRef(),
+          iface: ifaceName,
+          oldState: `${mismatched} interval mismatch`,
+          newState: mismatched === 'hello'
+            ? `Mismatched hello parameters from ${srcIP}: received ${hello.helloInterval}, configured ${iface.helloInterval}`
+            : `Mismatched dead parameters from ${srcIP}: received ${hello.deadInterval}, configured ${iface.deadInterval}`,
+        },
+      });
+      if (iface.neighbors.delete(hello.routerId)) this.scheduleSPF();
+      return;
+    }
 
     const neighborId = hello.routerId;
     let neighbor = iface.neighbors.get(neighborId);
