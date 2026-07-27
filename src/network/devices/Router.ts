@@ -1234,6 +1234,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const myIP = port.getIPAddress();
     if (!myIP) return;
 
+    if (arp.senderIP.equals(myIP) && !arp.senderMAC.equals(port.getMAC())) {
+      this.getLoggingConfig()?.append('warnings', 'ip',
+        `Duplicate address ${myIP} on ${portName}, sourced by ${arp.senderMAC.toCiscoString()}`,
+        true, 'DUPADDR');
+      return;
+    }
+
     // Learn sender (don't overwrite static entries)
     const existing = this.arpTable.get(arp.senderIP.toString());
     if (!existing || existing.type !== 'static') {

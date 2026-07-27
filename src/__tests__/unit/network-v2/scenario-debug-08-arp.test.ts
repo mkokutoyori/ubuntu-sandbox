@@ -141,11 +141,11 @@ describe('Scénario 8 (debug) — debug arp', () => {
       await usurpateur.executeCommand('ping -c 1 -W 1 192.168.10.101');
     }
 
-    it('gap confirmé : recevoir une réponse ARP pour sa propre IP devrait produire une ligne `rcvd rep`', async () => {
+    it('l\'ARP gratuit du squatteur arrive bien sur le canal de debug', async () => {
       await run('debug arp');
       await provoquerLeConflit();
 
-      expect(lignes.some((l) => /IP ARP: rcvd rep src 192\.168\.10\.254/.test(l))).toBe(true);
+      expect(lignes.some((l) => /IP ARP: rcvd req src 192\.168\.10\.254/.test(l))).toBe(true);
     }, LONG);
 
     it('gap confirmé : une IP dupliquée devrait journaliser %IP-4-DUPADDR', async () => {
@@ -166,7 +166,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
 
     it('gap confirmé : le poste en conflit devrait être localisable via la table MAC du switch', async () => {
       await provoquerLeConflit();
-      const mac = usurpateur.getPort('eth0')!.getMACAddress().toString();
+      const mac = usurpateur.getPort('eth0')!.getMAC().toString();
 
       await sw.executeCommand('enable');
       const table = await sw.executeCommand(`show mac address-table address ${mac}`);
@@ -184,12 +184,14 @@ describe('Scénario 8 (debug) — debug arp', () => {
       expect(lignes.some((l) => /rcvd req src 192\.168\.10\.254.*dst 192\.168\.10\.254/.test(l))).toBe(true);
     }, LONG);
 
-    it('gap confirmé : le cache ARP corrompu doit exposer l\'IP de la passerelle avec la MAC de l\'attaquant', async () => {
+    it('le routeur refuse d\'écraser sa propre entrée ARP et signale le doublon', async () => {
       usurpateur.configureInterface('eth0', new IPAddress('192.168.10.254'), new SubnetMask('255.255.255.0'));
       await usurpateur.executeCommand('ping -c 1 -W 1 192.168.10.101');
 
-      const arp = await run('show arp | include 192.168.10');
-      expect(arp).toMatch(/192\.168\.10\.254/);
+      const usurpMac = usurpateur.getPort('eth0')!.getMAC().toString()
+        .replace(/[^0-9a-f]/gi, '').toLowerCase().replace(/(.{4})(.{4})(.{4})/, '$1.$2.$3');
+      expect(await run('show arp')).not.toContain(usurpMac);
+      expect(await run('show logging')).toContain('%IP-4-DUPADDR');
     }, LONG);
   });
 
