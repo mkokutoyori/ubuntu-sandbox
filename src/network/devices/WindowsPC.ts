@@ -2529,11 +2529,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private buildNetContext(): WinCommandContext {
+    // The gateway is read through a getter, not snapshotted: `ipconfig
+    // /renew` obtains the lease and then re-displays the adapter within the
+    // same context, so a value captured at dispatch time would always show
+    // the addressing the command has just replaced.
+    const host = this;
     return {
       hostname: this.hostname,
       ports: this.ports,
-      defaultGateway: this.defaultGateway?.toString() || null,
-      defaultGateway6: this.getDefaultGateway6()?.toString() || null,
+      get defaultGateway() { return host.defaultGateway?.toString() || null; },
+      get defaultGateway6() { return host.getDefaultGateway6()?.toString() || null; },
       arpTable: this.arpTable,
 
       configureInterface: (ifName: string, ip: IPAddress, mask: SubnetMask) =>

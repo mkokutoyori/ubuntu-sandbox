@@ -350,8 +350,8 @@ describe('Group 2: Functional — DORA Process', () => {
       const output = await pc.executeCommand('sudo dhclient -v -t 5 eth0');
       
       expect(output).toContain('No DHCPOFFERS received');
-      expect(output).toContain('expired');
-      
+      expect(output).toContain('No working leases in persistent database - sleeping.');
+
       // Should have no IP configured
       const ipOutput = await pc.executeCommand('ip addr show eth0');
       expect(ipOutput).not.toContain('dynamic');

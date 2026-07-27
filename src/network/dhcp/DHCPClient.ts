@@ -292,6 +292,7 @@ export class DHCPClient implements IProtocolEngine {
     verbose?: boolean;
     timeout?: number;
     daemon?: boolean;
+    fromInitReboot?: boolean;
   } = {}): string {
     const mac = this.getMACForIface(iface);
     const state = this.getState(iface);
@@ -299,15 +300,16 @@ export class DHCPClient implements IProtocolEngine {
     const { verbose = false, timeout = 30 } = options;
     const clientIdentifier = this.buildClientIdentifier(mac);
 
-    // Check for INIT-REBOOT: do we have a lastKnownLease from a prior session?
-    if (state.state === 'INIT' && state.lastKnownLease && !state.lease) {
-      const lastLease = state.lastKnownLease;
-      // Only try INIT-REBOOT if the lease hasn't expired
-      if (lastLease.expiration > Date.now()) {
-        return this.initReboot(iface, state, lastLease, mac, clientIdentifier, verbose);
+    // INIT-REBOOT (RFC 2131 §3.2): a client that already knows an address —
+    // whether it is currently bound to it or read it back from the lease
+    // database — asks for that address again instead of starting over at
+    // DISCOVER. Only an expired record sends us back to INIT.
+    if (!options.fromInitReboot) {
+      const recorded = state.lease ?? state.lastKnownLease;
+      if (recorded && recorded.expiration > Date.now()) {
+        return this.initReboot(iface, state, recorded, mac, clientIdentifier, verbose);
       }
-      // Lease expired — clear it and proceed with normal INIT
-      state.lastKnownLease = null;
+      if (state.lastKnownLease) state.lastKnownLease = null;
     }
 
     // Reset state
@@ -318,9 +320,11 @@ export class DHCPClient implements IProtocolEngine {
     // Log INIT
     state.logs.push(`INIT state - starting DHCP on ${iface}`);
     if (verbose) {
-      lines.push(`Internet Systems Consortium DHCP Client 4.4.1`);
-      lines.push(`Listening on LPF/${iface}/${mac}`);
-      lines.push(`Sending on   LPF/${iface}/${mac}`);
+      if (!options.fromInitReboot) {
+        lines.push(`Internet Systems Consortium DHCP Client 4.4.1`);
+        lines.push(`Listening on LPF/${iface}/${mac}`);
+        lines.push(`Sending on   LPF/${iface}/${mac}`);
+      }
       lines.push(`DHCPDISCOVER on ${iface} to 255.255.255.255 port 67 interval 3`);
       lines.push(`INIT state`);
     }
@@ -331,12 +335,7 @@ export class DHCPClient implements IProtocolEngine {
     if (channels.length === 0) {
       // Verbose mode or explicit timeout: show failure
       if (verbose || options.timeout !== undefined) {
-        state.state = 'INIT';
-        state.logs.push('No DHCPOFFERS received');
-        if (verbose) {
-          lines.push(`No DHCPOFFERS received.`);
-          lines.push(`No working leases in persistent database - sleeping. expired.`);
-        }
+        this.noOffersFallback(iface, state, lines, verbose);
         return lines.join('\n');
       }
 
@@ -389,12 +388,7 @@ export class DHCPClient implements IProtocolEngine {
       if (this.connectedServers.length === 0 && !verbose && options.timeout === undefined) {
         return this.autoAssignLease(iface, state);
       }
-      state.state = 'INIT';
-      state.logs.push('No DHCPOFFERS received');
-      if (verbose) {
-        lines.push(`No DHCPOFFERS received.`);
-        lines.push(`No working leases in persistent database - sleeping. expired.`);
-      }
+      this.noOffersFallback(iface, state, lines, verbose);
       return lines.join('\n');
     }
 
@@ -580,6 +574,46 @@ export class DHCPClient implements IProtocolEngine {
   }
 
   /**
+   * Nothing answered. ISC's client then reads its lease database back: a
+   * record that has not expired is put back into service ("Trying recorded
+   * lease"), and only when there is none does it give up. Either way the
+   * interface and the client end up telling the same story — an address the
+   * client has disowned does not stay configured.
+   */
+  private noOffersFallback(
+    iface: string,
+    state: DHCPClientIfaceState,
+    lines: string[],
+    verbose: boolean,
+  ): void {
+    state.state = 'INIT';
+    state.logs.push('No DHCPOFFERS received');
+    if (verbose) lines.push('No DHCPOFFERS received.');
+
+    const recorded = state.lease ?? state.lastKnownLease;
+    if (recorded && recorded.expiration > Date.now()) {
+      state.state = 'BOUND';
+      state.lease = recorded;
+      state.lastKnownLease = { ...recorded };
+      state.logs.push(`Trying recorded lease ${recorded.ipAddress}`);
+      state.logs.push(`bound to ${recorded.ipAddress} (recorded lease)`);
+      if (verbose) {
+        lines.push(`Trying recorded lease ${recorded.ipAddress}`);
+        lines.push(`bound: renewal in ${recorded.renewalTime} seconds.`);
+      }
+      this.configureIP(iface, recorded.ipAddress, recorded.subnetMask, recorded.defaultGateway);
+      this.setupLeaseTimers(iface, state);
+      return;
+    }
+
+    if (state.lease) this.clearIP(iface);
+    state.lease = null;
+    state.lastKnownLease = null;
+    state.logs.push('No working leases in persistent database');
+    if (verbose) lines.push('No working leases in persistent database - sleeping.');
+  }
+
+  /**
    * INIT-REBOOT: Client has a previously known lease and tries to reuse it.
    * RFC 2131 §3.2: Client sends DHCPREQUEST with previously assigned IP (Option 50),
    * without Server Identifier (Option 54), to validate the lease is still valid.
@@ -628,15 +662,16 @@ export class DHCPClient implements IProtocolEngine {
     }
 
     if (!ackResult || !respondingChannel) {
-      // NAK or no response — fall back to normal INIT
+      // NAK or no response — fall back to normal INIT. The record itself is
+      // kept: if DISCOVER finds nothing either, an unexpired lease is still
+      // the client's best answer (see noOffersFallback).
       state.state = 'INIT';
-      state.lastKnownLease = null;
       state.logs.push('INIT-REBOOT failed - reverting to INIT');
       if (verbose) {
         lines.push(`DHCPNAK or no response - reverting to DHCPDISCOVER`);
       }
-      // Retry as normal INIT
-      return this.requestLease(iface, { verbose });
+      const retry = this.requestLease(iface, { verbose, fromInitReboot: true });
+      return retry ? lines.join('\n') + '\n' + retry : lines.join('\n');
     }
 
     // ARP probe

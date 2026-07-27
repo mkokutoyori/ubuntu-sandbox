@@ -178,7 +178,10 @@ export interface PortFrameDroppedPayload extends PortRef {
 }
 
 export interface PortLinkUpPayload extends PortRef {}
-export interface PortLinkDownPayload extends PortRef {}
+export interface PortLinkDownPayload extends PortRef {
+  /** True when the operator shut the port, false for a carrier loss. */
+  adminDown?: boolean;
+}
 
 export interface PortIpChangedPayload extends PortRef {
   ip: IPAddress | null;

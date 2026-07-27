@@ -11,6 +11,26 @@ import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 
+const INVALID_INPUT = "% Invalid input detected at '^' marker.";
+
+/**
+ * IOS takes up to eight addresses on `default-router` and `dns-server`, and
+ * each one has to be a usable host address: a mask, a multicast group, the
+ * all-ones broadcast or anything out of 240.0.0.0/4 is refused at the
+ * parser, not silently kept or silently dropped.
+ */
+function parseAddressList(args: string[]): string[] | null {
+  if (args.length < 1 || args.length > 8) return null;
+  for (const a of args) {
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+    if (!m) return null;
+    const o = m.slice(1).map(Number);
+    if (o.some(n => n > 255)) return null;
+    if (o[0] === 0 || o[0] >= 224) return null;
+  }
+  return args;
+}
+
 // ─── DHCP Pool Config Mode Commands ──────────────────────────────────
 
 export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
@@ -24,14 +44,18 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
   trie.registerGreedy('default-router', 'Set default router for DHCP clients', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
-    ctx.r()._getDHCPServerInternal().configurePoolRouter(ctx.getSelectedDHCPPool()!, args[0]);
+    const routers = parseAddressList(args);
+    if (!routers) return INVALID_INPUT;
+    ctx.r()._getDHCPServerInternal().configurePoolRouter(ctx.getSelectedDHCPPool()!, routers);
     return '';
   });
 
   trie.registerGreedy('dns-server', 'Set DNS server for DHCP clients', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
-    ctx.r()._getDHCPServerInternal().configurePoolDNS(ctx.getSelectedDHCPPool()!, args);
+    const servers = parseAddressList(args);
+    if (!servers) return INVALID_INPUT;
+    ctx.r()._getDHCPServerInternal().configurePoolDNS(ctx.getSelectedDHCPPool()!, servers);
     return '';
   });
 

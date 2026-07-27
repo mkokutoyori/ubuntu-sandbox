@@ -228,10 +228,12 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
-  configurePoolRouter(name: string, router: string): boolean {
+  configurePoolRouter(name: string, router: string | string[]): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
-    pool.defaultRouter = router;
+    const routers = Array.isArray(router) ? router : [router];
+    pool.defaultRouters = routers;
+    pool.defaultRouter = routers[0] ?? null;
     return true;
   }
 

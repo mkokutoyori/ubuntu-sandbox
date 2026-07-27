@@ -653,6 +653,21 @@ export class Port {
     this.notifyLinkChange(down || !this.isUp ? 'down' : 'up');
   }
 
+  /**
+   * `shutdown` / `no shutdown`. An operator taking the interface down is a
+   * different event from a cable coming out, and IOS reports them
+   * differently (%LINK-5-CHANGED administratively down vs %LINK-3-UPDOWN
+   * down) — so the cause travels with the notification. Both flags move
+   * together and exactly one notification goes out.
+   */
+  setAdminShutdown(down: boolean): void {
+    if (this.adminDown === down && this.isUp === !down) return;
+    this.adminDown = down;
+    this.isUp = !down;
+    Logger.info(this.equipmentId, 'port:admin', `${this.name}: admin ${down ? 'disabled' : 'enabled'}`);
+    this.notifyLinkChange(down ? 'down' : 'up');
+  }
+
   setUp(up: boolean): void {
     if (this.isUp === up) return; // No change — don't notify
     this.isUp = up;
@@ -671,7 +686,7 @@ export class Port {
     this.getBus().publish(
       state === 'up'
         ? { topic: 'port.link.up', payload: this.portRef() }
-        : { topic: 'port.link.down', payload: this.portRef() },
+        : { topic: 'port.link.down', payload: { ...this.portRef(), adminDown: this.adminDown } },
     );
   }
 

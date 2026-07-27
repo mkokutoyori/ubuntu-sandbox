@@ -109,6 +109,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
       network: null,
       mask: str(offer.getOption(DHCP_OPTION.SUBNET_MASK)),
       defaultRouter: str(offer.getOption(DHCP_OPTION.ROUTER)),
+      defaultRouters: strArray(offer.getOption(DHCP_OPTION.ROUTER)),
       dnsServers: strArray(offer.getOption(DHCP_OPTION.DNS)),
       domainName: str(offer.getOption(DHCP_OPTION.DOMAIN_NAME)),
       leaseDuration: num(offer.getOption(DHCP_OPTION.LEASE_TIME)) ?? 86400,

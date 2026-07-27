@@ -23,6 +23,12 @@ export type SyslogLineListener = (line: string) => void;
 
 export interface LoggingMonitorSource {
   subscribeMonitor(listener: SyslogLineListener): () => void;
+  /**
+   * `logging console`, which IOS has on by default. A console session gets
+   * these without asking; `terminal monitor` is what a VTY needs to see the
+   * same stream, and that one is `subscribeMonitor`.
+   */
+  subscribeConsole?(listener: SyslogLineListener): () => void;
 }
 
 export class LoggingConfig {
@@ -30,7 +36,10 @@ export class LoggingConfig {
   buffered = false;
   bufferedSize = 4096;
   bufferedSeverity: Severity = 'debugging';
+  /** `logging console` — on out of the box, silenced by `no logging console`. */
+  consoleEnabled = true;
   consoleSeverity: Severity = 'debugging';
+  monitorEnabled = true;
   monitorSeverity: Severity = 'debugging';
   trapSeverity: Severity = 'informational';
   facility = 'local7';
@@ -47,6 +56,7 @@ export class LoggingConfig {
   private attachedDeviceId: string | null = null;
   private busUnsub: (() => void) | null = null;
   private readonly monitorListeners = new Set<SyslogLineListener>();
+  private readonly consoleListeners = new Set<SyslogLineListener>();
   private readonly SEVERITY_ORDER: Record<Severity, number> = {
     emergencies: 0, alerts: 1, critical: 2, errors: 3,
     warnings: 4, notifications: 5, informational: 6, debugging: 7,
@@ -84,6 +94,15 @@ export class LoggingConfig {
     for (const listener of this.monitorListeners) listener(line);
   }
 
+  subscribeConsole(listener: SyslogLineListener): () => void {
+    this.consoleListeners.add(listener);
+    return () => { this.consoleListeners.delete(listener); };
+  }
+
+  private fanConsole(line: string): void {
+    for (const listener of this.consoleListeners) listener(line);
+  }
+
   /**
    * Append a log message into the buffered/console projection.
    *
@@ -99,8 +118,11 @@ export class LoggingConfig {
   append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
     if (!this.enabled) return;
     const ts = Date.now();
-    if (this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
+    if (this.monitorEnabled && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
       this.fanMonitor(this.formatEntry(severity, tag, text, ts, mnemonic));
+    }
+    if (this.consoleEnabled && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.consoleSeverity]) {
+      this.fanConsole(this.formatEntry(severity, tag, text, ts, mnemonic));
     }
     if (this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.bufferedSeverity]) return;
     this.messages.push({ ts, severity, tag, text, mnemonic });
@@ -164,8 +186,16 @@ export class LoggingConfig {
       }),
       bus.subscribeWhere('port.link.down', isOurs, (e) => {
         const p = e.payload;
-        this.append('errors', 'link',
-          `Interface ${p.portName}, changed state to down`, true, 'UPDOWN');
+        // IOS distinguishes the two ways a link goes down: an operator
+        // `shutdown` is %LINK-5-CHANGED "administratively down", a carrier
+        // loss is %LINK-3-UPDOWN "down".
+        if (p.adminDown) {
+          this.append('notifications', 'link',
+            `Interface ${p.portName}, changed state to administratively down`, true, 'CHANGED');
+        } else {
+          this.append('errors', 'link',
+            `Interface ${p.portName}, changed state to down`, true, 'UPDOWN');
+        }
         this.append('notifications', 'lineproto',
           `Line protocol on Interface ${p.portName}, changed state to down`, true, 'UPDOWN');
       }),
@@ -761,11 +791,13 @@ export class LoggingConfig {
         return;
       }
       case 'console': {
+        this.consoleEnabled = !negate;
         const s = normSeverity(args[1] ?? '');
         if (s) this.consoleSeverity = s;
         return;
       }
       case 'monitor': {
+        this.monitorEnabled = !negate;
         const s = normSeverity(args[1] ?? '');
         if (s) this.monitorSeverity = s;
         return;
@@ -837,8 +869,8 @@ export class LoggingConfig {
     const lines = [
       `Syslog logging: ${this.enabled ? 'enabled' : 'disabled'}` +
         ' (0 messages dropped, 0 flushes, 0 overruns)',
-      `    Console logging: ${lvl(this.consoleSeverity)}`,
-      `    Monitor logging: ${lvl(this.monitorSeverity)}`,
+      `    Console logging: ${this.consoleEnabled ? lvl(this.consoleSeverity) : 'disabled'}`,
+      `    Monitor logging: ${this.monitorEnabled ? lvl(this.monitorSeverity) : 'disabled'}`,
       `    Buffer logging: ${this.buffered
         ? `${lvl(this.bufferedSeverity)}, ${this.bufferedSize} bytes`
         : 'disabled'}`,
@@ -875,8 +907,10 @@ export class LoggingConfig {
     } else if (this.bufferedSeverity !== 'debugging') {
       lines.push(`logging buffered ${this.bufferedSeverity}`);
     }
-    if (this.consoleSeverity !== 'debugging') lines.push(`logging console ${this.consoleSeverity}`);
-    if (this.monitorSeverity !== 'debugging') lines.push(`logging monitor ${this.monitorSeverity}`);
+    if (!this.consoleEnabled) lines.push('no logging console');
+    else if (this.consoleSeverity !== 'debugging') lines.push(`logging console ${this.consoleSeverity}`);
+    if (!this.monitorEnabled) lines.push('no logging monitor');
+    else if (this.monitorSeverity !== 'debugging') lines.push(`logging monitor ${this.monitorSeverity}`);
     if (this.trapSeverity !== 'informational') lines.push(`logging trap ${this.trapSeverity}`);
     if (this.facility !== 'local7') lines.push(`logging facility ${this.facility}`);
     if (this.timestamps) lines.push('service timestamps log datetime msec');

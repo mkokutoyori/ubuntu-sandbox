@@ -38,8 +38,10 @@ export interface DHCPPoolConfig {
   network: string | null;
   /** Subnet mask (e.g. 255.255.255.0) */
   mask: string | null;
-  /** Default gateway address(es) */
+  /** Primary gateway — first entry of `defaultRouters`, option 3 as offered */
   defaultRouter: string | null;
+  /** Every address given to `default-router`, in order (IOS takes up to 8) */
+  defaultRouters: string[];
   /** DNS server address(es) */
   dnsServers: string[];
   /** Domain name */
@@ -375,6 +377,7 @@ export function createDefaultPoolConfig(name: string): DHCPPoolConfig {
     network: null,
     mask: null,
     defaultRouter: null,
+    defaultRouters: [],
     dnsServers: [],
     domainName: null,
     leaseDuration: 86400, // 1 day default

@@ -78,7 +78,23 @@ export class CiscoTerminalSession extends CLITerminalSession {
    */
   override async init(): Promise<void> {
     await super.init();
+    this.startConsoleLogging();
     this.maybeStartConsoleLogin();
+  }
+
+  /**
+   * This terminal is the device console, and IOS ships with `logging
+   * console debugging` on: %LINK/%LINEPROTO and friends appear here without
+   * anyone asking for them. `terminal monitor` is the separate opt-in a vty
+   * needs, and it keeps its own subscription.
+   */
+  private startConsoleLogging(): void {
+    const src = (this.device as unknown as {
+      getLoggingConfig?: () => LoggingMonitorSource | null;
+    }).getLoggingConfig?.();
+    if (!src?.subscribeConsole) return;
+    const unsubscribe = src.subscribeConsole((line) => this.addLine(line));
+    this.registerTearDown(unsubscribe);
   }
 
   private maybeStartConsoleLogin(): void {

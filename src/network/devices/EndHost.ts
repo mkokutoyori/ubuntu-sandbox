@@ -640,7 +640,12 @@ export abstract class EndHost extends Equipment {
       },
       (iface: string, ip: string, mask: string, gateway: string | null, origin: IPv4AddressOrigin = 'dhcp') => {
         this.configureInterface(iface, new IPAddress(ip), new SubnetMask(mask), origin);
-        if (gateway) this.setDefaultGateway(new IPAddress(gateway));
+        // A configuration that carries no router option — APIPA, or a pool
+        // without `default-router` — takes the DHCP-installed gateway away
+        // with it. A gateway the operator set by hand is not the client's
+        // to remove.
+        if (gateway) this.setDefaultGateway(new IPAddress(gateway), 'dhcp');
+        else if (this.defaultGatewayOrigin === 'dhcp') this.clearDefaultGateway();
         this.dhcpInterfaces.add(iface);
         this.onDhcpLeaseConfigured(iface);
       },
@@ -652,6 +657,7 @@ export abstract class EndHost extends Equipment {
           r => !(r.type === 'connected' && r.iface === iface)
         );
         this.defaultGateway = null;
+        this.defaultGatewayOrigin = null;
         this.routingTable = this.routingTable.filter(r => r.type !== 'default');
         this.dhcpInterfaces.delete(iface);
         this.onDhcpLeaseReleased(iface);
@@ -951,8 +957,16 @@ export abstract class EndHost extends Equipment {
 
   getDefaultGateway(): IPAddress | null { return this.defaultGateway; }
 
-  setDefaultGateway(gw: IPAddress): void {
+  /**
+   * Who installed the current default gateway. The DHCP client owns the one
+   * it installed and takes it back when the lease stops carrying a router
+   * option; everything else is the operator's and survives.
+   */
+  protected defaultGatewayOrigin: 'static' | 'dhcp' | null = null;
+
+  setDefaultGateway(gw: IPAddress, origin: 'static' | 'dhcp' = 'static'): void {
     this.defaultGateway = gw;
+    this.defaultGatewayOrigin = origin;
 
     const previousDefault = this.routingTable.find(r => r.type === 'default');
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
@@ -996,6 +1010,7 @@ export abstract class EndHost extends Equipment {
 
   clearDefaultGateway(): void {
     this.defaultGateway = null;
+    this.defaultGatewayOrigin = null;
     const previousDefault = this.routingTable.find(r => r.type === 'default');
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
     if (previousDefault) {

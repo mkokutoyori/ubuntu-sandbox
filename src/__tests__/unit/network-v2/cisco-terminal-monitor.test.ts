@@ -32,6 +32,12 @@ describe('Cisco terminal monitor — syslog event subscription streams into the 
     manager = new TerminalManager(bus);
     router = new CiscoRouter('R1');
     router.setEventBus(bus);
+    // The console gets syslog on its own (`logging console`, on by default),
+    // which would drown out what these cases are about. Silencing it is what
+    // an operator does to isolate the `terminal monitor` stream.
+    for (const c of ['enable', 'configure terminal', 'no logging console', 'end']) {
+      await router.executeCommand(c);
+    }
     const sid = manager.openTerminal(router)!;
     session = manager.getSession(sid) as CiscoTerminalSession;
     await waitBoot(session);
