@@ -39,6 +39,11 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    // Automatic reset of shared singletons before every test (rapport 08,
+    // item #51) — see the file for what this deliberately does and doesn't
+    // cover. Additive: existing per-file manual resets are untouched and
+    // remain harmless no-ops when this backstop already did the work.
+    setupFiles: ['./src/__tests__/setupGlobalState.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
