@@ -243,6 +243,7 @@ export abstract class Equipment {
    */
   protected addPort(port: Port): void {
     port.setEquipmentId(this.id);
+    port.setOwner(this);
     port.setEventBus(this.getBus());
     port.onFrame((portName, frame) => {
       if (!this.isPoweredOn) {

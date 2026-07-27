@@ -58,6 +58,11 @@ export interface SshClientResult {
 export interface SshClientOpts {
   /** argv passed to `ssh` (excluding the verb itself). */
   args: string[];
+  /**
+   * The machine running `ssh`. The target is resolved by walking the
+   * cable plant from here (docs/PRD-Frame-Only-Refactor.md P6).
+   */
+  sourceDevice?: object | null;
   /** Local hostname for the line written to auth.log on success. */
   sourceHostname: string;
   /** Local IP — appears as the "from" field in the remote auth.log. */
@@ -770,7 +775,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     const resolved = opts.resolveName(host);
     if (resolved) lookupHost = resolved;
   }
-  const found = findHostByAddress(lookupHost, opts.localVfs);
+  const found = findHostByAddress(lookupHost, opts.localVfs, opts.sourceDevice as never);
   if (!found) {
     // A *valid* numeric IPv4 that nothing on the LAN owns is a routing
     // failure (OpenSSH prints "No route to host"). Strings that merely

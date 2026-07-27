@@ -1323,6 +1323,7 @@ export class LinuxCommandExecutor {
     }
     return {
       args,
+      sourceDevice: this.localDevice,
       sourceHostname: hostname,
       sourceIp,
       sourceUser: user,
@@ -1841,6 +1842,16 @@ export class LinuxCommandExecutor {
   setTcpProbe(probe: (ip: string, port: number) => boolean): void {
     this.tcpProbe = probe;
   }
+
+  /**
+   * The machine this shell runs on. Client commands anchor their host
+   * lookup to it so a target is resolved by walking the cable plant from
+   * here, not by scanning every device in the simulation
+   * (docs/PRD-Frame-Only-Refactor.md P6).
+   */
+  private localDevice: object | null = null;
+  setLocalDevice(device: object): void { this.localDevice = device; }
+  getLocalDevice(): object | null { return this.localDevice; }
 
   private sshHostKeyProbe: ((ip: string, port: number) => ProbedHostKey | null) | null = null;
   setSshHostKeyProbe(probe: (ip: string, port: number) => ProbedHostKey | null): void {

@@ -232,6 +232,7 @@ export abstract class LinuxMachine extends EndHost
     this.socketTable.setEphemeralRange(32768, 60999);
     this.tcpv2.setEphemeralRange(32768, 60999);
     this.initDefaultSockets(profile.isServer);
+    this.executor.setLocalDevice(this);
     this.executor.setSocketTable(this.socketTable);
     this.executor.vfs.mkdirp('/proc/sys/net/ipv4', 0o755, 0, 0);
     this.executor.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', '32768\t60999\n', 0, 0, 0o022);

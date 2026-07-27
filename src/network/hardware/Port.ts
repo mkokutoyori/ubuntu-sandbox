@@ -75,6 +75,13 @@ export class Port {
   private isUp: boolean = true;
   private adminDown: boolean = false;
   private equipmentId: string = '';
+  /**
+   * The device this port is physically part of. Following a cable to its
+   * far end and asking the port who owns it is how the topology is
+   * actually connected; resolving the same thing through the global
+   * registry is not (docs/PRD-Frame-Only-Refactor.md).
+   */
+  private owner: object | null = null;
   private frameHandler: FrameHandler | null = null;
 
   // ─── Physical layer properties ──────────────────────────────────
@@ -197,6 +204,10 @@ export class Port {
   setEquipmentId(id: string): void {
     this.equipmentId = id;
   }
+
+  /** Set by the device when it registers the port. */
+  setOwner(owner: object): void { this.owner = owner; }
+  getOwner(): object | null { return this.owner; }
 
   // ─── IP Configuration ──────────────────────────────────────────
 

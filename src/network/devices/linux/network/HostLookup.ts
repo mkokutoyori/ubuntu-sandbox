@@ -21,12 +21,39 @@ import { IPAddress, IP_PROTO_TCP, createIPv4Packet } from '@/network/core/types'
  * return true only when a port owning `dstIp` is reachable AND every
  * device + port on the path is powered on and admin-up.
  */
-export function isPathReachable(srcIp: string, dstIp: string): boolean {
+/**
+ * Every device reachable from `from` by walking the cable plant, `from`
+ * included. This is the topology as it is actually wired: a port hands
+ * back the device it belongs to, and a cable hands back its far end.
+ *
+ * With no `from`, there is nothing to walk from and the global registry
+ * is the only answer left — the remaining callers that cannot name a
+ * source device yet (docs/PRD-Frame-Only-Refactor.md P6).
+ */
+function topologyDevices(from?: Equipment | null): Equipment[] {
+  if (!from) return EquipmentRegistry.getInstance().getAll();
+  const seen = new Map<string, Equipment>([[from.getId(), from]]);
+  const queue: Equipment[] = [from];
+  while (queue.length > 0) {
+    const dev = queue.shift()!;
+    for (const port of dev.getPorts()) {
+      const cable = port.getCable();
+      if (!cable) continue;
+      const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+      const peer = peerPort?.getOwner() as Equipment | null | undefined;
+      if (!peer || seen.has(peer.getId())) continue;
+      seen.set(peer.getId(), peer);
+      queue.push(peer);
+    }
+  }
+  return [...seen.values()];
+}
+
+export function isPathReachable(srcIp: string, dstIp: string, from?: Equipment | null): boolean {
   if (srcIp === dstIp) return true;
   if (!srcIp || srcIp === '127.0.0.1' || srcIp.startsWith('169.254.')) return true;
-  const registry = EquipmentRegistry.getInstance();
   const startPorts: Port[] = [];
-  for (const dev of registry.getAll()) {
+  for (const dev of topologyDevices(from)) {
     for (const port of dev.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && ip.toString() === srcIp) startPorts.push(port);
@@ -41,7 +68,7 @@ export function isPathReachable(srcIp: string, dstIp: string): boolean {
   const anyCable = startPorts.some(p => p.getCable() !== null || p.wasEverCabled());
   if (!anyCable) return true;
 
-  return findReachableHost(srcIp, dstIp) !== null;
+  return findReachableHost(srcIp, dstIp, from) !== null;
 }
 
 /**
@@ -52,10 +79,9 @@ export function isPathReachable(srcIp: string, dstIp: string): boolean {
  * (e.g. test fixtures), it returns the one truly reachable over the wire.
  * Returns null when no cabled path terminates at `dstIp`.
  */
-export function findReachableHost(srcIp: string, dstIp: string): Equipment | null {
-  const registry = EquipmentRegistry.getInstance();
+export function findReachableHost(srcIp: string, dstIp: string, from?: Equipment | null): Equipment | null {
   const startPorts: Port[] = [];
-  for (const dev of registry.getAll()) {
+  for (const dev of topologyDevices(from)) {
     for (const port of dev.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && ip.toString() === srcIp) startPorts.push(port);
@@ -74,7 +100,7 @@ export function findReachableHost(srcIp: string, dstIp: string): Equipment | nul
     if (!cable) continue;
     const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
     if (!peerPort || !peerPort.getIsUp()) continue;
-    const peerDev = registry.getById(peerPort.getEquipmentId());
+    const peerDev = peerPort.getOwner() as Equipment | null;
     if (!peerDev || !peerDev.getIsPoweredOn()) continue;
     const peerIp = peerPort.getIPAddress();
     if (peerIp && peerIp.toString() === dstIp) return peerDev;
@@ -119,11 +145,11 @@ interface RouterAclSurface {
 export function transitTcpAclVerdict(
   srcIp: string, dstIp: string, dstPort: number,
   now: Date = new Date(),
+  from?: Equipment | null,
 ): 'permit' | 'deny' {
   if (srcIp === dstIp) return 'permit';
-  const registry = EquipmentRegistry.getInstance();
   const startPorts: Port[] = [];
-  for (const dev of registry.getAll()) {
+  for (const dev of topologyDevices(from)) {
     for (const port of dev.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && ip.toString() === srcIp) startPorts.push(port);
@@ -144,7 +170,7 @@ export function transitTcpAclVerdict(
     if (!cable) continue;
     const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
     if (!peerPort || !peerPort.getIsUp()) continue;
-    const peerDev = registry.getById(peerPort.getEquipmentId());
+    const peerDev = peerPort.getOwner() as Equipment | null;
     if (!peerDev || !peerDev.getIsPoweredOn()) continue;
     const peerIp = peerPort.getIPAddress();
     if (peerIp && peerIp.toString() === dstIp) return 'permit';
@@ -222,15 +248,16 @@ export interface RemoteHost {
 export function findHostByAddress(
   addressOrName: string,
   resolverVfs?: { readFile: (p: string) => string | null },
+  from?: Equipment | null,
 ): RemoteHost | null {
-  const registry = EquipmentRegistry.getInstance();
+  const candidates = topologyDevices(from);
   const target = addressOrName.trim();
   if (!target) return null;
 
   // IPv4 numeric form → exact port match.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(target)) {
     let off: RemoteHost | null = null;
-    for (const dev of registry.getAll()) {
+    for (const dev of candidates) {
       for (const port of dev.getPorts()) {
         const ip = port.getIPAddress();
         if (ip && ip.toString() === target) {
@@ -266,7 +293,7 @@ export function findHostByAddress(
   if (target.includes(':') && /^[0-9a-fA-F:]+(%[a-zA-Z0-9_-]+)?$/.test(target)) {
     const bareTarget = target.split('%')[0].toLowerCase();
     let off: RemoteHost | null = null;
-    for (const dev of registry.getAll()) {
+    for (const dev of candidates) {
       for (const port of dev.getPorts()) {
         const matched = port.getIPv6Addresses().some((entry) => {
           const a = entry.address.toString().split('%')[0].toLowerCase();
@@ -305,7 +332,7 @@ export function findHostByAddress(
       resolverVfs.readFile('C:\\Windows\\System32\\drivers\\etc\\hosts');
     for (const entry of HostsFile.parse(hostsRaw).entries) {
       if (entry.hasName(needle) || entry.hasName(shortNeedle)) {
-        const dev = registry.getAll().find(d =>
+        const dev = candidates.find(d =>
           d.getIsPoweredOn() &&
           d.getPorts().some(p => p.getIPAddress()?.toString() === entry.ip),
         );
@@ -314,7 +341,7 @@ export function findHostByAddress(
     }
   }
 
-  for (const dev of registry.getAll()) {
+  for (const dev of candidates) {
     if (!dev.getIsPoweredOn()) continue;
     const candidate = (dev as Equipment & { profile?: { hostname?: string } });
     const hostname = candidate.profile?.hostname?.toLowerCase();
