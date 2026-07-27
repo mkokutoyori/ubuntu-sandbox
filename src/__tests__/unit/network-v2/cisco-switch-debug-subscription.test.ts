@@ -45,11 +45,12 @@ describe('Cisco switch debug spanning-tree — event subscription on the async p
 
   function stateChange(): void {
     bus.publish({
-      topic: 'stp.state.changed',
+      topic: 'stp.port-state.changed',
       payload: {
         deviceId: sw.id,
         hostname: 'SW1',
         port: 'FastEthernet0/2',
+        vlan: 1,
         oldState: 'blocking',
         newState: 'forwarding',
       },

@@ -97,10 +97,10 @@ export class SwitchDebugService implements TerminalDebugSource {
       const p = e.payload;
       this.emit('stp.events', `STP: ${p.port} role change ${p.oldRole} -> ${p.newRole}`);
     }));
-    this.broadcast.track(bus.subscribe('stp.state.changed', (e) => {
+    this.broadcast.track(bus.subscribe('stp.port-state.changed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
-      this.emit('stp.events', `STP: ${p.port} state change ${p.oldState} -> ${p.newState}`);
+      this.emit('stp.events', `STP: ${p.port} VLAN ${p.vlan} state change ${p.oldState ?? 'none'} -> ${p.newState}`);
     }));
     this.broadcast.track(bus.subscribe('stp.root.changed', (e) => {
       if (!mine(e.payload)) return;
@@ -115,12 +115,12 @@ export class SwitchDebugService implements TerminalDebugSource {
     this.broadcast.track(bus.subscribe('stp.bpdu.sent', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
-      this.emit('stp.bpdu', `STP: Tx BPDU on ${p.port} root ${p.rootMac} cost ${p.pathCost}`);
+      this.emit('stp.bpdu', `STP: Tx BPDU on ${p.port} Root Bridge ID ${p.rootMac} cost ${p.pathCost}`);
     }));
     this.broadcast.track(bus.subscribe('stp.bpdu.received', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
-      this.emit('stp.bpdu', `STP: Rx BPDU on ${p.port} from ${p.senderMac} root ${p.rootMac}`);
+      this.emit('stp.bpdu', `STP: Rx BPDU on ${p.port} Bridge ID ${p.senderMac} Root Bridge ID ${p.rootMac} cost ${p.pathCost ?? 0}`);
     }));
     this.broadcast.track(bus.subscribe('stp.bpdu-guard.violation', (e) => {
       if (!mine(e.payload)) return;

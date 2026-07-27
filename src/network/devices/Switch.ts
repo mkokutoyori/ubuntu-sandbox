@@ -358,6 +358,8 @@ export abstract class Switch extends Equipment {
     this.initDefaultVLAN();
     this.startMACAgingProcess();
     this.shell = this.createShell();
+    (this.shell as unknown as { attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void })
+      .attachLoggingToBus?.(this.getBus(), this.id);
     this.initArpInspection();
     this.initPortSecurity();
     this.initDhcpSnooping();
@@ -696,6 +698,7 @@ export abstract class Switch extends Equipment {
     if (this.arpInspectionPipeline) this.initArpInspection();
     this.initPortSecurity();
     this.initDhcpSnooping();
+    if (bus) (this.shell as unknown as { attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void }).attachLoggingToBus?.(bus, this.id);
   }
 
   // ─── Power Management ────────────────────────────────────────────
@@ -738,6 +741,8 @@ export abstract class Switch extends Equipment {
     }
     // Reset shell FSM to user mode
     this.shell = this.createShell();
+    (this.shell as unknown as { attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void })
+      .attachLoggingToBus?.(this.getBus(), this.id);
     this.startMACAgingProcess();
     // Reset volatile DAI runtime (keep config — it lives in NVRAM via running-config).
     this.arpErrDisabledPorts.clear();

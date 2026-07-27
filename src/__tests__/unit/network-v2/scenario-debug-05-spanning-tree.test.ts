@@ -38,6 +38,13 @@ describe('Scénario 5 (debug) — debug spanning-tree', () => {
 
   const run = (cmd: string): Promise<string> => sw.executeCommand(cmd);
 
+  async function intrusRevendiqueRoot(): Promise<void> {
+    for (const c of ['enable', 'configure terminal',
+      'spanning-tree vlan 1 priority 4096', 'end']) {
+      await intrus.executeCommand(c);
+    }
+  }
+
   describe('activation des debugs STP', () => {
     it('`debug spanning-tree events` s\'active', async () => {
       expect(await run('debug spanning-tree events')).toMatch(/debugging is on/i);
@@ -117,7 +124,9 @@ describe('Scénario 5 (debug) — debug spanning-tree', () => {
       await run('spanning-tree bpduguard enable');
       await run('end');
 
+      await intrusRevendiqueRoot();
       new Cable('lien-intrus').connect(sw.getPort('FastEthernet0/3')!, intrus.getPort('FastEthernet0/1')!);
+      await new Promise((r) => setTimeout(r, 50));
 
       const status = await run('show interfaces status');
       expect(status).toMatch(/Fa0\/3\s+(err-disabled|disabled|notconnect)/);
@@ -130,7 +139,9 @@ describe('Scénario 5 (debug) — debug spanning-tree', () => {
       await run('spanning-tree bpduguard enable');
       await run('end');
 
+      await intrusRevendiqueRoot();
       new Cable('lien-intrus').connect(sw.getPort('FastEthernet0/3')!, intrus.getPort('FastEthernet0/1')!);
+      await new Promise((r) => setTimeout(r, 50));
 
       const logs = await run('show logging');
       expect(logs).toContain('SPANTREE-2-BLOCK_BPDUGUARD');

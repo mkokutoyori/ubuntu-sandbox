@@ -3500,6 +3500,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private showLogging(sw: CiscoSwitch): string {
+    this.attachLoggingToBus(sw.getBus(), sw.id);
     const base = this.logging.render();
     const snoop = sw._getSnoopingLog();
     return snoop.length > 0 ? `${base}\n\n${snoop.join('\n')}` : base;

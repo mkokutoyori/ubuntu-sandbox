@@ -388,9 +388,13 @@ export class LoggingConfig {
           `Port ${p.portName ?? '?'} role changed ${p.oldRole ?? '?'} -> ${p.newRole ?? '?'}`);
       }),
       bus.subscribeWhere('stp.bpdu-guard.violation', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string };
-        this.append('errors', 'spantree',
-          `BPDU guard violation on port ${p.portName ?? '?'}, err-disabling`);
+        const p = e.payload as unknown as { port?: string; portName?: string };
+        const iface = p.port ?? p.portName ?? '?';
+        this.append('critical', 'spantree',
+          `Received BPDU on port ${iface} with BPDU Guard enabled. Disabling port.`,
+          true, 'BLOCK_BPDUGUARD');
+        this.append('errors', 'pm',
+          `Port ${iface} is err-disabled: bpduguard`, true, 'ERR_DISABLE');
       }),
       bus.subscribeWhere('stp.topology.change', isOurs, (e) => {
         const p = e.payload as unknown as { vlan?: number; portName?: string };
@@ -524,10 +528,10 @@ export class LoggingConfig {
         this.append('informational', 'dtp',
           `${p.portName ?? '?'}: trunk negotiation mode ${p.oldMode ?? '?'} -> ${p.newMode ?? '?'}`);
       }),
-      bus.subscribeWhere('stp.state.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; vlan?: number; oldState?: string; newState?: string };
+      bus.subscribeWhere('stp.port-state.changed', isOurs, (e) => {
+        const p = e.payload as unknown as { port?: string; vlan?: number; oldState?: string; newState?: string };
         this.append('informational', 'spantree',
-          `Port ${p.portName ?? '?'} VLAN ${p.vlan ?? 1} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `Port ${p.port ?? '?'} VLAN ${p.vlan ?? 1} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('stp.root-guard.changed', isOurs, (e) => {
         const p = e.payload as unknown as { portName?: string; blocked?: boolean };
