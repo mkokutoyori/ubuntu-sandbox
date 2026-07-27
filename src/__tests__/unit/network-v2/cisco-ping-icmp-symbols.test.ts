@@ -85,12 +85,8 @@ describe('IOS ping marks each probe with the reason it ended', () => {
     ).toBe('UU');
   }, 30000);
 
-  // Known gap, deliberately not asserted here: an inbound ACL is applied
-  // to transit traffic only (see Router.processIPv4, "C.1c"). Real IOS
-  // also filters packets addressed to the router itself, so an ACL that
-  // denies icmp to a router's own interface is currently not enforced.
-  // Changing that touches every protocol whose traffic is self-destined
-  // (OSPF, BGP, SSH), so it is its own piece of work.
+  // The same U, for an echo aimed at the router's own interface rather
+  // than through it, lives in router-inbound-acl-control-plane.test.ts.
 
   it('. — nothing answered at all', async () => {
     const r1 = new CiscoRouter('R1', 0, 0);

@@ -6,7 +6,12 @@
  */
 
 import type { IPAddress, SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
-import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH } from '../../core/types';
+import {
+  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH,
+  IP_PROTO_EIGRP, IP_PROTO_OSPF,
+} from '../../core/types';
+import { IP_PROTO_GRE } from '../../gre/types';
+import { IP_PROTO_PIM } from '../../pim/types';
 
 const DSCP_KEYWORD_TO_VALUE: Record<string, number> = {
   default: 0, cs0: 0, cs1: 8, cs2: 16, cs3: 24, cs4: 32, cs5: 40, cs6: 48, cs7: 56,
@@ -400,6 +405,10 @@ export class ACLEngine {
       case IP_PROTO_UDP: return 'udp';
       case IP_PROTO_ESP: return 'esp';
       case IP_PROTO_AH: return 'ahp';
+      case IP_PROTO_GRE: return 'gre';
+      case IP_PROTO_EIGRP: return 'eigrp';
+      case IP_PROTO_OSPF: return 'ospf';
+      case IP_PROTO_PIM: return 'pim';
       default: return 'ip';
     }
   }

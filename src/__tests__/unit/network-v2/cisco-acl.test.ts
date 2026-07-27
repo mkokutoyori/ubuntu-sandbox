@@ -1056,9 +1056,9 @@ describe('Cisco ACL (Access Control Lists)', () => {
       expect(output).toContain('64 bytes from 10.0.3.2');
     });
 
-    it('11.5 should not affect router-destined traffic (control plane)', async () => {
+    it('11.5 should filter router-destined traffic too (no control-plane bypass)', async () => {
       const { pcA, r1 } = buildTopology();
-      // Block ALL forwarded traffic with ACL
+      // Block ALL traffic arriving on the interface
       await configureRouter(r1, [
         'enable',
         'configure terminal',
@@ -1066,9 +1066,10 @@ describe('Cisco ACL (Access Control Lists)', () => {
         'interface GigabitEthernet0/0',
         'ip access-group 100 in',
       ]);
-      // Ping to R1's own interface should still work (control plane bypass)
+      // IOS runs the input ACL before the local/forward split, so an echo
+      // aimed at R1's own interface is denied like any other packet.
       const output = await pcA.executeCommand('ping -c 1 10.0.1.1');
-      expect(output).toContain('64 bytes from 10.0.1.1');
+      expect(output).not.toContain('64 bytes from 10.0.1.1');
     });
 
     it('11.6 should handle ACL without any entries gracefully', async () => {

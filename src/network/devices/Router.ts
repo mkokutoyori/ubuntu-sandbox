@@ -1349,6 +1349,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     // Phase C: Forwarding Decision
 
+    // C.1a: Inbound ACL. Cisco's inbound order of operations runs the input
+    // access list ahead of decryption and ahead of the local/forward split,
+    // so it filters what the router keeps for itself just as much as what it
+    // routes onward.
+    if (this.deniedByInboundACL(inPort, ipPkt)) return;
+
     // C.1: Is this packet for us? (any interface IP, broadcast, or
     // link-local multicast — 224.0.0.0/24 is consumed by the control
     // plane and MUST never be forwarded, RFC 1112/4541)
@@ -1371,7 +1377,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
     for (const [, port] of this.ports) {
       if (port.ownsIPv4(destIP)) {
-        // Control plane — deliver locally (ACL does not filter router-destined traffic)
+        // Control plane — the inbound ACL has already had its say (C.1a)
         this.handleLocalDelivery(inPort, ipPkt);
         return;
       }
@@ -1398,24 +1404,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    // C.1c: Inbound ACL check (only for transit/forwarded traffic)
-    const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
-    if (inboundACL !== null) {
-      const verdict = this.aclEngine.evaluateACL(inboundACL, ipPkt);
-      if (verdict === 'deny') {
-        Logger.info(this.id, 'router:acl-deny-in',
-          `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
-        this._debugService?.emitLine('ip.packet',
-          `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP}, len ${ipPkt.totalLength}, access denied`);
-        if (this.isIcmpUnreachablesEnabled(inPort)) {
-          this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
-        }
-        return;
-      }
-    }
-
     // C.2: Not for us → forward via FIB
     this.forwardPacket(inPort, ipPkt, originalPkt);
+  }
+
+  /**
+   * `ip access-group <acl> in`. A denied packet is dropped and, unless the
+   * interface carries `no ip unreachables`, answered with an ICMP
+   * administratively-prohibited (code 13).
+   */
+  private deniedByInboundACL(inPort: string, ipPkt: IPv4Packet): boolean {
+    const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
+    if (inboundACL === null) return false;
+    if (this.aclEngine.evaluateACL(inboundACL, ipPkt) !== 'deny') return false;
+
+    Logger.info(this.id, 'router:acl-deny-in',
+      `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+    this._debugService?.emitLine('ip.packet',
+      `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP}, len ${ipPkt.totalLength}, access denied`);
+    if (this.isIcmpUnreachablesEnabled(inPort)) {
+      this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
+    }
+    return true;
   }
 
   /**
@@ -1498,15 +1508,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     if (ipPkt.protocol === IP_PROTO_TCP) {
-      const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
-      if (inboundACL !== null) {
-        const verdict = this.aclEngine.evaluateACL(inboundACL, ipPkt);
-        if (verdict === 'deny') {
-          Logger.info(this.id, 'router:acl-deny-in',
-            `${this.name}: ACL denied inbound TCP on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
-          return;
-        }
-      }
       this.tcpv2.handleIp(inPort, ipPkt.sourceIP, ipPkt);
       return;
     }

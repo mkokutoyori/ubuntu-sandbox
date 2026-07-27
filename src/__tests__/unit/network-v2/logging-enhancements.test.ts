@@ -223,7 +223,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
 
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('show logging'));
-    expect(out).toMatch(/%SEC-4-WARNINGS:.+ACL denied inbound TCP/);
+    expect(out).toMatch(/%SEC-4-WARNINGS:.+ACL denied inbound on GigabitEthernet0\/0/);
   });
 
   it('a Windows firewall Block rule emits a 5152 Security event', async () => {
