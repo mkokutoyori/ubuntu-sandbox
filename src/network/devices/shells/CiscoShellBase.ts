@@ -964,6 +964,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return false;
   }
 
+  runShowCommandSync(cmdPart: string): string {
+    const previousMode = this.mode;
+    const previousLevel = this.currentPrivilegeLevel;
+    this.mode = 'privileged';
+    this.currentPrivilegeLevel = 15;
+    try {
+      return this.executeOnTrie(cmdPart);
+    } finally {
+      this.mode = previousMode;
+      this.currentPrivilegeLevel = previousLevel;
+    }
+  }
+
   protected executeOnTrie(cmdPart: string): string {
     if (this.mode === 'user' && this.currentPrivilegeLevel > 1 && this.currentPrivilegeLevel < 15) {
       const granted = this.tryGrantedPrivilegeCommand(cmdPart);
