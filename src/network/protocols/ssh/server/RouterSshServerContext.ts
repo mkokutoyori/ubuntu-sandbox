@@ -111,7 +111,7 @@ export class RouterSshServerContext implements ISshServerContext {
     // A real per-channel CLI session when the target can mint one: mode
     // transitions (`enable`, `configure terminal`) then persist across
     // lines, which the one-shot path below cannot express.
-    const vty = target.createVtyShell?.();
+    const vty = target.createVtyShell?.(userCtx.username);
     if (vty) {
       return {
         execute: async (line: string) => {

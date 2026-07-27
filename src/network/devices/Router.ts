@@ -703,13 +703,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * console into config mode, while the configuration it edits lives on
    * the device and is therefore shared (docs/PRD-SSH-Unification.md §3.2).
    */
-  createVtyShell(): {
+  createVtyShell(user?: string): {
     execute(rawInput: string): string | Promise<string>;
     getPrompt(): string;
     getCompletions(line: string): string[];
     lastEndedSession(): boolean;
   } {
     const shell = this.createShell();
+    // An account already at privilege 15 lands in privileged EXEC, as it
+    // would on real IOS. Without the login's name the session could only
+    // ever start at the lowest level, whatever the account was granted.
+    const level = user === undefined
+      ? undefined
+      : this.getCredentialStore().lookup(user)?.privilege;
+    if (level !== undefined && level >= 15) shell.enterPrivilegedExec?.();
     // A vendor CLI's exit word unwinds one mode at a time and, at the
     // top level, logs the VTY line out. The shell owns that state, so
     // the logout is detected here — an exit verb that leaves the prompt

@@ -19,6 +19,7 @@ import {
   type InputMode,
 } from './TerminalSession';
 import { createSessionForDevice } from './sessionFactory';
+import { presentedHostKey } from '@/network/protocols/ssh/presentedHostKey';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
 import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
@@ -1155,7 +1156,7 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    this.writeKnownHostsEntry(pending.device, pending.host, pending.user);
+    this.writeKnownHostsEntry(pending.device, pending.host);
 
     const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
     if (child) {
@@ -1341,7 +1342,7 @@ export class WindowsTerminalSession extends TerminalSession {
    * Pick the kind of primary shell for the remote's vendor — the shell
    * the user would land in if they were seated at the remote's console.
    */
-  private writeKnownHostsEntry(remote: Equipment, host: string, user: string): void {
+  private writeKnownHostsEntry(remote: Equipment, host: string): void {
     const localDev = this.device as unknown as {
       fs?: {
         readFile: (p: string) => { ok: boolean; content?: string };
@@ -1349,21 +1350,24 @@ export class WindowsTerminalSession extends TerminalSession {
         exists: (p: string) => boolean;
         mkdirp: (p: string) => void;
       };
+      userMgr?: { currentUser: string };
     };
     if (!localDev.fs) return;
-    const remoteAny = remote as unknown as {
-      getSshHostKey?: () => { type: string; publicKey: string };
-    };
-    const hk = remoteAny.getSshHostKey?.();
-    if (!hk) return;
-    const path = `C:\\Users\\${user}\\.ssh\\known_hosts`;
+    const key = presentedHostKey(remote);
+    if (!key) return;
+    // known_hosts is the *client's* record of hosts it has seen, so it
+    // belongs to the account running the client. Filing it under the
+    // remote account's name scattered it across profiles — and collided
+    // with the local one whenever the two names matched.
+    const localUser = localDev.userMgr?.currentUser ?? 'User';
+    const path = `C:\\Users\\${localUser}\\.ssh\\known_hosts`;
     const dir = path.substring(0, path.lastIndexOf('\\'));
     if (!localDev.fs.exists(dir)) localDev.fs.mkdirp(dir);
     const existing = localDev.fs.readFile(path);
     const body = existing.ok ? (existing.content ?? '') : '';
     const file = SshKnownHostsFile.parse(body);
     if (!file.find(host)) {
-      const updated = file.add({ hostnames: [host], keyType: hk.type, publicKey: hk.publicKey });
+      const updated = file.add({ hostnames: [host], keyType: key.keyType, publicKey: key.publicKey });
       localDev.fs.createFile(path, updated.serialize());
     }
   }
