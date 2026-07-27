@@ -14,7 +14,7 @@
  *   - ANSI color parsing
  */
 
-import React, { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
 import type {
@@ -72,12 +72,27 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   const reverseSearchRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom on output changes
+  // Scroll to bottom on output changes — but only while the user hasn't
+  // scrolled up to read earlier output. A real terminal freezes the view
+  // when you scroll back; forcing scrollTop unconditionally on every
+  // render (as this used to) yanked the view back down on every notify
+  // during a stream (tail -f, ping, debug ip ospf), making the
+  // scrollback unreadable (rapport 09 audit — mirrors the live-tail
+  // pattern already correct in NetworkLogsPanel.tsx).
+  const [stuckToBottom, setStuckToBottom] = useState(true);
   useEffect(() => {
-    if (terminalRef.current) {
+    if (stuckToBottom && terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   });
+
+  const handleTerminalScroll = useCallback(() => {
+    const el = terminalRef.current;
+    if (!el) return;
+    // Small epsilon: fractional scroll positions (momentum scroll,
+    // sub-pixel rendering) can land a px or two short of the true max.
+    setStuckToBottom(el.scrollHeight - el.scrollTop - el.clientHeight <= 4);
+  }, []);
 
   // Focus management — use currentInputMode (polymorphic) for all session types.
   // This stays in sync with the rendering logic which also reads currentInputMode.
@@ -309,12 +324,26 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       {/* ── Terminal output ── */}
       <div
         ref={terminalRef}
+        data-testid="terminal-output"
         className="flex-1 overflow-auto px-3 py-2"
         style={{ backgroundColor: theme.backgroundColor, lineHeight: sessionType === 'windows' ? '1.25' : '1.35' }}
         onClick={handleClick}
+        onScroll={handleTerminalScroll}
       >
         {session.lines.map((line) => (
-          <LineRenderer key={line.id} line={line} theme={theme} sessionType={sessionType} />
+          // content-visibility: auto skips layout/paint for scrollback that
+          // isn't near the viewport — scrollback is configurable up to
+          // 50,000 lines (rapport 09 audit), and without this every past
+          // line stays a live DOM/layout node forever. contain-intrinsic-size
+          // is a single-row estimate (most lines are); a wrapped long line
+          // gets its real height once it scrolls into view, same trade-off
+          // MDN documents for long chat/log lists.
+          <div
+            key={line.id}
+            style={{ contentVisibility: 'auto', containIntrinsicSize: `0 ${sessionType === 'windows' ? '1.25em' : '1.35em'}` }}
+          >
+            <LineRenderer line={line} theme={theme} sessionType={sessionType} />
+          </div>
         ))}
 
         {/* Tab suggestions (linux, windows) */}
