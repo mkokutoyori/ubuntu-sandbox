@@ -86,6 +86,7 @@ export interface OSPFRouterContext {
   getIPv6AccessLists(): import('../Router').IPv6ACL[] | undefined;
   getBfdAgent?(): BfdAgent | undefined;
   getIpPrefixListStore?(): import('./policy/IpPrefixList').IpPrefixListStore;
+  getBus?(): import('@/events/EventBus').IEventBus;
 }
 
 // ─── OSPF Integration Engine ────────────────────────────────────
@@ -135,6 +136,8 @@ export class RouterOSPFIntegration {
     if (this.ospfEngine) return;
     this.ospfEngine = new OSPFEngine(processId);
     this.ospfEngine.setDeviceId(this.ctx.id);
+    const bus = this.ctx.getBus?.();
+    if (bus) this.ospfEngine.setEventBus(bus);
 
     // Auto-detect Router ID: highest interface IP
     let highestIP = '0.0.0.0';
@@ -185,6 +188,8 @@ export class RouterOSPFIntegration {
   enableOSPFv3(processId: number = 1): void {
     if (this.ospfv3Engine) return;
     this.ospfv3Engine = new OSPFv3Engine(processId);
+    const v3Bus = this.ctx.getBus?.();
+    if (v3Bus) this.ospfv3Engine.setEventBus(v3Bus);
     Logger.info(this.ctx.id, 'ospfv3:enabled', `${this.ctx.name}: OSPFv3 process ${processId} enabled`);
   }
 

@@ -659,6 +659,7 @@ export abstract class EndHost extends Equipment {
         this.onDhcpLeaseReleased(iface);
       },
     );
+    this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
     this.dhcpClient.setServerObservationRecorder((iface, serverIp, serverMac) => {
       if (!serverMac || serverIp === '0.0.0.0') return;
