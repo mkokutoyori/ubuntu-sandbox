@@ -15,6 +15,12 @@ import {
 } from '@/shell/sshLauncher';
 import type { IShell } from '@/shell/IShell';
 import { reinstallDefaultShells } from '@/shell/registerDefaults';
+import {
+  configureCiscoSshServer,
+  configureHuaweiSshServer,
+  ROUTER_SSH_USER,
+  ROUTER_SSH_PASSWORD,
+} from './_helpers/routerSshFixtures';
 
 const MASK = '255.255.255.0';
 const PC_IP = '10.0.0.1';
@@ -25,23 +31,23 @@ function launchOpts(pc: LinuxPC): SshLaunchOptions {
   return {
     defaultUser: 'root',
     sourceIp: PC_IP,
+    sourceDevice: pc,
     wireProbe: (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port),
   };
 }
 
-async function buildCiscoLan(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
+async function buildCiscoLan(
+  opts: { vtyRange?: string } = {},
+): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
   const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
   const cisco = new CiscoRouter('cisco1', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);
   new Cable('c2').connect(cisco.getPorts()[0], sw.getPorts()[1]);
   pc.getPorts()[0].configureIP(new IPAddress(PC_IP), new SubnetMask(MASK));
-  for (const cmd of [
-    'enable', 'configure terminal',
-    'interface GigabitEthernet0/0',
-    `ip address ${CISCO_IP} ${MASK}`,
-    'no shutdown', 'end',
-  ]) await cisco.executeCommand(cmd);
+  // A real sshd, not just an address: the pool being tested is only
+  // meaningful for sessions that were genuinely opened over the wire.
+  await configureCiscoSshServer(cisco, CISCO_IP, MASK, { interfaceName: 'GigabitEthernet0/0', vtyRange: opts.vtyRange });
   return { pc, cisco };
 }
 
@@ -52,21 +58,16 @@ async function buildHuaweiLan(): Promise<{ pc: LinuxPC; huawei: HuaweiRouter }> 
   new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);
   new Cable('c2').connect(huawei.getPorts()[0], sw.getPorts()[1]);
   pc.getPorts()[0].configureIP(new IPAddress(PC_IP), new SubnetMask(MASK));
-  for (const cmd of [
-    'system-view',
-    'interface GigabitEthernet0/0/0',
-    `ip address ${HUAWEI_IP} ${MASK}`,
-    'undo shutdown', 'quit', 'quit',
-  ]) await huawei.executeCommand(cmd);
+  await configureHuaweiSshServer(huawei, HUAWEI_IP, MASK, { interfaceName: 'GigabitEthernet0/0/0' });
   return { pc, huawei };
 }
 
 async function openInteractiveSession(pc: LinuxPC, ip: string): Promise<IShell> {
-  const attempt = await tryInterpretSshLaunch(`ssh alice@${ip}`, launchOpts(pc));
+  const attempt = await tryInterpretSshLaunch(`ssh ${ROUTER_SSH_USER}@${ip}`, launchOpts(pc));
   expect(attempt?.kind).toBe('pending');
   const finalised = finalisePendingAuth(
     (attempt as { pendingAuth: Parameters<typeof finalisePendingAuth>[0] }).pendingAuth,
-    'alice',
+    ROUTER_SSH_PASSWORD,
   );
   expect(finalised.kind).toBe('success');
   if (finalised.kind !== 'success') throw new Error('unreachable');
@@ -96,7 +97,7 @@ describe('the VTY line pool is finite (default vty 0 4)', () => {
     for (let i = 0; i < 5; i++) await openInteractiveSession(pc, CISCO_IP);
     expect(registryOf(cisco).list()).toHaveLength(5);
 
-    const sixth = await tryInterpretSshLaunch(`ssh alice@${CISCO_IP}`, launchOpts(pc));
+    const sixth = await tryInterpretSshLaunch(`ssh ${ROUTER_SSH_USER}@${CISCO_IP}`, launchOpts(pc));
 
     expect(sixth?.kind).toBe('error');
     // The router's real SshServerHandler accepts the TCP connection
@@ -113,12 +114,12 @@ describe('the VTY line pool is finite (default vty 0 4)', () => {
     const { pc, cisco } = await buildCiscoLan();
     const shells: IShell[] = [];
     for (let i = 0; i < 5; i++) shells.push(await openInteractiveSession(pc, CISCO_IP));
-    expect((await tryInterpretSshLaunch(`ssh alice@${CISCO_IP}`, launchOpts(pc)))?.kind).toBe('error');
+    expect((await tryInterpretSshLaunch(`ssh ${ROUTER_SSH_USER}@${CISCO_IP}`, launchOpts(pc)))?.kind).toBe('error');
 
     shells[0].dispose();
 
     expect(registryOf(cisco).list()).toHaveLength(4);
-    const again = await tryInterpretSshLaunch(`ssh alice@${CISCO_IP}`, launchOpts(pc));
+    const again = await tryInterpretSshLaunch(`ssh ${ROUTER_SSH_USER}@${CISCO_IP}`, launchOpts(pc));
     expect(again?.kind).toBe('pending');
   });
 
@@ -141,22 +142,22 @@ describe('the VTY line pool is finite (default vty 0 4)', () => {
 
     const out = (cisco as unknown as {
       runSshCommandSync: (u: string, c: string) => { output: string } | null;
-    }).runSshCommandSync('alice', 'show users');
+    }).runSshCommandSync(ROUTER_SSH_USER, 'show users');
 
     expect(out?.output).toMatch(/vty 0/);
     expect(out?.output).toMatch(/vty 1/);
-    expect(out?.output).toMatch(/alice/);
+    expect(out?.output).toMatch(new RegExp(ROUTER_SSH_USER));
   });
 
   it('a narrower line vty range shrinks the pool', async () => {
-    const { pc, cisco } = await buildCiscoLan();
-    for (const cmd of [
-      'enable', 'configure terminal', 'line vty 0 1', 'exit', 'end',
-    ]) await cisco.executeCommand(cmd);
+    // The range is configured up front: on real IOS `line vty 0 1` after
+    // `line vty 0 4` selects a range, it does not delete lines 2-4, so a
+    // pool narrowed after the fact would not shrink.
+    const { pc } = await buildCiscoLan({ vtyRange: '0 1' });
     await openInteractiveSession(pc, CISCO_IP);
     await openInteractiveSession(pc, CISCO_IP);
 
-    const third = await tryInterpretSshLaunch(`ssh alice@${CISCO_IP}`, launchOpts(pc));
+    const third = await tryInterpretSshLaunch(`ssh ${ROUTER_SSH_USER}@${CISCO_IP}`, launchOpts(pc));
 
     expect(third?.kind).toBe('error');
     // See the "refuses the sixth" test above for why both wordings are
@@ -181,7 +182,7 @@ describe('the VTY line pool is finite (default vty 0 4)', () => {
     const { pc, huawei } = await buildHuaweiLan();
     for (let i = 0; i < 5; i++) await openInteractiveSession(pc, HUAWEI_IP);
 
-    const sixth = await tryInterpretSshLaunch(`ssh alice@${HUAWEI_IP}`, launchOpts(pc));
+    const sixth = await tryInterpretSshLaunch(`ssh ${ROUTER_SSH_USER}@${HUAWEI_IP}`, launchOpts(pc));
 
     expect(sixth?.kind).toBe('error');
     // See the "refuses the sixth" test above for why both wordings are
