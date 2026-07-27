@@ -40,6 +40,18 @@ function ctx(): IRmanOracleContext {
   };
 }
 
+/** A real datafile is needed to actually observe BACKUP piece/skip
+ *  behavior — `ctx()` above returns none, which is fine for the
+ *  display-only CONFIGURE tests but not for functional BACKUP ones. */
+function ctxWithDatafile(): IRmanOracleContext {
+  return {
+    ...ctx(),
+    getDatafiles: () => [
+      { fileNo: 1, path: '/u01/oradata/ORCL/system01.dbf', sizeBytes: 1_000, tablespace: 'SYSTEM' },
+    ],
+  } as IRmanOracleContext;
+}
+
 function showAllLines(session: RmanSession): string[] {
   const r = session.processLine('SHOW ALL');
   return r.ok ? r.value : [];
@@ -104,6 +116,65 @@ describe('CONFIGURE — device + compression + encryption + maxsetsize', () => {
     session.connect();
     session.processLine('CONFIGURE BACKUP OPTIMIZATION ON');
     expect(showAllLines(session).find(l => /BACKUP OPTIMIZATION ON/.test(l))).toBeDefined();
+  });
+
+  describe('CONFIGURE BACKUP OPTIMIZATION — functional effect (rapport 10, item #58)', () => {
+    beforeEach(() => BackupKey._reset());
+
+    it('ON: a second identical BACKUP DATABASE is skipped, no new piece written', () => {
+      const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctxWithDatafile());
+      s.connect();
+      s.processLine('CONFIGURE BACKUP OPTIMIZATION ON');
+      s.processLine('BACKUP DATABASE');
+
+      const types: string[] = [];
+      s.events$.subscribe(e => types.push(e.type));
+      s.processLine('BACKUP DATABASE');
+      expect(types).toContain('JOB_COMPLETED');
+      expect(types).not.toContain('BACKUP_PIECE_CREATED');
+    });
+
+    it('OFF (default): a second identical BACKUP DATABASE still writes a new piece', () => {
+      const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctxWithDatafile());
+      s.connect();
+      s.processLine('BACKUP DATABASE');
+
+      const types: string[] = [];
+      s.events$.subscribe(e => types.push(e.type));
+      s.processLine('BACKUP DATABASE');
+      expect(types).toContain('BACKUP_PIECE_CREATED');
+    });
+
+    it('ON: also applies to BACKUP TABLESPACE and BACKUP DATAFILE, not just DATABASE', () => {
+      const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctxWithDatafile());
+      s.connect();
+      s.processLine('CONFIGURE BACKUP OPTIMIZATION ON');
+      s.processLine('BACKUP DATABASE');
+
+      const tsTypes: string[] = [];
+      s.events$.subscribe(e => tsTypes.push(e.type));
+      s.processLine('BACKUP TABLESPACE SYSTEM');
+      expect(tsTypes).not.toContain('BACKUP_PIECE_CREATED');
+
+      const dfTypes: string[] = [];
+      s.events$.subscribe(e => dfTypes.push(e.type));
+      s.processLine('BACKUP DATAFILE 1');
+      expect(dfTypes).not.toContain('BACKUP_PIECE_CREATED');
+    });
+
+    it('an explicit NOT BACKED UP n TIMES clause overrides the optimization default', () => {
+      const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctxWithDatafile());
+      s.connect();
+      s.processLine('CONFIGURE BACKUP OPTIMIZATION ON');
+      s.processLine('BACKUP DATABASE'); // one covering backup exists now
+
+      const types: string[] = [];
+      s.events$.subscribe(e => types.push(e.type));
+      // Explicit threshold of 5 needs 5 covering backups — only 1 exists,
+      // so this must still run, not be silently skipped by the ON default.
+      s.processLine('BACKUP NOT BACKED UP 5 TIMES DATABASE');
+      expect(types).toContain('BACKUP_PIECE_CREATED');
+    });
   });
 
   it('CONFIGURE MAXSETSIZE TO 5G', () => {
