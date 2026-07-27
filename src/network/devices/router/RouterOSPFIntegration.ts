@@ -27,8 +27,7 @@ import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
 import type { BfdAgent } from '../../bfd/BfdAgent';
-// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P3, docs/PRD-Frame-Only-Refactor.md)
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 // ─── OSPF Extra Config Type ─────────────────────────────────────
 
@@ -1131,7 +1130,7 @@ export class RouterOSPFIntegration {
       // Through switch
       const remoteEquipId = remotePort.getEquipmentId();
       if (!RouterOSPFIntegration.getByEquipmentId(remoteEquipId)) {
-        const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
+        const remoteEquip = remotePort.getOwner() as Equipment | null;
         if (!remoteEquip) continue;
         for (const swPort of remoteEquip.getPorts()) {
           if (swPort === remotePort) continue;
@@ -1167,7 +1166,7 @@ export class RouterOSPFIntegration {
       const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
       if (!remotePort) continue;
       const remoteEquipId = remotePort.getEquipmentId();
-      const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
+      const remoteEquip = remotePort.getOwner() as Equipment | null;
 
       const tryAdd = (peer: RouterOSPFIntegration, rPort: Port) => {
         if (visited.has(peer.ctx.id) || !peer.ospfv3Engine) return;
@@ -1213,7 +1212,7 @@ export class RouterOSPFIntegration {
           const currIface = curr.ospfv3Engine?.getInterface(pn);
           queue.push({ peer: re, nextHop, iface, cost: cost + (currIface?.cost ?? 1) });
         } else {
-          const equip = EquipmentRegistry.getInstance().getById(rid);
+          const equip = rp.getOwner() as Equipment | null;
           if (!equip) continue;
           for (const swPort of equip.getPorts()) {
             if (swPort === rp) continue;
