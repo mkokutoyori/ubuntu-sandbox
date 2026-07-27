@@ -249,7 +249,7 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show ip dhcp excluded-address', 'Display DHCP excluded addresses', () =>
     getRouter()._getDHCPServerInternal().formatExcludedShow());
   trie.register('show debug', 'Display debugging flags', () =>
-    getRouter()._getDHCPServerInternal().formatDebugShow());
+    getRouter().getDebugService().format());
 
   trie.register('show ip dhcp snooping', 'Display DHCP snooping global state', () => {
     const r = getRouter() as any;
@@ -312,24 +312,29 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
 
 export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
   // debug commands
+  const debugSvc = () => getRouter().getDebugService();
   trie.register('debug ip dhcp server', 'Debug DHCP server', () => {
     const s = getRouter()._getDHCPServerInternal();
     s.setDebugServerPacket(true);
     s.setDebugServerEvents(true);
+    debugSvc().enable('ip.dhcp.server');
     return 'DHCP server debugging is on';
   });
   trie.register('no debug ip dhcp server', 'Disable DHCP server debugging', () => {
     const s = getRouter()._getDHCPServerInternal();
     s.setDebugServerPacket(false);
     s.setDebugServerEvents(false);
+    debugSvc().disable('ip.dhcp.server');
     return 'DHCP server debugging is off';
   });
   trie.register('debug ip dhcp server packet', 'Debug DHCP server packets', () => {
     getRouter()._getDHCPServerInternal().setDebugServerPacket(true);
+    debugSvc().enable('ip.dhcp.server', 'packet');
     return 'DHCP server packet debugging is on';
   });
   trie.register('debug ip dhcp server events', 'Debug DHCP server events', () => {
     getRouter()._getDHCPServerInternal().setDebugServerEvents(true);
+    debugSvc().enable('ip.dhcp.server', 'events');
     return 'DHCP server event debugging is on';
   });
 

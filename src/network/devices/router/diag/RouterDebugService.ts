@@ -42,6 +42,12 @@ export type DebugCategory =
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
+export function toCiscoMac(mac: string): string {
+  const hex = mac.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+  if (hex.length !== 12) return mac;
+  return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
+}
+
 export interface DebugFlag {
   category: DebugCategory;
   enabledAtMs: number;
@@ -80,9 +86,21 @@ export class RouterDebugService implements TerminalDebugSource {
     return this.broadcast.subscribe(listener);
   }
 
+  private aclMatchFn?: (aclName: string, line: string) => boolean;
+
+  setAclFilterEvaluator(fn: (aclName: string, line: string) => boolean): void {
+    this.aclMatchFn = fn;
+  }
+
   private emit(category: DebugCategory, line: string): void {
-    if (!this.flags.has(category)) return;
+    const flag = this.flags.get(category);
+    if (!flag) return;
+    if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line)) return;
     this.broadcast.fan(line);
+  }
+
+  emitLine(category: DebugCategory, line: string): void {
+    this.emit(category, line);
   }
 
   attachToBus(bus: IEventBus, deviceId: string): void {
@@ -118,14 +136,15 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('ip.ospf.packet', `OSPF: snd packet to ${p.destIp} on ${p.iface}`);
     }));
 
-    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; icmpType?: string } | null => {
-      const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string } } };
+    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; len: number; icmpType?: string } | null => {
+      const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; totalLength?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string; data?: { length?: number } } } };
       if (f?.etherType !== 0x0800 || f.payload?.type !== 'ipv4') return null;
       const ip = f.payload;
       return {
         src: ip.sourceIP?.toString?.() ?? '?',
         dst: ip.destinationIP?.toString?.() ?? '?',
         proto: ip.protocol ?? 0,
+        len: ip.totalLength ?? 0,
         icmpType: ip.payload?.type === 'icmp' ? ip.payload.icmpType : undefined,
       };
     };
@@ -145,12 +164,14 @@ export class RouterDebugService implements TerminalDebugSource {
       const arp = decodeArp(frame);
       if (arp) {
         const op = arp.op === 'reply' ? 'rep' : 'req';
-        this.emit('ip.arp', `IP ARP: ${dir} ${op} src ${arp.senderIp} ${arp.senderMac}, dst ${arp.targetIp} ${arp.targetMac} ${iface}`);
+        const senderMac = toCiscoMac(arp.senderMac);
+        const targetMac = arp.op === 'request' ? '0000.0000.0000' : toCiscoMac(arp.targetMac);
+        this.emit('ip.arp', `IP ARP: ${dir} ${op} src ${arp.senderIp} ${senderMac}, dst ${arp.targetIp} ${targetMac} ${iface}`);
         return;
       }
       const ip = decodeIp(frame);
       if (!ip) return;
-      this.emit('ip.packet', `IP: s=${ip.src}, d=${ip.dst}, len, ${dir} (proto ${ip.proto})`);
+      this.emit('ip.packet', `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`);
       if (ip.proto === 1) {
         const kind = ip.icmpType === 'echo-reply' ? 'echo reply' : ip.icmpType === 'echo-request' ? 'echo request' : (ip.icmpType ?? 'message');
         this.emit('ip.icmp', `ICMP: ${kind} ${dir}, src ${ip.src}, dst ${ip.dst}`);
@@ -175,7 +196,7 @@ export class RouterDebugService implements TerminalDebugSource {
   static label(category: DebugCategory): string {
     switch (category) {
       case 'crypto.isakmp': return 'Crypto ISAKMP';
-      case 'crypto.ipsec': return 'Crypto IPSec';
+      case 'crypto.ipsec': return 'Crypto IPSEC';
       case 'crypto.ikev2': return 'IKEv2';
       case 'crypto.pki': return 'Crypto PKI';
       case 'crypto.pki.transactions': return 'PKI Transactions';
@@ -195,7 +216,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.tcp': return 'IP TCP';
       case 'ip.udp': return 'IP UDP';
       case 'ip.nat': return 'IP NAT';
-      case 'ip.arp': return 'IP ARP';
+      case 'ip.arp': return 'ARP packet';
       case 'ip.dhcp.server': return 'IP DHCP server';
       case 'ip.ssh': return 'SSH';
       case 'ip.nhrp': return 'NHRP';

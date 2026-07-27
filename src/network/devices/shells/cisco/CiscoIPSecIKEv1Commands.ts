@@ -712,56 +712,47 @@ export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellC
   });
 
   // ── debug crypto commands ─────────────────────────────────────────
-  trie.register('debug crypto isakmp', 'Enable IKE/ISAKMP debug output', () => {
-    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('isakmp', true);
-    return 'Crypto ISAKMP debugging is on';
-  });
+  const debugSvc = () => ctx.r().getDebugService();
+  const engineFor = () => (ctx.r() as any)._getOrCreateIPSecEngine();
 
-  trie.register('no debug crypto isakmp', 'Disable IKE/ISAKMP debug output', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('isakmp', false);
-    return 'Crypto ISAKMP debugging is off';
-  });
+  for (const [verb, kind, category] of [
+    ['isakmp', 'isakmp', 'crypto.isakmp'],
+    ['ipsec', 'ipsec', 'crypto.ipsec'],
+    ['ikev2', 'ikev2', 'crypto.ikev2'],
+  ] as const) {
+    trie.registerGreedy(`debug crypto ${verb}`, `Enable ${verb.toUpperCase()} debug output`, (args) => {
+      const detail = /^detail$/i.test(args.join(' ').trim());
+      engineFor().setDebug(kind, true);
+      engineFor().setDebugDetail?.(kind, detail);
+      return detail ? debugSvc().enable(category, 'detail') : debugSvc().enable(category);
+    }, ['detail']);
+    trie.registerGreedy(`no debug crypto ${verb}`, `Disable ${verb.toUpperCase()} debug output`, () => {
+      (ctx.r() as any)._getIPSecEngineInternal()?.setDebug(kind, false);
+      return debugSvc().disable(category);
+    }, ['detail']);
+  }
 
-  trie.register('debug crypto ipsec', 'Enable IPSec debug output', () => {
-    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('ipsec', true);
-    return 'Crypto IPSEC debugging is on';
-  });
-
-  trie.register('no debug crypto ipsec', 'Disable IPSec debug output', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('ipsec', false);
-    return 'Crypto IPSEC debugging is off';
-  });
-
-  trie.register('debug crypto ikev2', 'Enable IKEv2 debug output', () => {
-    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('ikev2', true);
-    return 'Crypto IKEv2 debugging is on';
-  });
-
-  trie.register('no debug crypto ikev2', 'Disable IKEv2 debug output', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('ikev2', false);
-    return 'Crypto IKEv2 debugging is off';
-  });
-
-  trie.register('undebug all', 'Disable all debugging', () => {
+  const turnEverythingOff = (): string => {
     const engine = (ctx.r() as any)._getIPSecEngineInternal();
     if (engine) {
       engine.setDebug('isakmp', false);
       engine.setDebug('ipsec', false);
       engine.setDebug('ikev2', false);
     }
-    ctx.r()._getNATEngine().setDebugEnabled(false);
+    const nat = ctx.r()._getNATEngine();
+    nat.setDebugEnabled(false);
+    nat.setDebugDetailed(false);
+    const dhcp = ctx.r()._getDHCPServerInternal?.();
+    dhcp?.setDebugServerPacket(false);
+    dhcp?.setDebugServerEvents(false);
+    ctx.r().getDebugService().disableAll();
     return 'All possible debugging has been turned off';
-  });
+  };
 
-  trie.register('no debug all', 'Disable all debugging', () => {
-    const engine = (ctx.r() as any)._getIPSecEngineInternal();
-    if (engine) {
-      engine.setDebug('isakmp', false);
-      engine.setDebug('ipsec', false);
-      engine.setDebug('ikev2', false);
-    }
-    return 'All possible debugging has been turned off';
-  });
+  trie.register('undebug all', 'Disable all debugging', turnEverythingOff);
+  trie.register('no debug all', 'Disable all debugging', turnEverythingOff);
+  trie.register('undebug', 'Disable all debugging', turnEverythingOff);
+  trie.register('u all', 'Disable all debugging', turnEverythingOff);
 
   // ── show crypto engine ─────────────────────────────────────────────
   trie.register('show crypto engine brief', 'Display crypto engine information', () => {

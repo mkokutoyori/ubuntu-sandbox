@@ -842,10 +842,9 @@ export function displayDebugging(router: Router): string {
   }
   const ipsecEng = (router as any)._getIPSecEngineInternal?.();
   if (ipsecEng) {
-    const debug = (ipsecEng as any).debugFlags || {};
-    if (debug.isakmp) lines.push('IKE debugging is on');
-    if (debug.ipsec) lines.push('IPSec debugging is on');
-    if (debug.ikev2) lines.push('IKEv2 debugging is on');
+    if (ipsecEng.isDebugEnabled?.('isakmp')) lines.push('IKE debugging is on');
+    if (ipsecEng.isDebugEnabled?.('ipsec')) lines.push('IPSec debugging is on');
+    if (ipsecEng.isDebugEnabled?.('ikev2')) lines.push('IKEv2 debugging is on');
   }
   if (lines.length === 0) return 'No debugging is enabled.';
   return lines.join('\n');

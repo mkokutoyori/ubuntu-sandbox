@@ -555,6 +555,7 @@ export class NATEngine {
           this.hitCount++;
           this.updatePeak();
           this.debugLog(`s=${srcIP}->${globalIP}, d=${dstIP} [${session.globalPort}]`);
+          this.debugLogDetailed('o', `s=${srcIP}:${srcPort}->${globalIP}:${session.globalPort}, d=${dstIP}:${dstPort}`);
           this.getBus().publish({
             topic: 'nat.session.created',
             payload: {
@@ -572,6 +573,7 @@ export class NATEngine {
           if (proto === IP_PROTO_TCP) updateTcpState(session, pkt, 'out');
           this.hitCount++;
           this.debugLog(`s=${srcIP}->${session.globalIP}, d=${dstIP} [${session.globalPort}]`);
+          this.debugLogDetailed('o', `s=${srcIP}:${srcPort}->${session.globalIP}:${session.globalPort}, d=${dstIP}:${dstPort}`);
           if (oldTcp !== session.tcpState && session.tcpState !== undefined) {
             this.getBus().publish({
               topic: 'nat.tcp.state-changed',
@@ -635,6 +637,7 @@ export class NATEngine {
     }
 
     this.missCount++;
+    this.debugLog(`s=${srcIP}, d=${dstIP} [not translated]`, false);
     return null;
   }
 
@@ -710,16 +713,26 @@ export class NATEngine {
 
   // ─── debug ip nat ──────────────────────────────────────────────────
   private debugEnabled = false;
+  private debugDetailed = false;
+  private debugEmitFn?: (line: string) => void;
   setDebugEnabled(v: boolean): void { this.debugEnabled = v; }
   isDebugEnabled(): boolean { return this.debugEnabled; }
-  /**
-   * One line per translated packet, IOS `debug ip nat` format.
-   * Uses `Logger.warn` (not `.info`) because `show logging`'s buffer only
-   * retains warn/error-level events — the same mechanism already used for
-   * IPsec's `debug crypto ipsec` anti-replay traces.
-   */
-  private debugLog(line: string): void {
-    if (this.debugEnabled) Logger.warn(this.deviceId, 'nat:debug', `NAT*: ${line}`);
+  setDebugDetailed(v: boolean): void { this.debugDetailed = v; }
+  isDebugDetailed(): boolean { return this.debugDetailed; }
+  setDebugEmitter(fn: (line: string) => void): void { this.debugEmitFn = fn; }
+
+  private debugLog(line: string, translated = true): void {
+    if (!this.debugEnabled) return;
+    const text = `${translated ? 'NAT*' : 'NAT'}: ${line}`;
+    this.debugEmitFn?.(text);
+    Logger.warn(this.deviceId, 'nat:debug', text);
+  }
+
+  private debugLogDetailed(direction: 'i' | 'o', line: string): void {
+    if (!this.debugEnabled || !this.debugDetailed) return;
+    const text = `NAT: ${direction}: ${line}`;
+    this.debugEmitFn?.(text);
+    Logger.warn(this.deviceId, 'nat:debug', text);
   }
 
   clearTranslations(): void {

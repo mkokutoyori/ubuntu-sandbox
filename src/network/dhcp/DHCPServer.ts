@@ -46,6 +46,11 @@ const PENDING_OFFER_TIMEOUT_MS = DHCP_CONSTANTS.PENDING_OFFER_TIMEOUT_MS;
 /** Default conflict TTL: infinite (0 = never expire) */
 const DEFAULT_CONFLICT_TTL = 0;
 
+function formatChaddr(mac: string | undefined): string {
+  const hex = (mac ?? '').replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(-12);
+  return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
+}
+
 export class DHCPServer implements IProtocolEngine {
   /** Service enabled flag */
   private enabled: boolean = true;
@@ -65,8 +70,8 @@ export class DHCPServer implements IProtocolEngine {
   /** Pending offers: IP → pending (reserved between DISCOVER and REQUEST) */
   private pendingOffers: Map<string, DHCPPendingOffer> = new Map();
 
-  /** `ip dhcp ping packets` (0 = disabled, the default — no ping-before-offer check) */
-  private pingPacketCount = 0;
+  /** `ip dhcp ping packets` (IOS default 2; `ip dhcp ping packets 0` disables the check) */
+  private pingPacketCount = 2;
   /** `ip dhcp ping timeout` in milliseconds */
   private pingTimeoutMs = 500;
 
@@ -434,6 +439,20 @@ export class DHCPServer implements IProtocolEngine {
    * Accepts either the new DHCPDiscoverParams or legacy (clientMAC: string) for backward compat.
    */
   processDiscover(paramsOrMAC: DHCPDiscoverParams | string): DHCPOfferResult | null {
+    const dbgMac = typeof paramsOrMAC === 'string' ? paramsOrMAC : paramsOrMAC.clientMAC;
+    const dbgXid = typeof paramsOrMAC === 'string' ? 0 : paramsOrMAC.xid;
+    const dbgGiaddr = typeof paramsOrMAC === 'string' ? undefined : paramsOrMAC.giaddr;
+    this.debugEvent(`DHCPDISCOVER from ${formatChaddr(dbgMac)} through ${dbgGiaddr ?? 'relay not used'}`);
+    this.debugPacket('BOOTREQUEST', { xid: dbgXid, chaddr: formatChaddr(dbgMac), giaddr: dbgGiaddr });
+    const dbgOffer = this.processDiscoverInternal(paramsOrMAC);
+    if (dbgOffer) {
+      this.debugEvent(`DHCPOFFER on interface, offering ${dbgOffer.ip} to ${formatChaddr(dbgMac)}`);
+      this.debugPacket('BOOTREPLY', { xid: dbgOffer.xid, chaddr: formatChaddr(dbgMac), yiaddr: dbgOffer.ip, giaddr: dbgGiaddr });
+    }
+    return dbgOffer;
+  }
+
+  private processDiscoverInternal(paramsOrMAC: DHCPDiscoverParams | string): DHCPOfferResult | null {
     this.stats.discovers++;
     if (!this.enabled) return null;
 
@@ -555,6 +574,22 @@ export class DHCPServer implements IProtocolEngine {
    * Accepts either the new DHCPRequestParams or legacy (clientMAC, requestedIP) for backward compat.
    */
   processRequest(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPAckResult | null {
+    const dbgMac = typeof paramsOrMAC === 'string' ? paramsOrMAC : paramsOrMAC.clientMAC;
+    const dbgXid = typeof paramsOrMAC === 'string' ? 0 : paramsOrMAC.xid;
+    const dbgReq = typeof paramsOrMAC === 'string' ? legacyRequestedIP : paramsOrMAC.requestedIP;
+    this.debugEvent(`DHCPREQUEST received from client ${formatChaddr(dbgMac)} for ${dbgReq ?? '0.0.0.0'}`);
+    this.debugPacket('BOOTREQUEST', { xid: dbgXid, chaddr: formatChaddr(dbgMac), ciaddr: dbgReq });
+    const dbgAck = this.processRequestInternal(paramsOrMAC, legacyRequestedIP);
+    if (dbgAck) {
+      this.debugEvent(`DHCPACK sent to client ${formatChaddr(dbgMac)} for ${dbgAck.ip}`);
+      this.debugPacket('BOOTREPLY', { xid: dbgAck.xid, chaddr: formatChaddr(dbgMac), yiaddr: dbgAck.ip });
+    } else {
+      this.debugEvent(`DHCPNAK sent to client ${formatChaddr(dbgMac)}`);
+    }
+    return dbgAck;
+  }
+
+  private processRequestInternal(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPAckResult | null {
     if (!this.enabled) return null;
 
     // Normalize params (backward compat)
@@ -650,6 +685,24 @@ export class DHCPServer implements IProtocolEngine {
    * whether the response is ACK or NAK, rather than using null for NAK.
    */
   processRequestWithNak(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPRequestWithNakResult | null {
+    const dbgMac = typeof paramsOrMAC === 'string' ? paramsOrMAC : paramsOrMAC.clientMAC;
+    const dbgXid = typeof paramsOrMAC === 'string' ? 0 : paramsOrMAC.xid;
+    const dbgReq = typeof paramsOrMAC === 'string' ? legacyRequestedIP : paramsOrMAC.requestedIP;
+    this.debugEvent(`DHCPREQUEST received from client ${formatChaddr(dbgMac)} for ${dbgReq ?? '0.0.0.0'}`);
+    this.debugPacket('BOOTREQUEST', { xid: dbgXid, chaddr: formatChaddr(dbgMac), ciaddr: dbgReq });
+    const dbgRes = this.processRequestWithNakInternal(paramsOrMAC, legacyRequestedIP);
+    if (dbgRes && dbgRes.type === 'ACK') {
+      const dbgIp = dbgRes.binding?.ipAddress ?? dbgReq ?? '0.0.0.0';
+      this.debugEvent(`DHCPACK sent to client ${formatChaddr(dbgMac)} for ${dbgIp}`);
+      this.debugPacket('BOOTREPLY', { xid: dbgRes.xid, chaddr: formatChaddr(dbgMac), yiaddr: dbgIp });
+    } else if (dbgRes && dbgRes.type === 'NAK') {
+      this.debugEvent(`DHCPNAK sent to client ${formatChaddr(dbgMac)}`);
+      this.debugPacket('BOOTREPLY', { xid: dbgRes.xid, chaddr: formatChaddr(dbgMac) });
+    }
+    return dbgRes;
+  }
+
+  private processRequestWithNakInternal(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPRequestWithNakResult | null {
     if (!this.enabled) return null;
 
     // Normalize params
@@ -961,6 +1014,26 @@ export class DHCPServer implements IProtocolEngine {
     this.debug.serverEvents = on;
   }
 
+  private debugEmitFn?: (line: string) => void;
+  setDebugEmitter(fn: (line: string) => void): void { this.debugEmitFn = fn; }
+
+  private debugEvent(line: string): void {
+    if (!this.debug.serverEvents) return;
+    this.debugEmitFn?.(`DHCPD: ${line}`);
+  }
+
+  private debugPacket(kind: string, fields: { xid?: number; chaddr?: string; ciaddr?: string; yiaddr?: string; giaddr?: string }): void {
+    if (!this.debug.serverPacket) return;
+    const parts = [
+      `xid ${(fields.xid ?? 0).toString(16).toUpperCase()}`,
+      `chaddr ${fields.chaddr ?? '0000.0000.0000'}`,
+      `ciaddr ${fields.ciaddr ?? '0.0.0.0'}`,
+      `yiaddr ${fields.yiaddr ?? '0.0.0.0'}`,
+      `giaddr ${fields.giaddr ?? '0.0.0.0'}`,
+    ];
+    this.debugEmitFn?.(`DHCPD: ${kind}: ${parts.join(', ')}`);
+  }
+
   // ─── Relay ────────────────────────────────────────────────────────
 
   addHelperAddress(iface: string, address: string): void {
@@ -1046,6 +1119,28 @@ export class DHCPServer implements IProtocolEngine {
     return lines.join('\n').trimEnd();
   }
 
+  private countTotalAddresses(pool: DHCPPoolConfig): number {
+    if (!pool.network || !pool.mask) return 0;
+    const hostBits = 32 - this.maskToCIDR(pool.mask);
+    if (hostBits <= 1) return 0;
+    return Math.pow(2, hostBits) - 2;
+  }
+
+  private countExcludedForPool(pool: DHCPPoolConfig): number {
+    if (!pool.network || !pool.mask) return 0;
+    const netNum = this.ipToNumber(pool.network);
+    const maskNum = this.ipToNumber(pool.mask);
+    let n = 0;
+    for (const range of this.excludedRanges) {
+      const start = this.ipToNumber(range.start);
+      const end = this.ipToNumber(range.end ?? range.start);
+      for (let a = start; a <= end; a++) {
+        if ((a & maskNum) === (netNum & maskNum)) n++;
+      }
+    }
+    return n;
+  }
+
   private formatSinglePool(pool: DHCPPoolConfig): string {
     const cidr = pool.mask ? this.maskToCIDR(pool.mask) : '?';
     const leaseDays = Math.floor(pool.leaseDuration / 86400);
@@ -1058,6 +1153,10 @@ export class DHCPServer implements IProtocolEngine {
       `  DNS Server(s)    : ${pool.dnsServers.length > 0 ? pool.dnsServers.join(', ') : 'not configured'}`,
       `  Domain Name      : ${pool.domainName || 'not configured'}`,
       `  Lease Time       : ${pool.leaseInfinite ? 'infinite' : leaseStr}`,
+      `  Total addresses  : ${this.countTotalAddresses(pool)}`,
+      `  Leased addresses : ${this.countBindingsForPool(pool.name)}`,
+      `  Excluded addresses : ${this.countExcludedForPool(pool)}`,
+      `  Pending event    : none`,
       `  Current Bindings : ${this.countBindingsForPool(pool.name)}`,
     ];
     if (pool.nextServer) lines.push(`  Next Server      : ${pool.nextServer}`);

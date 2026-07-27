@@ -66,13 +66,14 @@ describe('DHCP — proactive ping-before-offer conflict detection', () => {
     expect(conflicts.some(c => c.ipAddress === '10.0.0.2' && c.detectionMethod === 'ping')).toBe(true);
   });
 
-  it('does not ping-check when ip dhcp ping packets is not configured', async () => {
+  it('does not ping-check when ip dhcp ping packets is explicitly 0', async () => {
     const h1 = new LinuxPC('linux-pc', 'H1');
     const r1 = new CiscoRouter('R1');
     new Cable('a').connect(h1.getPort('eth0')!, r1.getPort('GigabitEthernet0/0')!);
     await run(r1, [
       'enable', 'configure terminal',
       'interface GigabitEthernet0/0', 'ip address 10.0.1.1 255.255.255.0', 'no shutdown', 'exit',
+      'ip dhcp ping packets 0',
       'ip dhcp pool LAN', 'network 10.0.1.0 255.255.255.0', 'default-router 10.0.1.1', 'exit',
       'ip dhcp excluded-address 10.0.1.1',
       'end',

@@ -1543,6 +1543,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is on';
       if (sub === 'packet') return svc.enable('ip.packet');
+      if (sub.startsWith('packet ')) {
+        const detail = args.some((a) => /^detail$/i.test(a));
+        const aclName = args.slice(1).find((a) => !/^detail$/i.test(a));
+        if (!aclName) return svc.enable('ip.packet', detail ? 'detail' : undefined);
+        svc.enable('ip.packet', aclName);
+        return `IP packet debugging is on for access list ${aclName}${detail ? ' (detailed)' : ''}`;
+      }
       if (sub === 'icmp') return svc.enable('ip.icmp');
       if (sub === 'tcp') return svc.enable('ip.tcp');
       if (sub === 'udp') return svc.enable('ip.udp');

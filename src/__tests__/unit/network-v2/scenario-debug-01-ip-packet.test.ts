@@ -21,6 +21,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
   const LONG = 30_000;
   let rtr: CiscoRouter;
   let pc: LinuxPC;
+  let distant: LinuxPC;
   let lignes: string[];
 
   beforeEach(async () => {
@@ -29,18 +30,28 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
     rtr.powerOn();
     pc = new LinuxPC('linux-pc', 'pc-linux-1', 0, 0);
     pc.powerOn();
+    distant = new LinuxPC('linux-pc', 'pc-kribi-1', 0, 0);
+    distant.powerOn();
 
-    const [g0] = rtr.getPortNames();
+    const [g0, g1] = rtr.getPortNames();
     new Cable('lien').connect(rtr.getPort(g0)!, pc.getPort('eth0')!);
+    new Cable('lien-distant').connect(rtr.getPort(g1)!, distant.getPort('eth0')!);
 
     await rtr.executeCommand('enable');
     await rtr.executeCommand('configure terminal');
     await rtr.executeCommand(`interface ${g0}`);
     await rtr.executeCommand('ip address 192.168.10.254 255.255.255.0');
     await rtr.executeCommand('no shutdown');
+    await rtr.executeCommand('exit');
+    await rtr.executeCommand(`interface ${g1}`);
+    await rtr.executeCommand('ip address 192.168.30.254 255.255.255.0');
+    await rtr.executeCommand('no shutdown');
     await rtr.executeCommand('end');
 
     pc.configureInterface('eth0', new IPAddress('192.168.10.101'), new SubnetMask('255.255.255.0'));
+    distant.configureInterface('eth0', new IPAddress('192.168.30.20'), new SubnetMask('255.255.255.0'));
+    await pc.executeCommand('sudo ip route add default via 192.168.10.254');
+    await distant.executeCommand('sudo ip route add default via 192.168.30.254');
 
     lignes = [];
     rtr.getDebugService().subscribe((l: string) => lignes.push(l));
@@ -119,9 +130,9 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
       expect(ligne).toMatch(/\(GigabitEthernet|\(Gi/);
     }, LONG);
 
-    it('gap confirmé : un paquet routé devrait porter le verdict `forward` et le next hop `g=`', async () => {
+    it('un paquet routé porte le verdict `forward` et le next hop `g=`', async () => {
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 1 192.168.10.254');
+      await pc.executeCommand('ping -c 1 -W 1 192.168.30.20');
 
       expect(lignes.some((l) => l.includes('forward'))).toBe(true);
       expect(lignes.some((l) => /g=\d+\.\d+\.\d+\.\d+/.test(l))).toBe(true);
@@ -129,7 +140,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
   });
 
   describe('paquet rejeté par une ACL', () => {
-    it('gap confirmé : un paquet refusé par une ACL devrait produire `access denied`', async () => {
+    it('un paquet refusé par une ACL produit `access denied`', async () => {
       await run('configure terminal');
       await run('ip access-list extended BLOQUE');
       await run('10 deny ip host 192.168.10.101 any');
@@ -141,7 +152,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
       await run('end');
 
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 2 192.168.10.254');
+      await pc.executeCommand('ping -c 2 -W 1 192.168.30.20');
 
       expect(lignes.some((l) => l.includes('access denied'))).toBe(true);
     }, LONG);

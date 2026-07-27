@@ -504,14 +504,24 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
 // ─── Privileged Mode ──────────────────────────────────────────────────────────
 
 export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
-  trie.register('debug ip nat', 'Enable NAT packet-translation debugging', () => {
-    getRouter()._getNATEngine().setDebugEnabled(true);
-    return 'IP NAT debugging is on';
-  });
-  trie.register('no debug ip nat', 'Disable NAT packet-translation debugging', () => {
-    getRouter()._getNATEngine().setDebugEnabled(false);
-    return 'IP NAT debugging is off';
-  });
+  const debugSvc = () => getRouter().getDebugService();
+  trie.registerGreedy('debug ip nat', 'Enable NAT packet-translation debugging', (args) => {
+    const arg = args.join(' ').trim();
+    const nat = getRouter()._getNATEngine();
+    nat.setDebugEnabled(true);
+    if (/^detailed$/i.test(arg)) {
+      nat.setDebugDetailed(true);
+      return debugSvc().enable('ip.nat', 'detailed');
+    }
+    nat.setDebugDetailed(false);
+    return arg ? debugSvc().enable('ip.nat', arg) : debugSvc().enable('ip.nat');
+  }, ['detailed']);
+  trie.registerGreedy('no debug ip nat', 'Disable NAT packet-translation debugging', () => {
+    const nat = getRouter()._getNATEngine();
+    nat.setDebugEnabled(false);
+    nat.setDebugDetailed(false);
+    return debugSvc().disable('ip.nat');
+  }, ['detailed']);
   trie.register('clear ip nat translation *', 'Clear all dynamic NAT translations', () => {
     getRouter()._getNATEngine().clearTranslations();
     return '';

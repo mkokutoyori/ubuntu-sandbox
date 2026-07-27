@@ -1395,6 +1395,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-in',
           `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+        this._debugService?.emitLine('ip.packet',
+          `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP}, len ${ipPkt.totalLength}, access denied`);
         if (this.isIcmpUnreachablesEnabled(inPort)) {
           this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
         }
@@ -1727,6 +1729,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.counters.ipInAddrErrors++;
       Logger.info(this.id, 'router:no-route',
         `${this.name}: no route for ${ipPkt.destinationIP}`);
+      this._debugService?.emitLine('ip.packet',
+        `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP}, len ${ipPkt.totalLength}, unroutable`);
       this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 0);
       return;
     }
@@ -1755,6 +1759,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     const nextHopIP = route.nextHop || ipPkt.destinationIP;
 
+    this._debugService?.emitLine('ip.packet',
+      `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP} (${route.iface}), g=${nextHopIP}, len ${fwdPkt.totalLength}, forward`);
+
     // Phase E.2a: ICMP Redirect (RFC 1812 §5.2.7.2)
     // Send redirect when egress == ingress and source is on-link — host can reach next-hop directly.
     if (route.iface === inPort && route.nextHop) {
@@ -1773,6 +1780,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-out',
           `${this.name}: ACL denied outbound on ${route.iface}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
+        this._debugService?.emitLine('ip.packet',
+          `IP: s=${fwdPkt.sourceIP} (${inPort}), d=${fwdPkt.destinationIP}, len ${fwdPkt.totalLength}, access denied`);
         if (this.isIcmpUnreachablesEnabled(inPort)) {
           this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 13);
         }
@@ -2707,8 +2716,36 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this._routingTableLimit = max === null ? null : { max, thresholdPct };
   }
 
+  private debugLineMatchesAcl(aclRef: string, line: string): boolean {
+    const ref = /^\d+$/.test(aclRef) ? Number(aclRef) : aclRef;
+    const acl = typeof ref === 'number'
+      ? this.aclEngine.findById(ref)
+      : this.aclEngine.findByName(ref);
+    if (!acl || acl.entries.length === 0) return true;
+
+    const ips = line.match(/\d{1,3}(?:\.\d{1,3}){3}/g);
+    if (!ips || ips.length === 0) return true;
+
+    const probe = {
+      version: 4, ihl: 5, dscp: 0, ecn: 0,
+      totalLength: 20, identification: 0, flags: 0, fragmentOffset: 0,
+      ttl: 255, protocol: 1, headerChecksum: 0,
+      sourceIP: new IPAddress(ips[0]),
+      destinationIP: new IPAddress(ips[1] ?? ips[0]),
+      payload: undefined,
+    } as unknown as IPv4Packet;
+
+    return this.aclEngine.evaluateACL(ref, probe) !== 'deny';
+  }
+
   getDebugService(): RouterDebugService {
-    if (!this._debugService) this._debugService = new RouterDebugService();
+    if (!this._debugService) {
+      this._debugService = new RouterDebugService();
+      const svc = this._debugService;
+      this.natEngine.setDebugEmitter((line) => svc.emitLine('ip.nat', line));
+      this._getDHCPServerInternal().setDebugEmitter((line) => svc.emitLine('ip.dhcp.server', line));
+      svc.setAclFilterEvaluator((aclName, line) => this.debugLineMatchesAcl(aclName, line));
+    }
     this._debugService.attachToBus(this.getBus(), this.id);
     return this._debugService;
   }
