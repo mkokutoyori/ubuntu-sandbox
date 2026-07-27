@@ -118,6 +118,22 @@ export class TcpSocket {
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
   persistTimer: symbol | null = null;
   persistBackoffMs = 0;
+  /**
+   * Reentrancy guard for `flushSendBacklog` (PRD-TCP.md P3/P5) — this
+   * simulator delivers frames synchronously end to end, so transmitting a
+   * segment can synchronously trigger the peer's ACK, which re-enters this
+   * same socket's flush before the outer call's `while` loop has looped
+   * again. Left unguarded, every additional segment nests one more level
+   * of send→ACK→send call stack instead of being a new iteration of the
+   * same loop, growing JS call-stack depth linearly with segment count —
+   * for a large transfer this silently trips `Cable`'s anti-loop guard
+   * (`MAX_SYNC_DELIVERY_DEPTH`) partway through, dropping the tail of the
+   * data with no error. The guard flattens this: a reentrant call is a
+   * no-op (the outer loop recomputes window/backlog fresh on its next
+   * iteration anyway, since the ACK already updated them), so total depth
+   * stays bounded by one round trip's cable hops, not by segment count.
+   */
+  flushingBacklog = false;
 
   /** RFC 5681 congestion control (PRD-TCP.md P5) — slow start/congestion avoidance/fast recovery. */
   readonly cc: TcpCongestionControl = new TcpCongestionControl(this.mss);
@@ -658,27 +674,39 @@ export class TcpStack {
    * order until a future ACK/window-update frees enough room.
    */
   private flushSendBacklog(socket: TcpSocket): void {
-    while (socket.sendBacklog.length > 0) {
-      const inFlight = (socket.sendNext - socket.sendUnacked) >>> 0;
-      // PRD-TCP.md P3+P5: bounded by whichever is smaller — the peer's
-      // advertised receive window, or our own congestion window.
-      const effectiveWindow = Math.min(socket.peerWindow, socket.cc.cwnd);
-      const available = effectiveWindow > inFlight ? effectiveWindow - inFlight : 0;
-      if (available === 0) break;
-      const next = socket.sendBacklog[0];
-      const take = Math.min(available, next.payload.length);
-      const chunk = next.payload.slice(0, take);
-      const remainder = next.payload.slice(take);
-      socket.sendBacklog.shift();
-      if (remainder.length > 0) {
-        socket.sendBacklog.unshift({ payload: remainder, psh: next.psh });
+    // Reentrant call (see `flushingBacklog`'s doc comment): the outer
+    // invocation's `while` loop will pick up the freed window on its very
+    // next iteration since the ACK that triggered this reentry already
+    // updated `sendUnacked`/`cc.cwnd` before calling back in here — so
+    // just return and let that loop keep going in its own stack frame
+    // instead of nesting another one.
+    if (socket.flushingBacklog) return;
+    socket.flushingBacklog = true;
+    try {
+      while (socket.sendBacklog.length > 0) {
+        const inFlight = (socket.sendNext - socket.sendUnacked) >>> 0;
+        // PRD-TCP.md P3+P5: bounded by whichever is smaller — the peer's
+        // advertised receive window, or our own congestion window.
+        const effectiveWindow = Math.min(socket.peerWindow, socket.cc.cwnd);
+        const available = effectiveWindow > inFlight ? effectiveWindow - inFlight : 0;
+        if (available === 0) break;
+        const next = socket.sendBacklog[0];
+        const take = Math.min(available, next.payload.length);
+        const chunk = next.payload.slice(0, take);
+        const remainder = next.payload.slice(take);
+        socket.sendBacklog.shift();
+        if (remainder.length > 0) {
+          socket.sendBacklog.unshift({ payload: remainder, psh: next.psh });
+        }
+        const flags = noFlags(); flags.ack = true;
+        if (next.psh && remainder.length === 0) flags.psh = true;
+        const seq = socket.sendNext;
+        socket.sendNext = (seq + chunk.length) >>> 0;
+        this.transmitTracked(socket, flags, seq, socket.recvNext, chunk, chunk.length);
+        if (chunk.length === 0) break; // nothing consumed (zero window) — avoid spinning forever
       }
-      const flags = noFlags(); flags.ack = true;
-      if (next.psh && remainder.length === 0) flags.psh = true;
-      const seq = socket.sendNext;
-      socket.sendNext = (seq + chunk.length) >>> 0;
-      this.transmitTracked(socket, flags, seq, socket.recvNext, chunk, chunk.length);
-      if (chunk.length === 0) break; // nothing consumed (zero window) — avoid spinning forever
+    } finally {
+      socket.flushingBacklog = false;
     }
     this.maybeArmPersistTimer(socket);
   }
@@ -810,7 +838,7 @@ export class TcpStack {
       case 'syn-sent':
         if (seg.flags.syn && seg.flags.ack) {
           socket.recvNext = (seg.sequence + 1) >>> 0;
-          socket.sendUnacked = seg.acknowledgement;
+          if (seqLt(socket.sendUnacked, seg.acknowledgement)) socket.sendUnacked = seg.acknowledgement;
           // PRD-TCP.md P6 — finalize negotiation against what the peer's
           // SYN-ACK actually echoed back (`incomingOpts` was already
           // decoded above, alongside the generic peerLastTsVal update).
@@ -833,7 +861,7 @@ export class TcpStack {
         break;
       case 'syn-received':
         if (seg.flags.ack) {
-          socket.sendUnacked = seg.acknowledgement;
+          if (seqLt(socket.sendUnacked, seg.acknowledgement)) socket.sendUnacked = seg.acknowledgement;
           this._transition(socket, 'established');
           this.emitOpened(socket);
           try { socket._fireOpen(); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); }
@@ -849,7 +877,13 @@ export class TcpStack {
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
         } else if (seg.flags.ack && !seg.flags.fin) {
-          socket.sendUnacked = seg.acknowledgement;
+          // Guarded like `pruneUnackedQueue`'s own update (PRD-TCP.md P1):
+          // an old/reordered ACK reaching this branch after a newer one
+          // already advanced SND.UNA must not walk it backwards — that
+          // would inflate `sendNext - sendUnacked` (flow control's
+          // in-flight estimate) and can permanently stall the connection
+          // if it happens after the last real advance for a transfer.
+          if (seqLt(socket.sendUnacked, seg.acknowledgement)) socket.sendUnacked = seg.acknowledgement;
           // RFC 9293 §3.8.4/§3.10.7.4 — a no-payload segment behind our
           // current RCV.NXT carries no new data (this is exactly what a
           // keepalive probe looks like: the peer deliberately resends an
@@ -864,7 +898,7 @@ export class TcpStack {
         if (seg.flags.fin) this.handleIncomingFin(socket);
         break;
       case 'fin-wait-1':
-        socket.sendUnacked = seg.acknowledgement;
+        if (seqLt(socket.sendUnacked, seg.acknowledgement)) socket.sendUnacked = seg.acknowledgement;
         if (seg.flags.fin && seg.flags.ack) {
           socket.recvNext = (seg.sequence + 1) >>> 0;
           const ackFlags = noFlags(); ackFlags.ack = true;

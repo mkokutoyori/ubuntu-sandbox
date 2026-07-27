@@ -19,6 +19,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P5/P6, docs/PRD-Frame-Only-Refactor.md)
 import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
@@ -659,6 +660,7 @@ export abstract class EndHost extends Equipment {
         this.onDhcpLeaseReleased(iface);
       },
     );
+    this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
     this.dhcpClient.setServerObservationRecorder((iface, serverIp, serverMac) => {
       if (!serverMac || serverIp === '0.0.0.0') return;
@@ -1083,7 +1085,7 @@ export abstract class EndHost extends Equipment {
       const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
       if (!remotePort) continue;
       const remoteId = remotePort.getEquipmentId();
-      const remoteEquip = Equipment.getById(remoteId);
+      const remoteEquip = EquipmentRegistry.getInstance().getById(remoteId);
       if (!remoteEquip) continue;
 
       // Direct connection to a Router
@@ -1107,7 +1109,7 @@ export abstract class EndHost extends Equipment {
         };
         const helpers = helperBearer.getDhcpHelpersForIngressPort?.(remotePort.getName()) ?? [];
         for (const helperIp of helpers) {
-          for (const candidate of Equipment.getAllEquipment()) {
+          for (const candidate of EquipmentRegistry.getInstance().getAll()) {
             if (candidate.getPorts().some((p) => p.getIPAddress()?.toString() === helperIp)) {
               tryRegisterRouter(candidate);
               break;
@@ -1129,7 +1131,7 @@ export abstract class EndHost extends Equipment {
     // gated on the host being entirely uncabled.
     const hasCabledInterface = [...this.ports.values()].some((p) => p.getCable());
     if (!hasCabledInterface && this.dhcpClient['connectedServers'].length === 0) {
-      for (const equip of Equipment.getAllEquipment()) {
+      for (const equip of EquipmentRegistry.getInstance().getAll()) {
         if (equip === this) continue;
         tryRegisterRouter(equip);
       }

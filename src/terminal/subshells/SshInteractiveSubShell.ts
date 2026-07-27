@@ -71,6 +71,7 @@ import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 /** Mirrors LinuxInteractionPlanner.ts's MAX_SU_ATTEMPTS (real su retries 3x). */
 const MAX_SU_ATTEMPTS = 3;
@@ -82,7 +83,7 @@ function shQuote(value: string): string {
 
 /** Minimal in-process equivalent of LinuxTerminalSession's findLinuxMachineByIp(). */
 export function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
-  const all = (Equipment as unknown as { getAllEquipment: () => unknown[] }).getAllEquipment();
+  const all = EquipmentRegistry.getInstance().getAll();
   for (const eq of all) {
     if (!(eq instanceof LinuxMachine)) continue;
     const ports = (eq as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;

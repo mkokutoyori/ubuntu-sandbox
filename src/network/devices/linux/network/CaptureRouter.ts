@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P8, docs/PRD-Frame-Only-Refactor.md)
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { subscribeWireSegments, wireSegmentToCapturedPacket, type WireSegment } from './WireCaptureBus';
 import { PacketCaptureLog } from './PacketCaptureLog';

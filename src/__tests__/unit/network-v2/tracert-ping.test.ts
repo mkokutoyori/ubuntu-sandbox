@@ -20,6 +20,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network/equipment/Equipment';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 // ─── WAN Topology Helper ────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ async function configureWANIPs(topo: ReturnType<typeof setupWANTopology>) {
 
 describe('WAN-level Ping and Traceroute Command Suite', () => {
   beforeEach(() => {
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();

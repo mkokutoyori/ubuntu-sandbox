@@ -42,6 +42,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 // ─── Address plan ─────────────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ describe('WAN-01: Physical topology & reachability', () => {
   });
 
   it('eight devices are registered in the Equipment registry', () => {
-    expect(Equipment.getAllEquipment().length).toBe(8);
+    expect(EquipmentRegistry.getInstance().getAll().length).toBe(8);
   });
 
   it('clients have a default gateway', () => {

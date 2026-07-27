@@ -17,7 +17,6 @@ import {
   ETHERTYPE_IPV4, IP_PROTO_OSPF,
   createIPv4Packet,
 } from '../../core/types';
-import { Equipment } from '../../equipment/Equipment';
 import { resolveAcrossTransparentDevices } from '../../equipment/TopologyWalk';
 import { ipv4MulticastToMac } from '../../core/ip';
 import { Logger } from '../../core/Logger';
@@ -28,6 +27,8 @@ import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
 import type { BfdAgent } from '../../bfd/BfdAgent';
+// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P3, docs/PRD-Frame-Only-Refactor.md)
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 // ─── OSPF Extra Config Type ─────────────────────────────────────
 
@@ -87,6 +88,7 @@ export interface OSPFRouterContext {
   getIPv6AccessLists(): import('../Router').IPv6ACL[] | undefined;
   getBfdAgent?(): BfdAgent | undefined;
   getIpPrefixListStore?(): import('./policy/IpPrefixList').IpPrefixListStore;
+  getBus?(): import('@/events/EventBus').IEventBus;
 }
 
 // ─── OSPF Integration Engine ────────────────────────────────────
@@ -136,6 +138,8 @@ export class RouterOSPFIntegration {
     if (this.ospfEngine) return;
     this.ospfEngine = new OSPFEngine(processId);
     this.ospfEngine.setDeviceId(this.ctx.id);
+    const bus = this.ctx.getBus?.();
+    if (bus) this.ospfEngine.setEventBus(bus);
 
     // Auto-detect Router ID: highest interface IP
     let highestIP = '0.0.0.0';
@@ -186,6 +190,8 @@ export class RouterOSPFIntegration {
   enableOSPFv3(processId: number = 1): void {
     if (this.ospfv3Engine) return;
     this.ospfv3Engine = new OSPFv3Engine(processId);
+    const v3Bus = this.ctx.getBus?.();
+    if (v3Bus) this.ospfv3Engine.setEventBus(v3Bus);
     Logger.info(this.ctx.id, 'ospfv3:enabled', `${this.ctx.name}: OSPFv3 process ${processId} enabled`);
   }
 
@@ -1125,7 +1131,7 @@ export class RouterOSPFIntegration {
       // Through switch
       const remoteEquipId = remotePort.getEquipmentId();
       if (!RouterOSPFIntegration.getByEquipmentId(remoteEquipId)) {
-        const remoteEquip = Equipment.getById(remoteEquipId);
+        const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
         if (!remoteEquip) continue;
         for (const swPort of remoteEquip.getPorts()) {
           if (swPort === remotePort) continue;
@@ -1161,7 +1167,7 @@ export class RouterOSPFIntegration {
       const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
       if (!remotePort) continue;
       const remoteEquipId = remotePort.getEquipmentId();
-      const remoteEquip = Equipment.getById(remoteEquipId);
+      const remoteEquip = EquipmentRegistry.getInstance().getById(remoteEquipId);
 
       const tryAdd = (peer: RouterOSPFIntegration, rPort: Port) => {
         if (visited.has(peer.ctx.id) || !peer.ospfv3Engine) return;
@@ -1207,7 +1213,7 @@ export class RouterOSPFIntegration {
           const currIface = curr.ospfv3Engine?.getInterface(pn);
           queue.push({ peer: re, nextHop, iface, cost: cost + (currIface?.cost ?? 1) });
         } else {
-          const equip = Equipment.getById(rid);
+          const equip = EquipmentRegistry.getInstance().getById(rid);
           if (!equip) continue;
           for (const swPort of equip.getPorts()) {
             if (swPort === rp) continue;

@@ -22,6 +22,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network/equipment/Equipment';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 // ─── NAT Topology Helper ────────────────────────────────────────────
 
@@ -100,7 +101,7 @@ async function configureBasicNATRouting(topo: ReturnType<typeof setupNATTopology
 
 describe('Cisco and Huawei NAT/PAT Command System', () => {
   beforeEach(() => {
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();

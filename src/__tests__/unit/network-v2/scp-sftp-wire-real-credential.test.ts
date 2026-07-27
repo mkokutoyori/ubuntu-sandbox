@@ -26,12 +26,13 @@ import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
 import { SshSftpChannel } from '@/network/protocols/ssh/channels/SshSftpChannel';
 import { buildLan, assignIps, type SshLan, PC2_IP } from './ssh-lan-fixtures';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 beforeEach(() => {
   resetCounters();
   MACAddress.resetCounter();
   Logger.reset();
-  Equipment.clearRegistry();
+  EquipmentRegistry.getInstance().clear();
 });
 
 describe('scp/sftp go over the real wire when sshpass offers a real password', () => {

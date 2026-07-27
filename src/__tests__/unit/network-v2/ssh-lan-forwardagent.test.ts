@@ -23,13 +23,14 @@ import { Equipment } from '@/network';
 import { parseSshArgs } from '@/terminal/sessions/sshArgs';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
 import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 describe('SSH LAN — agent forwarding (`ssh -A`)', () => {
   beforeEach(() => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
   });
 
   // FA1

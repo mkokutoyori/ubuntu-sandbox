@@ -22,17 +22,6 @@ import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { getDefaultEventBus, ForwardingEventBus, type IEventBus } from '@/events/EventBus';
 
 export abstract class Equipment {
-  /**
-   * Global registry of all Equipment instances (for topology traversal).
-   * @deprecated Use EquipmentRegistry.getInstance() for new code.
-   * These static methods delegate to the singleton EquipmentRegistry.
-   */
-  private static get registry(): EquipmentRegistry { return EquipmentRegistry.getInstance(); }
-
-  static getById(id: string): Equipment | undefined { return EquipmentRegistry.getInstance().getById(id); }
-  static getAllEquipment(): Equipment[] { return EquipmentRegistry.getInstance().getAll(); }
-  static clearRegistry(): void { EquipmentRegistry.getInstance().clear(); }
-
   readonly id: string;
   name: string;
   protected hostname: string;

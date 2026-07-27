@@ -39,6 +39,7 @@ import { isOk } from '@/network/protocols/ssh/Result';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   buildLan,
   assignIps,
@@ -67,7 +68,7 @@ describe('SSH interactive shell — real-wire streaming + Ctrl+C', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
   });

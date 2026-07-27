@@ -18,6 +18,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { Equipment } from '@/network';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   buildLan,
   assignIps,
@@ -34,7 +35,7 @@ describe('SSH LAN — remote-shell experience (BRD SSH-04)', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
     // Terminal is rooted on PC1 ; SSH will push PC2 onto the stack.

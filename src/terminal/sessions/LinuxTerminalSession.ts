@@ -118,6 +118,7 @@ import type { TcpConnector } from '@/network/tcp/types';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 // ─── Theme ────────────────────────────────────────────────────────
 
@@ -3951,8 +3952,7 @@ export class LinuxTerminalSession extends TerminalSession {
  * null when the target is not a Linux device managed by the sandbox.
  */
 function findEquipmentByIp(targetIp: string): Equipment | null {
-  const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] })
-    .getAllEquipment();
+  const all = EquipmentRegistry.getInstance().getAll();
   for (const eq of all) {
     const portsObj = (eq as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
     if (!portsObj) continue;

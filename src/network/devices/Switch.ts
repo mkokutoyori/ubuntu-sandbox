@@ -360,6 +360,7 @@ export abstract class Switch extends Equipment {
     this.initArpInspection();
     this.initPortSecurity();
     this.initDhcpSnooping();
+    this.dhcpServer.setEventBus(this.getBus());
   }
 
   private initPortSecurity(): void {

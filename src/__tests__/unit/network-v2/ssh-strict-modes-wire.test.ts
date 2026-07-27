@@ -19,6 +19,7 @@ import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOpti
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { buildLan, assignIps, PC2_IP, type SshLan } from './ssh-lan-fixtures';
 import type { LinuxPC } from '@/network/devices/LinuxPC';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 function pcInternals(pc: LinuxPC) {
   return (pc as unknown as {
@@ -67,7 +68,7 @@ describe('SSH server (real wire) — StrictModes on public-key auth', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
   });

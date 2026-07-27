@@ -373,6 +373,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getIPv6AccessLists: () => this.ipv6AccessLists,
       getBfdAgent: () => this.getBfdAgent(),
       getIpPrefixListStore: () => this.ipPrefixListStore,
+      getBus: () => this.getBus(),
     });
     this.dynamicRouting = new RouterDynamicRouting({
       id: this.id,
@@ -392,6 +393,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // `getLoggingConfig()` accessor first, which no real CLI command does.
     this.shell.attachLoggingToBus?.(this.getBus(), this.id);
     this.natEngine.setDeviceId(this.id, this.name);
+    // An engine left on the process-wide default bus meets every other
+    // router's events there, and its actors then have to filter by device
+    // id to ignore them. The bus boundary is the guarantee that filtering
+    // only approximates (docs/PRD-Frame-Only-Refactor.md P2).
+    this.natEngine.setEventBus(this.getBus());
+    this.dhcpServer.setEventBus(this.getBus());
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? ({ type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any);
       // Undefined ACL = no interesting traffic, so require an explicit permit.
@@ -443,6 +450,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (bus) this.getSnmpService().attachToBus(bus, this.id);
     this._debugService?.attachToBus(this.getBus(), this.id);
     this.ipsecEngine?.setEventBus(this.getBus());
+    this.natEngine?.setEventBus(this.getBus());
     if (this._eemEngine) { this._eemEngine.stop(); this._eemEngine.start(); }
   }
 
@@ -540,7 +548,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const dotIdx = iface.indexOf('.');
     const physIface = dotIdx > 0 ? iface.slice(0, dotIdx) : iface;
     const port = this.ports.get(physIface);
-    return !port || port.isOperationallyUp();
+    if (!port) return true;
+    // A port that has never had a cable at all is a fixture built without
+    // a cable plant (unit tests exercising CLI/RIB behavior in isolation),
+    // not a real severed link — judge it on line/admin state alone, same
+    // "never wired" vs "unplugged" distinction Port.wasEverCabled() exists
+    // for (docs/PRD-Link-State.md §2.1 P6). Once a cable HAS been attached,
+    // full operational state (including carrier) is required as before.
+    if (!port.wasEverCabled()) return port.getIsUp() && !port.isAdminDown();
+    return port.isOperationallyUp();
   }
 
   /**

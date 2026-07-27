@@ -24,6 +24,7 @@ import {
   parseSshArgs,
 } from '@/terminal/sessions/sshArgs';
 import { SshLocalForwarder } from '@/network/protocols/ssh/SshLocalForwarder';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   buildLan,
   assignIps,
@@ -38,7 +39,7 @@ describe('SSH LAN — local port forwarding (`ssh -L`)', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
   });
