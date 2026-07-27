@@ -13,7 +13,11 @@ import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import { Switch } from '@/network/devices/Switch';
 import { IPAddress } from '@/network/core/types';
-import { parsePingArgs, formatCiscoPingSummary, ciscoPingMark, type CiscoPingRow } from '@/network/devices/shells/cisco/ciscoPing';
+import {
+  parsePingArgs, formatCiscoPingSummary, ciscoPingMark, answerOr, isYes,
+  sweepSizes, EXTENDED_PING_PROMPTS as EP, defaultExtendedPingParams,
+  type CiscoPingRow, type ExtendedPingParams,
+} from '@/network/devices/shells/cisco/ciscoPing';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -520,6 +524,90 @@ export class CiscoTerminalSession extends CLITerminalSession {
   }
 
   /**
+   * `ping` with no argument, in privileged EXEC, is IOS's extended ping:
+   * a question-and-answer dialog rather than an error. User EXEC keeps the
+   * one-line form, exactly like real IOS.
+   */
+  protected override buildInteractiveFlow(command: string): InteractiveStep[] | null {
+    if (command.trim() === 'ping' && this.vty?.state.mode === 'privileged'
+        && this.device instanceof Router) {
+      return this.buildExtendedPingSteps();
+    }
+    return super.buildInteractiveFlow(command);
+  }
+
+  private buildExtendedPingSteps(): InteractiveStep[] {
+    const ask = (prompt: string, storeAs: string): InteractiveStep =>
+      ({ type: 'text', prompt, storeAs, allowEmpty: true });
+    const v = (ctx: { values: Map<string, string> }, k: string) => ctx.values.get(k) ?? '';
+
+    const steps: InteractiveStep[] = [
+      ask(EP.protocol, 'proto'),
+      {
+        type: 'text', prompt: EP.target, storeAs: 'target', allowEmpty: true,
+        // IOS re-asks rather than carrying a bad address through the whole
+        // dialog and failing at the end.
+        validation: (value) => (
+          value.trim() === '' || parsePingArgs([value.trim()]).error === undefined
+            ? { valid: true }
+            : { valid: false, errorMessage: '% Unrecognized host or address, or protocol not running.' }
+        ),
+      },
+      ask(EP.repeat, 'repeat'),
+      ask(EP.size, 'size'),
+      ask(EP.timeout, 'timeout'),
+      ask(EP.extended, 'extended'),
+      // Index 6: skip the extended block when the answer was no.
+      { type: 'branch', predicate: (ctx) => (isYes(v(ctx, 'extended')) ? 7 : 13) },
+      ask(EP.source, 'source'),
+      ask(EP.tos, 'tos'),
+      ask(EP.df, 'df'),
+      ask(EP.validate, 'validate'),
+      ask(EP.pattern, 'pattern'),
+      ask(EP.routeOptions, 'routeOpts'),
+      // Index 13: asked in both branches, like IOS.
+      ask(EP.sweep, 'sweep'),
+      { type: 'branch', predicate: (ctx) => (isYes(v(ctx, 'sweep')) ? 15 : 18) },
+      ask(EP.sweepMin, 'sweepMin'),
+      ask(EP.sweepMax, 'sweepMax'),
+      ask(EP.sweepInterval, 'sweepInterval'),
+      {
+        type: 'execute',
+        action: async (ctx) => {
+          await this.runExtendedPing(this.collectExtendedPing(ctx.values));
+        },
+      },
+    ];
+    return steps;
+  }
+
+  /** Turn the dialog's answers into the parameters a probe actually uses. */
+  private collectExtendedPing(values: Map<string, string>): ExtendedPingParams {
+    const p = defaultExtendedPingParams();
+    const get = (k: string) => values.get(k) ?? '';
+    p.target = get('target').trim();
+    p.count = parseInt(answerOr(get('repeat'), '5'), 10) || 5;
+    p.sizeBytes = parseInt(answerOr(get('size'), '100'), 10) || 100;
+    p.timeoutMs = (parseInt(answerOr(get('timeout'), '2'), 10) || 2) * 1000;
+    if (isYes(get('extended'))) {
+      p.sourceIP = get('source').trim() || null;
+      p.tos = parseInt(answerOr(get('tos'), '0'), 10) || 0;
+      p.df = isYes(get('df'));
+      p.validateReply = isYes(get('validate'));
+      p.dataPattern = answerOr(get('pattern'), '0xABCD');
+      p.routeOptions = answerOr(get('routeOpts'), 'none');
+    }
+    if (isYes(get('sweep'))) {
+      p.sweep = {
+        min: parseInt(answerOr(get('sweepMin'), '36'), 10) || 36,
+        max: parseInt(answerOr(get('sweepMax'), '18024'), 10) || 18024,
+        interval: parseInt(answerOr(get('sweepInterval'), '1'), 10) || 1,
+      };
+    }
+    return p;
+  }
+
+  /**
    * `test aaa group <name> <user> <password> legacy` — a genuine TACACS+/
    * RADIUS round-trip against the named server group (not a method list:
    * this bypasses `aaa authentication login` resolution entirely, exactly
@@ -556,6 +644,69 @@ export class CiscoTerminalSession extends CLITerminalSession {
       },
     });
     return job !== null;
+  }
+
+  /**
+   * Run what the dialog asked for. A sweep is a series of runs of growing
+   * datagram size — that is how an operator finds a path MTU by hand, so
+   * each size is genuinely sent rather than summarised.
+   */
+  private async runExtendedPing(p: ExtendedPingParams): Promise<void> {
+    const dev = this.device;
+    if (!(dev instanceof Router)) return;
+
+    const parsed = parsePingArgs([p.target]);
+    if (parsed.error) { this.addLine(parsed.error); this.notify(); return; }
+
+    let sourceIP = p.sourceIP;
+    if (sourceIP) sourceIP = this.resolvePingSource(dev, sourceIP) ?? sourceIP;
+
+    if (p.validateReply || p.routeOptions.toLowerCase() !== 'none') {
+      // Said plainly rather than answered with a transcript that would
+      // imply checks the simulator never performed.
+      this.addLine('% Reply validation and IP header options are accepted but not simulated.');
+    }
+
+    const sizes = p.sweep ? sweepSizes(p.sweep) : [p.sizeBytes];
+    this.addLine('Type escape sequence to abort.');
+    if (p.sweep) {
+      this.addLine(`Sweeping from ${p.sweep.min} to ${p.sweep.max}, increment by ${p.sweep.interval}`);
+    }
+    this.addLine(
+      `Sending ${p.count * sizes.length}, ` +
+      `${p.sweep ? `[${p.sweep.min}..${p.sweep.max}]` : String(p.sizeBytes)}-byte ` +
+      `ICMP Echos to ${p.target}, timeout is ${p.timeoutMs / 1000} seconds:`,
+    );
+    if (p.df) this.addLine('Packet sent with the DF bit set');
+
+    const all: CiscoPingRow[] = [];
+    const marksBase = this.lines.length;
+    this.addLine('');
+    for (const size of sizes) {
+      const rows = await dev.executePingSequence(
+        new IPAddress(p.target), p.count, p.timeoutMs, sourceIP ?? undefined,
+        { df: p.df, tos: p.tos, sizeBytes: size },
+      );
+      all.push(...(rows.length ? rows : Array.from({ length: p.count }, (_, i) => ({
+        success: false, rttMs: 0, ttl: 0, seq: i + 1, fromIP: '', error: 'timeout' as const,
+      }))));
+      this.lines = this.lines.slice(0, marksBase);
+      this.addLine(all.map(ciscoPingMark).join(''));
+      this.notify();
+    }
+    this.addLine(formatCiscoPingSummary(all, p.count * sizes.length));
+    this.notify();
+  }
+
+  /** `Source address or interface:` accepts either form, like IOS. */
+  private resolvePingSource(dev: Router, source: string): string | null {
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(source)) return source;
+    for (const [name, port] of dev._getPortsInternal()) {
+      if (name.toLowerCase() === source.toLowerCase()) {
+        return port.getIPAddress()?.toString() ?? null;
+      }
+    }
+    return null;
   }
 
   private tryStartCiscoPing(commandLine: string): boolean {

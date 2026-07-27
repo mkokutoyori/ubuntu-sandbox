@@ -1557,6 +1557,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             }
           }
         }
+        // A Fragmentation Needed answering one of our own echo requests is
+        // the DF probe coming back: settle it so the CLI can mark it `M`
+        // instead of waiting out the timeout as if nothing had replied.
+        if (icmp.originalPacket) {
+          const origICMP = icmp.originalPacket.payload as ICMPPacket;
+          if (origICMP && origICMP.type === 'icmp' && origICMP.icmpType === 'echo-request') {
+            this.emitIcmpEchoFailed({
+              fromIp: ipPkt.sourceIP.toString(),
+              toIp: icmp.originalPacket.destinationIP.toString(),
+              id: origICMP.id, seq: origICMP.sequence,
+              reason: `Destination unreachable (from ${ipPkt.sourceIP}) code 4`,
+            });
+          }
+        }
       } else if (icmp.icmpType === 'echo-reply') {
         // Phase 5.8/5.9: settle awaiting _sendPing / traceroute via the bus.
         this.emitIcmpEchoReply({
@@ -3195,6 +3209,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     sourceIPStr?: string,
     hooks?: {
       onResult?: (row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void;
+      /** IOS extended ping: `Set DF bit in IP header?` and `Type of service`. */
+      df?: boolean;
+      tos?: number;
+      sizeBytes?: number;
       shouldStop?: () => boolean;
     },
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
@@ -3251,7 +3269,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (hooks?.shouldStop?.()) break;
       let row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string };
       try {
-        row = await this._sendPing(route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs);
+        row = await this._sendPing(
+          route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs,
+          { df: hooks?.df, tos: hooks?.tos, sizeBytes: hooks?.sizeBytes },
+        );
       } catch (err) {
         // A probe that ended because a router answered with an ICMP error
         // is not the same event as one nothing answered — the CLI prints a
@@ -3429,6 +3450,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private async _sendPing(
     iface: string, port: Port, myIP: IPAddress, targetIP: IPAddress,
     dstMAC: MACAddress, seq: number, timeoutMs: number,
+    opts?: { df?: boolean; tos?: number; sizeBytes?: number },
   ): Promise<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string }> {
     // Line protocol down — the probe fails immediately instead of burning a
     // full timeout waiting for a reply the severed link can never carry
@@ -3459,12 +3481,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       { timeoutMs, scheduler: this.getRouterScheduler() },
     );
 
+    // IOS counts the whole IP datagram in `Datagram size`, so the ICMP
+    // payload is that minus the 20-byte IP header and the 8-byte ICMP one.
+    const datagram = Math.max(28, opts?.sizeBytes ?? 100);
+    const dataSize = datagram - 28;
     const icmp: ICMPPacket = {
       type: 'icmp', icmpType: 'echo-request', code: 0,
-      id, sequence: seq, dataSize: 92,
+      id, sequence: seq, dataSize,
     };
-    const icmpSize = 8 + 92;
+    const icmpSize = 8 + dataSize;
     const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize);
+    if (opts?.tos) ipPkt.tos = opts.tos;
+    // RFC 791 §3.1: DF is bit 1 of the flags field. With it set a router
+    // that would have to fragment answers ICMP type 3 code 4 instead,
+    // which is what makes `Set DF bit` a real path-MTU probe.
+    if (opts?.df) ipPkt.flags |= 0x2;
 
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,
@@ -3513,9 +3544,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         // Destination Unreachable is `U`, a Time Exceeded is `&`.
         err.pingCause = /Time to live exceeded/i.test(winner.r.reason)
           ? 'ttl-exceeded'
-          : /Destination unreachable/i.test(winner.r.reason)
-            ? 'unreachable'
-            : 'timeout';
+          : /code 4\b/.test(winner.r.reason)
+            ? 'frag-needed'
+            : /Destination unreachable/i.test(winner.r.reason)
+              ? 'unreachable'
+              : 'timeout';
         throw err;
       }
       const rtt = performance.now() - sentAt;

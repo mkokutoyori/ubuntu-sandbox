@@ -162,3 +162,81 @@ export function formatCiscoPingSummary(results: CiscoPingRow[], count: number): 
   }
   return summary;
 }
+
+// ── Extended ping ──────────────────────────────────────────────────
+
+/**
+ * Everything the IOS extended-ping dialog can set. The fields that reach
+ * the packet are `count`, `sizeBytes`, `timeoutMs`, `sourceIP`, `tos` and
+ * `df`; `sweep` turns one run into a series of increasing sizes.
+ *
+ * `validateReply`, `dataPattern` and the record-route options are part of
+ * the dialog because IOS asks them, but the simulator has no payload
+ * bytes to validate and no IP-option area to record a route in, so they
+ * are collected and reported rather than silently pretended.
+ */
+export interface ExtendedPingParams {
+  target: string;
+  count: number;
+  sizeBytes: number;
+  timeoutMs: number;
+  sourceIP: string | null;
+  tos: number;
+  df: boolean;
+  validateReply: boolean;
+  dataPattern: string;
+  routeOptions: string;
+  sweep: { min: number; max: number; interval: number } | null;
+}
+
+export function defaultExtendedPingParams(): ExtendedPingParams {
+  return {
+    target: '', count: 5, sizeBytes: 100, timeoutMs: 2000, sourceIP: null,
+    tos: 0, df: false, validateReply: false, dataPattern: '0xABCD',
+    routeOptions: 'none', sweep: null,
+  };
+}
+
+/** The prompts, in IOS order. `extended` gates the middle block. */
+export const EXTENDED_PING_PROMPTS = {
+  protocol: 'Protocol [ip]:',
+  target: 'Target IP address:',
+  repeat: 'Repeat count [5]:',
+  size: 'Datagram size [100]:',
+  timeout: 'Timeout in seconds [2]:',
+  extended: 'Extended commands [n]:',
+  source: 'Source address or interface:',
+  tos: 'Type of service [0]:',
+  df: 'Set DF bit in IP header? [no]:',
+  validate: 'Validate reply data? [no]:',
+  pattern: 'Data pattern [0xABCD]:',
+  routeOptions: 'Loose, Strict, Record, Timestamp, Verbose[none]:',
+  sweep: 'Sweep range of sizes [n]:',
+  sweepMin: 'Sweep min size [36]:',
+  sweepMax: 'Sweep max size [18024]:',
+  sweepInterval: 'Sweep interval [1]:',
+} as const;
+
+/** IOS treats an empty answer as the bracketed default. */
+export function answerOr(value: string, fallback: string): string {
+  const t = value.trim();
+  return t === '' ? fallback : t;
+}
+
+export function isYes(value: string, fallback = false): boolean {
+  const t = value.trim().toLowerCase();
+  if (t === '') return fallback;
+  return t === 'y' || t === 'yes';
+}
+
+/**
+ * The size series a sweep produces: min, min+interval, … up to max. A
+ * sweep is how an operator finds the real path MTU by hand, so the sizes
+ * have to be genuinely sent, not summarised.
+ */
+export function sweepSizes(sweep: { min: number; max: number; interval: number }): number[] {
+  const step = Math.max(1, Math.floor(sweep.interval));
+  const sizes: number[] = [];
+  for (let s = sweep.min; s <= sweep.max; s += step) sizes.push(s);
+  return sizes;
+}
