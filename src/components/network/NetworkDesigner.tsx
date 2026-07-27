@@ -18,15 +18,17 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { NetworkLogsPanel } from './NetworkLogsPanel';
 import { Toolbar } from './Toolbar';
 import { HelpDialog } from './HelpDialog';
+import { SaveTopologyDialog } from './SaveTopologyDialog';
+import { OpenTopologyDialog } from './OpenTopologyDialog';
+import { ConfirmDialog } from './ConfirmDialog';
+import { MessageDialog } from './MessageDialog';
 import { TerminalModal } from './TerminalModal';
 import { TerminalTaskbar } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Equipment } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
 import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
-import {
-  saveTopologyToBrowser, loadTopologyFromBrowser, listSavedTopologies, deleteTopologyFromBrowser,
-} from '@/store/localStorageTopology';
+import { saveTopologyToBrowser, loadTopologyFromBrowser } from '@/store/localStorageTopology';
 import { cn } from '@/lib/utils';
 import { getTerminalManager } from '@/terminal/sessions';
 
@@ -52,6 +54,14 @@ export function NetworkDesigner() {
 
   // Help dialog
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // Save/Open/Clear-All/Reset dialogs — replace window.prompt/alert/confirm
+  // (rapport 09 audit, item #54).
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [openDialogOpen, setOpenDialogOpen] = useState(false);
+  const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [message, setMessage] = useState<{ title: string; description: string } | null>(null);
 
   const { getDevices, clearAll, deviceInstances, connections } = useNetworkStore();
   const devices = getDevices();
@@ -93,47 +103,30 @@ export function NetworkDesigner() {
       setMinimizedSessions(new Set());
     } catch (err) {
       if (err instanceof Error && err.message !== 'No file selected') {
-        alert(`Import failed: ${err.message}`);
+        setMessage({ title: 'Import failed', description: err.message });
       }
     }
   }, [clearAll, allSessions, manager]);
 
-  // ── Save / Open via localStorage ──
-  const handleSave = useCallback(() => {
-    const name = window.prompt('Save topology as:', projectName);
-    if (!name || !name.trim()) return;
+  // ── Save / Open via localStorage — dialogs, not window.prompt ──
+  const handleSave = useCallback(() => setSaveDialogOpen(true), []);
+
+  const handleSaveTopology = useCallback((name: string) => {
     try {
       const topology = exportTopology(name, deviceInstances, connections);
       saveTopologyToBrowser(name, topology);
       setProjectName(name);
     } catch (err) {
-      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+      setMessage({ title: 'Save failed', description: err instanceof Error ? err.message : String(err) });
     }
-  }, [projectName, deviceInstances, connections]);
+  }, [deviceInstances, connections]);
 
-  const handleOpen = useCallback(async () => {
-    const saved = listSavedTopologies();
-    if (saved.length === 0) {
-      alert('No saved topologies in browser storage. Use "Save" first, or "Import" to load a JSON file.');
-      return;
-    }
-    const choices = saved
-      .map((s, i) => `${i + 1}. ${s.name} (${s.deviceCount} devices, saved ${new Date(s.savedAt).toLocaleString()})`)
-      .join('\n');
-    const pick = window.prompt(`Choose a topology to open (1-${saved.length}):\n\n${choices}\n\nType the number, or prefix with "delete " to remove (e.g. "delete 2"):`, '1');
-    if (!pick) return;
-    const trimmed = pick.trim();
-    const deleteMatch = trimmed.match(/^delete\s+(\d+)$/i);
-    if (deleteMatch) {
-      const idx = Number.parseInt(deleteMatch[1], 10) - 1;
-      if (idx >= 0 && idx < saved.length) deleteTopologyFromBrowser(saved[idx].name);
-      return;
-    }
-    const idx = Number.parseInt(trimmed, 10) - 1;
-    if (idx < 0 || idx >= saved.length) return;
-    const topology = loadTopologyFromBrowser(saved[idx].name);
+  const handleOpen = useCallback(() => setOpenDialogOpen(true), []);
+
+  const handleOpenTopology = useCallback(async (name: string) => {
+    const topology = loadTopologyFromBrowser(name);
     if (!topology) {
-      alert('Could not read this topology from storage (corrupted entry).');
+      setMessage({ title: 'Open failed', description: 'Could not read this topology from storage (corrupted entry).' });
       return;
     }
     try {
@@ -148,21 +141,23 @@ export function NetworkDesigner() {
       setProjectName(result.projectName);
       setMinimizedSessions(new Set());
     } catch (err) {
-      alert(`Open failed: ${err instanceof Error ? err.message : String(err)}`);
+      setMessage({ title: 'Open failed', description: err instanceof Error ? err.message : String(err) });
     }
   }, [clearAll]);
 
   // ── Clear All: destructive, so ask first (Reset already does) ──
   const handleClearAll = useCallback(() => {
     if (deviceInstances.size === 0) return;
-    if (!window.confirm(`Remove all ${deviceInstances.size} device(s) and their connections? This cannot be undone.`)) return;
-    clearAll();
-  }, [deviceInstances, clearAll]);
+    setClearAllConfirmOpen(true);
+  }, [deviceInstances]);
 
   // ── Reset: power-cycle every device on the canvas ──
   const handleReset = useCallback(() => {
     if (deviceInstances.size === 0) return;
-    if (!window.confirm(`Power-cycle ${deviceInstances.size} device(s)? Running protocol state will be reset.`)) return;
+    setResetConfirmOpen(true);
+  }, [deviceInstances]);
+
+  const handleResetConfirmed = useCallback(() => {
     deviceInstances.forEach((device) => {
       try { device.powerOff(); } catch { /* ignore */ }
     });
@@ -410,6 +405,40 @@ export function NetworkDesigner() {
         onToggleLogs={() => setLogsOpen(o => !o)}
       />
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      <SaveTopologyDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        defaultName={projectName}
+        onSave={handleSaveTopology}
+      />
+      <OpenTopologyDialog
+        open={openDialogOpen}
+        onOpenChange={setOpenDialogOpen}
+        onOpen={handleOpenTopology}
+      />
+      <ConfirmDialog
+        open={clearAllConfirmOpen}
+        onOpenChange={setClearAllConfirmOpen}
+        title="Remove all devices?"
+        description={`Remove all ${deviceInstances.size} device(s) and their connections? This cannot be undone.`}
+        confirmLabel="Remove all"
+        destructive
+        onConfirm={clearAll}
+      />
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        title="Power-cycle all devices?"
+        description={`Power-cycle ${deviceInstances.size} device(s)? Running protocol state will be reset.`}
+        confirmLabel="Power-cycle"
+        onConfirm={handleResetConfirmed}
+      />
+      <MessageDialog
+        open={message !== null}
+        onOpenChange={(o) => { if (!o) setMessage(null); }}
+        title={message?.title ?? ''}
+        description={message?.description ?? ''}
+      />
 
       <div className={cn(
         "flex-1 flex overflow-hidden",
