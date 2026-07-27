@@ -89,7 +89,6 @@ import { DHCPClient } from '../dhcp/DHCPClient';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
-import type { DHCPServer } from '../dhcp/DHCPServer';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IP_PROTO_GRE } from '../gre/types';
 
