@@ -30,7 +30,6 @@ import {
   IkeV2ProposalWire, IkeV2Chosen,
   GdoiMessage, GdoiGroupRegister, GdoiGroupConfig, isIkeMessage, isGdoiMessage,
 } from './IPSecTypes';
-import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
 import {
   prfPlus, hmac, type HashAlgorithm, MD5, SHA1, SHA256, sha256,
@@ -69,8 +68,6 @@ import { PkiKeyPair } from '../pki/PkiKeyPair';
 import { verificationToIkeReason } from './IkeCertAuthConfig';
 import type { X509Certificate } from '../pki/X509Certificate';
 import { DdnsResolver } from './DdnsResolver';
-// eslint-disable-next-line no-restricted-imports -- registry walk still to be replaced by real frames (P4, docs/PRD-Frame-Only-Refactor.md)
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 
 // Forward reference — resolved at runtime to avoid circular imports
@@ -3787,107 +3784,19 @@ export class IPSecEngine implements IProtocolEngine {
   // ── NAT path detection ─────────────────────────────────────────
 
   /**
-   * Compute the apparent source IP that the peer would see after NAT/MASQUERADE.
+   * RFC 3947 NAT-D: an initiator cannot know whether something ahead of
+   * it rewrites addresses, so it does not try. It sends its own address
+   * as its identity; the responder compares that claim against the
+   * source it actually received (see `natT` in `onIkeOffer`) and reports
+   * the verdict back in the accept. Detection therefore comes entirely
+   * from the IKE exchange on UDP/500.
+   *
+   * This used to resolve the next hop through the global equipment
+   * registry and ask that device for its masquerade address — knowledge
+   * no real router has (docs/PRD-Frame-Only-Refactor.md P4).
    */
-  private getApparentSourceIP(localIP: string, peerIP: string): string {
-    try {
-      const route = (this.router as any).lookupRoute(new IPAddress(peerIP));
-      if (!route?.nextHop) return localIP;
-
-      const nextHopStr = route.nextHop.toString();
-      // If next hop IS the peer, no NAT
-      if (nextHopStr === peerIP) return localIP;
-
-      // Check if the next hop is a non-Router device (potential NAT)
-      const nextHopEquip = IPSecEngine.findEquipmentByIP(nextHopStr);
-      if (!nextHopEquip) return localIP;
-
-      // If it IS a Router, no NAT between us
-      if ((nextHopEquip as any)._getIPSecEngineInternal) return localIP;
-
-      // Non-router — check masquerade
-      const masqIP: string | null = (nextHopEquip as any).getOutgoingMasqueradeIP?.(peerIP) || null;
-      if (masqIP) return masqIP;
-    } catch { /* ignore */ }
+  private getApparentSourceIP(localIP: string, _peerIP: string): string {
     return localIP;
-  }
-
-  // ── Static helpers ─────────────────────────────────────────────
-
-  static findRouterByIP(ip: string): Router | null {
-    for (const equip of EquipmentRegistry.getInstance().getAll()) {
-      if (!(equip as any)._getIPSecEngineInternal) continue; // not a Router
-      const ports = (equip as any)._getPortsInternal?.();
-      if (!ports) continue;
-      for (const [, port] of ports) {
-        if (port.getIPAddress?.()?.toString() === ip) return equip as unknown as Router;
-      }
-    }
-    return null;
-  }
-
-  static findEquipmentByIP(ip: string): Equipment | null {
-    for (const equip of EquipmentRegistry.getInstance().getAll()) {
-      const ports = (equip as any)._getPortsInternal?.() || (equip as any).getPorts?.();
-      if (!ports) continue;
-      for (const [, port] of (ports instanceof Map ? ports : new Map())) {
-        if ((port as any).getIPAddress?.()?.toString() === ip) return equip;
-      }
-      // For EndHosts, ports may be iterable differently
-      if ((equip as any).ports instanceof Map) {
-        for (const [, port] of (equip as any).ports) {
-          if ((port as any).getIPAddress?.()?.toString() === ip) return equip;
-        }
-      }
-    }
-    return null;
-  }
-
-  /**
-   * NAT-T: Find a Router behind a NAT device.
-   * When a peer IP belongs to a non-Router device (e.g. LinuxPC acting as NAT),
-   * check its iptables PREROUTING DNAT rules for UDP 500 to discover the real Router.
-   */
-  static findRouterBehindNAT(natIP: string): { router: Router; realPeerIP: string } | null {
-    const natDevice = IPSecEngine.findEquipmentByIP(natIP);
-    if (!natDevice) return null;
-    // If it IS a Router already, skip
-    if ((natDevice as any)._getIPSecEngineInternal) return null;
-
-    // Check for iptables DNAT rules targeting UDP 500 (IKE)
-    const iptables = (natDevice as any).executor?.iptables || (natDevice as any).iptables;
-    if (iptables && typeof iptables.evaluateNat === 'function') {
-      // Find which interface on the NAT device has this IP
-      let inIface = '';
-      const devPorts = (natDevice as any).ports;
-      if (devPorts instanceof Map) {
-        for (const [name, port] of devPorts) {
-          if ((port as any).getIPAddress?.()?.toString() === natIP) {
-            inIface = name;
-            break;
-          }
-        }
-      }
-      // Simulate an inbound UDP 500 packet to see if DNAT applies
-      const testPkt = {
-        direction: 'in' as const,
-        protocol: 17,  // UDP
-        srcIP: '0.0.0.0',
-        dstIP: natIP,
-        srcPort: 500,
-        dstPort: 500,
-        iface: inIface,
-      };
-      const natResult = iptables.evaluateNat(testPkt, 'PREROUTING');
-      if (natResult && natResult.action === 'DNAT' && natResult.address) {
-        const realIP = natResult.address.split(':')[0];
-        const realRouter = IPSecEngine.findRouterByIP(realIP);
-        if (realRouter) {
-          return { router: realRouter, realPeerIP: realIP };
-        }
-      }
-    }
-    return null;
   }
 
   // ══════════════════════════════════════════════════════════════════
