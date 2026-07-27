@@ -1497,6 +1497,20 @@ export abstract class LinuxMachine extends EndHost
     super.handleFrame(portName, frame);
   }
 
+  /**
+   * A VLAN sub-interface's own `Port` is never cabled (see
+   * `addVlanSubInterface` — frames are tunneled through the parent via
+   * the `sendFrame` override above), so `Port.isOperationallyUp()` on it
+   * always reports no carrier even though the parent link is up. Reflect
+   * the parent's real carrier for a sub-interface instead.
+   */
+  protected override isInterfaceOperationallyUp(portName: string, port: Port): boolean {
+    const vlanSub = this.vlanSubInterfaces.get(portName);
+    if (!vlanSub) return super.isInterfaceOperationallyUp(portName, port);
+    const parentPort = this.ports.get(vlanSub.parent);
+    return port.getIsUp() && !port.isAdminDown() && !!parentPort?.isOperationallyUp();
+  }
+
   /** Cached SSH server context — replaced on `systemctl restart sshd`. */
   private _sshContext: LinuxSshServerContext | null = null;
   /** Unsubscribe hook for the service-manager lifecycle listener. */

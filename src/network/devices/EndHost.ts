@@ -2201,7 +2201,7 @@ export abstract class EndHost extends Equipment {
     }
     if (addr.isLoopback() || this.getPortOwningIP(addr)) return true;
     const route = this.resolveRoute(addr);
-    return route !== null && route.port.isOperationallyUp();
+    return route !== null && this.isInterfaceOperationallyUp(route.iface, route.port);
   }
 
   /**
@@ -2662,7 +2662,7 @@ export abstract class EndHost extends Equipment {
     // prints "From <src> icmp_seq=N Destination Host Unreachable" for every
     // probe, which is the visible failure a plain timeout never produces
     // (docs/PRD-Link-State.md §2.1 P3).
-    if (!port.isOperationallyUp()) {
+    if (!this.isInterfaceOperationallyUp(portName, port)) {
       throw new Error(`Destination unreachable from ${myIP}`);
     }
 
@@ -2815,7 +2815,7 @@ export abstract class EndHost extends Equipment {
    *
    * Returns: { port, nextHopIP } or null if unreachable.
    */
-  protected resolveRoute(targetIP: IPAddress): { port: Port; nextHopIP: IPAddress } | null {
+  protected resolveRoute(targetIP: IPAddress): { port: Port; iface: string; nextHopIP: IPAddress } | null {
     const table = this.buildFullRoutingTable();
     const destInt = targetIP.toUint32();
 
@@ -2844,7 +2844,18 @@ export abstract class EndHost extends Equipment {
     // For connected routes (nextHop is null), the next-hop is the destination itself
     const nextHopIP = bestRoute.nextHop || targetIP;
 
-    return { port, nextHopIP };
+    return { port, iface: bestRoute.iface, nextHopIP };
+  }
+
+  /**
+   * True when `portName` can actually carry traffic. Delegates to
+   * `Port.isOperationallyUp()` by default; overridden by `LinuxMachine`
+   * so a VLAN sub-interface (which is a real Linux construct but has no
+   * `Cable` of its own — see `addVlanSubInterface`) correctly reflects
+   * its parent interface's carrier instead of always reporting down.
+   */
+  protected isInterfaceOperationallyUp(portName: string, port: Port): boolean {
+    return port.isOperationallyUp();
   }
 
   // ─── High-level Ping (used by terminal commands) ──────────────
@@ -3903,7 +3914,7 @@ export abstract class EndHost extends Equipment {
 
     if (!srcIP) throw new Error('No IPv6 address');
 
-    if (!port.isOperationallyUp()) {
+    if (!this.isInterfaceOperationallyUp(portName, port)) {
       throw new Error(`Destination unreachable from ${srcIP}`);
     }
 
