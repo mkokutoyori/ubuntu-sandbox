@@ -399,6 +399,35 @@ function applyCommand(cmd: HistoryCommand, direction: 'undo' | 'redo', get: GetF
   }
 }
 
+/**
+ * Bridges autonomous device/link changes (a port going down on a dead-
+ * interval timeout, a DHCP lease expiring, ...) into a `revision` bump so
+ * the canvas/properties panel pick them up without any zustand action
+ * having run first (rapport 09, item #56). Scoped to the handful of
+ * topics that actually change a rendered field (`isUp`, `ipAddress`) —
+ * NOT `subscribeAll`, which also carries per-frame traffic events and
+ * would reintroduce the re-render storm item #52 removed.
+ *
+ * Re-checked (cheap reference compare) on every `getDevices()` call
+ * rather than subscribed once at module load: tests reset the default
+ * EventBus between runs (`__setDefaultEventBus(null)`, see
+ * `setupGlobalState.ts`), and a one-time subscription at import time
+ * would silently go dead against the discarded bus.
+ */
+const AUTONOMOUS_REVISION_TOPICS = ['port.link.up', 'port.link.down', 'port.config.ip-changed'] as const;
+let subscribedBus: ReturnType<typeof getDefaultEventBus> | null = null;
+let unsubscribeAutonomousEvents: (() => void) | null = null;
+
+function ensureAutonomousEventBridge(): void {
+  const bus = getDefaultEventBus();
+  if (bus === subscribedBus) return;
+  unsubscribeAutonomousEvents?.();
+  subscribedBus = bus;
+  const bump = () => useNetworkStore.setState(state => ({ revision: state.revision + 1 }));
+  const unsubs = AUTONOMOUS_REVISION_TOPICS.map(topic => bus.subscribe(topic, bump));
+  unsubscribeAutonomousEvents = () => unsubs.forEach(u => u());
+}
+
 export const useNetworkStore = create<NetworkState>((set, get) => ({
   deviceInstances: new Map(),
   connections: [],
@@ -469,6 +498,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   },
 
   getDevices: () => {
+    ensureAutonomousEventBridge();
     const state = get();
     const devices: NetworkDeviceUI[] = [];
     let unchanged = devicesArraySnapshot.length === state.deviceInstances.size;
