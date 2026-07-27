@@ -5,7 +5,22 @@ import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { hashPassword } from '@/network/vtp/types';
-import { md5Hex } from '@/crypto';
+import { md5, utf8ToBytes, bytesToHex } from '@/crypto';
+
+function referenceDigest(domain: string, password: string, revision: number): string {
+  const secret = md5(utf8ToBytes(password));
+  const domainField = new Uint8Array(32);
+  domainField.set(utf8ToBytes(domain).slice(0, 32));
+  const revisionField = new Uint8Array([
+    (revision >>> 24) & 0xff, (revision >>> 16) & 0xff, (revision >>> 8) & 0xff, revision & 0xff,
+  ]);
+  const body = new Uint8Array(secret.length * 2 + domainField.length + revisionField.length);
+  body.set(secret, 0);
+  body.set(domainField, secret.length);
+  body.set(revisionField, secret.length + domainField.length);
+  body.set(secret, secret.length + domainField.length + revisionField.length);
+  return bytesToHex(md5(body));
+}
 
 beforeEach(() => {
   resetCounters();
@@ -15,9 +30,9 @@ beforeEach(() => {
 });
 
 describe('VTP password digest is a genuine MD5, not a placeholder hash', () => {
-  it('matches an independently computed MD5 of the same domain|password input', () => {
-    expect(hashPassword('LAB', 'secret')).toBe(md5Hex('LAB|secret'));
-    expect(hashPassword('PROD', 'other')).toBe(md5Hex('PROD|other'));
+  it('matches an independently computed MD5 of the real Cisco field layout (domain/revision sandwiched by the password digest)', () => {
+    expect(hashPassword('LAB', 'secret', 3)).toBe(referenceDigest('LAB', 'secret', 3));
+    expect(hashPassword('PROD', 'other', 0)).toBe(referenceDigest('PROD', 'other', 0));
   });
 
   it('is a 32-character lowercase hex digest, the real MD5 output shape', () => {

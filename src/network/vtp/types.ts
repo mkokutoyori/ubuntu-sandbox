@@ -1,7 +1,26 @@
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
-import { md5Hex } from '@/crypto';
+import { md5, utf8ToBytes, bytesToHex } from '@/crypto';
 export const ETHERTYPE_VTP = 0x2003;
 export const VTP_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
+
+/** Real Summary Advertisement's Management Domain field: a fixed 32-byte,
+ *  zero-padded slot (Wireshark's `packet-vtp.c` dissector). */
+const VTP_DOMAIN_FIELD_BYTES = 32;
+
+function domainField(domain: string): Uint8Array {
+  const field = new Uint8Array(VTP_DOMAIN_FIELD_BYTES);
+  field.set(utf8ToBytes(domain).slice(0, VTP_DOMAIN_FIELD_BYTES));
+  return field;
+}
+
+function revisionField(revision: number): Uint8Array {
+  const field = new Uint8Array(4);
+  field[0] = (revision >>> 24) & 0xff;
+  field[1] = (revision >>> 16) & 0xff;
+  field[2] = (revision >>> 8) & 0xff;
+  field[3] = revision & 0xff;
+  return field;
+}
 
 export type VtpMode = 'server' | 'client' | 'transparent' | 'off';
 export type VtpVersion = 1 | 2 | 3;
@@ -97,7 +116,28 @@ export function createDefaultVtpConfig(systemMac: string): VtpConfig {
   };
 }
 
-export function hashPassword(domain: string, password: string): string {
+/**
+ * Real Cisco VTP MD5 digest construction, reverse-engineered by the Yersinia
+ * VTP packet-crafting tool (`vtp_generate_md5()`): the password's own MD5
+ * digest bookends a summary struct (here: the 32-byte zero-padded domain
+ * field + the 4-byte big-endian revision), and the whole thing is hashed
+ * again — not the domain/password string concatenation this used to be.
+ * `version`/`updater`/`vlans` are part of Yersinia's real struct too but
+ * aren't included here: no byte serialization for a VLAN database or an
+ * IPv4 updater identity exists anywhere else in this codebase to reuse, so
+ * pulling them in would mean inventing a second, unverified encoding on
+ * top of an already-uncertain one. domain/revision/password (this PRD
+ * phase's explicit scope) are the fields every call site already has in a
+ * form that matches the real wire field 1:1.
+ */
+export function hashPassword(domain: string, password: string, revision: number = 0): string {
   if (!password) return '';
-  return md5Hex(`${domain}|${password}`);
+  const secret = md5(utf8ToBytes(password));
+  const body = new Uint8Array(secret.length + VTP_DOMAIN_FIELD_BYTES + 4 + secret.length);
+  let offset = 0;
+  body.set(secret, offset); offset += secret.length;
+  body.set(domainField(domain), offset); offset += VTP_DOMAIN_FIELD_BYTES;
+  body.set(revisionField(revision), offset); offset += 4;
+  body.set(secret, offset);
+  return bytesToHex(md5(body));
 }

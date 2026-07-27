@@ -187,7 +187,7 @@ export class VtpAgent extends ReactiveAgentBase {
     if (this.config.domain && payload.domain !== this.config.domain) {
       accepted = false;
       reject = 'domain-mismatch';
-    } else if (this.config.domain && payload.passwordHash !== hashPassword(this.config.domain, this.config.password)) {
+    } else if (this.config.domain && payload.passwordHash !== hashPassword(payload.domain, this.config.password, payload.revision)) {
       accepted = false;
       reject = 'password-mismatch';
     }
@@ -378,7 +378,7 @@ export class VtpAgent extends ReactiveAgentBase {
       domain: this.config.domain, revision: this.config.revision,
       updater: this.config.lastUpdaterIdentity,
       updateTimestamp: this.config.lastUpdateTimestamp,
-      passwordHash: hashPassword(this.config.domain, this.config.password),
+      passwordHash: hashPassword(this.config.domain, this.config.password, this.config.revision),
       vlans: [],
       primaryClaim: { ...this.knownPrimary, forced },
     };
@@ -528,7 +528,7 @@ export class VtpAgent extends ReactiveAgentBase {
       revision,
       updater: this.config.lastUpdaterIdentity,
       updateTimestamp: this.config.lastUpdateTimestamp,
-      passwordHash: hashPassword(this.config.domain, this.config.password),
+      passwordHash: hashPassword(this.config.domain, this.config.password, revision),
       vlans,
       ...(mst ? { database: 'mst' as const, ...(mst.region ? { mstRegion: mst.region } : {}) } : {}),
       ...(messageType === 'summary' ? { followers: fragment?.followers ?? 1 } : {}),
