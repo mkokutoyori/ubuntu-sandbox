@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from './ConfirmDialog';
 import { listSavedTopologies } from '@/store/localStorageTopology';
+import { TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
 
 interface SaveTopologyDialogProps {
   open: boolean;
@@ -48,6 +49,7 @@ export function SaveTopologyDialog({ open, onOpenChange, defaultName, onSave }: 
             placeholder="Topology name"
             autoFocus
           />
+          <p className="text-xs text-muted-foreground">{TOPOLOGY_SAVE_CAVEATS}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button onClick={submit} disabled={!name.trim()}>Save</Button>

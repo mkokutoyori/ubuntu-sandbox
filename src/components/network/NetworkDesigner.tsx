@@ -27,7 +27,7 @@ import { TerminalTaskbar } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Equipment } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
-import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
+import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile, TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
 import { saveTopologyToBrowser, loadTopologyFromBrowser } from '@/store/localStorageTopology';
 import { cn } from '@/lib/utils';
 import { getTerminalManager } from '@/terminal/sessions';
@@ -61,6 +61,8 @@ export function NetworkDesigner() {
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
   const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
   const [message, setMessage] = useState<{ title: string; description: string } | null>(null);
 
   const { getDevices, clearAll, deviceInstances, connections } = useNetworkStore();
@@ -80,12 +82,17 @@ export function NetworkDesigner() {
   }, [manager.getVersion()]);
 
   // ── Export/Import handlers ──
-  const handleExport = useCallback(() => {
+  // Export/Import both hand back a file that only captures configurable
+  // device state, not live sessions/protocol state — surfaced up front
+  // via a confirm dialog rather than silently, per rapport 09 item #55.
+  const runExport = useCallback(() => {
     const topology = exportTopology(projectName, deviceInstances, connections);
     downloadTopologyJSON(topology);
   }, [projectName, deviceInstances, connections]);
 
-  const handleImport = useCallback(async () => {
+  const handleExport = useCallback(() => setExportConfirmOpen(true), []);
+
+  const runImport = useCallback(async () => {
     try {
       const data = await openTopologyFile();
       const result = await importTopology(data);
@@ -111,6 +118,14 @@ export function NetworkDesigner() {
       }
     }
   }, [clearAll, allSessions, manager]);
+
+  const handleImport = useCallback(() => {
+    if (deviceInstances.size > 0) {
+      setImportConfirmOpen(true);
+      return;
+    }
+    runImport();
+  }, [deviceInstances, runImport]);
 
   // ── Save / Open via localStorage — dialogs, not window.prompt ──
   const handleSave = useCallback(() => setSaveDialogOpen(true), []);
@@ -447,6 +462,24 @@ export function NetworkDesigner() {
         open={openDialogOpen}
         onOpenChange={setOpenDialogOpen}
         onOpen={handleOpenTopology}
+        confirmReplace={deviceInstances.size > 0}
+      />
+      <ConfirmDialog
+        open={exportConfirmOpen}
+        onOpenChange={setExportConfirmOpen}
+        title="Export topology?"
+        description={TOPOLOGY_SAVE_CAVEATS}
+        confirmLabel="Export"
+        onConfirm={runExport}
+      />
+      <ConfirmDialog
+        open={importConfirmOpen}
+        onOpenChange={setImportConfirmOpen}
+        title="Replace current topology?"
+        description="Importing a file will replace everything on the canvas now. Any unsaved changes will be lost."
+        confirmLabel="Replace"
+        destructive
+        onConfirm={runImport}
       />
       <ConfirmDialog
         open={clearAllConfirmOpen}

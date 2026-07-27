@@ -10,18 +10,32 @@ interface OpenTopologyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpen: (name: string) => void;
+  /** True when the current canvas has devices on it — opening a saved
+   *  topology discards them, so that needs a confirmation first
+   *  (rapport 09, item #55: this used to happen with no warning at all). */
+  confirmReplace?: boolean;
 }
 
 /** Replaces the `window.prompt(...)` (pick-by-number, "delete N" syntax)
  *  flow (rapport 09 audit, item #54) with a clickable list + delete
  *  button per entry. */
-export function OpenTopologyDialog({ open, onOpenChange, onOpen }: OpenTopologyDialogProps) {
+export function OpenTopologyDialog({ open, onOpenChange, onOpen, confirmReplace }: OpenTopologyDialogProps) {
   const [entries, setEntries] = useState<SavedTopologyEntry[]>([]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [pendingOpen, setPendingOpen] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) setEntries(listSavedTopologies());
   }, [open]);
+
+  const selectEntry = (name: string) => {
+    if (confirmReplace) {
+      setPendingOpen(name);
+      return;
+    }
+    onOpen(name);
+    onOpenChange(false);
+  };
 
   return (
     <>
@@ -44,12 +58,11 @@ export function OpenTopologyDialog({ open, onOpenChange, onOpen }: OpenTopologyD
                     role="button"
                     tabIndex={0}
                     className="group flex items-center justify-between gap-2 rounded-md px-3 py-2 cursor-pointer hover:bg-accent"
-                    onClick={() => { onOpen(entry.name); onOpenChange(false); }}
+                    onClick={() => selectEntry(entry.name)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        onOpen(entry.name);
-                        onOpenChange(false);
+                        selectEntry(entry.name);
                       }
                     }}
                   >
@@ -88,6 +101,19 @@ export function OpenTopologyDialog({ open, onOpenChange, onOpen }: OpenTopologyD
             setEntries(listSavedTopologies());
           }
           setPendingDelete(null);
+        }}
+      />
+      <ConfirmDialog
+        open={pendingOpen !== null}
+        onOpenChange={(o) => { if (!o) setPendingOpen(null); }}
+        title="Replace current topology?"
+        description={`Loading "${pendingOpen}" will replace everything on the canvas now. Any unsaved changes will be lost.`}
+        confirmLabel="Replace"
+        destructive
+        onConfirm={() => {
+          if (pendingOpen) onOpen(pendingOpen);
+          setPendingOpen(null);
+          onOpenChange(false);
         }}
       />
     </>
