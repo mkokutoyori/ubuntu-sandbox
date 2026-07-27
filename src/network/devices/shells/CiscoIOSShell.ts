@@ -304,6 +304,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   setMode(mode: CiscoShellMode): void { this.mode = mode; }
 
+  /** A privilege-15 login is already in privileged EXEC on real IOS. */
+  enterPrivilegedExec(): void { this.setMode('privileged'); }
+
   override getMode(): CiscoShellMode { return this.mode as CiscoShellMode; }
 
   getSelectedInterface(): string | null { return this.selectedInterface; }
