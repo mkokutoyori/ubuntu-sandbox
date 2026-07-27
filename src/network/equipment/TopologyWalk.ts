@@ -18,7 +18,6 @@
 
 import type { Equipment } from './Equipment';
 import type { Port } from '../hardware/Port';
-import { EquipmentRegistry } from './EquipmentRegistry';
 
 export interface TransparentWalkHit {
   /** The equipment satisfying `matches`. */
@@ -42,14 +41,13 @@ export function resolveAcrossTransparentDevices(
   entryPort: Port,
   matches: (equipment: Equipment) => boolean,
 ): TransparentWalkHit[] {
-  const registry = EquipmentRegistry.getInstance();
   const hits: TransparentWalkHit[] = [];
   const visitedDeviceIds = new Set<string>();
   const queue: Port[] = [entryPort];
 
   while (queue.length > 0) {
     const port = queue.shift()!;
-    const device = registry.getById(port.getEquipmentId());
+    const device = port.getOwner() as Equipment | null;
     if (!device || visitedDeviceIds.has(device.getId())) continue;
     visitedDeviceIds.add(device.getId());
 

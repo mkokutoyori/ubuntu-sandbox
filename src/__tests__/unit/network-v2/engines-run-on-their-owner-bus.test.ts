@@ -102,7 +102,7 @@ describe('every engine a device owns publishes on that device\'s bus', () => {
   it('a Huawei router, a switch, a Linux host and a Windows host too', async () => {
     const devices: Equipment[] = [
       new HuaweiRouter('R2', 0, 0),
-      new CiscoSwitch('SW1', 24, 0, 0),
+      new CiscoSwitch('switch-cisco', 'SW1', 24, 0, 0),
       new LinuxPC('linux-pc', 'PC1', 0, 0),
       new WindowsPC('windows-pc', 'WIN1', 0, 0),
     ];
