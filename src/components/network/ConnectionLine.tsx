@@ -5,7 +5,7 @@
  * with interface labels at each endpoint and a type indicator at the midpoint.
  */
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Connection, isConnectionActive } from '@/store/networkStore';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
 import {
@@ -22,8 +22,13 @@ interface ConnectionLineProps {
   devices: NetworkDeviceUI[];
 }
 
-export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
-  const { selectedConnectionId, selectConnection, removeConnection } = useNetworkStore();
+function ConnectionLineImpl({ connection, devices }: ConnectionLineProps) {
+  // Scoped selectors, not a bare useNetworkStore() — this component
+  // shouldn't re-render just because the user panned, zoomed, or moved
+  // an unrelated device (rapport 09 audit, §1).
+  const selectedConnectionId = useNetworkStore(s => s.selectedConnectionId);
+  const selectConnection = useNetworkStore(s => s.selectConnection);
+  const removeConnection = useNetworkStore(s => s.removeConnection);
 
   const isSelected = selectedConnectionId === connection.id;
 
@@ -199,3 +204,10 @@ export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
     </g>
   );
 }
+
+// `devices`/`connection` are referentially stable across renders while
+// nothing they represent actually changed (networkStore.ts's snapshot
+// cache) — memoizing skips the per-frame re-render every ConnectionLine
+// otherwise took from NetworkCanvas re-rendering on packet animation
+// ticks alone (rapport 09 audit).
+export const ConnectionLine = memo(ConnectionLineImpl);
