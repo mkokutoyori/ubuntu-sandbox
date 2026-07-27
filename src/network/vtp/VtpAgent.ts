@@ -20,11 +20,20 @@ export interface VtpHost {
   vtpApplyVlans(vlans: VtpVlanEntry[]): { added: number[]; removed: number[] };
   vtpIsTrunkPort(portName: string): boolean;
   vtpLocalInterest(): number[];
+  /** Updater Identity for the wire (real Cisco: management interface IP,
+   *  or failing that the lowest-numbered active VLAN SVI) — '0.0.0.0' if
+   *  none is configured. */
+  vtpUpdaterIdentity(): string;
 }
 
 const PRUNING_ELIGIBLE_MIN = 2;
 const PRUNING_ELIGIBLE_MAX = 1001;
 const STANDARD_VLAN_MAX = 1005;
+/** Real Subset Advertisements carry roughly this many VLANs per frame;
+ *  fragmenting at the same order of magnitude keeps `followers`/
+ *  `sequenceNumber` exercised by any lab whose VLAN base is unusually
+ *  large, without changing behavior for the common (single-lot) case. */
+const VLANS_PER_SUBSET = 40;
 
 function sameSet(a: Set<number>, b: Set<number>): boolean {
   if (a.size !== b.size) return false;
@@ -32,11 +41,20 @@ function sameSet(a: Set<number>, b: Set<number>): boolean {
   return true;
 }
 
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  if (items.length === 0) return [];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 export class VtpAgent extends ReactiveAgentBase {
   private config: VtpConfig;
   private readonly advertising = new Set<string>();
   private lastSummaryRevision: number | null = null;
   private lastSummaryDomain: string | null = null;
+  private pendingSubsetTotal = 1;
+  private readonly pendingSubsetParts = new Map<number, VtpVlanEntry[]>();
   private readonly peerInterest = new Map<string, Set<number>>();
   private knownPrimary: { updater: string; revision: number } | null = null;
   private hasSyncedDatabase = false;
@@ -116,6 +134,8 @@ export class VtpAgent extends ReactiveAgentBase {
   bumpRevision(): void {
     if (this.config.mode !== 'server' || !this.config.domain) return;
     this.config.revision += 1;
+    this.config.lastUpdaterIdentity = this.host.vtpUpdaterIdentity();
+    this.config.lastUpdateTimestamp = Date.now();
     this.advertiseSummary('local-vlan-change');
   }
 
@@ -186,8 +206,12 @@ export class VtpAgent extends ReactiveAgentBase {
     if (this.config.mode !== 'server' && this.config.mode !== 'client') return;
 
     if (payload.messageType === 'summary') {
+      if (this.lastSummaryDomain !== payload.domain || this.lastSummaryRevision !== payload.revision) {
+        this.pendingSubsetParts.clear();
+      }
       this.lastSummaryDomain = payload.domain;
       this.lastSummaryRevision = payload.revision;
+      this.pendingSubsetTotal = payload.followers ?? 1;
       if (this.config.version === 3 && payload.primaryClaim) {
         this.considerPrimaryClaim(payload.primaryClaim);
       }
@@ -207,12 +231,23 @@ export class VtpAgent extends ReactiveAgentBase {
       return;
     }
 
+    // Buffer fragments until every one declared by the matching Summary's
+    // `followers` count has arrived, then apply the assembled diff exactly
+    // once — applying a partial lot on its own would make vtpApplyVlans
+    // (a full-database diff) delete every VLAN not yet received.
+    this.pendingSubsetParts.set(payload.sequenceNumber ?? 1, payload.vlans);
+    if (this.pendingSubsetParts.size < this.pendingSubsetTotal) return;
+    const combined = [...this.pendingSubsetParts.keys()].sort((a, b) => a - b)
+      .flatMap(seq => this.pendingSubsetParts.get(seq)!);
+    this.pendingSubsetParts.clear();
+
     const isFreshJoin = this.config.mode === 'client' && !this.hasSyncedDatabase;
     if (payload.revision > this.config.revision || (isFreshJoin && payload.revision === this.config.revision)) {
       const oldRev = this.config.revision;
-      const result = this.host.vtpApplyVlans(this.filterVlansForVersion(payload.vlans));
+      const result = this.host.vtpApplyVlans(this.filterVlansForVersion(combined));
       this.config.revision = payload.revision;
-      this.config.updaterMac = payload.updater;
+      this.config.lastUpdaterIdentity = payload.updater;
+      this.config.lastUpdateTimestamp = payload.updateTimestamp;
       this.hasSyncedDatabase = true;
       this.getBus().publish({
         topic: 'vtp.db.synced',
@@ -283,7 +318,8 @@ export class VtpAgent extends ReactiveAgentBase {
     const payload: VtpFrame = {
       type: 'vtp', version: this.config.version, messageType: 'summary',
       domain: this.config.domain, revision: this.config.revision,
-      updater: this.config.updaterMac,
+      updater: this.config.lastUpdaterIdentity,
+      updateTimestamp: this.config.lastUpdateTimestamp,
       passwordHash: hashPassword(this.config.domain, this.config.password),
       vlans: [],
       primaryClaim: { ...this.knownPrimary, forced },
@@ -339,7 +375,8 @@ export class VtpAgent extends ReactiveAgentBase {
       messageType: 'join',
       domain: this.config.domain,
       revision: this.config.revision,
-      updater: this.config.updaterMac,
+      updater: this.config.lastUpdaterIdentity,
+      updateTimestamp: this.config.lastUpdateTimestamp,
       passwordHash: '',
       vlans: [],
       interestVlans: [...interest],
@@ -399,8 +436,16 @@ export class VtpAgent extends ReactiveAgentBase {
     if (!port) return;
     this.advertising.add(portName);
     try {
-      this.sendVtpFrame(portName, 'summary', [], reason);
-      this.sendVtpFrame(portName, 'subset', this.filterVlansForVersion(this.host.vtpListVlans()), reason);
+      const lots = chunk(this.filterVlansForVersion(this.host.vtpListVlans()), VLANS_PER_SUBSET);
+      const followers = Math.max(1, lots.length);
+      this.sendVtpFrame(portName, 'summary', [], reason, { followers });
+      if (lots.length === 0) {
+        this.sendVtpFrame(portName, 'subset', [], reason, { sequenceNumber: 1 });
+      } else {
+        lots.forEach((lot, i) => {
+          this.sendVtpFrame(portName, 'subset', lot, reason, { sequenceNumber: i + 1 });
+        });
+      }
     } finally {
       this.advertising.delete(portName);
     }
@@ -411,6 +456,7 @@ export class VtpAgent extends ReactiveAgentBase {
     messageType: 'summary' | 'subset' | 'request',
     vlans: VtpVlanEntry[],
     reason: string,
+    fragment?: { followers?: number; sequenceNumber?: number },
   ): void {
     const port = this.host.getPort(portName);
     if (!port) return;
@@ -419,9 +465,12 @@ export class VtpAgent extends ReactiveAgentBase {
       messageType,
       domain: this.config.domain,
       revision: this.config.revision,
-      updater: this.config.updaterMac,
+      updater: this.config.lastUpdaterIdentity,
+      updateTimestamp: this.config.lastUpdateTimestamp,
       passwordHash: hashPassword(this.config.domain, this.config.password),
       vlans,
+      ...(messageType === 'summary' ? { followers: fragment?.followers ?? 1 } : {}),
+      ...(messageType === 'subset' ? { sequenceNumber: fragment?.sequenceNumber ?? 1 } : {}),
       ...(messageType === 'summary' && this.knownPrimary
         ? { primaryClaim: { ...this.knownPrimary, forced: false } }
         : {}),

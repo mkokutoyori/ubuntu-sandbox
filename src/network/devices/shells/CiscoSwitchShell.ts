@@ -1151,7 +1151,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const cfg = this.d().getVtpAgent().getConfig();
         const numVlans = this.d().getVLANs().size;
         const deviceId = this.formatMacCisco(new MACAddress(cfg.updaterMac));
-        const updaterIp = this.lowestSviIp();
+        const updaterIp = cfg.lastUpdaterIdentity;
+        const modifiedAt = cfg.lastUpdateTimestamp ? this.formatVtpTimestamp(cfg.lastUpdateTimestamp) : '0-0-00 00:00:00';
         return [
           `VTP Version capable             : 1 to 2`,
           `VTP version running             : ${cfg.version}`,
@@ -1159,7 +1160,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,
           `VTP Traps Generation            : Disabled`,
           `Device ID                       : ${deviceId}`,
-          `Configuration last modified by ${updaterIp} at 0-0-00 00:00:00`,
+          `Configuration last modified by ${updaterIp} at ${modifiedAt}`,
           `Local updater ID is ${updaterIp} on interface Vl1 (lowest numbered VLAN interface found)`,
           ``,
           `Feature VLAN:`,
@@ -4024,10 +4025,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
-  private lowestSviIp(): string {
-    const svis = this.d().getSvis().filter(s => s.ip).sort((a, b) => a.vlan - b.vlan);
-    const first = svis[0];
-    return first && first.ip ? first.ip.toString() : '0.0.0.0';
+  private formatVtpTimestamp(epochMs: number): string {
+    const d = new Date(epochMs);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getMonth() + 1}-${d.getDate()}-${pad(d.getFullYear() % 100)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
   private showSviInterface(vlan: number): string {

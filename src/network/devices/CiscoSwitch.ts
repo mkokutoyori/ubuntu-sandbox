@@ -93,6 +93,7 @@ export class CiscoSwitch extends Switch {
       vtpApplyVlans: (vs) => this._vtpApplyVlans(vs),
       vtpIsTrunkPort: (n) => this._vtpIsTrunkPort(n),
       vtpLocalInterest: () => this._vtpLocalInterest(),
+      vtpUpdaterIdentity: () => this._vtpUpdaterIdentity(),
     }, () => this.getBus(), baseMac);
     this.udldAgent = new UdldAgent({
       ...hostBase,

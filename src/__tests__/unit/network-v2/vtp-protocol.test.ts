@@ -117,6 +117,69 @@ describe('VTP — revision bumps on local change', () => {
   });
 });
 
+describe('VTP — Updater Identity is an IP, not the Device ID MAC', () => {
+  it('a local VLAN change stamps lastUpdaterIdentity as an IP and a real timestamp', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    await setupAsServer(sw, 'LAB');
+    const before = Date.now();
+    await sw.executeCommand('configure terminal');
+    await sw.executeCommand('vlan 10');
+    await sw.executeCommand('end');
+    const cfg = sw.getVtpAgent().getConfig();
+    expect(cfg.lastUpdaterIdentity).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    expect(cfg.lastUpdateTimestamp).toBeGreaterThanOrEqual(before);
+  });
+
+  it('the frame actually delivered over the wire carries the IP-formatted updater and a matching updateTimestamp', async () => {
+    const server = new CiscoSwitch('switch-cisco', 'S1', 8);
+    const client = new CiscoSwitch('switch-cisco', 'S2', 8);
+    await setupAsServer(server, 'LAB');
+    await setupAsClient(client, 'LAB');
+    new Cable('c1').connect(server.getPort('FastEthernet0/1')!, client.getPort('FastEthernet0/1')!);
+    await makeTrunk(server, 'FastEthernet0/1');
+    await makeTrunk(client, 'FastEthernet0/1');
+
+    const received: import('@/network/vtp/types').VtpFrame[] = [];
+    const clientAgent = client.getVtpAgent();
+    const originalHandleFrame = clientAgent.handleFrame.bind(clientAgent);
+    clientAgent.handleFrame = (port, frame) => {
+      const payload = frame.payload as import('@/network/vtp/types').VtpFrame | undefined;
+      if (payload?.type === 'vtp' && payload.messageType === 'summary') received.push(payload);
+      originalHandleFrame(port, frame);
+    };
+
+    await server.executeCommand('configure terminal');
+    await server.executeCommand('vlan 10');
+    await server.executeCommand('end');
+    clientAgent.handleFrame = originalHandleFrame;
+
+    expect(received.length).toBeGreaterThan(0);
+    const serverCfg = server.getVtpAgent().getConfig();
+    expect(received[received.length - 1].updater).toBe(serverCfg.lastUpdaterIdentity);
+    expect(received[received.length - 1].updater).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    expect(received[received.length - 1].updateTimestamp).toBe(serverCfg.lastUpdateTimestamp);
+  });
+
+  it('a client learns the server IP as updater and never touches its own Device ID MAC', async () => {
+    const server = new CiscoSwitch('switch-cisco', 'S1', 8);
+    const client = new CiscoSwitch('switch-cisco', 'S2', 8);
+    await setupAsServer(server, 'LAB');
+    await setupAsClient(client, 'LAB');
+    new Cable('c1').connect(server.getPort('FastEthernet0/1')!, client.getPort('FastEthernet0/1')!);
+    await makeTrunk(server, 'FastEthernet0/1');
+    await makeTrunk(client, 'FastEthernet0/1');
+
+    const clientDeviceIdBefore = client.getVtpAgent().getConfig().updaterMac;
+    await server.executeCommand('configure terminal');
+    await server.executeCommand('vlan 77');
+    await server.executeCommand('end');
+
+    const clientCfg = client.getVtpAgent().getConfig();
+    expect(clientCfg.lastUpdaterIdentity).toBe(server.getVtpAgent().getConfig().lastUpdaterIdentity);
+    expect(clientCfg.updaterMac).toBe(clientDeviceIdBefore);
+  });
+});
+
 describe('VTP — server pushes its DB to a client', () => {
   it('client syncs the server VLAN when revisions advance', async () => {
     const server = new CiscoSwitch('switch-cisco', 'S1', 8);

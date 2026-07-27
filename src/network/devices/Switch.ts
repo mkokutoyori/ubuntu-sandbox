@@ -2632,6 +2632,12 @@ export abstract class Switch extends Equipment {
     }
   }
 
+  _vtpUpdaterIdentity(): string {
+    const svis = this.getSvis().filter(s => s.ip).sort((a, b) => a.vlan - b.vlan);
+    const first = svis[0];
+    return first && first.ip ? first.ip.toString() : '0.0.0.0';
+  }
+
   _vtpListVlans(): Array<{ id: number; name: string; mtu: number; type: 'ethernet' }> {
     const out: Array<{ id: number; name: string; mtu: number; type: 'ethernet' }> = [];
     for (const [, v] of this.vlans) {
