@@ -65,6 +65,10 @@ export function NetworkDesigner() {
 
   const { getDevices, clearAll, deviceInstances, connections } = useNetworkStore();
   const devices = getDevices();
+  const undo = useNetworkStore(s => s.undo);
+  const redo = useNetworkStore(s => s.redo);
+  const canUndo = useNetworkStore(s => s.historyPast.length > 0);
+  const canRedo = useNetworkStore(s => s.historyFuture.length > 0);
 
   // Subscribe to TerminalManager for reactive updates
   const manager = getTerminalManager();
@@ -286,6 +290,30 @@ export function NetworkDesigner() {
     return () => window.removeEventListener('keydown', handler);
   }, [visibleSessions.length]);
 
+  // Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z (or +Y) — graph undo/redo (rapport 09
+  // audit, item #54). Skipped while a text input/textarea/contenteditable
+  // has focus (terminal input, Save dialog's name field, …) so this
+  // doesn't hijack the browser's own text-edit undo there.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const active = document.activeElement;
+      const isTextInput = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+        || (active instanceof HTMLElement && active.isContentEditable);
+      if (isTextInput) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo, redo]);
+
   const hasOpenTerminals = allSessions.length > 0;
   const hasVisibleTerminals = visibleSessions.length > 0;
 
@@ -403,6 +431,10 @@ export function NetworkDesigner() {
         onHelp={() => setHelpOpen(true)}
         logsOpen={logsOpen}
         onToggleLogs={() => setLogsOpen(o => !o)}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
       <SaveTopologyDialog

@@ -29,6 +29,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
   // longer re-renders this one. Actions are stable references.
   const selectDevice = useNetworkStore(s => s.selectDevice);
   const moveDevice = useNetworkStore(s => s.moveDevice);
+  const commitMove = useNetworkStore(s => s.commitMove);
   const removeDevice = useNetworkStore(s => s.removeDevice);
   const updateDevice = useNetworkStore(s => s.updateDevice);
   const startConnecting = useNetworkStore(s => s.startConnecting);
@@ -44,6 +45,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
   const [showTargetSelector, setShowTargetSelector] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const dragOffset = useRef({ x: 0, y: 0 });
+  const dragStartPos = useRef({ x: 0, y: 0 });
   const deviceRef = useRef<HTMLDivElement>(null);
 
   const isSelected = selectedDeviceId === device.id;
@@ -72,6 +74,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
 
     selectDevice(device.id);
     setIsDragging(true);
+    dragStartPos.current = { x: device.x, y: device.y };
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     dragOffset.current = {
@@ -96,6 +99,13 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
 
     const handleMouseUp = () => {
       setIsDragging(false);
+      // One undo step per drag gesture, not per pixel — the position was
+      // already applied live via moveDevice above.
+      const current = useNetworkStore.getState().deviceInstances.get(device.id);
+      if (current) {
+        const pos = current.getPosition();
+        commitMove(device.id, dragStartPos.current, { x: pos.x, y: pos.y });
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -105,7 +115,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, device.id, zoom, moveDevice]);
+  }, [isDragging, device.id, zoom, moveDevice, commitMove]);
 
   // Open source interface selector (instead of auto-selecting first free)
   const handleStartConnection = (e: React.MouseEvent) => {
@@ -147,22 +157,28 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
   // the terminal when available, mirroring double-click.
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const STEP = e.shiftKey ? 40 : 10;
+    const nudge = (x: number, y: number) => {
+      const from = { x: device.x, y: device.y };
+      const to = { x, y };
+      moveDevice(device.id, to.x, to.y);
+      commitMove(device.id, from, to);
+    };
     switch (e.key) {
       case 'ArrowUp':
         e.preventDefault();
-        moveDevice(device.id, device.x, Math.max(0, device.y - STEP));
+        nudge(device.x, Math.max(0, device.y - STEP));
         break;
       case 'ArrowDown':
         e.preventDefault();
-        moveDevice(device.id, device.x, device.y + STEP);
+        nudge(device.x, device.y + STEP);
         break;
       case 'ArrowLeft':
         e.preventDefault();
-        moveDevice(device.id, Math.max(0, device.x - STEP), device.y);
+        nudge(Math.max(0, device.x - STEP), device.y);
         break;
       case 'ArrowRight':
         e.preventDefault();
-        moveDevice(device.id, device.x + STEP, device.y);
+        nudge(device.x + STEP, device.y);
         break;
       case 'Delete':
       case 'Backspace':
@@ -183,7 +199,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
         break;
     }
   }, [
-    device, moveDevice, removeDevice, isConnecting, isConnectionSource,
+    device, moveDevice, commitMove, removeDevice, isConnecting, isConnectionSource,
     hasTerminal, onOpenTerminal, getPopoverPosition,
   ]);
 
