@@ -157,6 +157,29 @@ export class WireRemoteShell implements IShell {
     return this.wire.getCompletionsAsync(line);
   }
 
+  /**
+   * An editor typed here runs where the file is — on the remote — and
+   * only keystrokes and a screen cross the wire. The host reaches it
+   * through these, so they have to survive the `IShell` adaptation
+   * (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  openRemoteEditor(line: string): ReturnType<SshInteractiveSubShell['openRemoteEditor']> {
+    return this.wire.openRemoteEditor(line);
+  }
+
+  editorTransport(): ReturnType<SshInteractiveSubShell['editorTransport']> {
+    return this.wire.editorTransport();
+  }
+
+  /** `?` is a help key on a vendor CLI, a plain character elsewhere. */
+  supportsInlineHelp(): boolean {
+    return this.wire.supportsInlineHelp();
+  }
+
+  inlineHelpAsync(line: string): Promise<string[]> {
+    return this.wire.inlineHelpAsync(line);
+  }
+
   /** A foreground job runs on the remote, so Ctrl+C is delivered there. */
   interruptForeground(): boolean {
     return this.wire.interruptForeground();
