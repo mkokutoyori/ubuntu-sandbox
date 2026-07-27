@@ -3215,8 +3215,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       let row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string };
       try {
         row = await this._sendPing(route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs);
-      } catch {
-        row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
+      } catch (err) {
+        // A probe that ended because a router answered with an ICMP error
+        // is not the same event as one nothing answered — the CLI prints a
+        // different character for each.
+        const cause = (err as { pingCause?: string } | null)?.pingCause ?? 'timeout';
+        row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: cause };
       }
       results.push(row);
       hooks?.onResult?.(row);
@@ -3466,7 +3470,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
-      if (winner.kind === 'failed') throw new Error(winner.r.reason);
+      if (winner.kind === 'failed') {
+        const err = new Error(winner.r.reason) as Error & { pingCause?: string };
+        // IOS marks the probe by the ICMP type that answered it: a
+        // Destination Unreachable is `U`, a Time Exceeded is `&`.
+        err.pingCause = /Time to live exceeded/i.test(winner.r.reason)
+          ? 'ttl-exceeded'
+          : /Destination unreachable/i.test(winner.r.reason)
+            ? 'unreachable'
+            : 'timeout';
+        throw err;
+      }
       const rtt = performance.now() - sentAt;
       return {
         success: true,

@@ -13,7 +13,7 @@ import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import { Switch } from '@/network/devices/Switch';
 import { IPAddress } from '@/network/core/types';
-import { parsePingArgs, formatCiscoPingSummary, type CiscoPingRow } from '@/network/devices/shells/cisco/ciscoPing';
+import { parsePingArgs, formatCiscoPingSummary, ciscoPingMark, type CiscoPingRow } from '@/network/devices/shells/cisco/ciscoPing';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -576,7 +576,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
     const repaintMarks = () => {
       this.lines = this.lines.slice(0, marksBase);
-      this.addLine(results.map((r) => (r.success ? '!' : '.')).join(''));
+      this.addLine(results.map(ciscoPingMark).join(''));
       this.notify();
     };
 

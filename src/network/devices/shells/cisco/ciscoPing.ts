@@ -6,6 +6,21 @@
  * here as a single source of truth instead of being copied into each shell.
  */
 
+/**
+ * Why a probe ended. IOS prints one character per probe and the character
+ * IS the diagnosis, so the cause has to survive all the way from the ICMP
+ * layer to the renderer rather than being flattened into "failed".
+ */
+export type CiscoPingFailure =
+  /** Nothing came back before the timeout. */
+  | 'timeout'
+  /** An ICMP Destination Unreachable was received (type 3, any code but 4). */
+  | 'unreachable'
+  /** An ICMP Time Exceeded was received (type 11). */
+  | 'ttl-exceeded'
+  /** An ICMP Fragmentation Needed was received while DF was set (type 3 code 4). */
+  | 'frag-needed';
+
 /** One probe outcome, as produced by a device's `executePingSequence`. */
 export interface CiscoPingRow {
   success: boolean;
@@ -13,7 +28,22 @@ export interface CiscoPingRow {
   ttl: number;
   seq: number;
   fromIP: string;
-  error?: string;
+  error?: CiscoPingFailure | string;
+}
+
+/**
+ * The IOS character for one probe. A reply is `!`; silence is `.`; every
+ * other mark means a router actually answered with an ICMP error, which
+ * is precisely what makes them worth distinguishing when troubleshooting.
+ */
+export function ciscoPingMark(row: CiscoPingRow): string {
+  if (row.success) return '!';
+  switch (row.error) {
+    case 'unreachable': return 'U';
+    case 'ttl-exceeded': return '&';
+    case 'frag-needed': return 'M';
+    default: return '.';
+  }
 }
 
 /** Upper bound on `ping … repeat N` the simulator will drive synchronously. */
@@ -102,7 +132,7 @@ export function formatCiscoPing(
   lines.push('Type escape sequence to abort.');
   lines.push(`Sending ${count}, ${sizeBytes}-byte ICMP Echos to ${target}, timeout is ${timeoutMs / 1000} seconds:`);
 
-  const chars = results.map(r => (r.success ? '!' : '.'));
+  const chars = results.map(ciscoPingMark);
   if (results.length === 0) {
     for (let i = 0; i < count; i++) chars.push('.');
   }
