@@ -50,6 +50,8 @@ export class HuaweiDebugService implements TerminalDebugSource {
     return this.broadcast.subscribe(listener);
   }
 
+  subscriberCount(): number { return this.broadcast.subscriberCount(); }
+
   private emit(category: HuaweiDebugCategory, line: string): void {
     if (!this.flags.has(category)) return;
     this.broadcast.fan(line);

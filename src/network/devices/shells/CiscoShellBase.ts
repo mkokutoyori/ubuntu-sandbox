@@ -218,15 +218,39 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected terminalMonitorExplicit = false;
   protected readonly debugConsole: string[] = [];
   private debugSourceAttached = false;
+  private offDebugSource: (() => void) | null = null;
+  private asyncOutputLive = false;
+
+  receivesAsyncOutput(): { debug: boolean; syslog: boolean } {
+    return { debug: this.terminalMonitor, syslog: this.terminalMonitor };
+  }
+
+  setAsyncOutputLive(live: boolean): void {
+    this.asyncOutputLive = live;
+    if (live) this.debugConsole.length = 0;
+  }
 
   protected attachDebugSource(src?: { subscribe(listener: (line: string) => void): () => void } | null): void {
     if (this.debugSourceAttached || !src) return;
     this.debugSourceAttached = true;
-    src.subscribe((line) => {
-      if (!this.terminalMonitor) return;
+    this.offDebugSource = src.subscribe((line) => {
+      if (!this.terminalMonitor || this.asyncOutputLive) return;
       this.debugConsole.push(line);
       if (this.debugConsole.length > 500) this.debugConsole.shift();
     });
+  }
+
+  /**
+   * The debug registry is the device's and outlives any one line, so a
+   * shell that goes away has to take its listener with it. A VTY mints a
+   * fresh shell per session; without this, every SSH login left one more
+   * dead listener on the router for as long as it stayed powered on.
+   */
+  releaseDebugSource(): void {
+    this.offDebugSource?.();
+    this.offDebugSource = null;
+    this.debugSourceAttached = false;
+    this.debugConsole.length = 0;
   }
 
   protected drainDebugConsole(): string {

@@ -103,5 +103,9 @@ describe('syslog subscriptions read fields their payload actually publishes', ()
 
     expect(checked, 'the guard must actually resolve subscriptions, not vacuously pass').toBeGreaterThan(50);
     expect(offenders, `subscriptions rendering '?' instead of a value:\n  ${offenders.join('\n  ')}`).toEqual([]);
-  });
+    // Ce garde-fou lit l'arborescence des sources au lieu de monter un
+    // lab : quelques centaines de millisecondes seul, mais la lecture
+    // disque est en concurrence avec les autres fichiers de la passe.
+    // Le budget par défaut de 5 s est trop juste pour cela.
+  }, 30_000);
 });

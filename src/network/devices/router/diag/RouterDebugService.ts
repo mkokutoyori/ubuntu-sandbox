@@ -95,6 +95,8 @@ export class RouterDebugService implements TerminalDebugSource {
     return this.broadcast.subscribe(listener);
   }
 
+  subscriberCount(): number { return this.broadcast.subscriberCount(); }
+
   /**
    * Re-read `logging rate-limit` before each line, so an operator who
    * lowers the budget mid-flood sees it take effect at once instead of

@@ -200,6 +200,14 @@ export class HuaweiRouter extends Router {
     return this._huaweiDebugService;
   }
 
+  /**
+   * A VRP session reads its `debugging` traces from the VRP registry —
+   * the Cisco-flavoured one this device also inherits stays empty.
+   */
+  protected override getVtyDebugSource(): { subscribe(listener: (line: string) => void): () => void } {
+    return this.getHuaweiDebugService();
+  }
+
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
     if (ipPkt.protocol === IP_PROTO_IGMP) {
       this.igmpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);

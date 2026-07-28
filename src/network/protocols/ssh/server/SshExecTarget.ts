@@ -118,6 +118,17 @@ export interface SshVtyShell {
    * session (docs/PRD-SSH-Unification.md §4bis B2).
    */
   isNested?(): boolean;
+  /**
+   * Output this session receives without having asked for it on the line
+   * it arrives on: `debug` traces and, once `terminal monitor` is on,
+   * syslog. It is asynchronous by nature — a real router prints it the
+   * moment the event happens, not when the operator next presses Enter —
+   * so it needs a push of its own rather than riding a command's reply.
+   * Absent means the remote never speaks unprompted.
+   */
+  subscribeAsyncOutput?(sink: (line: string) => void): () => void;
+  /** The line has dropped — give back whatever this session holds on the device. */
+  dispose?(): void;
 }
 
 export interface SshExecTarget {

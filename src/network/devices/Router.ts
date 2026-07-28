@@ -783,6 +783,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     getPrompt(): string;
     getCompletions(line: string): string[];
     lastEndedSession(): boolean;
+    subscribeAsyncOutput(sink: (line: string) => void): () => void;
+    dispose(): void;
   } {
     const shell = this.createShell();
     shell.beginExecSession?.(this.resolveVtyExecLevel(user));
@@ -807,7 +809,43 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       // The shell's own candidates, so they follow its CLI mode.
       getCompletions: (line: string) => shell.tabCandidates(line, this),
       lastEndedSession: () => ended,
+      // The two streams are the device's — one debug registry, one syslog
+      // buffer, shared by every line. What is per-session is who agreed to
+      // receive them, and that answer is read at delivery time so a
+      // `terminal monitor` typed mid-session takes effect at once.
+      subscribeAsyncOutput: (sink: (line: string) => void) => {
+        const offs: Array<() => void> = [];
+        const debugSource = this.getVtyDebugSource();
+        if (debugSource) {
+          offs.push(debugSource.subscribe((line) => {
+            if (shell.receivesAsyncOutput?.().debug) sink(line);
+          }));
+        }
+        const syslogSource = this.getLoggingConfig();
+        if (syslogSource) {
+          offs.push(syslogSource.subscribeMonitor((line) => {
+            if (shell.receivesAsyncOutput?.().syslog) sink(line);
+          }));
+        }
+        shell.setAsyncOutputLive?.(true);
+        return () => {
+          shell.setAsyncOutputLive?.(false);
+          for (const off of offs) off();
+        };
+      },
+      // The line is gone; the shell it was minted for must not keep a
+      // hand on the device's debug registry.
+      dispose: () => shell.releaseDebugSource?.(),
     };
+  }
+
+  /**
+   * The debug registry a VTY session reads from. Cisco's is the one
+   * `Router` owns; Huawei keeps a VRP-flavoured registry of its own and
+   * overrides this.
+   */
+  protected getVtyDebugSource(): { subscribe(listener: (line: string) => void): () => void } | null {
+    return this.getDebugService();
   }
 
   /** Get the vendor-specific boot sequence */

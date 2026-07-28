@@ -51,6 +51,12 @@ interface OpenChannelInfo {
    */
   shell?: ILinuxShell;
   /**
+   * Detaches this channel from the shell's unprompted output stream
+   * (`debug`, `terminal monitor`). Set at shell_open for a remote that
+   * publishes one, and called once the channel or the connection goes.
+   */
+  offAsyncOutput?: () => void;
+  /**
    * The editor currently holding this channel, if any. While it is set
    * every keystroke goes to the engine instead of the shell
    * (docs/PRD-SSH-Unification.md §4bis B3).
@@ -212,6 +218,7 @@ export class SshServerHandler {
       keepaliveTimer = null;
       decPreauth();
       for (const info of channels.values()) {
+        info.offAsyncOutput?.();
         info.interactiveShell?.dispose();
         info.shell?.dispose?.();
       }
@@ -362,6 +369,7 @@ export class SshServerHandler {
               durationMs: Date.now() - info.openedAt,
             });
           }
+          info?.offAsyncOutput?.();
           info?.interactiveShell?.dispose();
           info?.shell?.dispose?.();
           channels.delete(channelId);
@@ -434,6 +442,20 @@ export class SshServerHandler {
             // since this is a real pty-like session (colorized output,
             // hung up on close), unlike a one-shot `exec`.
             shell: this.ctx.getShell(userCtx, cwd, { interactive: true }),
+          });
+          // A router talks back without being asked: `debug` traces and,
+          // under `terminal monitor`, syslog. Pushing them as they happen
+          // is the whole point — buffering them until the next keypress
+          // is what made a `debug` over SSH look like it did nothing.
+          const opened = channels.get(channelId);
+          opened!.offAsyncOutput = opened?.shell?.subscribeAsyncOutput?.((text) => {
+            try {
+              conn.write(JSON.stringify({
+                op: 'shell_output',
+                channelId,
+                chunk: text.endsWith('\n') ? text : `${text}\n`,
+              }));
+            } catch { /* socket closed under the subscription */ }
           });
           this.eventBus.emit({
             kind: 'channel_opened',
@@ -608,6 +630,7 @@ export class SshServerHandler {
             // wtmp; Windows turns it into a 4634 (Logoff) Security event.
             this.ctx.recordLogout?.(userCtx.username, clientIp);
           }
+          info?.offAsyncOutput?.();
           info?.interactiveShell?.dispose();
           info?.shell?.dispose?.();
           channels.delete(channelId);

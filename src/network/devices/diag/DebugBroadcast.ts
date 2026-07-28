@@ -55,6 +55,13 @@ export class DebugBroadcast {
     return () => { this.listeners.delete(listener); };
   }
 
+  /**
+   * How many consumers are attached right now. Every VTY session opens
+   * one and is expected to give it back when the line drops — a count
+   * that only ever grows is a leak, and this is what makes it visible.
+   */
+  subscriberCount(): number { return this.listeners.size; }
+
   fan(line: string): void {
     if (this.outputGate && !this.outputGate()) return;
     if (!this.admit()) return;

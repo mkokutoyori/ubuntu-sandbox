@@ -273,8 +273,24 @@ export class SshInteractiveSubShell implements ISubShell {
      *  administrative disconnect. Nothing was typed, so the host has to be
      *  told to print the footer and pop this sub-shell by itself. */
     private readonly onRemoteHangup?: (footer: string) => void,
+    /** The remote spoke without being asked — a router's `debug` trace or
+     *  a syslog line under `terminal monitor`. It arrives while the
+     *  operator sits at the prompt with no command running, which is
+     *  precisely when the per-command collector below is not listening. */
+    private readonly onRemoteOutput?: (line: string) => void,
   ) {
     this.cwd = initialCwd === '~' ? `/home/${remoteUser}` : initialCwd;
+    if (this.onRemoteOutput) {
+      // Only outside a command: during one, the collector installed by
+      // handleLine is already taking these chunks, and both firing would
+      // print every line twice.
+      this.channel.onData((chunk) => {
+        if (this.inFlight) return;
+        for (const line of chunk.replace(/\n$/, '').split('\n')) {
+          this.onRemoteOutput?.(line);
+        }
+      });
+    }
     if (this.onRemoteHangup) {
       this.channel.onClose(() => {
         if (this.closing) return;

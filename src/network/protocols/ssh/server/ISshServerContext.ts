@@ -95,6 +95,13 @@ export interface ILinuxShell {
    */
   isNested?(): boolean;
   /**
+   * Output this shell produces on its own, with no line to attach it to:
+   * a router's `debug` traces and its `terminal monitor` syslog. The
+   * handler pushes whatever arrives here down the channel as it happens.
+   * Absent means the remote never speaks unprompted (every POSIX shell).
+   */
+  subscribeAsyncOutput?(sink: (line: string) => void): () => void;
+  /**
    * Open an editor for `commandLine` on this channel, or return null
    * when the line opens none. The engine runs here, against the real
    * filesystem this shell already acts on — permissions, swap files and

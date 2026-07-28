@@ -131,6 +131,10 @@ export class RouterSshServerContext implements ISshServerContext {
         },
         getPrompt: () => vty.getPrompt(),
         getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
+        subscribeAsyncOutput: vty.subscribeAsyncOutput
+          ? (sink: (line: string) => void) => vty.subscribeAsyncOutput!(sink)
+          : undefined,
+        dispose: vty.dispose ? () => vty.dispose!() : undefined,
         supportsInlineHelp: true,
         // `?` is a help key here, and `clear counters` is a real command
         // — neither behaves the POSIX way.

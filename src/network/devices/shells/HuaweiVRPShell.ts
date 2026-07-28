@@ -218,6 +218,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   protected terminalDebugging: boolean = false;
   protected terminalMonitor: boolean = false;
 
+  /**
+   * VRP splits what IOS merges: `terminal monitor` opens the line to
+   * unprompted output at all, and `terminal debugging` is the extra
+   * switch debug traces need on top of it.
+   */
+  receivesAsyncOutput(): { debug: boolean; syslog: boolean } {
+    return {
+      debug: this.terminalMonitor && this.terminalDebugging,
+      syslog: this.terminalMonitor,
+    };
+  }
+
   // Per-mode command tries
   private userTrie = new CommandTrie();
   private systemTrie = new CommandTrie();

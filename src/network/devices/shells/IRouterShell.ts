@@ -32,6 +32,25 @@ export interface IRouterShell {
   attachLoggingToBus?(bus: import('@/events/EventBus').IEventBus, deviceId: string): void;
   /** The shell's logging config — source of the `terminal monitor` syslog stream. */
   getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
+  /**
+   * Which unprompted streams this line currently accepts. The streams are
+   * device-wide but the choice is the line's own, so the gate lives here:
+   * IOS opens both with `terminal monitor`, VRP wants `terminal monitor`
+   * for its logs and `terminal debugging` on top for debug traces.
+   */
+  receivesAsyncOutput?(): { debug: boolean; syslog: boolean };
+  /**
+   * Tell the shell someone is now delivering that output live. A shell
+   * that buffers it for the next keypress must stop, or the operator
+   * reads every line twice.
+   */
+  setAsyncOutputLive?(live: boolean): void;
+  /**
+   * Give back everything this shell holds on the device that outlives it
+   * — today, its listener on the debug registry. Called when the session
+   * it was minted for ends.
+   */
+  releaseDebugSource?(): void;
   /** Render the vendor's `show running-config` text (source for `write memory`). */
   getRunningConfigText?(router: Router): string;
   /** Re-apply a saved config text onto live router state (`copy start run`, `reload`). */

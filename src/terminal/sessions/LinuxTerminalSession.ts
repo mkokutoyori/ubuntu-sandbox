@@ -2972,6 +2972,7 @@ export class LinuxTerminalSession extends TerminalSession {
           // would make the remote log an accept/close pair.
           transportLiveness(session),
           (footer) => this.onRemoteHangup(footer),
+          (line) => this.addLine(line),
         );
         this._inputBuf = '';
         this.notify();
