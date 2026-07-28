@@ -90,6 +90,17 @@ import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
 import { parseResolvConf } from './linux/nss/ResolvConf';
+import {
+  ResolvedService,
+  parseResolvedConf,
+  RESOLVED_CONF_PATH,
+  RUN_STUB_RESOLV,
+  RUN_UPSTREAM_RESOLV,
+  STUB_ADDRESS,
+} from './linux/net/ResolvedService';
+import { RRType } from '../dns/wire/RRType';
+import { decodeDnsMessage, encodeDnsMessage } from '../dns/wire/DnsMessageCodec';
+import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { X509Certificate } from '../pki/X509Certificate';
 import type { PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
 
@@ -292,7 +303,9 @@ export abstract class LinuxMachine extends EndHost
         const content = this.executor.readFile('/etc/resolv.conf') ?? '';
         return [...content.matchAll(/^\s*nameserver\s+(\S+)/gm)]
           .map(m => m[1])
-          .filter(ip => !ip.startsWith('127.'))
+          // Le stub répond pour de vrai désormais : son adresse passe.
+          // Les autres bouclages restent filtrés, faute de service.
+          .filter(ip => ip === STUB_ADDRESS || !ip.startsWith('127.'))
           .slice(0, 3);
       },
       searchDomains: () => {
@@ -366,6 +379,7 @@ export abstract class LinuxMachine extends EndHost
       this.udpClose(DNS_PORT);
       unbindDnsTcpServer(this, DNS_PORT);
     });
+    this.bindResolvedStub();
 
     this.bind9 = new Bind9Service(this, {
       read: (path) => this.executor.vfs.readFile(path),
@@ -584,12 +598,94 @@ export abstract class LinuxMachine extends EndHost
   // ─── DNS over the wire (server side) ─────────────────────────────────
 
   private bindDnsServerPort(): void {
-    // bindDnsUdpServer supersedes the systemd-resolved stub listener on
-    // 127.0.0.53, like real dnsmasq taking over port 53 on Ubuntu.
+    // Le stub de systemd-resolved tient 127.0.0.53:53 ; un serveur DNS
+    // local prend 0.0.0.0:53 à côté, sans conflit — c'est la cohabitation
+    // réelle sur Ubuntu.
     try {
       bindDnsUdpServer(this, (query) => this.answerDnsQuery(query), DNS_PORT, 'dnsmasq');
       bindDnsTcpServer(this, (query) => this.answerDnsQuery(query), DNS_PORT);
     } catch { /* port already bound (e.g. service restarted) */ }
+  }
+
+  // ─── systemd-resolved ────────────────────────────────────────────────
+
+  private _resolvedService: ResolvedService | null = null;
+
+  /**
+   * Le service de résolution de l'hôte. `queryUpstream` part réellement
+   * sur le câble : le stub ne fabrique aucune réponse, il relaie et met
+   * en cache (`docs/PRD-resolvectl.md` §2.2).
+   */
+  getResolvedService(): ResolvedService {
+    if (!this._resolvedService) {
+      this._resolvedService = new ResolvedService({
+        queryUpstream: (server, name) => {
+          let serverIP: IPAddress;
+          try { serverIP = new IPAddress(server); } catch { return null; }
+          const reply = this.queryDnsServerSync(serverIP, name, 'A');
+          if (!reply) return null;
+          return reply.answers
+            .filter((rr) => rr.data.type === RRType.A)
+            .map((rr) => (rr.data as ARecordData).address.toString());
+        },
+      });
+      this.loadResolvedConfig();
+    }
+    return this._resolvedService;
+  }
+
+  /** Relit `resolved.conf` et réécrit les fichiers de `/run`. */
+  loadResolvedConfig(): void {
+    const svc = this._resolvedService;
+    if (!svc) return;
+    svc.setGlobal(parseResolvedConf(this.executor.vfs.readFile(RESOLVED_CONF_PATH)));
+    this.publishResolvedState();
+  }
+
+  /** Projette l'état courant dans `/run/systemd/resolve/`. */
+  publishResolvedState(): void {
+    const svc = this._resolvedService;
+    if (!svc) return;
+    const vfs = this.executor.vfs;
+    if (!vfs.exists('/run/systemd/resolve')) vfs.mkdirp('/run/systemd/resolve', 0o755, 0, 0);
+    vfs.writeFile(RUN_STUB_RESOLV, svc.stubResolvConf(), 0, 0, 0o022);
+    vfs.writeFile(RUN_UPSTREAM_RESOLV, svc.upstreamResolvConf(), 0, 0, 0o022);
+  }
+
+  /**
+   * Le vrai écouteur du stub : de vraies requêtes DNS décodées du fil,
+   * une vraie réponse encodée. Remplace le `bind()` décoratif qui faisait
+   * croire à `ss` qu'un service écoutait (écart #1 du PRD).
+   */
+  private bindResolvedStub(): void {
+    try {
+      // L'unité systemd-resolved pose une entrée sans gestionnaire dans la
+      // table des sockets (SERVICE_LISTENERS) : c'est elle que `ss`
+      // montrait. On la reprend pour mettre un vrai service derrière.
+      this.socketTable.unbind('udp', STUB_ADDRESS, DNS_PORT);
+      this.udpBindAddress(STUB_ADDRESS, DNS_PORT, ({ sourceIP, udp }) => {
+        if (!(udp.payload instanceof Uint8Array)) return;
+        let query: DnsMessage;
+        try { query = decodeDnsMessage(udp.payload); } catch { return; }
+        const bytes = encodeDnsMessage(this.answerResolvedQuery(query));
+        this.sendUdpDatagramTo(sourceIP, udp.sourcePort, DNS_PORT, bytes, bytes.length);
+      }, 'systemd-resolved');
+    } catch { /* déjà lié */ }
+  }
+
+  private answerResolvedQuery(query: DnsMessage): DnsMessage {
+    const question = query.questions[0];
+    if (!question) return buildLegacyResponseMessage(query, DnsRcode.FORMERR, []);
+    const outcome = this.getResolvedService().resolve(question.qname);
+    if (outcome.addresses.length === 0) {
+      return buildLegacyResponseMessage(query, 'SERVFAIL', []);
+    }
+    return buildLegacyResponseMessage(query, 'NOERROR', outcome.addresses.map((ip) => ({
+      name: question.qname,
+      type: 'A',
+      value: ip,
+      ttl: 60,
+    })));
   }
 
   private answerDnsQuery(query: DnsMessage): DnsMessage {
@@ -1334,7 +1430,8 @@ export abstract class LinuxMachine extends EndHost
     const sshdBanner = 'SSH-2.0-Sandbox-Server\r\n';
     this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd', sshdBanner);
     this.socketTable.bind('tcp', '::', 22, 985, 'sshd', sshdBanner);
-    this.socketTable.bind('udp', '127.0.0.53', 53, 540, 'systemd-resolved');
+    // L'entrée 127.0.0.53:53 est posée par bindResolvedStub(), avec un
+    // vrai gestionnaire derrière — plus un bind() décoratif.
 
     if (isServer) {
       const tnsBanner = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
@@ -2349,6 +2446,8 @@ export abstract class LinuxMachine extends EndHost
       sendUdpProbe: (target: IPAddress, destinationPort: number, sourcePort: number): boolean => {
         return this.sendUdpDatagram(target, destinationPort, sourcePort, null, 0);
       },
+      getResolvedService: () => this.getResolvedService(),
+      publishResolvedState: () => this.publishResolvedState(),
       getLldpNeighbors: (iface?: string) => this.getLldpNeighbors(iface),
       getDhcpClient: (): DHCPClient => {
         return this.dhcpClient;

@@ -149,6 +149,11 @@ export interface LinuxNetKernel {
 
   tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout';
 
+  /** Le service systemd-resolved de l'hôte (stub, cache, config par lien). */
+  getResolvedService(): import('./net/ResolvedService').ResolvedService;
+  /** Réécrit `/run/systemd/resolve/` après un changement de configuration. */
+  publishResolvedState(): void;
+
   /** Voisins LLDP découverts sur le câble, tous ports ou un seul. */
   getLldpNeighbors(iface?: string): import('../../lldp/LldpAgent').LldpNeighbor[];
 

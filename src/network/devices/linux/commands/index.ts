@@ -43,6 +43,7 @@ import { radtestCommand } from './net/Radtest';
 import { tcpdumpCommand } from './net/Tcpdump';
 import { arpingCommand } from './net/Arping';
 import { netplanCommand } from './net/Netplan';
+import { resolvectlCommand } from './net/Resolvectl';
 import { networkctlCommand } from './net/Networkctl';
 import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
@@ -129,6 +130,7 @@ export {
   arpingCommand,
   netplanCommand,
   networkctlCommand,
+  resolvectlCommand,
   nmcliCommand,
   ifupCommand,
   ifdownCommand,
@@ -225,6 +227,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   arpingCommand,
   netplanCommand,
   networkctlCommand,
+  resolvectlCommand,
   nmcliCommand,
   ifupCommand,
   ifdownCommand,

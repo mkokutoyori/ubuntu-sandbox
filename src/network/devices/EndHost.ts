@@ -2302,6 +2302,25 @@ export abstract class EndHost extends Equipment {
     this.udpListeners.set(port, listener);
   }
 
+  private readonly udpAddressListeners = new Map<string, UdpListener>();
+
+  /**
+   * Lie un service à UNE adresse plutôt qu'à tout le port. Le port reste
+   * disponible pour un service lié à `0.0.0.0`, ce qui est la cohabitation
+   * réelle entre systemd-resolved (127.0.0.53:53) et un serveur DNS local.
+   */
+  public udpBindAddress(
+    address: string, port: number, listener: UdpListener, processName?: string,
+  ): void {
+    this.socketTable.bind('udp', address, port, undefined, processName);
+    this.udpAddressListeners.set(`${address}:${port}`, listener);
+  }
+
+  public udpCloseAddress(address: string, port: number): void {
+    this.udpAddressListeners.delete(`${address}:${port}`);
+    this.socketTable.unbind('udp', address, port);
+  }
+
   /** Close a UDP port: remove the listener and the socket-table entry. */
   public udpClose(port: number): void {
     this.udpListeners.delete(port);
@@ -2447,6 +2466,15 @@ export abstract class EndHost extends Equipment {
     sourceIP: IPAddress | IPv6Address, destinationIP: IPAddress | IPv6Address,
     sourceMAC?: string,
   ): boolean {
+    // Un service lié à UNE adresse est consulté avant le port générique :
+    // c'est ce qui permet à systemd-resolved de tenir 127.0.0.53:53 sans
+    // interdire à dnsmasq ou bind9 de prendre 0.0.0.0:53, exactement comme
+    // sur un Ubuntu réel.
+    const bound = this.udpAddressListeners.get(`${destinationIP.toString()}:${udp.destinationPort}`);
+    if (bound) {
+      bound({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC });
+      return true;
+    }
     const listener = this.udpListeners.get(udp.destinationPort);
     if (!listener) return false;
     listener({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC });
