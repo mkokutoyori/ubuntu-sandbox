@@ -17,13 +17,23 @@ function agent(router: Router): PimAgent | undefined {
   return (router as unknown as { getPimAgent?: () => PimAgent }).getPimAgent?.();
 }
 
+/**
+ * The engine only ever builds explicit-join (*,G) state — dense mode's
+ * flood-and-prune is not modelled. The mode is still stored and displayed,
+ * so the CLI has to say plainly that it does not change behaviour rather
+ * than let the output imply otherwise.
+ */
+export const PIM_DENSE_MODE_NOTE =
+  '% PIM dense mode is accepted but behaves as sparse mode in this simulator '
+  + '(explicit join only — flood-and-prune is not modelled).';
+
 export function buildPimInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
   const enable = (mode: PimMode) => (args: string[]) => {
     void args;
     const a = agent(ctx.r());
     if (!a) return '';
     for (const port of ctx.selectedPorts()) a.enableInterface(port, mode);
-    return '';
+    return mode === 'sparse' ? '' : PIM_DENSE_MODE_NOTE;
   };
   trie.registerGreedy('ip pim sparse-mode', 'Enable PIM sparse mode', enable('sparse'));
   trie.registerGreedy('ip pim dense-mode', 'Enable PIM dense mode', enable('dense'));
@@ -77,6 +87,56 @@ export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): v
 
   trie.registerGreedy('ip pim spt-threshold', 'Configure PIM SPT switchover threshold', () => '');
 
+  // `ip pim bsr-candidate <iface> [hash-mask-length] [priority]` — the BSR
+  // identity is the interface's own address, exactly as on real IOS.
+  trie.registerGreedy('ip pim bsr-candidate', 'Configure this router as a candidate BSR', (args) => {
+    const a = agent(ctx.r());
+    const r = ctx.r();
+    if (!a) return '';
+    const iface = args[0];
+    if (!iface) return '% Incomplete command.';
+    const ip = r.getPort(iface)?.getIPAddress()?.toString();
+    if (!ip) return `% Interface ${iface} has no IP address`;
+    const priority = args[2] !== undefined ? parseInt(args[2], 10) : 0;
+    if (Number.isNaN(priority) || priority < 0 || priority > 255) {
+      return `% Invalid input detected at '^' marker.`;
+    }
+    a.setBsrCandidate(ip, priority);
+    return '';
+  });
+
+  trie.registerGreedy('no ip pim bsr-candidate', 'Remove the candidate BSR configuration', () => {
+    const a = agent(ctx.r());
+    if (!a) return '';
+    a.clearBsrCandidate();
+    return '';
+  });
+
+  // `ip pim rp-candidate <iface> [group-list <acl>] [priority <n>]`.
+  trie.registerGreedy('ip pim rp-candidate', 'Advertise this router as a candidate RP', (args) => {
+    const a = agent(ctx.r());
+    const r = ctx.r();
+    if (!a) return '';
+    const iface = args[0];
+    if (!iface) return '% Incomplete command.';
+    const ip = r.getPort(iface)?.getIPAddress()?.toString();
+    if (!ip) return `% Interface ${iface} has no IP address`;
+    const pIdx = args.findIndex((x) => x.toLowerCase() === 'priority');
+    const priority = pIdx >= 0 ? parseInt(args[pIdx + 1] ?? '', 10) : 0;
+    if (Number.isNaN(priority) || priority < 0 || priority > 255) {
+      return `% Invalid input detected at '^' marker.`;
+    }
+    a.setRpCandidate(ip, priority);
+    return '';
+  });
+
+  trie.registerGreedy('no ip pim rp-candidate', 'Remove the candidate RP configuration', () => {
+    const a = agent(ctx.r());
+    if (!a) return '';
+    a.clearRpCandidate();
+    return '';
+  });
+
   trie.registerGreedy('ip pim join-prune-interval', 'Set PIM join/prune interval (seconds)', (args) => {
     const a = agent(ctx.r());
     if (!a) return '';
@@ -107,14 +167,47 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
   trie.registerGreedy('show ip pim rp mapping', 'Display PIM RP mappings', () => {
     const a = agent(ctx.r());
     if (!a) return '';
-    const rps = a.getConfig().rps;
+    const rps = a.listRps();
     if (rps.length === 0) return 'PIM Group-to-RP Mappings\nThis system is not a PIM RP.';
+    const now = a.nowMs();
+    const bsr = a.getConfig().currentBsr;
     const lines: string[] = ['PIM Group-to-RP Mappings'];
     for (const rp of rps) {
       lines.push('');
       lines.push(`Group(s) ${rp.groupRangeAddress}/${rp.groupRangeMaskBits}`);
       lines.push(`  RP: ${rp.rpAddress}`);
-      lines.push(`    Info source: ${rp.isStatic ? 'static' : 'bootstrap'}`);
+      if (rp.isStatic) {
+        lines.push(`    Info source: static`);
+      } else {
+        const expires = hms(Math.max(0, (rp.expiresMs ?? now) - now));
+        lines.push(`    Info source: ${bsr?.address ?? '0.0.0.0'} (?), via bootstrap, priority ${rp.priority ?? 0}`);
+        lines.push(`         Expires: ${expires}`);
+      }
+    }
+    return lines.join('\n');
+  });
+
+  trie.registerGreedy('show ip pim bsr-router', 'Display the PIM bootstrap router', () => {
+    const a = agent(ctx.r());
+    if (!a) return '';
+    const cfg = a.getConfig();
+    if (!cfg.currentBsr && !cfg.bsrCandidate && !cfg.rpCandidate) {
+      return 'PIMv2 Bootstrap information\n  This system is not part of any PIM domain.';
+    }
+    const now = a.nowMs();
+    const lines: string[] = ['PIMv2 Bootstrap information'];
+    if (cfg.currentBsr) {
+      const isSelf = cfg.bsrCandidate?.address === cfg.currentBsr.address;
+      lines.push(`  BSR address: ${cfg.currentBsr.address}${isSelf ? ' (?)' : ''}`);
+      lines.push(`  Uptime:      ${cfg.lastBsrHeardMs === null ? 'local' : hms(now - cfg.lastBsrHeardMs)}, BSR Priority: ${cfg.currentBsr.priority}, Hash mask length: 30`);
+      lines.push(`  This system is ${isSelf ? 'the Bootstrap Router (BSR)' : 'not the Bootstrap Router (BSR)'}`);
+    } else if (cfg.bsrCandidate) {
+      lines.push(`  This system is a candidate BSR`);
+      lines.push(`    Candidate BSR address: ${cfg.bsrCandidate.address}, priority: ${cfg.bsrCandidate.priority}, hash mask length: 30`);
+    }
+    if (cfg.rpCandidate) {
+      lines.push(`  Candidate RP: ${cfg.rpCandidate.address}`);
+      lines.push(`    Group(s) ${cfg.rpCandidate.groupRangeAddress}/${cfg.rpCandidate.groupRangeMaskBits}, priority ${cfg.rpCandidate.priority}`);
     }
     return lines.join('\n');
   });
@@ -136,6 +229,15 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       const ip = port?.getIPAddress()?.toString() ?? '0.0.0.0';
       const nbrCount = a.listNeighbors(ifaceName).length;
       lines.push(`${ip.padEnd(17)}${ifaceName.padEnd(25)}v2/${rt.mode.padEnd(7)}${String(nbrCount).padEnd(6)}${String(rt.helloIntervalSec).padEnd(7)}${String(rt.drPriority).padEnd(7)}${rt.designatedRouterIp ?? 'none'}`);
+    }
+    const anyDense = ifaces.some((n) => {
+      const rt = a.getInterfaceRuntime(n);
+      return rt !== undefined && rt.mode !== 'sparse';
+    });
+    if (anyDense) {
+      lines.push('');
+      lines.push('Note: dense mode is displayed as configured but behaves as sparse mode');
+      lines.push('      in this simulator (explicit join only — no flood-and-prune).');
     }
     return lines.join('\n');
   });

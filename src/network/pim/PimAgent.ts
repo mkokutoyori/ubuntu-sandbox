@@ -4,8 +4,10 @@ import {
   type PimConfig, type PimInterfaceRuntime, type PimNeighborEntry,
   type PimMode, type PimPacket, type PimHelloOption,
   type PimMroutEntry, type PimRpEntry, type PimJoinPruneBody,
+  type PimMessageType, type PimBsrCandidate,
+  type PimBootstrapBody, type PimCandidateRpBody,
   createDefaultPimConfig, defaultInterfaceRuntime, makeNeighborKey, makeMroutKey,
-  compareDrCandidate, getOption, matchesGroupRange, ipToUint32,
+  compareDrCandidate, compareBsrCandidate, getOption, matchesGroupRange, ipToUint32,
   IP_PROTO_PIM, PIM_ALL_ROUTERS, PIM_ALL_ROUTERS_MAC,
 } from './types';
 import {
@@ -55,6 +57,13 @@ export class PimAgent {
   }
 
   getConfig(): Readonly<PimConfig> { return this.config; }
+
+  /**
+   * Protocol clock. Every timestamp this agent records and compares comes
+   * from the scheduler, so virtual time really does age neighbours, join
+   * state and BSR/RP entries.
+   */
+  nowMs(): number { return this.getScheduler().now(); }
 
   enableInterface(iface: string, mode: PimMode = 'sparse'): void {
     const rt = this.ensureIface(iface);
@@ -138,13 +147,262 @@ export class PimAgent {
     }
   }
 
+  /**
+   * Longest-match RP lookup across both sources. A more specific group
+   * range always wins whatever its origin; on an equal mask the static
+   * entry wins, matching real Cisco/VRP behaviour.
+   */
   resolveRpForGroup(group: string): string | null {
+    return this.resolveRpEntryForGroup(group)?.rpAddress ?? null;
+  }
+
+  resolveRpEntryForGroup(group: string): PimRpEntry | null {
     let best: PimRpEntry | null = null;
-    for (const r of this.config.rps) {
+    for (const r of [...this.config.rps, ...this.config.learnedRps]) {
       if (!matchesGroupRange(group, r.groupRangeAddress, r.groupRangeMaskBits)) continue;
-      if (!best || r.groupRangeMaskBits > best.groupRangeMaskBits) best = r;
+      if (!best) { best = r; continue; }
+      if (r.groupRangeMaskBits > best.groupRangeMaskBits) { best = r; continue; }
+      if (r.groupRangeMaskBits === best.groupRangeMaskBits && r.isStatic && !best.isStatic) {
+        best = r;
+      }
     }
-    return best?.rpAddress ?? null;
+    return best;
+  }
+
+  /** Every RP this router knows about, static first, for display. */
+  listRps(): PimRpEntry[] {
+    return [...this.config.rps, ...this.config.learnedRps];
+  }
+
+  // ─── Bootstrap Router (RFC 5059) ─────────────────────────────────
+
+  /** `ip pim bsr-candidate <iface> [hash-len] [priority]` / VRP `c-bsr`. */
+  setBsrCandidate(address: string, priority: number): void {
+    this.config.bsrCandidate = { address, priority };
+    this.electBsr();
+  }
+
+  clearBsrCandidate(): void {
+    const wasSelf = this.isSelfBsr();
+    this.config.bsrCandidate = null;
+    // Standing down as BSR also drops the RP set we were originating; a
+    // remaining BSR on the segment will re-teach it.
+    if (wasSelf) {
+      this.config.currentBsr = null;
+      this.config.lastBsrHeardMs = null;
+      this.config.learnedRps = [];
+      this.config.candidateRps.clear();
+      this.rebindMroutesToRp();
+    }
+  }
+
+  /** `ip pim rp-candidate <iface> [group-list] [priority]` / VRP `c-rp`. */
+  setRpCandidate(
+    address: string, priority = 0,
+    groupRangeAddress = '224.0.0.0', groupRangeMaskBits = 4,
+  ): void {
+    this.config.rpCandidate = { address, priority, groupRangeAddress, groupRangeMaskBits };
+    this.config.lastCandidateRpSentMs = null;
+    this.advertiseCandidateRp();
+  }
+
+  clearRpCandidate(): void {
+    this.config.rpCandidate = null;
+  }
+
+  private isSelfBsr(): boolean {
+    const c = this.config.bsrCandidate;
+    return c !== null && this.config.currentBsr?.address === c.address;
+  }
+
+  /**
+   * RFC 5059 §3.1: the highest-priority candidate wins, ties broken by the
+   * highest address. A router with no C-BSR configuration simply accepts
+   * whatever BSR it hears.
+   */
+  private electBsr(challenger?: PimBsrCandidate): void {
+    const previous = this.config.currentBsr;
+    let winner = this.config.currentBsr;
+    for (const c of [this.config.bsrCandidate, challenger]) {
+      if (!c) continue;
+      if (!winner || compareBsrCandidate(c, winner) < 0) winner = c;
+    }
+    if (!winner) return;
+    if (challenger && winner.address === challenger.address) {
+      this.config.lastBsrHeardMs = this.nowMs();
+    }
+    if (previous && previous.address === winner.address && previous.priority === winner.priority) {
+      return;
+    }
+    this.config.currentBsr = winner;
+    if (this.isSelfBsr()) this.config.lastBsrHeardMs = null;
+    this.getBus().publish({
+      topic: 'pim.bsr.changed',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        oldBsrIp: previous?.address ?? null,
+        newBsrIp: winner.address,
+        priority: winner.priority,
+        isSelf: this.isSelfBsr(),
+      },
+    });
+    Logger.info(this.host.id, 'pim:bsr',
+      `${this.host.name}: BSR ${previous?.address ?? '(none)'} → ${winner.address}`);
+    // A freshly elected BSR announces itself without waiting for the timer.
+    if (this.isSelfBsr()) this.originateBootstrap();
+  }
+
+  private onBootstrap(inPort: string, senderIp: string, body: PimBootstrapBody): void {
+    const advertised: PimBsrCandidate = { address: body.bsrAddress, priority: body.bsrPriority };
+    const mine = this.config.bsrCandidate;
+    // A candidate that outranks the sender keeps its own view and does not
+    // relay — the losing BSR will hear ours and stand down.
+    if (mine && compareBsrCandidate(mine, advertised) < 0) {
+      this.electBsr();
+      return;
+    }
+    this.electBsr(advertised);
+    if (this.config.currentBsr?.address !== advertised.address) return;
+    this.applyBootstrapRps(body);
+    this.relayBootstrap(inPort, body);
+    if (this.config.rpCandidate) this.advertiseCandidateRp();
+  }
+
+  private applyBootstrapRps(body: PimBootstrapBody): void {
+    const now = this.nowMs();
+    const fresh: PimRpEntry[] = [];
+    for (const g of body.groups) {
+      for (const rp of g.rps) {
+        fresh.push({
+          rpAddress: rp.rpAddress,
+          groupRangeAddress: g.groupRangeAddress,
+          groupRangeMaskBits: g.groupRangeMaskBits,
+          isStatic: false,
+          priority: rp.priority,
+          expiresMs: now + rp.holdtimeSec * 1000,
+        });
+      }
+    }
+    this.config.learnedRps = fresh;
+    this.config.bootstrapFragmentTag = body.fragmentTag;
+    this.rebindMroutesToRp();
+    this.getBus().publish({
+      topic: 'pim.rp.learned',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        bsrIp: body.bsrAddress,
+        rps: fresh.map(r => ({
+          rpAddress: r.rpAddress,
+          groupRange: `${r.groupRangeAddress}/${r.groupRangeMaskBits}`,
+          priority: r.priority ?? 0,
+        })),
+      },
+    });
+  }
+
+  /** Re-point every (*,G) whose RP choice may have changed. */
+  private rebindMroutesToRp(): void {
+    for (const m of this.config.mroutes.values()) {
+      const rp = this.resolveRpForGroup(m.groupAddress);
+      if (rp === m.rpAddress) continue;
+      m.rpAddress = rp;
+      this.getBus().publish({
+        topic: 'pim.rp.changed',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          group: m.groupAddress, rpAddress: rp,
+        },
+      });
+      this.maybeRefreshUpstream(m);
+    }
+  }
+
+  private onCandidateRp(body: PimCandidateRpBody): void {
+    // Only the elected BSR collects Candidate-RP-Advertisements.
+    if (!this.isSelfBsr()) return;
+    const now = this.nowMs();
+    for (const g of body.groups) {
+      const key = `${body.rpAddress}|${g.groupRangeAddress}/${g.groupRangeMaskBits}`;
+      this.config.candidateRps.set(key, {
+        rp: {
+          rpAddress: body.rpAddress,
+          groupRangeAddress: g.groupRangeAddress,
+          groupRangeMaskBits: g.groupRangeMaskBits,
+          isStatic: false,
+          priority: body.priority,
+        },
+        expiresMs: now + body.holdtimeSec * 1000,
+      });
+    }
+    this.originateBootstrap();
+  }
+
+  /** Build and flood this router's own Bootstrap message. */
+  private originateBootstrap(): void {
+    const self = this.config.bsrCandidate;
+    if (!self || !this.isSelfBsr()) return;
+    const byRange = new Map<string, PimBootstrapBody['groups'][number]>();
+    for (const { rp, expiresMs } of this.config.candidateRps.values()) {
+      const rangeKey = `${rp.groupRangeAddress}/${rp.groupRangeMaskBits}`;
+      let g = byRange.get(rangeKey);
+      if (!g) {
+        g = {
+          groupRangeAddress: rp.groupRangeAddress,
+          groupRangeMaskBits: rp.groupRangeMaskBits,
+          rps: [],
+        };
+        byRange.set(rangeKey, g);
+      }
+      g.rps.push({
+        rpAddress: rp.rpAddress,
+        priority: rp.priority ?? 0,
+        holdtimeSec: Math.max(1, Math.ceil((expiresMs - this.nowMs()) / 1000)),
+      });
+    }
+    this.config.bootstrapFragmentTag++;
+    const body: PimBootstrapBody = {
+      bsrAddress: self.address,
+      bsrPriority: self.priority,
+      fragmentTag: this.config.bootstrapFragmentTag,
+      groups: Array.from(byRange.values()),
+    };
+    // The BSR is a receiver of its own set too, so its RP table matches
+    // what every other router in the domain will learn.
+    this.applyBootstrapRps(body);
+    this.config.lastBootstrapSentMs = this.nowMs();
+    for (const rt of this.config.interfaces.values()) {
+      if (rt.enabled) this.transmitBootstrap(rt.iface, body);
+    }
+  }
+
+  /** Forward an accepted Bootstrap out of every interface but the one it came in on. */
+  private relayBootstrap(inPort: string, body: PimBootstrapBody): void {
+    for (const rt of this.config.interfaces.values()) {
+      if (!rt.enabled || rt.iface === inPort) continue;
+      this.transmitBootstrap(rt.iface, body);
+    }
+  }
+
+  private advertiseCandidateRp(): void {
+    const c = this.config.rpCandidate;
+    if (!c) return;
+    const bsr = this.config.currentBsr;
+    if (!bsr) return;
+    const body: PimCandidateRpBody = {
+      rpAddress: c.address,
+      priority: c.priority,
+      holdtimeSec: Math.ceil(this.config.candidateRpIntervalSec * 2.5),
+      groups: [{
+        groupRangeAddress: c.groupRangeAddress,
+        groupRangeMaskBits: c.groupRangeMaskBits,
+      }],
+    };
+    this.config.lastCandidateRpSentMs = this.nowMs();
+    // We are the BSR ourselves: no need to put it on the wire.
+    if (this.isSelfBsr()) { this.onCandidateRp(body); return; }
+    for (const rt of this.config.interfaces.values()) {
+      if (rt.enabled) this.transmitCandidateRp(rt.iface, body);
+    }
   }
 
   listMroutes(): PimMroutEntry[] {
@@ -186,6 +444,9 @@ export class PimAgent {
   }
 
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): void {
+    // A stopped agent has no timers and must not answer on the wire
+    // either, or a shut-down router keeps driving its peers' state.
+    if (!this.running) return;
     if (!this.config.enabled) return;
     if (ipPkt.protocol !== IP_PROTO_PIM) return;
     const payload = ipPkt.payload as PimPacket | undefined;
@@ -204,6 +465,16 @@ export class PimAgent {
 
     if (payload.messageType === 'join-prune') {
       if (payload.joinPrune) this.onJoinPrune(rt, senderIp, payload.joinPrune);
+      return;
+    }
+
+    if (payload.messageType === 'bootstrap') {
+      if (payload.bootstrap) this.onBootstrap(inPort, senderIp, payload.bootstrap);
+      return;
+    }
+
+    if (payload.messageType === 'candidate-rp-advertisement') {
+      if (payload.candidateRp) this.onCandidateRp(payload.candidateRp);
       return;
     }
 
@@ -228,8 +499,8 @@ export class PimAgent {
       drPriority,
       generationId,
       hasDrPriorityOption: !!drPriOpt,
-      lastHeardMs: Date.now(),
-      upSinceMs: existing?.upSinceMs ?? Date.now(),
+      lastHeardMs: this.nowMs(),
+      upSinceMs: existing?.upSinceMs ?? this.nowMs(),
       addressList,
     };
     this.config.neighbors.set(k, entry);
@@ -258,7 +529,7 @@ export class PimAgent {
         groupAddress: group, sourceAddress: null, entryType: 'star-g',
         incomingInterface: null, upstreamNeighborIp: null, rpAddress: rp,
         outgoingInterfaces: new Set(),
-        joinExpiryMs: 0, uptimeMs: Date.now(), lastJoinSentMs: 0,
+        joinExpiryMs: 0, uptimeMs: this.nowMs(), lastJoinSentMs: 0,
       };
       this.config.mroutes.set(k, m);
     }
@@ -320,8 +591,8 @@ export class PimAgent {
       }],
     };
     this.transmitJoinPrune(m.incomingInterface, body);
-    m.lastJoinSentMs = Date.now();
-    m.joinExpiryMs = Date.now() + this.config.joinPruneHoldtimeSec * 1000;
+    m.lastJoinSentMs = this.nowMs();
+    m.joinExpiryMs = this.nowMs() + this.config.joinPruneHoldtimeSec * 1000;
     this.emitMrout(m, 'join');
   }
 
@@ -342,19 +613,40 @@ export class PimAgent {
   }
 
   private transmitJoinPrune(iface: string, body: PimJoinPruneBody): void {
+    this.transmit(iface, 'join-prune', 32 + body.groups.length * 16, (p) => { p.joinPrune = body; });
+  }
+
+  private transmitBootstrap(iface: string, body: PimBootstrapBody): void {
+    this.transmit(iface, 'bootstrap', 24 + body.groups.length * 16, (p) => { p.bootstrap = body; });
+  }
+
+  private transmitCandidateRp(iface: string, body: PimCandidateRpBody): void {
+    this.transmit(iface, 'candidate-rp-advertisement', 16 + body.groups.length * 8,
+      (p) => { p.candidateRp = body; });
+  }
+
+  /**
+   * One egress path for every non-Hello PIM message: same all-routers
+   * destination, same TTL-1 IPv4 header, so a new message type can never
+   * drift from the ones already on the wire.
+   */
+  private transmit(
+    iface: string, messageType: PimMessageType, bodyBytes: number,
+    fill: (payload: PimPacket) => void,
+  ): void {
     const port = this.host.getPort(iface);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
     const payload: PimPacket = {
-      type: 'pim', version: 2, messageType: 'join-prune',
+      type: 'pim', version: 2, messageType,
       reserved: 0, checksum: 0, options: [],
       senderIp: srcIp.toString(),
-      joinPrune: body,
     };
+    fill(payload);
     const ipPkt: IPv4Packet = {
       type: 'ipv4', version: 4, ihl: 5, tos: 0xc0,
-      totalLength: 20 + 32 + body.groups.length * 16,
+      totalLength: 20 + bodyBytes,
       identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
       ttl: 1, protocol: IP_PROTO_PIM, headerChecksum: 0,
       sourceIP: srcIp, destinationIP: new IPAddress(PIM_ALL_ROUTERS),
@@ -372,7 +664,7 @@ export class PimAgent {
       topic: 'pim.packet.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        iface, messageType: 'join-prune',
+        iface, messageType,
         destinationIp: PIM_ALL_ROUTERS,
       },
     });
@@ -392,13 +684,13 @@ export class PimAgent {
             incomingInterface: null, upstreamNeighborIp: null,
             rpAddress: this.resolveRpForGroup(g.groupAddress),
             outgoingInterfaces: new Set(),
-            joinExpiryMs: 0, uptimeMs: Date.now(), lastJoinSentMs: 0,
+            joinExpiryMs: 0, uptimeMs: this.nowMs(), lastJoinSentMs: 0,
           };
           this.config.mroutes.set(k, m);
         }
         const added = !m.outgoingInterfaces.has(rt.iface);
         m.outgoingInterfaces.add(rt.iface);
-        m.joinExpiryMs = Date.now() + body.holdtimeSec * 1000;
+        m.joinExpiryMs = this.nowMs() + body.holdtimeSec * 1000;
         if (added) this.emitMrout(m, 'oif-added');
         this.maybeRefreshUpstream(m);
       } else if (g.pruneStarG) {
@@ -502,7 +794,7 @@ export class PimAgent {
       payload: ipPkt,
     };
     this.host.sendFrame(rt.iface, eth);
-    rt.lastHelloSentMs = Date.now();
+    rt.lastHelloSentMs = this.nowMs();
     this.getBus().publish({
       topic: 'pim.packet.sent',
       payload: {
@@ -527,7 +819,7 @@ export class PimAgent {
     this.scheduler = s;
     if (this.helloTimer === null) {
       this.helloTimer = s.setInterval(() => {
-        const now = Date.now();
+        const now = this.nowMs();
         for (const rt of this.config.interfaces.values()) {
           if (!rt.enabled) continue;
           if (now - rt.lastHelloSentMs >= rt.helloIntervalSec * 1000) {
@@ -541,13 +833,14 @@ export class PimAgent {
     }
     if (this.refreshTimer === null) {
       this.refreshTimer = s.setInterval(() => {
-        const now = Date.now();
+        const now = this.nowMs();
         for (const m of this.config.mroutes.values()) {
           if (m.outgoingInterfaces.size === 0) continue;
           if (now - m.lastJoinSentMs >= this.config.joinPruneIntervalSec * 1000) {
             this.maybeRefreshUpstream(m);
           }
         }
+        this.bsrTick(now);
       }, 1000);
     }
   }
@@ -559,8 +852,57 @@ export class PimAgent {
     if (this.refreshTimer !== null) { s.clear(this.refreshTimer); this.refreshTimer = null; }
   }
 
+  /**
+   * RFC 5059 §5: the BSR re-originates every BS_Period; a non-BSR router
+   * that has not heard from the current BSR within BS_Timeout drops it and
+   * falls back to its own candidacy, if it has one. C-RPs re-advertise on
+   * their own period, and learned RP entries age out with their holdtime.
+   */
+  private bsrTick(now: number): void {
+    if (this.isSelfBsr()) {
+      const last = this.config.lastBootstrapSentMs;
+      if (last === null || now - last >= this.config.bootstrapIntervalSec * 1000) {
+        this.originateBootstrap();
+      }
+    } else if (this.config.currentBsr && this.config.lastBsrHeardMs !== null) {
+      if (now - this.config.lastBsrHeardMs > this.config.bootstrapTimeoutSec * 1000) {
+        const lost = this.config.currentBsr;
+        this.config.currentBsr = null;
+        this.config.lastBsrHeardMs = null;
+        this.config.learnedRps = [];
+        this.getBus().publish({
+          topic: 'pim.bsr.changed',
+          payload: {
+            deviceId: this.host.id, hostname: this.host.getHostname(),
+            oldBsrIp: lost.address, newBsrIp: null,
+            priority: lost.priority, isSelf: false,
+          },
+        });
+        this.rebindMroutesToRp();
+        this.electBsr();
+      }
+    }
+
+    if (this.config.rpCandidate && this.config.currentBsr) {
+      const last = this.config.lastCandidateRpSentMs;
+      if (last === null || now - last >= this.config.candidateRpIntervalSec * 1000) {
+        this.advertiseCandidateRp();
+      }
+    }
+
+    for (const [k, entry] of this.config.candidateRps) {
+      if (now > entry.expiresMs) this.config.candidateRps.delete(k);
+    }
+    const stillValid = this.config.learnedRps.filter(
+      (r) => r.expiresMs === undefined || now <= r.expiresMs);
+    if (stillValid.length !== this.config.learnedRps.length) {
+      this.config.learnedRps = stillValid;
+      this.rebindMroutesToRp();
+    }
+  }
+
   private expireDue(): void {
-    const now = Date.now();
+    const now = this.nowMs();
     const touched = new Set<string>();
     for (const [k, n] of this.config.neighbors) {
       if (now - n.lastHeardMs > n.helloHoldSec * 1000) {

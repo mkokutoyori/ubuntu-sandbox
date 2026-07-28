@@ -59,6 +59,10 @@ import {
   registerHuaweiIgmpInterfaceCommands, registerHuaweiIgmpDisplayCommands,
 } from './huawei/HuaweiIgmpCommands';
 import {
+  registerHuaweiPimInterfaceCommands, registerHuaweiPimViewCommands,
+  registerHuaweiPimDisplayCommands,
+} from './huawei/HuaweiPimCommands';
+import {
   type HuaweiIPSecContext,
   registerHuaweiIPSecSystemCommands, registerHuaweiIPSecInterfaceCommands,
   registerHuaweiIPSecDisplayCommands,
@@ -220,6 +224,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private interfaceTrie = new CommandTrie();
   private dhcpPoolTrie = new CommandTrie();
   private ospfTrie = new CommandTrie();
+  private pimTrie = new CommandTrie();
   private ospfAreaTrie = new CommandTrie();
   // IPSec sub-mode tries
   private ikeProposalTrie = new CommandTrie();
@@ -284,6 +289,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     for (const t of [
       this.userTrie, this.systemTrie, this.interfaceTrie, this.dhcpPoolTrie,
       this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ospfv3AreaTrie, this.ripTrie,
+      this.pimTrie,
       this.ikeProposalTrie, this.ikePeerTrie, this.ipsecProposalTrie, this.ipsecPolicyTrie,
       this.uiTrie, this.aclBasicTrie, this.aclAdvancedTrie,
       this.ikev2ProposalTrie, this.ikev2PolicyTrie, this.ikev2KeyringTrie,
@@ -482,6 +488,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'system':     return `[${host}]`;
       case 'interface':  return `[${host}-${this.selectedInterface}]`;
       case 'dhcp-pool':  return `[${host}-ip-pool-${this.selectedPool}]`;
+      case 'pim':        return `[${host}-pim]`;
       case 'ospf':       return `[${host}-ospf-1]`;
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
       case 'ospfv3':     return `[${host}-ospfv3-1]`;
@@ -740,6 +747,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'ospf';
         this.ospfArea = null;
         return '';
+      case 'pim':
+        this.mode = 'system';
+        return '';
       case 'ospf':
         this.mode = 'system';
         return '';
@@ -901,6 +911,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'system': return this.systemTrie;
       case 'interface': return this.interfaceTrie;
       case 'dhcp-pool': return this.dhcpPoolTrie;
+      case 'pim': return this.pimTrie;
       case 'ospf': return this.ospfTrie;
       case 'ospf-area': return this.ospfAreaTrie;
       case 'bgp': return this.bgpTrie;
@@ -1289,6 +1300,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // IGMP display commands
     registerHuaweiIgmpDisplayCommands(t, getRouter);
+
+    // PIM display commands
+    registerHuaweiPimDisplayCommands(t, getRouter);
 
     // IPSec display commands
     registerHuaweiIPSecDisplayCommands(t, getRouter);
@@ -1734,6 +1748,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // IGMP display commands
     registerHuaweiIgmpDisplayCommands(t, () => this.r());
 
+    // PIM display commands + the PIM view entry point
+    registerHuaweiPimDisplayCommands(t, () => this.r());
+    t.registerGreedy('multicast', 'Multicast configuration', (args) => {
+      const sub = (args[0] ?? '').toLowerCase();
+      return sub === 'routing-enable' ? '' : 'Error: Unrecognized command found at \'^\' position.';
+    });
+    t.registerGreedy('undo multicast', 'Disable multicast routing', () => '');
+    t.register('pim', 'Enter the PIM view', () => { this.mode = 'pim'; return ''; });
+    registerHuaweiPimViewCommands(this.pimTrie, this);
+    registerHuaweiPimDisplayCommands(this.pimTrie, () => this.r());
+
     // IPSec system-mode commands
     registerHuaweiIPSecSystemCommands(t, this);
 
@@ -1959,6 +1984,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // IGMP interface + display commands
     registerHuaweiIgmpInterfaceCommands(t, this);
     registerHuaweiIgmpDisplayCommands(t, getRouter);
+
+    // PIM interface + display commands
+    registerHuaweiPimInterfaceCommands(t, this);
+    registerHuaweiPimDisplayCommands(t, getRouter);
 
     // IPSec interface commands
     registerHuaweiIPSecInterfaceCommands(t, this);

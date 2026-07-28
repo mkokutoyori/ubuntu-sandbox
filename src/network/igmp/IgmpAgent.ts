@@ -162,6 +162,9 @@ export class IgmpAgent {
   }
 
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): void {
+    // A stopped agent has no timers and must not answer on the wire
+    // either, or a shut-down router keeps driving its peers' state.
+    if (!this.running) return;
     if (!this.config.enabled) return;
     if (ipPkt.protocol !== IP_PROTO_IGMP) return;
     const payload = ipPkt.payload as IgmpPacket | undefined;
