@@ -351,6 +351,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerVtpCommands();
     this.registerUdldCommands();
     this.registerIgmpSnoopingCommands();
+    this.registerPimSnoopingCommands();
     this.registerMonitorSessionCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
@@ -1314,6 +1315,64 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (kw !== undefined) return `% Invalid input detected at '^' marker.`;
     agent.setQuerierEnabled(vlan, on);
     return '';
+  }
+
+  /** `[no] ip pim snooping [vlan <n>]` — global or per-VLAN. */
+  private applyPimSnooping(args: string[], on: boolean): string {
+    const agent = this.d().getPimSnoopingAgent();
+    const a = args.map(s => s.toLowerCase());
+    if (a.length === 0) { agent.setEnabled(on); return ''; }
+    if (a[0] === 'vlan' && a[1]) {
+      const vlan = parseInt(a[1], 10);
+      if (Number.isNaN(vlan)) return `% Invalid input detected at '^' marker.`;
+      agent.setVlanEnabled(vlan, on);
+      return '';
+    }
+    return `% Invalid input detected at '^' marker.`;
+  }
+
+  private showPimSnooping(args: string[]): string {
+    const agent = this.d().getPimSnoopingAgent();
+    const cfg = agent.getConfig();
+    if (args.includes('neighbor')) {
+      const rows = ['Vlan      Neighbor            Port', '----      --------            ----'];
+      for (const v of agent.listVlans()) {
+        for (const n of v.neighbors.values()) {
+          rows.push(`${String(v.vlan).padEnd(10)}${n.neighborIp.padEnd(20)}${n.port}`);
+        }
+      }
+      return rows.join('\n');
+    }
+    if (args.includes('group')) {
+      const rows = ['Vlan      Group               Port List', '----      -----               ---------'];
+      for (const { vlan, group } of agent.listGroups()) {
+        rows.push(`${String(vlan).padEnd(10)}${group.groupAddress.padEnd(20)}${[...group.members.keys()].join(', ')}`);
+      }
+      return rows.join('\n');
+    }
+    const lines: string[] = [];
+    lines.push('Global runtime status: ' + (cfg.enabled ? 'enabled' : 'disabled'));
+    lines.push('');
+    for (const v of agent.listVlans()) {
+      lines.push(`Vlan ${v.vlan}`);
+      lines.push(`--------`);
+      lines.push(` PIM snooping                : ${cfg.enabled && v.enabled ? 'Enabled' : 'Disabled'}`);
+      lines.push(` PIMv2 Hello messages        : ${v.neighbors.size} neighbor(s)`);
+      lines.push(` Number of user enabled ports: ${v.routerPorts.size}`);
+      lines.push(` Number of groups            : ${v.groups.size}`);
+    }
+    return lines.join('\n');
+  }
+
+  private registerPimSnoopingCommands(): void {
+    this.configTrie.registerGreedy('ip pim snooping', 'PIM snooping config',
+      (args) => this.applyPimSnooping(args, true));
+    this.configTrie.registerGreedy('no ip pim snooping', 'Disable PIM snooping',
+      (args) => this.applyPimSnooping(args, false));
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show ip pim snooping', 'Display PIM snooping state',
+        (args) => this.showPimSnooping(args.map(s => s.toLowerCase())));
+    }
   }
 
   private registerIgmpSnoopingCommands(): void {

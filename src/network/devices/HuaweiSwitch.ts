@@ -12,6 +12,7 @@ import { ETHERTYPE_STP } from '../stp/types';
 import { LacpAgent } from '../lacp/LacpAgent';
 import { ETHERTYPE_LACP } from '../lacp/types';
 import { IgmpSnoopingAgent } from '../igmp-snooping/IgmpSnoopingAgent';
+import { PimSnoopingAgent } from '../pim-snooping/PimSnoopingAgent';
 import { Dot1xAgent } from '../dot1x/Dot1xAgent';
 import { ETHERTYPE_EAPOL } from '../dot1x/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -23,6 +24,7 @@ export class HuaweiSwitch extends Switch {
   private readonly stpAgent: StpAgent;
   private readonly lacpAgent: LacpAgent;
   private readonly igmpSnoopingAgent: IgmpSnoopingAgent;
+  private readonly pimSnoopingAgent: PimSnoopingAgent;
   private readonly dot1xAgent: Dot1xAgent;
   private readonly natEngine = new NATEngine();
   _getNATEngine(): NATEngine { return this.natEngine; }
@@ -61,12 +63,17 @@ export class HuaweiSwitch extends Switch {
         this.getSvis().find(s => s.vlan === vlan)?.ip?.toString() ?? null,
       getVlanIds: () => [...this.getVLANs().keys()],
     }, () => this.getBus());
+    this.pimSnoopingAgent = new PimSnoopingAgent({
+      ...hostBase,
+      resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
+      isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
+    }, () => this.getBus());
     this.dot1xAgent = new Dot1xAgent({
       ...hostBase,
       onDot1xPortAuthorized: (p, authorized) => this.applyDot1xAuth(p, authorized),
     }, () => this.getBus());
     this.agents.registerAll(
-      this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent,
+      this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent, this.pimSnoopingAgent,
       this.dot1xAgent,
     );
     this.agents.startAll();
@@ -126,11 +133,16 @@ export class HuaweiSwitch extends Switch {
       return;
     }
     this.igmpSnoopingAgent.handleFrame(portName, frame);
+    this.pimSnoopingAgent.handleFrame(portName, frame);
     super.handleFrame(portName, frame);
   }
 
   protected override getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgent {
     return this.igmpSnoopingAgent;
+  }
+
+  protected override getPimSnoopingAgentOrNull(): PimSnoopingAgent {
+    return this.pimSnoopingAgent;
   }
 
   addVoiceVlanOui(macHex: string, maskHex: string, description?: string): void {
@@ -161,6 +173,7 @@ export class HuaweiSwitch extends Switch {
   getStpAgent(): StpAgent { return this.stpAgent; }
   getLacpAgent(): LacpAgent { return this.lacpAgent; }
   getIgmpSnoopingAgent(): IgmpSnoopingAgent { return this.igmpSnoopingAgent; }
+  getPimSnoopingAgent(): PimSnoopingAgent { return this.pimSnoopingAgent; }
   getDot1xAgent(): Dot1xAgent { return this.dot1xAgent; }
 
   protected getPortName(index: number, _total: number): string {

@@ -33,6 +33,7 @@ import { ETHERTYPE_VTP } from '../vtp/types';
 import { UdldAgent } from '../udld/UdldAgent';
 import { ETHERTYPE_UDLD } from '../udld/types';
 import { IgmpSnoopingAgent } from '../igmp-snooping/IgmpSnoopingAgent';
+import { PimSnoopingAgent } from '../pim-snooping/PimSnoopingAgent';
 import { SyslogAgent } from '../syslog/SyslogAgent';
 import { Dot1xAgent } from '../dot1x/Dot1xAgent';
 import { ETHERTYPE_EAPOL } from '../dot1x/types';
@@ -52,6 +53,7 @@ export class CiscoSwitch extends Switch {
   private readonly vtpAgent: VtpAgent;
   private readonly udldAgent: UdldAgent;
   private readonly igmpSnoopingAgent: IgmpSnoopingAgent;
+  private readonly pimSnoopingAgent: PimSnoopingAgent;
   private readonly syslogAgent: SyslogAgent;
   private readonly dot1xAgent: Dot1xAgent;
 
@@ -121,6 +123,11 @@ export class CiscoSwitch extends Switch {
         this.getSvis().find(s => s.vlan === vlan)?.ip?.toString() ?? null,
       getVlanIds: () => [...this.getVLANs().keys()],
     }, () => this.getBus());
+    this.pimSnoopingAgent = new PimSnoopingAgent({
+      ...hostBase,
+      resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
+      isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
+    }, () => this.getBus());
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
     this.dot1xAgent = new Dot1xAgent({
       ...hostBase,
@@ -129,7 +136,7 @@ export class CiscoSwitch extends Switch {
     this.agents.registerAll(
       this.cdpAgent, this.lldpAgent, this.dtpAgent, this.stpAgent,
       this.lacpAgent, this.vtpAgent, this.udldAgent,
-      this.igmpSnoopingAgent, this.syslogAgent, this.dot1xAgent,
+      this.igmpSnoopingAgent, this.pimSnoopingAgent, this.syslogAgent, this.dot1xAgent,
     );
     this.agents.startAll();
   }
@@ -327,11 +334,16 @@ export class CiscoSwitch extends Switch {
       return;
     }
     this.igmpSnoopingAgent.handleFrame(portName, frame);
+    this.pimSnoopingAgent.handleFrame(portName, frame);
     super.handleFrame(portName, frame);
   }
 
   protected override getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgent {
     return this.igmpSnoopingAgent;
+  }
+
+  protected override getPimSnoopingAgentOrNull(): PimSnoopingAgent {
+    return this.pimSnoopingAgent;
   }
 
   protected override getVtpAgentOrNull(): VtpAgent {
@@ -344,6 +356,7 @@ export class CiscoSwitch extends Switch {
   getVtpAgent(): VtpAgent { return this.vtpAgent; }
   getUdldAgent(): UdldAgent { return this.udldAgent; }
   getIgmpSnoopingAgent(): IgmpSnoopingAgent { return this.igmpSnoopingAgent; }
+  getPimSnoopingAgent(): PimSnoopingAgent { return this.pimSnoopingAgent; }
   getSyslogAgent(): SyslogAgent { return this.syslogAgent; }
   getDot1xAgent(): Dot1xAgent { return this.dot1xAgent; }
 

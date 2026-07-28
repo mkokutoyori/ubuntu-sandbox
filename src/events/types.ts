@@ -40,6 +40,7 @@ import type { BfdDomainEvent } from '@/network/bfd/events';
 import type { UdldDomainEvent } from '@/network/udld/events';
 import type { IgmpDomainEvent } from '@/network/igmp/events';
 import type { IgmpSnoopingDomainEvent } from '@/network/igmp-snooping/events';
+import type { PimSnoopingDomainEvent } from '@/network/pim-snooping/events';
 import type { PimDomainEvent } from '@/network/pim/events';
 import type { SyslogDomainEvent } from '@/network/syslog/events';
 import type { RadiusDomainEvent } from '@/network/radius/events';
@@ -350,6 +351,7 @@ export type DomainEvent =
   | UdldDomainEvent
   | IgmpDomainEvent
   | IgmpSnoopingDomainEvent
+  | PimSnoopingDomainEvent
   | PimDomainEvent
   | SyslogDomainEvent
   | RadiusDomainEvent

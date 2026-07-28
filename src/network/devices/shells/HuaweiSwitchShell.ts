@@ -1411,6 +1411,28 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    this.vlanTrie.registerGreedy('pim-snooping', 'VLAN PIM snooping configuration', (args) => {
+      if (this.selectedVlan === null) return '';
+      const agent = this.pimSnoopingAgentOrNull();
+      if (!agent) return '';
+      if ((args[0] ?? '').toLowerCase() !== 'enable') {
+        return 'Error: Unrecognized command found at \'^\' position.';
+      }
+      agent.setEnabled(true);
+      agent.setVlanEnabled(this.selectedVlan, true);
+      return '';
+    });
+    this.vlanTrie.registerGreedy('undo pim-snooping', 'Disable VLAN PIM snooping', (args) => {
+      if (this.selectedVlan === null) return '';
+      const agent = this.pimSnoopingAgentOrNull();
+      if (!agent) return '';
+      if (args.length !== 0 && (args[0] ?? '').toLowerCase() !== 'enable') {
+        return 'Error: Unrecognized command found at \'^\' position.';
+      }
+      agent.setVlanEnabled(this.selectedVlan, false);
+      return '';
+    });
+
     this.vlanTrie.registerGreedy('traffic-policy', 'Apply a traffic policy to this VLAN', (args) => {
       if (this.selectedVlan === null || !this.swRef || !args[0]) return 'Error: Incomplete command.';
       if (args[1]?.toLowerCase() !== 'inbound') return 'Error: Wrong parameter found.';
@@ -2106,6 +2128,42 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       return lines.join('\n');
     });
+    trie.registerGreedy('display pim-snooping', 'Display PIM snooping state', (args) => {
+      const agent = this.pimSnoopingAgentOrNull();
+      if (!agent) return '';
+      const cfg = agent.getConfig();
+      if (args[0] === 'neighbor') {
+        const rows: string[] = [];
+        for (const v of agent.listVlans()) {
+          for (const n of v.neighbors.values()) {
+            rows.push(` VLAN ID: ${v.vlan}`);
+            rows.push(`  Neighbor: ${n.neighborIp}`);
+            rows.push(`  Port: ${n.port}`);
+          }
+        }
+        return rows.length ? rows.join('\n') : 'Info: No PIM neighbor is found.';
+      }
+      if (args[0] === 'group') {
+        const rows: string[] = [];
+        for (const { vlan, group } of agent.listGroups()) {
+          rows.push(` Group address: ${group.groupAddress}`);
+          rows.push(`  VLAN ID: ${vlan}`);
+          rows.push(`  Member ports: ${[...group.members.keys()].join(' ') || '(none)'}`);
+        }
+        return rows.length ? rows.join('\n') : 'Info: No multicast group entry is found.';
+      }
+      const vlans = agent.listVlans();
+      if (!cfg.enabled || vlans.length === 0) return 'Info: PIM snooping is not enabled on any VLAN.';
+      const lines: string[] = [];
+      for (const v of vlans) {
+        lines.push(`VLAN ID: ${v.vlan}`);
+        lines.push(`  PIM snooping: ${v.enabled ? 'enabled' : 'disabled'}`);
+        lines.push(`  Router ports: ${[...v.routerPorts].join(' ') || '(none)'}`);
+        lines.push(`  Neighbors: ${v.neighbors.size}`);
+        lines.push(`  Groups: ${v.groups.size}`);
+      }
+      return lines.join('\n');
+    });
     trie.registerGreedy('display eth-trunk', 'Display Eth-Trunk information', (args) => {
       const id = parseInt(args[0] ?? '', 10);
       if (isNaN(id)) {
@@ -2553,6 +2611,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
     agent?.setStaticRouterPort(vlan, port, on);
     return '';
+  }
+
+  private pimSnoopingAgentOrNull(): import('@/network/pim-snooping/PimSnoopingAgent').PimSnoopingAgent | null {
+    return (this.swRef as unknown as {
+      getPimSnoopingAgent?: () => import('@/network/pim-snooping/PimSnoopingAgent').PimSnoopingAgent;
+    } | null)?.getPimSnoopingAgent?.() ?? null;
   }
 
   private huaweiPortId(portName: string): string {

@@ -71,6 +71,7 @@ import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore'
 import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
 import type { PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import { isReservedMulticast } from '../igmp/types';
 
 // Re-export shell classes for backward compatibility
 export { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -143,6 +144,11 @@ export interface SwitchportConfig {
 export interface IgmpSnoopingAgentLike {
   getVlanState(vlan: number): { enabled: boolean } | undefined;
   computeEgressPorts(ingressPort: string, groupAddress: string): string[];
+}
+
+/** Same shape as the IGMP one, plus the global on/off PIM snooping has. */
+export interface PimSnoopingAgentLike extends IgmpSnoopingAgentLike {
+  getConfig(): { enabled: boolean };
 }
 
 export interface VtpPruningAgentLike {
@@ -1899,16 +1905,45 @@ export abstract class Switch extends Equipment {
     if (!ipPkt || ipPkt.type !== 'ipv4' || !(ipPkt.destinationIP instanceof IPAddress)) return null;
     const firstOctet = ipPkt.destinationIP.getOctets()[0];
     if (firstOctet < 224 || firstOctet > 239) return null;
-    const agent = this.getIgmpSnoopingAgentOrNull();
-    if (!agent) return null;
-    const vlanState = agent.getVlanState(vlan);
-    if (!vlanState || !vlanState.enabled) return null;
-    const ports = agent.computeEgressPorts(ingressPort, ipPkt.destinationIP.toString());
-    return ports.length > 0 ? ports : null;
+    // RFC 4541 §2.1.2: the link-local range 224.0.0.0/24 is never
+    // constrained by snooping. Every routing and redundancy protocol
+    // lives there (OSPF 224.0.0.5, RIPv2 .9, EIGRP .10, PIM .13, VRRP
+    // .18, HSRPv2 .102, IGMP itself .1/.2), and no snooping agent ever
+    // records membership for it — so restricting it to the ports learned
+    // for some unrelated group would silently break those adjacencies.
+    if (isReservedMulticast(ipPkt.destinationIP.toString())) return null;
+
+    // Both snooping engines answer for the same group; the frame egresses
+    // the union of what each one learned. Composing them here — rather
+    // than teaching either engine about the other — keeps each one's own
+    // member ∪ router-port merge as the single implementation of it.
+    const group = ipPkt.destinationIP.toString();
+    const ports = new Set<string>();
+    let anyActive = false;
+
+    const igmp = this.getIgmpSnoopingAgentOrNull();
+    if (igmp?.getVlanState(vlan)?.enabled) {
+      anyActive = true;
+      for (const p of igmp.computeEgressPorts(ingressPort, group)) ports.add(p);
+    }
+
+    const pim = this.getPimSnoopingAgentOrNull();
+    if (pim?.getConfig().enabled && pim.getVlanState(vlan)?.enabled) {
+      anyActive = true;
+      for (const p of pim.computeEgressPorts(ingressPort, group)) ports.add(p);
+    }
+
+    if (!anyActive || ports.size === 0) return null;
+    return Array.from(ports);
   }
 
   /** Vendor hook: the IGMP-snooping agent, when the platform has one. */
   protected getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgentLike | null {
+    return null;
+  }
+
+  /** Vendor hook: the PIM-snooping agent, when the platform has one. */
+  protected getPimSnoopingAgentOrNull(): PimSnoopingAgentLike | null {
     return null;
   }
 
