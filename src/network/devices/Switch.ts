@@ -358,8 +358,7 @@ export abstract class Switch extends Equipment {
     this.initDefaultVLAN();
     this.startMACAgingProcess();
     this.shell = this.createShell();
-    (this.shell as unknown as { attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void })
-      .attachLoggingToBus?.(this.getBus(), this.id);
+    this.attachLoggingBus(this.getBus());
     this.initArpInspection();
     this.initPortSecurity();
     this.initDhcpSnooping();
@@ -698,7 +697,7 @@ export abstract class Switch extends Equipment {
     if (this.arpInspectionPipeline) this.initArpInspection();
     this.initPortSecurity();
     this.initDhcpSnooping();
-    if (bus) (this.shell as unknown as { attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void }).attachLoggingToBus?.(bus, this.id);
+    if (bus) this.attachLoggingBus(bus);
   }
 
   // ─── Power Management ────────────────────────────────────────────
@@ -741,8 +740,7 @@ export abstract class Switch extends Equipment {
     }
     // Reset shell FSM to user mode
     this.shell = this.createShell();
-    (this.shell as unknown as { attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void })
-      .attachLoggingToBus?.(this.getBus(), this.id);
+    this.attachLoggingBus(this.getBus());
     this.startMACAgingProcess();
     // Reset volatile DAI runtime (keep config — it lives in NVRAM via running-config).
     this.arpErrDisabledPorts.clear();
@@ -2520,6 +2518,41 @@ export abstract class Switch extends Equipment {
   // ─── VTY line configuration (`line vty …`) ────────────────────────
   private readonly _vtyLineConfig = new VtyLineConfigStore();
   /** @internal Used by the shared config-line handlers. */
+  /**
+   * Put the logging buffer on this device's bus, and gate its severity-7
+   * lines behind this device's debug registry: those lines ARE `debug`
+   * output, so they may only appear while the matching `debug` is on and
+   * must stop on `undebug all`. A switch model with no debug service
+   * keeps the ungated behaviour.
+   */
+  private attachLoggingBus(bus: import('@/events/EventBus').IEventBus): void {
+    const shell = this.shell as unknown as {
+      attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void;
+      getLoggingConfig?: () => { setDebugGate: (g: (tag: string) => boolean) => void } | undefined;
+    };
+    shell.attachLoggingToBus?.(bus, this.id);
+    const dev = this as unknown as { getDebugService?: () => { isEnabledForSyslogTag: (t: string) => boolean } };
+    if (!dev.getDebugService) return;
+    shell.getLoggingConfig?.()?.setDebugGate(
+      (tag) => dev.getDebugService!().isEnabledForSyslogTag(tag));
+  }
+
+  /**
+   * The syslog buffer behind `show logging`, and the console stream a
+   * terminal subscribes to. The router has always exposed this; without
+   * it on the switch a switch console showed neither %LINK/%LINEPROTO nor
+   * any `debug` output — the buffer filled up and nothing ever read it.
+   */
+  getLoggingConfig(): import('./inspection/config/LoggingConfig').LoggingConfig | null {
+    const shell = this.shell as unknown as {
+      getLoggingConfig?: () => import('./inspection/config/LoggingConfig').LoggingConfig;
+    };
+    const cfg = shell.getLoggingConfig?.();
+    if (!cfg) return null;
+    this.attachLoggingBus(this.getBus());
+    return cfg;
+  }
+
   _getVtyLineConfig(): VtyLineConfigStore { return this._vtyLineConfig; }
   _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean }> {
     return this.getCredentialStore().list().map(a => ({

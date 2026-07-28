@@ -94,7 +94,7 @@ describe('Cisco debug arp — event subscription streams ARP frames into the ter
 
     expect(session.lines.some((l) =>
       l.text.includes('IP ARP: rcvd req') &&
-      l.text.includes('src 10.0.0.2 00:11:22:33:44:55') &&
+      l.text.includes('src 10.0.0.2 0011.2233.4455') &&
       l.text.includes('dst 10.0.0.1') &&
       l.text.includes('GigabitEthernet0/0'))).toBe(true);
   });
@@ -108,7 +108,7 @@ describe('Cisco debug arp — event subscription streams ARP frames into the ter
 
     expect(session.lines.some((l) =>
       l.text.includes('IP ARP: sent rep') &&
-      l.text.includes('src 10.0.0.1 aa:bb:cc:00:01:00'))).toBe(true);
+      l.text.includes('src 10.0.0.1 aabb.cc00.0100'))).toBe(true);
   });
 
   it('the prompt stays free while debug arp runs (background, not blocking)', async () => {

@@ -62,6 +62,27 @@ export class LoggingConfig {
     warnings: 4, notifications: 5, informational: 6, debugging: 7,
   };
 
+  /**
+   * Severity 7 is `debug` output, and IOS only ever produces it while the
+   * matching `debug` command is on. The device hands over its debug
+   * registry here so `undebug all` reaches these lines too — without the
+   * gate they were emitted unconditionally, so a router with CDP running
+   * printed neighbour chatter to a console nobody had asked to debug, and
+   * no command could stop it.
+   *
+   * A device that never sets a gate keeps the old unconditional
+   * behaviour, so nothing else in the tree changes shape.
+   */
+  private debugGate: ((tag: string) => boolean) | null = null;
+
+  setDebugGate(gate: ((tag: string) => boolean) | null): void {
+    this.debugGate = gate;
+  }
+
+  private debugAllowed(tag: string): boolean {
+    return this.debugGate === null || this.debugGate(tag);
+  }
+
   /** `event` like `bfd:state` → tag `bfd`. */
   private tagFromEvent(event: string): string {
     const colon = event.indexOf(':');
@@ -117,6 +138,7 @@ export class LoggingConfig {
    */
   append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
     if (!this.enabled) return;
+    if (severity === 'debugging' && !this.debugAllowed(tag)) return;
     const ts = Date.now();
     if (this.monitorEnabled && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
       this.fanMonitor(this.formatEntry(severity, tag, text, ts, mnemonic));
@@ -290,14 +312,14 @@ export class LoggingConfig {
           `(${p.source ?? '*'}, ${p.group ?? '*'}) iif ${p.iif ?? '?'}`);
       }),
       bus.subscribeWhere('cdp.neighbor.refreshed', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteDeviceId?: string };
+        const p = e.payload as unknown as { localPort?: string; remoteHost?: string };
         this.append('debugging', 'cdp',
-          `Neighbor ${p.remoteDeviceId ?? '?'} on ${p.localPort ?? '?'} refreshed`);
+          `Neighbor ${p.remoteHost ?? '?'} on ${p.localPort ?? '?'} refreshed`);
       }),
       bus.subscribeWhere('lldp.neighbor.refreshed', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteSystemName?: string };
+        const p = e.payload as unknown as { localPort?: string; remoteSystem?: string };
         this.append('debugging', 'lldp',
-          `Neighbor ${p.remoteSystemName ?? '?'} on ${p.localPort ?? '?'} refreshed`);
+          `Neighbor ${p.remoteSystem ?? '?'} on ${p.localPort ?? '?'} refreshed`);
       }),
       bus.subscribeWhere('bgp.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload as unknown as { neighborIp?: string; oldState?: string; newState?: string; remoteAs?: number | null };

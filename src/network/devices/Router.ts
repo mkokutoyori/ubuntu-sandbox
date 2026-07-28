@@ -392,7 +392,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // this, `show logging` stays empty for every domain event (OSPF, HSRP,
     // NAT debug, …) until something happens to call the internal
     // `getLoggingConfig()` accessor first, which no real CLI command does.
-    this.shell.attachLoggingToBus?.(this.getBus(), this.id);
+    this.attachLoggingBus(this.getBus());
     this.natEngine.setDeviceId(this.id, this.name);
     // An engine left on the process-wide default bus meets every other
     // router's events there, and its actors then have to filter by device
@@ -447,7 +447,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
-    if (bus) this.shell.attachLoggingToBus?.(bus, this.id);
+    if (bus) this.attachLoggingBus(bus);
     if (bus) this.getSnmpService().attachToBus(bus, this.id);
     this._debugService?.attachToBus(this.getBus(), this.id);
     this.ipsecEngine?.setEventBus(this.getBus());
@@ -2823,6 +2823,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.aclEngine.evaluateACL(ref, probe) !== 'deny';
   }
 
+  /**
+   * Put the logging buffer on this device's bus, and gate its severity-7
+   * lines behind this device's debug registry: those lines ARE `debug`
+   * output, so they may only appear while the matching `debug` is on and
+   * must stop on `undebug all`.
+   */
+  private attachLoggingBus(bus: import('@/events/EventBus').IEventBus): void {
+    this.shell.attachLoggingToBus?.(bus, this.id);
+    this.shell.getLoggingConfig?.()?.setDebugGate(
+      (tag) => this.getDebugService().isEnabledForSyslogTag(tag));
+  }
+
   getDebugService(): RouterDebugService {
     if (!this._debugService) {
       this._debugService = new RouterDebugService();
@@ -2842,7 +2854,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getLoggingConfig(): import('./inspection/config/LoggingConfig').LoggingConfig | null {
     const cfg = this.shell.getLoggingConfig?.();
     if (!cfg) return null;
-    this.shell.attachLoggingToBus?.(this.getBus(), this.id);
+    this.attachLoggingBus(this.getBus());
     return cfg;
   }
 

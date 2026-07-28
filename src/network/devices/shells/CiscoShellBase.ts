@@ -1573,7 +1573,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
-      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp', scope?: string) => string } };
+      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim', scope?: string) => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is on';
       if (sub === 'packet') return svc.enable('ip.packet');
@@ -1596,11 +1596,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'eigrp') return svc.enable('ip.eigrp');
       if (sub === 'bgp') return svc.enable('ip.bgp');
       if (sub === 'nhrp') return svc.enable('ip.nhrp');
+      if (sub === 'pim') return svc.enable('ip.pim');
       return svc.enable('ip.packet', sub);
     });
     this.privilegedTrie.registerGreedy('no debug ip', 'Disable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
-      const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp') => string } };
+      const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim') => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is off';
       if (sub === 'packet') return svc.disable('ip.packet');
@@ -1616,6 +1617,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'eigrp') return svc.disable('ip.eigrp');
       if (sub === 'bgp') return svc.disable('ip.bgp');
       if (sub === 'nhrp') return svc.disable('ip.nhrp');
+      if (sub === 'pim') return svc.disable('ip.pim');
       return svc.disable('ip.packet');
     });
     const debugSvc = () => {
@@ -1644,6 +1646,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('debug cdp', 'Debug CDP', () => genericDebug()?.enable('cdp.packets') ?? 'CDP packets debugging is on');
     this.privilegedTrie.registerGreedy('no debug lldp', 'Disable LLDP debug', () => genericDebug()?.disable('lldp.packets') ?? '');
     this.privilegedTrie.registerGreedy('no debug cdp', 'Disable CDP debug', () => genericDebug()?.disable('cdp.packets') ?? '');
+    this.privilegedTrie.registerGreedy('debug vxlan', 'Debug VXLAN', () => genericDebug()?.enable('vxlan') ?? 'VXLAN debugging is on');
+    this.privilegedTrie.registerGreedy('no debug vxlan', 'Disable VXLAN debug', () => genericDebug()?.disable('vxlan') ?? '');
+    this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');
+    this.privilegedTrie.registerGreedy('no debug port-security', 'Disable port-security debug', () => genericDebug()?.disable('port-security') ?? '');
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
     this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
       this.attachLoggingToDevice(this.d());

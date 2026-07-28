@@ -1,7 +1,9 @@
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
-export type SwitchDebugCategory = 'arp' | 'mac' | 'link' | 'stp.events' | 'stp.bpdu';
+export type SwitchDebugCategory =
+  | 'arp' | 'mac' | 'link' | 'stp.events' | 'stp.bpdu'
+  | 'cdp' | 'lldp' | 'port-security' | 'dhcp' | 'vxlan';
 
 const LABELS: Record<SwitchDebugCategory, string> = {
   arp: 'ARP packet',
@@ -9,11 +11,23 @@ const LABELS: Record<SwitchDebugCategory, string> = {
   link: 'Link state',
   'stp.events': 'Spanning Tree event',
   'stp.bpdu': 'Spanning Tree BPDU',
+  cdp: 'CDP packets',
+  lldp: 'LLDP packets',
+  'port-security': 'Port security',
+  dhcp: 'DHCP',
+  vxlan: 'VXLAN',
 };
 
 function mapScope(arg: string): SwitchDebugCategory[] | null {
   const w = arg.trim().toLowerCase().replace(/\s+/g, ' ');
   if (w === 'ip.arp' || w === 'arp') return ['arp'];
+  // The shared Cisco shell enables by category name (`cdp.packets`), an
+  // operator types the verb (`cdp packets`) — both land here.
+  if (w === 'cdp' || w.startsWith('cdp ') || w.startsWith('cdp.')) return ['cdp'];
+  if (w === 'lldp' || w.startsWith('lldp ') || w.startsWith('lldp.')) return ['lldp'];
+  if (w === 'port-security' || w === 'port security' || w === 'port_security') return ['port-security'];
+  if (w === 'dhcp' || w.startsWith('ip dhcp') || w.startsWith('ip.dhcp')) return ['dhcp'];
+  if (w === 'vxlan') return ['vxlan'];
   if (w === 'mac' || w === 'mac address-table' || w === 'mac-address-table') return ['mac'];
   if (w === 'link' || w === 'link-state' || w === 'link state') return ['link'];
   if (w.startsWith('spanning-tree') || w.startsWith('spanning tree')) {
@@ -64,6 +78,18 @@ export class SwitchDebugService implements TerminalDebugSource {
   hasAnyFlag(): boolean { return this.all || this.flags.size > 0; }
 
   isStpEnabled(): boolean { return this.all || this.flags.has('stp.events') || this.flags.has('stp.bpdu'); }
+
+  /**
+   * Is the `debug` behind this syslog tag on? Severity-7 lines the logging
+   * subsystem raises on its own go through here (`LoggingConfig
+   * .setDebugGate`), so `undebug all` silences them like any other debug.
+   * An unmapped tag has no verb to enable it, so it stays off.
+   */
+  isEnabledForSyslogTag(tag: string): boolean {
+    if (this.all) return true;
+    const cats = mapScope(tag === 'port_security' ? 'port-security' : tag);
+    return cats !== null && cats.some((c) => this.flags.has(c));
+  }
 
   list(): string[] {
     return [...this.flags].map((c) => `${LABELS[c]} debugging is on`).sort();

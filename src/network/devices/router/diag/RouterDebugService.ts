@@ -38,7 +38,10 @@ export type DebugCategory =
   | 'ntp.events'
   | 'ntp.packets'
   | 'lldp.packets'
-  | 'cdp.packets';
+  | 'cdp.packets'
+  | 'ip.pim'
+  | 'vxlan'
+  | 'port-security';
 
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -259,7 +262,36 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ntp.packets': return 'NTP packets';
       case 'lldp.packets': return 'LLDP packets';
       case 'cdp.packets': return 'CDP packets';
+      case 'ip.pim': return 'PIM';
+      case 'vxlan': return 'VXLAN';
+      case 'port-security': return 'Port security';
     }
+  }
+
+  /**
+   * The debug category behind a syslog tag, for the severity-7 lines the
+   * logging subsystem raises on its own (`LoggingConfig.setDebugGate`).
+   * An unmapped tag has no `debug` verb to turn it on, so its lines stay
+   * off — nothing may reach a console that never asked for it.
+   */
+  static categoryForSyslogTag(tag: string): DebugCategory | null {
+    switch (tag) {
+      case 'cdp': return 'cdp.packets';
+      case 'lldp': return 'lldp.packets';
+      case 'nat': return 'ip.nat';
+      case 'arp': return 'ip.arp';
+      case 'dhcp': return 'ip.dhcp.server';
+      case 'pim': return 'ip.pim';
+      case 'vxlan': return 'vxlan';
+      case 'port_security': return 'port-security';
+      default: return null;
+    }
+  }
+
+  /** Is the `debug` behind this syslog tag currently on? */
+  isEnabledForSyslogTag(tag: string): boolean {
+    const category = RouterDebugService.categoryForSyslogTag(tag);
+    return category !== null && this.isEnabled(category);
   }
 
   format(): string {
