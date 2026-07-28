@@ -230,19 +230,39 @@ describe('P1 — a bundled Port-channel is one STP port', () => {
   it('both members answer to one STP-level name', async () => {
     const { b } = await bundledPair();
     const agent = b.getStpAgent();
-    if (agent.stpKey('FastEthernet0/1') === 'FastEthernet0/1') return; // not bundled here
-
     expect(agent.stpKey('FastEthernet0/1')).toBe('Port-channel1');
     expect(agent.stpKey('FastEthernet0/2')).toBe('Port-channel1');
     expect(agent.stpMembers('Port-channel1'))
       .toEqual(['FastEthernet0/1', 'FastEthernet0/2']);
   });
 
-  // Not asserted here, and not delivered: the resulting forward state
-  // reaching both members. The election and the BPDU exchange now run on
-  // the aggregate, but `getSTPState` still shows one member forwarding and
-  // the other blocking — the per-VLAN state written before the bundle
-  // formed is never recomputed once LACP brings it up.
+  it('the election runs once, on the aggregate', async () => {
+    const { b } = await bundledPair();
+    const agent = b.getStpAgent();
+    expect(agent.isRoot(), 'the far side has the better bridge ID').toBe(false);
+    expect(
+      agent.getRootPort(),
+      'the aggregate is the root port — not one of its members',
+    ).toBe('Port-channel1');
+    expect(agent.getPortRole('Port-channel1')).toBe('root');
+  });
+
+  it('no member is left blocking while the other forwards', async () => {
+    const { b } = await bundledPair();
+    expect(
+      [b.getSTPState('FastEthernet0/1'), b.getSTPState('FastEthernet0/2')],
+      'a Port-channel is one link: blocking half of it would break the aggregate',
+    ).toEqual(['forwarding', 'forwarding']);
+  });
+
+  it('what a member learned before bundling follows it into the aggregate', async () => {
+    const { b } = await bundledPair();
+    const info = b.getStpAgent().getPortInfoForVlan(1, 'Port-channel1');
+    expect(
+      info?.designatedRoot.priority,
+      'dropping it would put the bridge back to believing it is root',
+    ).toBe(4097);
+  });
 
   it('an unbundled port is still its own STP port', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);

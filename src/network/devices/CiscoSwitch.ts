@@ -89,7 +89,11 @@ export class CiscoSwitch extends Switch {
       getStpNativeVlan: (p) => this.getSwitchportConfig(p)?.trunkNativeVlan ?? 1,
       getStpBundleGroup: (p) => this.getStpBundleGroup(p),
     }, () => this.getBus(), baseMac);
-    this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
+    this.lacpAgent = new LacpAgent({
+      ...hostBase,
+      onLacpBundleChanged: (port, groupId, bundled) =>
+        this.stpAgent.onBundleChanged(port, `Port-channel${groupId}`, bundled),
+    }, () => this.getBus(), baseMac);
     this.vtpAgent = new VtpAgent({
       ...hostBase,
       vtpListVlans: () => this._vtpListVlans(),

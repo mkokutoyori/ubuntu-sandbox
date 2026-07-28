@@ -89,6 +89,55 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     return this.host.getStpBundleGroup?.(portName)?.groupKey ?? portName;
   }
 
+  /**
+   * LACP has just bundled or unbundled this port, so the name STP knows it
+   * by has changed. Whatever was learned under the old name describes a
+   * link that no longer exists at that granularity — left in place it wins
+   * the root-port election over the aggregate, and the members keep the
+   * roles they held as standalone ports. Drop both names and re-elect.
+   */
+  onBundleChanged(portName: string, groupKey: string, bundled: boolean): void {
+    const [stale, target] = bundled ? [portName, groupKey] : [groupKey, portName];
+    for (const inst of this.instances.values()) {
+      // The BPDU heard under the old name was heard on this same physical
+      // link, so it moves across rather than being thrown away — dropping
+      // it would put the bridge back to believing it is root until the
+      // next Hello, and blocking would be recomputed from nothing.
+      const carried = inst.portInfo.get(stale);
+      inst.forgetPort(stale);
+      const own = this.ownBridgeId(inst.vlanId);
+      if (carried && !bridgeEquals(carried.designatedBridge, own)) {
+        inst.setPortInfo(target, { ...carried });
+      }
+    }
+    this.recomputeOnTopologyChange();
+    // The members' data-plane state is only refreshed when the aggregate's
+    // own state *changes*. The second member to join finds it unchanged, so
+    // it would keep the blocking it was given as a standalone port — the
+    // aggregate has to be re-asserted to every member, not just the first.
+    for (const inst of this.instances.values()) {
+      const state = inst.getForwardState(target);
+      if (state === 'disabled') continue;
+      for (const vlan of this.vlansForInstanceKey(inst.vlanId)) {
+        for (const member of this.stpMembers(target)) {
+          this.host.onForwardStateChanged(member, state, vlan);
+        }
+      }
+    }
+  }
+
+  /**
+   * The physical port to ask the host about. Switchport config, guards and
+   * link type are all held per physical interface, so a bundle key has to
+   * be resolved to a member before any of them is looked up — otherwise the
+   * aggregate reads as an unknown port carrying no VLAN, and stops sending
+   * BPDUs entirely.
+   */
+  private hostPortName(name: string): string {
+    if (this.host.getPort(name)) return name;
+    return this.stpMembers(name)[0] ?? name;
+  }
+
   /** The physical ports behind an STP-level name. */
   stpMembers(key: string): string[] {
     for (const port of this.host.getPorts()) {
@@ -246,7 +295,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   }
 
   private portVlans(portName: string): number[] {
-    const v = this.host.getStpPortVlans?.(portName);
+    const v = this.host.getStpPortVlans?.(this.hostPortName(portName));
     // A genuinely empty array (e.g. an L2PT-tunneled port) means "no local
     // STP participation at all" — only a missing hook falls back to VLAN 1.
     return v ?? [1];
@@ -434,7 +483,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   }
 
   getPortLinkType(portName: string): 'p2p' | 'shared' {
-    return this.host.getPort(portName)?.getDuplex() === 'half'
+    return this.getPort(portName)?.getDuplex() === 'half'
       ? 'shared' : 'p2p';
   }
 
@@ -544,8 +593,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   }
 
   getPortGuards(portName: string): StpPortGuards {
-    let g = this.guards.get(portName);
-    if (!g) { g = defaultPortGuards(); this.guards.set(portName, g); }
+    const key = this.hostPortName(portName);
+    let g = this.guards.get(key);
+    if (!g) { g = defaultPortGuards(); this.guards.set(key, g); }
     return g;
   }
 
@@ -555,8 +605,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   }
 
   isPortFastOperational(portName: string): boolean {
-    return this.guards.get(portName)?.portFast === true
-      && !this.portFastLost.has(portName);
+    const key = this.hostPortName(portName);
+    return this.guards.get(key)?.portFast === true
+      && !this.portFastLost.has(key);
   }
 
   setPortBpduGuard(portName: string, on: boolean): void {
@@ -999,9 +1050,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     // inside this engine still runs off `bpdu.vlan` (unchanged) — this
     // only fixes what a `tcpdump` capture or `show`-style inspection would
     // see on the wire, not the internal per-VLAN dispatch mechanism.
-    const nativeVlan = this.host.getStpNativeVlan?.(portName) ?? 1;
+    const nativeVlan = this.host.getStpNativeVlan?.(this.hostPortName(portName)) ?? 1;
     const pvstPlus = this.config.mode !== 'mstp'
-      && (this.host.isStpTrunkPort?.(portName) ?? false)
+      && (this.host.isStpTrunkPort?.(this.hostPortName(portName)) ?? false)
       && key !== nativeVlan;
     const frame: EthernetFrame & { dot1q?: { tpid: number; pcp: number; dei: number; vid: number } } = {
       srcMAC: port.getMAC(),

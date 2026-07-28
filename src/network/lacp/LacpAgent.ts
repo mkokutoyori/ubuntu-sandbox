@@ -18,6 +18,12 @@ export interface LacpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  /**
+   * A port joined or left an aggregate. STP knows a bundled port by its
+   * group name, so the change has to reach it — same host-callback shape
+   * DTP and UDLD already use for their own state changes.
+   */
+  onLacpBundleChanged?(portName: string, groupKey: string, bundled: boolean): void;
 }
 
 export class LacpAgent extends ReactiveAgentBase {
@@ -345,6 +351,9 @@ export class LacpAgent extends ReactiveAgentBase {
       });
       Logger.info(this.host.id, 'lacp:state',
         `${this.host.name}: ${p.portName} ${oldState} → ${p.state}`);
+    }
+    if (oldBundled !== p.bundled) {
+      this.host.onLacpBundleChanged?.(p.portName, `${p.groupId}`, p.bundled);
     }
     if (!oldBundled && p.bundled) {
       this.getBus().publish({
