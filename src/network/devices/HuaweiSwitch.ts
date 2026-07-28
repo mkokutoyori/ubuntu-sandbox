@@ -46,6 +46,7 @@ export class HuaweiSwitch extends Switch {
       onForwardStateChanged: (p, s, v) => this.applyStpForwardState(p, s, v),
       onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
       getStpPortVlans: (p) => this.getStpPortVlans(p),
+      getStpBundleGroup: (p) => this.getStpBundleGroup(p),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.igmpSnoopingAgent = new IgmpSnoopingAgent({
@@ -66,6 +67,21 @@ export class HuaweiSwitch extends Switch {
 
   private applyDot1xAuth(portName: string, authorized: boolean): void {
     if (!authorized) this.flushDynamicMacsOnPort(portName, 'dot1x-unauthorized');
+  }
+
+  /**
+   * The Eth-Trunk a port is currently bundled into. VRP runs STP on the
+   * trunk, not on its members, exactly as IOS does on a Port-channel.
+   */
+  private getStpBundleGroup(portName: string): { groupKey: string; members: string[] } | undefined {
+    const info = this.lacpAgent.getPortInfo(portName);
+    if (!info || !info.bundled) return undefined;
+    const members = this.lacpAgent.getGroupMembers(info.groupId)
+      .filter(p => p.bundled)
+      .map(p => p.portName)
+      .sort();
+    if (members.length === 0) return undefined;
+    return { groupKey: `Eth-Trunk${info.groupId}`, members };
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState, vlan: number): void {

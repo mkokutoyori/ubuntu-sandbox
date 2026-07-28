@@ -464,10 +464,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (cfg.errDisableRecoverySec <= 0) this.d()._setArpRecoverySec(30);
         return '';
       });
+    this.configTrie.registerGreedy('errdisable recovery cause bpduguard',
+      'Auto-recover BPDU Guard err-disabled ports', () => {
+        const sw = this.d();
+        if (sw._getBpduGuardRecoverySec?.() === 0) sw._setBpduGuardRecoverySec?.(30);
+        return '';
+      });
     this.configTrie.registerGreedy('errdisable recovery interval',
       'Auto-recovery interval (sec)', (args) => {
         const n = parseInt(args[0] ?? '', 10);
-        if (!isNaN(n) && n > 0) this.d()._setArpRecoverySec(n);
+        if (isNaN(n) || n <= 0) return '';
+        // IOS keeps one interval for every cause, not one per cause.
+        this.d()._setArpRecoverySec(n);
+        const sw = this.d();
+        if ((sw._getBpduGuardRecoverySec?.() ?? 0) > 0) sw._setBpduGuardRecoverySec?.(n);
         return '';
       });
 
@@ -976,7 +986,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       'Recover an err-disabled port', (args) => {
         const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
         const cleared = this.d()._clearArpInspectionErrDisable(portName)
-          || this.d()._clearPsecErrDisable(portName);
+          || this.d()._clearPsecErrDisable(portName)
+          || (this.d()._clearBpduGuardErrDisable?.(portName) ?? false);
         return cleared ? '' : '';
       });
   }
@@ -1424,8 +1435,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const isBpduGuard = head === 'bpduguard';
       const isBpduFilter = head === 'bpdufilter';
       const isPortFast = head === 'portfast';
+      // `spanning-tree cost 10` and `spanning-tree vlan 20 cost 10` are the
+      // same command with an optional instance selector in front.
+      const perVlan = head === 'vlan' ? parseInt(a[1], 10) : NaN;
+      const knob = Number.isNaN(perVlan) ? head : a[2];
+      const knobValue = parseInt(Number.isNaN(perVlan) ? a[1] : a[3], 10);
+      const vlanArg = Number.isNaN(perVlan) ? undefined : perVlan;
       for (const i of ifs) {
-        if (isPortFast) {
+        if (knob === 'cost' && !Number.isNaN(knobValue)) {
+          agent.setPortCost(i, knobValue, vlanArg);
+        } else if (knob === 'port-priority' && !Number.isNaN(knobValue)) {
+          agent.setPortPriority(i, knobValue, vlanArg);
+        } else if (isPortFast) {
           agent.setPortFast(i, a[1] !== 'disable');
         } else if (isBpduGuard) {
           agent.setPortBpduGuard(i, a[1] === 'enable');
@@ -1447,8 +1468,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         ? [this.selectedInterface] : this.selectedInterfaceRange;
       const a = args.map(s => s.toLowerCase());
       const agent = this.d().getStpAgent();
+      const noVlan = a[0] === 'vlan' ? parseInt(a[1], 10) : NaN;
+      const noKnob = Number.isNaN(noVlan) ? a[0] : a[2];
+      const noVlanArg = Number.isNaN(noVlan) ? undefined : noVlan;
       for (const i of ifs) {
-        if (a[0] === 'portfast') agent.setPortFast(i, false);
+        if (noKnob === 'cost') agent.setPortCost(i, null, noVlanArg);
+        else if (noKnob === 'port-priority') agent.setPortPriority(i, null, noVlanArg);
+        else if (a[0] === 'portfast') agent.setPortFast(i, false);
         else if (a[0] === 'bpduguard') agent.setPortBpduGuard(i, false);
         else if (a[0] === 'bpdufilter') agent.setPortBpduFilter(i, false);
         else if (a[0] === 'guard' && a[1] === 'loop') agent.setPortLoopGuard(i, false);
@@ -2798,6 +2824,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (sw._getPsecRecoverySec() > 0) {
       lines.push('errdisable recovery cause psecure-violation');
     }
+    if ((sw._getBpduGuardRecoverySec?.() ?? 0) > 0) {
+      lines.push('errdisable recovery cause bpduguard');
+    }
 
     const cdpAgent = (sw as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
     if (cdpAgent) for (const l of cdpAgent.runningConfigGlobalLines()) lines.push(l);
@@ -3240,7 +3269,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const rootPort = agent?.getRootPortForVlan(vlanId);
     const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const rootMacFmt = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
-    const rootPrio = (isRoot ? (agent?.getVlanPriority(vlanId) ?? 32768) : (root?.priority ?? 32768)) + vlanId;
+    const rootPrio = isRoot
+      ? (agent?.ownBridgeId(vlanId).priority ?? 32768 + vlanId)
+      : (root?.priority ?? 32768 + vlanId);
     const lines = [
       `VLAN${String(vlanId).padStart(4, '0')}`,
       '  Spanning tree enabled protocol ieee',
@@ -3311,7 +3342,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const rootPort = agent?.getRootPortForVlan(vlanId);
     const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const mac = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
-    const prio = (isRoot ? (agent?.getVlanPriority(vlanId) ?? 32768) : (root?.priority ?? 32768)) + vlanId;
+    const prio = isRoot
+      ? (agent?.ownBridgeId(vlanId).priority ?? 32768 + vlanId)
+      : (root?.priority ?? 32768 + vlanId);
     const hello = agent?.getVlanHelloSec(vlanId) ?? 2;
     const maxAge = agent?.getVlanMaxAgeSec(vlanId) ?? 20;
     const fwd = agent?.getVlanForwardDelaySec(vlanId) ?? 15;
@@ -3328,7 +3361,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const agent = this.stpAgentOf(sw);
     const own = agent?.ownBridgeId();
     const mac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
-    const prio = (agent?.getVlanPriority(vlanId) ?? 32768) + vlanId;
+    const prio = agent?.ownBridgeId(vlanId).priority ?? 32768 + vlanId;
     const hello = agent?.getVlanHelloSec(vlanId) ?? 2;
     const maxAge = agent?.getVlanMaxAgeSec(vlanId) ?? 20;
     const fwd = agent?.getVlanForwardDelaySec(vlanId) ?? 15;

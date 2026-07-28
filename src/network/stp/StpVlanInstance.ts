@@ -18,14 +18,17 @@ export interface StpInstanceAgent {
   scheduler(): IScheduler;
   getPort(name: string): Port | undefined;
   getPorts(): Port[];
+  stpLogicalPorts(): Array<{ key: string; port: Port }>;
   getMode(): StpProtocolMode;
   isEnabledStp(): boolean;
   forwardDelaySec(vlan: number): number;
   maxAgeSec(vlan: number): number;
   ownBridgeId(vlan: number): BridgeId;
-  costForPort(port: Port | undefined): number;
-  portIdFor(portName: string): number;
+  costForPort(port: Port | undefined, vlan?: number): number;
+  portIdFor(portName: string, vlan?: number): number;
   isRootInconsistent(portName: string): boolean;
+  clearRootInconsistent(portName: string): void;
+  getVlanHelloSec(vlan: number): number;
   isLoopGuardActive(portName: string): boolean;
   isLoopInconsistent(portName: string): boolean;
   setLoopInconsistent(portName: string, on: boolean): void;
@@ -84,6 +87,14 @@ export class StpVlanInstance {
     let expired = false;
     for (const [portName, info] of this.portInfo) {
       if (bridgeEquals(info.designatedBridge, own)) continue;
+      // Root Guard lifts itself once the superior BPDUs stop, well before
+      // the info ages out: IOS gives the port back after roughly two Hello
+      // times of silence. Without this the block is permanent and a lab
+      // can never show the recovery half of the scenario.
+      if (this.agent.isRootInconsistent(portName)
+          && nowMs - info.ageMs > this.agent.getVlanHelloSec(this.vlanId) * 2000) {
+        this.agent.clearRootInconsistent(portName);
+      }
       if (nowMs - info.ageMs <= this.agent.maxAgeSec(this.vlanId) * 1000) continue;
       if (info.role !== 'designated' && this.agent.isLoopGuardActive(portName)) {
         // Real IOS: without Loop Guard, a non-designated port that stops
@@ -149,8 +160,7 @@ export class StpVlanInstance {
     this.rootPathCost = bridgeEquals(bestRoot, own) ? 0 : bestCost;
     this.rootPort = bridgeEquals(bestRoot, own) ? null : bestPort;
 
-    for (const port of this.agent.getPorts()) {
-      const name = port.getName();
+    for (const { key: name, port } of this.agent.stpLogicalPorts()) {
       if (!port.getIsUp() || !port.isConnected()) continue;
       if (!this.agent.portCarriesVlan(name, this.vlanId)) continue;
       if (this.agent.isRootInconsistent(name)) { this.applyRole(name, 'alternate'); continue; }
@@ -164,7 +174,7 @@ export class StpVlanInstance {
       if (!info) { this.applyRole(name, 'designated'); continue; }
       const myAdvertised = {
         root: this.rootBridge, cost: this.rootPathCost,
-        bridge: own, port: this.agent.portIdFor(name),
+        bridge: own, port: this.agent.portIdFor(name, this.vlanId),
       };
       const theirs = {
         root: info.designatedRoot, cost: info.designatedCost,
@@ -200,7 +210,7 @@ export class StpVlanInstance {
     const sender = compareBridge(a.designatedBridge, b.designatedBridge);
     if (sender !== 0) return sender;
     if (a.designatedPort !== b.designatedPort) return a.designatedPort - b.designatedPort;
-    return this.agent.portIdFor(aPort) - this.agent.portIdFor(bPort);
+    return this.agent.portIdFor(aPort, this.vlanId) - this.agent.portIdFor(bPort, this.vlanId);
   }
 
   private bpduSuperiority(
@@ -220,11 +230,11 @@ export class StpVlanInstance {
     if (!info) {
       const port = this.agent.getPort(portName);
       info = {
-        role: 'disabled', cost: this.agent.costForPort(port),
+        role: 'disabled', cost: this.agent.costForPort(port, this.vlanId),
         designatedRoot: this.agent.ownBridgeId(this.vlanId),
         designatedBridge: this.agent.ownBridgeId(this.vlanId),
         designatedCost: 0,
-        designatedPort: this.agent.portIdFor(portName),
+        designatedPort: this.agent.portIdFor(portName, this.vlanId),
         ageMs: Date.now(),
       };
       this.portInfo.set(portName, info);
@@ -313,9 +323,9 @@ export class StpVlanInstance {
   }
 
   forceAll(state: StpForwardState): void {
-    for (const port of this.agent.getPorts()) {
-      if (!this.agent.portCarriesVlan(port.getName(), this.vlanId)) continue;
-      this.applyForwardState(port.getName(), state);
+    for (const { key } of this.agent.stpLogicalPorts()) {
+      if (!this.agent.portCarriesVlan(key, this.vlanId)) continue;
+      this.applyForwardState(key, state);
     }
   }
 }

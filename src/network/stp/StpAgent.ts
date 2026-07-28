@@ -4,7 +4,7 @@ import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type BridgeId, type StpBpdu, type StpConfig, type StpPortInfo, type StpPortRole,
   type StpPortGuards, type MstRegion,
-  createDefaultStpConfig, compareBridge, defaultPathCost, defaultPathCostLong,
+  createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost, defaultPathCostLong,
   defaultPortGuards, createDefaultMstRegion, parseStpVlanList,
   ETHERTYPE_STP, STP_BRIDGE_MAC, PVST_PLUS_MAC,
 } from './types';
@@ -28,6 +28,12 @@ export interface StpHost {
   /** Only real 802.1Q trunk ports get Cisco's PVST+ per-VLAN wire dressing (see `PVST_PLUS_MAC`); absent entirely on non-Cisco hosts. */
   isStpTrunkPort?(portName: string): boolean;
   getStpNativeVlan?(portName: string): number;
+  /**
+   * The LACP bundle a port belongs to, when it is currently bundled. STP
+   * runs on the aggregate, not on its members: a Port-channel is one
+   * logical link, and blocking half of it would be a bug, not a loop fix.
+   */
+  getStpBundleGroup?(portName: string): { groupKey: string; members: string[] } | undefined;
 }
 
 export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
@@ -73,11 +79,84 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   getHostname(): string { return this.host.getHostname(); }
   bus(): IEventBus { return this.getBus(); }
   scheduler(): IScheduler { return this.getScheduler(); }
-  getPort(name: string): import('../hardware/Port').Port | undefined { return this.host.getPort(name); }
+  /**
+   * The name STP knows a port by: its bundle key when the port is
+   * currently aggregated, its own name otherwise. Every map in the agent
+   * and in the instances is keyed by this, so an aggregate elects, blocks
+   * and forwards as the single link it physically is.
+   */
+  stpKey(portName: string): string {
+    return this.host.getStpBundleGroup?.(portName)?.groupKey ?? portName;
+  }
+
+  /** The physical ports behind an STP-level name. */
+  stpMembers(key: string): string[] {
+    for (const port of this.host.getPorts()) {
+      const group = this.host.getStpBundleGroup?.(port.getName());
+      if (group?.groupKey === key) return group.members;
+    }
+    return [key];
+  }
+
+  /**
+   * The member a bundle actually transmits through: the first one still up
+   * and cabled. A logical name is never handed to `sendFrame` — only real
+   * ports carry frames.
+   */
+  private txMemberFor(key: string): string {
+    if (this.host.getPort(key)) return key;
+    const members = this.stpMembers(key);
+    const live = members.find(m => {
+      const p = this.host.getPort(m);
+      return !!p && p.getIsUp() && p.isConnected();
+    });
+    return live ?? members[0] ?? key;
+  }
+
+  /** One representative port per STP-level name, in physical port order. */
+  stpLogicalPorts(): Array<{ key: string; port: import('../hardware/Port').Port }> {
+    const seen = new Set<string>();
+    const out: Array<{ key: string; port: import('../hardware/Port').Port }> = [];
+    for (const port of this.host.getPorts()) {
+      const key = this.stpKey(port.getName());
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, port });
+    }
+    return out;
+  }
+
+  /**
+   * Resolves an STP-level name to a real port — a bundle key resolves to
+   * its first member, which is what keeps every name-keyed lookup in the
+   * instances working unchanged.
+   */
+  getPort(name: string): import('../hardware/Port').Port | undefined {
+    const direct = this.host.getPort(name);
+    if (direct) return direct;
+    const members = this.stpMembers(name);
+    return members[0] === name ? undefined : this.host.getPort(members[0]);
+  }
   getPorts(): import('../hardware/Port').Port[] { return this.host.getPorts(); }
   isEnabledStp(): boolean { return this.config.enabled; }
-  forwardDelaySec(vlan: number): number { return this.getVlanForwardDelaySec(vlan); }
-  maxAgeSec(vlan: number): number { return this.getVlanMaxAgeSec(vlan); }
+  /**
+   * 802.1D: only the root's timers are in force. A bridge that is not the
+   * root runs on the values it heard on its root port, falling back to its
+   * own configuration when it is the root or has heard nothing yet.
+   */
+  private rootPortTimers(key: number): StpPortInfo | null {
+    const inst = this.instances.get(key);
+    if (!inst || inst.isRoot()) return null;
+    const rootPort = inst.getRootPort();
+    return rootPort ? inst.portInfo.get(rootPort) ?? null : null;
+  }
+
+  forwardDelaySec(vlan: number): number {
+    return this.rootPortTimers(vlan)?.forwardDelaySec ?? this.getVlanForwardDelaySec(vlan);
+  }
+  maxAgeSec(vlan: number): number {
+    return this.rootPortTimers(vlan)?.maxAgeSec ?? this.getVlanMaxAgeSec(vlan);
+  }
   isRootInconsistent(portName: string): boolean { return this.rootInconsistent.has(portName); }
   isLoopInconsistent(portName: string): boolean { return this.loopInconsistent.has(portName); }
 
@@ -114,8 +193,12 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     // Fan out to every real VLAN this instance carries — the data plane
     // gates forwarding per actual 802.1Q VLAN, not per (simulator-internal)
     // instance key, and several VLANs can share one MSTI's fate.
+    // The data plane is still per physical port: a bundle's STP verdict
+    // has to reach every member, or half the aggregate stays blocked.
     for (const vlan of this.vlansForInstanceKey(key)) {
-      this.host.onForwardStateChanged(portName, state, vlan);
+      for (const member of this.stpMembers(portName)) {
+        this.host.onForwardStateChanged(member, state, vlan);
+      }
     }
   }
   onInstanceTopologyChange(_vlan: number): void { this.notifyTopologyChange(); }
@@ -254,12 +337,26 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   getRootPort(): string | null { return this.cst().getRootPort(); }
   getRootPathCost(): number { return this.cst().getRootPathCost(); }
   isRoot(): boolean { return this.cst().isRoot(); }
+  /**
+   * The Extended System ID (802.1t): the VLAN — or the MSTI — lives in the
+   * low 12 bits of the priority, which is why a configured priority is
+   * always a multiple of 4096. Carrying it here means the value compared by
+   * the election, the value put on the wire and the value `show
+   * spanning-tree` prints are one and the same.
+   */
   ownBridgeId(key = this.cstKey()): BridgeId {
-    const priority = this.config.mode === 'mstp'
+    const configured = this.config.mode === 'mstp'
       ? this.getMstInstancePriority(key)
       : this.getVlanPriority(key);
-    return { priority, mac: this.config.baseMac };
+    return { priority: configured + this.extendedSystemId(key), mac: this.config.baseMac };
   }
+
+  /**
+   * The instance number carried in the low 12 bits of a bridge priority.
+   * VRP prints the configured priority instead, so its `display stp` takes
+   * this back off rather than keeping a second copy of the arithmetic.
+   */
+  extendedSystemId(key = this.cstKey()): number { return key & 0xfff; }
 
   getPortRole(portName: string): StpPortRole { return this.cst().getPortRole(portName); }
 
@@ -267,8 +364,59 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     return this.getPortCostForInstance(this.cstKey(), portName);
   }
 
-  costForPort(port: import('../hardware/Port').Port | undefined): number {
-    const kbps = (port?.getSpeed() ?? 0) * 1000;
+  /**
+   * `spanning-tree [vlan <v>] cost <n>` / `port-priority <n>`. An operator
+   * value wins over the speed-derived one; a per-VLAN value wins over the
+   * port-wide one. Absent both, nothing changes from the auto behaviour.
+   */
+  private readonly portCostOverride = new Map<string, number>();
+  private readonly portPriorityOverride = new Map<string, number>();
+
+  private overrideOf(map: Map<string, number>, portName: string, vlan?: number): number | undefined {
+    if (vlan !== undefined) {
+      const perVlan = map.get(`${vlan}:${portName}`);
+      if (perVlan !== undefined) return perVlan;
+    }
+    return map.get(portName);
+  }
+
+  setPortCost(portName: string, cost: number | null, vlan?: number): void {
+    const key = vlan === undefined ? portName : `${vlan}:${portName}`;
+    if (cost === null) this.portCostOverride.delete(key);
+    else this.portCostOverride.set(key, cost);
+    this.recomputeOnTopologyChange();
+  }
+
+  setPortPriority(portName: string, priority: number | null, vlan?: number): void {
+    const key = vlan === undefined ? portName : `${vlan}:${portName}`;
+    if (priority === null) this.portPriorityOverride.delete(key);
+    // Real IOS rounds port-priority down to the nearest multiple of 16.
+    else this.portPriorityOverride.set(key, Math.floor(priority / 16) * 16);
+    this.recomputeOnTopologyChange();
+  }
+
+  getPortCostOverride(portName: string, vlan?: number): number | undefined {
+    return this.overrideOf(this.portCostOverride, portName, vlan);
+  }
+  getPortPriorityOverride(portName: string, vlan?: number): number | undefined {
+    return this.overrideOf(this.portPriorityOverride, portName, vlan);
+  }
+
+  costForPort(port: import('../hardware/Port').Port | undefined, vlan?: number): number {
+    const name = port?.getName();
+    if (name !== undefined) {
+      const key = this.stpKey(name);
+      const override = this.overrideOf(this.portCostOverride, key, vlan)
+        ?? this.overrideOf(this.portCostOverride, name, vlan);
+      if (override !== undefined) return override;
+    }
+    // A bundle's cost comes from the bandwidth it actually aggregates, so
+    // adding a second member really does make the aggregate cheaper.
+    const bundle = name !== undefined ? this.host.getStpBundleGroup?.(name) : undefined;
+    const speed = bundle
+      ? bundle.members.reduce((sum, m) => sum + (this.host.getPort(m)?.getSpeed() ?? 0), 0)
+      : (port?.getSpeed() ?? 0);
+    const kbps = speed * 1000;
     return this.pathcostMethod === 'long' ? defaultPathCostLong(kbps) : defaultPathCost(kbps);
   }
 
@@ -523,12 +671,14 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     return out;
   }
 
-  handleFrame(portName: string, frame: EthernetFrame): void {
+  handleFrame(physicalPort: string, frame: EthernetFrame): void {
     if (!this.config.enabled) return;
     const payload = frame.payload as StpBpdu | undefined;
     if (!payload || payload.type !== 'stp') return;
-    const port = this.host.getPort(portName);
+    const port = this.host.getPort(physicalPort);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
+    // A BPDU heard on any member is a BPDU heard by the aggregate.
+    const portName = this.stpKey(physicalPort);
     // Hard `bpdufilter enable`: the port drops every BPDU it receives, full
     // stop — unlike the portfast-driven "default" mode, there is no
     // automatic recovery baked into this override in real IOS either.
@@ -572,6 +722,14 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
 
     const key = payload.vlan ?? 1;
     const inst = this.instanceForKey(key);
+    // 802.1D: a BPDU whose Message Age has already reached Max Age is past
+    // its useful life and is discarded rather than acted on — this is what
+    // caps the network diameter a given Max Age can support.
+    if (payload.messageAgeSec >= this.maxAgeSec(key)) {
+      Logger.info(this.host.id, 'stp:message-age',
+        `${this.host.name}: BPDU on ${portName} discarded, message age ${payload.messageAgeSec}s reached max age ${this.maxAgeSec(key)}s`);
+      return;
+    }
     this.getBus().publish({
       topic: 'stp.bpdu.received',
       payload: {
@@ -581,6 +739,24 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
         rootMac: payload.rootBridge.mac,
       },
     });
+    // BackboneFast: an inferior BPDU from the same neighbour means that
+    // neighbour has lost its own path to the root — an indirect link
+    // failure. Without it the port sits on stale information until Max Age
+    // runs out; with it, the information is dropped now and the election
+    // reruns immediately, which is the whole point of the feature.
+    const previous = inst.portInfo.get(portName);
+    if (this.config.backboneFast && previous
+        && bridgeEquals(previous.designatedBridge, payload.senderBridge)
+        && compareBridge(payload.rootBridge, previous.designatedRoot) > 0) {
+      const role = previous.role;
+      if (role === 'root' || role === 'alternate' || role === 'backup') {
+        Logger.info(this.host.id, 'stp:backbonefast',
+          `${this.host.name}: BackboneFast — inferior BPDU on ${portName}, skipping max age`);
+        inst.portInfo.delete(portName);
+        inst.runElection();
+      }
+    }
+
     const cost = this.costForPort(port);
     const info: StpPortInfo = {
       role: 'disabled',
@@ -590,6 +766,10 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       designatedCost: payload.rootPathCost,
       designatedPort: payload.portId,
       ageMs: Date.now(),
+      helloSec: payload.helloSec,
+      maxAgeSec: payload.maxAgeSec,
+      forwardDelaySec: payload.forwardDelaySec,
+      messageAgeSec: payload.messageAgeSec,
     };
     inst.setPortInfo(portName, info);
     // A BPDU arrived on this port again — whatever kept it loop-inconsistent
@@ -736,7 +916,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       topologyChange: false,
       topologyChangeAck: false,
     };
-    this.host.sendFrame(portName, {
+    this.host.sendFrame(this.txMemberFor(portName), {
       srcMAC: port.getMAC(),
       dstMAC: new MACAddress(STP_BRIDGE_MAC),
       etherType: ETHERTYPE_STP,
@@ -762,8 +942,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   emitBpduOnAllPorts(): void {
     if (!this.config.enabled) return;
     this.ensurePortInstances();
-    for (const port of this.host.getPorts()) {
-      const name = port.getName();
+    // One BPDU per logical port: a bundle speaks once, through whichever
+    // member is up, not once per member.
+    for (const { key: name, port } of this.stpLogicalPorts()) {
       if (!port.getIsUp() || !port.isConnected()) continue;
       const keys = new Set(this.portVlans(name).map(v => this.instanceKeyForVlan(v)));
       for (const key of keys) {
@@ -800,11 +981,14 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       rootBridge: inst.getRootBridge(),
       rootPathCost: inst.getRootPathCost(),
       senderBridge: this.ownBridgeId(key),
-      portId: this.portIdFor(portName),
-      messageAgeSec: 0,
-      maxAgeSec: this.config.maxAgeSec,
-      helloSec: this.config.helloSec,
-      forwardDelaySec: this.config.forwardDelaySec,
+      portId: this.portIdFor(portName, key),
+      // The root originates at 0; every bridge that relays the root's BPDU
+      // adds a hop, and the timers relayed are the root's, not this
+      // bridge's own configuration.
+      messageAgeSec: inst.isRoot() ? 0 : (this.rootPortTimers(key)?.messageAgeSec ?? 0) + 1,
+      maxAgeSec: this.maxAgeSec(key),
+      helloSec: this.rootPortTimers(key)?.helloSec ?? this.getVlanHelloSec(key),
+      forwardDelaySec: this.forwardDelaySec(key),
       topologyChange: this.tcFlagActive,
       topologyChangeAck: this.pendingTcAck.delete(adKey),
     };
@@ -828,7 +1012,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (pvstPlus) frame.dot1q = { tpid: 0x8100, pcp: 0, dei: 0, vid: key };
     this.advertising.add(adKey);
     this.bpduSentCounts.set(portName, (this.bpduSentCounts.get(portName) ?? 0) + 1);
-    try { this.host.sendFrame(portName, frame); }
+    try { this.host.sendFrame(this.txMemberFor(portName), frame); }
     finally { this.advertising.delete(adKey); }
     this.getBus().publish({
       topic: 'stp.bpdu.sent',
@@ -841,9 +1025,11 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     });
   }
 
-  portIdFor(portName: string): number {
-    const idx = this.host.getPorts().findIndex(p => p.getName() === portName);
-    return (0x80 << 8) | (idx & 0xff);
+  portIdFor(portName: string, vlan?: number): number {
+    const member = this.stpMembers(portName)[0] ?? portName;
+    const idx = this.host.getPorts().findIndex(p => p.getName() === member);
+    const priority = this.overrideOf(this.portPriorityOverride, portName, vlan) ?? 0x80;
+    return ((priority & 0xff) << 8) | (idx & 0xff);
   }
 
   portNumberFor(portName: string): number {

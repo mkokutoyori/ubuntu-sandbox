@@ -2250,7 +2250,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
       const a = args.map(s => s.toLowerCase());
       if (a.length === 0) return 'Error: Incomplete command.';
-      const valid = new Set(['edged-port', 'bpdu-protection', 'cost',
+      const valid = new Set(['edged-port', 'bpdu-protection', 'cost', 'instance',
         'port', 'disable', 'enable', 'bpdu-filter', 'loop-protection',
         'root-protection', 'tc-restriction']);
       if (!valid.has(a[0])) {
@@ -2277,6 +2277,20 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.applyToStpAgent(ag => ag.setPortRootGuard(port, true));
       } else if (a[0] === 'loop-protection') {
         this.applyToStpAgent(ag => ag.setPortLoopGuard(port, true));
+      } else if (a[0] === 'cost') {
+        // `stp [instance <n>] cost <m>` — VRP's spelling of the same knob
+        // Cisco writes `spanning-tree [vlan <v>] cost <m>`.
+        const cost = parseInt(a[1], 10);
+        if (!Number.isNaN(cost)) this.applyToStpAgent(ag => ag.setPortCost(port, cost));
+      } else if (a[0] === 'instance' && a[2] === 'cost') {
+        const inst = parseInt(a[1], 10);
+        const cost = parseInt(a[3], 10);
+        if (!Number.isNaN(inst) && !Number.isNaN(cost)) {
+          this.applyToStpAgent(ag => ag.setPortCost(port, cost, inst));
+        }
+      } else if (a[0] === 'port' && a[1] === 'priority') {
+        const priority = parseInt(a[2], 10);
+        if (!Number.isNaN(priority)) this.applyToStpAgent(ag => ag.setPortPriority(port, priority));
       }
       return '';
     });
@@ -2485,10 +2499,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const maxAgeSec = cfg?.maxAgeSec ?? 20;
     const fwDelaySec = cfg?.forwardDelaySec ?? 15;
     const rootCost = ag?.getRootPathCost() ?? 0;
-    const localPrio = own?.priority ?? this.stp.priority;
+    // VRP prints the configured priority: unlike Cisco's per-VLAN trees,
+    // MSTP has one CIST, so there is no instance number folded into the
+    // low bits to show. The engine carries it (802.1t, for the election
+    // and the wire); this view takes it back off.
+    const extId = ag?.extendedSystemId() ?? 0;
+    const localPrio = (own?.priority ?? this.stp.priority) - (own ? extId : 0);
     const localMacFmt = this.toHuaweiMac(own?.mac);
     const rootMacFmt = root ? this.toHuaweiMac(root.mac) : localMacFmt;
-    const rootPrio = root?.priority ?? localPrio;
+    const rootPrio = root ? root.priority - extId : localPrio;
     const portNames = this.swRef?.getPortNames() ?? [];
     const rootPortIdx = rootPort ? portNames.indexOf(rootPort) : -1;
     const rootPortId = rootPortIdx >= 0 ? `${rootPortIdx + 1}.${rootPortIdx + 1}` : '0.0';

@@ -180,6 +180,8 @@ function makeInstanceAgent() {
     }) as unknown as ReturnType<StpInstanceAgent['scheduler']>,
     getPort: (n) => ports.get(n),
     getPorts: () => [...ports.values()],
+    // No LACP here: every port is its own STP-level port.
+    stpLogicalPorts: () => [...ports.entries()].map(([key, port]) => ({ key, port })),
     getMode: () => 'rstp',
     isEnabledStp: () => true,
     forwardDelaySec: () => 15,
@@ -188,6 +190,8 @@ function makeInstanceAgent() {
     costForPort: () => 19,
     portIdFor: (n) => (n === 'p1' ? 0x8001 : 0x8002),
     isRootInconsistent: () => false,
+    clearRootInconsistent: () => {},
+    getVlanHelloSec: () => 2,
     isLoopGuardActive: (n) => loopGuardPorts.has(n),
     isLoopInconsistent: (n) => loopInconsistent.has(n),
     setLoopInconsistent: (n, on) => { if (on) loopInconsistent.add(n); else loopInconsistent.delete(n); },

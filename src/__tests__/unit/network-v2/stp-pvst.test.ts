@@ -61,12 +61,14 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
 
     expect(a.isRootForVlan(10)).toBe(true);
     expect(b.isRootForVlan(10)).toBe(false);
-    expect(b.getRootBridgeForVlan(10).priority).toBe(4096);
+    // 802.1t extended system ID: priority 4096 on VLAN 10 is a bridge ID
+    // priority of 4106, which is what a real Catalyst advertises.
+    expect(b.getRootBridgeForVlan(10).priority).toBe(4106);
     expect(b.getRootPortForVlan(10)).toBe('FastEthernet0/1');
 
     expect(b.isRootForVlan(20)).toBe(true);
     expect(a.isRootForVlan(20)).toBe(false);
-    expect(a.getRootBridgeForVlan(20).priority).toBe(4096);
+    expect(a.getRootBridgeForVlan(20).priority).toBe(4116);
     expect(a.getRootPortForVlan(20)).toBe('FastEthernet0/1');
   });
 

@@ -2281,7 +2281,7 @@ export abstract class Switch extends Equipment {
     if (wasRunning) this.startMACAgingProcess();
   }
 
-  private getScheduler(): IScheduler {
+  protected getScheduler(): IScheduler {
     return this.schedulerOverride ?? getDefaultScheduler();
   }
 

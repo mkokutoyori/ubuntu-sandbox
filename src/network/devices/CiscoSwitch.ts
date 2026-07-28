@@ -38,6 +38,8 @@ import { Dot1xAgent } from '../dot1x/Dot1xAgent';
 import { ETHERTYPE_EAPOL } from '../dot1x/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
+import type { TimerHandle } from '@/events/Scheduler';
+import { Logger } from '../core/Logger';
 import { SwitchDebugService } from './switch/SwitchDebugService';
 
 export class CiscoSwitch extends Switch {
@@ -85,6 +87,7 @@ export class CiscoSwitch extends Switch {
       getStpPortVlans: (p) => this.getStpPortVlans(p),
       isStpTrunkPort: (p) => this._vtpIsTrunkPort(p),
       getStpNativeVlan: (p) => this.getSwitchportConfig(p)?.trunkNativeVlan ?? 1,
+      getStpBundleGroup: (p) => this.getStpBundleGroup(p),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.vtpAgent = new VtpAgent({
@@ -161,10 +164,102 @@ export class CiscoSwitch extends Switch {
     this.setStpVlanState(portName, vlan, state);
   }
 
+  /**
+   * The Port-channel a port is currently bundled into, if any. Only ports
+   * LACP has actually brought up count: a member still negotiating is not
+   * part of the aggregate yet and keeps running STP on its own.
+   */
+  private getStpBundleGroup(portName: string): { groupKey: string; members: string[] } | undefined {
+    const info = this.lacpAgent.getPortInfo(portName);
+    if (!info || !info.bundled) return undefined;
+    const members = this.lacpAgent.getGroupMembers(info.groupId)
+      .filter(p => p.bundled)
+      .map(p => p.portName)
+      .sort();
+    if (members.length === 0) return undefined;
+    return { groupKey: `Port-channel${info.groupId}`, members };
+  }
+
+  /**
+   * `errdisable recovery cause bpduguard`. A port BPDU Guard shut has to be
+   * able to come back on its own like every other err-disable cause, and
+   * the log has to say which cause it was — a bare port-down tells the
+   * operator nothing.
+   */
+  private readonly bpduGuardErrDisabled = new Map<string, number>();
+  private bpduGuardRecoverySec = 0;
+  private bpduGuardRecoveryTimer: TimerHandle | null = null;
+
   private applyStpBpduGuardErrDisable(portName: string): void {
     const p = this.getPort(portName);
     if (p) p.setUp(false);
     this.setSTPState(portName, 'disabled');
+    this.bpduGuardErrDisabled.set(portName, Date.now());
+    Logger.warn(this.id, 'stp:bpduguard',
+      `${this.name}: bpduguard error detected on ${portName}, putting ${portName} in err-disable state`);
+    this.getBus().publish({
+      topic: 'stp.errdisable.changed',
+      payload: {
+        deviceId: this.id, hostname: this.getHostname(),
+        port: portName, cause: 'bpduguard', state: 'err-disabled',
+      },
+    });
+    this.ensureBpduGuardRecoveryTimer();
+  }
+
+  _getBpduGuardRecoverySec(): number { return this.bpduGuardRecoverySec; }
+
+  _setBpduGuardRecoverySec(sec: number): void {
+    this.bpduGuardRecoverySec = Math.max(0, sec);
+    if (this.bpduGuardRecoverySec > 0) this.ensureBpduGuardRecoveryTimer();
+    else this.stopBpduGuardRecoveryTimer();
+  }
+
+  _getBpduGuardErrDisabledPorts(): Set<string> {
+    return new Set(this.bpduGuardErrDisabled.keys());
+  }
+
+  _clearBpduGuardErrDisable(portName: string): boolean {
+    if (!this.bpduGuardErrDisabled.delete(portName)) return false;
+    const p = this.getPort(portName);
+    if (p) p.setUp(true);
+    Logger.info(this.id, 'stp:bpduguard',
+      `${this.name}: Attempting to recover from bpduguard err-disable state on ${portName}`);
+    this.getBus().publish({
+      topic: 'stp.errdisable.changed',
+      payload: {
+        deviceId: this.id, hostname: this.getHostname(),
+        port: portName, cause: 'bpduguard', state: 'recovered',
+      },
+    });
+    if (this.bpduGuardErrDisabled.size === 0) this.stopBpduGuardRecoveryTimer();
+    return true;
+  }
+
+  private ensureBpduGuardRecoveryTimer(): void {
+    if (this.bpduGuardRecoveryTimer !== null) return;
+    if (this.bpduGuardRecoverySec <= 0 || this.bpduGuardErrDisabled.size === 0) return;
+    this.bpduGuardRecoveryTimer = this.getScheduler()
+      .setInterval(() => this.recoverBpduGuardErrDisabled(), 1000);
+  }
+
+  private stopBpduGuardRecoveryTimer(): void {
+    if (this.bpduGuardRecoveryTimer === null) return;
+    this.getScheduler().clear(this.bpduGuardRecoveryTimer);
+    this.bpduGuardRecoveryTimer = null;
+  }
+
+  private recoverBpduGuardErrDisabled(): void {
+    if (this.bpduGuardRecoverySec <= 0 || this.bpduGuardErrDisabled.size === 0) {
+      this.stopBpduGuardRecoveryTimer();
+      return;
+    }
+    const now = Date.now();
+    for (const [portName, since] of [...this.bpduGuardErrDisabled]) {
+      if ((now - since) / 1000 >= this.bpduGuardRecoverySec) {
+        this._clearBpduGuardErrDisable(portName);
+      }
+    }
   }
 
   override setEventBus(bus: IEventBus | null): void {

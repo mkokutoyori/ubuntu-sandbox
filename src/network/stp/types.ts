@@ -133,6 +133,16 @@ export interface StpPortInfo {
   designatedCost: number;
   designatedPort: number;
   ageMs: number;
+  /**
+   * Timers as advertised by whoever sent this BPDU. A non-root bridge runs
+   * on the root's values, not on its own — that is what makes a Max Age or
+   * Forward Delay set on the root take effect network-wide.
+   */
+  helloSec?: number;
+  maxAgeSec?: number;
+  forwardDelaySec?: number;
+  /** Message Age carried by the BPDU, incremented at each relay. */
+  messageAgeSec?: number;
 }
 
 export function createDefaultStpConfig(baseMac: string): StpConfig {

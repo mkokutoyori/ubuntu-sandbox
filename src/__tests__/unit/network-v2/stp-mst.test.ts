@@ -81,7 +81,9 @@ describe('MSTP — independent CIST + MSTI election (Cisco)', () => {
     // same physical port, which is only possible with independent MSTIs.
     expect(b.isRootForInstance(1)).toBe(true);
     expect(a.isRootForInstance(1)).toBe(false);
-    expect(b.getRootBridgeForInstance(1).priority).toBe(0);
+    // 802.1t: the instance number lives in the low 12 bits of the
+    // priority, so MSTI 1 at priority 0 is a bridge ID priority of 1.
+    expect(b.getRootBridgeForInstance(1).priority).toBe(1);
     expect(a.getRootPortForInstance(1)).toBe('FastEthernet0/1');
     expect(a.getPortRoleForInstance(1, 'FastEthernet0/1')).toBe('root');
     expect(b.getPortRoleForInstance(1, 'FastEthernet0/1')).toBe('designated');

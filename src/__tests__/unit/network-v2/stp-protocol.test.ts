@@ -68,7 +68,8 @@ describe('STP — root election across a cable', () => {
     const loserStp = loser.getStpAgent();
     expect(winnerStp.isRoot()).toBe(true);
     expect(loserStp.isRoot()).toBe(false);
-    expect(loserStp.getRootBridge().priority).toBe(4096);
+    // 802.1t: `priority 4096` on VLAN 1 is a bridge ID priority of 4097.
+    expect(loserStp.getRootBridge().priority).toBe(4097);
     expect(loserStp.getRootPort()).toBe('FastEthernet0/1');
   });
 
@@ -286,11 +287,16 @@ describe('STP — 802.1D listening/learning transitions', () => {
   });
 
   it('honors a non-default forward-time during reconvergence', async () => {
-    const { other, blockedPort, rootPort } = await buildRedundantPair();
-    await other.executeCommand('enable');
-    await other.executeCommand('configure terminal');
-    await other.executeCommand('spanning-tree vlan 1 forward-time 4');
-    await other.executeCommand('end');
+    const { root, other, blockedPort, rootPort } = await buildRedundantPair();
+    // 802.1D: only the root's timers are in force. Setting forward-time on
+    // the non-root bridge is the classic no-op; it has to come from the
+    // root and reach the other bridge through its BPDUs.
+    await root.executeCommand('enable');
+    await root.executeCommand('configure terminal');
+    await root.executeCommand('spanning-tree vlan 1 forward-time 4');
+    await root.executeCommand('end');
+    // The new timer reaches the other bridge on the root's next Hello.
+    vts.advance(2_000);
 
     other.getPort(rootPort)!.setUp(false);
 
