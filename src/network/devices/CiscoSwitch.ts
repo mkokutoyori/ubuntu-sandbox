@@ -194,7 +194,7 @@ export class CiscoSwitch extends Switch {
     const p = this.getPort(portName);
     if (p) p.setUp(false);
     this.setSTPState(portName, 'disabled');
-    this.bpduGuardErrDisabled.set(portName, Date.now());
+    this.bpduGuardErrDisabled.set(portName, this.stpAgent.nowMs());
     Logger.warn(this.id, 'stp:bpduguard',
       `${this.name}: bpduguard error detected on ${portName}, putting ${portName} in err-disable state`);
     this.getBus().publish({
@@ -254,7 +254,7 @@ export class CiscoSwitch extends Switch {
       this.stopBpduGuardRecoveryTimer();
       return;
     }
-    const now = Date.now();
+    const now = this.stpAgent.nowMs();
     for (const [portName, since] of [...this.bpduGuardErrDisabled]) {
       if ((now - since) / 1000 >= this.bpduGuardRecoverySec) {
         this._clearBpduGuardErrDisable(portName);

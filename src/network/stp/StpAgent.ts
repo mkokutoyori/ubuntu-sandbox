@@ -765,7 +765,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       designatedBridge: { ...payload.senderBridge },
       designatedCost: payload.rootPathCost,
       designatedPort: payload.portId,
-      ageMs: Date.now(),
+      ageMs: this.nowMs(),
       helloSec: payload.helloSec,
       maxAgeSec: payload.maxAgeSec,
       forwardDelaySec: payload.forwardDelaySec,
@@ -1048,9 +1048,17 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     this.scheduleInterval('info-age', () => this.expireStaleBpduInfo(), 1_000);
   }
 
+  /**
+   * The clock STP ages against. It has to be the scheduler's, not the wall
+   * clock: the timers that drive ageing and err-disable recovery run on the
+   * injected scheduler, and under a virtual one wall time never moves — so
+   * a `Date.now()` stamp compared on a scheduler tick never elapses.
+   */
+  nowMs(): number { return this.getScheduler().now(); }
+
   private expireStaleBpduInfo(): void {
     if (!this.config.enabled) return;
-    const now = Date.now();
+    const now = this.nowMs();
     for (const inst of this.instances.values()) inst.expireStaleBpduInfo(now);
   }
 
@@ -1062,6 +1070,10 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     const portFast = this.isPortFastOperational(portName);
     this.portFastLost.delete(portName);
     this.loopInconsistent.delete(portName);
+    // A port that is down carries no superior BPDU any more, so Root Guard
+    // has nothing left to justify it. Without this the flag outlives the
+    // BPDU info the ageing loop needs, and the port stays blocked forever.
+    this.clearRootInconsistent(portName);
     let wasActive = false;
     for (const [, inst] of this.instances) {
       const wasRootPort = inst.getRootPort() === portName;

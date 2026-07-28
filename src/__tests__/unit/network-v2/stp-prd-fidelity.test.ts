@@ -121,18 +121,29 @@ describe('P3 — Root Guard is reversible', () => {
       'a superior BPDU on a root-guarded port blocks it',
     ).toBe(true);
 
-    // The release path itself: `clearRootInconsistent` really does give the
-    // port back and rerun the election.
-    victim.getStpAgent().clearRootInconsistent('FastEthernet0/1');
-    expect(victim.getStpAgent().isRootInconsistent('FastEthernet0/1')).toBe(false);
+    // The attacker is unplugged: nothing superior arrives any more, so the
+    // guard has nothing left to justify it.
+    victim.getPort('FastEthernet0/1')!.getCable()!.disconnect();
+    expect(
+      victim.getStpAgent().isRootInconsistent('FastEthernet0/1'),
+      'without this the port stays blocked for the rest of the lab',
+    ).toBe(false);
   });
 
-  // Not asserted here, and not delivered: the release driven purely by
-  // ageing. `expireStaleBpduInfo` now calls `clearRootInconsistent` after
-  // two Hello times of silence, but the only way a lab stops hearing the
-  // attacker is for its port to go down — and the link-down path forgets
-  // the port's BPDU info without ever reaching that loop, so the flag
-  // survives. Clearing the guard state on link-down is the missing half.
+  it('a neighbour that goes quiet on a live link releases it too', async () => {
+    const attacker = new CiscoSwitch('switch-cisco', 'SW-ATTACK', 4);
+    const victim = new CiscoSwitch('switch-cisco', 'SW-VICTIM', 4);
+    await cfg(attacker, ['spanning-tree vlan 1 priority 0']);
+    await cfg(victim, ['interface FastEthernet0/1', 'spanning-tree guard root']);
+    new Cable('c').connect(attacker.getPort('FastEthernet0/1')!, victim.getPort('FastEthernet0/1')!);
+    expect(victim.getStpAgent().isRootInconsistent('FastEthernet0/1')).toBe(true);
+
+    // The cable stays in; the attacker just stops sending. Two Hello times
+    // of silence is what IOS waits for before giving the port back.
+    await cfg(attacker, ['no spanning-tree vlan 1']);
+    vts.advance(6_000);
+    expect(victim.getStpAgent().isRootInconsistent('FastEthernet0/1')).toBe(false);
+  });
 });
 
 describe('P7 — errdisable recovery cause bpduguard', () => {
@@ -143,12 +154,29 @@ describe('P7 — errdisable recovery cause bpduguard', () => {
       .toContain('errdisable recovery cause bpduguard');
   });
 
-  // Not asserted here, and not delivered: the automatic re-enable itself.
-  // The CLI, the timer and `_clearBpduGuardErrDisable` are in place, but in
-  // a real BPDU-Guard trip the port comes down without
-  // `applyStpBpduGuardErrDisable` having recorded it, so the recovery timer
-  // has nothing to work on. Finding which path actually downs the port is
-  // what remains.
+  it('stays down without the cause, comes back with it', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
+    const talker = new CiscoSwitch('switch-cisco', 'SW-TALKER', 4);
+    await cfg(sw, [
+      'interface FastEthernet0/1', 'spanning-tree portfast',
+      'spanning-tree bpduguard enable',
+    ]);
+    new Cable('c').connect(talker.getPort('FastEthernet0/1')!, sw.getPort('FastEthernet0/1')!);
+
+    expect(sw.getPort('FastEthernet0/1')!.getIsUp()).toBe(false);
+    expect(sw._getBpduGuardErrDisabledPorts().has('FastEthernet0/1')).toBe(true);
+
+    vts.advance(60_000);
+    expect(
+      sw.getPort('FastEthernet0/1')!.getIsUp(),
+      'with no recovery cause configured, IOS leaves it err-disabled',
+    ).toBe(false);
+
+    await cfg(sw, ['errdisable recovery cause bpduguard', 'errdisable recovery interval 30']);
+    vts.advance(31_000);
+    expect(sw.getPort('FastEthernet0/1')!.getIsUp()).toBe(true);
+    expect(sw._getBpduGuardErrDisabledPorts().size).toBe(0);
+  });
 });
 
 describe('P2 — the root owns the timers', () => {
