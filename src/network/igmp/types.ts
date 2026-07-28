@@ -22,13 +22,36 @@ export interface IgmpPacket extends NetworkPdu {
 
 export type IgmpInterfaceState = 'querier' | 'non-querier' | 'startup';
 
+/**
+ * How a membership got into the table. `dynamic` came from a host's
+ * Report and ages out; the two configured origins are operator-created
+ * and never expire (`ip igmp join-group` / `ip igmp static-group`).
+ */
+export type IgmpGroupOrigin = 'dynamic' | 'join-group' | 'static-group';
+
 export interface IgmpGroupRecord {
   groupAddress: string;
   iface: string;
   reporters: Set<string>;
   lastReporterIp: string | null;
   lastReportMs: number;
-  v1Compat: boolean;
+  /**
+   * RFC 2236 §4 "Version 1 Host Present" timer: absolute deadline until
+   * which this group must be treated as having an IGMPv1 member. Null
+   * once no v1 Report has been seen for a full Group Membership Interval.
+   */
+  v1CompatUntilMs: number | null;
+  origin: IgmpGroupOrigin;
+}
+
+/** Whether the Version 1 Host Present timer is still running. */
+export function isV1CompatActive(g: IgmpGroupRecord, nowMs: number): boolean {
+  return g.v1CompatUntilMs !== null && g.v1CompatUntilMs > nowMs;
+}
+
+/** A configured membership is never aged out and never left by a host. */
+export function isConfiguredGroup(g: IgmpGroupRecord): boolean {
+  return g.origin !== 'dynamic';
 }
 
 export interface IgmpInterfaceRuntime {
@@ -39,6 +62,8 @@ export interface IgmpInterfaceRuntime {
   querierIp: string | null;
   lastQuerierMs: number;
   startupQueriesSent: number;
+  /** When this router last originated a General Query; null until the first. */
+  lastQuerySentMs: number | null;
   queryIntervalSec: number;
   queryResponseIntervalDs: number;
   lastMemberQueryIntervalDs: number;
@@ -46,6 +71,12 @@ export interface IgmpInterfaceRuntime {
   startupQueryCount: number;
   otherQuerierPresentSec: number;
   robustness: number;
+  /**
+   * Operator-configured memberships (`ip igmp join-group` /
+   * `static-group`), kept apart from the live group table so they survive
+   * a link flap and are re-materialised when the interface comes back.
+   */
+  configuredGroups: Map<string, Exclude<IgmpGroupOrigin, 'dynamic'>>;
 }
 
 export interface IgmpConfig {
@@ -68,6 +99,7 @@ export function defaultIfaceRuntime(iface: string): IgmpInterfaceRuntime {
     state: 'startup',
     querierIp: null, lastQuerierMs: 0,
     startupQueriesSent: 0,
+    lastQuerySentMs: null,
     queryIntervalSec: 125,
     queryResponseIntervalDs: 100,
     lastMemberQueryIntervalDs: 10,
@@ -75,11 +107,17 @@ export function defaultIfaceRuntime(iface: string): IgmpInterfaceRuntime {
     startupQueryCount: 2,
     otherQuerierPresentSec: 255,
     robustness: 2,
+    configuredGroups: new Map(),
   };
 }
 
 export function groupMembershipIntervalSec(rt: IgmpInterfaceRuntime): number {
   return rt.robustness * rt.queryIntervalSec + Math.ceil(rt.queryResponseIntervalDs / 10);
+}
+
+/** RFC 2236 §8.6 — Startup Query Interval, a quarter of the Query Interval. */
+export function startupQueryIntervalSec(rt: IgmpInterfaceRuntime): number {
+  return Math.max(1, Math.ceil(rt.queryIntervalSec / 4));
 }
 
 // RFC 1112 address arithmetic lives in core/ip.ts (canonical home);

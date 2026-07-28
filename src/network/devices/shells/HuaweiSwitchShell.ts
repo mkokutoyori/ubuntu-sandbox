@@ -1384,7 +1384,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       extra['igmp-snooping'].push(line);
       (v as unknown as { extras: Record<string, string[]> }).extras = extra;
       const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
-      if (agent && args[0] === 'enable') agent.setVlanEnabled(this.selectedVlan, true);
+      if (!agent) return '';
+      if (args[0] === 'enable') agent.setVlanEnabled(this.selectedVlan, true);
+      else if (args[0] === 'fast-leave') agent.setImmediateLeave(this.selectedVlan, true);
+      else if (args[0] === 'static-router-port') {
+        return this.applyStaticRouterPort(this.selectedVlan, args.slice(1), true);
+      }
       return '';
     });
     this.vlanTrie.registerGreedy('undo igmp-snooping', 'Disable VLAN IGMP snooping', (args, raw) => {
@@ -1397,7 +1402,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       extra['igmp-snooping'].push(line);
       (v as unknown as { extras: Record<string, string[]> }).extras = extra;
       const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
-      if (agent && (args.length === 0 || args[0] === 'enable')) agent.setVlanEnabled(this.selectedVlan, false);
+      if (!agent) return '';
+      if (args.length === 0 || args[0] === 'enable') agent.setVlanEnabled(this.selectedVlan, false);
+      else if (args[0] === 'fast-leave') agent.setImmediateLeave(this.selectedVlan, false);
+      else if (args[0] === 'static-router-port') {
+        return this.applyStaticRouterPort(this.selectedVlan, args.slice(1), false);
+      }
       return '';
     });
 
@@ -2092,6 +2102,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         lines.push(`  IGMP snooping: ${v.enabled ? 'enabled' : 'disabled'}`);
         lines.push(`  Immediate leave: ${cfg.immediateLeave.has(v.vlan) ? 'enabled' : 'disabled'}`);
         lines.push(`  Router ports: ${[...v.routerPorts].join(' ') || '(none)'}`);
+        lines.push(`  Static router ports: ${[...v.staticRouterPorts].join(' ') || '(none)'}`);
       }
       return lines.join('\n');
     });
@@ -2529,6 +2540,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
     if (!mac) return '0000-0000-0000';
     const hex = mac.replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(0, 12);
     return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`;
+  }
+
+  /** `igmp-snooping static-router-port interface <port>` (VLAN view). */
+  private applyStaticRouterPort(vlan: number, rest: string[], on: boolean): string {
+    const idx = rest.findIndex(s => s.toLowerCase() === 'interface');
+    const spec = (idx >= 0 ? rest.slice(idx + 1) : rest).join('').replace(/\s+/g, '');
+    if (!spec) return 'Error: Incomplete command.';
+    const names = this.swRef?.getPortNames() ?? [];
+    const port = names.find(n => n.toLowerCase() === spec.toLowerCase());
+    if (!port) return 'Error: Wrong parameter found at \'^\' position.';
+    const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+    agent?.setStaticRouterPort(vlan, port, on);
+    return '';
   }
 
   private huaweiPortId(portName: string): string {

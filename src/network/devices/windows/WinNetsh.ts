@@ -670,6 +670,10 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
     return handleShowNeighbors(ctx);
   }
 
+  if (sub === 'joins') {
+    return handleShowJoins(ctx, ifFilter);
+  }
+
   if (sub === 'dynamicport') {
     const proto = (args[1] ?? 'tcp').toLowerCase();
     return renderDynamicPort(proto);
@@ -680,6 +684,28 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
   }
 
   return `The subcommand "${args[0]}" was not found in this context.\nType "netsh interface ipv4 show ?" for more information.`;
+}
+
+/**
+ * `netsh interface ipv4 show joins` — the multicast groups each interface
+ * has joined. 224.0.0.1 is always listed: every IPv4 host is a permanent
+ * member of the all-systems group.
+ */
+function handleShowJoins(ctx: WinCommandContext, ifFilter?: string): string {
+  const joined = ctx.listMulticastGroups?.() ?? [];
+  const lines: string[] = [];
+  for (const [name] of ctx.ports) {
+    if (ifFilter && name !== resolveAdapterName(ifFilter, ctx.ports)) continue;
+    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const groups = ['224.0.0.1', ...joined.filter(g => g.iface === name).map(g => g.group)];
+    lines.push(`Interface ${displayName} : ${displayName}`);
+    lines.push('');
+    lines.push('Scope       References  Last  Address');
+    lines.push('----------  ----------  ----  ---------------------------------');
+    for (const g of groups) lines.push(`      0           1   Yes  ${g}`);
+    lines.push('');
+  }
+  return lines.join('\n');
 }
 
 function renderDynamicPort(proto: string): string {

@@ -8,6 +8,7 @@
 import type { Router } from '../../Router';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
+import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
@@ -354,6 +355,7 @@ export function showRunningConfig(router: Router): string {
     if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
     const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
     if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
+    lines.push(...igmpInterfaceRunningConfigLines(router, name));
     const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
     const pending = ospfExtra?.pendingIfConfig.get(name);
     if (pending) {

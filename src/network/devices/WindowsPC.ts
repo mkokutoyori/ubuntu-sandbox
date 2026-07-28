@@ -2570,6 +2570,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return entry ? entry.canonicalName : null;
       },
 
+      listMulticastGroups: (ifName?: string) => this.listMulticastGroups(ifName),
+
       resetStack: () => {
         for (const [name, port] of this.ports) {
           port.clearIP();

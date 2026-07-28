@@ -18,7 +18,7 @@ import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import type { LinuxNetKernel } from '../LinuxNetKernel';
 import type { DnsService } from '../LinuxDnsService';
 import type { Bind9Service } from '../bind9/Bind9Service';
-import type { IpXfrmContext, IpLinkOpsContext } from '../LinuxIpCommand';
+import type { IpXfrmContext, IpLinkOpsContext, IpMaddrContext } from '../LinuxIpCommand';
 import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
 import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
@@ -62,6 +62,9 @@ export interface LinuxCommandContext {
     list(): string[];
     exec(name: string, cmdLine: string): Promise<string>;
   };
+
+  /** IPv4 multicast membership (IGMP) backing `ip maddr add/del/show`. */
+  readonly maddr?: IpMaddrContext;
 
   /** Active machine profile (isServer, hostname, ...). */
   readonly profile: LinuxProfile;

@@ -2,16 +2,18 @@ import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type IgmpConfig, type IgmpInterfaceRuntime, type IgmpGroupRecord,
-  type IgmpPacket, type IgmpMessageType,
+  type IgmpPacket, type IgmpGroupOrigin,
   createDefaultIgmpConfig, defaultIfaceRuntime, makeGroupKey,
-  groupMembershipIntervalSec, ipv4MulticastToMac, isMulticastIpv4, isReservedMulticast,
+  groupMembershipIntervalSec, startupQueryIntervalSec,
+  isMulticastIpv4, isReservedMulticast,
+  isV1CompatActive, isConfiguredGroup,
   compareQuerier,
-  IP_PROTO_IGMP, IGMP_ALL_SYSTEMS, IGMP_ALL_ROUTERS,
+  IP_PROTO_IGMP, IGMP_ALL_SYSTEMS,
 } from './types';
+import { buildIgmpFrame, igmpQuery, igmpReport, igmpDestination } from './frames';
 import {
-  MACAddress, IPAddress,
+  IPAddress,
   type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 
@@ -55,6 +57,13 @@ export class IgmpAgent {
 
   getConfig(): Readonly<IgmpConfig> { return this.config; }
 
+  /**
+   * Protocol clock. Every timestamp this agent records and compares comes
+   * from the scheduler, so a virtual-time test advancing the scheduler
+   * really does age memberships and compatibility timers.
+   */
+  nowMs(): number { return this.getScheduler().now(); }
+
   enableInterface(iface: string, version: 1 | 2 = 2): void {
     const rt = this.ensureIface(iface);
     rt.enabled = true;
@@ -62,6 +71,9 @@ export class IgmpAgent {
     rt.state = 'startup';
     rt.startupQueriesSent = 0;
     this.kickStartupQuery(rt);
+    for (const [group, origin] of rt.configuredGroups) {
+      this.materializeConfiguredGroup(rt, group, origin);
+    }
   }
 
   disableInterface(iface: string): void {
@@ -98,6 +110,55 @@ export class IgmpAgent {
     const rt = this.ensureIface(iface);
     if (!rt.enabled) return;
     this.recordMembership(rt, group, reporterIp);
+  }
+
+  /**
+   * `ip igmp join-group` / `ip igmp static-group`: the router itself joins
+   * the group on that interface. A join-group membership is a real one —
+   * the router announces it with an unsolicited Membership Report, exactly
+   * as a host would. A static-group is forwarding state only: no Report is
+   * ever sent and the last reporter stays 0.0.0.0.
+   */
+  configuredJoin(iface: string, group: string, origin: Exclude<IgmpGroupOrigin, 'dynamic'>): boolean {
+    if (!isMulticastIpv4(group) || isReservedMulticast(group)) return false;
+    let rt = this.ensureIface(iface);
+    if (!rt.enabled) {
+      this.enableInterface(iface, rt.version);
+      rt = this.ensureIface(iface);
+    }
+    rt.configuredGroups.set(group, origin);
+    this.materializeConfiguredGroup(rt, group, origin);
+    return true;
+  }
+
+  configuredLeave(iface: string, group: string, origin: Exclude<IgmpGroupOrigin, 'dynamic'>): boolean {
+    const rt = this.config.interfaces.get(iface);
+    if (!rt || rt.configuredGroups.get(group) !== origin) return false;
+    rt.configuredGroups.delete(group);
+    const k = makeGroupKey(iface, group);
+    const rec = this.config.groups.get(k);
+    if (rec) {
+      this.config.groups.delete(k);
+      this.publishGroupLeft(rec, 'leave');
+    }
+    return true;
+  }
+
+  listConfiguredGroups(iface: string): Array<{ group: string; origin: Exclude<IgmpGroupOrigin, 'dynamic'> }> {
+    const rt = this.config.interfaces.get(iface);
+    if (!rt) return [];
+    return Array.from(rt.configuredGroups.entries())
+      .map(([group, origin]) => ({ group, origin }))
+      .sort((a, b) => a.group.localeCompare(b.group));
+  }
+
+  private materializeConfiguredGroup(
+    rt: IgmpInterfaceRuntime, group: string, origin: Exclude<IgmpGroupOrigin, 'dynamic'>,
+  ): void {
+    const myIp = this.host.getPort(rt.iface)?.getIPAddress()?.toString() ?? '0.0.0.0';
+    const reporterIp = origin === 'join-group' ? myIp : '0.0.0.0';
+    this.recordMembership(rt, group, reporterIp, false, origin);
+    if (origin === 'join-group') this.sendReport(rt, group);
   }
 
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): void {
@@ -138,7 +199,7 @@ export class IgmpAgent {
   private onQuery(rt: IgmpInterfaceRuntime, senderIp: string): void {
     const port = this.host.getPort(rt.iface);
     const myIp = port?.getIPAddress()?.toString() ?? '0.0.0.0';
-    rt.lastQuerierMs = Date.now();
+    rt.lastQuerierMs = this.nowMs();
     if (rt.state === 'querier' || rt.state === 'startup') {
       if (compareQuerier(senderIp, myIp) < 0) {
         const oldState = rt.state;
@@ -155,23 +216,32 @@ export class IgmpAgent {
     }
   }
 
-  private recordMembership(rt: IgmpInterfaceRuntime, group: string, reporterIp: string, v1 = false): void {
+  private recordMembership(
+    rt: IgmpInterfaceRuntime, group: string, reporterIp: string,
+    v1 = false, origin: IgmpGroupOrigin = 'dynamic',
+  ): void {
     if (!isMulticastIpv4(group) || isReservedMulticast(group)) return;
     const k = makeGroupKey(rt.iface, group);
+    const now = this.nowMs();
+    // RFC 2236 §4: a v1 Report (re)arms the Version 1 Host Present timer
+    // for one full Group Membership Interval.
+    const v1Until = v1 ? now + groupMembershipIntervalSec(rt) * 1000 : null;
     const existing = this.config.groups.get(k);
     if (existing) {
       existing.reporters.add(reporterIp);
       existing.lastReporterIp = reporterIp;
-      existing.lastReportMs = Date.now();
-      if (v1) existing.v1Compat = true;
+      existing.lastReportMs = now;
+      if (v1Until !== null) existing.v1CompatUntilMs = v1Until;
+      if (origin !== 'dynamic') existing.origin = origin;
       return;
     }
     const rec: IgmpGroupRecord = {
       groupAddress: group, iface: rt.iface,
       reporters: new Set([reporterIp]),
       lastReporterIp: reporterIp,
-      lastReportMs: Date.now(),
-      v1Compat: v1,
+      lastReportMs: now,
+      v1CompatUntilMs: v1Until,
+      origin,
     };
     this.config.groups.set(k, rec);
     this.getBus().publish({
@@ -189,6 +259,12 @@ export class IgmpAgent {
     const k = makeGroupKey(rt.iface, group);
     const rec = this.config.groups.get(k);
     if (!rec) return;
+    // RFC 2236 §4: while the Version 1 Host Present timer is running the
+    // router must ignore Leave Group for that group — an IGMPv1 member is
+    // known to be there and could never have sent this message itself.
+    if (isV1CompatActive(rec, this.nowMs())) return;
+    // A membership the operator configured is not a host's to withdraw.
+    if (isConfiguredGroup(rec)) return;
     if (rt.state === 'querier' || rt.state === 'startup') {
       this.sendGroupSpecificQuery(rt, group);
     }
@@ -225,7 +301,27 @@ export class IgmpAgent {
     }
   }
 
+  /**
+   * RFC 2236 §7.1: a starting router sends `startupQueryCount` General
+   * Queries one Startup Query Interval apart before it settles into the
+   * querier role, then keeps querying every Query Interval. Both cadences
+   * run off this one-second tick.
+   */
+  private queryTick(): void {
+    const now = this.nowMs();
+    for (const rt of this.config.interfaces.values()) {
+      if (!rt.enabled) continue;
+      if (rt.state === 'non-querier') continue;
+      const periodSec = rt.state === 'startup'
+        ? startupQueryIntervalSec(rt)
+        : rt.queryIntervalSec;
+      if (rt.lastQuerySentMs !== null && now - rt.lastQuerySentMs < periodSec * 1000) continue;
+      this.sendGeneralQuery(rt);
+    }
+  }
+
   private sendGeneralQuery(rt: IgmpInterfaceRuntime): void {
+    rt.lastQuerySentMs = this.nowMs();
     this.sendQuery(rt, '0.0.0.0', IGMP_ALL_SYSTEMS, rt.queryResponseIntervalDs);
     if (rt.state === 'startup') {
       rt.startupQueriesSent++;
@@ -242,6 +338,11 @@ export class IgmpAgent {
   }
 
   private sendGroupSpecificQuery(rt: IgmpInterfaceRuntime, group: string): void {
+    // RFC 2236 §4: a Group-Specific Query is meaningless to an IGMPv1
+    // member, which would never answer it — suppress it while the
+    // Version 1 Host Present timer is running for this group.
+    const rec = this.config.groups.get(makeGroupKey(rt.iface, group));
+    if (rec && isV1CompatActive(rec, this.nowMs())) return;
     for (let i = 0; i < rt.lastMemberQueryCount; i++) {
       this.sendQuery(rt, group, group, rt.lastMemberQueryIntervalDs);
     }
@@ -252,35 +353,23 @@ export class IgmpAgent {
     if (!port || !port.getIsUp() || !port.isConnected()) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    const payload: IgmpPacket = {
-      type: 'igmp', version: 2,
-      messageType: 'membership-query',
-      maxRespTimeDs: maxRespDs,
-      groupAddress: group,
-      checksum: 0,
-    };
-    this.sendIgmp(rt, srcIp, new IPAddress(destIp), payload);
+    this.sendIgmp(rt, srcIp, new IPAddress(destIp), igmpQuery(group, maxRespDs));
+  }
+
+  /** Unsolicited Membership Report for a group this router itself joined. */
+  private sendReport(rt: IgmpInterfaceRuntime, group: string): void {
+    const port = this.host.getPort(rt.iface);
+    if (!port || !port.getIsUp() || !port.isConnected()) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    const payload = igmpReport(group, rt.version);
+    this.sendIgmp(rt, srcIp, new IPAddress(igmpDestination(payload)), payload);
   }
 
   private sendIgmp(rt: IgmpInterfaceRuntime, srcIp: IPAddress, dstIp: IPAddress, payload: IgmpPacket): void {
     const port = this.host.getPort(rt.iface);
     if (!port) return;
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 6, tos: 0xc0,
-      totalLength: 24 + 8,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 1, protocol: IP_PROTO_IGMP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp,
-      payload,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const dstMacStr = ipv4MulticastToMac(dstIp.toString());
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(dstMacStr),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
-    };
+    const eth: EthernetFrame = buildIgmpFrame(port.getMAC(), srcIp, dstIp, payload);
     this.host.sendFrame(rt.iface, eth);
     this.getBus().publish({
       topic: 'igmp.packet.sent',
@@ -307,12 +396,7 @@ export class IgmpAgent {
     const s = this.getScheduler();
     this.scheduler = s;
     if (this.queryTimer === null) {
-      this.queryTimer = s.setInterval(() => {
-        for (const rt of this.config.interfaces.values()) {
-          if (!rt.enabled) continue;
-          if (rt.state === 'querier') this.sendGeneralQuery(rt);
-        }
-      }, 1000);
+      this.queryTimer = s.setInterval(() => this.queryTick(), 1000);
     }
     if (this.expiryTimer === null) {
       this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
@@ -326,10 +410,12 @@ export class IgmpAgent {
   }
 
   private expireDue(): void {
-    const now = Date.now();
+    const now = this.nowMs();
     for (const rt of this.config.interfaces.values()) {
       if (!rt.enabled) continue;
-      if (rt.state === 'non-querier' && rt.lastQuerierMs > 0) {
+      // `querierIp` — not `lastQuerierMs > 0` — is what says another querier
+      // was heard: the Query that demoted us can legitimately land at t = 0.
+      if (rt.state === 'non-querier' && rt.querierIp !== null) {
         if (now - rt.lastQuerierMs > rt.otherQuerierPresentSec * 1000) {
           const oldState = rt.state;
           rt.state = 'querier';
@@ -342,6 +428,7 @@ export class IgmpAgent {
     for (const [k, g] of this.config.groups) {
       const rt = this.config.interfaces.get(g.iface);
       if (!rt) continue;
+      if (isConfiguredGroup(g)) continue;
       const ageMs = now - g.lastReportMs;
       if (ageMs > groupMembershipIntervalSec(rt) * 1000) {
         this.config.groups.delete(k);
@@ -381,5 +468,8 @@ export class IgmpAgent {
     rt.startupQueriesSent = 0;
     rt.state = 'startup';
     this.kickStartupQuery(rt);
+    for (const [group, origin] of rt.configuredGroups) {
+      this.materializeConfiguredGroup(rt, group, origin);
+    }
   }
 }

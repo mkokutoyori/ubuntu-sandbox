@@ -56,6 +56,9 @@ import {
   registerOSPFDisplayCommands,
 } from './huawei/HuaweiOspfCommands';
 import {
+  registerHuaweiIgmpInterfaceCommands, registerHuaweiIgmpDisplayCommands,
+} from './huawei/HuaweiIgmpCommands';
+import {
   type HuaweiIPSecContext,
   registerHuaweiIPSecSystemCommands, registerHuaweiIPSecInterfaceCommands,
   registerHuaweiIPSecDisplayCommands,
@@ -1284,6 +1287,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // OSPF display commands
     registerOSPFDisplayCommands(t, getRouter);
 
+    // IGMP display commands
+    registerHuaweiIgmpDisplayCommands(t, getRouter);
+
     // IPSec display commands
     registerHuaweiIPSecDisplayCommands(t, getRouter);
 
@@ -1725,6 +1731,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // OSPF display commands
     registerOSPFDisplayCommands(t, () => this.r());
 
+    // IGMP display commands
+    registerHuaweiIgmpDisplayCommands(t, () => this.r());
+
     // IPSec system-mode commands
     registerHuaweiIPSecSystemCommands(t, this);
 
@@ -1946,6 +1955,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // OSPF interface commands
     registerOSPFInterfaceCommands(t, this as any);
+
+    // IGMP interface + display commands
+    registerHuaweiIgmpInterfaceCommands(t, this);
+    registerHuaweiIgmpDisplayCommands(t, getRouter);
 
     // IPSec interface commands
     registerHuaweiIPSecInterfaceCommands(t, this);

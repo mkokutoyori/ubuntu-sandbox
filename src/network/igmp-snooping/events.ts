@@ -30,8 +30,15 @@ export interface SnoopingForwardPayload extends SnoopingDeviceRef {
   egressPorts: string[];
 }
 
+export interface SnoopingQuerierSentPayload extends SnoopingDeviceRef {
+  vlan: number;
+  sourceIp: string;
+  ports: number;
+}
+
 export type IgmpSnoopingDomainEvent =
   | { topic: 'igmp.snooping.member.joined'; payload: SnoopingMemberJoinedPayload }
   | { topic: 'igmp.snooping.member.left'; payload: SnoopingMemberLeftPayload }
   | { topic: 'igmp.snooping.router-port.changed'; payload: SnoopingRouterPortChangedPayload }
-  | { topic: 'igmp.snooping.forward'; payload: SnoopingForwardPayload };
+  | { topic: 'igmp.snooping.forward'; payload: SnoopingForwardPayload }
+  | { topic: 'igmp.snooping.querier.sent'; payload: SnoopingQuerierSentPayload };

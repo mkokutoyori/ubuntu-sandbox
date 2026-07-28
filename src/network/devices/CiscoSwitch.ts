@@ -117,6 +117,9 @@ export class CiscoSwitch extends Switch {
       ...hostBase,
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
+      getSviIp: (vlan: number) =>
+        this.getSvis().find(s => s.vlan === vlan)?.ip?.toString() ?? null,
+      getVlanIds: () => [...this.getVLANs().keys()],
     }, () => this.getBus());
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
     this.dot1xAgent = new Dot1xAgent({

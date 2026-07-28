@@ -1351,6 +1351,11 @@ export abstract class LinuxMachine extends EndHost
         list: () => this.listNetNamespaces(),
         exec: (name: string, cmdLine: string) => this.execInNamespace(name, cmdLine),
       },
+      maddr: {
+        join: (ifName: string, group: string) => this.joinMulticastGroup(ifName, group),
+        leave: (ifName: string, group: string) => this.leaveMulticastGroup(ifName, group),
+        list: (ifName?: string) => this.listMulticastGroups(ifName),
+      },
       sshServerConfig: () => this.getSshServerContext().effectiveSshdServerConfig(),
     };
   }

@@ -1275,15 +1275,59 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
   }
 
+  /** `ip igmp snooping vlan <n> mrouter interface <port>`. */
+  private applyStaticMrouter(vlan: number, rest: string[], on: boolean): string {
+    const idx = rest.findIndex(s => s.toLowerCase() === 'interface');
+    const spec = idx >= 0 ? rest.slice(idx + 1).join(' ') : rest.join(' ');
+    if (!spec) return '% Incomplete command.';
+    const port = this.resolvePortName(spec);
+    if (!port) return `% Invalid interface ${spec}`;
+    this.d().getIgmpSnoopingAgent().setStaticRouterPort(vlan, port, on);
+    return '';
+  }
+
+  /**
+   * `ip igmp snooping [vlan <n>] querier [address <ip> | query-interval <s>]`.
+   * A bare `querier` toggles the role; the sub-keywords only ever set
+   * parameters, so `no ... querier address` clears the address rather than
+   * disabling the querier — same as IOS.
+   */
+  private applySnoopingQuerier(vlan: number | null, rest: string[], on: boolean): string {
+    const agent = this.d().getIgmpSnoopingAgent();
+    const kw = rest[0];
+    if (kw === 'address') {
+      if (on && !rest[1]) return '% Incomplete command.';
+      if (on && !/^\d{1,3}(\.\d{1,3}){3}$/.test(rest[1])) {
+        return `% Invalid input detected at '^' marker.`;
+      }
+      agent.setQuerierAddress(on ? rest[1] : null);
+      return '';
+    }
+    if (kw === 'query-interval') {
+      const secs = parseInt(rest[1] ?? '', 10);
+      if (on && (Number.isNaN(secs) || secs < 1 || secs > 18000)) {
+        return `% Invalid input detected at '^' marker.`;
+      }
+      agent.setQuerierInterval(on ? secs : 60);
+      return '';
+    }
+    if (kw !== undefined) return `% Invalid input detected at '^' marker.`;
+    agent.setQuerierEnabled(vlan, on);
+    return '';
+  }
+
   private registerIgmpSnoopingCommands(): void {
     this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config', (args) => {
       const agent = this.d().getIgmpSnoopingAgent();
       const a = args.map(s => s.toLowerCase());
       if (a.length === 0) { agent.setEnabled(true); return ''; }
+      if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), true);
       if (a[0] === 'vlan' && a[1]) {
         const vlan = parseInt(a[1], 10);
         if (!Number.isNaN(vlan)) {
           if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, true); return ''; }
+          if (a[2] === 'mrouter') return this.applyStaticMrouter(vlan, args.slice(3), true);
+          if (a[2] === 'querier') return this.applySnoopingQuerier(vlan, a.slice(3), true);
           agent.setVlanEnabled(vlan, true);
         }
         return '';
@@ -1294,10 +1338,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const agent = this.d().getIgmpSnoopingAgent();
       const a = args.map(s => s.toLowerCase());
       if (a.length === 0) { agent.setEnabled(false); return ''; }
+      if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), false);
       if (a[0] === 'vlan' && a[1]) {
         const vlan = parseInt(a[1], 10);
         if (!Number.isNaN(vlan)) {
           if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, false); return ''; }
+          if (a[2] === 'mrouter') return this.applyStaticMrouter(vlan, args.slice(3), false);
+          if (a[2] === 'querier') return this.applySnoopingQuerier(vlan, a.slice(3), false);
           agent.setVlanEnabled(vlan, false);
         }
       }
@@ -1323,9 +1370,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           return rows.join('\n');
         }
         if (args.includes('mrouter')) {
-          const rows = ['Vlan    ports'];
+          const rows = ['Vlan    ports', '----    -----'];
           for (const v of agent.listVlans()) {
-            rows.push(`${String(v.vlan).padEnd(8)}${Array.from(v.routerPorts).join(', ')}`);
+            const ports = Array.from(v.routerPorts)
+              .map(p => `${p}(${v.staticRouterPorts.has(p) ? 'static' : 'dynamic'})`)
+              .join(', ');
+            rows.push(`${String(v.vlan).padEnd(8)}${ports}`);
           }
           return rows.join('\n');
         }
@@ -1339,6 +1389,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         lines.push(`Robustness variable        : 2`);
         lines.push(`Last member query count    : 2`);
         lines.push(`Last member query interval : 1000`);
+        if (args.includes('querier')) {
+          for (const v of agent.listVlans()) {
+            const src = agent.querierSourceIp(v.vlan);
+            const admin = cfg.querierEnabled || v.querierEnabled;
+            lines.push(``);
+            lines.push(`Vlan ${v.vlan}: IGMP snooping querier status`);
+            lines.push(`--------------------------------------------`);
+            lines.push(`Admin state                    : ${admin ? 'Enabled' : 'Disabled'}`);
+            lines.push(`Admin version                  : 2`);
+            lines.push(`Operational state              : ${agent.isQuerierOperational(v.vlan) ? 'Enabled' : 'Disabled'}`);
+            lines.push(`Querier address                : ${src ?? '0.0.0.0'}`);
+            lines.push(`Query interval                 : ${cfg.querierIntervalSec}`);
+            lines.push(`Max response time              : ${Math.round(cfg.querierMaxRespTimeDs / 10)}`);
+          }
+          return lines.join('\n');
+        }
         lines.push(``);
         lines.push(`Vlan ${[...agent.listVlans()].map(v => v.vlan).join(',') || '<none>'}:`);
         return lines.join('\n');

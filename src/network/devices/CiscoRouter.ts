@@ -122,6 +122,7 @@ export class CiscoRouter extends Router {
   private readonly bfdAgent: BfdAgent;
   private readonly igmpAgent: IgmpAgent;
   private readonly pimAgent: PimAgent;
+  private igmpPimUnsubs: Array<() => void> = [];
   private readonly syslogAgent: SyslogAgent;
   private readonly radiusClient: RadiusClientAgent;
   private readonly radiusServer: RadiusServerAgent;
@@ -164,14 +165,7 @@ export class CiscoRouter extends Router {
     });
     this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus());
     this.pimAgent = new PimAgent(hostBase, () => this.getBus());
-    this.getBus().subscribe('igmp.group.joined', (e) => {
-      if (e.payload.deviceId !== this.id) return;
-      this.pimAgent.joinGroup(e.payload.groupAddress, e.payload.iface);
-    });
-    this.getBus().subscribe('igmp.group.left', (e) => {
-      if (e.payload.deviceId !== this.id) return;
-      this.pimAgent.leaveGroup(e.payload.groupAddress, e.payload.iface);
-    });
+    this.bindIgmpToPim();
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
@@ -232,6 +226,28 @@ export class CiscoRouter extends Router {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
+    this.bindIgmpToPim();
+  }
+
+  /**
+   * IGMP membership → PIM outgoing-interface list. Held as an explicit
+   * subscription pair so a bus swap re-establishes it, like `restartAll`
+   * does for the agents themselves.
+   */
+  private bindIgmpToPim(): void {
+    if (!this.pimAgent) return;
+    for (const u of this.igmpPimUnsubs) u();
+    const bus = this.getBus();
+    this.igmpPimUnsubs = [
+      bus.subscribe('igmp.group.joined', (e) => {
+        if (e.payload.deviceId !== this.id) return;
+        this.pimAgent.joinGroup(e.payload.groupAddress, e.payload.iface);
+      }),
+      bus.subscribe('igmp.group.left', (e) => {
+        if (e.payload.deviceId !== this.id) return;
+        this.pimAgent.leaveGroup(e.payload.groupAddress, e.payload.iface);
+      }),
+    ];
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {

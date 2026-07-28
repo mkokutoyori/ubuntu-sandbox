@@ -2,6 +2,7 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { IgmpAgent } from '../../../igmp/IgmpAgent';
 import type { IgmpGroupRecord, IgmpInterfaceRuntime } from '../../../igmp/types';
+import { isMulticastIpv4, isReservedMulticast, isV1CompatActive, isConfiguredGroup } from '../../../igmp/types';
 import { hms } from '@/lib/format';
 
 interface IfCtx {
@@ -17,11 +18,27 @@ function agent(router: Router): IgmpAgent | undefined {
   return (router as unknown as { getIgmpAgent?: () => IgmpAgent }).getIgmpAgent?.();
 }
 
-function expiresIn(rt: IgmpInterfaceRuntime | undefined, g: IgmpGroupRecord): string {
+function expiresIn(rt: IgmpInterfaceRuntime | undefined, g: IgmpGroupRecord, nowMs: number): string {
+  // A locally configured membership is held by the running-config, not by
+  // a host's Report — IOS prints "never" for it.
+  if (isConfiguredGroup(g)) return 'never';
   if (!rt) return '00:00:00';
   const intervalMs = (rt.robustness * rt.queryIntervalSec + Math.ceil(rt.queryResponseIntervalDs / 10)) * 1000;
-  const remaining = intervalMs - (Date.now() - g.lastReportMs);
+  const remaining = intervalMs - (nowMs - g.lastReportMs);
   return hms(remaining);
+}
+
+/** IGMP lines for one interface in `show running-config`. */
+export function igmpInterfaceRunningConfigLines(router: Router, iface: string): string[] {
+  const a = agent(router);
+  if (!a) return [];
+  const lines: string[] = [];
+  const rt = a.getInterfaceRuntime(iface);
+  if (rt?.enabled && rt.version !== 2) lines.push(` ip igmp version ${rt.version}`);
+  for (const { group, origin } of a.listConfiguredGroups(iface)) {
+    lines.push(` ip igmp ${origin} ${group}`);
+  }
+  return lines;
 }
 
 export function buildIgmpInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
@@ -46,10 +63,35 @@ export function buildIgmpInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void 
     return '';
   });
 
+  for (const origin of ['join-group', 'static-group'] as const) {
+    trie.registerGreedy(`ip igmp ${origin}`,
+      origin === 'join-group' ? 'Join a multicast group' : 'Statically forward a multicast group',
+      (args) => {
+        const a = agent(ctx.r());
+        if (!a) return '';
+        const group = args[0];
+        if (!group) return '% Incomplete command.';
+        if (!isMulticastIpv4(group) || isReservedMulticast(group)) return '% Invalid group address';
+        for (const port of ctx.selectedPorts()) a.configuredJoin(port, group, origin);
+        return '';
+      });
+
+    trie.registerGreedy(`no ip igmp ${origin}`, 'Remove a configured multicast group', (args) => {
+      const a = agent(ctx.r());
+      if (!a) return '';
+      const group = args[0];
+      if (!group) return '% Incomplete command.';
+      for (const port of ctx.selectedPorts()) a.configuredLeave(port, group, origin);
+      return '';
+    });
+  }
+
+  const subCommands = new Set(['version', 'join-group', 'static-group']);
+
   trie.registerGreedy('ip igmp', 'Enable IGMP', (args) => {
     const a = agent(ctx.r());
     if (!a) return '';
-    if (args[0] === 'version') return '';
+    if (subCommands.has(args[0])) return '';
     for (const port of ctx.selectedPorts()) a.enableInterface(port, 2);
     return '';
   });
@@ -57,7 +99,7 @@ export function buildIgmpInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void 
   trie.registerGreedy('no ip igmp', 'Disable IGMP', (args) => {
     const a = agent(ctx.r());
     if (!a) return '';
-    if (args[0] === 'version') return '';
+    if (subCommands.has(args[0])) return '';
     for (const port of ctx.selectedPorts()) a.disableInterface(port);
     return '';
   });
@@ -72,6 +114,7 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
     if (ifIdx >= 0 && args[ifIdx + 1]) iface = args[ifIdx + 1];
     const detail = args.includes('detail');
     const groups = iface ? a.groupsFor(iface) : a.listGroups();
+    const now = a.nowMs();
     if (detail) {
       const blocks: string[] = [];
       for (const g of groups) {
@@ -79,8 +122,8 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
         blocks.push([
           `Interface:\t\t${g.iface}`,
           `Group:\t\t\t${g.groupAddress}`,
-          `Uptime:\t\t\t${hms(Date.now() - g.lastReportMs)}`,
-          `Group mode:\t\tIGMPv${g.v1Compat ? 1 : (rt?.version ?? 2)}`,
+          `Uptime:\t\t\t${hms(now - g.lastReportMs)}`,
+          `Group mode:\t\tIGMPv${isV1CompatActive(g, now) ? 1 : (rt?.version ?? 2)}`,
           `Last reporter:\t\t${g.lastReporterIp ?? ''}`,
           `Source list is empty`,
         ].join('\n'));
@@ -92,7 +135,7 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
     for (const g of groups) {
       const rt = a.getInterfaceRuntime(g.iface);
       rows.push(
-        `${g.groupAddress.padEnd(17)}${g.iface.padEnd(25)}${hms(Date.now() - g.lastReportMs).padEnd(10)}${expiresIn(rt, g).padEnd(10)}${g.lastReporterIp ?? ''}`);
+        `${g.groupAddress.padEnd(17)}${g.iface.padEnd(25)}${hms(now - g.lastReportMs).padEnd(10)}${expiresIn(rt, g, now).padEnd(10)}${g.lastReporterIp ?? ''}`);
     }
     return rows.join('\n');
   });

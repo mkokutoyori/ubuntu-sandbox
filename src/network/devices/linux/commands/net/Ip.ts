@@ -18,6 +18,7 @@ import {
   type IpTunnelContext,
   type IpTunnelInfo,
   type IpLinkOpsContext,
+  type IpMaddrContext,
   type IpRuleContext,
   type IpRuleInfo,
   type IpNetnsContext,
@@ -103,6 +104,7 @@ export function buildIpCtx(
   greAgent?: GreAgent,
   linkOps?: IpLinkOpsContext,
   netns?: IpNetnsContext,
+  maddr?: IpMaddrContext,
 ): IpNetworkContext {
   return {
     // Any local port answers this: a port belongs to the machine that
@@ -374,6 +376,7 @@ export function buildIpCtx(
     linkOps,
     rule: buildRuleCtx(net),
     netns,
+    maddr,
   };
 }
 
@@ -382,11 +385,12 @@ export const ipCommand: LinuxCommand = {
   needsNetworkContext: true,
   usage: 'ip [ OPTIONS ] OBJECT { COMMAND | help }',
   complete: makeArgCompleter({
-    firstWords: ['address', 'addr', 'link', 'route', 'neigh', 'neighbor',
+    firstWords: ['address', 'addr', 'link', 'maddr', 'route', 'neigh', 'neighbor',
       'rule', 'tunnel', 'netns', 'xfrm'],
     wordsAfter: {
       addr: ['show', 'add', 'del', 'flush'],
       address: ['show', 'add', 'del', 'flush'],
+      maddr: ['show', 'add', 'del'],
       link: ['show', 'set'],
       route: ['show', 'add', 'del', 'get', 'flush'],
       neigh: ['show', 'add', 'del', 'flush'],
@@ -404,7 +408,7 @@ export const ipCommand: LinuxCommand = {
       if (!name || !cmdLine) return 'Usage: ip netns exec NAME cmd...';
       return ctx.netns.exec(name, cmdLine);
     }
-    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps, ctx.netns);
+    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps, ctx.netns, ctx.maddr);
     const out = executeIpCommand(ipCtx, args);
     return out;
   },

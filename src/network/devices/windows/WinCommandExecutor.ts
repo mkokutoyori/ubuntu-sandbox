@@ -146,6 +146,9 @@ export interface WinCommandContext {
 
   reverseLookup?(ip: string): string | null;
 
+  /** IPv4 multicast groups this host has joined (`netsh … show joins`). */
+  listMulticastGroups?(ifName?: string): Array<{ iface: string; group: string }>;
+
   // Service state query (for netsh dhcpclient show state, etc.)
   isServiceRunning(name: string): boolean;
 

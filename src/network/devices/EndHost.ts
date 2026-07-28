@@ -91,6 +91,8 @@ import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IP_PROTO_GRE } from '../gre/types';
+import { IP_PROTO_IGMP } from '../igmp/types';
+import { IgmpHostAgent } from '../igmp/IgmpHostAgent';
 
 export interface GreDecapsulator {
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): IPv4Packet | null;
@@ -323,6 +325,12 @@ export abstract class EndHost extends Equipment {
   protected greAgent: GreDecapsulator | null = null;
 
   /**
+   * Receiver-side IGMP (RFC 2236 §3). Lazily built so a host that never
+   * joins a group carries no multicast state at all.
+   */
+  private _igmpHostAgent: IgmpHostAgent | null = null;
+
+  /**
    * IPv4 host model (RFC 1122 §3.3.4.2).
    * - 'weak': accept packets destined to ANY local address, whatever the
    *   ingress interface — the Linux default behaviour.
@@ -381,6 +389,38 @@ export abstract class EndHost extends Equipment {
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (this.hostSignalRefreshActor) this.attachHostActors();
+  }
+
+  // ─── IGMP (receiver side, RFC 2236 §3) ───────────────────────────
+
+  getIgmpHostAgent(): IgmpHostAgent {
+    if (!this._igmpHostAgent) {
+      this._igmpHostAgent = new IgmpHostAgent({
+        id: this.id, name: this.name,
+        getHostname: () => this.getHostname(),
+        getPort: (n: string) => this.ports.get(n),
+        sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      }, () => this.getBus());
+    }
+    return this._igmpHostAgent;
+  }
+
+  /**
+   * Join an IPv4 multicast group on an interface — the real receiver-side
+   * action, emitting a genuine Membership Report on the wire.
+   */
+  joinMulticastGroup(iface: string, group: string): boolean {
+    return this.getIgmpHostAgent().join(iface, group);
+  }
+
+  leaveMulticastGroup(iface: string, group: string): boolean {
+    return this.getIgmpHostAgent().leave(iface, group);
+  }
+
+  listMulticastGroups(iface?: string): Array<{ iface: string; group: string }> {
+    const all = this.getIgmpHostAgent().listMemberships();
+    return (iface ? all.filter(m => m.iface === iface) : all)
+      .map(({ iface: i, group }) => ({ iface: i, group }));
   }
 
   /** Attach (or rebind) the host signal-refresh actor to the current bus. */
@@ -1348,11 +1388,22 @@ export abstract class EndHost extends Equipment {
     const isForUs = frame.dstMAC.equals(port.getMAC());
     const isBroadcast = frame.dstMAC.isBroadcast();
     // IPv6 multicast MAC: 33:33:XX:XX:XX:XX
+    // IPv4 multicast MAC (RFC 1112 §6.4): 01:00:5E:XX:XX:XX
     const octets = frame.dstMAC.getOctets();
     const isMulticast = octets[0] === 0x33 && octets[1] === 0x33;
+    const isIpv4Multicast = octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
 
-    if (!isForUs && !isBroadcast && !isMulticast) {
+    if (!isForUs && !isBroadcast && !isMulticast && !isIpv4Multicast) {
       return;
+    }
+
+    // A NIC only passes up the IPv4 groups this host actually joined —
+    // plus the always-joined link-local range (all-systems, IGMP Queries).
+    if (isIpv4Multicast && frame.etherType === ETHERTYPE_IPV4) {
+      const ipv4 = frame.payload as IPv4Packet;
+      if (!this.getIgmpHostAgent().acceptsGroup(portName, ipv4.destinationIP.toString())) {
+        return;
+      }
     }
 
     // For multicast, verify we're actually subscribed (have matching IPv6 address)
@@ -1603,6 +1654,13 @@ export abstract class EndHost extends Equipment {
     if (!verifyIPv4Checksum(ipPkt)) {
       Logger.warn(this.id, 'ipv4:checksum-fail',
         `${this.name}: invalid IPv4 checksum, dropping packet`);
+      return;
+    }
+
+    // IGMP is addressed to a multicast group, never to this host's own
+    // address, so it has to be picked off before the local/forward split.
+    if (ipPkt.protocol === IP_PROTO_IGMP) {
+      this.getIgmpHostAgent().handleIp(portName, ipPkt);
       return;
     }
 

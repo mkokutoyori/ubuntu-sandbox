@@ -151,6 +151,14 @@ export interface IpNetworkContext {
   ): { iface: string; nextHopIP: string; table: number } | null;
   /** Optional network namespace CRUD for ip netns (list/add/del only — exec is handled upstream) */
   netns?: IpNetnsContext;
+  /** Optional IPv4 multicast membership context for `ip maddr` (IGMP). */
+  maddr?: IpMaddrContext;
+}
+
+export interface IpMaddrContext {
+  join(ifName: string, group: string): boolean;
+  leave(ifName: string, group: string): boolean;
+  list(ifName?: string): Array<{ iface: string; group: string }>;
 }
 
 export interface IpNetnsContext {
@@ -418,12 +426,78 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'netns':
       return ipNetns(ctx, subArgs);
 
+    case 'maddr':
+    case 'maddress':
+    case 'm':
+      return ipMaddr(ctx, subArgs);
+
     case 'monitor':
       return '';
 
     default:
       return `Object "${object}" is unknown, try "ip help".`;
   }
+}
+
+// ─── ip maddr ───────────────────────────────────────────────────────
+
+/**
+ * `ip maddr {add|del|show} [ADDRESS] [dev NAME]` — multicast group
+ * membership. iproute2 accepts an IPv4 group here and the kernel joins it,
+ * which is what makes an IGMP Membership Report go out.
+ */
+function ipMaddr(ctx: IpNetworkContext, args: string[]): string {
+  const m = ctx.maddr;
+  if (!m) return 'RTNETLINK answers: Operation not supported';
+
+  const cmd = args[0] === undefined || args[0] === 'show' || args[0] === 'list' || args[0] === 'sh'
+    ? 'show'
+    : args[0];
+  const rest = cmd === 'show' && args[0] !== undefined ? args.slice(1) : args.slice(1);
+
+  const devIdx = rest.findIndex(a => a === 'dev');
+  const dev = devIdx >= 0 ? rest[devIdx + 1] : undefined;
+  const positional = devIdx >= 0
+    ? rest.filter((_, i) => i !== devIdx && i !== devIdx + 1)
+    : rest;
+
+  if (cmd === 'show') {
+    const byIface = new Map<string, string[]>();
+    for (const entry of m.list(dev)) {
+      const list = byIface.get(entry.iface) ?? [];
+      list.push(entry.group);
+      byIface.set(entry.iface, list);
+    }
+    const names = dev ? [dev] : ctx.getInterfaceNames();
+    const lines: string[] = [];
+    for (const name of names) {
+      if (!ctx.getInterfaceInfo(name)) continue;
+      lines.push(`${ctx.getIfIndex(name)}:\t${name}`);
+      // Every interface is permanently a member of the all-systems group.
+      lines.push(`\tinet 224.0.0.1`);
+      for (const g of byIface.get(name) ?? []) lines.push(`\tinet ${g}`);
+    }
+    return lines.join('\n');
+  }
+
+  if (cmd !== 'add' && cmd !== 'del' && cmd !== 'delete') {
+    return `Command "${cmd}" is unknown, try "ip maddr help".`;
+  }
+  const group = positional[0];
+  if (!group) return 'Not enough information: address is required.';
+  if (!dev) return 'Not enough information: "dev" argument is required.';
+  if (!ctx.getInterfaceInfo(dev)) return `Cannot find device "${dev}"`;
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(group)) {
+    return `Error: an inet address is expected rather than "${group}".`;
+  }
+
+  const ok = cmd === 'add' ? m.join(dev, group) : m.leave(dev, group);
+  if (!ok) {
+    return cmd === 'add'
+      ? 'RTNETLINK answers: Invalid argument'
+      : 'RTNETLINK answers: No such file or directory';
+  }
+  return '';
 }
 
 // ─── ip addr ────────────────────────────────────────────────────────
