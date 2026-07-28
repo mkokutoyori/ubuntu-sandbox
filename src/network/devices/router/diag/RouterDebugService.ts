@@ -90,6 +90,14 @@ export class RouterDebugService implements TerminalDebugSource {
     return this.broadcast.subscribe(listener);
   }
 
+  /** `logging rate-limit N` — console budget for debug output. */
+  setRateLimit(linesPerSecond: number): void { this.broadcast.setRateLimit(linesPerSecond); }
+  getRateLimit(): number { return this.broadcast.getRateLimit(); }
+  /** Lines the rate limiter dropped since boot. */
+  getDroppedCount(): number { return this.broadcast.getDroppedCount(); }
+  /** Report the current window's drops now, rather than on the next line. */
+  flushDrops(): void { this.broadcast.flushDrops(); }
+
   private aclMatchFn?: (aclName: string, line: string) => boolean;
   private readonly categoryRenderers = new Map<DebugCategory, () => string>();
 
