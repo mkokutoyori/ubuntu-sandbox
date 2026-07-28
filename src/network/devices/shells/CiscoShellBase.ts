@@ -36,7 +36,7 @@ import {
   showNtpStatus, showNtpAssociations,
   showLine, showIpSsh, showSshSessions, showHosts, showVrf, showBoot,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
-  showProcessesMemory, showBuffers, showTcpBrief, showSockets,
+  showBuffers, showTcpBrief, showSockets,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
   type ShowStateDevice,
 } from './cisco/CiscoCommonShow';

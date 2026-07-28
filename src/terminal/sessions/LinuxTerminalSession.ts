@@ -154,6 +154,15 @@ export class LinuxTerminalSession extends TerminalSession {
    * when no continuation is in progress. Drives the PS2 `>` prompt.
    */
   private _continuationBuffer: string | null = null;
+  /**
+   * The delimiter the accumulation is waiting for, when the reason for the
+   * continuation is a here-document specifically. Null for every other
+   * reason. Ctrl+D and Tab behave differently inside a here-document body
+   * than inside an open quote or block, and this is what tells them apart.
+   */
+  private _pendingHeredocDelimiter: string | null = null;
+  /** Line number the current here-document body started on, for the EOF warning. */
+  private _heredocStartLine = 0;
   /** PS2 continuation prompt — real bash default. */
   private readonly ps2Prompt = '> ';
 
@@ -448,6 +457,19 @@ export class LinuxTerminalSession extends TerminalSession {
     user: string; hostname: string; path: string; promptChar: string;
     foreign?: boolean;
   } {
+    // PS2 has no user@host:path shape to decompose. Marking it foreign is
+    // what makes the renderer print `getPrompt()` verbatim — without this
+    // the canvas terminal kept showing PS1 through a whole here-document,
+    // even though the session was collecting a body.
+    if (this._continuationBuffer !== null && !this.hasActiveChild && !this.activeSubShell) {
+      return {
+        user: this.currentUser,
+        hostname: this.device.getHostname() || 'localhost',
+        path: this.currentPath,
+        promptChar: '$',
+        foreign: true,
+      };
+    }
     if (this.hasActiveChild) {
       if (this.foreground.getSessionType() !== 'linux') {
         return {
@@ -688,6 +710,10 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.inputMode.type === 'editor' || this.inputMode.type === 'remote-editor') return false;
 
     if (e.key === 'd' && e.ctrlKey && this.input === '') {
+      // Ctrl+D inside an open here-document ends the document, it does not
+      // end the shell: bash warns and runs the command with the body it
+      // has. Nothing here may close the session or the SSH connection.
+      if (this._pendingHeredocDelimiter !== null) { void this.endHeredocAtEof(); return true; }
       if (this.endRemoteSession()) return true;
       if (this.sshStack.length > 0) { this.popRemoteDevice(); return true; }
       this._onRequestClose?.();
@@ -695,6 +721,45 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     return super.handleKey(e);
+  }
+
+  protected override pendingHeredocDelimiter(): string | null {
+    return this._pendingHeredocDelimiter;
+  }
+
+  /**
+   * Ctrl+C at a PS2 prompt abandons the whole accumulated command, whatever
+   * kept it open — an open quote, a block, or a here-document body. Without
+   * this the buffer survived the interrupt and the next line typed was
+   * silently appended to a command the user believed cancelled.
+   */
+  protected override onCtrlC(): void {
+    // Cleared before the base class echoes `^C`, so the line it prints
+    // carries PS1 rather than the PS2 being abandoned.
+    this._continuationBuffer = null;
+    this._pendingHeredocDelimiter = null;
+    super.onCtrlC();
+  }
+
+  /**
+   * `bash: warning: here-document at line N delimited by end-of-file
+   * (wanted 'DELIM')` — then the command runs with the partial body. The
+   * lexer already accepts a here-document left open at EOF, so the text is
+   * handed over exactly as accumulated, with no delimiter line.
+   */
+  private endHeredocAtEof(): void | Promise<void> {
+    const accumulated = this._continuationBuffer ?? '';
+    const delimiter = this._pendingHeredocDelimiter;
+    this._continuationBuffer = null;
+    this._pendingHeredocDelimiter = null;
+    this.addLine(this.getPrompt());
+    this.addLine(
+      `bash: warning: here-document at line ${this._heredocStartLine} `
+      + `delimited by end-of-file (wanted \`${delimiter}')`,
+    );
+    const done = this.executeCommand(accumulated, { echo: false });
+    this.notify();
+    return done;
   }
 
   /**
@@ -714,6 +779,13 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Tab
     if (e.key === 'Tab') {
+      // A here-document body is free text, not a command line: readline
+      // does not complete there, it just takes the tab. `<<-` even relies
+      // on leading tabs being typeable.
+      if (this._pendingHeredocDelimiter !== null) {
+        this.setInput(this.input + '\t');
+        return true;
+      }
       this.onTab();
       return true;
     }
@@ -760,7 +832,11 @@ export class LinuxTerminalSession extends TerminalSession {
       const analysis = analyzeBashInput(accumulated);
       if (!analysis.complete) {
         this.addEchoLine(this.getPrompt(), cmd);
+        if (this._continuationBuffer === null && analysis.heredocDelimiter) {
+          this._heredocStartLine = accumulated.split('\n').length;
+        }
         this._continuationBuffer = accumulated;
+        this._pendingHeredocDelimiter = analysis.heredocDelimiter ?? null;
         this.updatePrompt?.();
         this.notify();
         return;
@@ -771,6 +847,7 @@ export class LinuxTerminalSession extends TerminalSession {
         // first line; the continuation lines were already echoed live).
         this.addEchoLine(this.getPrompt(), cmd);
         this._continuationBuffer = null;
+        this._pendingHeredocDelimiter = null;
         this.updatePrompt?.();
         const doneMulti = this.executeCommand(accumulated, { echo: false });
         this.notify();

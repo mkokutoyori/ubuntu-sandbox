@@ -31,15 +31,20 @@ interface ScanState {
   danglingConnector: boolean;
   /** Paren depth inside `$((…))` / `((…))` — `<<` there is a shift. */
   arithDepth: number;
+  /**
+   * Delimiters awaited, in the order their bodies come — `cmd <<A <<B`
+   * reads A's body first, then B's. A queue, like `BashLexer`'s own
+   * `pendingHeredocs`, so both layers model the same rule.
+   */
+  pendingHeredocs: string[];
 }
 
 /**
- * Scan a single physical line, updating quote/continuation state. Returns
- * the here-doc delimiter opened on this line (if any).
+ * Scan a single physical line, updating quote/continuation state. Appends
+ * to `st.pendingHeredocs` every here-doc opened on this line.
  */
-function scanLine(line: string, st: ScanState): string | null {
+function scanLine(line: string, st: ScanState): void {
   st.trailingBackslash = false;
-  let heredoc: string | null = null;
   const words: string[] = [];
   let cur = '';
   let i = 0;
@@ -93,7 +98,7 @@ function scanLine(line: string, st: ScanState): string | null {
       } else {
         while (j < line.length && /[A-Za-z0-9_]/.test(line[j])) { delim += line[j]; j++; }
       }
-      if (delim) heredoc = delim;
+      if (delim) st.pendingHeredocs.push(delim);
       i = j; continue;
     }
 
@@ -113,27 +118,27 @@ function scanLine(line: string, st: ScanState): string | null {
   // A line ending in a connector (| && ||) with nothing after is dangling.
   const lastWord = words[words.length - 1];
   st.danglingConnector = lastWord === '|' || lastWord === '&&' || lastWord === '||';
-
-  return heredoc;
 }
 
 export function analyzeBashInput(input: string): BashInputAnalysis {
   const lines = input.split('\n');
-  const st: ScanState = { quote: null, trailingBackslash: false, blocks: [], danglingConnector: false, arithDepth: 0 };
-  let pendingHeredoc: string | null = null;
+  const st: ScanState = {
+    quote: null, trailingBackslash: false, blocks: [],
+    danglingConnector: false, arithDepth: 0, pendingHeredocs: [],
+  };
 
   for (const line of lines) {
-    if (pendingHeredoc !== null) {
-      // Inside a here-document: only the exact delimiter line closes it.
-      if (line.trim() === pendingHeredoc) pendingHeredoc = null;
+    if (st.pendingHeredocs.length > 0) {
+      // Inside a here-document: only the exact delimiter line closes it,
+      // and it closes the one at the head of the queue.
+      if (line.trim() === st.pendingHeredocs[0]) st.pendingHeredocs.shift();
       continue;
     }
-    const opened = scanLine(line, st);
-    if (opened) pendingHeredoc = opened;
+    scanLine(line, st);
   }
 
-  if (pendingHeredoc !== null) {
-    return { complete: false, heredocDelimiter: pendingHeredoc };
+  if (st.pendingHeredocs.length > 0) {
+    return { complete: false, heredocDelimiter: st.pendingHeredocs[0] };
   }
   if (st.quote !== null || st.trailingBackslash || st.blocks.length > 0
       || st.danglingConnector || st.arithDepth > 0) {

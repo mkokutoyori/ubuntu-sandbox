@@ -312,17 +312,6 @@ function checkReadPermission(
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-/**
- * Preprocess heredocs in bash source.
- *
- * Transforms:
- *   cmd << 'DELIM'        →  cmd <<< 'body line 1\nbody line 2'
- *   cmd << DELIM           →  cmd <<< "body line 1\nbody line 2"
- *   cmd <<- DELIM          →  cmd <<< "body (tabs stripped)"
- *
- * Quoted delimiter  → single-quoted herestring (no expansion).
- * Unquoted delimiter → double-quoted herestring (expansion happens).
- */
 /** Remove shebang line if present. */
 function stripShebang(content: string): string {
   if (content.startsWith('#!')) {

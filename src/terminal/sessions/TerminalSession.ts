@@ -1614,6 +1614,43 @@ export abstract class TerminalSession {
   }
 
   /**
+   * Here-document hint opt-in, same shape as ghost text: off by default,
+   * per-terminal. Real bash never names the awaited delimiter — its PS2 is
+   * a bare `> ` and stays that way here. This only offers a teaching aid
+   * beside the prompt to whoever asks for it, and the prompt text itself
+   * is never touched, so a copied transcript still reproduces.
+   */
+  private _heredocHintEnabled = false;
+
+  isHeredocHintEnabled(): boolean {
+    return this._heredocHintEnabled;
+  }
+
+  setHeredocHintEnabled(enabled: boolean): void {
+    if (this._heredocHintEnabled === enabled) return;
+    this._heredocHintEnabled = enabled;
+    this.notify();
+  }
+
+  toggleHeredocHint(): boolean {
+    this.setHeredocHintEnabled(!this._heredocHintEnabled);
+    return this._heredocHintEnabled;
+  }
+
+  /**
+   * The status-line hint when one applies — null everywhere but a session
+   * that is actually collecting a here-document body with the opt-in on.
+   */
+  getHeredocHint(): string | null {
+    if (!this._heredocHintEnabled) return null;
+    const delimiter = this.pendingHeredocDelimiter();
+    return delimiter === null ? null : `waiting for: ${delimiter}`;
+  }
+
+  /** Overridden by sessions that model here-document accumulation. */
+  protected pendingHeredocDelimiter(): string | null { return null; }
+
+  /**
    * Ghost text: the inline grey continuation shown after the caret when
    * exactly one completion exists for the current input. Gated by the
    * per-session opt-in; sessions with a completion source override
