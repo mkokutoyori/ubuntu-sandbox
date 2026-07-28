@@ -16,6 +16,7 @@
 
 import type {
   NssEthersEntry, NssGroupEntry, NssGshadowEntry, NssHostEntry,
+  NssAliasEntry,
   NssNetgroupEntry, NssNetworkEntry, NssPasswdEntry, NssProtocolEntry,
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
@@ -68,5 +69,8 @@ export const GetentFormatter = {
       .map(t => `(${t.host},${t.user},${t.domain})`)
       .join(' ');
     return `${e.name} ${tris}`.trim();
+  },
+  alias(e: NssAliasEntry): string {
+    return `${e.name}: ${e.members.join(', ')}`;
   },
 };

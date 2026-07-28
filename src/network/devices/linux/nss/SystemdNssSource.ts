@@ -36,6 +36,9 @@ export class SystemdNssSource implements INssSource {
 
   constructor(private readonly dynamic: DynamicUserTable) {}
 
+  /** State stamp for cache keys — this source has no file to stat. */
+  getRevision(): number { return this.dynamic.getRevision(); }
+
   private dynPasswd(u: DynamicUser): NssPasswdEntry {
     return { name: u.name, passwd: 'x', uid: u.uid, gid: u.gid, gecos: 'Dynamic User', dir: '/', shell: NOLOGIN };
   }

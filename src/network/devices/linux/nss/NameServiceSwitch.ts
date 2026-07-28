@@ -32,6 +32,7 @@ import {
 import type {
   NssDatabaseConfig, NssEnumResult, NssResult, NssSourceSpec, NssStatus,
 } from './types';
+import { NssCache } from './NssCache';
 
 /**
  * Cache-invalidation signal — every IAM / host event that could change
@@ -49,11 +50,33 @@ function mergeEntries<T>(a: T, b: T): T {
   return a;
 }
 
+/**
+ * Files a database can be produced from. A cached answer stamps the
+ * mtime of each of these, so an edit invalidates it by construction —
+ * no TTL, no staleness window.
+ */
+const BACKING_FILES: Record<string, string[]> = {
+  passwd: ['/etc/passwd'],
+  group: ['/etc/group'],
+  shadow: ['/etc/shadow'],
+  gshadow: ['/etc/gshadow'],
+  hosts: ['/etc/hosts'],
+  services: ['/etc/services'],
+  protocols: ['/etc/protocols'],
+  networks: ['/etc/networks'],
+  ethers: ['/etc/ethers'],
+  rpc: ['/etc/rpc'],
+  netgroup: ['/etc/netgroup'],
+  aliases: ['/etc/aliases'],
+};
+
 export class NameServiceSwitch {
   /** Cache-invalidation listeners (downstream caches subscribe). */
   private readonly invalidationListeners = new Set<CacheInvalidationListener>();
   /** Disposable event-bus subscriptions, cleared on dispose(). */
   private readonly busSubscriptions: Unsubscribe[] = [];
+  /** The layered cache the invalidation signal finally feeds. */
+  private readonly cache = new NssCache();
 
   /**
    * @param vfs       VFS owning `/etc/nsswitch.conf`.
@@ -71,6 +94,39 @@ export class NameServiceSwitch {
     private readonly deviceId: string | null = null,
   ) {
     if (this.bus) this.wireBusInvalidation(this.bus);
+    // The signal finally has a consumer: every wired IAM/host event now
+    // drops that database's cached answers instead of reaching nobody.
+    this.onCacheInvalidated((db) => this.cache.invalidate(db));
+  }
+
+  /** The layered cache, for observability and tests. */
+  getCache(): NssCache { return this.cache; }
+
+  /**
+   * Composite cache key. Embeds the mtime of `/etc/nsswitch.conf` and of
+   * every file the database can come from, so any edit yields a
+   * different key — a cached answer can never be served stale.
+   * Returns null when the answer is not safely cacheable.
+   */
+  private cacheKeyFor(database: string, specs: NssSourceSpec[], key: string): string | null {
+    const files = BACKING_FILES[database];
+    if (!files) return null;
+
+    const sourceStamps: string[] = [];
+    for (const spec of specs) {
+      if (spec.name === 'files') { sourceStamps.push('files'); continue; }
+      // Any other source must be able to stamp its own state, or the
+      // answer is not safely cacheable (`dns`, for one, never is).
+      const src = this.sources.get(spec.name) as { getRevision?: () => number } | undefined;
+      const rev = src?.getRevision?.();
+      if (rev === undefined) return null;
+      sourceStamps.push(`${spec.name}@${rev}`);
+    }
+
+    const fileStamps = ['/etc/nsswitch.conf', ...files]
+      .map((p) => `${p}@${this.vfs.resolveInode(p)?.mtime ?? 0}`)
+      .join(',');
+    return `${database}|${sourceStamps.join('+')}|${fileStamps}|${key}`;
   }
 
   // ─── Public API ─────────────────────────────────────────────────────
@@ -109,9 +165,27 @@ export class NameServiceSwitch {
   lookup<T>(
     database: string,
     invoke: (source: INssSource) => NssResult<T> | undefined,
+    cacheKey?: string,
   ): NssResult<T> {
     const config = this.parsedConfig();
     const specs = sourcesFor(config, database);
+
+    const ck = cacheKey === undefined ? null : this.cacheKeyFor(database, specs, `k:${cacheKey}`);
+    if (ck) {
+      const hit = this.cache.get<NssResult<T>>(ck);
+      if (hit) return hit.value;
+    }
+    const result = this.lookupUncached(database, specs, invoke);
+    if (ck) this.cache.set(database, ck, result);
+    return result;
+  }
+
+  private lookupUncached<T>(
+    database: string,
+    specs: NssSourceSpec[],
+    invoke: (source: INssSource) => NssResult<T> | undefined,
+  ): NssResult<T> {
+    void database;
     let sawNotFound = false;
     let sawUnavail = false;
     let merged: T | undefined;
@@ -168,9 +242,25 @@ export class NameServiceSwitch {
   enumerate<T>(
     database: string,
     invoke: (source: INssSource) => NssEnumResult<T> | undefined,
+    cacheKey?: string,
   ): NssEnumResult<T> {
     const config = this.parsedConfig();
     const specs = sourcesFor(config, database);
+
+    const ck = cacheKey === undefined ? null : this.cacheKeyFor(database, specs, `e:${cacheKey}`);
+    if (ck) {
+      const hit = this.cache.get<NssEnumResult<T>>(ck);
+      if (hit) return hit.value;
+    }
+    const result = this.enumerateUncached(specs, invoke);
+    if (ck) this.cache.set(database, ck, result);
+    return result;
+  }
+
+  private enumerateUncached<T>(
+    specs: NssSourceSpec[],
+    invoke: (source: INssSource) => NssEnumResult<T> | undefined,
+  ): NssEnumResult<T> {
     const aggregate: T[] = [];
     let lastStatus: NssStatus = 'NOTFOUND';
 

@@ -10,6 +10,14 @@ export interface DynamicUser {
 export class DynamicUserTable {
   private readonly byNameMap = new Map<string, DynamicUser>();
   private readonly byUidMap = new Map<number, DynamicUser>();
+  /**
+   * Bumped on every real mutation. There is no file to stat behind a
+   * dynamic user, so this is what lets a cached NSS answer be keyed on
+   * the table's state instead of guessing with a TTL.
+   */
+  private revision = 0;
+
+  getRevision(): number { return this.revision; }
 
   allocate(name: string): DynamicUser {
     const existing = this.byNameMap.get(name);
@@ -26,6 +34,7 @@ export class DynamicUserTable {
         const user: DynamicUser = { name, uid, gid: uid };
         this.byNameMap.set(name, user);
         this.byUidMap.set(uid, user);
+        this.revision++;
         return user;
       }
     }
@@ -37,6 +46,7 @@ export class DynamicUserTable {
     if (!user) return;
     this.byNameMap.delete(name);
     this.byUidMap.delete(user.uid);
+    this.revision++;
   }
 
   byName(name: string): DynamicUser | null {

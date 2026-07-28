@@ -24,9 +24,11 @@ import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxUserManager } from '../LinuxUserManager';
 import { HostsFile } from '../../HostsFile';
 import type { INssSource } from './INssSource';
+import { parseAliasesFile } from './aliasesFile';
 import type {
   NssEnumResult, NssResult,
   NssEthersEntry, NssGroupEntry, NssGshadowEntry, NssHostEntry,
+  NssAliasEntry,
   NssNetgroupEntry, NssNetworkEntry, NssPasswdEntry, NssProtocolEntry,
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
@@ -445,4 +447,29 @@ export class FilesNssSource implements INssSource {
       yield { name: parts[0], triples };
     }
   }
+
+  // ── aliases (/etc/aliases) ─────────────────────────────────────────
+
+  getaliasbyname(name: string): NssResult<NssAliasEntry> {
+    const wanted = name.toLowerCase();
+    for (const a of this.iterateAliases()) {
+      if (a.name.toLowerCase() === wanted) return SUCCESS(a);
+    }
+    return NOTFOUND();
+  }
+
+  enumAliases(): NssEnumResult<NssAliasEntry> {
+    const list = [...this.iterateAliases()];
+    return list.length ? ENUM_OK(list) : ENUM_EMPTY();
+  }
+
+  /**
+   * `/etc/aliases` lines are `name: dest[, dest...]`. Continuation lines
+   * (leading whitespace) belong to the previous entry, as in a real
+   * aliases(5) file.
+   */
+  private iterateAliases(): NssAliasEntry[] {
+    return parseAliasesFile(this.vfs.readFile('/etc/aliases'));
+  }
+
 }

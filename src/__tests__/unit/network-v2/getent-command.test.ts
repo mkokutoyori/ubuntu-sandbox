@@ -230,7 +230,7 @@ describe('getent hosts', () => {
     expect(r.output).toMatch(/localhost/);
   });
 
-  it('topology-resolved hostname via the DNS source', async () => {
+  it('another machine on the topology does not resolve without a nameserver', async () => {
     const pc2 = new LinuxPC('pc2');
     pc2.setEventBus(bus);
     pc2.setHostname('pc2');
@@ -239,13 +239,14 @@ describe('getent hosts', () => {
       new IPAddress('10.0.0.42'),
       new SubnetMask('255.255.255.0'));
 
-    // Sanity probe: resolver finds it directly.
+    // Scanning every device in the simulation was the old fallback and was
+    // deliberately removed (docs/PRD-Frame-Only-Refactor.md P6): with no
+    // nameserver configured, the dns source has nothing to ask.
     const direct = pc.executor.nss.lookup('hosts', s => s.gethostbyname?.('pc2'));
-    expect(direct.status).toBe('SUCCESS');
+    expect(direct.status).toBe('NOTFOUND');
 
     const r = await getent(pc, 'hosts pc2');
-    expect(r.exitCode).toBe(0);
-    expect(r.output).toMatch(/10\.0\.0\.42.*pc2/);
+    expect(r.exitCode).toBe(2);
   });
 
   it('unknown host → exit 2', async () => {
@@ -281,21 +282,19 @@ describe('getent options', () => {
   });
 
   it('-s files forces the `files` source (no DNS fallback)', async () => {
-    const pc2 = new LinuxPC('pc2');
-    pc2.setEventBus(bus);
-    pc2.setHostname('pc2');
-    const port = pc2.getPorts()[0];
-    pc2.configureInterface(port.getName(),
-      new IPAddress('10.0.0.42'),
-      new SubnetMask('255.255.255.0'));
+    // `pc2` is only in /etc/hosts, so `files` answers it; a name that is
+    // in neither /etc/hosts nor any zone stays unresolved either way.
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.0.42 pc2" >> /etc/hosts'`);
 
-    // Without -s files, pc2 resolves via DNS.
     const open = await getent(pc, 'hosts pc2');
     expect(open.exitCode).toBe(0);
 
-    // With -s files, only /etc/hosts is consulted.
     const filesOnly = await getent(pc, '-s files hosts pc2');
-    expect(filesOnly.exitCode).toBe(2);
+    expect(filesOnly.exitCode).toBe(0);
+    expect(filesOnly.output).toMatch(/10\.0\.0\.42.*pc2/);
+
+    const unknownViaFiles = await getent(pc, '-s files hosts nowhere');
+    expect(unknownViaFiles.exitCode).toBe(2);
   });
 
   it('--service=files is recognised as -s files', async () => {

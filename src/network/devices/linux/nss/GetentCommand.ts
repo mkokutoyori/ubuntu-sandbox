@@ -40,6 +40,7 @@ import { GetentFormatter } from './GetentFormatter';
 import type {
   NssEnumResult, NssResult,
   NssEthersEntry, NssGroupEntry, NssGshadowEntry, NssHostEntry,
+  NssAliasEntry,
   NssNetgroupEntry, NssNetworkEntry, NssPasswdEntry, NssProtocolEntry,
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
@@ -143,17 +144,24 @@ export function runGetent(
 
   const overrideFor = (database: string): string | null =>
     parsed.service.perDb.get(database) ?? parsed.service.global;
+
+  // The resolver caches per (database, key); handlers pass no key of
+  // their own, so the invocation's own argv plus the position of the
+  // call in the (deterministic) call sequence identifies it exactly.
+  const invocation = argv.join(' ');
+  let callSeq = 0;
+
   const resolveSingle = <T>(database: string, fn: (s: INssSource) => NssResult<T> | undefined): NssResult<T> => {
     const ov = overrideFor(database);
     if (ov === 'files') return fn(fallbackFilesSource) ?? { status: 'UNAVAIL' };
     if (ov) return nss.lookupVia<T>(ov, fn);
-    return nss.lookup<T>(database, fn);
+    return nss.lookup<T>(database, fn, `${invocation}#${callSeq++}`);
   };
   const resolveEnum = <T>(database: string, fn: (s: INssSource) => NssEnumResult<T> | undefined): NssEnumResult<T> => {
     const ov = overrideFor(database);
     if (ov === 'files') return fn(fallbackFilesSource) ?? { status: 'UNAVAIL', entries: [] };
     if (ov) return nss.enumerateVia<T>(ov, fn);
-    return nss.enumerate<T>(database, fn);
+    return nss.enumerate<T>(database, fn, `${invocation}#${callSeq++}`);
   };
 
   switch (parsed.database) {
@@ -172,10 +180,7 @@ export function runGetent(
     case 'rpc':       return handleRpc(resolveSingle, resolveEnum, parsed.keys);
     case 'netgroup':  return handleNetgroup(resolveSingle, resolveEnum, parsed.keys);
     case 'initgroups':return handleInitgroups(resolveSingle, parsed.keys);
-    case 'aliases':
-      // /etc/aliases — mail aliases. Real getent supports it; the
-      // simulator has no mail subsystem, return UNAVAIL → empty.
-      return { output: '', exitCode: 2 };
+    case 'aliases':   return handleAliases(resolveSingle, resolveEnum, parsed.keys);
     default:
       return { output: `Unknown database: ${parsed.database}`, exitCode: 1 };
   }
@@ -418,6 +423,21 @@ function handleNetgroup(single: SingleFn, enumerate: EnumFn, keys: string[]): Ge
   for (const k of keys) {
     const r = single<NssNetgroupEntry>('netgroup', s => s.getnetgrent?.(k));
     if (r.status === 'SUCCESS' && r.entry) out.push(GetentFormatter.netgroup(r.entry));
+    else allOk = false;
+  }
+  return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
+}
+
+function handleAliases(single: SingleFn, enumerate: EnumFn, keys: string[]): GetentResult {
+  if (keys.length === 0) {
+    const r = enumerate<NssAliasEntry>('aliases', s => s.enumAliases?.());
+    return { output: r.entries.map(GetentFormatter.alias).join('\n'), exitCode: 0 };
+  }
+  const out: string[] = [];
+  let allOk = true;
+  for (const k of keys) {
+    const r = single<NssAliasEntry>('aliases', s => s.getaliasbyname?.(k));
+    if (r.status === 'SUCCESS' && r.entry) out.push(GetentFormatter.alias(r.entry));
     else allOk = false;
   }
   return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };

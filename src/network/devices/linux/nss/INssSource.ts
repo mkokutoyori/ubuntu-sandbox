@@ -22,7 +22,7 @@ import type {
   NssResult, NssEnumResult,
   NssPasswdEntry, NssGroupEntry, NssShadowEntry, NssGshadowEntry,
   NssHostEntry, NssServiceEntry, NssProtocolEntry, NssNetworkEntry,
-  NssEthersEntry, NssRpcEntry, NssNetgroupEntry,
+  NssEthersEntry, NssRpcEntry, NssNetgroupEntry, NssAliasEntry,
 } from './types';
 
 export interface INssSource {
@@ -76,4 +76,8 @@ export interface INssSource {
 
   getnetgrent?(name: string): NssResult<NssNetgroupEntry>;
   enumNetgroup?(): NssEnumResult<NssNetgroupEntry>;
+
+  // ── aliases ────────────────────────────────────────────────────────
+  getaliasbyname?(name: string): NssResult<NssAliasEntry>;
+  enumAliases?(): NssEnumResult<NssAliasEntry>;
 }

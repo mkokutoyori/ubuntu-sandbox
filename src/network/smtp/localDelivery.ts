@@ -1,4 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
+import { parseAliasesFile, expandAlias } from '@/network/devices/linux/nss/aliasesFile';
 
 export interface MboxEntry {
   readonly envelopeFrom: string;
@@ -48,6 +49,17 @@ export function formatMboxEntry(entry: MboxEntry): string {
   return `${mboxFromLine(entry.envelopeFrom, entry.receivedAt)}${CRLF}${entry.rawMessage}${CRLF}${CRLF}`;
 }
 
+/**
+ * Recipients a local address really resolves to, after `/etc/aliases`.
+ * An address with no alias resolves to itself, so this is safe to call
+ * unconditionally.
+ */
+export function resolveAliasRecipients(fs: MailDropFileSystem, recipientAddress: string): string[] {
+  const entries = parseAliasesFile(fs.readFile('/etc/aliases'));
+  if (entries.length === 0) return [recipientAddress];
+  return expandAlias(entries, recipientAddress, resolveLocalPart);
+}
+
 export function deliverLocalMessage(
   fs: MailDropFileSystem,
   recipientAddress: string,
@@ -55,8 +67,15 @@ export function deliverLocalMessage(
   owner: { uid: number; gid: number },
   eventBus?: IEventBus,
 ): boolean {
-  const path = mailboxPathFor(recipientAddress);
-  const ok = fs.writeFile(path, formatMboxEntry(entry), owner.uid, owner.gid, 0o022, true);
-  if (ok) eventBus?.publish({ topic: 'smtp.delivery.local', payload: { recipient: recipientAddress } });
-  return ok;
+  // `/etc/aliases` first: a message to `postmaster` has to land in the
+  // real recipients' mailboxes, not in a `postmaster` one nobody reads.
+  const recipients = resolveAliasRecipients(fs, recipientAddress);
+  let allOk = true;
+  for (const rcpt of recipients) {
+    const path = mailboxPathFor(rcpt);
+    const ok = fs.writeFile(path, formatMboxEntry(entry), owner.uid, owner.gid, 0o022, true);
+    if (ok) eventBus?.publish({ topic: 'smtp.delivery.local', payload: { recipient: rcpt } });
+    else allOk = false;
+  }
+  return allOk;
 }
