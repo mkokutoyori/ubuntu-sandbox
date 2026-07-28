@@ -24,6 +24,8 @@ export type DisconnectReason =
   | 'host_key_rejected'
   | 'protocol_error'
   | 'admin_disconnect'
+  /** La ligne a expiré faute d'activité — l'`exec-timeout` d'une VTY. */
+  | 'exec_timeout'
   | 'throttled'
   | 'client-alive-timeout'
   | 'reset'

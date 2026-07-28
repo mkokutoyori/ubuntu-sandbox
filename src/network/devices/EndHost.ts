@@ -93,6 +93,9 @@ import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IP_PROTO_GRE } from '../gre/types';
 import { IP_PROTO_IGMP } from '../igmp/types';
 import { IgmpHostAgent } from '../igmp/IgmpHostAgent';
+import { LldpAgent } from '../lldp/LldpAgent';
+import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
+import type { LldpNeighbor } from '../lldp/LldpAgent';
 
 export interface GreDecapsulator {
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): IPv4Packet | null;
@@ -329,6 +332,7 @@ export abstract class EndHost extends Equipment {
    * joins a group carries no multicast state at all.
    */
   private _igmpHostAgent: IgmpHostAgent | null = null;
+  private _lldpAgent: LldpAgent | null = null;
 
   /**
    * IPv4 host model (RFC 1122 §3.3.4.2).
@@ -403,6 +407,53 @@ export abstract class EndHost extends Equipment {
       }, () => this.getBus());
     }
     return this._igmpHostAgent;
+  }
+
+  // ─── LLDP (IEEE 802.1AB) ─────────────────────────────────────────
+
+  /**
+   * Un poste Linux parle LLDP comme n'importe quel équipement du LAN :
+   * c'est ce qui lui permet de découvrir le commutateur auquel il est
+   * câblé, et c'est ce que `networkctl lldp` affiche. Le moteur est le
+   * même que celui des switches et des routeurs, seul l'hôte change
+   * (`docs/PRD-networkctl.md` §7).
+   */
+  getLldpAgent(): LldpAgent {
+    if (!this._lldpAgent) {
+      this._lldpAgent = new LldpAgent({
+        id: this.id, name: this.name,
+        getHostname: () => this.getHostname(),
+        getType: () => this.getType(),
+        getPort: (n: string) => this.ports.get(n),
+        getPorts: () => [...this.ports.values()],
+        sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      } as never, () => this.getBus());
+      // networkd écoute par défaut (`LLDP=yes`) mais n'émet pas
+      // (`EmitLLDP=no`) : un poste voit le commutateur auquel il est
+      // câblé sans rien configurer, et n'encombre pas le LAN pour autant.
+      // C'est l'inverse du défaut Cisco, où `lldp run` ouvre les deux.
+      // L'émission se coupe AVANT l'activation : `setEnabled(true)` annonce
+      // immédiatement, et une annonce partie ne se rattrape pas.
+      for (const port of this.ports.values()) {
+        this._lldpAgent.setPortTransmit(port.getName(), false);
+      }
+      this._lldpAgent.setEnabled(true);
+      this._lldpAgent.start();
+    }
+    return this._lldpAgent;
+  }
+
+  /** `EmitLLDP=` de systemd.network(5) — l'hôte annonce sa présence. */
+  setLldpEmission(on: boolean): void {
+    const agent = this.getLldpAgent();
+    for (const port of this.ports.values()) agent.setPortTransmit(port.getName(), on);
+    if (on) agent.advertiseAll('config-change');
+  }
+
+  /** Voisins LLDP, tous ports confondus ou sur un seul. */
+  getLldpNeighbors(iface?: string): LldpNeighbor[] {
+    const agent = this.getLldpAgent();
+    return iface ? agent.getNeighborsOnPort(iface) : agent.getNeighbors();
   }
 
   /**
@@ -1383,6 +1434,16 @@ export abstract class EndHost extends Equipment {
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     const port = this.ports.get(portName);
     if (!port) return;
+
+    // LLDP voyage vers 01:80:c2:00:00:0e, qui n'est ni broadcast ni l'un
+    // des deux préfixes multicast IP reconnus plus bas : sans cette sortie
+    // anticipée le filtre L2 jetterait la trame et l'hôte ne découvrirait
+    // jamais son voisin.
+    if (frame.etherType === ETHERTYPE_LLDP
+      && frame.dstMAC.toString().toLowerCase() === LLDP_MULTICAST_MAC.toLowerCase()) {
+      this.getLldpAgent().handleFrame(portName, frame);
+      return;
+    }
 
     // L2 filter: accept frames addressed to us, broadcast, or multicast
     const isForUs = frame.dstMAC.equals(port.getMAC());

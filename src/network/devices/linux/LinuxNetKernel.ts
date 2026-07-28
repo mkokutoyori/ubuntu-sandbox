@@ -149,6 +149,9 @@ export interface LinuxNetKernel {
 
   tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout';
 
+  /** Voisins LLDP découverts sur le câble, tous ports ou un seul. */
+  getLldpNeighbors(iface?: string): import('../../lldp/LldpAgent').LldpNeighbor[];
+
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
   autoDiscoverDHCPServers(): void;

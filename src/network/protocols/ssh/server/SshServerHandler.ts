@@ -203,7 +203,7 @@ export class SshServerHandler {
           kind: 'client_disconnected',
           user: userCtx?.username ?? '',
           ip: clientIp,
-          reason: 'exec-timeout',
+          reason: 'exec_timeout',
           timestamp: Date.now(),
         });
         try { conn.write(JSON.stringify({ op: 'disconnect', reason: 'exec-timeout' })); }

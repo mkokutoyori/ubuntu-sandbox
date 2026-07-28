@@ -1687,7 +1687,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       debugSvc()?.disable('standby') ?? '');
     this.privilegedTrie.registerGreedy('no debug eigrp', 'Disable EIGRP debug', (_args) =>
       debugSvc()?.disable('ip.eigrp') ?? '');
-    const genericDebug = () => (this.d() as unknown as { getDebugService?: () => { enable(c: string): string; disable(c: string): string } }).getDebugService?.();
+    const genericDebug = () => (this.d() as unknown as {
+      getDebugService?: () => {
+        enable(c: string, scope?: string): string;
+        disable(c: string): string;
+        addCondition(kind: 'interface' | 'vrf', value: string): string;
+        removeCondition(kind: 'interface' | 'vrf', value: string): string;
+        clearConditions(): void;
+      };
+    }).getDebugService?.();
     this.privilegedTrie.registerGreedy('debug interface', 'Debug interface state changes', (args) => {
       const svc = genericDebug();
       const iface = args.join(' ').trim();

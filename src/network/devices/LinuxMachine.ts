@@ -410,7 +410,7 @@ export abstract class LinuxMachine extends EndHost
       if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
     });
 
-    this.executor.setNetworkCommandRunner((argv, env) => {
+    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
       const args = argv.slice(1);
@@ -424,19 +424,58 @@ export abstract class LinuxMachine extends EndHost
       // simple command it evaluates (composite lines, pipelines, scripts,
       // functions) — the declarative privilege gate must apply here too,
       // not just on the single-command fast path in `tryNetworkCommand`.
+      // `dispatchMaybeNetwork` retire le `sudo` avant d'arriver ici : sans
+      // ce drapeau, une commande réseau privilégiée était refusée dans une
+      // ligne composée (`sudo iptables -L; echo $?`) alors qu'elle passait
+      // seule, et l'autorisation sudoers n'était jamais consultée.
+      if (viaSudo) {
+        const auth = this.executor.authorizeSudo(argv[0], args, 'root');
+        if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
+          this.executor.writeSudoAuditLine('not-in-sudoers', auth, argv.join(' '));
+          return Promise.resolve({
+            output: `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`,
+            exitCode: 1,
+          });
+        }
+        if (auth.reason === 'command-not-allowed') {
+          this.executor.writeSudoAuditLine('command-not-allowed', auth, argv.join(' '));
+          return Promise.resolve({
+            output: `Sorry, user ${auth.invokingUser} is not allowed to execute '${argv.join(' ')}' as ${auth.runasUser} on ${auth.hostname}.`,
+            exitCode: 1,
+          });
+        }
+        this.executor.writeSudoAuditLine('success', auth, argv.join(' '));
+      }
+      const userMgr = this.executor.userMgr;
+      const saved = viaSudo
+        ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
+        : null;
+      if (saved) {
+        userMgr.currentUser = 'root';
+        userMgr.currentUid = 0;
+        userMgr.currentGid = 0;
+      }
+      const restore = (): void => {
+        if (!saved) return;
+        userMgr.currentUser = saved.user;
+        userMgr.currentUid = saved.uid;
+        userMgr.currentGid = saved.gid;
+      };
+
       if (cmd.privilege) {
-        const userMgr = this.executor.userMgr;
         const actor = {
           uid: userMgr.currentUid,
           user: userMgr.currentUser,
           groups: userMgr.getUserGroups(userMgr.currentUser).map((g) => g.name),
         };
         const denial = evaluatePrivilegeRequirement(cmd.privilege, argv[0], args, actor);
-        if (denial) return Promise.resolve(denial);
+        if (denial) { restore(); return Promise.resolve(denial); }
       }
       const ctx = this.buildCommandContext();
-      if (cmd.runWithStatusSync) return Promise.resolve(cmd.runWithStatusSync(ctx, args));
-      if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args);
+      if (cmd.runWithStatusSync) {
+        try { return Promise.resolve(cmd.runWithStatusSync(ctx, args)); } finally { restore(); }
+      }
+      if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args).finally(restore);
       // Match `_registryCommandHook`'s exit-code inference (used when this
       // same registry command is reached via the synchronous script
       // dispatch default case) so `$?`/`||` chaining behaves identically
@@ -444,7 +483,7 @@ export abstract class LinuxMachine extends EndHost
       return Promise.resolve(cmd.run(ctx, args)).then((output) => ({
         output,
         exitCode: this.inferRegistryExitCode(argv[0], output),
-      }));
+      })).finally(restore);
     });
     this.executor.setNetworkCommandNamePredicate((name) => {
       const cmd = this.commands.get(name);
@@ -2288,6 +2327,7 @@ export abstract class LinuxMachine extends EndHost
       sendUdpProbe: (target: IPAddress, destinationPort: number, sourcePort: number): boolean => {
         return this.sendUdpDatagram(target, destinationPort, sourcePort, null, 0);
       },
+      getLldpNeighbors: (iface?: string) => this.getLldpNeighbors(iface),
       getDhcpClient: (): DHCPClient => {
         return this.dhcpClient;
       },

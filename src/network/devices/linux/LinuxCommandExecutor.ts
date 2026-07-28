@@ -2595,11 +2595,11 @@ export class LinuxCommandExecutor {
    * argv is not a network command and the synchronous dispatch applies.
    */
   private networkRunner:
-    | ((argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
+    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
     | null = null;
 
   setNetworkCommandRunner(
-    runner: (argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
   ): void {
     this.networkRunner = runner;
   }
@@ -2672,8 +2672,9 @@ export class LinuxCommandExecutor {
     background?: boolean,
   ): { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }> {
     if (!background && this.networkRunner && argv.length > 0) {
-      const effective = argv[0] === 'sudo' ? argv.slice(1) : argv;
-      const pending = effective.length > 0 ? this.networkRunner(effective, env) : null;
+      const viaSudo = argv[0] === 'sudo';
+      const effective = viaSudo ? argv.slice(1) : argv;
+      const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo) : null;
       if (pending) return pending;
       const suPending = this.trySuNetworkCommand(argv, env);
       if (suPending) return suPending;

@@ -10,6 +10,13 @@ import {
   type DeclaredInterfaceConfig,
   type NetplanConfig,
 } from './net/NetworkConfigFiles';
+import {
+  discoverNetworkdFiles,
+  matchLinkFile,
+  matchNetworkFile,
+  DEFAULT_LINK_FILE_PATH,
+  DEFAULT_LINK_FILE_TEXT,
+} from './net/NetworkdFiles';
 
 export const INTERFACES_PATH = '/etc/network/interfaces';
 export const NETPLAN_PATH = '/etc/netplan/01-netcfg.yaml';
@@ -40,6 +47,16 @@ export class LinuxNetworkConfigManager {
       const cfg: NetplanConfig = { renderer: 'networkd', interfaces };
       if (!this.vfs.exists('/etc/netplan')) this.vfs.mkdirp('/etc/netplan', 0o755, 0, 0);
       this.vfs.createFileAt(NETPLAN_PATH, serializeNetplanYaml(cfg), 0o600, 0, 0);
+    }
+    // Le répertoire d'administration existe même vide sur un Ubuntu neuf,
+    // et le .link par défaut est fourni par le paquet systemd — sans lui,
+    // `networkctl status` nommait un fichier qui n'existait pas.
+    if (!this.vfs.exists('/etc/systemd/network')) {
+      this.vfs.mkdirp('/etc/systemd/network', 0o755, 0, 0);
+    }
+    if (!this.vfs.exists(DEFAULT_LINK_FILE_PATH)) {
+      this.vfs.mkdirp('/usr/lib/systemd/network', 0o755, 0, 0);
+      this.vfs.createFileAt(DEFAULT_LINK_FILE_PATH, DEFAULT_LINK_FILE_TEXT, 0o644, 0, 0);
     }
     if (!this.vfs.exists(NM_CONF_PATH)) {
       if (!this.vfs.exists('/etc/NetworkManager')) this.vfs.mkdirp('/etc/NetworkManager', 0o755, 0, 0);
@@ -196,6 +213,86 @@ export class LinuxNetworkConfigManager {
       }
     }
     return warnings;
+  }
+
+  /** Fichiers networkd qui s'appliquent réellement à `iface` (§5 du PRD). */
+  resolveNetworkdFiles(iface: string): { networkFile: string | null; linkFile: string | null } {
+    const files = discoverNetworkdFiles(this.vfs);
+    const network = matchNetworkFile(files, iface);
+    const link = matchLinkFile(files, iface);
+    return {
+      // Netplan reste prioritaire quand il existe : c'est ce que fait
+      // Ubuntu, et netplan génère justement ces fichiers-là.
+      networkFile: network?.path ?? (this.vfs.exists(NETPLAN_PATH) ? NETPLAN_PATH : null),
+      linkFile: link?.path ?? null,
+    };
+  }
+
+  /** `networkctl cat` / `networkctl edit`. */
+  networkdFileAction(
+    net: LinuxNetKernel,
+    verb: 'cat' | 'edit',
+    targets: readonly string[],
+  ): { output: string; exitCode: number } {
+    const files = discoverNetworkdFiles(this.vfs);
+    const paths: string[] = [];
+    if (targets.length === 0) {
+      paths.push(...files.map((f) => f.path));
+      if (this.vfs.exists(NETPLAN_PATH)) paths.push(NETPLAN_PATH);
+    }
+    for (const target of targets) {
+      if (net.getPorts().has(target)) {
+        const resolved = this.resolveNetworkdFiles(target);
+        for (const p of [resolved.networkFile, resolved.linkFile]) if (p) paths.push(p);
+        continue;
+      }
+      const byName = files.find((f) => f.basename === target || f.path === target);
+      if (byName) { paths.push(byName.path); continue; }
+      if (this.vfs.exists(target)) { paths.push(target); continue; }
+      return { output: `Cannot find device or file '${target}'.`, exitCode: 1 };
+    }
+
+    const unique = [...new Set(paths)];
+    if (unique.length === 0) {
+      return { output: 'No network configuration files found.', exitCode: 1 };
+    }
+    if (verb === 'edit') {
+      // L'édition passe par l'éditeur déjà simulé ; ici on se borne à
+      // désigner le fichier, sans prétendre l'avoir ouvert.
+      return { output: unique.map((p) => `Would edit ${p}`).join('\n'), exitCode: 0 };
+    }
+    const blocks = unique.map((p) => `# ${p}\n${this.vfs.readFile(p) ?? ''}`.trimEnd());
+    return { output: blocks.join('\n\n'), exitCode: 0 };
+  }
+
+  /** `networkctl reconfigure <iface>` — réapplique le seul lien visé. */
+  reconfigureInterface(net: LinuxNetKernel, iface: string): string[] {
+    const declared = this.readNetplan()?.interfaces.get(iface);
+    if (!declared) return [];
+    const applied = this.applyDeclaredConfig(net, iface, declared);
+    for (const line of applied) this.logMgr.logSystemd('systemd-networkd', line);
+    return applied;
+  }
+
+  /**
+   * Table des étiquettes d'adresses de la RFC 3484, telle que systemd la
+   * porte en dur : c'est une constante du protocole, pas un état.
+   */
+  addressLabelTable(): string {
+    const rows: Array<[string, number]> = [
+      ['::1/128', 0], ['::/0', 1], ['2002::/16', 2], ['::/96', 3],
+      ['::ffff:0.0.0.0/96', 4], ['2001::/32', 5], ['fc00::/7', 13],
+      ['::ffff:0.0.0.0/96', 4],
+    ];
+    const seen = new Set<string>();
+    const lines = ['LABEL PREFIX/PREFIXLEN'];
+    for (const [prefix, label] of rows) {
+      const key = `${prefix}|${label}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`${String(label).padStart(5)} ${prefix}`);
+    }
+    return lines.join('\n');
   }
 
   networkctlStatus(net: LinuxNetKernel, ifaceName?: string): string {
