@@ -157,6 +157,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       terminalLength: this.terminalLength,
       terminalWidth: this.terminalWidth,
       terminalMonitor: this.terminalMonitor,
+      terminalMonitorExplicit: this.terminalMonitorExplicit,
       terminalDebugging: this.terminalMonitor,
       privilegeLevel: this.currentPrivilegeLevel,
       historySize: this.terminalHistorySize,
@@ -178,6 +179,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.terminalLength = s.terminalLength;
     this.terminalWidth = s.terminalWidth;
     this.terminalMonitor = s.terminalMonitor;
+    this.terminalMonitorExplicit = s.terminalMonitorExplicit ?? false;
   }
 
   // ─── Abstract Method Implementations ─────────────────────────────

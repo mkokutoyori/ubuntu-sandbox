@@ -71,6 +71,14 @@ export interface VtySnapshot {
   terminalWidth: number;
   /** `terminal monitor` — stream this line's syslog output to the terminal. */
   terminalMonitor: boolean;
+  /**
+   * True once the operator has typed `terminal monitor` or `terminal no
+   * monitor` on this line. The console receives debug output without
+   * asking, so "off" and "never set" cannot be the same state — otherwise
+   * `terminal no monitor` has nothing to distinguish itself from a fresh
+   * console and cannot silence anything.
+   */
+  terminalMonitorExplicit?: boolean;
   /** Huawei VRP `terminal debugging` — route debug output to this vty. */
   terminalDebugging: boolean;
   /** Privilege level 0–15. 15 = enable. 1 = user. */
@@ -144,6 +152,7 @@ export class CliShellSession {
       terminalLength: init.initialLength ?? 24,
       terminalWidth: 80,
       terminalMonitor: false,
+      terminalMonitorExplicit: false,
       terminalDebugging: false,
       privilegeLevel: 1,
       historySize: 10,

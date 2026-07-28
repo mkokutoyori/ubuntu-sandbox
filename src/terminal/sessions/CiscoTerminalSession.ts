@@ -777,12 +777,26 @@ export class CiscoTerminalSession extends CLITerminalSession {
     return job !== null;
   }
 
+  /**
+   * A console receives debug output without asking — IOS ships with
+   * `logging console debugging`. A line that has explicitly said
+   * `terminal no monitor` receives nothing, and that choice is the
+   * operator's alone: silencing one session must leave every other one
+   * untouched, which is exactly what a per-session subscription gives.
+   */
+  private receivesDebugOutput(): boolean {
+    const state = this.vty?.state;
+    if (!state?.terminalMonitorExplicit) return true;
+    return state.terminalMonitor;
+  }
+
   private reconcileDebugSubscription(): void {
     const svc = (this.device as unknown as { getDebugService?: () => TerminalDebugSource }).getDebugService?.();
     if (!svc) return;
-    if (svc.hasAnyFlag() && !this.debugJob) {
+    const wanted = svc.hasAnyFlag() && this.receivesDebugOutput();
+    if (wanted && !this.debugJob) {
       this.startDebugSubscription(svc);
-    } else if (!svc.hasAnyFlag() && this.debugJob) {
+    } else if (!wanted && this.debugJob) {
       this.debugJob.cancel();
       this.debugJob = null;
     }

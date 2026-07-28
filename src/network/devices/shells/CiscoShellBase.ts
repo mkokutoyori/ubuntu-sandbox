@@ -214,6 +214,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
   protected terminalMonitor = false;
+  /** Set once `terminal [no] monitor` has been typed on this line. */
+  protected terminalMonitorExplicit = false;
   protected readonly debugConsole: string[] = [];
   private debugSourceAttached = false;
 
@@ -981,7 +983,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
   }
 
+  /**
+   * `undebug X` is `no debug X`, and IOS accepts every abbreviation down
+   * to `u X`. Registering both spellings for each debug family would
+   * guarantee the two drift apart the first time one gains an option, so
+   * the synonym is resolved once, here, before the trie ever sees it.
+   * `undebug all` keeps its own registration — it does more than clear
+   * the flag registry.
+   */
+  private static undebugAsNoDebug(cmdPart: string): string | null {
+    const m = /^\s*(u|un|und|unde|undeb|undebu|undebug)\s+(\S.*)$/i.exec(cmdPart);
+    if (!m) return null;
+    const rest = m[2].trim();
+    if (/^all\b/i.test(rest)) return null;
+    return `no debug ${rest}`;
+  }
+
   protected executeOnTrie(cmdPart: string): string {
+    const asNoDebug = CiscoShellBase.undebugAsNoDebug(cmdPart);
+    if (asNoDebug !== null) cmdPart = asNoDebug;
     if (this.mode === 'user' && this.currentPrivilegeLevel > 1 && this.currentPrivilegeLevel < 15) {
       const granted = this.tryGrantedPrivilegeCommand(cmdPart);
       if (granted !== null) return granted;
@@ -1367,10 +1387,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
       if (sub === 'history') { this.terminalHistoryEnabled = false; return ''; }
-      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; return ''; }
+      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; this.terminalMonitorExplicit = true; return ''; }
       return CISCO_ERRORS.INVALID_INPUT;
     }
-    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; return ''; }
+    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; this.terminalMonitorExplicit = true; return ''; }
     if (head === 'exec') return '';
     if (head === 'history') {
       if ((rest[0] ?? '').toLowerCase() === 'size') {
@@ -1573,15 +1593,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
-      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim', scope?: string) => string } };
+      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim', scope?: string, detail?: boolean) => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is on';
       if (sub === 'packet') return svc.enable('ip.packet');
       if (sub.startsWith('packet ')) {
         const detail = args.some((a) => /^detail$/i.test(a));
         const aclName = args.slice(1).find((a) => !/^detail$/i.test(a));
-        if (!aclName) return svc.enable('ip.packet', detail ? 'detail' : undefined);
-        svc.enable('ip.packet', aclName);
+        if (!aclName) return svc.enable('ip.packet', undefined, detail);
+        svc.enable('ip.packet', aclName, detail);
         return `IP packet debugging is on for access list ${aclName}${detail ? ' (detailed)' : ''}`;
       }
       if (sub === 'icmp') return svc.enable('ip.icmp');

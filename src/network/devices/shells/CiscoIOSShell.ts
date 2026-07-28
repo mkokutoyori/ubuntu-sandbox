@@ -413,6 +413,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       terminalLength: this.terminalLength,
       terminalWidth: this.terminalWidth,
       terminalMonitor: this.terminalMonitor,
+      terminalMonitorExplicit: this.terminalMonitorExplicit,
       // Cisco IOS has no separate "terminal debugging" toggle — `terminal
       // monitor` alone gates whether debug/log output reaches this vty
       // (unlike Huawei VRP, which distinguishes the two). Mirror it here
@@ -450,6 +451,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.terminalLength = s.terminalLength;
     this.terminalWidth = s.terminalWidth;
     this.terminalMonitor = s.terminalMonitor;
+    this.terminalMonitorExplicit = s.terminalMonitorExplicit ?? false;
     this.cmdHistory = s.cmdHistory;
   }
 

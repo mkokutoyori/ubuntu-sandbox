@@ -55,16 +55,20 @@ export function toCiscoMac(mac: string): string {
 export interface DebugFlag {
   category: DebugCategory;
   enabledAtMs: number;
+  /** ACL name/number the flag is filtered by, when one was given. */
   scope?: string;
+  /** `detail` keyword — an independent axis from the ACL, so it needs
+   *  its own field: `debug ip packet 100 detail` carries both. */
+  detail?: boolean;
 }
 
 export class RouterDebugService implements TerminalDebugSource {
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
   private readonly broadcast = new DebugBroadcast();
 
-  enable(category: DebugCategory, scope?: string): string {
-    this.flags.set(category, { category, enabledAtMs: Date.now(), scope });
-    return `${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}`;
+  enable(category: DebugCategory, scope?: string, detail = false): string {
+    this.flags.set(category, { category, enabledAtMs: Date.now(), scope, detail });
+    return `${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
   }
 
   disable(category: DebugCategory): string {
@@ -344,7 +348,7 @@ export class RouterDebugService implements TerminalDebugSource {
         const custom = this.categoryRenderers.get(f.category);
         if (custom) return custom();
         if (f.category === 'interface' && f.scope) return `Interface ${f.scope} debugging is on`;
-        return `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}`;
+        return `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
       })
       .join('\n');
   }

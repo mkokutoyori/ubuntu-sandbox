@@ -708,6 +708,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return true;
   }
 
+  /**
+   * `no interface Tunnel0`. Only virtual interfaces can be removed — a
+   * physical port is soldered on, and IOS refuses just as flatly.
+   *
+   * Removing the port is not enough: anything still pointing at it would
+   * be left holding a name that resolves to nothing. Static routes via
+   * the interface go, and so does a `debug` scoped to it — an operator
+   * who deletes the interface they were watching should not be left with
+   * a flag aimed at a ghost.
+   */
+  _removeVirtualInterface(name: string): boolean {
+    const port = this.ports.get(name);
+    if (!port) return false;
+    if (!/^(Loopback|Tunnel|Vlan|Port-channel|Nve|Virtual-Template|Serial)/i.test(name)) return false;
+
+    const cable = port.getCable?.();
+    if (cable) cable.disconnect();
+    this.ports.delete(name);
+    this.routingTable = this.routingTable.filter((r) => r.iface !== name);
+
+    const debug = this._debugService;
+    if (debug) {
+      for (const flag of debug.list()) {
+        if (flag.scope && flag.scope.toLowerCase() === name.toLowerCase()) debug.disable(flag.category);
+      }
+    }
+    return true;
+  }
+
   /** Vendor-specific interface naming convention */
   protected abstract getVendorPortName(index: number): string;
 

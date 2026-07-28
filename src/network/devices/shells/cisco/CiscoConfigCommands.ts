@@ -139,6 +139,28 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
+  trie.registerGreedy('no interface', 'Remove a virtual interface', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const raw = args.join(' ');
+    const combined = raw.replace(/\s+/g, '');
+    const typed = combined.match(/^(loopback|lo|tunnel|tu|virtual-template|port-channel|po|vlan|nve)([\d/.]+)$/i);
+    const typeMap: Record<string, string> = {
+      loopback: 'Loopback', lo: 'Loopback', tunnel: 'Tunnel', tu: 'Tunnel',
+      'virtual-template': 'Virtual-Template', 'port-channel': 'Port-channel',
+      po: 'Port-channel', vlan: 'Vlan', nve: 'Nve',
+    };
+    const name = typed
+      ? `${typeMap[typed[1].toLowerCase()]}${typed[2]}`
+      : ctx.resolveInterfaceName(raw);
+    if (!name) return `% Invalid input detected at '^' marker.\nno interface ${raw}\n             ^`;
+    if (!ctx.r()._removeVirtualInterface(name)) {
+      // Real IOS on a physical port: the hardware is not going anywhere.
+      return `% Invalid input detected at '^' marker.\nno interface ${raw}\n             ^`;
+    }
+    if (ctx.getSelectedInterface?.() === name) ctx.setSelectedInterface(null);
+    return '';
+  });
+
   trie.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const poolName = args[0];
