@@ -38,6 +38,8 @@ export class LoggingConfig {
   bufferedSeverity: Severity = 'debugging';
   /** `logging console` — on out of the box, silenced by `no logging console`. */
   consoleEnabled = true;
+  /** `logging rate-limit N` — null means the platform default applies. */
+  rateLimit: number | null = null;
   consoleSeverity: Severity = 'debugging';
   monitorEnabled = true;
   monitorSeverity: Severity = 'debugging';
@@ -762,6 +764,14 @@ export class LoggingConfig {
       case 'on':
         this.enabled = !negate;
         return;
+      case 'rate-limit': {
+        // IOS bounds console/monitor output so a debug under load cannot
+        // starve the CPU. `no logging rate-limit` restores the default.
+        if (negate) { this.rateLimit = null; return; }
+        const n = args.slice(1).find((a) => /^\d+$/.test(a));
+        this.rateLimit = n ? Math.max(1, parseInt(n, 10)) : null;
+        return;
+      }
       case 'buffered': {
         this.buffered = !negate;
         for (const a of args.slice(1)) {

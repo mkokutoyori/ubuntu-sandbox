@@ -41,7 +41,8 @@ export type DebugCategory =
   | 'cdp.packets'
   | 'ip.pim'
   | 'vxlan'
-  | 'port-security';
+  | 'port-security'
+  | 'ipv6.packet';
 
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -94,6 +95,56 @@ export class RouterDebugService implements TerminalDebugSource {
     return this.broadcast.subscribe(listener);
   }
 
+  /**
+   * Re-read `logging rate-limit` before each line, so an operator who
+   * lowers the budget mid-flood sees it take effect at once instead of
+   * having to bounce the debug.
+   */
+  private rateLimitResolver: (() => void) | null = null;
+  setRateLimitResolver(fn: (() => void) | null): void { this.rateLimitResolver = fn; }
+
+  /**
+   * `debug condition interface X` / `debug condition vrf Y`. On IOS a
+   * condition is global: every debug already on, and every one enabled
+   * afterwards, inherits it. A line that carries no evidence either way
+   * is dropped — a condition the operator asked for must not be widened
+   * by our own inability to classify a line.
+   */
+  private readonly conditions: Array<{ kind: 'interface' | 'vrf'; value: string }> = [];
+
+  addCondition(kind: 'interface' | 'vrf', value: string): string {
+    if (!this.conditions.some((c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase())) {
+      this.conditions.push({ kind, value });
+    }
+    return `Condition ${this.conditions.length} set`;
+  }
+
+  removeCondition(kind: 'interface' | 'vrf', value: string): string {
+    const i = this.conditions.findIndex(
+      (c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase());
+    if (i < 0) return `% Condition not found`;
+    this.conditions.splice(i, 1);
+    return `Condition ${i + 1} has been removed`;
+  }
+
+  clearConditions(): void { this.conditions.length = 0; }
+
+  listConditions(): ReadonlyArray<{ kind: 'interface' | 'vrf'; value: string }> {
+    return this.conditions;
+  }
+
+  /** Does this line satisfy every standing condition? */
+  private passesConditions(line: string): boolean {
+    for (const c of this.conditions) {
+      const needle = c.value.toLowerCase();
+      if (!line.toLowerCase().includes(needle)) return false;
+    }
+    return true;
+  }
+
+  /** Master switch: `no logging on` mutes every channel, flags intact. */
+  setOutputGate(gate: (() => boolean) | null): void { this.broadcast.setOutputGate(gate); }
+
   /** `logging rate-limit N` — console budget for debug output. */
   setRateLimit(linesPerSecond: number): void { this.broadcast.setRateLimit(linesPerSecond); }
   getRateLimit(): number { return this.broadcast.getRateLimit(); }
@@ -116,6 +167,8 @@ export class RouterDebugService implements TerminalDebugSource {
   private emit(category: DebugCategory, line: string): void {
     const flag = this.flags.get(category);
     if (!flag) return;
+    this.rateLimitResolver?.();
+    if (!this.passesConditions(line)) return;
     if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line)) return;
     this.broadcast.fan(line);
   }
@@ -232,6 +285,16 @@ export class RouterDebugService implements TerminalDebugSource {
         this.emit('ip.arp', `IP ARP: ${dir} ${op} src ${arp.senderIp} ${senderMac}, dst ${arp.targetIp} ${targetMac} ${iface}`);
         return;
       }
+      // IPv6 is a separate protocol with a separate flag. `debug ip
+      // packet` must not see it, and `debug ipv6 packet` must not see
+      // IPv4 — the etherType decides, nothing else.
+      const f6 = frame as { etherType?: number; payload?: { type?: string; nextHeader?: number; payloadLength?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string } } };
+      if (f6?.etherType === 0x86dd && f6.payload?.type === 'ipv6') {
+        const v6 = f6.payload;
+        this.emit('ipv6.packet',
+          `IPV6: s=${v6.sourceIP?.toString?.() ?? '?'} (${iface}), d=${v6.destinationIP?.toString?.() ?? '?'}, len ${v6.payloadLength ?? 0}, ${dir} (nxt ${v6.nextHeader ?? 0})`);
+        return;
+      }
       const ip = decodeIp(frame);
       if (!ip) return;
       this.emit('ip.packet', `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`);
@@ -312,6 +375,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.pim': return 'PIM';
       case 'vxlan': return 'VXLAN';
       case 'port-security': return 'Port security';
+      case 'ipv6.packet': return 'IPv6 packet';
     }
   }
 

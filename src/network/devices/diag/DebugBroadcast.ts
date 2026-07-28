@@ -35,6 +35,16 @@ export class DebugBroadcast {
     this.rateLimit = Math.max(1, Math.floor(linesPerSecond));
   }
 
+  /**
+   * `logging on` is the master switch: `no logging on` silences every
+   * channel at once, debug included. The flags stay set — the operator
+   * turned the output off, not the instrumentation — so `show debug`
+   * still lists what would be traced.
+   */
+  private outputGate: (() => boolean) | null = null;
+
+  setOutputGate(gate: (() => boolean) | null): void { this.outputGate = gate; }
+
   getRateLimit(): number { return this.rateLimit; }
 
   /** Lines the rate limiter has dropped since the device came up. */
@@ -46,6 +56,7 @@ export class DebugBroadcast {
   }
 
   fan(line: string): void {
+    if (this.outputGate && !this.outputGate()) return;
     if (!this.admit()) return;
     for (const listener of this.listeners) listener(line);
   }

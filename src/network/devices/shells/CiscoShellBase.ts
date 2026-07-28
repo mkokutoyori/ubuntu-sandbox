@@ -999,6 +999,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return `no debug ${rest}`;
   }
 
+  /** Best-effort canonical interface name, for `debug condition interface`. */
+  protected resolveInterfaceNameForDebug(raw: string): string | null {
+    const dev = this.d() as unknown as { getPortNames?: () => string[] };
+    const names = dev.getPortNames?.() ?? [];
+    const flat = raw.replace(/\s+/g, '').toLowerCase();
+    return names.find((n) => n.toLowerCase() === flat)
+      ?? names.find((n) => n.toLowerCase().replace(/[a-z]/g, '') === flat.replace(/[a-z]/g, '')
+        && n.toLowerCase().startsWith(flat.slice(0, 2)))
+      ?? null;
+  }
+
   protected executeOnTrie(cmdPart: string): string {
     const asNoDebug = CiscoShellBase.undebugAsNoDebug(cmdPart);
     if (asNoDebug !== null) cmdPart = asNoDebug;
@@ -1666,6 +1677,40 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('debug cdp', 'Debug CDP', () => genericDebug()?.enable('cdp.packets') ?? 'CDP packets debugging is on');
     this.privilegedTrie.registerGreedy('no debug lldp', 'Disable LLDP debug', () => genericDebug()?.disable('lldp.packets') ?? '');
     this.privilegedTrie.registerGreedy('no debug cdp', 'Disable CDP debug', () => genericDebug()?.disable('cdp.packets') ?? '');
+    this.privilegedTrie.registerGreedy('debug ipv6', 'Debug IPv6', (args) => {
+      const svc = genericDebug();
+      if (!svc) return 'IPv6 packet debugging is on';
+      const sub = args.join(' ').toLowerCase();
+      if (sub === '' || sub.startsWith('packet')) return svc.enable('ipv6.packet');
+      return svc.enable('ipv6.packet', sub);
+    });
+    this.privilegedTrie.registerGreedy('no debug ipv6', 'Disable IPv6 debug', () =>
+      genericDebug()?.disable('ipv6.packet') ?? '');
+    this.privilegedTrie.registerGreedy('debug condition', 'Restrict every debug to a condition', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const kind = (args[0] ?? '').toLowerCase();
+      const value = args.slice(1).join(' ').trim();
+      if (kind !== 'interface' && kind !== 'vrf') return CISCO_ERRORS.INVALID_INPUT;
+      if (!value) return CISCO_ERRORS.INCOMPLETE;
+      const resolved = kind === 'interface'
+        ? (this.resolveInterfaceNameForDebug(value) ?? value)
+        : value;
+      return svc.addCondition(kind, resolved);
+    });
+    this.privilegedTrie.registerGreedy('no debug condition', 'Remove a debug condition', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const kind = (args[0] ?? '').toLowerCase();
+      if (kind === 'all') { svc.clearConditions(); return 'All conditions have been removed'; }
+      const value = args.slice(1).join(' ').trim();
+      if (kind !== 'interface' && kind !== 'vrf') return CISCO_ERRORS.INVALID_INPUT;
+      if (!value) return CISCO_ERRORS.INCOMPLETE;
+      const resolved = kind === 'interface'
+        ? (this.resolveInterfaceNameForDebug(value) ?? value)
+        : value;
+      return svc.removeCondition(kind, resolved);
+    });
     this.privilegedTrie.registerGreedy('debug vxlan', 'Debug VXLAN', () => genericDebug()?.enable('vxlan') ?? 'VXLAN debugging is on');
     this.privilegedTrie.registerGreedy('no debug vxlan', 'Disable VXLAN debug', () => genericDebug()?.disable('vxlan') ?? '');
     this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');

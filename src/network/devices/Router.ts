@@ -2875,6 +2875,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.ipsecEngine?.setDebugEmitter((kind, line) => {
         svc.emitLine(kind === 'ipsec' ? 'crypto.ipsec' : 'crypto.isakmp', line);
       });
+      // `no logging on` and `logging rate-limit N` govern debug output too:
+      // both are read live, so a change applies to the very next line
+      // rather than to the next `debug` command.
+      svc.setOutputGate(() => this.shell.getLoggingConfig?.()?.enabled !== false);
+      const configuredLimit = () => this.shell.getLoggingConfig?.()?.rateLimit ?? null;
+      const followConfiguredLimit = () => {
+        const n = configuredLimit();
+        if (n !== null && n !== svc.getRateLimit()) svc.setRateLimit(n);
+      };
+      svc.setRateLimitResolver(followConfiguredLimit);
     }
     this._debugService.attachToBus(this.getBus(), this.id);
     return this._debugService;
