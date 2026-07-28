@@ -152,6 +152,41 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('ip.ospf.packet', `OSPF: snd packet to ${p.destIp} on ${p.iface}`);
     }));
 
+    // Neighbour discovery, multicast, VXLAN and the DHCP client. These used
+    // to be raised by the logging subsystem as `%CDP-7-DEBUGGING: …` — a
+    // shape IOS never prints, invented from the severity name. Real debug
+    // output carries the subsystem's own prefix and no severity at all.
+    this.broadcast.track(bus.subscribe('cdp.neighbor.refreshed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { localPort?: string; remoteHost?: string };
+      this.emit('cdp.packets',
+        `CDP-PA: Packet received from ${p.remoteHost ?? '?'} on interface ${p.localPort ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('lldp.neighbor.refreshed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { localPort?: string; remoteSystem?: string };
+      this.emit('lldp.packets',
+        `LLDP: Received packet from ${p.remoteSystem ?? '?'} on ${p.localPort ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('pim.mroute.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { group?: string; source?: string; iif?: string };
+      this.emit('ip.pim',
+        `PIM(0): Update (${p.source ?? '*'}, ${p.group ?? '*'}), incoming interface ${p.iif ?? 'Null'}`);
+    }));
+    this.broadcast.track(bus.subscribe('vxlan.mac.learned', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { vni?: number; mac?: string; vtepIp?: string };
+      this.emit('vxlan',
+        `NVE: Learned ${p.mac ?? '?'} in VNI ${p.vni ?? 0} from peer ${p.vtepIp ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('dhcp.client.state-changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { iface?: string; oldState?: string; newState?: string };
+      this.emit('ip.dhcp.server',
+        `DHCP: ${p.iface ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+    }));
+
     const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; len: number; icmpType?: string } | null => {
       const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; totalLength?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string; data?: { length?: number } } } };
       if (f?.etherType !== 0x0800 || f.payload?.type !== 'ipv4') return null;

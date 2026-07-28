@@ -97,15 +97,57 @@ du routeur.
 | `LoggingConfig` sévérités 0-6 | sans objet — ce sont de vrais messages syslog, pas du debug | — | — |
 | `DebugBroadcast` | transport uniquement, pas un registre | — | — |
 
-## Reste ouvert
+## Deuxième passe — la forme des lignes
 
-- **Le libellé n'est pas du vrai IOS.** `%CDP-7-DEBUGGING: Neighbor X on
-  Y refreshed` est construit à partir du nom de la sévérité. Un vrai IOS
-  écrit `CDP-PA: Packet received from X on interface Y`, sans préfixe
-  `%…-7-…`. La porte corrige *quand* la ligne sort ; sa forme reste à
-  reprendre, protocole par protocole. Non fait ici : c'est un travail de
-  fidélité de texte, indépendant du défaut remonté, et qui touche des
-  tests qui épinglent le libellé actuel.
+La porte réglait *quand* une ligne sort, pas sa forme. Deux corrections
+ont suivi.
+
+### Le préfixe
+
+`%CDP-7-DEBUGGING:` était fabriqué à partir du nom de la sévérité :
+`%${TAG}-${severityNum}-${mnemonic ?? severity}`. IOS n'imprime jamais
+cela pour du debug — la sortie de `debug` n'est pas du syslog, elle porte
+le préfixe du sous-système et aucune sévérité.
+
+Les huit familles ont donc quitté `LoggingConfig` pour les registres de
+debug, qui émettent déjà des lignes brutes (`OSPF:`, `IP ARP:`, `NAT:`).
+Il ne reste **aucun** `append('debugging', …)` : le cinquième chemin a
+disparu au lieu d'être seulement gardé. La porte reste en place comme
+garde-fou pour toute sévérité 7 qui réapparaîtrait.
+
+Formes retenues : `CDP-PA: Packet received from X on interface Y`,
+`LLDP: Received packet from X on Y`, `PIM(0): Update (S, G), incoming
+interface I`, `NVE: Learned M in VNI N from peer P`, `IP ARP INSPECTION:
+Learned IP MAC on P`, `PORT_SECURITY: Aged out M on P`, `DHCP: I state
+A -> B`. Honnêtement : `CDP-PA`, `PIM(0)` et `DHCP:` sont des formes
+Cisco établies ; `NVE:`, `IP ARP INSPECTION:` et `PORT_SECURITY:` sont
+plausibles mais pas vérifiées contre une capture réelle.
+
+La ligne NAT a été supprimée plutôt que déplacée : `NATEngine` émet déjà
+`NAT: s=… -> …` sur le canal de debug, l'abonnement de `LoggingConfig`
+en était un doublon syslog.
+
+### Le `?` était systémique
+
+Le voisin anonyme n'était pas un cas isolé. `LoggingConfig` lit chaque
+payload à travers un `as unknown as { … }` qui **désactive le contrôle de
+types** : un nom de champ inexistant compile et rend `undefined`, que les
+`?? '?'` transforment en `?`.
+
+Un contrôle croisé de tous les abonnements contre les payloads
+réellement publiés a trouvé **57 abonnements sur 98** dans ce cas — plus
+de la moitié. Corrigés en trois catégories : renommages simples (37,
+`portName`→`port`, `group`→`groupAddress`, `neighbor`→`neighborIp`, …),
+reformulations là où le champ attendu n'existe pas du tout (20, par
+exemple `stp.root.changed` qui n'a jamais porté de VLAN), et payloads
+imbriqués lus à plat (AAA et sessions SSH : la valeur est sous
+`account.name` / `session.user`, pas à la racine).
+
+`syslog-payload-fields.test.ts` re-dérive la comparaison depuis les
+sources et échoue sur tout nouvel écart, donc le cast ne peut plus
+pourrir en silence. La garde a été vérifiée par mutation.
+
+## Reste ouvert
 - **`runSshCommandSync`** (le `ssh hôte "commande"` non interactif)
   répond encore `Current privilege level is 15` en dur.
 - **Tâche #53** : `debug` et `terminal monitor` ne produisent aucune

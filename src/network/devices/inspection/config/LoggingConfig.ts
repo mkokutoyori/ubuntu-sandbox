@@ -227,9 +227,9 @@ export class LoggingConfig {
           `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`);
       }),
       bus.subscribeWhere('hsrp.active.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; group?: number; oldState?: string; newState?: string };
+        const p = e.payload as unknown as { iface?: string; group?: number; activeIp?: string; activePriority?: number };
         this.append('informational', 'hsrp',
-          `${p.iface ?? 'iface'} Grp ${p.group ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `${p.iface ?? 'iface'} Grp ${p.group ?? 0} Active router is ${p.activeIp ?? '?'} (priority ${p.activePriority ?? 0})`);
       }),
       bus.subscribeWhere('hsrp.state.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; group?: number; oldState?: string; newState?: string };
@@ -247,54 +247,49 @@ export class LoggingConfig {
           `CDP ${p.enabled ? 'enabled' : 'disabled'}`);
       }),
       bus.subscribeWhere('host.icmp.echo-failed', isOurs, (e) => {
-        const p = e.payload as unknown as { target?: string; reason?: string };
+        const p = e.payload as unknown as { toIp?: string; reason?: string };
         this.append('warnings', 'icmp',
-          `Echo to ${p.target ?? '?'} failed: ${p.reason ?? 'no response'}`);
+          `Echo to ${p.toIp ?? '?'} failed: ${p.reason ?? 'no response'}`);
       }),
       bus.subscribeWhere('lacp.port.bundled', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; bundle?: string };
+        const p = e.payload as unknown as { port?: string; groupId?: number };
         this.append('notifications', 'etherchannel',
-          `Interface ${p.portName ?? '?'} is bundled in ${p.bundle ?? 'Port-channel'}`);
+          `Interface ${p.port ?? '?'} joined port-channel Port-channel${p.groupId ?? 0}`);
       }),
       bus.subscribeWhere('lacp.port.unbundled', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; bundle?: string };
+        const p = e.payload as unknown as { port?: string; groupId?: number; cause?: string };
         this.append('notifications', 'etherchannel',
-          `Interface ${p.portName ?? '?'} unbundled from ${p.bundle ?? 'Port-channel'}`);
+          `Interface ${p.port ?? '?'} left port-channel Port-channel${p.groupId ?? 0}${p.cause ? ` (${p.cause})` : ''}`);
       }),
       bus.subscribeWhere('lacp.port.state-changed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; oldState?: string; newState?: string };
+        const p = e.payload as unknown as { port?: string; oldState?: string; newState?: string };
         this.append('informational', 'lacp',
-          `Port ${p.portName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `Port ${p.port ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('igmp.snooping.member.joined', isOurs, (e) => {
-        const p = e.payload as unknown as { vlan?: number; group?: string; portName?: string };
+        const p = e.payload as unknown as { vlan?: number; groupAddress?: string; port?: string };
         this.append('informational', 'igmp_snoop',
-          `Group ${p.group ?? '?'} VLAN ${p.vlan ?? 1} member joined on ${p.portName ?? '?'}`);
+          `Group ${p.groupAddress ?? '?'} VLAN ${p.vlan ?? 1} member joined on ${p.port ?? '?'}`);
       }),
       bus.subscribeWhere('igmp.snooping.member.left', isOurs, (e) => {
-        const p = e.payload as unknown as { vlan?: number; group?: string; portName?: string };
+        const p = e.payload as unknown as { vlan?: number; groupAddress?: string; port?: string };
         this.append('informational', 'igmp_snoop',
-          `Group ${p.group ?? '?'} VLAN ${p.vlan ?? 1} member left on ${p.portName ?? '?'}`);
+          `Group ${p.groupAddress ?? '?'} VLAN ${p.vlan ?? 1} member left on ${p.port ?? '?'}`);
       }),
       bus.subscribeWhere('igmp.querier.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { vlan?: number; newQuerier?: string };
+        const p = e.payload as unknown as { iface?: string; querierIp?: string; newState?: string };
         this.append('notifications', 'igmp_snoop',
-          `VLAN ${p.vlan ?? 1} querier elected: ${p.newQuerier ?? '?'}`);
-      }),
-      bus.subscribeWhere('vxlan.mac.learned', isOurs, (e) => {
-        const p = e.payload as unknown as { vni?: number; mac?: string; vtepIp?: string };
-        this.append('debugging', 'vxlan',
-          `MAC ${p.mac ?? '?'} learned on VNI ${p.vni ?? 0} via VTEP ${p.vtepIp ?? '?'}`);
+          `Querier on ${p.iface ?? '?'} is ${p.querierIp ?? '?'} (${p.newState ?? '?'})`);
       }),
       bus.subscribeWhere('vtp.db.synced', isOurs, (e) => {
-        const p = e.payload as unknown as { domain?: string; revision?: number };
+        const p = e.payload as unknown as { port?: string; newRevision?: number; vlansAdded?: number; vlansRemoved?: number };
         this.append('notifications', 'vtp',
-          `Database synced for domain '${p.domain ?? '?'}' (revision ${p.revision ?? 0})`);
+          `Database synced from ${p.port ?? '?'} (revision ${p.newRevision ?? 0}, +${p.vlansAdded ?? 0}/-${p.vlansRemoved ?? 0} VLANs)`);
       }),
       bus.subscribeWhere('udld.state.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; oldState?: string; newState?: string };
+        const p = e.payload as unknown as { port?: string; oldState?: string; newState?: string };
         this.append('informational', 'udld',
-          `Port ${p.portName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `Port ${p.port ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('tacacs.acct.completed', isOurs, (e) => {
         const p = e.payload as unknown as { username?: string; status?: string; flags?: string };
@@ -302,24 +297,9 @@ export class LoggingConfig {
           `Accounting ${p.flags ?? ''} ${p.status ?? '?'} for ${p.username ?? '?'}`);
       }),
       bus.subscribeWhere('glbp.avf.assigned', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; group?: number; forwarder?: number; mac?: string };
+        const p = e.payload as unknown as { iface?: string; group?: number; forwarderNumber?: number; vmac?: string };
         this.append('informational', 'glbp',
-          `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarder ?? 0} assigned MAC ${p.mac ?? '?'}`);
-      }),
-      bus.subscribeWhere('pim.mroute.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { group?: string; source?: string; iif?: string };
-        this.append('debugging', 'pim',
-          `(${p.source ?? '*'}, ${p.group ?? '*'}) iif ${p.iif ?? '?'}`);
-      }),
-      bus.subscribeWhere('cdp.neighbor.refreshed', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteHost?: string };
-        this.append('debugging', 'cdp',
-          `Neighbor ${p.remoteHost ?? '?'} on ${p.localPort ?? '?'} refreshed`);
-      }),
-      bus.subscribeWhere('lldp.neighbor.refreshed', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteSystem?: string };
-        this.append('debugging', 'lldp',
-          `Neighbor ${p.remoteSystem ?? '?'} on ${p.localPort ?? '?'} refreshed`);
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarderNumber ?? 0} assigned MAC ${p.vmac ?? '?'}`);
       }),
       bus.subscribeWhere('bgp.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload as unknown as { neighborIp?: string; oldState?: string; newState?: string; remoteAs?: number | null };
@@ -343,19 +323,14 @@ export class LoggingConfig {
           `Interface ${p.portName} is err-disabled: psecure-violation`);
       }),
       bus.subscribeWhere('bfd.session.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { neighbor?: string; iface?: string; oldState?: string; newState?: string };
+        const p = e.payload as unknown as { neighborIp?: string; iface?: string; oldState?: string; newState?: string };
         this.append('notifications', 'bfd',
-          `Session to neighbor ${p.neighbor ?? '?'} on ${p.iface ?? '?'} changed state from ${p.oldState ?? '?'} to ${p.newState ?? '?'}`);
+          `Session to neighbor ${p.neighborIp ?? '?'} on ${p.iface ?? '?'} changed state from ${p.oldState ?? '?'} to ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('arp.violation', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; senderIp?: string; senderMac?: string; reason?: string };
+        const p = e.payload as unknown as { ingressPort?: string; senderIp?: string; senderMac?: string; reason?: string };
         this.append('warnings', 'dai',
-          `DAI: ${p.iface ?? '?'}: Invalid ARP ${p.reason ?? ''} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
-      }),
-      bus.subscribeWhere('nat.translation.applied', isOurs, (e) => {
-        const p = e.payload as unknown as { protocol?: string; insideLocal?: string; insideGlobal?: string };
-        this.append('debugging', 'nat',
-          `Translation: ${p.protocol ?? 'ip'} ${p.insideLocal ?? '?'} -> ${p.insideGlobal ?? '?'}`);
+          `DAI: ${p.ingressPort ?? '?'}: Invalid ARP ${p.reason ?? ''} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
       }),
       bus.subscribeWhere('port.config.ip-changed', isOurs, (e) => {
         const p = e.payload;
@@ -380,19 +355,19 @@ export class LoggingConfig {
           `Interface ${p.portName}, duplex changed to ${p.duplex}`);
       }),
       bus.subscribeWhere('rip.route.added', isOurs, (e) => {
-        const p = e.payload as unknown as { destination?: string; mask?: string; nextHop?: string; metric?: number };
+        const p = e.payload as unknown as { network?: string; mask?: string; nextHop?: string; metric?: number };
         this.append('informational', 'rip',
-          `Route added ${p.destination}/${p.mask} via ${p.nextHop} metric ${p.metric}`);
+          `Route added ${p.network}/${p.mask} via ${p.nextHop} metric ${p.metric}`);
       }),
       bus.subscribeWhere('rip.route.timed-out', isOurs, (e) => {
-        const p = e.payload as unknown as { destination?: string; mask?: string; nextHop?: string };
+        const p = e.payload as unknown as { network?: string; mask?: string };
         this.append('warnings', 'rip',
-          `Route timed out ${p.destination}/${p.mask} via ${p.nextHop}`);
+          `Route timed out ${p.network ?? '?'}/${p.mask ?? '?'}`);
       }),
       bus.subscribeWhere('ipsec.ike.sa-installed', isOurs, (e) => {
-        const p = e.payload as unknown as { peerIp?: string; spi?: number };
+        const p = e.payload as unknown as { peerIp?: string; spiInitiator?: number };
         this.append('notifications', 'crypto',
-          `IKE SA installed with peer ${p.peerIp ?? '?'} (SPI 0x${(p.spi ?? 0).toString(16)})`);
+          `IKE SA installed with peer ${p.peerIp ?? '?'} (SPI 0x${(p.spiInitiator ?? 0).toString(16)})`);
       }),
       bus.subscribeWhere('ipsec.ike.sa-deleted', isOurs, (e) => {
         const p = e.payload as unknown as { peerIp?: string; reason?: string };
@@ -400,9 +375,9 @@ export class LoggingConfig {
           `IKE SA deleted with peer ${p.peerIp ?? '?'} (${p.reason ?? 'deleted'})`);
       }),
       bus.subscribeWhere('ipsec.sa.installed', isOurs, (e) => {
-        const p = e.payload as unknown as { peerIp?: string; spi?: number; proto?: string };
+        const p = e.payload as unknown as { peerIp?: string; spiOutbound?: number; protocol?: string };
         this.append('notifications', 'crypto',
-          `IPSEC: ${p.proto ?? 'ESP'} SA installed with ${p.peerIp ?? '?'} (SPI 0x${(p.spi ?? 0).toString(16)})`);
+          `IPSEC: ${p.protocol ?? 'ESP'} SA installed with ${p.peerIp ?? '?'} (SPI 0x${(p.spiOutbound ?? 0).toString(16)})`);
       }),
       bus.subscribeWhere('ipsec.dpd.peer-down', isOurs, (e) => {
         const p = e.payload as unknown as { peerIp?: string };
@@ -410,9 +385,9 @@ export class LoggingConfig {
           `DPD: peer ${p.peerIp ?? '?'} declared dead`);
       }),
       bus.subscribeWhere('ntp.synced', isOurs, (e) => {
-        const p = e.payload as unknown as { server?: string; stratum?: number; offsetMs?: number };
+        const p = e.payload as unknown as { serverIp?: string; newStratum?: number; offsetMs?: number };
         this.append('notifications', 'ntp',
-          `System clock synchronized to ${p.server ?? '?'} stratum ${p.stratum ?? '?'} offset ${p.offsetMs ?? 0}ms`);
+          `System clock synchronized to ${p.serverIp ?? '?'} stratum ${p.newStratum ?? '?'} offset ${p.offsetMs ?? 0}ms`);
       }),
       bus.subscribeWhere('ntp.unsynced', isOurs, (e) => {
         const p = e.payload as unknown as { reason?: string };
@@ -420,9 +395,9 @@ export class LoggingConfig {
           `System clock unsynchronized (${p.reason ?? 'no reachable server'})`);
       }),
       bus.subscribeWhere('snmp.auth.rejected', isOurs, (e) => {
-        const p = e.payload as unknown as { sourceIp?: string; community?: string; version?: string };
+        const p = e.payload as unknown as { fromIp?: string; community?: string; reason?: string };
         this.append('warnings', 'snmp',
-          `Authentication failure for SNMP request from ${p.sourceIp ?? '?'} (community '${p.community ?? '?'}', v${p.version ?? '?'})`);
+          `Authentication failure for SNMP request from ${p.fromIp ?? '?'} (community '${p.community ?? '?'}', ${p.reason ?? '?'})`);
       }),
       bus.subscribeWhere('snmp.trap.sent', isOurs, (e) => {
         const p = e.payload as unknown as { destinationIp?: string; trapOid?: string };
@@ -430,18 +405,18 @@ export class LoggingConfig {
           `Trap sent to ${p.destinationIp ?? '?'} oid=${p.trapOid ?? '?'}`);
       }),
       bus.subscribeWhere('stp.root.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { vlan?: number; oldRoot?: string; newRoot?: string };
+        const p = e.payload as unknown as { oldRootMac?: string; newRootMac?: string; rootPort?: string };
         this.append('notifications', 'spantree',
-          `Root changed for VLAN ${p.vlan ?? 1}, new root ${p.newRoot ?? '?'} (was ${p.oldRoot ?? '?'})`);
+          `New root ${p.newRootMac ?? '?'} (was ${p.oldRootMac ?? '?'}), root port ${p.rootPort ?? 'none'}`);
       }),
       bus.subscribeWhere('stp.role.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; oldRole?: string; newRole?: string };
+        const p = e.payload as unknown as { port?: string; oldRole?: string; newRole?: string };
         this.append('informational', 'spantree',
-          `Port ${p.portName ?? '?'} role changed ${p.oldRole ?? '?'} -> ${p.newRole ?? '?'}`);
+          `Port ${p.port ?? '?'} role changed ${p.oldRole ?? '?'} -> ${p.newRole ?? '?'}`);
       }),
       bus.subscribeWhere('stp.bpdu-guard.violation', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; portName?: string };
-        const iface = p.port ?? p.portName ?? '?';
+        const p = e.payload as unknown as { port?: string };
+        const iface = p.port ?? '?';
         this.append('critical', 'spantree',
           `Received BPDU on port ${iface} with BPDU Guard enabled. Disabling port.`,
           true, 'BLOCK_BPDUGUARD');
@@ -449,49 +424,44 @@ export class LoggingConfig {
           `Port ${iface} is err-disabled: bpduguard`, true, 'ERR_DISABLE');
       }),
       bus.subscribeWhere('stp.topology.change', isOurs, (e) => {
-        const p = e.payload as unknown as { vlan?: number; portName?: string };
+        const p = e.payload as unknown as { origin?: string; port?: string };
         this.append('notifications', 'spantree',
-          `Topology change for VLAN ${p.vlan ?? 1} (port ${p.portName ?? '?'})`);
+          `Topology change (${p.origin ?? '?'})${p.port ? ` on port ${p.port}` : ''}`);
       }),
       bus.subscribeWhere('lldp.neighbor.discovered', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteSystemName?: string; remotePortId?: string };
+        const p = e.payload as unknown as { localPort?: string; remoteSystem?: string; remotePort?: string };
         this.append('informational', 'lldp',
-          `Neighbor ${p.remoteSystemName ?? '?'} (${p.remotePortId ?? '?'}) discovered on ${p.localPort ?? '?'}`);
+          `Neighbor ${p.remoteSystem ?? '?'} (${p.remotePort ?? '?'}) discovered on ${p.localPort ?? '?'}`);
       }),
       bus.subscribeWhere('lldp.neighbor.expired', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteSystemName?: string };
+        const p = e.payload as unknown as { localPort?: string; remoteSystem?: string };
         this.append('notifications', 'lldp',
-          `Neighbor ${p.remoteSystemName ?? '?'} expired on ${p.localPort ?? '?'}`);
+          `Neighbor ${p.remoteSystem ?? '?'} expired on ${p.localPort ?? '?'}`);
       }),
       bus.subscribeWhere('igmp.group.joined', isOurs, (e) => {
-        const p = e.payload as unknown as { group?: string; iface?: string };
+        const p = e.payload as unknown as { groupAddress?: string; iface?: string };
         this.append('informational', 'igmp',
-          `Membership report received for group ${p.group ?? '?'} on ${p.iface ?? '?'}`);
+          `Membership report received for group ${p.groupAddress ?? '?'} on ${p.iface ?? '?'}`);
       }),
       bus.subscribeWhere('igmp.group.left', isOurs, (e) => {
-        const p = e.payload as unknown as { group?: string; iface?: string };
+        const p = e.payload as unknown as { groupAddress?: string; iface?: string };
         this.append('informational', 'igmp',
-          `Leave received for group ${p.group ?? '?'} on ${p.iface ?? '?'}`);
-      }),
-      bus.subscribeWhere('arp.snoop.learned', isOurs, (e) => {
-        const p = e.payload as unknown as { ip?: string; mac?: string; portName?: string };
-        this.append('debugging', 'arp',
-          `Snoop learned ${p.ip ?? '?'} -> ${p.mac ?? '?'} on ${p.portName ?? '?'}`);
+          `Leave received for group ${p.groupAddress ?? '?'} on ${p.iface ?? '?'}`);
       }),
       bus.subscribeWhere('arp.rate-limit-exceeded', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; rate?: number };
+        const p = e.payload as unknown as { ingressPort?: string; observedPps?: number };
         this.append('warnings', 'dai',
-          `ARP rate-limit exceeded on ${p.portName ?? '?'} (${p.rate ?? 0} pkts/s)`);
+          `ARP rate-limit exceeded on ${p.ingressPort ?? '?'} (${p.observedPps ?? 0} pkts/s)`);
       }),
       bus.subscribeWhere('dhcp.pool.lease-allocated', isOurs, (e) => {
-        const p = e.payload as unknown as { ip?: string; mac?: string; pool?: string };
+        const p = e.payload as unknown as { ip?: string; clientMac?: string; pool?: string };
         this.append('informational', 'dhcpd',
-          `Assigned ${p.ip ?? '?'} to ${p.mac ?? '?'} from pool ${p.pool ?? '?'}`);
+          `Assigned ${p.ip ?? '?'} to ${p.clientMac ?? '?'} from pool ${p.pool ?? '?'}`);
       }),
       bus.subscribeWhere('dhcp.pool.lease-released', isOurs, (e) => {
-        const p = e.payload as unknown as { ip?: string; mac?: string };
+        const p = e.payload as unknown as { ip?: string; pool?: string; reason?: string };
         this.append('informational', 'dhcpd',
-          `Released ${p.ip ?? '?'} from ${p.mac ?? '?'}`);
+          `Released ${p.ip ?? '?'} to pool ${p.pool ?? '?'} (${p.reason ?? '?'})`);
       }),
       bus.subscribeWhere('dhcp.address-conflict', isOurs, (e) => {
         const p = e.payload as unknown as { ip?: string };
@@ -509,16 +479,14 @@ export class LoggingConfig {
           `Lease on ${p.iface ?? '?'} expired (${p.ip ?? '?'})`);
       }),
       bus.subscribeWhere('cdp.neighbor.discovered', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; deviceId?: string; remoteDeviceId?: string; remotePortId?: string };
-        const remote = (p as { remoteDeviceId?: string; deviceIdRemote?: string }).remoteDeviceId
-          ?? (p as { deviceIdRemote?: string }).deviceIdRemote ?? '?';
+        const p = e.payload as unknown as { localPort?: string; remoteHost?: string; remotePort?: string };
         this.append('informational', 'cdp',
-          `Neighbor ${remote} (${p.remotePortId ?? '?'}) discovered on ${p.localPort ?? '?'}`);
+          `Neighbor ${p.remoteHost ?? '?'} (${p.remotePort ?? '?'}) discovered on ${p.localPort ?? '?'}`);
       }),
       bus.subscribeWhere('cdp.neighbor.expired', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteDeviceId?: string };
+        const p = e.payload as unknown as { localPort?: string; remoteHost?: string };
         this.append('notifications', 'cdp',
-          `Neighbor ${p.remoteDeviceId ?? '?'} expired on ${p.localPort ?? '?'}`);
+          `Neighbor ${p.remoteHost ?? '?'} expired on ${p.localPort ?? '?'}`);
       }),
       bus.subscribeWhere('vrrp.state.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; vrid?: number; oldState?: string; newState?: string };
@@ -531,54 +499,54 @@ export class LoggingConfig {
           `${p.iface ?? '?'} VRID ${p.vrid ?? 0} new master ${p.masterIp ?? '?'}`);
       }),
       bus.subscribeWhere('glbp.avg.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; group?: number; avgIp?: string };
+        const p = e.payload as unknown as { iface?: string; group?: number; oldState?: string; newState?: string };
         this.append('notifications', 'glbp',
-          `${p.iface ?? '?'} Grp ${p.group ?? 0} AVG is ${p.avgIp ?? '?'}`);
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} AVG state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('glbp.avf.state.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; group?: number; forwarder?: number; oldState?: string; newState?: string };
+        const p = e.payload as unknown as { iface?: string; group?: number; forwarderNumber?: number; oldState?: string; newState?: string };
         this.append('informational', 'glbp',
-          `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarder ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarderNumber ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('router.aaa.account.login.success', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; sourceIp?: string };
+        const p = e.payload as unknown as { account?: { name?: string }; from?: string };
         this.append('notifications', 'sec_login',
-          `Login Success [user: ${p.username ?? '?'}] [Source: ${p.sourceIp ?? '?'}]`);
+          `Login Success [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}]`);
       }),
       bus.subscribeWhere('router.aaa.account.login.failure', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; sourceIp?: string; reason?: string };
+        const p = e.payload as unknown as { account?: { name?: string }; from?: string; reason?: string };
         this.append('warnings', 'sec_login',
-          `Login Failed [user: ${p.username ?? '?'}] [Source: ${p.sourceIp ?? '?'}] (${p.reason ?? 'invalid credentials'})`);
+          `Login Failed [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}] (${p.reason ?? 'invalid credentials'})`);
       }),
       bus.subscribeWhere('router.aaa.account.locked', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string };
+        const p = e.payload as unknown as { account?: { name?: string; lockReason?: string | null } };
         this.append('critical', 'sec',
-          `Account ${p.username ?? '?'} locked due to repeated failures`);
+          `Account ${p.account?.name ?? '?'} locked (${p.account?.lockReason ?? 'repeated failures'})`);
       }),
       bus.subscribeWhere('router.aaa.account.created', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; privLvl?: number };
+        const p = e.payload as unknown as { account?: { name?: string; privilege?: number } };
         this.append('informational', 'sys',
-          `User account '${p.username ?? '?'}' created (priv ${p.privLvl ?? 1})`);
+          `User account '${p.account?.name ?? '?'}' created (priv ${p.account?.privilege ?? 1})`);
       }),
       bus.subscribeWhere('router.aaa.account.deleted', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string };
+        const p = e.payload as unknown as { account?: { name?: string } };
         this.append('informational', 'sys',
-          `User account '${p.username ?? '?'}' deleted`);
+          `User account '${p.account?.name ?? '?'}' deleted`);
       }),
       bus.subscribeWhere('router.ssh.session.opened', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; sourceIp?: string; vty?: string };
+        const p = e.payload as unknown as { session?: { user?: string; line?: string; fromIp?: string } };
         this.append('informational', 'ssh',
-          `Session opened for '${p.username ?? '?'}' on ${p.vty ?? 'vty'} from ${p.sourceIp ?? '?'}`);
+          `Session opened for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'} from ${p.session?.fromIp ?? '?'}`);
       }),
       bus.subscribeWhere('router.ssh.session.closed', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; vty?: string };
+        const p = e.payload as unknown as { session?: { user?: string; line?: string; closeReason?: string | null } };
         this.append('informational', 'ssh',
-          `Session closed for '${p.username ?? '?'}' on ${p.vty ?? 'vty'}`);
+          `Session closed for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'}${p.session?.closeReason ? ` (${p.session.closeReason})` : ''}`);
       }),
       bus.subscribeWhere('dtp.mode.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; oldMode?: string; newMode?: string };
+        const p = e.payload as unknown as { port?: string; oldOperationalMode?: string; newOperationalMode?: string };
         this.append('informational', 'dtp',
-          `${p.portName ?? '?'}: trunk negotiation mode ${p.oldMode ?? '?'} -> ${p.newMode ?? '?'}`);
+          `${p.port ?? '?'}: trunk negotiation mode ${p.oldOperationalMode ?? '?'} -> ${p.newOperationalMode ?? '?'}`);
       }),
       bus.subscribeWhere('stp.port-state.changed', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; vlan?: number; oldState?: string; newState?: string };
@@ -586,9 +554,9 @@ export class LoggingConfig {
           `Port ${p.port ?? '?'} VLAN ${p.vlan ?? 1} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('stp.root-guard.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; blocked?: boolean };
+        const p = e.payload as unknown as { port?: string; state?: string };
         this.append('warnings', 'spantree',
-          `Root-guard ${p.blocked ? 'blocked' : 'unblocked'} on ${p.portName ?? '?'}`);
+          `Root-guard ${p.state ?? '?'} on ${p.port ?? '?'}`);
       }),
       bus.subscribeWhere('netflow.collector.changed', isOurs, (e) => {
         const p = e.payload as unknown as { collectorIp?: string; added?: boolean };
@@ -598,11 +566,11 @@ export class LoggingConfig {
             : `Collector ${p.collectorIp ?? '?'} removed`);
       }),
       bus.subscribeWhere('vxlan.vtep.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { vni?: number; vtepIp?: string; added?: boolean };
+        const p = e.payload as unknown as { vni?: number; remoteVtepIp?: string; added?: boolean };
         this.append('informational', 'vxlan',
           p.added
-            ? `VTEP ${p.vtepIp ?? '?'} added to VNI ${p.vni ?? 0}`
-            : `VTEP ${p.vtepIp ?? '?'} removed from VNI ${p.vni ?? 0}`);
+            ? `VTEP ${p.remoteVtepIp ?? '?'} added to VNI ${p.vni ?? 0}`
+            : `VTEP ${p.remoteVtepIp ?? '?'} removed from VNI ${p.vni ?? 0}`);
       }),
       bus.subscribeWhere('vxlan.packet.dropped', isOurs, (e) => {
         const p = e.payload as unknown as { vni?: number; reason?: string };
@@ -622,60 +590,60 @@ export class LoggingConfig {
         this.append('notifications', 'rip', 'RIP routing process stopped');
       }),
       bus.subscribeWhere('pim.neighbor.added', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; neighbor?: string };
+        const p = e.payload as unknown as { iface?: string; neighborIp?: string };
         this.append('notifications', 'pim',
-          `Neighbor ${p.neighbor ?? '?'} discovered on ${p.iface ?? '?'}`);
+          `Neighbor ${p.neighborIp ?? '?'} discovered on ${p.iface ?? '?'}`);
       }),
       bus.subscribeWhere('pim.neighbor.lost', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; neighbor?: string };
+        const p = e.payload as unknown as { iface?: string; neighborIp?: string };
         this.append('warnings', 'pim',
-          `Neighbor ${p.neighbor ?? '?'} on ${p.iface ?? '?'} timed out`);
+          `Neighbor ${p.neighborIp ?? '?'} on ${p.iface ?? '?'} timed out`);
       }),
       bus.subscribeWhere('pim.rp.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { group?: string; oldRp?: string; newRp?: string };
+        const p = e.payload as unknown as { group?: string; rpAddress?: string };
         this.append('notifications', 'pim',
-          `RP for ${p.group ?? '*'} changed ${p.oldRp ?? '?'} -> ${p.newRp ?? '?'}`);
+          `RP for ${p.group ?? '*'} is now ${p.rpAddress ?? '?'}`);
       }),
       bus.subscribeWhere('dot1x.auth.outcome', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; mac?: string; outcome?: string; user?: string };
-        const sev = p.outcome === 'success' ? 'informational' : 'warnings';
+        const p = e.payload as unknown as { port?: string; accepted?: boolean; identity?: string; reason?: string };
+        const sev = p.accepted ? 'informational' : 'warnings';
         this.append(sev, 'dot1x',
-          `Authentication ${p.outcome ?? '?'} on ${p.portName ?? '?'} for ${p.user ?? p.mac ?? '?'}`);
+          `Authentication ${p.accepted ? 'success' : 'failure'} on ${p.port ?? '?'} for ${p.identity ?? '?'}`);
       }),
       bus.subscribeWhere('dot1x.port.state.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; oldState?: string; newState?: string };
+        const p = e.payload as unknown as { port?: string; oldState?: string; newState?: string };
         this.append('informational', 'dot1x',
-          `Port ${p.portName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `Port ${p.port ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('udld.err-disable', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string };
+        const p = e.payload as unknown as { port?: string };
         this.append('errors', 'udld',
-          `Port ${p.portName ?? '?'} err-disabled by UDLD`);
+          `Port ${p.port ?? '?'} err-disabled by UDLD`);
       }),
       bus.subscribeWhere('udld.neighbor.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; neighborId?: string };
+        const p = e.payload as unknown as { port?: string; remoteDeviceId?: string };
         this.append('informational', 'udld',
-          `Neighbor change on ${p.portName ?? '?'} (id ${p.neighborId ?? '?'})`);
+          `Neighbor change on ${p.port ?? '?'} (id ${p.remoteDeviceId ?? '?'})`);
       }),
       bus.subscribeWhere('vtp.domain.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { domain?: string };
+        const p = e.payload as unknown as { newDomain?: string };
         this.append('informational', 'vtp',
-          `VTP domain changed to '${p.domain ?? '?'}'`);
+          `VTP domain changed to '${p.newDomain ?? '?'}'`);
       }),
       bus.subscribeWhere('vtp.mode.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { mode?: string };
+        const p = e.payload as unknown as { newMode?: string };
         this.append('informational', 'vtp',
-          `VTP mode changed to ${p.mode ?? '?'}`);
+          `VTP mode changed to ${p.newMode ?? '?'}`);
       }),
       bus.subscribeWhere('radius.auth.rejected', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; sourceIp?: string; reason?: string };
+        const p = e.payload as unknown as { username?: string; fromIp?: string; reason?: string };
         this.append('warnings', 'radius',
-          `Authentication rejected for ${p.username ?? '?'} from ${p.sourceIp ?? '?'} (${p.reason ?? '?'})`);
+          `Authentication rejected for ${p.username ?? '?'} from ${p.fromIp ?? '?'} (${p.reason ?? '?'})`);
       }),
       bus.subscribeWhere('radius.auth.completed', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; status?: string };
+        const p = e.payload as unknown as { username?: string; accepted?: boolean };
         this.append('informational', 'radius',
-          `Authentication ${p.status ?? '?'} for ${p.username ?? '?'}`);
+          `Authentication ${p.accepted ? 'accepted' : 'rejected'} for ${p.username ?? '?'}`);
       }),
       bus.subscribeWhere('tacacs.authen.completed', isOurs, (e) => {
         const p = e.payload as unknown as { username?: string; status?: string };
@@ -688,24 +656,19 @@ export class LoggingConfig {
           `Authorization ${p.status ?? '?'} for ${p.username ?? '?'} cmd='${p.command ?? '?'}'`);
       }),
       bus.subscribeWhere('gre.tunnel.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { tunnelName?: string; oldState?: string; newState?: string };
+        const p = e.payload as unknown as { tunnelId?: string; added?: boolean; sourceIp?: string; destinationIp?: string };
         this.append('notifications', 'gre',
-          `Tunnel ${p.tunnelName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `Tunnel ${p.tunnelId ?? '?'} ${p.added ? 'up' : 'down'} (${p.sourceIp ?? '?'} -> ${p.destinationIp ?? '?'})`);
       }),
       bus.subscribeWhere('port.config.ipv6-added', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; ipv6?: string };
+        const p = e.payload as unknown as { portName?: string; address?: string };
         this.append('informational', 'ifmgr',
-          `Interface ${p.portName ?? '?'}, IPv6 address ${p.ipv6 ?? '?'} assigned`);
+          `Interface ${p.portName ?? '?'}, IPv6 address ${p.address ?? '?'} assigned`);
       }),
       bus.subscribeWhere('port.config.ipv6-removed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; ipv6?: string };
+        const p = e.payload as unknown as { portName?: string; address?: string };
         this.append('informational', 'ifmgr',
-          `Interface ${p.portName ?? '?'}, IPv6 address ${p.ipv6 ?? '?'} removed`);
-      }),
-      bus.subscribeWhere('port.security.mac-aged', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; mac?: string };
-        this.append('debugging', 'port_security',
-          `MAC ${p.mac ?? '?'} aged out on ${p.portName ?? '?'}`);
+          `Interface ${p.portName ?? '?'}, IPv6 address ${p.address ?? '?'} removed`);
       }),
       bus.subscribeWhere('port.security.errdisable.cleared', isOurs, (e) => {
         const p = e.payload as unknown as { portName?: string };
@@ -713,39 +676,34 @@ export class LoggingConfig {
           `Interface ${p.portName ?? '?'} recovered from err-disabled state`);
       }),
       bus.subscribeWhere('port.security.sticky-saved', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; count?: number };
+        const p = e.payload as unknown as { portName?: string; mac?: string };
         this.append('informational', 'port_security',
-          `Sticky MAC addresses saved on ${p.portName ?? '?'} (${p.count ?? 0} entries)`);
+          `Sticky MAC ${p.mac ?? '?'} saved on ${p.portName ?? '?'}`);
       }),
       bus.subscribeWhere('arp.errdisable.set', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; reason?: string };
+        const p = e.payload as unknown as { port?: string; cause?: string };
         this.append('errors', 'dai',
-          `Port ${p.portName ?? '?'} err-disabled (${p.reason ?? 'DAI violation'})`);
+          `Port ${p.port ?? '?'} err-disabled (${p.cause ?? 'DAI violation'})`);
       }),
       bus.subscribeWhere('arp.errdisable.cleared', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string };
+        const p = e.payload as unknown as { port?: string };
         this.append('informational', 'dai',
-          `Port ${p.portName ?? '?'} cleared from err-disabled`);
+          `Port ${p.port ?? '?'} cleared from err-disabled`);
       }),
       bus.subscribeWhere('pim.dr.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; newDr?: string };
+        const p = e.payload as unknown as { iface?: string; newDrIp?: string };
         this.append('notifications', 'pim',
-          `Designated Router on ${p.iface ?? '?'} is now ${p.newDr ?? '?'}`);
+          `Designated Router on ${p.iface ?? '?'} is now ${p.newDrIp ?? '?'}`);
       }),
       bus.subscribeWhere('gre.packet.dropped', isOurs, (e) => {
-        const p = e.payload as unknown as { tunnelName?: string; reason?: string };
+        const p = e.payload as unknown as { sourceIp?: string; destinationIp?: string; reason?: string };
         this.append('warnings', 'gre',
-          `Dropped packet on tunnel ${p.tunnelName ?? '?'} (${p.reason ?? '?'})`);
-      }),
-      bus.subscribeWhere('dhcp.client.state-changed', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; oldState?: string; newState?: string };
-        this.append('debugging', 'dhcp',
-          `Client ${p.iface ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `Dropped packet on tunnel ${p.sourceIp ?? '?'} -> ${p.destinationIp ?? '?'} (${p.reason ?? '?'})`);
       }),
       bus.subscribeWhere('dhcp.reservation.added', isOurs, (e) => {
-        const p = e.payload as unknown as { ip?: string; mac?: string; pool?: string };
+        const p = e.payload as unknown as { ip?: string; clientMac?: string; pool?: string };
         this.append('informational', 'dhcpd',
-          `Reservation added: ${p.ip ?? '?'} for ${p.mac ?? '?'} (pool ${p.pool ?? '?'})`);
+          `Reservation added: ${p.ip ?? '?'} for ${p.clientMac ?? '?'} (pool ${p.pool ?? '?'})`);
       }),
       bus.subscribe('cable.disconnected', (e) => {
         const p = e.payload as unknown as {

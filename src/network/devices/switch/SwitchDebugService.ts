@@ -154,6 +154,41 @@ export class SwitchDebugService implements TerminalDebugSource {
       this.emit('stp.events', `STP: BPDU guard violation on ${p.port} (sender ${p.senderMac})`);
     }));
 
+    // Neighbour discovery, DAI snooping, port security and VXLAN. The
+    // logging subsystem used to raise these as `%CDP-7-DEBUGGING: …`, a
+    // shape IOS never prints — real debug output carries the subsystem's
+    // own prefix and no severity.
+    this.broadcast.track(bus.subscribe('cdp.neighbor.refreshed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { localPort?: string; remoteHost?: string };
+      this.emit('cdp',
+        `CDP-PA: Packet received from ${p.remoteHost ?? '?'} on interface ${p.localPort ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('lldp.neighbor.refreshed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { localPort?: string; remoteSystem?: string };
+      this.emit('lldp',
+        `LLDP: Received packet from ${p.remoteSystem ?? '?'} on ${p.localPort ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('arp.snoop.learned', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { ip?: string; mac?: string; portName?: string };
+      this.emit('arp',
+        `IP ARP INSPECTION: Learned ${p.ip ?? '?'} ${p.mac ?? '?'} on ${p.portName ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('port.security.mac-aged', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { portName?: string; mac?: string };
+      this.emit('port-security',
+        `PORT_SECURITY: Aged out ${p.mac ?? '?'} on ${p.portName ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('vxlan.mac.learned', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { vni?: number; mac?: string; vtepIp?: string };
+      this.emit('vxlan',
+        `NVE: Learned ${p.mac ?? '?'} in VNI ${p.vni ?? 0} from peer ${p.vtepIp ?? '?'}`);
+    }));
+
     this.broadcast.track(bus.subscribe('switch.mac.learned', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
