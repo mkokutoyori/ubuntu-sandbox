@@ -99,6 +99,8 @@ import {
   STUB_ADDRESS,
 } from './linux/net/ResolvedService';
 import { RRType } from '../dns/wire/RRType';
+import { DnsValidator, type DnssecStatus } from '../dns/dnssec/DnsValidator';
+import type { DsRecordData, ResourceRecord, ResourceRecordData } from '../dns/wire/ResourceRecord';
 import { decodeDnsMessage, encodeDnsMessage } from '../dns/wire/DnsMessageCodec';
 import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { X509Certificate } from '../pki/X509Certificate';
@@ -619,19 +621,84 @@ export abstract class LinuxMachine extends EndHost
   getResolvedService(): ResolvedService {
     if (!this._resolvedService) {
       this._resolvedService = new ResolvedService({
-        queryUpstream: (server, name) => {
+        // Le bit DO n'est posé que si l'on compte valider : sans lui le
+        // serveur n'a aucune raison de renvoyer les RRSIG.
+        queryUpstream: async (server, name, dnssecOk) => {
+          let serverIP: IPAddress;
+          try { serverIP = new IPAddress(server); } catch { return null; }
+          const reply = await this.queryDnsServer(serverIP, name, 'A', 2000, { dnssecOk });
+          if (!reply) return null;
+          return {
+            addresses: reply.answers
+              .filter((rr) => rr.data.type === RRType.A)
+              .map((rr) => (rr.data as ARecordData).address.toString()),
+            records: reply.answers,
+          };
+        },
+        queryUpstreamSync: (server, name) => {
           let serverIP: IPAddress;
           try { serverIP = new IPAddress(server); } catch { return null; }
           const reply = this.queryDnsServerSync(serverIP, name, 'A');
           if (!reply) return null;
-          return reply.answers
-            .filter((rr) => rr.data.type === RRType.A)
-            .map((rr) => (rr.data as ARecordData).address.toString());
+          return {
+            addresses: reply.answers
+              .filter((rr) => rr.data.type === RRType.A)
+              .map((rr) => (rr.data as ARecordData).address.toString()),
+            records: reply.answers,
+          };
         },
+        validate: (records) => this.validateDnssec(records),
+        hasTrustAnchors: () => this.dnssecAnchors.length > 0,
       });
       this.loadResolvedConfig();
     }
     return this._resolvedService;
+  }
+
+  private _dnsValidator: DnsValidator | null = null;
+
+  /**
+   * Valide une réponse en remontant la chaîne de confiance jusqu'à une
+   * ancre. Le `ChainLookup` repart sur le fil pour chaque DNSKEY et DS
+   * demandés : c'est une vraie remontée, pas une table de vérité.
+   *
+   * Sans ancre configurée (`/etc/systemd/resolved.conf` `DNSSECAnchors=`
+   * n'existe pas ici), la chaîne ne peut aboutir : on rend `insecure`
+   * plutôt que de prétendre valider.
+   */
+  private async validateDnssec(
+    records: readonly ResourceRecord<ResourceRecordData>[],
+  ): Promise<DnssecStatus> {
+    if (this.dnssecAnchors.length === 0) return 'insecure';
+    if (!this._dnsValidator) {
+      this._dnsValidator = new DnsValidator(
+        async (qname, qtype) => {
+          const svc = this.getResolvedService();
+          const { server } = svc.selectServer(qname);
+          if (!server) return { status: 'SERVFAIL', records: [] };
+          let serverIP: IPAddress;
+          try { serverIP = new IPAddress(server); } catch { return { status: 'SERVFAIL', records: [] }; }
+          const reply = await this.queryDnsServer(
+            serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true });
+          if (!reply) return { status: 'SERVFAIL', records: [] };
+          return { status: 'NOERROR', records: [...reply.answers, ...reply.authorities] };
+        },
+        this.dnssecAnchors,
+      );
+    }
+    return this._dnsValidator.validateAnswer(records);
+  }
+
+  private dnssecAnchors: ResourceRecord<DsRecordData>[] = [];
+
+  /**
+   * Ancres de confiance de l'hôte. Le vrai systemd-resolved embarque
+   * celle de la racine ; ici il n'y a pas de racine publique, donc c'est
+   * à la maquette de dire à quoi elle fait confiance.
+   */
+  setDnssecTrustAnchors(anchors: readonly ResourceRecord<DsRecordData>[]): void {
+    this.dnssecAnchors = [...anchors];
+    this._dnsValidator = null;
   }
 
   /** Relit `resolved.conf` et réécrit les fichiers de `/run`. */
@@ -667,25 +734,42 @@ export abstract class LinuxMachine extends EndHost
         if (!(udp.payload instanceof Uint8Array)) return;
         let query: DnsMessage;
         try { query = decodeDnsMessage(udp.payload); } catch { return; }
-        const bytes = encodeDnsMessage(this.answerResolvedQuery(query));
-        this.sendUdpDatagramTo(sourceIP, udp.sourcePort, DNS_PORT, bytes, bytes.length);
+        const send = (reply: DnsMessage): void => {
+          const bytes = encodeDnsMessage(reply);
+          this.sendUdpDatagramTo(sourceIP, udp.sourcePort, DNS_PORT, bytes, bytes.length);
+        };
+        // Sans validation à faire, la réponse part dans la même pile
+        // d'appel : c'est ce qui garde le résolveur NSS synchrone du
+        // système capable d'interroger le stub.
+        const immediate = this.answerResolvedQuerySync(query);
+        if (immediate) { send(immediate); return; }
+        void this.answerResolvedQuery(query).then(send);
       }, 'systemd-resolved');
     } catch { /* déjà lié */ }
   }
 
-  private answerResolvedQuery(query: DnsMessage): DnsMessage {
+  private answerResolvedQuerySync(query: DnsMessage): DnsMessage | null {
     const question = query.questions[0];
     if (!question) return buildLegacyResponseMessage(query, DnsRcode.FORMERR, []);
-    const outcome = this.getResolvedService().resolve(question.qname);
-    if (outcome.addresses.length === 0) {
-      return buildLegacyResponseMessage(query, 'SERVFAIL', []);
-    }
-    return buildLegacyResponseMessage(query, 'NOERROR', outcome.addresses.map((ip) => ({
-      name: question.qname,
-      type: 'A',
-      value: ip,
-      ttl: 60,
+    const outcome = this.getResolvedService().resolveSync(question.qname);
+    if (!outcome) return null;
+    return this.renderResolvedAnswer(query, question.qname, outcome.addresses);
+  }
+
+  private renderResolvedAnswer(
+    query: DnsMessage, qname: string, addresses: readonly string[],
+  ): DnsMessage {
+    if (addresses.length === 0) return buildLegacyResponseMessage(query, 'SERVFAIL', []);
+    return buildLegacyResponseMessage(query, 'NOERROR', addresses.map((ip) => ({
+      name: qname, type: 'A' as const, value: ip, ttl: 60,
     })));
+  }
+
+  private async answerResolvedQuery(query: DnsMessage): Promise<DnsMessage> {
+    const question = query.questions[0];
+    if (!question) return buildLegacyResponseMessage(query, DnsRcode.FORMERR, []);
+    const outcome = await this.getResolvedService().resolve(question.qname);
+    return this.renderResolvedAnswer(query, question.qname, outcome.addresses);
   }
 
   private answerDnsQuery(query: DnsMessage): DnsMessage {

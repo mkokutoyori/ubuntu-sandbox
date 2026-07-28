@@ -122,16 +122,27 @@ function renderStatus(ctx: LinuxCommandContext, cible: string | undefined, legen
   return lines.join('\n');
 }
 
-function renderQuery(ctx: LinuxCommandContext, cibles: string[]): { output: string; exitCode: number } {
+async function renderQuery(
+  ctx: LinuxCommandContext, cibles: string[],
+): Promise<{ output: string; exitCode: number }> {
   if (cibles.length === 0) {
     return { output: 'resolvectl: query requires at least one name', exitCode: 1 };
   }
   const out: string[] = [];
   let exitCode = 0;
   for (const nom of cibles) {
-    const r = resolvedOf(ctx).resolve(nom);
+    const r = await resolvedOf(ctx).resolve(nom);
     if (r.addresses.length === 0) {
-      out.push(`${nom}: Name or service not known`);
+      // Une réponse écartée par DNSSEC ne se confond pas avec un nom
+      // inconnu : l'opérateur doit savoir qu'il y avait une réponse et
+      // qu'elle a été refusée.
+      if (r.refusedBecause === 'bogus') {
+        out.push(`${nom}: Failed to resolve: DNSSEC validation failed`);
+      } else if (r.refusedBecause === 'unsigned-but-required') {
+        out.push(`${nom}: Failed to resolve: no signed data and DNSSEC=yes`);
+      } else {
+        out.push(`${nom}: Name or service not known`);
+      }
       exitCode = 1;
       continue;
     }
@@ -140,6 +151,7 @@ function renderQuery(ctx: LinuxCommandContext, cibles: string[]): { output: stri
     }
     out.push('');
     out.push(`-- Information acquired via protocol DNS in 0us.`);
+    out.push(`-- Data is authenticated: ${r.dnssec === 'secure' ? 'yes' : 'no'}`);
     out.push(`-- Data from: ${r.origin === 'cache' ? 'cache' : 'network'}`);
   }
   return { output: out.join('\n'), exitCode };
@@ -148,7 +160,7 @@ function renderQuery(ctx: LinuxCommandContext, cibles: string[]): { output: stri
 function renderStatistics(ctx: LinuxCommandContext): string {
   const s = resolvedOf(ctx).statistics();
   return [
-    'DNSSEC supported by current servers: no',
+    `DNSSEC supported by current servers: ${s.secureTransactions > 0 ? 'yes' : 'no'}`,
     '',
     'Transactions',
     `Current Transactions: 0`,
@@ -161,6 +173,9 @@ function renderStatistics(ctx: LinuxCommandContext): string {
     '',
     'Failure Transactions',
     `  Total Transactions: ${s.failedTransactions}`,
+    '',
+    'DNSSEC Verdicts',
+    `              Secure: ${s.secureTransactions}`,
   ].join('\n');
 }
 
@@ -222,7 +237,9 @@ Commands:
   dnsovertls [LINK [MODE]]     Get/set per-interface DNS-over-TLS mode
   revert LINK                  Revert per-interface configuration`;
 
-function execute(ctx: LinuxCommandContext, argv: string[]): { output: string; exitCode: number } {
+async function execute(
+  ctx: LinuxCommandContext, argv: string[],
+): Promise<{ output: string; exitCode: number }> {
   const opts = parseArgs(argv);
   if (opts.help) return { output: HELP, exitCode: 0 };
   if (opts.version) return { output: 'systemd 249 (249.11-0ubuntu3)', exitCode: 0 };
@@ -233,7 +250,7 @@ function execute(ctx: LinuxCommandContext, argv: string[]): { output: string; ex
   const svc = resolvedOf(ctx);
   switch (opts.verb) {
     case 'query':
-      return renderQuery(ctx, opts.args);
+      return await renderQuery(ctx, opts.args);
     case 'statistics':
       return { output: renderStatistics(ctx), exitCode: 0 };
     case 'reset-statistics':
@@ -263,6 +280,6 @@ export const resolvectlCommand: LinuxCommand = {
     appliesWhen: (args) => args.some((a) => ADMIN_VERBS.has(a)),
     satisfiedBy: Satisfy.root,
   },
-  run(ctx, args) { return execute(ctx, args).output; },
+  async run(ctx, args) { return (await execute(ctx, args)).output; },
   async runWithStatus(ctx, args) { return execute(ctx, args); },
 };

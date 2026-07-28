@@ -13,6 +13,8 @@
  */
 
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
+import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 
 export type TriState = 'yes' | 'no' | 'resolve';
 export type DnssecMode = 'yes' | 'no' | 'allow-downgrade';
@@ -48,6 +50,8 @@ export interface ResolvedStatistics {
   cacheMisses: number;
   currentCacheSize: number;
   failedTransactions: number;
+  /** Réponses validées comme signées et intègres. */
+  secureTransactions: number;
 }
 
 export function defaultLinkConfig(): ResolvedLinkConfig {
@@ -125,11 +129,41 @@ export interface ResolvedQueryOutcome {
   origin: 'cache' | 'network' | 'none';
   link: string | null;
   server: string | null;
+  /**
+   * Verdict DNSSEC de la réponse. `unset` quand le mode est `no` : on n'a
+   * pas validé, ce qui n'est pas la même chose qu'avoir validé et trouvé
+   * la zone non signée (`insecure`).
+   */
+  dnssec: DnssecStatus | 'unset';
+  /** Motif du refus, quand la réponse a été écartée. */
+  refusedBecause?: 'bogus' | 'unsigned-but-required';
+}
+
+export interface UpstreamAnswer {
+  addresses: string[];
+  /** Enregistrements bruts, RRSIG compris quand le bit DO est posé. */
+  records: readonly ResourceRecord<ResourceRecordData>[];
 }
 
 export interface ResolvedDeps {
   /** Interroge réellement un serveur sur le câble. Null = pas de réponse. */
-  queryUpstream(server: string, name: string): string[] | null;
+  queryUpstream(server: string, name: string, dnssecOk: boolean): Promise<UpstreamAnswer | null>;
+  /**
+   * Variante synchrone, utilisée quand il n'y a rien à valider. Valider
+   * coûte des allers-retours supplémentaires vers le haut de la chaîne,
+   * donc la validation impose le chemin asynchrone ; sans elle, le
+   * résolveur NSS synchrone du système peut continuer d'interroger le
+   * stub dans la même pile d'appel.
+   */
+  queryUpstreamSync?(server: string, name: string): UpstreamAnswer | null;
+  /** Valide une réponse signée en remontant la chaîne de confiance. */
+  validate?(records: readonly ResourceRecord<ResourceRecordData>[]): Promise<DnssecStatus>;
+  /**
+   * True quand une ancre de confiance est posée. Sans ancre, aucune
+   * chaîne ne peut aboutir : il n'y a donc rien à valider, et le chemin
+   * synchrone reste ouvert.
+   */
+  hasTrustAnchors?(): boolean;
   now?(): number;
 }
 
@@ -139,10 +173,12 @@ export class ResolvedService {
   private readonly cache: DnsCache;
   private stats: ResolvedStatistics = {
     transactions: 0, cacheHits: 0, cacheMisses: 0,
-    currentCacheSize: 0, failedTransactions: 0,
+    currentCacheSize: 0, failedTransactions: 0, secureTransactions: 0,
   };
   /** Réponses mises en cache par le stub, avec leur échéance. */
-  private readonly answers = new Map<string, { addresses: string[]; expiresAtMs: number }>();
+  private readonly answers = new Map<string, {
+    addresses: string[]; expiresAtMs: number; dnssec: DnssecStatus | 'unset';
+  }>();
 
   constructor(private readonly deps: ResolvedDeps) {
     this.cache = new DnsCache(deps.now ?? (() => Date.now()));
@@ -196,8 +232,78 @@ export class ResolvedService {
     return { server: null, link: null };
   }
 
-  /** Ce que le stub fait d'une requête : cache, puis fil, puis cache. */
-  resolve(name: string, ttlSeconds = 60): ResolvedQueryOutcome {
+  /**
+   * Le mode DNSSEC effectif pour un lien : le réglage du lien l'emporte
+   * sur le global, comme chez systemd.
+   */
+  dnssecModeFor(link: string | null): DnssecMode {
+    if (link) {
+      const cfg = this.links.get(link);
+      if (cfg) return cfg.dnssec;
+    }
+    return this.global.dnssec;
+  }
+
+  /**
+   * Ce que le stub fait d'une requête : cache, puis fil, validation, puis
+   * cache. Asynchrone parce que valider demande de vraies requêtes vers
+   * le haut de la chaîne de confiance (DNSKEY, DS) — un validateur
+   * synchrone ne pourrait pas les faire.
+   */
+  /** True quand une requête pour ce lien passera par la validation. */
+  willValidate(link: string | null): boolean {
+    if (this.dnssecModeFor(link) === 'no') return false;
+    if (this.deps.validate === undefined) return false;
+    return this.deps.hasTrustAnchors?.() ?? true;
+  }
+
+  /**
+   * Chemin synchrone : même cache, même sélection de serveur, sans
+   * validation. Rend null quand la validation s'impose — l'appelant doit
+   * alors passer par `resolve`.
+   */
+  resolveSync(name: string, ttlSeconds = 60): ResolvedQueryOutcome | null {
+    const key = name.toLowerCase().replace(/\.$/, '');
+    const now = (this.deps.now ?? (() => Date.now()))();
+
+    if (this.global.cache) {
+      const cached = this.answers.get(key);
+      if (cached && cached.expiresAtMs > now) {
+        this.stats.transactions++;
+        this.stats.cacheHits++;
+        return {
+          addresses: [...cached.addresses], origin: 'cache',
+          link: null, server: null, dnssec: cached.dnssec,
+        };
+      }
+    }
+    const { server, link } = this.selectServer(key);
+    if (this.willValidate(link) || !this.deps.queryUpstreamSync) return null;
+
+    this.stats.transactions++;
+    if (this.global.cache) {
+      this.answers.delete(key);
+      this.stats.cacheMisses++;
+    }
+    if (!server) {
+      this.stats.failedTransactions++;
+      return { addresses: [], origin: 'none', link: null, server: null, dnssec: 'unset' };
+    }
+    const answer = this.deps.queryUpstreamSync(server, key);
+    if (!answer || answer.addresses.length === 0) {
+      this.stats.failedTransactions++;
+      return { addresses: [], origin: 'none', link, server, dnssec: 'unset' };
+    }
+    if (this.global.cache) {
+      this.answers.set(key, {
+        addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000, dnssec: 'unset',
+      });
+      this.stats.currentCacheSize = this.answers.size;
+    }
+    return { addresses: answer.addresses, origin: 'network', link, server, dnssec: 'unset' };
+  }
+
+  async resolve(name: string, ttlSeconds = 60): Promise<ResolvedQueryOutcome> {
     this.stats.transactions++;
     const key = name.toLowerCase().replace(/\.$/, '');
     const now = (this.deps.now ?? (() => Date.now()))();
@@ -206,7 +312,10 @@ export class ResolvedService {
       const cached = this.answers.get(key);
       if (cached && cached.expiresAtMs > now) {
         this.stats.cacheHits++;
-        return { addresses: [...cached.addresses], origin: 'cache', link: null, server: null };
+        return {
+          addresses: [...cached.addresses], origin: 'cache',
+          link: null, server: null, dnssec: cached.dnssec,
+        };
       }
       if (cached) this.answers.delete(key);
       this.stats.cacheMisses++;
@@ -215,18 +324,47 @@ export class ResolvedService {
     const { server, link } = this.selectServer(key);
     if (!server) {
       this.stats.failedTransactions++;
-      return { addresses: [], origin: 'none', link: null, server: null };
+      return { addresses: [], origin: 'none', link: null, server: null, dnssec: 'unset' };
     }
-    const addresses = this.deps.queryUpstream(server, key);
-    if (!addresses || addresses.length === 0) {
+
+    const mode = this.dnssecModeFor(link);
+    const wantDnssec = this.willValidate(link);
+    const answer = await this.deps.queryUpstream(server, key, wantDnssec);
+    if (!answer || answer.addresses.length === 0) {
       this.stats.failedTransactions++;
-      return { addresses: [], origin: 'none', link, server };
+      return { addresses: [], origin: 'none', link, server, dnssec: 'unset' };
     }
+
+    let dnssec: DnssecStatus | 'unset' = 'unset';
+    if (wantDnssec) {
+      dnssec = await this.deps.validate!(answer.records);
+      if (dnssec === 'secure') this.stats.secureTransactions++;
+      // Une réponse falsifiée est refusée quel que soit le mode : c'est
+      // tout l'objet de DNSSEC. Une zone non signée n'est refusée qu'en
+      // mode strict, `allow-downgrade` l'acceptant par définition.
+      if (dnssec === 'bogus') {
+        this.stats.failedTransactions++;
+        return {
+          addresses: [], origin: 'none', link, server,
+          dnssec, refusedBecause: 'bogus',
+        };
+      }
+      if (dnssec === 'insecure' && mode === 'yes') {
+        this.stats.failedTransactions++;
+        return {
+          addresses: [], origin: 'none', link, server,
+          dnssec, refusedBecause: 'unsigned-but-required',
+        };
+      }
+    }
+
     if (this.global.cache) {
-      this.answers.set(key, { addresses: [...addresses], expiresAtMs: now + ttlSeconds * 1000 });
+      this.answers.set(key, {
+        addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000, dnssec,
+      });
       this.stats.currentCacheSize = this.answers.size;
     }
-    return { addresses, origin: 'network', link, server };
+    return { addresses: answer.addresses, origin: 'network', link, server, dnssec };
   }
 
   flushCaches(): void {
@@ -242,7 +380,7 @@ export class ResolvedService {
   resetStatistics(): void {
     this.stats = {
       transactions: 0, cacheHits: 0, cacheMisses: 0,
-      currentCacheSize: this.answers.size, failedTransactions: 0,
+      currentCacheSize: this.answers.size, failedTransactions: 0, secureTransactions: 0,
     };
   }
 
