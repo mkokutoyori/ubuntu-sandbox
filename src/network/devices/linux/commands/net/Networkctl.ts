@@ -78,6 +78,8 @@ function buildDeps(ctx: LinuxCommandContext): LinkStateDeps {
     isManagedByNetworkManager: (iface) => ctx.netConfig.isManagedByNetworkManager(iface),
     resolvConf: ctx.executor.vfs.readFile('/etc/resolv.conf'),
     resolveFiles: (iface) => ctx.netConfig.resolveNetworkdFiles(iface),
+    networkdActive: ctx.executor.serviceMgr.isActive('systemd-networkd'),
+    governedByNetworkd: (iface) => ctx.netConfig.isGovernedByNetworkd(iface),
   };
 }
 
@@ -198,7 +200,10 @@ function runActionVerb(
   ctx: LinuxCommandContext, verb: string, patterns: string[],
 ): { output: string; exitCode: number } {
   if (verb === 'reload') {
-    const { warnings } = ctx.netConfig.applyNetplan(ctx.net);
+    // Relit les fichiers natifs comme le vrai `networkctl reload`, pas
+    // seulement le netplan (`docs/PRD-networkd.md` écart #5).
+    const native = ctx.netConfig.applyNetworkd(ctx.net);
+    const { warnings } = ctx.netConfig.applyNetplan(ctx.net, native.governed);
     return { output: warnings.join('\n'), exitCode: 0 };
   }
   if (patterns.length === 0) {

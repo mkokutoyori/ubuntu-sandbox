@@ -69,6 +69,10 @@ export interface LinkStateDeps {
   resolvConf: string | null;
   /** Fichiers `.network`/`.link` qui s'appliquent au lien (phase 3). */
   resolveFiles?(iface: string): { networkFile: string | null; linkFile: string | null };
+  /** True si systemd-networkd tourne. Arrêté, plus personne ne configure. */
+  networkdActive?: boolean;
+  /** True si un `.network` retient ce lien et l'a réellement configuré. */
+  governedByNetworkd?(iface: string): boolean;
 }
 
 export const LOOPBACK_MTU = 65536;
@@ -136,9 +140,20 @@ function deriveOperational(deps: LinkStateDeps, name: string): OperationalState 
 function deriveSetup(deps: LinkStateDeps, name: string): SetupState {
   if (deps.isManagedByNetworkManager(name)) return 'unmanaged';
   if (deps.netplan?.renderer === 'NetworkManager') return 'unmanaged';
+
+  const nativelyGoverned = deps.governedByNetworkd?.(name) ?? false;
   const declared = deps.netplan?.interfaces.get(name);
-  if (!declared) return 'unmanaged';
-  if (declared.method !== 'dhcp') return 'configured';
+  if (!nativelyGoverned && !declared) return 'unmanaged';
+
+  // Démon arrêté : plus personne n'applique quoi que ce soit. Le lien
+  // reste connu mais sa configuration est en attente, elle n'est pas
+  // aboutie (`docs/PRD-networkd.md` §4).
+  if (deps.networkdActive === false) return 'pending';
+
+  // Un `.network` a été appliqué à l'instant : la configuration est
+  // faite, quoi qu'en dise le netplan pour ce même lien.
+  if (nativelyGoverned) return 'configured';
+  if (declared!.method !== 'dhcp') return 'configured';
   return hasActiveLease(deps, name) ? 'configured' : 'configuring';
 }
 

@@ -1,7 +1,7 @@
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxLogManager } from './LinuxLogManager';
 import type { LinuxNetKernel } from './LinuxNetKernel';
-import { IPAddress, SubnetMask } from '../../core/types';
+import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
 import {
   parseInterfacesFile,
   serializeInterfacesFile,
@@ -17,6 +17,11 @@ import {
   DEFAULT_LINK_FILE_PATH,
   DEFAULT_LINK_FILE_TEXT,
 } from './net/NetworkdFiles';
+import {
+  resolveNetdevs,
+  resolveNetworkdPlans,
+  type NetworkdLinkPlan,
+} from './net/NetworkdPlan';
 
 export const INTERFACES_PATH = '/etc/network/interfaces';
 export const NETPLAN_PATH = '/etc/netplan/01-netcfg.yaml';
@@ -100,11 +105,137 @@ export class LinuxNetworkConfigManager {
     return applied;
   }
 
-  applyNetplan(net: LinuxNetKernel): { applied: string[]; warnings: string[] } {
+  /**
+   * Applique les fichiers natifs de networkd, et rend les liens qu'ils
+   * gouvernent. Un lien retenu par un `.network` échappe ensuite au
+   * chemin netplan : sur Ubuntu netplan *génère* ces fichiers, donc le
+   * format natif est la source la plus spécifique, et appliquer les deux
+   * reviendrait à configurer deux fois (`docs/PRD-networkd.md` §2.2).
+   */
+  applyNetworkd(net: LinuxNetKernel): { applied: string[]; governed: Set<string> } {
+    const plans = resolveNetworkdPlans(this.vfs, [...net.getPorts().keys()]);
+    const applied: string[] = [];
+    for (const plan of plans.values()) {
+      applied.push(...this.applyLinkPlan(net, plan));
+    }
+    if (plans.size > 0) this.writeResolvConf(net, [...plans.values()]);
+    for (const line of applied) this.logMgr.logSystemd('systemd-networkd', line);
+    return { applied, governed: new Set(plans.keys()) };
+  }
+
+  private applyLinkPlan(net: LinuxNetKernel, plan: NetworkdLinkPlan): string[] {
+    const applied: string[] = [];
+    const port = net.getPorts().get(plan.iface);
+    if (!port) return applied;
+
+    if (plan.macAddress) {
+      port.setMAC(new MACAddress(plan.macAddress));
+      applied.push(`${plan.iface}: MAC address set to ${plan.macAddress}`);
+    }
+    if (plan.mtu !== null && port.getMTU() !== plan.mtu) {
+      port.setMTU(plan.mtu);
+      applied.push(`${plan.iface}: MTU set to ${plan.mtu}`);
+    }
+
+    // `manual` et `down` disent explicitement de ne pas monter le lien ;
+    // tout le reste le monte, ce qui est le défaut de systemd.
+    if (plan.activationPolicy === 'down' || plan.activationPolicy === 'always-down') {
+      net.setInterfaceAdmin(plan.iface, false);
+      applied.push(`${plan.iface}: brought down by ActivationPolicy=${plan.activationPolicy}`);
+    } else if (plan.activationPolicy !== 'manual' && !port.getIsUp()) {
+      net.setInterfaceAdmin(plan.iface, true);
+      applied.push(`${plan.iface}: brought up`);
+    }
+
+    for (const [index, cidr] of plan.addresses.entries()) {
+      const [addr, prefix] = cidr.split('/');
+      if (!addr || addr.includes(':')) continue;
+      const mask = SubnetMask.fromCIDR(prefix ? Number(prefix) : 24);
+      if (index === 0) net.configureInterface(plan.iface, new IPAddress(addr), mask);
+      else port.addSecondaryIP(new IPAddress(addr), mask);
+      applied.push(`${plan.iface}: IPv4 address ${cidr}`);
+    }
+
+    if (plan.gateway) {
+      net.setDefaultGateway(new IPAddress(plan.gateway));
+      applied.push(`${plan.iface}: default gateway ${plan.gateway}`);
+    }
+    for (const route of plan.routes) {
+      const [dest, prefix] = route.destination.split('/');
+      if (!dest || !route.gateway || dest.includes(':')) continue;
+      const mask = SubnetMask.fromCIDR(prefix ? Number(prefix) : 32);
+      // Réappliquer la même configuration ne doit rien empiler : le noyau
+      // refuse un doublon (`RTNETLINK answers: File exists`), et un
+      // redémarrage du démon rejoue forcément le même plan.
+      const already = net.getRoutingTable().some((r) =>
+        r.network.toString() === dest
+        && r.mask.toString() === mask.toString()
+        && r.nextHop?.toString() === route.gateway);
+      if (already) continue;
+      net.addStaticRoute(new IPAddress(dest), mask, new IPAddress(route.gateway), route.metric ?? undefined);
+      applied.push(`${plan.iface}: route ${route.destination} via ${route.gateway}`);
+    }
+
+    if (plan.dhcp === 'yes' || plan.dhcp === 'ipv4') {
+      net.getDhcpClient().requestLease(plan.iface, {});
+      applied.push(`${plan.iface}: DHCPv4 client started`);
+    }
+    return applied;
+  }
+
+  /**
+   * Les serveurs déclarés d'abord, ceux du bail ensuite — l'ordre de
+   * systemd. Écrit en clair plutôt que via un stub 127.0.0.53 : le
+   * résolveur du simulateur lit ce fichier directement, et pointer vers
+   * un stub inexistant casserait toute résolution (`PRD-networkd` §7).
+   */
+  private writeResolvConf(net: LinuxNetKernel, plans: readonly NetworkdLinkPlan[]): void {
+    const servers: string[] = [];
+    const domains: string[] = [];
+    for (const plan of plans) {
+      for (const s of plan.dns) if (!servers.includes(s)) servers.push(s);
+      for (const d of plan.domains) if (!domains.includes(d)) domains.push(d);
+      if (!plan.useDns) continue;
+      const lease = net.getDhcpClient().getState(plan.iface)?.lease;
+      for (const s of lease?.dnsServers ?? []) if (!servers.includes(s)) servers.push(s);
+    }
+    if (servers.length === 0 && domains.length === 0) return;
+    const lines = ['# This file is managed by systemd-networkd.', '# Do not edit.'];
+    if (domains.length) lines.push(`search ${domains.join(' ')}`);
+    for (const s of servers) lines.push(`nameserver ${s}`);
+    this.vfs.writeFile('/etc/resolv.conf', `${lines.join('\n')}\n`, 0, 0, 0o022);
+  }
+
+  /** Crée les périphériques virtuels déclarés par `.netdev`. */
+  applyNetdevs(linkOps: {
+    addDummy(name: string): string;
+    addVlan(name: string, parent: string, vid: number): string;
+    addVeth(name: string, peerName: string): string;
+  } | undefined, existing: ReadonlySet<string>): string[] {
+    if (!linkOps) return [];
+    const applied: string[] = [];
+    for (const dev of resolveNetdevs(this.vfs)) {
+      if (existing.has(dev.name)) continue;
+      // Seuls les trois types que le simulateur sait réellement créer :
+      // annoncer bond ou bridge sans modèle serait un mensonge.
+      if (dev.kind === 'dummy') linkOps.addDummy(dev.name);
+      else if (dev.kind === 'vlan' && dev.vlanId !== null) {
+        const parent = [...existing][0];
+        if (!parent) continue;
+        linkOps.addVlan(dev.name, parent, dev.vlanId);
+      } else continue;
+      applied.push(`${dev.name}: netdev of kind ${dev.kind} created from ${dev.path}`);
+      this.logMgr.logSystemd('systemd-networkd', applied[applied.length - 1]);
+    }
+    return applied;
+  }
+
+  applyNetplan(net: LinuxNetKernel, skip: ReadonlySet<string> = new Set()): { applied: string[]; warnings: string[] } {
     const cfg = this.readNetplan();
     const applied: string[] = [];
     if (cfg) {
       for (const [name, iface] of cfg.interfaces) {
+        if (skip.has(name)) continue;
         applied.push(...this.applyDeclaredConfig(net, name, iface));
       }
     }
@@ -215,6 +346,11 @@ export class LinuxNetworkConfigManager {
     return warnings;
   }
 
+  /** True si un `.network` retient ce lien — c'est networkd qui le gouverne. */
+  isGovernedByNetworkd(iface: string): boolean {
+    return matchNetworkFile(discoverNetworkdFiles(this.vfs), iface) !== null;
+  }
+
   /** Fichiers networkd qui s'appliquent réellement à `iface` (§5 du PRD). */
   resolveNetworkdFiles(iface: string): { networkFile: string | null; linkFile: string | null } {
     const files = discoverNetworkdFiles(this.vfs);
@@ -267,6 +403,14 @@ export class LinuxNetworkConfigManager {
 
   /** `networkctl reconfigure <iface>` — réapplique le seul lien visé. */
   reconfigureInterface(net: LinuxNetKernel, iface: string): string[] {
+    // Le fichier natif d'abord : c'est la source la plus spécifique, et
+    // c'est celle que `networkctl reconfigure` relit sur un vrai système.
+    const plan = resolveNetworkdPlans(this.vfs, [iface]).get(iface);
+    if (plan) {
+      const applied = this.applyLinkPlan(net, plan);
+      for (const line of applied) this.logMgr.logSystemd('systemd-networkd', line);
+      return applied;
+    }
     const declared = this.readNetplan()?.interfaces.get(iface);
     if (!declared) return [];
     const applied = this.applyDeclaredConfig(net, iface, declared);

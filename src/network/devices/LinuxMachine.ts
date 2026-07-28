@@ -709,8 +709,30 @@ export abstract class LinuxMachine extends EndHost
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'systemd-networkd') return;
       if (event !== 'start' && event !== 'restart' && event !== 'reload') return;
-      this.executor.netConfig.applyNetplan(this.net);
+      this.applyNetworkConfiguration();
     });
+  }
+
+  /**
+   * Ce que fait le démon quand il démarre ou relit : les fichiers natifs
+   * d'abord, netplan ensuite pour ce qu'ils ne gouvernent pas. Avant, le
+   * démon ne rejouait que netplan et un `.network` écrit à la main
+   * n'avait aucun effet (`docs/PRD-networkd.md` §1.3, écart #1).
+   */
+  applyNetworkConfiguration(): { applied: string[]; warnings: string[] } {
+    const existing = new Set(this.ports.keys());
+    this.executor.netConfig.applyNetdevs(this.buildCommandContext().linkOps, existing);
+    const native = this.executor.netConfig.applyNetworkd(this.net);
+    const netplan = this.executor.netConfig.applyNetplan(this.net, native.governed);
+    return {
+      applied: [...native.applied, ...netplan.applied],
+      warnings: netplan.warnings,
+    };
+  }
+
+  /** True tant que systemd-networkd tourne — personne ne configure sinon. */
+  isNetworkdActive(): boolean {
+    return this.executor.serviceMgr.isActive('systemd-networkd');
   }
 
   private readonly _sshdActivePorts = new Set<number>();
