@@ -307,8 +307,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   setMode(mode: CiscoShellMode): void { this.mode = mode; }
 
-  /** A privilege-15 login is already in privileged EXEC on real IOS. */
-  enterPrivilegedExec(): void { this.setMode('privileged'); }
+  /**
+   * A privilege-15 login is already in privileged EXEC on real IOS; a
+   * lower level opens in user EXEC. The level travels with the mode —
+   * setting one without the other made `show privilege` disagree with the
+   * prompt the same session was showing.
+   */
+  beginExecSession(level: number): void {
+    this.currentPrivilegeLevel = level;
+    this.setMode(level >= 15 ? 'privileged' : 'user');
+  }
 
   override getMode(): CiscoShellMode { return this.mode as CiscoShellMode; }
 

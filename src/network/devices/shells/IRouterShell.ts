@@ -15,12 +15,13 @@ export interface IRouterShell {
   /** Get the current CLI prompt string (e.g. "Router#", "<Router>") */
   getPrompt(router: Router): string;
   /**
-   * Start this session in privileged EXEC, for a login whose account is
-   * already at that level. Only vendors with a distinct privileged mode
-   * implement it — VRP's user-view prompt does not change with the
-   * account's level, so a Huawei shell leaves this undefined.
+   * Open this session at the EXEC level the line grants — level 15 lands
+   * straight in privileged EXEC, anything lower stays in user EXEC, as on
+   * real IOS. Only vendors with a distinct level model implement it —
+   * VRP's user-view prompt does not change with the account's level, so a
+   * Huawei shell leaves this undefined.
    */
-  enterPrivilegedExec?(): void;
+  beginExecSession?(level: number): void;
   /** Get context-sensitive help for the given input (? behavior) */
   getHelp(inputBeforeQuestion: string, router?: Router): string;
   /** Get tab completion for the given partial input */

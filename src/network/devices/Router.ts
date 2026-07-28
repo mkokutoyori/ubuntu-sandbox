@@ -509,6 +509,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         },
       }),
       execTarget: () => this as unknown as SshExecTarget,
+      execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
       aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
       // Reuse the exact admission/failure-tracking the cross-vendor bypass
@@ -716,6 +717,33 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getShell(): IRouterShell { return this.shell; }
 
   /**
+   * `exec-timeout` of the VTY line, in milliseconds. Real IOS hangs an
+   * idle EXEC session up on the line's own timer; `exec-timeout 0 0`
+   * (both fields zero) disables it, as does an unconfigured line here.
+   */
+  private resolveVtyIdleTimeoutMs(): number | null {
+    const block = this.vtyLineConfig.all()[0];
+    if (!block) return null;
+    const { execTimeoutMinutes: min, execTimeoutSeconds: sec } = block;
+    if (min == null && sec == null) return null;
+    const ms = ((min ?? 0) * 60 + (sec ?? 0)) * 1000;
+    return ms > 0 ? ms : null;
+  }
+
+  /**
+   * The EXEC level an incoming VTY session opens at. Real IOS: a
+   * `privilege level N` on the line OVERRIDES the authenticated account's
+   * own level; with none configured the account's level applies. Without
+   * a login name there is nothing to look up, so the line starts at 1.
+   */
+  private resolveVtyExecLevel(user?: string): number {
+    const lineLevel = this.vtyLineConfig.all()[0]?.privilege;
+    if (lineLevel != null) return lineLevel;
+    if (user === undefined) return 1;
+    return this.getCredentialStore().lookup(user)?.privilege ?? 1;
+  }
+
+  /**
    * A CLI shell dedicated to one remote session. Real VTY semantics: its
    * own mode context, so `configure terminal` over SSH never drags the
    * console into config mode, while the configuration it edits lives on
@@ -728,13 +756,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     lastEndedSession(): boolean;
   } {
     const shell = this.createShell();
-    // An account already at privilege 15 lands in privileged EXEC, as it
-    // would on real IOS. Without the login's name the session could only
-    // ever start at the lowest level, whatever the account was granted.
-    const level = user === undefined
-      ? undefined
-      : this.getCredentialStore().lookup(user)?.privilege;
-    if (level !== undefined && level >= 15) shell.enterPrivilegedExec?.();
+    shell.beginExecSession?.(this.resolveVtyExecLevel(user));
     // A vendor CLI's exit word unwinds one mode at a time and, at the
     // top level, logs the VTY line out. The shell owns that state, so
     // the logout is detected here — an exit verb that leaves the prompt

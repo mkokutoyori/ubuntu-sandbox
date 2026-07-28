@@ -269,9 +269,23 @@ export class SshInteractiveSubShell implements ISubShell {
      *  wire the session was opened on. Omitted means "never check"
      *  (docs/PRD-Link-State.md §3.3). */
     private readonly probeAlive?: () => boolean,
+    /** The remote hung the line up on its own — a VTY `exec-timeout`, an
+     *  administrative disconnect. Nothing was typed, so the host has to be
+     *  told to print the footer and pop this sub-shell by itself. */
+    private readonly onRemoteHangup?: (footer: string) => void,
   ) {
     this.cwd = initialCwd === '~' ? `/home/${remoteUser}` : initialCwd;
+    if (this.onRemoteHangup) {
+      this.channel.onClose(() => {
+        if (this.closing) return;
+        this.closing = true;
+        this.onRemoteHangup?.(`Connection to ${this.remoteHost} closed.`);
+      });
+    }
   }
+
+  /** Set once this session is on its way out, whichever side started it. */
+  private closing = false;
 
   getPrompt(): string {
     if (this.nestedHop) return this.nestedHop.getPrompt();
@@ -583,6 +597,7 @@ export class SshInteractiveSubShell implements ISubShell {
   }
 
   dispose(): void {
+    this.closing = true;
     this.nestedHop?.dispose();
     this.channel.close();
     if (this.onDispose) this.onDispose();

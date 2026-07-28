@@ -125,6 +125,13 @@ export interface ISshServerContext {
    * unaffected and always use the plain one-shot `getShell()` path.
    */
   createInteractiveShell?(userCtx: SshUserContext): SshInteractiveShell | null;
+  /**
+   * How long an interactive shell channel may sit idle before the server
+   * hangs it up, in milliseconds — a network CLI's `exec-timeout` on the
+   * line the session landed on. Null (or an absent implementation) means
+   * the line never times out, which is what a POSIX sshd does.
+   */
+  execIdleTimeoutMs?(): number | null;
   getMotd(): string;
   getLastLogin(user: string): string | null;
   recordLogin(user: string, fromIp: string): void;

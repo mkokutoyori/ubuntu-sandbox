@@ -62,6 +62,8 @@ export interface RouterSshServerDeps {
   aaaAuthenticate?(username: string, password: string): Promise<boolean>;
   /** Router-style execution backend (IOS / VRP / cmd.exe line dispatch). */
   execTarget(): SshExecTarget;
+  /** `exec-timeout` of the VTY line an incoming session lands on, in ms. */
+  execIdleTimeoutMs?(): number | null;
   /** Optional sftp source (running-config, startup-config). */
   sftpSource?(): RouterSftpSource | null;
   /** Optional reactive event bus from the SSH event subsystem. */
@@ -103,6 +105,10 @@ export class RouterSshServerContext implements ISshServerContext {
       return new RouterSftpFileSystem({ read: () => null, list: () => [] });
     }
     return new RouterSftpFileSystem(src);
+  }
+
+  execIdleTimeoutMs(): number | null {
+    return this.deps.execIdleTimeoutMs?.() ?? null;
   }
 
   getShell(userCtx: SshUserContext, _cwd: string): ILinuxShell {

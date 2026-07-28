@@ -182,8 +182,33 @@ export class SshServerHandler {
       }, intervalSec * 1000);
     }
 
+    // `exec-timeout` on a network CLI's VTY line: the SERVER hangs an idle
+    // EXEC session up, exactly as IOS does — the client only ever learns
+    // of it by having its socket closed under it. Re-armed on every line,
+    // so activity keeps the line alive.
+    let idleTimer: ReturnType<TimerSet['setTimeout']> | null = null;
+    const rearmExecIdle = (): void => {
+      if (idleTimer !== null) timers.clear(idleTimer);
+      idleTimer = null;
+      const ms = this.ctx.execIdleTimeoutMs?.() ?? null;
+      if (ms == null || ms <= 0) return;
+      idleTimer = timers.setTimeout(() => {
+        this.eventBus.emit({
+          kind: 'client_disconnected',
+          user: userCtx?.username ?? '',
+          ip: clientIp,
+          reason: 'exec-timeout',
+          timestamp: Date.now(),
+        });
+        try { conn.write(JSON.stringify({ op: 'disconnect', reason: 'exec-timeout' })); }
+        catch { /* socket already gone */ }
+        conn.close();
+      }, ms);
+    };
+
     conn.onClose?.((reason) => {
       timers.clearAll();
+      idleTimer = null;
       keepaliveTimer = null;
       decPreauth();
       for (const info of channels.values()) {
@@ -415,6 +440,7 @@ export class SshServerHandler {
             user: userCtx.username,
             channelType: 'shell',
           });
+          rearmExecIdle();
           conn.write(JSON.stringify({
             ok: true,
             channelId,
@@ -446,6 +472,7 @@ export class SshServerHandler {
           const channelId = parsed.channelId as number;
           const info = channels.get(channelId);
           const line = (parsed.data as string | undefined) ?? '';
+          rearmExecIdle();
 
           // Try the real-time job runtime first (e.g. `ping`): output
           // streams over the wire as `shell_output` pushes while the job

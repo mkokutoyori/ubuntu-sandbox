@@ -34,6 +34,9 @@ export class SshShellChannel
 
   private dataHandlers: Array<(d: string) => void> = [];
   private offConn: (() => void) | null = null;
+  private offConnClose: (() => void) | null = null;
+  /** True while closing because the peer hung up — nothing to write back. */
+  private peerClosed = false;
   private cols = 80;
   private rows = 24;
   private pendingLine: ((r: ExecResult) => void) | null = null;
@@ -64,6 +67,17 @@ export class SshShellChannel
 
   protected handleOpen(): void {
     this.offConn = this.conn.onData((data) => this.onWire(data));
+    // The server hangs the line up on its own (a VTY `exec-timeout`, an
+    // administrative disconnect): the socket dies under us with nothing
+    // typed, so the channel has to hear it from the transport rather than
+    // from a reply it will never get. Only a real FIN counts — a yanked
+    // cable resets the socket without the peer ever saying goodbye, and
+    // ssh learns about that on its next write, not before.
+    this.offConnClose = this.conn.onClose?.((reason) => {
+      if (reason !== 'fin') return;
+      this.peerClosed = true;
+      this.close();
+    }) ?? null;
     // Announce the channel to the server so it can spin up the
     // persistent shell session.
     this.conn.write(
@@ -72,13 +86,17 @@ export class SshShellChannel
   }
 
   protected handleClose(): void {
-    if (this.offConn) {
-      this.conn.write(
-        JSON.stringify({ op: 'shell_close', channelId: this.channelId }),
-      );
+    if (this.offConn && !this.peerClosed) {
+      try {
+        this.conn.write(
+          JSON.stringify({ op: 'shell_close', channelId: this.channelId }),
+        );
+      } catch { /* socket already gone */ }
     }
     this.offConn?.();
     this.offConn = null;
+    this.offConnClose?.();
+    this.offConnClose = null;
     this.dataHandlers = [];
   }
 

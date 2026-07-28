@@ -131,8 +131,17 @@ async function submitPassword(session: TerminalSession, value: string): Promise<
   session.handleKey(key('Enter'));
   await tick();
 }
+/**
+ * Type a command. A session driving a nested remote shell reads its line
+ * from the interactive-text buffer, not from `input` — writing to the
+ * wrong one submits an empty line and the command silently never runs.
+ */
 async function type(session: TerminalSession, cmd: string): Promise<void> {
-  session.setInput(cmd);
+  if (session.currentInputMode.type === 'interactive-text') {
+    session.setInputBuf(cmd);
+  } else {
+    session.setInput(cmd);
+  }
   session.handleKey(key('Enter'));
   await tick();
 }

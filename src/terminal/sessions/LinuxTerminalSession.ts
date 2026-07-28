@@ -2894,6 +2894,7 @@ export class LinuxTerminalSession extends TerminalSession {
           // provoked with a fresh handshake — otherwise every command
           // would make the remote log an accept/close pair.
           transportLiveness(session),
+          (footer) => this.onRemoteHangup(footer),
         );
         this._inputBuf = '';
         this.notify();
@@ -3656,6 +3657,20 @@ export class LinuxTerminalSession extends TerminalSession {
     this._inputBuf = out.input;
     this.tabSuggestions =
       out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
+    this.notify();
+  }
+
+  /**
+   * The remote hung the line up with nothing typed here — an IOS VTY
+   * `exec-timeout` firing server-side. Real ssh prints its footer the
+   * moment the socket dies and hands the shell back, so the footer and
+   * the local prompt land without waiting for the next keypress.
+   */
+  private onRemoteHangup(footer: string): void {
+    if (!this.activeSubShell) return;
+    this.addLine(footer);
+    this.exitSubShell();
+    this.addLine(this.getPrompt());
     this.notify();
   }
 
