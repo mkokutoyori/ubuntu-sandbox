@@ -20,6 +20,7 @@ interface RlsPolicyRow {
   statementTypes: { sel: boolean; ins: boolean; upd: boolean; del: boolean; idx: boolean };
   enabled: boolean;
   policyType: string;
+  updateCheck: boolean;
 }
 
 registerView({
@@ -56,7 +57,7 @@ registerView({
         p.statementTypes.upd ? 'YES' : 'NO',
         p.statementTypes.del ? 'YES' : 'NO',
         p.statementTypes.idx ? 'YES' : 'NO',
-        'NO',
+        p.updateCheck ? 'YES' : 'NO',
         p.enabled ? 'YES' : 'NO',
         p.policyType === 'STATIC' ? 'YES' : 'NO',
         p.policyType,

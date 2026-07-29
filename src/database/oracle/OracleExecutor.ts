@@ -29,7 +29,7 @@ import { makeSqlId } from './views/sqlId';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { collectSelectColumnUsage, BARE_STAR, type SelectColumnUsage } from './security/SelectColumnUsage';
-import { resolveRlsPredicate, type RlsHost, type RlsOperation, type RlsPolicyRecord } from './security/RlsPredicateApplier';
+import { resolveRlsPredicate, type RlsHost, type RlsOperation, type RlsPolicyRecord, type ReferencedColumns } from './security/RlsPredicateApplier';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
 import { formatDateWithPattern, parseDateWithPattern, coerceDateValue } from './functions/dateSupport';
@@ -1212,7 +1212,7 @@ export class OracleExecutor extends BaseExecutor {
       return this.executeSelectFromDual(stmt);
     }
 
-    this.enforceSelectColumnPrivileges(stmt);
+    this.prepareSelectColumnScope(stmt);
 
     // ── Step 1: Build combined row set (FROM + JOINs) ──────────────
     const fromResult = this.resolveFromClause(stmt);
@@ -1499,11 +1499,27 @@ export class OracleExecutor extends BaseExecutor {
    */
   private applyRlsPredicate(
     schema: string, tableName: string, operation: RlsOperation,
-    rows: StorageRow[], columns: StorageColMeta[],
+    rows: StorageRow[], columns: StorageColMeta[], referenced?: ReferencedColumns,
   ): StorageRow[] {
-    const predicate = resolveRlsPredicate(this.rlsHost, schema, tableName, operation);
+    const predicate = resolveRlsPredicate(
+      this.rlsHost, schema, tableName, operation, referenced);
     if (!predicate) return rows;
     return rows.filter(row => this.evaluateCondition(predicate, row, columns));
+  }
+
+  /**
+   * A row test for the policies guarding a write, or `null` when none
+   * apply. `UPDATE`/`DELETE` use it on the rows they would touch; with
+   * `withCheckOption` it instead tests the row about to be written.
+   */
+  private rlsRowGuard(
+    schema: string, tableName: string, operation: RlsOperation,
+    columns: StorageColMeta[], withCheckOption = false,
+  ): ((row: StorageRow) => boolean) | null {
+    const predicate = resolveRlsPredicate(
+      this.rlsHost, schema, tableName, operation, undefined, withCheckOption);
+    if (!predicate) return null;
+    return (row: StorageRow) => this.evaluateCondition(predicate, row, columns);
   }
 
   private readonly rlsHost: RlsHost = {
@@ -1524,11 +1540,22 @@ export class OracleExecutor extends BaseExecutor {
   };
 
   /**
-   * Refuses a SELECT that reads a column the session was never granted.
+   * Which columns of each FROM table the statement reads, keyed by the
+   * table reference that named them. Two questions need this answer —
+   * column privileges and a policy's `sec_relevant_cols` — and computing
+   * it twice would let them drift apart. Keyed by AST node identity, so
+   * nested statements never collide and nothing needs clearing.
+   */
+  private readonly selectColumnScope =
+    new WeakMap<import('../engine/parser/ASTNode').TableRef, ReadonlySet<string>>();
+
+  /**
+   * Records the read scope of each FROM table, and refuses a SELECT that
+   * reads a column the session was never granted.
    *
-   * The usage walk only runs for a table the user is actually restricted
-   * on, so ownership, DBA, `SELECT ANY TABLE` and plain table grants —
-   * every ordinary case — cost one lookup and nothing else.
+   * The usage walk runs only for a table where the answer changes
+   * something — a column restriction to enforce, or a policy scoped to
+   * particular columns. Every ordinary case costs two lookups.
    *
    * A bare column name is attributed to any FROM table that carries it.
    * A name carried by two of them would be ORA-00918 in real Oracle, so
@@ -1536,7 +1563,7 @@ export class OracleExecutor extends BaseExecutor {
    * Views and dictionary sources have no storage metadata to enumerate
    * and are left to the object-level check.
    */
-  private enforceSelectColumnPrivileges(stmt: SelectStatement): void {
+  private prepareSelectColumnScope(stmt: SelectStatement): void {
     const refs: import('../engine/parser/ASTNode').TableRef[] = [];
     for (const ref of stmt.from ?? []) if (ref.type === 'TableRef') refs.push(ref);
     for (const join of stmt.joins ?? []) if (join.table.type === 'TableRef') refs.push(join.table);
@@ -1546,7 +1573,7 @@ export class OracleExecutor extends BaseExecutor {
       const schema = this.resolveSchema(ref.schema);
       const tableName = ref.name.toUpperCase();
       const granted = this.privileges.columnRestriction(schema, tableName, 'SELECT');
-      if (granted === null) continue;
+      if (granted === null && !this.hasColumnScopedPolicy(schema, tableName)) continue;
       const meta = this.storage.getTableMeta(schema, tableName);
       if (!meta) continue;
 
@@ -1567,8 +1594,18 @@ export class OracleExecutor extends BaseExecutor {
           for (const col of tableColumns) touched.add(col);
         }
       }
-      this.privileges.requireColumnAccess(schema, tableName, 'SELECT', touched);
+      this.selectColumnScope.set(ref, touched);
+      if (granted !== null) {
+        this.privileges.requireColumnAccess(schema, tableName, 'SELECT', touched);
+      }
     }
+  }
+
+  /** True when some policy on the object only arms for certain columns. */
+  private hasColumnScopedPolicy(schema: string, tableName: string): boolean {
+    return (this.catalog as OracleCatalog).getRlsPolicies().some(p =>
+      p.enabled && p.secRelevantCols.length > 0
+      && p.objectOwner === schema && p.objectName === tableName);
   }
 
   private loadTableReference(ref: import('../engine/parser/ASTNode').TableReference): { rows: StorageRow[]; columns: StorageColMeta[] } {
@@ -1648,7 +1685,8 @@ export class OracleExecutor extends BaseExecutor {
     if (ref.asOf) {
       storageRows = this.flashbackRowsAt(schema, tableName, ref.asOf) ?? storageRows;
     }
-    storageRows = this.applyRlsPredicate(schema, tableName, 'SELECT', storageRows, meta.columns);
+    storageRows = this.applyRlsPredicate(
+      schema, tableName, 'SELECT', storageRows, meta.columns, this.selectColumnScope.get(ref));
     const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
     // Prefix column names with alias or table name for disambiguation
@@ -2644,11 +2682,18 @@ export class OracleExecutor extends BaseExecutor {
     this.privileges.requireObjectAccess(schema, tableName, 'INSERT');
     this.privileges.requireColumnAccess(schema, tableName, 'INSERT',
       stmt.columns ?? tableMeta.columns.map(c => c.name));
+    const checkOption = this.rlsRowGuard(schema, tableName, 'INSERT', tableMeta.columns, true);
+    const requireWritable = (row: StorageRow): void => {
+      if (checkOption && !checkOption(row)) {
+        throw new OracleError(28115, 'policy with check option violation');
+      }
+    };
     let insertedCount = 0;
 
     if (stmt.values) {
       for (const valueList of stmt.values) {
         const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
+        requireWritable(row);
         this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.insertRowChecked(schema, tableName, tableMeta, row);
@@ -2680,6 +2725,7 @@ export class OracleExecutor extends BaseExecutor {
         }
         // Columns the SELECT did not supply fall back to their DEFAULT.
         this.applyColumnDefaults(tableMeta, row, provided);
+        requireWritable(row);
         this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.insertRowChecked(schema, tableName, tableMeta, row);
@@ -2753,9 +2799,13 @@ export class OracleExecutor extends BaseExecutor {
 
     for (const assign of stmt.assignments) this.requireColumnIndex(tableMeta, assign.column);
 
+    const visible = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns);
+    const checkOption = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns, true);
+
     const count = this.storage.updateRows(
       schema, tableName,
-      (row) => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns),
+      (row) => (!visible || visible(row))
+        && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns)),
       (row) => {
         const newRow = [...row];
         for (const assign of stmt.assignments) {
@@ -2763,6 +2813,9 @@ export class OracleExecutor extends BaseExecutor {
           if (colIdx >= 0) {
             newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
           }
+        }
+        if (checkOption && !checkOption(newRow)) {
+          throw new OracleError(28115, 'policy with check option violation');
         }
         // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK).
         // Pass the pre-update row so uniqueness checks can exclude it
@@ -2788,17 +2841,18 @@ export class OracleExecutor extends BaseExecutor {
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');
 
+    const visible = this.rlsRowGuard(schema, tableName, 'DELETE', tableMeta.columns);
+    const deletable = (row: StorageRow): boolean =>
+      (!visible || visible(row))
+      && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
+
     // Validate FK constraints on rows to be deleted
-    const rowsToDelete = this.storage.getRows(schema, tableName)
-      .filter(row => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
+    const rowsToDelete = this.storage.getRows(schema, tableName).filter(deletable);
     for (const row of rowsToDelete) {
       this.constraints.validateDeleteForeignKeys(schema, tableName, row);
     }
 
-    const count = this.storage.deleteRows(
-      schema, tableName,
-      (row) => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns),
-    );
+    const count = this.storage.deleteRows(schema, tableName, deletable);
 
     return emptyResult(`${count} row${count !== 1 ? 's' : ''} deleted.`, count);
   }

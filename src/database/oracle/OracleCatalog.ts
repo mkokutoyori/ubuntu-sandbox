@@ -1206,6 +1206,8 @@ export class OracleCatalog extends BaseCatalog {
     /** Columns that activate the policy (DBMS_RLS sec_relevant_cols). */
     secRelevantCols: string[];
     policyType: 'STATIC' | 'SHARED_STATIC' | 'CONTEXT_SENSITIVE' | 'SHARED_CONTEXT_SENSITIVE' | 'DYNAMIC';
+    /** DBMS_RLS `update_check`: the written row must satisfy the predicate. */
+    updateCheck: boolean;
   }[] = [];
 
   /** Distinct (object, group) tuples shown by DBA_POLICY_GROUPS. */
@@ -1220,6 +1222,7 @@ export class OracleCatalog extends BaseCatalog {
     statementTypes?: string; policyType?: string;
     policyGroup?: string;
     secRelevantCols?: string;
+    updateCheck?: string | boolean;
   }): void {
     const parts = p.policyFunction.split('.');
     const pkg = parts.length === 2 ? parts[0].toUpperCase() : null;
@@ -1247,6 +1250,9 @@ export class OracleCatalog extends BaseCatalog {
       enabled: true,
       secRelevantCols: (p.secRelevantCols || '').split(',').map(c => c.trim().toUpperCase()).filter(Boolean),
       policyType: (p.policyType || 'DYNAMIC') as 'DYNAMIC',
+      updateCheck: typeof p.updateCheck === 'boolean'
+        ? p.updateCheck
+        : String(p.updateCheck ?? '').trim().toUpperCase() === 'TRUE',
     });
     if (p.policyGroup && p.policyGroup.toUpperCase() !== 'SYS_DEFAULT') {
       const key = `${p.objectSchema.toUpperCase()}.${p.objectName.toUpperCase()}.${p.policyGroup.toUpperCase()}`;

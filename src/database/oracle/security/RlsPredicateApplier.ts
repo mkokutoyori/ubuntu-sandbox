@@ -15,6 +15,14 @@
  * Exemptions are Oracle's: `SYS`, and anyone holding `EXEMPT ACCESS
  * POLICY`. The object's own owner is **not** exempt — that is the classic
  * VPD surprise, and reproducing it is the point.
+ *
+ * On a write the predicate does two different jobs. It always narrows
+ * which existing rows `UPDATE`/`DELETE` may reach — you cannot change
+ * what you cannot see. Separately, `update_check` makes the *resulting*
+ * row have to satisfy the predicate too, so an `INSERT` or `UPDATE`
+ * cannot push a row somewhere its author would no longer be allowed to
+ * read it (ORA-28115). Only policies carrying that argument take part in
+ * the second job, which is what `onlyWithCheckOption` selects.
  */
 
 import type { Expression, SelectStatement } from '../../engine/parser/ASTNode';
@@ -36,7 +44,15 @@ export interface RlsPolicyRecord {
   statementTypes: { sel: boolean; ins: boolean; upd: boolean; del: boolean; idx: boolean };
   enabled: boolean;
   secRelevantCols: string[];
+  updateCheck: boolean;
 }
+
+/**
+ * Columns the statement references on the object, when that is known.
+ * `undefined` means "not determined" and arms every policy — a column
+ * relevance that cannot be established must not disarm a filter.
+ */
+export type ReferencedColumns = ReadonlySet<string> | undefined;
 
 export interface RlsHost {
   /** Policies registered on any object, read live from the catalog. */
@@ -94,6 +110,17 @@ function appliesTo(policy: RlsPolicyRecord, operation: RlsOperation): boolean {
 const evaluating = new Set<string>();
 
 /**
+ * A policy naming `sec_relevant_cols` only arms when the statement
+ * actually references one of those columns — column-level VPD. A policy
+ * that names none arms unconditionally.
+ */
+function isRelevant(policy: RlsPolicyRecord, referenced: ReferencedColumns): boolean {
+  if (policy.secRelevantCols.length === 0) return true;
+  if (referenced === undefined) return true;
+  return policy.secRelevantCols.some(c => referenced.has(c));
+}
+
+/**
  * The predicate guarding `schema.object` for this statement, or `null`
  * when nothing applies. Several policies are ANDed together.
  */
@@ -102,6 +129,8 @@ export function resolveRlsPredicate(
   schema: string,
   objectName: string,
   operation: RlsOperation,
+  referenced: ReferencedColumns = undefined,
+  onlyWithCheckOption = false,
 ): Expression | null {
   const user = host.currentUser();
   if (user === 'SYS' || host.isExempt(user)) return null;
@@ -112,7 +141,9 @@ export function resolveRlsPredicate(
   if (evaluating.has(key)) return null;
 
   const applicable = host.policies().filter(p =>
-    p.enabled && p.objectOwner === owner && p.objectName === obj && appliesTo(p, operation));
+    p.enabled && p.objectOwner === owner && p.objectName === obj
+    && appliesTo(p, operation) && isRelevant(p, referenced)
+    && (!onlyWithCheckOption || p.updateCheck));
   if (applicable.length === 0) return null;
 
   const parts: Expression[] = [];

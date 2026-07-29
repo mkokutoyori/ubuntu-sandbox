@@ -389,6 +389,49 @@ Points de sémantique tranchés ici :
   passe non filtrée — Oracle lève ORA-28108 pour la boucle équivalente ;
   ne pas boucler est le minimum, rendre l'erreur exacte ne l'est pas ici.
 
+**Livré en P5 (écriture, `update_check`, `sec_relevant_cols`).** Sur une
+table protégée par `id = 1`, l'écriture était restée entièrement libre après
+P4 : `UPDATE` répondait « 2 rows updated. » et `DELETE` « 2 rows deleted. »
+Un utilisateur ne pouvait pas *voir* la ligne de son collègue mais pouvait
+l'écraser et la supprimer.
+
+Le prédicat fait deux travaux distincts sur une écriture, et les confondre
+serait faux :
+
+- il **restreint les lignes atteignables** par `UPDATE`/`DELETE` — on ne
+  modifie pas ce qu'on ne voit pas. Composé en `AND` avec le `WHERE` de
+  l'instruction, au point où le moteur décide quelles lignes concordent ;
+- avec `update_check`, il **valide en plus la ligne écrite** : un `INSERT`
+  ou un `UPDATE` ne peut pas pousser une ligne là où son auteur n'aurait
+  plus le droit de la relire. Sinon ORA-28115. Seules les politiques
+  portant cet argument participent à ce second travail — c'est le
+  paramètre `onlyWithCheckOption` de `resolveRlsPredicate`.
+
+`update_check` n'était pas même enregistré : `executeDbmsRlsCall` ne lisait
+pas l'argument et `DBA_POLICIES.CHK_OPTION` rendait la constante `'NO'`.
+Champ `updateCheck` ajouté au magasin, lu par la vue.
+
+`sec_relevant_cols` n'armait rien non plus. La politique ne se déclenche
+désormais que si l'instruction référence une des colonnes nommées —
+projetée ou lue dans un `WHERE`, `SELECT *` les référençant toutes. Les
+colonnes lues sont celles que P3 calculait déjà : `prepareSelectColumnScope`
+les enregistre une fois dans une `WeakMap` clé par nœud d'AST, et les deux
+questions — privilège de colonne, pertinence d'une politique — lisent la
+même réponse. Les calculer deux fois les aurait laissées diverger, ce que
+le §9 de ce document interdit explicitement. Une portée non déterminée arme
+la politique : une pertinence qu'on ne sait pas établir ne doit pas
+désarmer un filtre.
+
+Écarts assumés :
+
+- `sec_relevant_cols` ne gouverne que la lecture. Oracle le décrit comme
+  s'appliquant aux colonnes « référencées dans une requête » ; l'étendre à
+  l'écriture serait une extrapolation.
+- `sec_relevant_cols_opt => DBMS_RLS.ALL_ROWS`, qui remplace le filtrage de
+  lignes par un masquage en `NULL` des colonnes sensibles, n'est pas
+  implémenté — c'est un second mode de rendu, pas un réglage du même.
+- Les types d'instruction `INDEX` restent inertes.
+
 **Défaut adjacent corrigé au passage.** `executeDbmsRlsCall` passe `''`
 pour un argument omis, et `addRlsPolicy` écrivait
 `p.statementTypes ?? 'SELECT,INSERT,UPDATE,DELETE'` : `''` n'étant ni `null`

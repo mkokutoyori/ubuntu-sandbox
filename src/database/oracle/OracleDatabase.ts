@@ -2113,6 +2113,7 @@ export class OracleDatabase implements SqlCommandHost {
         statementTypes: get('STATEMENT_TYPES'),
         policyType: get('POLICY_TYPE'),
         secRelevantCols: get('SEC_RELEVANT_COLS'),
+        updateCheck: get('UPDATE_CHECK'),
       });
     } else if (upper.includes('.ADD_GROUPED_POLICY')) {
       this.catalog.addRlsPolicy({
