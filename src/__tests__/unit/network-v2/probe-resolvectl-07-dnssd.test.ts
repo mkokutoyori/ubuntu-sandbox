@@ -87,7 +87,11 @@ describe('Scénario 1 — le fichier d\'unité publie le service', () => {
     const { b } = await lab();
     await publish(b, 'web.dnssd', SERVICE_WEB);
 
-    expect(b.getMdnsAgent().services().list()).toEqual([
+    // `toMatchObject` plutôt qu'une égalité stricte : la déclaration
+    // porte aussi les champs optionnels de `systemd.dnssd(5)`, et figer
+    // la forme exacte ferait échouer ce cas à chaque champ ajouté sans
+    // rien dire de la lecture du fichier, qui est ce qu'il vérifie.
+    expect(b.getMdnsAgent().services().list()).toMatchObject([
       { instance: 'Mon serveur web', type: '_http._tcp', port: 80, txt: ['path=/index.html'] },
     ]);
   }, LONG);

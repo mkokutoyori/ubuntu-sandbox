@@ -90,6 +90,7 @@ import { bindDnsTlsServer, unbindDnsTlsServer, DOT_PORT } from '../dns/transport
 import { LlmnrAgent } from '../llmnr/LlmnrAgent';
 import { MdnsAgent } from '../mdns/MdnsAgent';
 import { discoverDnssdFiles } from './linux/net/DnssdFiles';
+import type { ServiceRegistration } from '../dnssd/types';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -693,10 +694,29 @@ export abstract class LinuxMachine extends EndHost
     const agent = this._mdnsAgent;
     if (!agent) return;
     const registry = agent.services();
-    registry.clear();
+
+    // Le rechargement est différentiel, pas un `clear()` suivi d'une
+    // republication : sans comparer, un service retiré du disque
+    // disparaîtrait en silence, et les pairs qui l'ont entendu
+    // continueraient de le croire là (RFC 6762 §10.1).
+    const before = new Map(registry.list().map((s) => [`${s.instance}|${s.type}`, s]));
+    const changed: ServiceRegistration[] = [];
+    const seen = new Set<string>();
+
     for (const file of discoverDnssdFiles(this.executor.vfs)) {
-      registry.publish(file.service);
+      const key = `${file.service.instance}|${file.service.type}`;
+      seen.add(key);
+      if (registry.publish(file.service)) changed.push(file.service);
     }
+    for (const [key, gone] of before) {
+      if (seen.has(key)) continue;
+      registry.unpublish(gone.instance, gone.type);
+      if (agent.nameState() === 'claimed') agent.announceService(gone, true);
+    }
+    // On n'annonce qu'une fois le nom acquis : annoncer un service porté
+    // par un nom encore en sondage serait affirmer les deux à la fois.
+    if (agent.nameState() !== 'claimed') return;
+    for (const reg of changed) agent.announceService(reg);
   }
 
   /**

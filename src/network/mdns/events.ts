@@ -36,9 +36,17 @@ export interface MdnsNameClaimedPayload extends MdnsDeviceRef {
   renamed: boolean;
 }
 
+export interface MdnsServicePayload extends MdnsDeviceRef {
+  /** Le nom d'instance complet — `Mon serveur._http._tcp.local`. */
+  name: string;
+  port: number;
+}
+
 export type MdnsDomainEvent =
   | { topic: 'mdns.query.sent'; payload: MdnsQuerySentPayload }
   | { topic: 'mdns.responded'; payload: MdnsRespondedPayload }
   | { topic: 'mdns.announced'; payload: MdnsAnnouncedPayload }
   | { topic: 'mdns.conflict.detected'; payload: MdnsConflictPayload }
-  | { topic: 'mdns.name.claimed'; payload: MdnsNameClaimedPayload };
+  | { topic: 'mdns.name.claimed'; payload: MdnsNameClaimedPayload }
+  | { topic: 'mdns.service.announced'; payload: MdnsServicePayload }
+  | { topic: 'mdns.service.goodbye'; payload: MdnsServicePayload };

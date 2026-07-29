@@ -10,7 +10,10 @@
  * [Service]
  * Name=Mon serveur web
  * Type=_http._tcp
+ * SubType=_printer
  * Port=80
+ * Priority=0
+ * Weight=0
  * TxtText=path=/index.html
  * ```
  */
@@ -71,6 +74,13 @@ export function parseDnssdFile(path: string, text: string): DnssdFile | null {
   // la charger à moitié publierait une annonce trompeuse.
   if (!name || !type || !Number.isFinite(port)) return null;
 
+  const asUint16 = (key: string): number | undefined => {
+    const raw = service.get(key)?.[0];
+    if (raw === undefined) return undefined;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 && n <= 0xffff ? n : undefined;
+  };
+
   return {
     path,
     basename,
@@ -79,6 +89,9 @@ export function parseDnssdFile(path: string, text: string): DnssdFile | null {
       type: type.toLowerCase(),
       port,
       txt: service.get('txttext') ?? [],
+      subtypes: (service.get('subtype') ?? []).map((s) => s.toLowerCase()),
+      priority: asUint16('priority'),
+      weight: asUint16('weight'),
     },
   };
 }

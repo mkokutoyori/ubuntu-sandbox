@@ -31,6 +31,36 @@ export interface ServiceRegistration {
   readonly type: string;
   readonly port: number;
   readonly txt: readonly string[];
+  /**
+   * §7.1 — les sous-types sous lesquels ce service veut aussi être
+   * trouvé : `_printer` fait répondre à
+   * `_printer._sub._http._tcp.local`. La même instance, retrouvée par
+   * un chemin plus étroit.
+   */
+  readonly subtypes?: readonly string[];
+  /** Champs SRV, rarement autres que 0 mais réglables (`systemd.dnssd(5)`). */
+  readonly priority?: number;
+  readonly weight?: number;
+}
+
+/** `_printer` + `_http._tcp` → `_printer._sub._http._tcp.local` (§7.1). */
+export function subtypeName(
+  subtype: string, type: string, domain: string = DNSSD_DOMAIN,
+): string {
+  const sub = subtype.toLowerCase().startsWith('_') ? subtype.toLowerCase() : `_${subtype.toLowerCase()}`;
+  return `${sub}._sub.${serviceTypeName(type, domain)}`;
+}
+
+/**
+ * Décompose `_printer._sub._http._tcp.local`. Rend null pour tout ce
+ * qui n'est pas une question de sous-type — c'est le marqueur `_sub`
+ * qui tranche, pas la position.
+ */
+export function parseSubtypeName(name: string): { subtype: string; type: string } | null {
+  const labels = name.toLowerCase().replace(/\.$/, '').split('.');
+  const at = labels.indexOf('_sub');
+  if (at !== 1 || labels.length < 5) return null;
+  return { subtype: labels[0], type: `${labels[2]}.${labels[3]}` };
 }
 
 /** `_http._tcp` → `_http._tcp.local`. */
@@ -88,6 +118,9 @@ export interface ResolvedService {
   /** Le nom d'hôte qui porte le service — `alpha.local`. */
   host: string;
   port: number;
+  /** Champs SRV, tels que le répondeur les a annoncés. */
+  priority: number;
+  weight: number;
   txt: string[];
   /** Les adresses de cet hôte, quand elles ont été apprises. */
   addresses: string[];

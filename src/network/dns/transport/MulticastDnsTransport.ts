@@ -44,16 +44,26 @@ export type McastDnsResponder = (
   sourcePort: number,
 ) => McastDnsReply | null;
 
+/**
+ * Ce qu'un hôte fait des *réponses* qu'il entend passer sur le groupe,
+ * sans les avoir demandées. C'est par là qu'arrivent les annonces et
+ * les adieux : sans écoute passive, une annonce n'apprendrait rien à
+ * personne et n'aurait pas d'existence observable.
+ */
+export type McastDnsObserver = (response: DnsMessage) => void;
+
 export function bindMulticastDns(
   host: EndHost, binding: McastDnsBinding, responder: McastDnsResponder,
+  observer?: McastDnsObserver,
 ): void {
   host.udpBind(binding.port, ({ sourceIP, udp }) => {
     if (!(udp.payload instanceof Uint8Array)) return;
     let query: DnsMessage;
     try { query = decodeDnsMessage(udp.payload); } catch { return; }
     // Une réponse n'appelle pas de réponse : sans ce garde, deux hôtes
-    // qui possèdent le même nom se répondraient sans fin.
-    if (query.flags.qr) return;
+    // qui possèdent le même nom se répondraient sans fin. Elle est en
+    // revanche écoutée : c'est ainsi qu'on apprend d'une annonce.
+    if (query.flags.qr) { observer?.(query); return; }
 
     const reply = responder(query, sourceIP, udp.sourcePort);
     if (!reply) return;

@@ -30,7 +30,15 @@
  *
  * **DNS-SD (RFC 6763).** Le registre de services (`dnssd/`) répond aux
  * questions PTR/SRV/TXT en plus des adresses de l'hôte : c'est le même
- * répondeur, avec une source d'enregistrements de plus.
+ * répondeur, avec une source d'enregistrements de plus. Les sous-types
+ * (§7.1) y répondent aussi, en désignant la même instance par un chemin
+ * plus étroit.
+ *
+ * **Mise à jour et adieu (§8.4, §10.1).** Un service modifié se
+ * réannonce ; un service retiré part avec un TTL nul. Pour que ce ne
+ * soit pas décoratif, l'agent écoute aussi les annonces des autres et
+ * tient un cache passif des services entendus — c'est lui qu'un TTL nul
+ * vide, et il rend l'adieu observable.
  */
 import type { EndHost } from '@/network/devices/EndHost';
 import type { IPAddress, IPv6Address } from '@/network/core/types';
@@ -44,15 +52,16 @@ import {
   bindMulticastDns, unbindMulticastDns, queryMulticastDns, announceMulticastDns,
   type McastDnsReply,
 } from '@/network/dns/transport/MulticastDnsTransport';
+import type { ServiceRegistration } from '@/network/dnssd/types';
 import {
   MDNS_BINDING, MDNS_DOMAIN, MDNS_PORT, MDNS_RECORD_TTL, MDNS_LEGACY_TTL,
   MDNS_TIMEOUT_MS, MDNS_PROBE_COUNT, MDNS_PROBE_INTERVAL_MS, MDNS_MAX_RENAMES,
   isLocalName, nextCandidateName, type MdnsNameState,
 } from './types';
 import { getDefaultEventBus } from '@/events/EventBus';
-import { DnsSdRegistry } from '@/network/dnssd/DnsSdRegistry';
+import { DnsSdRegistry, DNSSD_RECORD_TTL } from '@/network/dnssd/DnsSdRegistry';
 import {
-  DNSSD_ENUM_NAME, parseInstanceName, serviceTypeName,
+  DNSSD_ENUM_NAME, instanceName, parseInstanceName, serviceTypeName,
   type ResolvedService,
 } from '@/network/dnssd/types';
 import { makeARecord } from '@/network/dns/wire/ResourceRecord';
@@ -124,10 +133,57 @@ export class MdnsAgent {
     addresses: () => this.ownAddresses(),
   });
 
+  /**
+   * Les services entendus des autres, appris de leurs annonces. Un TTL
+   * nul les en retire (§10.1) : c'est ce qui donne un effet observable
+   * à un adieu.
+   */
+  private readonly heard = new Map<string, { name: string; port: number; host: string }>();
+
   constructor(private readonly host: EndHost) {}
 
   /** Le registre DNS-SD de cet hôte (RFC 6763). */
   services(): DnsSdRegistry { return this.sd; }
+
+  /** Les instances entendues sur le lien, telles que le cache les tient. */
+  knownServices(): Array<{ name: string; port: number; host: string }> {
+    return [...this.heard.values()];
+  }
+
+  /**
+   * §8.4 et §10.1 — republie un service, ou en fait l'adieu. Un TTL nul
+   * est l'instruction de suppression : c'est le même jeu
+   * d'enregistrements, avec la seule durée de vie qui change.
+   */
+  announceService(reg: ServiceRegistration, goodbye = false): boolean {
+    const records = this.sd.announcementRecords(reg, goodbye ? 0 : DNSSD_RECORD_TTL);
+    const sent = announceMulticastDns(
+      this.host, MDNS_BINDING, this.buildRecordResponse(nextDnsTransactionId(), records, []));
+    if (sent) {
+      getDefaultEventBus().publish({
+        topic: goodbye ? 'mdns.service.goodbye' : 'mdns.service.announced',
+        payload: {
+          deviceId: this.host.getId(), hostname: this.host.getHostname(),
+          name: instanceName(reg.instance, reg.type), port: reg.port,
+        },
+      });
+    }
+    return sent;
+  }
+
+  /**
+   * Ce qu'on retient d'une annonce entendue. Un SRV dit qu'une instance
+   * existe et où ; le même SRV à TTL nul dit qu'elle s'en va.
+   */
+  private observe(response: DnsMessage): void {
+    for (const rr of response.answers) {
+      if (rr.data.type !== RRType.SRV) continue;
+      const name = rr.name.toLowerCase().replace(/\.$/, '');
+      if (rr.ttl === 0) { this.heard.delete(name); continue; }
+      const srv = rr.data as { port: number; target: string };
+      this.heard.set(name, { name, port: srv.port, host: srv.target });
+    }
+  }
 
   /** `<hostname>.local`, ou le nom de repli obtenu après un conflit. */
   ownName(): string {
@@ -158,7 +214,10 @@ export class MdnsAgent {
   start(): void {
     if (this.bound) return;
     try {
-      bindMulticastDns(this.host, MDNS_BINDING, (q, src, sport) => this.respond(q, src, sport));
+      bindMulticastDns(
+        this.host, MDNS_BINDING,
+        (q, src, sport) => this.respond(q, src, sport),
+        (r) => this.observe(r));
       this.bound = true;
     } catch { return; }
     // §8.1 : on ne s'annonce qu'après avoir sondé. Le sondage part en
@@ -194,6 +253,11 @@ export class MdnsAgent {
           },
         });
         this.announce();
+        // §8.3 — une fois le nom acquis, on annonce *tous* ses
+        // enregistrements. Sans cela, un service publié avant la fin du
+        // sondage n'aurait jamais été annoncé : le fichier était lu, le
+        // registre le connaissait, et personne sur le lien ne l'apprenait.
+        for (const reg of this.sd.list()) this.announceService(reg);
         return;
       }
 
@@ -433,7 +497,9 @@ export class MdnsAgent {
       const all = [...r.answers, ...r.additionals];
       const srv = all.find((rr) => rr.data.type === RRType.SRV);
       if (!srv) continue;
-      const s = srv.data as { port: number; target: string };
+      const s = srv.data as {
+        port: number; target: string; priority: number; weight: number;
+      };
       const txt = all
         .filter((rr) => rr.data.type === RRType.TXT)
         .flatMap((rr) => [...(rr.data as { text: readonly string[] }).text])
@@ -444,7 +510,8 @@ export class MdnsAgent {
         .map((rr) => (rr.data as { address: { toString(): string } }).address.toString());
       return {
         instance: parsed.instance, type: parsed.type, domain: parsed.domain,
-        host: s.target, port: s.port, txt, addresses,
+        host: s.target, port: s.port, priority: s.priority, weight: s.weight,
+        txt, addresses,
       };
     }
     return null;

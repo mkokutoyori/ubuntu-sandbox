@@ -313,8 +313,13 @@ ne circule sur le fil — c'est tout l'intérêt du protocole :
 |---|---|
 | `_services._dns-sd._udp.local` PTR | les *types* présents sur le lien (§9) |
 | `_http._tcp.local` PTR | les *instances* de ce type (§4.1) |
-| `Mon serveur._http._tcp.local` SRV | l'hôte et le port (§5) |
+| `_printer._sub._http._tcp.local` PTR | les instances déclarées sous ce **sous-type** (§7.1) |
+| `Mon serveur._http._tcp.local` SRV | l'hôte, le port, priority et weight (§5) |
 | … TXT | les métadonnées, un `clé=valeur` par segment (§6.1) |
+
+Un sous-type restreint la découverte sans créer un second service : son
+PTR désigne exactement la même instance. Il n'apparaît pas dans
+l'énumération de §9, qui ne liste que des types.
 
 Le répondeur joint en additionnels ce que le demandeur voudra de toute
 façon ensuite (§12) : le SRV et le TXT derrière un PTR, l'adresse
@@ -330,7 +335,10 @@ est ignorée plutôt que publiée à moitié.
 [Service]
 Name=Mon serveur web
 Type=_http._tcp
+SubType=_printer
 Port=80
+Priority=0
+Weight=0
 TxtText=path=/index.html
 ```
 
@@ -338,11 +346,30 @@ Le nom d'instance est libre — espaces et points compris (§4.1.1) : il
 est fait pour être lu. `parseInstanceName` découpe donc depuis la fin,
 seule façon correcte de séparer `Bureau 2.4._http._tcp.local`.
 
-**Limites.** Le registre synthétise les enregistrements à la demande et
-ne les annonce pas spontanément : un service publié est trouvé par
-parcours, pas par une annonce non sollicitée comme le nom d'hôte. Les
-sous-types (`_printer._sub._http._tcp`) et la mise à jour d'un service
-en cours de vie ne sont pas modélisés.
+### 7.6 Cycle de vie d'un service (§8.4, §10.1)
+
+Un service publié est **annoncé** dès que le nom d'hôte est acquis — pas
+avant : annoncer un service porté par un nom encore en sondage
+affirmerait les deux à la fois. Modifié, il est **réannoncé** avec le bit
+cache-flush, qui remplace au lieu d'empiler. Retiré, il part avec un
+**TTL nul** : c'est l'instruction de suppression de §10.1, pas un
+silence.
+
+Le rechargement des `.dnssd` est différentiel et non un `clear()` suivi
+d'une republication. Sans comparer, un service retiré du disque
+disparaîtrait en silence et les pairs qui l'ont entendu continueraient
+de le croire là. Republier à l'identique, à l'inverse, n'annonce rien —
+cela n'apprendrait rien à personne.
+
+**Pour que tout cela ne soit pas décoratif**, l'agent écoute aussi les
+annonces des autres et tient un cache passif des services entendus.
+C'est ce cache qu'un TTL nul vide, et c'est lui qui rend un adieu
+observable : sans écoute passive, une annonce partirait sans que rien
+ne puisse montrer qu'elle arrive.
+
+**Limites.** Le cache passif retient l'instance, son hôte et son port,
+pas ses métadonnées : le TXT reste demandé à la résolution. Le TTL des
+entrées entendues n'expire pas tout seul — seul un adieu les retire.
 
 ### 7.1 Le chemin asynchrone de la base `hosts`
 
@@ -382,8 +409,8 @@ NSS ; `resolveHostnameSync` lui reste réservé, avec la même limite.
 - **`resolvectl openpgp` / `tlsa`** : OPENPGPKEY et TLSA n'ont pas de
   source de données dans les zones du simulateur. `service` en a une
   depuis DNS-SD (§7.5) et existe.
-- **Sous-types DNS-SD** (`_printer._sub._http._tcp`) et mise à jour d'un
-  service publié en cours de vie.
+- **Expiration par TTL du cache passif de services** : une entrée
+  entendue n'est retirée que par un adieu explicite (§7.6).
 - **DoH et DoQ** : `DnsHttpsTransport`/`DnsQuicTransport` reposent encore
   sur `SimulatedTls` et migrent sous `PRD-HTTP.md`/`PRD-QUIC.md`.
 - **Épinglage du certificat DoT** (`DNSOverTLS=yes#nom`, vérification du
