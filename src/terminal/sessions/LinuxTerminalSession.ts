@@ -73,6 +73,7 @@ import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
+import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { transportLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
@@ -1637,6 +1638,10 @@ export class LinuxTerminalSession extends TerminalSession {
         await this.enterSsh(parts.slice(1));
         return;
       }
+      if (parts[0] === 'telnet') {
+        await this.enterTelnet(parts.slice(1));
+        return;
+      }
       if (parts[0] === 'ssh-keygen') {
         await this.enterSshKeygen(parts.slice(1));
         return;
@@ -2745,6 +2750,32 @@ export class LinuxTerminalSession extends TerminalSession {
     // isClientBlocked/recordAuthFailure hooks, now reachable from a real
     // auth exchange instead of a local call.
     await this.connectAndEnterSsh(merged);
+  }
+
+  /**
+   * `telnet host [port]` — one real TCP connection to the remote VTY,
+   * then a sub-shell over it. Every line printed afterwards is the
+   * remote device's own text: the login dialog, the prompt and the
+   * command output all come off the wire
+   * (docs/PRD-VTY-Transport.md §2.1 item 6).
+   */
+  private async enterTelnet(args: string[]): Promise<void> {
+    const vfs = (this.device as unknown as {
+      executor?: { vfs?: { readFile(p: string): string | null } };
+    }).executor?.vfs;
+    const sub = await launchTelnet(args, {
+      device: this.device,
+      resolverVfs: vfs ? { readFile: (p: string) => vfs.readFile(p) } : undefined,
+      emit: (text, type) => this.addLine(text, type),
+    });
+    if (!sub) { this.notify(); return; }
+
+    this.activeSubShell = sub;
+    this._inputBuf = '';
+    const opening = await sub.begin();
+    for (const line of opening.output) this.addLine(line);
+    if (opening.exit) { this.exitSubShell(); return; }
+    this.notify();
   }
 
   private lookupSourceIp(): string {

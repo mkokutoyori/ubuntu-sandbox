@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-07-24T16:41:11.745Z
+Generated: 2026-07-29T07:33:56.903Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1649,6 +1649,7 @@ Total steps: 413
 
 [325/413] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
   Total translations: 0
   Static translations: 0
   Dynamic translations: 0
@@ -1657,6 +1658,8 @@ Total steps: 413
   Inside interfaces:   none
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -1770,12 +1773,46 @@ Total steps: 413
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.2/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state init -> speak
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state speak -> active
+  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state init -> speak
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state speak -> active
+  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state init -> speak
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state speak -> active
+  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state init -> speak
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state speak -> active
+  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 1 state init -> master
+  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 2 state init -> master
+  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 3 state init -> master
+  %GLBP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Fwd 1 assigned MAC 00:07:b4:00:01:01
+  %GLBP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 AVG state init -> active
 
 [340/413] r1 R1# show snmp
   SNMP agent not enabled
@@ -1785,7 +1822,7 @@ Total steps: 413
 [341/413] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1427.C9374BC6 (16:41:11.786 UTC Fri Jul 24 2026)
+  reference time is EE142B64.FCED9168 (07:33:56.988 UTC Wed Jul 29 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1# show ntp associations
@@ -1794,7 +1831,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *16:41:11.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1819,6 +1856,12 @@ Total steps: 413
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [347/413] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -2142,16 +2185,90 @@ Total steps: 413
       Gateway         Distance      Last Update
     Distance: (default is 110)
   
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  No NAT translations.
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  
+  ------------------ show ip ospf neighbor ------------------
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.2/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state init -> speak
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state speak -> active
+  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state init -> speak
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state speak -> active
+  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state init -> speak
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state speak -> active
+  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state init -> speak
+  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state speak -> active
+  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 1 state init -> master
+  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 2 state init -> master
+  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 3 state init -> master
+  %GLBP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Fwd 1 assigned MAC 00:07:b4:00:01:01
+  %GLBP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 AVG state init -> active
 
 [357/413] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -2476,6 +2593,7 @@ Total steps: 413
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
+    interface    Remove a virtual interface
     router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
@@ -2484,7 +2602,6 @@ Total steps: 413
     key          Key management
     crypto       Encryption and key management
     event        Embedded Event Manager
-    interface    Remove an interface
     vlan         Remove a VLAN
     line         Remove line configuration
 

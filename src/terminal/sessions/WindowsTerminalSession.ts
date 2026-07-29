@@ -47,6 +47,7 @@ import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
 import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
+import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
@@ -888,6 +889,14 @@ export class WindowsTerminalSession extends TerminalSession {
       }
     }
 
+    // `telnet host [port]` opens a real session on the remote VTY, the
+    // same way `ssh` does — the device-level `cmdTelnet` only ever
+    // printed a banner (docs/PRD-VTY-Transport.md §2.1 item 6).
+    if (lower === 'telnet' || lower.startsWith('telnet ')) {
+      await this.enterTelnet(trimmed.split(/\s+/).slice(1));
+      return;
+    }
+
     if (lower === 'runas' || lower.startsWith('runas ')) {
       if (await this.tryStartRunasInteractive(trimmed)) {
         this.notify();
@@ -1295,6 +1304,21 @@ export class WindowsTerminalSession extends TerminalSession {
    * interactive mode at all; this reuses `NslookupSubShell` as-is (DRY)
    * instead of writing a second, parallel implementation.
    */
+  private async enterTelnet(args: string[]): Promise<void> {
+    const sub = await launchTelnet(args, {
+      device: this.device,
+      emit: (text, type) => this.addLine(text, type),
+    });
+    if (!sub) { this.notify(); return; }
+
+    this.activeSubShell = sub;
+    this._inputBuf = '';
+    const opening = await sub.begin();
+    for (const line of opening.output) this.addLine(line);
+    if (opening.exit) { this.exitSubShell(); return; }
+    this.notify();
+  }
+
   private enterNslookup(): void {
     const dev = this.device instanceof WindowsPC ? this.device : null;
     const deps = dev?.getInteractiveNslookupDeps() ?? null;

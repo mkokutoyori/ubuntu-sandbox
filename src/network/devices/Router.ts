@@ -52,7 +52,7 @@ import { NqaEngine } from './router/diag/NqaEngine';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
-import { TcpStack } from '../tcp/TcpStack';
+import { TcpStack, type TcpSocket } from '../tcp/TcpStack';
 import type { TcpStream } from '../tcp/types';
 import { verifyUdpChecksum } from '../tcp/types';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
@@ -584,6 +584,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected readonly tcpv2: TcpStack;
   public getTcpStack(): TcpStack { return this.tcpv2; }
+
+  /**
+   * Open an outbound TCP connection, resolving once the handshake really
+   * settles — same contract as `EndHost.tcpConnect`, which a router
+   * lacked, so an outbound client running on the CLI (telnet toward
+   * another device's VTY) had no way to reach the wire.
+   */
+  public async tcpConnect(dstIp: string, dstPort: number): Promise<TcpSocket | null> {
+    const socket = this.tcpv2.connect(dstIp, dstPort);
+    if (!socket) return null;
+    if (socket.state === 'established') return socket;
+    return new Promise((resolve) => {
+      let offOpen: () => void = () => {};
+      let offClose: () => void = () => {};
+      offOpen = socket.onOpen(() => { offOpen(); offClose(); resolve(socket); });
+      offClose = socket.onClose(() => { offOpen(); offClose(); resolve(null); });
+    });
+  }
 
   private createPorts(): void {
     const portCount = 4;

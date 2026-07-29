@@ -27,6 +27,8 @@ import type { InteractiveStep } from '@/terminal/core/types';
 import { isInteractionPlanner, type InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
+import type { TelnetInteractiveSubShell } from '@/terminal/subshells/TelnetInteractiveSubShell';
 import { createSessionForDevice } from './sessionFactory';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 
@@ -79,8 +81,17 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   getPrompt(): string {
     if (this.hasActiveChild) return this.foreground.getPrompt();
+    if (this.telnetSubShell) return this.telnetSubShell.getPrompt();
     return this.prompt;
   }
+
+  /**
+   * An outbound `telnet` session held open by this terminal. A CLI
+   * terminal has no general sub-shell stack — the one case that needs
+   * it is telnet, whose remote answers arrive asynchronously off a real
+   * socket (docs/PRD-VTY-Transport.md §2.1 item 6).
+   */
+  private telnetSubShell: TelnetInteractiveSubShell | null = null;
 
   protected abstract getDefaultPrompt(): string;
 
@@ -288,7 +299,16 @@ export abstract class CLITerminalSession extends TerminalSession {
       this.pushHistory(trimmed);
     }
 
+    if (this.telnetSubShell) {
+      await this.runTelnetLine(trimmed);
+      return;
+    }
+
     const firstWord = trimmed.split(/\s+/)[0]?.toLowerCase();
+    if (firstWord === 'telnet') {
+      await this.enterTelnet(trimmed.split(/\s+/).slice(1));
+      return;
+    }
     if (firstWord && this.sshInteractiveVerbs().includes(firstWord) && this.sshInteractiveModeAllowed()) {
       const sshSteps = this.buildSshInteractiveFlowSteps(trimmed);
       if (sshSteps) {
@@ -495,6 +515,34 @@ export abstract class CLITerminalSession extends TerminalSession {
         },
       },
     ];
+  }
+
+  /**
+   * `telnet host [port]` from a router CLI. One real connection, and the
+   * remote's own text from there on — the outbound verb used to print a
+   * banner and return.
+   */
+  private async enterTelnet(args: string[]): Promise<void> {
+    const sub = await launchTelnet(args, {
+      device: this.device,
+      emit: (text) => this.addLine(text),
+    });
+    if (!sub) { this.notify(); return; }
+
+    this.telnetSubShell = sub;
+    const opening = await sub.begin();
+    for (const line of opening.output) this.addLine(line);
+    if (opening.exit) this.telnetSubShell = null;
+    this.notify();
+  }
+
+  private async runTelnetLine(line: string): Promise<void> {
+    const sub = this.telnetSubShell;
+    if (!sub) return;
+    const result = await sub.processLine(line);
+    for (const out of result.output) this.addLine(out);
+    if (result.exit) { sub.dispose(); this.telnetSubShell = null; }
+    this.notify();
   }
 
   /** First configured IPv4 address on `dev`, or null. */

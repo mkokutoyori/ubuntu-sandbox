@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-07-24T16:40:49.551Z
+Generated: 2026-07-29T07:33:56.884Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [4/482] r1 R1> show calendar
-  16:40:49 UTC Fri Jul 24 2026
+  07:33:56 UTC Wed Jul 29 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -70,12 +70,24 @@ Total steps: 482
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [9/482] r1 R1> show processes cpu history
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [10/482] r1 R1> show processes memory
   Processor Pool Total: 0 Used: 0 Free: 0
@@ -92,29 +104,19 @@ Total steps: 482
   I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [13/482] r1 R1> show running-config
-  Building configuration...
-  
-  Current configuration : 157 bytes
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-  !
-  interface GigabitEthernet0/1
-  !
-  interface GigabitEthernet0/2
-  !
-  interface GigabitEthernet0/3
-  !
-  end
+  % Invalid input detected at '^' marker.
+  show running-config
+       ^
 
 [14/482] r1 R1> show startup-config
-  % startup-config is not present
+  % Invalid input detected at '^' marker.
+  show startup-config
+       ^
 
 [15/482] r1 R1> show running-config all
-  Building configuration...
+  % Invalid input detected at '^' marker.
+  show running-config all
+       ^
 
 [16/482] r1 R1> show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -379,6 +381,7 @@ Total steps: 482
 
 [38/482] r1 R1> show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
   Total translations: 0
   Static translations: 0
   Dynamic translations: 0
@@ -387,6 +390,8 @@ Total steps: 482
   Inside interfaces:   none
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -401,12 +406,27 @@ Total steps: 482
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
 
 [42/482] r1 R1> show snmp
   SNMP agent not enabled
@@ -416,7 +436,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1411.8F9DB22D (16:40:49.561 UTC Fri Jul 24 2026)
+  reference time is EE142B64.E51EB851 (07:33:56.895 UTC Wed Jul 29 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -549,146 +569,9 @@ Total steps: 482
     Name                             Default RD            Protocols   Interfaces
 
 [68/482] r1 R1> show tech-support
-  ------------------ show version ------------------
-  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
-  Copyright (c) 1986-2025 by Cisco Systems, Inc.
-  
-  ROM: System Bootstrap, Version 15.0(1r)M15
-  
-  R1 uptime is 0 minutes
-  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
-  
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
-  Processor board ID FTX1234567A
-  4 Gigabit Ethernet interfaces
-  DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
-  
-  Configuration register is 0x2102
-  
-  ------------------ show running-config ------------------
-  Building configuration...
-  
-  Current configuration : 157 bytes
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-  !
-  interface GigabitEthernet0/1
-  !
-  interface GigabitEthernet0/2
-  !
-  interface GigabitEthernet0/3
-  !
-  end
-  
-  ------------------ show ip interface brief ------------------
-  Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         unassigned      YES manual up                    up
-  GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
-  
-  ------------------ show ip route ------------------
-  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
-  
-  Gateway of last resort is not set
-  
-  
-  ------------------ show interfaces ------------------
-  GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       1 packets output, 64 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
-  GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       2 packets output, 128 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
-  GigabitEthernet0/2 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.0003 (bia 0200.0000.0003)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       0 packets output, 0 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
-  GigabitEthernet0/3 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.0004 (bia 0200.0000.0004)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       0 packets output, 0 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
-  
-  ------------------ show ip protocols ------------------
-  No routing protocol is configured.
-  
-  ------------------ show logging ------------------
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: disabled
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
-      Sequence numbers: disabled
-      No active syslog hosts
+  % Invalid input detected at '^' marker.
+  show tech-support
+       ^
 
 [69/482] r1 R1> show diag
   Slot 0:  Built-in PID (real)
@@ -715,87 +598,83 @@ Total steps: 482
     event       Embedded Event Manager
 
 [72/482] r1 R1> show ?
-    clock           Display the system clock
-    users           Display active lines
-    sessions        Display open outgoing connections
-    inventory       Display hardware inventory
-    processes       Display active processes
-    memory          Display memory statistics
-    flash:          Display flash filesystem
-    platform        Display platform information
-    license         Display licenses
-    diag            Display chassis diagnostics
-    idprom          Display IDPROM contents
-    mac             MAC configuration
-    running-config  Display running configuration
-    privilege       Display current privilege level
-    history         Display command history
-    ntp             Display NTP associations
-    cdp             Display CDP information
-    lldp            Display LLDP information
-    snmp            Display SNMP status
-    controllers     Display controller status
-    environment     Display environment
-    line            Display TTY lines
-    ip              Internet Protocol
-    ssh             Display SSH connections
-    hosts           Display host cache
-    vrf             Display VRFs
-    boot            Display boot variables
-    redundancy      Display redundancy state
-    file            Display file systems
-    calendar        Display hardware calendar
-    terminal        Display terminal parameters
-    buffers         Display buffer pools
-    tcp             Display TCP connections
-    sockets         Display open sockets
-    stacks          Display process stacks
-    reload          Display reload schedule
-    aaa             Display AAA state
-    aliases         Display command aliases
-    arp             Display ARP table
-    bgp             Display BGP
-    standby         Display HSRP state
-    vrrp            Display VRRP state
-    glbp            Display GLBP state
-    bfd             Bidirectional Forwarding Detection
-    nve             Network Virtualization Endpoint
-    vxlan           Virtual Extensible LAN
-    track           Display tracked objects
-    ipv6            Internet Protocol version 6
-    route-map       Display route-maps
-    logging         Display syslog state
-    tech-support    Aggregate diagnostic output
-    table-map       Display table-maps
-    mls             Multilayer switching
-    queueing        Display queueing configuration
-    traffic-shape   Display traffic shaping
-    interfaces      Display interface status
-    startup-config  Display saved configuration
-    configuration   Display saved configuration
-    counters        Display traffic counters
-    debug           Display debugging flags
-    dhcp            Dynamic Host Configuration Protocol
-    access-lists    Display all access lists
-    crypto          Encryption and key management
-    debugging       Display active debug flags
-    dmvpn           Display DMVPN status
-    version         Display system hardware and software status
-    vlans           Display VLANs (router)
-    key             Key management
-    radius          RADIUS authentication
-    tacacs          Display TACACS
-    login           Display login config
-    policy-map      Show policy-map
-    parameter-map   Display parameter-map
-    zone            Display security zone
-    zone-pair       Display security zone-pair
-    class-map       Show class-map
-    time-range      Show time-range
-    event           Embedded Event Manager
-    flow            NetFlow
-    archive         Display archive status
-    sntp            Show SNTP
+    clock          Display the system clock
+    users          Display active lines
+    sessions       Display open outgoing connections
+    inventory      Display hardware inventory
+    processes      Display active processes
+    interfaces     Display interface status
+    memory         Display memory statistics
+    flash:         Display flash filesystem
+    platform       Display platform information
+    license        Display licenses
+    diag           Display chassis diagnostics
+    idprom         Display IDPROM contents
+    mac            MAC configuration
+    privilege      Display current privilege level
+    history        Display command history
+    ntp            Display NTP associations
+    cdp            Display CDP information
+    lldp           Display LLDP information
+    snmp           Display SNMP status
+    controllers    Display controller status
+    environment    Display environment
+    line           Display TTY lines
+    ip             Internet Protocol
+    ssh            Display SSH connections
+    hosts          Display host cache
+    vrf            Display VRFs
+    boot           Display boot variables
+    redundancy     Display redundancy state
+    file           Display file systems
+    calendar       Display hardware calendar
+    terminal       Display terminal parameters
+    buffers        Display buffer pools
+    tcp            Display TCP connections
+    sockets        Display open sockets
+    stacks         Display process stacks
+    reload         Display reload schedule
+    aaa            Display AAA state
+    aliases        Display command aliases
+    arp            Display ARP table
+    bgp            Display BGP
+    standby        Display HSRP state
+    vrrp           Display VRRP state
+    glbp           Display GLBP state
+    bfd            Bidirectional Forwarding Detection
+    nve            Network Virtualization Endpoint
+    vxlan          Virtual Extensible LAN
+    track          Display tracked objects
+    ipv6           Internet Protocol version 6
+    route-map      Display route-maps
+    logging        Display syslog state
+    table-map      Display table-maps
+    mls            Multilayer switching
+    queueing       Display queueing configuration
+    traffic-shape  Display traffic shaping
+    configuration  Display saved configuration
+    counters       Display traffic counters
+    debug          Display debugging flags
+    dhcp           Dynamic Host Configuration Protocol
+    access-lists   Display all access lists
+    crypto         Encryption and key management
+    debugging      Display active debug flags
+    dmvpn          Display DMVPN status
+    version        Display system hardware and software status
+    vlans          Display VLANs (router)
+    key            Key management
+    radius         RADIUS authentication
+    tacacs         Display TACACS
+    login          Display login config
+    policy-map     Show policy-map
+    parameter-map  Display parameter-map
+    zone           Display security zone
+    zone-pair      Display security zone-pair
+    class-map      Show class-map
+    time-range     Show time-range
+    event          Embedded Event Manager
+    flow           NetFlow
+    sntp           Show SNTP
 
 [73/482] r1 R1> ping
   % Ping requires a target IP address.
@@ -836,10 +715,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [81/482] r1 R1# show calendar
-  16:40:49 UTC Fri Jul 24 2026
+  07:33:56 UTC Wed Jul 29 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -878,12 +757,24 @@ Total steps: 482
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [86/482] r1 R1# show processes cpu history
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [87/482] r1 R1# show processes memory
   Processor Pool Total: 0 Used: 0 Free: 0
@@ -1187,6 +1078,7 @@ Total steps: 482
 
 [115/482] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
   Total translations: 0
   Static translations: 0
   Dynamic translations: 0
@@ -1195,6 +1087,8 @@ Total steps: 482
   Inside interfaces:   none
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -1209,12 +1103,27 @@ Total steps: 482
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
 
 [119/482] r1 R1# show snmp
   SNMP agent not enabled
@@ -1224,7 +1133,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1411.916872B0 (16:40:49.568 UTC Fri Jul 24 2026)
+  reference time is EE142B64.E7AE147A (07:33:56.905 UTC Wed Jul 29 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1487,16 +1396,71 @@ Total steps: 482
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
   
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  No NAT translations.
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  
+  ------------------ show ip ospf neighbor ------------------
+  % OSPF is not configured
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
 
 [146/482] r1 R1# show diag
   Slot 0:  Built-in PID (real)
@@ -1558,7 +1522,7 @@ Total steps: 482
   All possible debugging has been turned off
 
 [154/482] r1 R1# show debugging
-  IP packet debugging is on
+  No debug flags are enabled
 
 
 --- [155] § config sub-mode navigation ---
@@ -1569,7 +1533,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1578,7 +1542,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1587,7 +1551,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1596,7 +1560,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1605,7 +1569,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1614,7 +1578,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1623,7 +1587,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1632,7 +1596,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1641,7 +1605,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1650,7 +1614,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1659,7 +1623,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1668,7 +1632,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1677,7 +1641,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1686,7 +1650,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1695,7 +1659,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1704,7 +1668,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1713,7 +1677,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1722,7 +1686,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1731,7 +1695,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1740,7 +1704,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1749,7 +1713,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1758,7 +1722,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config)# do show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:56.000 UTC Wed Jul 29 2026
 
 [221/482] r1 R1(config)# exit
 <empty>
@@ -1975,6 +1939,7 @@ Total steps: 482
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
+    interface    Remove a virtual interface
     router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
@@ -1983,7 +1948,6 @@ Total steps: 482
     key          Key management
     crypto       Encryption and key management
     event        Embedded Event Manager
-    interface    Remove an interface
     vlan         Remove a VLAN
     line         Remove line configuration
 
@@ -3186,6 +3150,7 @@ Total steps: 482
 
 [394/482] r1 R1-EDGE# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
   Total translations: 0
   Static translations: 0
   Dynamic translations: 0
@@ -3194,6 +3159,8 @@ Total steps: 482
   Inside interfaces:   none
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -3209,6 +3176,10 @@ Total steps: 482
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
+    Total addresses  : 0
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
 
 [397/482] r1 R1-EDGE# show access-lists
@@ -3277,7 +3248,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1411.A6666666 (16:40:49.650 UTC Fri Jul 24 2026)
+  reference time is EE142B65.010624DD (07:33:57.004 UTC Wed Jul 29 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -3286,7 +3257,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *16:40:49.000 UTC Fri Jul 24 2026
+  *07:33:57.000 UTC Wed Jul 29 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3310,6 +3281,12 @@ Total steps: 482
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [416/482] r1 R1-EDGE# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -3695,6 +3672,46 @@ Total steps: 482
     Advertised networks:
   
     RIP learned routes: 0
+  
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  No NAT translations.
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  
+  ------------------ show ip ospf neighbor ------------------
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -4136,6 +4153,7 @@ Total steps: 482
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
+    interface    Remove a virtual interface
     router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
@@ -4144,7 +4162,6 @@ Total steps: 482
     key          Key management
     crypto       Encryption and key management
     event        Embedded Event Manager
-    interface    Remove an interface
     vlan         Remove a VLAN
     line         Remove line configuration
 
