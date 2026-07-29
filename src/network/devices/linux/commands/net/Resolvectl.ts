@@ -12,6 +12,7 @@ import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
 import {
   STUB_ADDRESS,
   type ResolvedLinkConfig,
+  type ResolvedService,
 } from '../../net/ResolvedService';
 
 const CONFIG_VERBS = new Set([
@@ -61,14 +62,17 @@ function resolvedOf(ctx: LinuxCommandContext) {
   return ctx.net.getResolvedService();
 }
 
-function protocolLines(cfg: {
-  llmnr: string; mdns: string; dnssec: string; dnsOverTls: string;
-}): string[] {
+/**
+ * `status` montre le réglage *effectif*, pas ce qui est stocké : un lien
+ * qui n'a rien de posé hérite du global, et c'est cette valeur-là qui
+ * gouverne la résolution.
+ */
+function protocolLines(svc: ResolvedService, link: string | null): string[] {
   return [
-    `       LLMNR setting: ${cfg.llmnr}`,
-    `MulticastDNS setting: ${cfg.mdns}`,
-    `  DNSOverTLS setting: ${cfg.dnsOverTls}`,
-    `      DNSSEC setting: ${cfg.dnssec}`,
+    `       LLMNR setting: ${svc.llmnrFor(link)}`,
+    `MulticastDNS setting: ${svc.mdnsFor(link)}`,
+    `  DNSOverTLS setting: ${svc.dnsOverTlsModeFor(link)}`,
+    `      DNSSEC setting: ${svc.dnssecModeFor(link)}`,
   ];
 }
 
@@ -88,7 +92,7 @@ function renderStatus(ctx: LinuxCommandContext, cible: string | undefined, legen
 
   if (!cible) {
     lines.push('Global');
-    lines.push(...protocolLines(global));
+    lines.push(...protocolLines(svc, null));
     lines.push(`resolv.conf mode: ${resolvConfMode(ctx)}`);
     if (global.dnsServers.length) {
       lines.push(`  Current DNS Server: ${global.dnsServers[0]}`);
@@ -109,12 +113,15 @@ function renderStatus(ctx: LinuxCommandContext, cible: string | undefined, legen
     if (!cible && cfg.dnsServers.length === 0 && cfg.domains.length === 0) continue;
     if (lines.length) lines.push('');
     lines.push(`Link ${ctx.net.getIfIndex(iface)} (${iface})`);
-    lines.push(...protocolLines(cfg));
+    lines.push(...protocolLines(svc, iface));
     if (cfg.dnsServers.length) {
       lines.push(`  Current DNS Server: ${cfg.dnsServers[0]}`);
       lines.push(`         DNS Servers: ${cfg.dnsServers.join(' ')}`);
     }
     if (cfg.domains.length) lines.push(`          DNS Domain: ${cfg.domains.join(' ')}`);
+    if (cfg.negativeTrustAnchors.length) {
+      lines.push(`          DNSSEC NTA: ${cfg.negativeTrustAnchors.join(' ')}`);
+    }
     if (cfg.defaultRoute) lines.push('       Default Route: yes');
   }
 
@@ -140,6 +147,10 @@ async function renderQuery(
         out.push(`${nom}: Failed to resolve: DNSSEC validation failed`);
       } else if (r.refusedBecause === 'unsigned-but-required') {
         out.push(`${nom}: Failed to resolve: no signed data and DNSSEC=yes`);
+      } else if (r.refusedBecause === 'no-encrypted-transport') {
+        // DNSOverTLS=yes ne retombe jamais sur le clair : sans 853 en
+        // face, la requête échoue. C'est le mot de systemd pour ce cas.
+        out.push(`${nom}: resolve call failed: All attempts to contact name servers or networks failed`);
       } else {
         out.push(`${nom}: Name or service not known`);
       }
@@ -151,7 +162,10 @@ async function renderQuery(
     }
     out.push('');
     out.push(`-- Information acquired via protocol DNS in 0us.`);
-    out.push(`-- Data is authenticated: ${r.dnssec === 'secure' ? 'yes' : 'no'}`);
+    out.push(
+      `-- Data is authenticated: ${r.dnssec === 'secure' ? 'yes' : 'no'}; `
+      + `Data was acquired via local or encrypted transport: ${r.encrypted ? 'yes' : 'no'}`,
+    );
     out.push(`-- Data from: ${r.origin === 'cache' ? 'cache' : 'network'}`);
   }
   return { output: out.join('\n'), exitCode };
@@ -193,15 +207,14 @@ function runConfigVerb(ctx: LinuxCommandContext, verb: string, args: string[]): 
     case 'dns': cfg.dnsServers = [...rest]; break;
     case 'domain': cfg.domains = [...rest]; break;
     case 'default-route': cfg.defaultRoute = /^(yes|true|1)$/i.test(rest[0] ?? 'yes'); break;
-    case 'llmnr': cfg.llmnr = (rest[0] as ResolvedLinkConfig['llmnr']) ?? 'yes'; break;
-    case 'mdns': cfg.mdns = (rest[0] as ResolvedLinkConfig['mdns']) ?? 'no'; break;
-    case 'dnssec': cfg.dnssec = (rest[0] as ResolvedLinkConfig['dnssec']) ?? 'allow-downgrade'; break;
-    case 'dnsovertls': cfg.dnsOverTls = (rest[0] as ResolvedLinkConfig['dnsOverTls']) ?? 'no'; break;
+    // Une valeur absente remet le réglage à « non posé » : le lien suit
+    // alors le global, comme `resolvectl dnssec <lien> ""` chez systemd.
+    case 'llmnr': cfg.llmnr = (rest[0] as ResolvedLinkConfig['llmnr']) || null; break;
+    case 'mdns': cfg.mdns = (rest[0] as ResolvedLinkConfig['mdns']) || null; break;
+    case 'dnssec': cfg.dnssec = (rest[0] as ResolvedLinkConfig['dnssec']) || null; break;
+    case 'dnsovertls': cfg.dnsOverTls = (rest[0] as ResolvedLinkConfig['dnsOverTls']) || null; break;
     case 'revert': svc.revertLink(iface); break;
-    // `nta` (negative trust anchor) est accepté et sans effet : aucune
-    // validation DNSSEC ne traverse le stub aujourd'hui, et prétendre le
-    // contraire serait le défaut que ce PRD corrige.
-    case 'nta': break;
+    case 'nta': cfg.negativeTrustAnchors = [...rest]; break;
   }
   ctx.net.publishResolvedState();
   return { output: '', exitCode: 0 };
@@ -235,6 +248,7 @@ Commands:
   mdns [LINK [MODE]]           Get/set per-interface MulticastDNS mode
   dnssec [LINK [MODE]]         Get/set per-interface DNSSEC mode
   dnsovertls [LINK [MODE]]     Get/set per-interface DNS-over-TLS mode
+  nta [LINK [DOMAIN...]]       Get/set per-interface DNSSEC NTA
   revert LINK                  Revert per-interface configuration`;
 
 async function execute(

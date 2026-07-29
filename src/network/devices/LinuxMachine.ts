@@ -86,6 +86,7 @@ import type { DnsMessage } from '../dns/wire/DnsMessage';
 import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCompat';
 import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { bindDnsTcpServer, unbindDnsTcpServer } from '../dns/transport/DnsTcpTransport';
+import { bindDnsTlsServer, unbindDnsTlsServer, DOT_PORT } from '../dns/transport/DnsTlsTransport';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -380,6 +381,9 @@ export abstract class LinuxMachine extends EndHost
     this.dnsService.onStop(() => {
       this.udpClose(DNS_PORT);
       unbindDnsTcpServer(this, DNS_PORT);
+      unbindDnsTlsServer(this);
+      this.socketTable.unbind('tcp', '0.0.0.0', DNS_PORT);
+      this.socketTable.unbind('tcp', '0.0.0.0', DOT_PORT);
     });
     this.bindResolvedStub();
 
@@ -607,6 +611,20 @@ export abstract class LinuxMachine extends EndHost
       bindDnsUdpServer(this, (query) => this.answerDnsQuery(query), DNS_PORT, 'dnsmasq');
       bindDnsTcpServer(this, (query) => this.answerDnsQuery(query), DNS_PORT);
     } catch { /* port already bound (e.g. service restarted) */ }
+    // RFC 7858 : le même contenu servi sur le 853 chiffré. Sans cette
+    // écoute, `DNSOverTLS=` n'aurait personne à qui parler et le réglage
+    // ne serait qu'un texte de plus dans `resolvectl status`.
+    try {
+      bindDnsTlsServer(this, (query) => this.answerDnsQuery(query));
+    } catch { /* port already bound (e.g. service restarted) */ }
+    // `TcpStack.listen()` n'inscrit rien dans la table des sockets : sans
+    // ces deux lignes, `ss`/`netstat` ne montreraient ni le 53/tcp ni le
+    // 853, alors que les deux répondent réellement.
+    for (const port of [DNS_PORT, DOT_PORT]) {
+      try {
+        this.socketTable.bind('tcp', '0.0.0.0', port, undefined, 'dnsmasq');
+      } catch { /* déjà annoncé */ }
+    }
   }
 
   // ─── systemd-resolved ────────────────────────────────────────────────
@@ -622,11 +640,14 @@ export abstract class LinuxMachine extends EndHost
     if (!this._resolvedService) {
       this._resolvedService = new ResolvedService({
         // Le bit DO n'est posé que si l'on compte valider : sans lui le
-        // serveur n'a aucune raison de renvoyer les RRSIG.
-        queryUpstream: async (server, name, dnssecOk) => {
+        // serveur n'a aucune raison de renvoyer les RRSIG. `tls` bascule
+        // le transport sur le 853 chiffré (RFC 7858) ; le service décide,
+        // celui-ci exécute.
+        queryUpstream: async (server, name, dnssecOk, encrypted) => {
           let serverIP: IPAddress;
           try { serverIP = new IPAddress(server); } catch { return null; }
-          const reply = await this.queryDnsServer(serverIP, name, 'A', 2000, { dnssecOk });
+          const reply = await this.queryDnsServer(
+            serverIP, name, 'A', 2000, { dnssecOk, tls: encrypted });
           if (!reply) return null;
           return {
             addresses: reply.answers
@@ -674,12 +695,20 @@ export abstract class LinuxMachine extends EndHost
       this._dnsValidator = new DnsValidator(
         async (qname, qtype) => {
           const svc = this.getResolvedService();
-          const { server } = svc.selectServer(qname);
+          const { server, link } = svc.selectServer(qname);
           if (!server) return { status: 'SERVFAIL', records: [] };
           let serverIP: IPAddress;
           try { serverIP = new IPAddress(server); } catch { return { status: 'SERVFAIL', records: [] }; }
-          const reply = await this.queryDnsServer(
-            serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true });
+          // La remontée de chaîne emprunte le même transport que la
+          // requête qu'elle valide : sur un lien en DoT strict, le 53 en
+          // clair n'a aucune raison de répondre.
+          const tls = svc.dnsOverTlsModeFor(link) !== 'no';
+          let reply = await this.queryDnsServer(
+            serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true, tls });
+          if (!reply && tls && svc.dnsOverTlsModeFor(link) === 'opportunistic') {
+            reply = await this.queryDnsServer(
+              serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true });
+          }
           if (!reply) return { status: 'SERVFAIL', records: [] };
           return { status: 'NOERROR', records: [...reply.answers, ...reply.authorities] };
         },
@@ -887,9 +916,12 @@ export abstract class LinuxMachine extends EndHost
 
   private wireNetworkConfigLifecycle(): void {
     this.executor.serviceMgr.onLifecycle((event, name) => {
-      if (name !== 'systemd-networkd') return;
       if (event !== 'start' && event !== 'restart' && event !== 'reload') return;
-      this.applyNetworkConfiguration();
+      if (name === 'systemd-networkd') this.applyNetworkConfiguration();
+      // `resolved.conf` n'était lu qu'à la toute première instanciation du
+      // service : écrire `DNSOverTLS=` ou `DNSSEC=` puis redémarrer le
+      // démon ne changeait rien, et le réglage global restait lettre morte.
+      if (name === 'systemd-resolved') this.loadResolvedConfig();
     });
   }
 

@@ -20,6 +20,8 @@ interface DigInvocation {
   noAll: boolean;
   showAnswer: boolean;
   tcp: boolean;
+  /** `+tls` — DNS-over-TLS (RFC 7858), port 853 par défaut. */
+  tls: boolean;
   recurse: boolean;
   dnssec: boolean;
   bufsize: number | null;
@@ -47,6 +49,7 @@ function newInvocation(): DigInvocation {
     noAll: false,
     showAnswer: false,
     tcp: false,
+    tls: false,
     recurse: true,
     dnssec: false,
     bufsize: null,
@@ -67,6 +70,7 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
   let server = resolverIP ?? '';
   let short = false;
   let tcp = false;
+  let tls = false;
   let noAll = false;
   let showAnswer = false;
   let recurse = true;
@@ -88,6 +92,8 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     if (arg.startsWith('@')) server = arg.slice(1);
     else if (arg === '+short') short = true;
     else if (arg === '+tcp' || arg === '+vc') tcp = true;
+    else if (arg === '+tls') tls = true;
+    else if (arg === '+notls') tls = false;
     else if (arg === '+noall') noAll = true;
     else if (arg === '+answer') showAnswer = true;
     else if (arg === '+norecurse') recurse = false;
@@ -129,6 +135,7 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     g.server = server;
     g.short = short;
     g.tcp = tcp;
+    g.tls = tls;
     g.noAll = noAll;
     g.showAnswer = showAnswer;
     g.recurse = recurse;
@@ -145,6 +152,11 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     if (g.qtype === 'AXFR' || g.qtype === 'IXFR') g.tcp = true;
   }
   return groups;
+}
+
+/** Le port réellement interrogé : 853 sous `+tls`, 53 sinon. */
+function digPort(invocation: DigInvocation): number {
+  return invocation.port ?? (invocation.tls ? 853 : 53);
 }
 
 /** The one diagnostic dig writes to stderr when no server answered. */
@@ -177,7 +189,7 @@ function transferOutput(invocation: DigInvocation, message: DnsMessage): string 
   }
   for (const rr of records) lines.push(formatRecordLine(rr));
   lines.push(`;; Query time: ${Math.floor(Math.random() * 10) + 1} msec`);
-  lines.push(`;; SERVER: ${invocation.server}#${invocation.port ?? 53}(${invocation.server})`);
+  lines.push(`;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server})`);
   lines.push(`;; WHEN: ${new Date().toUTCString()}`);
   lines.push(`;; XFR size: ${records.length} records (messages 1, bytes ${encodeDnsMessage(message).length})`);
   return lines.join('\n');
@@ -242,7 +254,7 @@ function fullOutput(invocation: DigInvocation, message: DnsMessage): string {
   pushSection(lines, 'ADDITIONAL', message.additionals);
 
   lines.push(`;; Query time: ${Math.floor(Math.random() * 10) + 1} msec`);
-  lines.push(`;; SERVER: ${invocation.server}#${invocation.port ?? 53}(${invocation.server})`);
+  lines.push(`;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server})`);
   lines.push(`;; WHEN: ${new Date().toUTCString()}`);
   lines.push(`;; MSG SIZE  rcvd: ${encodeDnsMessage(message).length}`);
   return lines.join('\n');
@@ -362,6 +374,7 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
   const options: DnsQueryOptions = {
     recursionDesired: invocation.recurse,
     tcp: invocation.tcp,
+    tls: invocation.tls,
     dnssecOk: invocation.dnssec,
     udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : undefined),
     port: invocation.port ?? undefined,
@@ -378,7 +391,7 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
   if (!message) return noServersLine(banner, invocation.short);
 
   // RFC 1035 §4.2.1 — real dig retries TC=1 over TCP by default.
-  if (message.flags.tc && !options.tcp) {
+  if (message.flags.tc && !options.tcp && !options.tls) {
     const tcpMessage = await query(
       invocation.server, invocation.domain, invocation.qtype,
       invocation.timeoutSeconds * 1000, { ...options, tcp: true },

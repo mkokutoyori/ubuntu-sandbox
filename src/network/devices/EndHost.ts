@@ -82,6 +82,7 @@ import {
 } from '../dns/compat/DnsWireCompat';
 import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
+import { queryDnsOverTls, DOT_PORT } from '../dns/transport/DnsTlsTransport';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
@@ -2557,6 +2558,17 @@ export abstract class EndHost extends Equipment {
     options: DnsQueryOptions = {},
   ): Promise<DnsMessage | null> {
     const port = options.port ?? DNS_PORT;
+    if (options.tls) {
+      // RFC 7858 : port propre, poignée de main TLS 1.3 réelle. Le port 53
+      // par défaut ne vaut pas ici — c'est 853 tant que l'appelant n'en
+      // impose pas un autre.
+      const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
+      if (!query) return null;
+      if (!(serverIP instanceof IPAddress)) return null;
+      return queryDnsOverTls(this, serverIP, query, {
+        port: options.port ?? DOT_PORT, timeoutMs,
+      });
+    }
     if (options.tcp) {
       const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
       if (!query) return null;

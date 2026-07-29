@@ -39,6 +39,8 @@ export interface DnsWireResponse {
 export interface DnsQueryOptions {
   readonly recursionDesired?: boolean;
   readonly tcp?: boolean;
+  /** DNS-over-TLS (RFC 7858) : TCP/853 sous une vraie session TLS 1.3. */
+  readonly tls?: boolean;
   readonly dnssecOk?: boolean;
   readonly udpPayloadSize?: number;
   /** Destination port override (`dig -p <port>`). Defaults to 53. */

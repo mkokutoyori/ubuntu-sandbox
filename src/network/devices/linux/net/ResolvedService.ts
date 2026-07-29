@@ -20,15 +20,26 @@ export type TriState = 'yes' | 'no' | 'resolve';
 export type DnssecMode = 'yes' | 'no' | 'allow-downgrade';
 export type DnsOverTlsMode = 'yes' | 'no' | 'opportunistic';
 
+/**
+ * Réglages d'un lien. `null` veut dire « non posé sur ce lien » : c'est
+ * alors le global de `resolved.conf` qui s'applique. Une valeur par défaut
+ * en dur masquerait le global, et `DNSOverTLS=`/`DNSSEC=` n'auraient
+ * jamais d'effet sur un lien existant.
+ */
 export interface ResolvedLinkConfig {
   dnsServers: string[];
   /** Un domaine préfixé `~` ne sert qu'au routage, pas à la recherche. */
   domains: string[];
   defaultRoute: boolean;
-  llmnr: TriState;
-  mdns: TriState;
-  dnssec: DnssecMode;
-  dnsOverTls: DnsOverTlsMode;
+  llmnr: TriState | null;
+  mdns: TriState | null;
+  dnssec: DnssecMode | null;
+  dnsOverTls: DnsOverTlsMode | null;
+  /**
+   * `resolvectl nta` — domaines soustraits à la validation DNSSEC. Un nom
+   * couvert par une ancre négative est rendu sans être validé.
+   */
+  negativeTrustAnchors: string[];
   /** Posée par networkd plutôt que par l'opérateur. */
   fromNetworkd: boolean;
 }
@@ -59,10 +70,11 @@ export function defaultLinkConfig(): ResolvedLinkConfig {
     dnsServers: [],
     domains: [],
     defaultRoute: false,
-    llmnr: 'yes',
-    mdns: 'no',
-    dnssec: 'allow-downgrade',
-    dnsOverTls: 'no',
+    llmnr: null,
+    mdns: null,
+    dnssec: null,
+    dnsOverTls: null,
+    negativeTrustAnchors: [],
     fromNetworkd: false,
   };
 }
@@ -135,8 +147,10 @@ export interface ResolvedQueryOutcome {
    * la zone non signée (`insecure`).
    */
   dnssec: DnssecStatus | 'unset';
+  /** True quand la réponse a voyagé chiffrée (DNS-over-TLS). */
+  encrypted: boolean;
   /** Motif du refus, quand la réponse a été écartée. */
-  refusedBecause?: 'bogus' | 'unsigned-but-required';
+  refusedBecause?: 'bogus' | 'unsigned-but-required' | 'no-encrypted-transport';
 }
 
 export interface UpstreamAnswer {
@@ -147,7 +161,9 @@ export interface UpstreamAnswer {
 
 export interface ResolvedDeps {
   /** Interroge réellement un serveur sur le câble. Null = pas de réponse. */
-  queryUpstream(server: string, name: string, dnssecOk: boolean): Promise<UpstreamAnswer | null>;
+  queryUpstream(
+    server: string, name: string, dnssecOk: boolean, encrypted: boolean,
+  ): Promise<UpstreamAnswer | null>;
   /**
    * Variante synchrone, utilisée quand il n'y a rien à valider. Valider
    * coûte des allers-retours supplémentaires vers le haut de la chaîne,
@@ -177,7 +193,8 @@ export class ResolvedService {
   };
   /** Réponses mises en cache par le stub, avec leur échéance. */
   private readonly answers = new Map<string, {
-    addresses: string[]; expiresAtMs: number; dnssec: DnssecStatus | 'unset';
+    addresses: string[]; expiresAtMs: number;
+    dnssec: DnssecStatus | 'unset'; encrypted: boolean;
   }>();
 
   constructor(private readonly deps: ResolvedDeps) {
@@ -239,22 +256,66 @@ export class ResolvedService {
   dnssecModeFor(link: string | null): DnssecMode {
     if (link) {
       const cfg = this.links.get(link);
-      if (cfg) return cfg.dnssec;
+      if (cfg?.dnssec) return cfg.dnssec;
     }
     return this.global.dnssec;
   }
 
+  /** Le réglage LLMNR effectif : celui du lien s'il est posé, sinon le global. */
+  llmnrFor(link: string | null): TriState {
+    if (link) {
+      const cfg = this.links.get(link);
+      if (cfg?.llmnr) return cfg.llmnr;
+    }
+    return this.global.llmnr;
+  }
+
+  /** Le réglage mDNS effectif : celui du lien s'il est posé, sinon le global. */
+  mdnsFor(link: string | null): TriState {
+    if (link) {
+      const cfg = this.links.get(link);
+      if (cfg?.mdns) return cfg.mdns;
+    }
+    return this.global.mdns;
+  }
+
   /**
-   * Ce que le stub fait d'une requête : cache, puis fil, validation, puis
-   * cache. Asynchrone parce que valider demande de vraies requêtes vers
-   * le haut de la chaîne de confiance (DNSKEY, DS) — un validateur
-   * synchrone ne pourrait pas les faire.
+   * Le mode DNS-over-TLS effectif pour un lien : le réglage du lien
+   * l'emporte sur le global, comme pour DNSSEC.
    */
+  dnsOverTlsModeFor(link: string | null): DnsOverTlsMode {
+    if (link) {
+      const cfg = this.links.get(link);
+      if (cfg?.dnsOverTls) return cfg.dnsOverTls;
+    }
+    return this.global.dnsOverTls;
+  }
+
+  /**
+   * True quand la requête ne peut pas se régler dans la pile d'appel :
+   * chiffrer demande une poignée de main TCP, valider demande de remonter
+   * la chaîne. Les deux imposent l'asynchrone.
+   */
+  requiresAsync(link: string | null, name?: string): boolean {
+    return this.willValidate(link, name) || this.dnsOverTlsModeFor(link) !== 'no';
+  }
+
   /** True quand une requête pour ce lien passera par la validation. */
-  willValidate(link: string | null): boolean {
+  willValidate(link: string | null, name?: string): boolean {
     if (this.dnssecModeFor(link) === 'no') return false;
     if (this.deps.validate === undefined) return false;
+    if (name !== undefined && this.underNegativeTrustAnchor(link, name)) return false;
     return this.deps.hasTrustAnchors?.() ?? true;
+  }
+
+  /** True si le nom tombe sous une ancre négative posée sur ce lien. */
+  underNegativeTrustAnchor(link: string | null, name: string): boolean {
+    const anchors = link ? this.links.get(link)?.negativeTrustAnchors ?? [] : [];
+    const fqdn = name.toLowerCase().replace(/\.$/, '');
+    return anchors.some((raw) => {
+      const domain = raw.toLowerCase().replace(/\.$/, '');
+      return domain !== '' && (fqdn === domain || fqdn.endsWith(`.${domain}`));
+    });
   }
 
   /**
@@ -273,12 +334,12 @@ export class ResolvedService {
         this.stats.cacheHits++;
         return {
           addresses: [...cached.addresses], origin: 'cache',
-          link: null, server: null, dnssec: cached.dnssec,
+          link: null, server: null, dnssec: cached.dnssec, encrypted: cached.encrypted,
         };
       }
     }
     const { server, link } = this.selectServer(key);
-    if (this.willValidate(link) || !this.deps.queryUpstreamSync) return null;
+    if (this.requiresAsync(link, key) || !this.deps.queryUpstreamSync) return null;
 
     this.stats.transactions++;
     if (this.global.cache) {
@@ -287,22 +348,35 @@ export class ResolvedService {
     }
     if (!server) {
       this.stats.failedTransactions++;
-      return { addresses: [], origin: 'none', link: null, server: null, dnssec: 'unset' };
+      return {
+        addresses: [], origin: 'none', link: null, server: null,
+        dnssec: 'unset', encrypted: false,
+      };
     }
     const answer = this.deps.queryUpstreamSync(server, key);
     if (!answer || answer.addresses.length === 0) {
       this.stats.failedTransactions++;
-      return { addresses: [], origin: 'none', link, server, dnssec: 'unset' };
+      return { addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted: false };
     }
     if (this.global.cache) {
       this.answers.set(key, {
-        addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000, dnssec: 'unset',
+        addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
+        dnssec: 'unset', encrypted: false,
       });
       this.stats.currentCacheSize = this.answers.size;
     }
-    return { addresses: answer.addresses, origin: 'network', link, server, dnssec: 'unset' };
+    return {
+      addresses: answer.addresses, origin: 'network', link, server,
+      dnssec: 'unset', encrypted: false,
+    };
   }
 
+  /**
+   * Ce que le stub fait d'une requête : cache, puis fil — chiffré ou non
+   * selon le mode du lien — validation, puis cache. Asynchrone parce que
+   * chiffrer demande une poignée de main et que valider demande de vraies
+   * requêtes vers le haut de la chaîne de confiance (DNSKEY, DS).
+   */
   async resolve(name: string, ttlSeconds = 60): Promise<ResolvedQueryOutcome> {
     this.stats.transactions++;
     const key = name.toLowerCase().replace(/\.$/, '');
@@ -314,7 +388,7 @@ export class ResolvedService {
         this.stats.cacheHits++;
         return {
           addresses: [...cached.addresses], origin: 'cache',
-          link: null, server: null, dnssec: cached.dnssec,
+          link: null, server: null, dnssec: cached.dnssec, encrypted: cached.encrypted,
         };
       }
       if (cached) this.answers.delete(key);
@@ -324,15 +398,37 @@ export class ResolvedService {
     const { server, link } = this.selectServer(key);
     if (!server) {
       this.stats.failedTransactions++;
-      return { addresses: [], origin: 'none', link: null, server: null, dnssec: 'unset' };
+      return {
+        addresses: [], origin: 'none', link: null, server: null,
+        dnssec: 'unset', encrypted: false,
+      };
     }
 
     const mode = this.dnssecModeFor(link);
-    const wantDnssec = this.willValidate(link);
-    const answer = await this.deps.queryUpstream(server, key, wantDnssec);
+    const wantDnssec = this.willValidate(link, key);
+    const tls = this.dnsOverTlsModeFor(link);
+
+    let answer: UpstreamAnswer | null = null;
+    let encrypted = false;
+    if (tls !== 'no') {
+      answer = await this.deps.queryUpstream(server, key, wantDnssec, true);
+      encrypted = answer !== null;
+    }
+    // `yes` est strict : plutôt aucune réponse qu'une réponse en clair.
+    // `opportunistic` retombe sur le clair, ce qui est tout ce qu'il
+    // promet — il protège d'un observateur passif, pas d'un actif.
+    if (!answer && tls === 'yes') {
+      this.stats.failedTransactions++;
+      return {
+        addresses: [], origin: 'none', link, server,
+        dnssec: 'unset', encrypted: false, refusedBecause: 'no-encrypted-transport',
+      };
+    }
+    if (!answer) answer = await this.deps.queryUpstream(server, key, wantDnssec, false);
+
     if (!answer || answer.addresses.length === 0) {
       this.stats.failedTransactions++;
-      return { addresses: [], origin: 'none', link, server, dnssec: 'unset' };
+      return { addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted };
     }
 
     let dnssec: DnssecStatus | 'unset' = 'unset';
@@ -346,25 +442,26 @@ export class ResolvedService {
         this.stats.failedTransactions++;
         return {
           addresses: [], origin: 'none', link, server,
-          dnssec, refusedBecause: 'bogus',
+          dnssec, encrypted, refusedBecause: 'bogus',
         };
       }
       if (dnssec === 'insecure' && mode === 'yes') {
         this.stats.failedTransactions++;
         return {
           addresses: [], origin: 'none', link, server,
-          dnssec, refusedBecause: 'unsigned-but-required',
+          dnssec, encrypted, refusedBecause: 'unsigned-but-required',
         };
       }
     }
 
     if (this.global.cache) {
       this.answers.set(key, {
-        addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000, dnssec,
+        addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
+        dnssec, encrypted,
       });
       this.stats.currentCacheSize = this.answers.size;
     }
-    return { addresses: answer.addresses, origin: 'network', link, server, dnssec };
+    return { addresses: answer.addresses, origin: 'network', link, server, dnssec, encrypted };
   }
 
   flushCaches(): void {

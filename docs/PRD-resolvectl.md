@@ -92,7 +92,7 @@ Aucune ligne de code n'est écrite dans le cadre de ce document.
 | 7 | `/etc/systemd/resolved.conf` n'existe pas (`ls /etc/systemd/` → `network system`) | Le fichier existe et gouverne les réglages globaux | Moyenne |
 | 8 | `/run/systemd/resolve/` n'existe pas : ni `stub-resolv.conf`, ni `resolv.conf` | Les deux fichiers d'exécution existent | Moyenne |
 | 9 | Aucune statistique : ni transactions, ni succès/échecs, ni taille de cache | `resolvectl statistics` rend des compteurs réels | Moyenne |
-| 10 | Aucune bascule de protocole (LLMNR, mDNS, DNSSEC, DNSoverTLS) | Réglables et rapportées — voir §7 sur ce qui est réellement fait | Moyenne |
+| 10 | Aucune bascule de protocole (LLMNR, mDNS, DNSSEC, DNSoverTLS) | Réglables et rapportées ; DNSSEC et DoT réellement branchés — voir §7 | Moyenne |
 | 11 | `DnsCache` n'a aucun compteur de hits/misses | Nécessaire pour #9 | Faible |
 | 12 | Aucun `resolvectl query` : pour interroger, il faut `dig` ou `getent` | `query` résout par le même chemin que le système | Élevée |
 
@@ -212,17 +212,31 @@ devient pas obligatoire.
 `LLMNR`, `MulticastDNS`, `DNSOverTLS` et `DNSSEC` sont réglables et
 rapportés — mais il faut dire ce qui est réellement fait :
 
-| Réglage | Ce qui sera fait |
+| Réglage | Ce qui est fait |
 |---|---|
-| `DNSSEC=` | **Réel en partie** : `DnsValidator` existe et le stub peut valider une réponse signée. `allow-downgrade` accepte une zone non signée |
+| `DNSSEC=` | **Réel** : `DnsValidator` remonte la chaîne par de vraies requêtes DNSKEY/DS. `secure`, `bogus` et `insecure` sont tous les trois atteints ; `allow-downgrade` accepte une zone non signée, jamais une falsifiée. `resolvectl nta` soustrait un domaine à la validation |
+| `DNSOverTLS=` | **Réel** : `DnsTlsTransport` fait une vraie poignée de main TLS 1.3 (RFC 8446) sur le 853, avec PKI et ALPN `dot` exigée. `yes` refuse de retomber en clair, `opportunistic` y retombe |
 | `LLMNR=` | **Réglage seul** : aucun émetteur/récepteur LLMNR n'existe. Rapporté par `status`, sans effet sur la résolution |
 | `MulticastDNS=` | **Réglage seul**, même raison |
-| `DNSOverTLS=` | **Réglage seul** : `SimulatedTls` existe mais n'est pas branché au transport DNS |
 
-Ces trois « réglage seul » doivent être **visibles comme tels** dans la
+Ces deux « réglage seul » doivent rester **visibles comme tels** dans la
 documentation et ne jamais faire croire à une résolution qui n'a pas
 lieu. Un réglage accepté qui ne fait rien est le défaut que toute cette
 série corrige ; le répéter ici serait incohérent.
+
+### 7.1 Ce que DNSSEC et DoT coûtent au chemin synchrone
+
+Valider demande des allers-retours supplémentaires ; chiffrer demande une
+poignée de main. Les deux imposent le chemin asynchrone, alors que
+`INssSource.gethostbyname` est synchrone de bout en bout. Conséquence
+mesurée, assumée : sous `DNSSEC=` actif (ancre posée) ou `DNSOverTLS≠no`,
+un `getent hosts` **à froid** ne rend rien — le stub ne peut pas rendre la
+main avant d'avoir la réponse. Une fois le nom en cache, le chemin
+synchrone repasse normalement.
+
+Rendre ce cas correct demanderait de passer `INssSource` en asynchrone, ce
+qui touche `getent`, `ping`, `curl` et toute résolution de nom d'hôte :
+c'est un chantier séparé, pas une extension de celui-ci.
 
 ---
 
@@ -233,8 +247,10 @@ série corrige ; le répéter ici serait incohérent.
   n'ont pas de source de données dans les zones du simulateur.
 - **LLMNR et mDNS réels** : deux protocoles entiers, chacun de la taille
   d'un PRD.
-- **DNS-over-TLS réel** : demande de brancher `SimulatedTls` sur le
-  transport DNS, séparément.
+- **DoH et DoQ** : `DnsHttpsTransport`/`DnsQuicTransport` reposent encore
+  sur `SimulatedTls` et migrent sous `PRD-HTTP.md`/`PRD-QUIC.md`.
+- **Épinglage du certificat DoT** (`DNSOverTLS=yes#nom`, vérification du
+  nom du serveur) : le transport vérifie la chaîne, pas l'identité.
 - **`resolvectl log-level`, `reset-server-features`,
   `show-server-state`** : diagnostics internes sans état à refléter.
 - **`nss-resolve`** (la source NSS `resolve`) : `nsswitch.conf` porte
