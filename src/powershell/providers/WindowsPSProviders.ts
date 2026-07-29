@@ -1639,6 +1639,12 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return probe?.success ?? false;
   }
   resolveDns(name: string): string[] { return this.pc.resolveDnsSync(name); }
+  resolveDnsWithOptions(name: string, options: {
+    dnsOnly?: boolean; llmnrOnly?: boolean;
+    noHostsFile?: boolean; cacheOnly?: boolean;
+  }): string[] {
+    return this.pc.resolveDnsSync(name, options);
+  }
   resolveDnsViaServer(name: string, server: string): string[] { return this.pc.resolveDnsViaServerSync(name, server); }
   resolveDnsViaServerWithTtl(name: string, server: string): Array<{ ip: string; ttl: number }> {
     return this.pc.resolveDnsViaServerWithTtlSync(name, server);
@@ -1778,6 +1784,19 @@ class WindowsNetworkAdapter implements INetworkProvider {
         remotePort:    s.state === 'LISTEN' ? 0 : s.remotePort,
         state:         s.state === 'LISTEN' ? 'Listen' : s.state,
         pid:           s.pid,
+      }));
+  }
+
+  getUdpEndpoints() {
+    const table = (this.pc as unknown as { getSocketTable?: () => { getAll: () => Array<{ protocol: string; localAddress: string; localPort: number; pid: number; processName: string }> } }).getSocketTable?.();
+    if (!table) return [];
+    return table.getAll()
+      .filter(s => s.protocol.toLowerCase() === 'udp')
+      .map(s => ({
+        localAddress: s.localAddress,
+        localPort:    s.localPort,
+        pid:          s.pid,
+        processName:  s.processName,
       }));
   }
 

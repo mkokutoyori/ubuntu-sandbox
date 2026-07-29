@@ -40,6 +40,13 @@ import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/Win
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
+import { LlmnrAgent } from '../llmnr/LlmnrAgent';
+import { LLMNR_RECORD_TTL } from '../llmnr/types';
+import { MdnsAgent } from '../mdns/MdnsAgent';
+import { MDNS_RECORD_TTL } from '../mdns/types';
+import {
+  isLlmnrEnabled, isMdnsEnabled, type DnsClientQueryOptions,
+} from './windows/WinDnsClientPolicy';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -393,6 +400,54 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.initDefaultSockets();
     this.wireReactiveProjections();
     this.auditPolicy.seedDefaults(type === 'windows-server' ? 'server' : 'client');
+    this.registry.onValueChanged = () => this.syncLinkLocalResponders();
+  }
+
+  // ─── LLMNR / mDNS (client DNS Windows) ──────────────────────────
+
+  private _llmnrAgent: LlmnrAgent | null = null;
+  private _mdnsAgent: MdnsAgent | null = null;
+
+  /**
+   * Les deux répondeurs de lien. Ce sont les mêmes agents que ceux de
+   * systemd-resolved côté Linux — LLMNR est d'ailleurs une invention de
+   * Microsoft, et un Windows le parle par défaut là où un Linux attend
+   * qu'on le lui demande. Ils ne dépendent que de l'`EndHost` : rien à
+   * spécialiser ici, seulement à brancher.
+   */
+  getLlmnrAgent(): LlmnrAgent {
+    if (!this._llmnrAgent) this._llmnrAgent = new LlmnrAgent(this);
+    return this._llmnrAgent;
+  }
+
+  getMdnsAgent(): MdnsAgent {
+    if (!this._mdnsAgent) this._mdnsAgent = new MdnsAgent(this);
+    return this._mdnsAgent;
+  }
+
+  /**
+   * Aligne les deux répondeurs sur la stratégie du registre. Rappelé à
+   * chaque écriture dans la base : sans cela, `reg add ... EnableMulticast
+   * /d 0` annoncerait « opération réussie » et le port 5355 resterait
+   * ouvert.
+   */
+  syncLinkLocalResponders(): void {
+    if (!this.getIsPoweredOn()) return;
+    const llmnr = this.getLlmnrAgent();
+    const mdns = this.getMdnsAgent();
+    if (isLlmnrEnabled(this.registry)) llmnr.start(); else llmnr.stop();
+    if (isMdnsEnabled(this.registry)) mdns.start(); else mdns.stop();
+  }
+
+  override powerOn(): void {
+    super.powerOn();
+    this.syncLinkLocalResponders();
+  }
+
+  override powerOff(): void {
+    this._llmnrAgent?.stop();
+    this._mdnsAgent?.stop();
+    super.powerOff();
   }
 
   /**
@@ -1778,6 +1833,67 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /**
+   * Le nom relève-t-il de mDNS et de lui seul ?
+   *
+   * `.local` ne part jamais vers un serveur DNS unicast (RFC 6762 §3),
+   * et Windows respecte cette règle depuis la version 1703. Envoyer un
+   * `.local` au DNS reviendrait à demander à un serveur de trancher sur
+   * un espace de noms qui appartient au lien.
+   */
+  private isMdnsName(name: string): boolean {
+    const lower = name.toLowerCase().replace(/\.$/, '');
+    return lower.endsWith('.local') && lower.split('.').length === 2;
+  }
+
+  /** Un nom sans point : le domaine de LLMNR (RFC 4795 §2.1). */
+  private isLlmnrName(name: string): boolean {
+    const lower = name.toLowerCase().replace(/\.$/, '');
+    return lower !== '' && !lower.includes('.');
+  }
+
+  /**
+   * Le dernier recours du client DNS Windows : les deux protocoles de
+   * lien. `.local` va à mDNS, un nom mono-label à LLMNR — jamais
+   * l'inverse. Chacun n'est consulté que si la stratégie du registre le
+   * laisse actif ; c'est la même porte que celle qui décide de tenir le
+   * port, donc `EnableMulticast /d 0` ferme la résolution en même temps
+   * que le répondeur.
+   */
+  private resolveLinkLocalSync(name: string): string[] {
+    if (this.isMdnsName(name)) {
+      return isMdnsEnabled(this.registry) ? this.getMdnsAgent().resolveSync(name) : [];
+    }
+    if (this.isLlmnrName(name)) {
+      return isLlmnrEnabled(this.registry) ? this.getLlmnrAgent().resolveSync(name) : [];
+    }
+    return [];
+  }
+
+  private async resolveLinkLocal(name: string): Promise<string[]> {
+    if (this.isMdnsName(name)) {
+      return isMdnsEnabled(this.registry) ? this.getMdnsAgent().resolve(name) : [];
+    }
+    if (this.isLlmnrName(name)) {
+      return isLlmnrEnabled(this.registry) ? this.getLlmnrAgent().resolve(name) : [];
+    }
+    return [];
+  }
+
+  /**
+   * Une réponse de lien entre dans le cache du client DNS, avec son TTL.
+   * Sans cela `ipconfig /displaydns` et `Get-DnsClientCache` ne
+   * verraient jamais un nom que `ping` vient pourtant de résoudre — deux
+   * commandes du même système se contrediraient.
+   */
+  private cacheLinkLocalAnswer(name: string, addresses: readonly string[]): void {
+    if (addresses.length === 0) return;
+    const ttl = this.isMdnsName(name) ? MDNS_RECORD_TTL : LLMNR_RECORD_TTL;
+    this.dnsCache.store(name, addresses.map((ip) => ({
+      name, ttl, rrClass: 1, data: { type: RRType.A, address: new IPAddress(ip) },
+    })));
+  }
+
+  /**
    * Resolve a name to an IPv4 address, mirroring the Windows resolver
    * order: literal IP → hosts file → the machine's own name → DNS.
    * The DNS step queries each configured server over UDP/53 through the
@@ -1806,33 +1922,60 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         try { return new IPAddress(cached); } catch { void 0; }
       }
     }
-    for (const { server, qname } of this.dnsResolutionAttempts(name)) {
-      const response = await this.queryDnsServer(server, qname, 'A');
-      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-      if (aRecords.length > 0) {
-        this.dnsCache.store(qname, response!.answers);
-        return (aRecords[0].data as ARecordData).address;
+    if (!this.isMdnsName(name)) {
+      for (const { server, qname } of this.dnsResolutionAttempts(name)) {
+        const response = await this.queryDnsServer(server, qname, 'A');
+        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+        if (aRecords.length > 0) {
+          this.dnsCache.store(qname, response!.answers);
+          return (aRecords[0].data as ARecordData).address;
+        }
       }
+    }
+
+    // 5. Le lien, quand le DNS n'a rien su dire.
+    const linkLocal = await this.resolveLinkLocal(name);
+    if (linkLocal.length > 0) {
+      this.cacheLinkLocalAnswer(name, linkLocal);
+      try { return new IPAddress(linkLocal[0]); } catch { return null; }
     }
     return null;
   }
 
-  resolveDnsSync(name: string): string[] {
-    const hostsIp = this.readHostsFile().resolve(name, 4);
-    if (hostsIp) return [hostsIp];
-    for (const qname of this.dnsSearchCandidates(name)) {
-      const cached = this.dnsCache.lookup(qname, 'A');
-      if (cached) return [cached];
+  /**
+   * L'ordre du client DNS Windows, avec les restrictions que
+   * `Resolve-DnsName` sait poser : fichier hosts, cache, serveurs DNS,
+   * puis le lien. Chaque commutateur retire une étape — c'est ainsi que
+   * l'opérateur découvre *qui* a répondu, puisque la cmdlet ne le dit
+   * pas d'elle-même.
+   */
+  resolveDnsSync(name: string, options: DnsClientQueryOptions = {}): string[] {
+    const linkOnly = options.llmnrOnly === true;
+    if (!options.noHostsFile && !linkOnly) {
+      const hostsIp = this.readHostsFile().resolve(name, 4);
+      if (hostsIp) return [hostsIp];
     }
-    for (const { server, qname } of this.dnsResolutionAttempts(name)) {
-      const response = this.queryDnsServerSync(server, qname, 'A');
-      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-      if (aRecords.length > 0) {
-        this.dnsCache.store(qname, response!.answers);
-        return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
+    if (!linkOnly) {
+      for (const qname of this.dnsSearchCandidates(name)) {
+        const cached = this.dnsCache.lookup(qname, 'A');
+        if (cached) return [cached];
       }
     }
-    return [];
+    if (options.cacheOnly) return [];
+    if (!this.isMdnsName(name) && !linkOnly) {
+      for (const { server, qname } of this.dnsResolutionAttempts(name)) {
+        const response = this.queryDnsServerSync(server, qname, 'A');
+        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+        if (aRecords.length > 0) {
+          this.dnsCache.store(qname, response!.answers);
+          return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
+        }
+      }
+    }
+    if (options.dnsOnly) return [];
+    const linkLocal = this.resolveLinkLocalSync(name);
+    if (linkLocal.length > 0) this.cacheLinkLocalAnswer(name, linkLocal);
+    return linkLocal;
   }
 
   resolveDnsViaServerSync(name: string, server: string): string[] {

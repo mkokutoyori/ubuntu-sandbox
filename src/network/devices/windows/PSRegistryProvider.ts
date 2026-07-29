@@ -231,8 +231,23 @@ export class PSRegistryProvider {
   private hklm: RegistryKey;
   private hkcu: RegistryKey = buildHKCU();
 
+  /**
+   * Notifié après toute écriture, quel qu'en soit le chemin — `reg add`
+   * de cmd, `Set-ItemProperty` de PowerShell, ou une stratégie de
+   * groupe. Sans ce fil, une valeur de stratégie qui commande un service
+   * ne serait relue qu'au prochain démarrage : poser `EnableMulticast`
+   * à zéro afficherait « opération réussie » pendant que le port reste
+   * ouvert, ce qui est exactement le genre de réglage décoratif que ce
+   * dépôt refuse.
+   */
+  onValueChanged: (() => void) | null = null;
+
   constructor(product: WindowsProductIdentity = WINDOWS_CLIENT_PRODUCT_IDENTITY) {
     this.hklm = buildHKLM(product);
+  }
+
+  private notifyChanged(): void {
+    this.onValueChanged?.();
   }
 
   // ─── Internal navigation ──────────────────────────────────────────
@@ -362,6 +377,7 @@ export class PSRegistryProvider {
       return `Remove-Item : The item has children and the Recurse parameter was not specified. If you are sure you want to remove it and all its children, specify the Recurse parameter.`;
     }
     parent.subkeys.delete(leafKey);
+    this.notifyChanged();
     return '';
   }
 
@@ -435,6 +451,7 @@ export class PSRegistryProvider {
     if (!parsed) return;
     const key = this.ensurePath(parsed);
     seedValue(key, name, value, type);
+    this.notifyChanged();
   }
 
   setItemProperty(path: string, name: string, value: string | number): string {
@@ -444,6 +461,7 @@ export class PSRegistryProvider {
     if (!key) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     const type: RegistryValue['type'] = typeof value === 'number' ? 'DWord' : 'String';
     key.values.set(name.toLowerCase(), { name, value, type });
+    this.notifyChanged();
     return '';
   }
 
@@ -456,6 +474,7 @@ export class PSRegistryProvider {
       return `Remove-ItemProperty : Property '${name}' does not exist at path '${path}'.`;
     }
     key.values.delete(name.toLowerCase());
+    this.notifyChanged();
     return '';
   }
 

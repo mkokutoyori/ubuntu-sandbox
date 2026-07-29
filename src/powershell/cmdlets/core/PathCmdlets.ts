@@ -24,6 +24,26 @@ function requireRegistryProvider(path: string): void {
   }
 }
 
+/**
+ * `HKLM\Logiciel\...` — une ruche, mais sans les deux-points du lecteur
+ * PowerShell. `reg.exe` écrit ainsi, PowerShell non : pour lui `HKLM`
+ * sans `:` n'est pas un lecteur, et il le dit.
+ *
+ * Sans ce garde, un tel chemin ne passait aucun des deux tests
+ * ci-dessus : l'écriture retombait sur un `return null` muet, et
+ * `Set-ItemProperty` rendait la main sans erreur ni effet. Une écriture
+ * perdue qui se présente comme réussie est pire qu'un refus.
+ */
+function hivePathMissingDrive(path: string): boolean {
+  return /^(HKLM|HKCU|HKCR|HKU|HKCC)\\/i.test(path);
+}
+
+function reportMissingDrive(ctx: CmdletContext, cmdlet: string, path: string): void {
+  const drive = /^([A-Z]+)\\/i.exec(path)?.[1] ?? path;
+  ctx.emitError(
+    `${cmdlet} : Cannot find drive. A drive with the name '${drive}' does not exist.`);
+}
+
 // ─── Split-Path ───────────────────────────────────────────────────────────
 
 export class SplitPathCmdlet implements ICmdlet {
@@ -571,6 +591,10 @@ export class SetItemPropertyCmdlet implements ICmdlet {
       if (!ctx.providers.registry) requireRegistryProvider(path);
       return ctx.providers.registry.setItemProperty(path, name, value);
     }
+    if (hivePathMissingDrive(path)) {
+      reportMissingDrive(ctx, 'Set-ItemProperty', path);
+      return null;
+    }
     requireRegistryProvider(path);
     return null;
   }
@@ -588,6 +612,10 @@ export class RemoveItemPropertyCmdlet implements ICmdlet {
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
       return ctx.providers.registry.removeItemProperty(path, name);
+    }
+    if (hivePathMissingDrive(path)) {
+      reportMissingDrive(ctx, 'Remove-ItemProperty', path);
+      return null;
     }
     requireRegistryProvider(path);
     return null;

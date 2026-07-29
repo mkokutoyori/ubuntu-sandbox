@@ -71,7 +71,7 @@ import {
   NewNetNeighborCmdlet, RemoveNetNeighborCmdlet, SetNetNeighborCmdlet,
   TestConnectionCmdlet, ResolveDnsNameCmdlet, InvokeWebRequestCmdlet,
   GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
-  GetNetTCPConnectionCmdlet, HostnameCmdlet, WhoamiCmdlet,
+  GetNetTCPConnectionCmdlet, GetNetUDPEndpointCmdlet, HostnameCmdlet, WhoamiCmdlet,
   NewNetIPAddressCmdlet, RemoveNetIPAddressCmdlet,
   NewNetRouteCmdlet, RemoveNetRouteCmdlet,
   EnableNetAdapterCmdlet, DisableNetAdapterCmdlet, RenameNetAdapterCmdlet,
@@ -356,6 +356,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetNetIPConfigurationCmdlet());
   registry.register(new GetNetRouteCmdlet());
   registry.register(new GetNetTCPConnectionCmdlet());
+  registry.register(new GetNetUDPEndpointCmdlet());
   registry.register(new GetNetNeighborCmdlet());
   registry.register(new NewNetNeighborCmdlet());
   registry.register(new RemoveNetNeighborCmdlet());

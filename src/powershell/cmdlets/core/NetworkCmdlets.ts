@@ -193,9 +193,24 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
       } as Record<string, PSValue>)) as PSValue;
     }
 
+    // Les commutateurs d'ordre : chacun retire une étape de la chaîne du
+    // client DNS. La cmdlet ne nomme pas le protocole qui a répondu —
+    // les poser est le seul moyen de le savoir, et donc de distinguer un
+    // nom servi par le fichier hosts d'un nom servi par le lien.
+    const flag = (n: string): boolean => ctx.named[n] !== undefined && ctx.named[n] !== false;
+    const restrictions = {
+      dnsOnly: flag('dnsonly'),
+      llmnrOnly: flag('llmnronly'),
+      noHostsFile: flag('nohostsfile'),
+      cacheOnly: flag('cacheonly'),
+    };
+    const restricted = Object.values(restrictions).some(Boolean);
+
     const ips = server && net.resolveDnsViaServer
       ? net.resolveDnsViaServer(name, server)
-      : net.resolveDns(name);
+      : (restricted && net.resolveDnsWithOptions
+        ? net.resolveDnsWithOptions(name, restrictions)
+        : net.resolveDns(name));
     if (ips.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
     const cacheEntries = net.getDnsClientCache?.() ?? [];
     const ttlFor = (ip: string): number =>
@@ -441,6 +456,36 @@ export class GetNetTCPConnectionCmdlet implements ICmdlet {
       State:          c.state,
       OwningProcess:  c.pid,
     } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+// ── Get-NetUDPEndpoint ────────────────────────────────────────────────────
+
+/**
+ * Le pendant UDP de `Get-NetTCPConnection`. Pas de colonne `State` :
+ * UDP n'a pas de connexion, un point de terminaison est une écoute.
+ * C'est la vue PowerShell de ce que `netstat -an` montre pour 5355 et
+ * 5353 — la preuve qu'un répondeur de lien tient son port, et non un
+ * réglage qui l'affirmerait.
+ */
+export class GetNetUDPEndpointCmdlet implements ICmdlet {
+  readonly name = 'get-netudpendpoint';
+  readonly displayName = 'Get-NetUDPEndpoint';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const endpoints = net.getUdpEndpoints?.() ?? [];
+    const rawPort = ctx.named['localport'];
+    const portFilter = rawPort !== undefined ? Number(psValueToString(rawPort)) : null;
+    return endpoints
+      .filter(e => portFilter === null || e.localPort === portFilter)
+      .map(e => ({
+        LocalAddress:  e.localAddress,
+        LocalPort:     e.localPort,
+        OwningProcess: e.pid,
+        ProcessName:   e.processName,
+      } as Record<string, PSValue>)) as PSValue;
   }
 }
 

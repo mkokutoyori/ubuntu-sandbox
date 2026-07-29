@@ -104,6 +104,45 @@ export function announceMulticastDns(
  * peuvent légitimement répondre sur un lien, et c'est le seul moyen de
  * voir un nom disputé plutôt que de le masquer.
  */
+/**
+ * La même question, posée sans rendre la main.
+ *
+ * Un résolveur système bloque : `gethostbyname` ne rend pas la main
+ * avant d'avoir une réponse ou un délai écoulé, et c'est aussi le cas
+ * des cmdlets `Resolve-DnsName` / `Get-DnsClientCache` de Windows, qui
+ * n'ont pas de forme asynchrone. Dans ce simulateur une trame est remise
+ * par appel direct : la réponse d'un pair arrive donc pendant l'envoi,
+ * et l'attente d'un vrai réseau est le seul élément qui manque.
+ *
+ * Ce qui en découle honnêtement : il n'y a pas de délai à attendre ici.
+ * Un pair qui ne répond pas ne rend rien, immédiatement — là où un vrai
+ * hôte patienterait sa seconde réglementaire.
+ */
+export function queryMulticastDnsSync(
+  host: EndHost, binding: McastDnsBinding, query: DnsMessage,
+): DnsMessage[] {
+  let sourcePort: number;
+  try { sourcePort = host.getSocketTable().allocateEphemeralPort(); }
+  catch { return []; }
+
+  const collected: DnsMessage[] = [];
+  try {
+    host.udpBind(sourcePort, ({ udp }) => {
+      if (!(udp.payload instanceof Uint8Array)) return;
+      let response: DnsMessage;
+      try { response = decodeDnsMessage(udp.payload); } catch { return; }
+      if (!response.flags.qr || response.id !== query.id) return;
+      collected.push(response);
+    }, `${binding.processName}-client`);
+  } catch { return []; }
+
+  const bytes = encodeDnsMessage(query);
+  host.sendUdpDatagram(
+    new IPAddress(binding.group), binding.port, sourcePort, bytes, bytes.length);
+  host.udpClose(sourcePort);
+  return collected;
+}
+
 export function queryMulticastDns(
   host: EndHost,
   binding: McastDnsBinding,
