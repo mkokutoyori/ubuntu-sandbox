@@ -22,7 +22,7 @@ export const curlCommand: LinuxCommand = {
   usage: 'curl [-k] [-s] [-v] [-I] URL',
   help: 'Transfer data from or to a server.',
 
-  run(ctx: LinuxCommandContext, args: string[]): string {
+  async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     const head = args.includes('-I') || args.includes('--head');
     let url: string | null = null;
     for (let i = 0; i < args.length; i++) {
@@ -41,7 +41,7 @@ export const curlCommand: LinuxCommand = {
     const path = m[4] || '/';
 
     if (scheme === 'https') {
-      const ip = ctx.net.resolveHostnameSync(host);
+      const ip = await ctx.net.resolveHostname(host);
       if (!ip) return `curl: (6) Could not resolve host: ${host}`;
 
       try {
@@ -76,7 +76,7 @@ export const curlCommand: LinuxCommand = {
 
     // PRD-Windows-Server.md §5 P11 / PRD-HTTP.md §5 P12: a real HTTP dial
     // (IIS/W3SVC, or any other real HTTP-hosting device), not a stub.
-    const fetched = fetchHttp(ctx, url);
+    const fetched = await fetchHttp(ctx, url);
     if (fetched.ok === false) {
       if (fetched.reason === 'unresolved-host') return `curl: (6) Could not resolve host: ${fetched.host}`;
       if (fetched.reason === 'refused') return `curl: (7) Failed to connect to ${fetched.host} port ${fetched.port}: Connection refused`;

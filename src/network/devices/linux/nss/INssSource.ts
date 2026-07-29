@@ -52,6 +52,20 @@ export interface INssSource {
   gethostbyaddr?(addr: string): NssResult<NssHostEntry>;
   enumHosts?(): NssEnumResult<NssHostEntry>;
 
+  /**
+   * Jumeaux asynchrones de la base `hosts`. Seule cette base en a besoin :
+   * les autres se lisent dans le VFS et sont réellement synchrones, alors
+   * qu'une réponse DNS peut demander une poignée de main TLS (DoT) ou une
+   * remontée de chaîne (DNSSEC) — impossible à faire tenir dans la pile
+   * d'appel de l'appelant.
+   *
+   * Une source qui ne les implémente pas reste utilisable :
+   * {@link NameServiceSwitch.lookupAsync} retombe sur la méthode
+   * synchrone correspondante.
+   */
+  gethostbynameAsync?(name: string, family?: 2 | 10): Promise<NssResult<NssHostEntry[]>>;
+  gethostbyaddrAsync?(addr: string): Promise<NssResult<NssHostEntry>>;
+
   // ── services / protocols / networks ────────────────────────────────
   getservbyname?(name: string, protocol?: string): NssResult<NssServiceEntry>;
   getservbyport?(port: number, protocol?: string): NssResult<NssServiceEntry>;

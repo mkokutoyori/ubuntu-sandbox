@@ -98,6 +98,9 @@ import {
   RUN_STUB_RESOLV,
   RUN_UPSTREAM_RESOLV,
   STUB_ADDRESS,
+  type ResolvedQtype,
+  type ResolvedQueryOutcome,
+  type UpstreamAnswer,
 } from './linux/net/ResolvedService';
 import { RRType } from '../dns/wire/RRType';
 import { DnsValidator, type DnssecStatus } from '../dns/dnssec/DnsValidator';
@@ -157,6 +160,26 @@ function parseDnsServerLiteral(literal: string): IPAddress | IPv6Address | null 
   try { return new IPAddress(literal); } catch { /* not IPv4 */ }
   try { return new IPv6Address(literal); } catch { /* not IPv6 */ }
   return null;
+}
+
+/**
+ * Ce que le stub retient d'une réponse amont : les adresses du type
+ * demandé, les enregistrements bruts pour la validation, et si le nom
+ * lui-même est inconnu. Sans cette dernière distinction, « pas d'AAAA
+ * pour ce nom » et « ce nom n'existe pas » seraient confondus.
+ */
+function readUpstreamAnswer(
+  reply: DnsMessage | null, qtype: ResolvedQtype,
+): UpstreamAnswer | null {
+  if (!reply) return null;
+  const wanted = qtype === 'AAAA' ? RRType.AAAA : RRType.A;
+  return {
+    addresses: reply.answers
+      .filter((rr) => rr.data.type === wanted)
+      .map((rr) => (rr.data as ARecordData).address.toString()),
+    records: reply.answers,
+    nxdomain: reply.flags.rcode === DnsRcode.NXDOMAIN,
+  };
 }
 
 // ─── Class ─────────────────────────────────────────────────────────────
@@ -323,6 +346,11 @@ export abstract class LinuxMachine extends EndHost
         const server = parseDnsServerLiteral(serverIp);
         if (!server) return null;
         return this.queryDnsServerSync(server, name, qtype);
+      },
+      queryAsync: async (serverIp, name, qtype) => {
+        const server = parseDnsServerLiteral(serverIp);
+        if (!server) return null;
+        return this.queryDnsServer(server, name, qtype);
       },
     });
     // Cabled hosts resolve names over the wire (no registry scan); and
@@ -643,30 +671,17 @@ export abstract class LinuxMachine extends EndHost
         // serveur n'a aucune raison de renvoyer les RRSIG. `tls` bascule
         // le transport sur le 853 chiffré (RFC 7858) ; le service décide,
         // celui-ci exécute.
-        queryUpstream: async (server, name, dnssecOk, encrypted) => {
+        queryUpstream: async (server, name, qtype, dnssecOk, encrypted) => {
           let serverIP: IPAddress;
           try { serverIP = new IPAddress(server); } catch { return null; }
           const reply = await this.queryDnsServer(
-            serverIP, name, 'A', 2000, { dnssecOk, tls: encrypted });
-          if (!reply) return null;
-          return {
-            addresses: reply.answers
-              .filter((rr) => rr.data.type === RRType.A)
-              .map((rr) => (rr.data as ARecordData).address.toString()),
-            records: reply.answers,
-          };
+            serverIP, name, qtype, 2000, { dnssecOk, tls: encrypted });
+          return readUpstreamAnswer(reply, qtype);
         },
-        queryUpstreamSync: (server, name) => {
+        queryUpstreamSync: (server, name, qtype) => {
           let serverIP: IPAddress;
           try { serverIP = new IPAddress(server); } catch { return null; }
-          const reply = this.queryDnsServerSync(serverIP, name, 'A');
-          if (!reply) return null;
-          return {
-            addresses: reply.answers
-              .filter((rr) => rr.data.type === RRType.A)
-              .map((rr) => (rr.data as ARecordData).address.toString()),
-            records: reply.answers,
-          };
+          return readUpstreamAnswer(this.queryDnsServerSync(serverIP, name, qtype), qtype);
         },
         validate: (records) => this.validateDnssec(records),
         hasTrustAnchors: () => this.dnssecAnchors.length > 0,
@@ -777,28 +792,54 @@ export abstract class LinuxMachine extends EndHost
     } catch { /* déjà lié */ }
   }
 
+  /**
+   * Le type demandé, quand le stub sait le résoudre. Tout le reste (MX,
+   * TXT, SRV, PTR…) ne passe pas par le résolveur du stub — il n'a ni
+   * cache ni sélection de serveur pour ces types.
+   */
+  private stubQtype(question: DnsMessage['questions'][number]): ResolvedQtype | null {
+    if (question.qtype === RRType.A) return 'A';
+    if (question.qtype === RRType.AAAA) return 'AAAA';
+    return null;
+  }
+
   private answerResolvedQuerySync(query: DnsMessage): DnsMessage | null {
     const question = query.questions[0];
     if (!question) return buildLegacyResponseMessage(query, DnsRcode.FORMERR, []);
-    const outcome = this.getResolvedService().resolveSync(question.qname);
+    const qtype = this.stubQtype(question);
+    if (!qtype) return buildLegacyResponseMessage(query, 'NOERROR', []);
+    const outcome = this.getResolvedService().resolveSync(question.qname, qtype);
     if (!outcome) return null;
-    return this.renderResolvedAnswer(query, question.qname, outcome.addresses);
+    return this.renderResolvedAnswer(query, question.qname, qtype, outcome);
   }
 
+  /**
+   * Une réponse vide ne vaut pas SERVFAIL : un nom qui existe en A mais
+   * pas en AAAA doit rendre NOERROR sans réponse (NODATA), sans quoi
+   * toute recherche double famille — `getent hosts`, `ahosts` — croit à
+   * un échec et jette la moitié qui avait pourtant abouti.
+   */
   private renderResolvedAnswer(
-    query: DnsMessage, qname: string, addresses: readonly string[],
+    query: DnsMessage, qname: string, qtype: ResolvedQtype,
+    outcome: ResolvedQueryOutcome,
   ): DnsMessage {
-    if (addresses.length === 0) return buildLegacyResponseMessage(query, 'SERVFAIL', []);
-    return buildLegacyResponseMessage(query, 'NOERROR', addresses.map((ip) => ({
-      name: qname, type: 'A' as const, value: ip, ttl: 60,
+    if (outcome.addresses.length === 0) {
+      if (outcome.verdict === 'nxdomain') return buildLegacyResponseMessage(query, 'NXDOMAIN', []);
+      if (outcome.verdict === 'nodata') return buildLegacyResponseMessage(query, 'NOERROR', []);
+      return buildLegacyResponseMessage(query, 'SERVFAIL', []);
+    }
+    return buildLegacyResponseMessage(query, 'NOERROR', outcome.addresses.map((ip) => ({
+      name: qname, type: qtype, value: ip, ttl: 60,
     })));
   }
 
   private async answerResolvedQuery(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
     if (!question) return buildLegacyResponseMessage(query, DnsRcode.FORMERR, []);
-    const outcome = await this.getResolvedService().resolve(question.qname);
-    return this.renderResolvedAnswer(query, question.qname, outcome.addresses);
+    const qtype = this.stubQtype(question);
+    if (!qtype) return buildLegacyResponseMessage(query, 'NOERROR', []);
+    const outcome = await this.getResolvedService().resolve(question.qname, qtype);
+    return this.renderResolvedAnswer(query, question.qname, qtype, outcome);
   }
 
   private answerDnsQuery(query: DnsMessage): DnsMessage {
@@ -2367,8 +2408,8 @@ export abstract class LinuxMachine extends EndHost
   private async resolveHostnameOverWire(name: string): Promise<IPAddress | null> {
     try { return new IPAddress(name); } catch { void 0; }
 
-    const r = this.executor.nss.lookup<NssHostEntry[]>(
-      'hosts', s => s.gethostbyname?.(name, 2),
+    const r = await this.executor.nss.lookupAsync<NssHostEntry[]>(
+      'hosts', s => s.gethostbynameAsync?.(name, 2) ?? s.gethostbyname?.(name, 2),
     );
     if (r.status === 'SUCCESS' && r.entry) {
       for (const h of r.entry) {
@@ -2385,8 +2426,8 @@ export abstract class LinuxMachine extends EndHost
   private async resolveHostname6OverWire(name: string): Promise<IPv6Address | null> {
     try { return new IPv6Address(name); } catch { void 0; }
 
-    const r = this.executor.nss.lookup<NssHostEntry[]>(
-      'hosts', s => s.gethostbyname?.(name, 10),
+    const r = await this.executor.nss.lookupAsync<NssHostEntry[]>(
+      'hosts', s => s.gethostbynameAsync?.(name, 10) ?? s.gethostbyname?.(name, 10),
     );
     if (r.status === 'SUCCESS' && r.entry) {
       for (const h of r.entry) {
@@ -2595,6 +2636,9 @@ export abstract class LinuxMachine extends EndHost
       resolveHostname6: (name: string): Promise<IPv6Address | null> => {
         return this.resolveHostname6OverWire(name);
       },
+      // Repli synchrone : ne voit ni DNSSEC ni DoT, faute de pouvoir
+      // attendre. Les appelants qui peuvent attendre prennent
+      // `resolveHostname`.
       resolveHostnameSync: (name: string): IPAddress | null => {
         try { return new IPAddress(name); } catch { /* not a literal address */ }
         const r = this.executor.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));

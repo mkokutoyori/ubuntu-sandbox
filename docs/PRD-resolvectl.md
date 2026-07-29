@@ -224,19 +224,35 @@ documentation et ne jamais faire croire à une résolution qui n'a pas
 lieu. Un réglage accepté qui ne fait rien est le défaut que toute cette
 série corrige ; le répéter ici serait incohérent.
 
-### 7.1 Ce que DNSSEC et DoT coûtent au chemin synchrone
+### 7.1 Le chemin asynchrone de la base `hosts`
 
 Valider demande des allers-retours supplémentaires ; chiffrer demande une
 poignée de main. Les deux imposent le chemin asynchrone, alors que
-`INssSource.gethostbyname` est synchrone de bout en bout. Conséquence
-mesurée, assumée : sous `DNSSEC=` actif (ancre posée) ou `DNSOverTLS≠no`,
-un `getent hosts` **à froid** ne rend rien — le stub ne peut pas rendre la
-main avant d'avoir la réponse. Une fois le nom en cache, le chemin
-synchrone repasse normalement.
+`INssSource` était synchrone de bout en bout : sous `DNSSEC=` actif ou
+`DNSOverTLS≠no`, un `getent hosts` **à froid** ne rendait rien, et le
+disait comme un nom inconnu.
 
-Rendre ce cas correct demanderait de passer `INssSource` en asynchrone, ce
-qui touche `getent`, `ping`, `curl` et toute résolution de nom d'hôte :
-c'est un chantier séparé, pas une extension de celui-ci.
+C'est corrigé, pour la seule base qui en a besoin. Les autres — `passwd`,
+`group`, `services`… — se lisent dans le VFS et restent réellement
+synchrones ; leur donner un chemin asynchrone n'aurait rien apporté.
+
+| Élément | Ce qui a changé |
+|---|---|
+| `INssSource` | Jumeaux **optionnels** `gethostbynameAsync`/`gethostbyaddrAsync`. Une source qui ne les implémente pas — `files` — reste interrogée par sa méthode synchrone |
+| `NameServiceSwitch` | `lookupAsync`/`lookupViaAsync`. La marche `[STATUS=action]` est extraite dans un walker unique que les deux chemins pilotent, pour qu'ils ne puissent pas décider différemment |
+| `DnsNssSource` | `queryAsync` sur le résolveur de fil ; l'extraction message → `NssResult` est partagée avec le chemin synchrone |
+| `getent` | Passe du `switch` synchrone du dispatcher au registre des commandes, donc au chemin asynchrone. Seules les bases `hosts`/`ahosts*` l'empruntent ; les autres repartent sur l'implémentation inchangée |
+| `resolveHostname`/`6` | Déjà `async` de signature, ils appelaient une résolution synchrone. `ping`, `traceroute` et les autres en profitent sans changer |
+| `curl` | `fetchHttp` attend la résolution ; le dial lui-même reste synchrone |
+
+**Limite restante, mesurée.** Un `getent` atteint par un chemin
+irréductiblement synchrone — le collecteur du bash interne, appelé pour
+les imbrications profondes — retombe sur `getentSync` et ne voit donc ni
+DNSSEC ni DoT. Un script lancé par `bash script.sh` n'est *pas* concerné :
+le dispatcher route déjà cette forme vers son jumeau asynchrone.
+`ssh` non plus n'a pas de chemin asynchrone : `runSshClient` est
+synchrone de bout en bout et résout surtout par la topologie, pas par
+NSS ; `resolveHostnameSync` lui reste réservé, avec la même limite.
 
 ---
 

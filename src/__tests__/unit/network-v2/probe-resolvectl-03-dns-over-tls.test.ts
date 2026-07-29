@@ -222,21 +222,16 @@ describe('Scénario 5 — le stub reste utilisable sous DoT', () => {
     ).not.toContain('10.0.0.50');
   }, LONG);
 
-  it('gap confirmé : `getent` à froid ne peut pas attendre la poignée de main', async () => {
+  it('`getent` répond à froid, sans requête préalable', async () => {
     const { pc } = await lab();
     await pc.executeCommand('sudo resolvectl dnsovertls eth0 yes');
     await pc.executeCommand("sudo sh -c 'printf \"nameserver 127.0.0.53\\n\" > /etc/resolv.conf'");
 
-    // `INssSource.gethostbyname` est synchrone de bout en bout : il ne
-    // peut pas attendre une poignée de main TLS. Le cache du stub est ce
-    // qui rend le chemin NSS praticable ; à froid, il n'y a rien à servir.
-    expect(await pc.executeCommand('getent hosts web.lab.local')).not.toContain('10.0.0.50');
-
-    await pc.executeCommand('resolvectl query web.lab.local');
-    expect(
-      await pc.executeCommand('getent hosts web.lab.local'),
-      'une fois la réponse en cache, le chemin synchrone repasse',
-    ).toContain('10.0.0.50');
+    // Ce cas documentait la limite du §7.1 : `INssSource` étant synchrone
+    // de bout en bout, seul un cache déjà chaud rendait `getent`
+    // utilisable sous DoT. La base `hosts` a désormais un chemin
+    // asynchrone (`probe-resolvectl-04`), et la limite est levée.
+    expect(await pc.executeCommand('getent hosts web.lab.local')).toContain('10.0.0.50');
   }, LONG);
 });
 

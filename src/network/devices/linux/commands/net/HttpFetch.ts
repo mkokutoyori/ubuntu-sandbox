@@ -14,10 +14,15 @@ export type HttpFetchResult =
   | { ok: true; host: string; port: number; response: NonNullable<HttpDialResult['response']> }
   | { ok: false; reason: 'bad-url' | 'unresolved-host' | 'refused'; host?: string; port?: number };
 
-export function fetchHttp(ctx: LinuxCommandContext, url: string): HttpFetchResult {
+/**
+ * Asynchrone pour la seule résolution du nom : le reste du dial est
+ * synchrone. C'est la résolution qui doit pouvoir attendre, puisqu'elle
+ * peut passer par le stub, valider (DNSSEC) ou chiffrer (DoT).
+ */
+export async function fetchHttp(ctx: LinuxCommandContext, url: string): Promise<HttpFetchResult> {
   const parsed = parseHttpUrl(url);
   if (!parsed) return { ok: false, reason: 'bad-url' };
-  const ip = ctx.net.resolveHostnameSync(parsed.host);
+  const ip = await ctx.net.resolveHostname(parsed.host);
   if (!ip) return { ok: false, reason: 'unresolved-host', host: parsed.host, port: parsed.port };
   const result = dialHttp({
     tcpStack: ctx.net.getTcpStack(), targetIp: ip.toString(), port: parsed.port, path: parsed.path,

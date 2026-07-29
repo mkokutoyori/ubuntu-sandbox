@@ -114,6 +114,9 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
       if (current) current.qtype = pendingQtype;
     } else if (arg.startsWith('+') || arg.startsWith('-')) continue;
     else if (current && rrTypeFromName(arg) !== null) current.qtype = arg.toUpperCase();
+    // `dig AAAA example.com` — le vrai dig reconnaît un type avant le nom.
+    // Sans ceci, `AAAA` devenait le nom cherché et la requête partait en A.
+    else if (!current && rrTypeFromName(arg) !== null) pendingQtype = arg.toUpperCase();
     else if (current && CLASS_NAMES[arg.toUpperCase()] !== undefined) current.qclass = CLASS_NAMES[arg.toUpperCase()];
     else {
       if (current) groups.push(current);

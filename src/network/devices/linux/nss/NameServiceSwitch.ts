@@ -180,40 +180,93 @@ export class NameServiceSwitch {
     return result;
   }
 
+  /**
+   * La marche `[STATUS=action]` de glibc, isolée de la façon dont chaque
+   * source est interrogée. Les chemins synchrone et asynchrone la
+   * pilotent tous les deux : dupliquer ces règles serait s'exposer à ce
+   * que `getent hosts` et `ping` finissent par ne plus décider pareil.
+   */
+  private startWalk<T>() {
+    let sawNotFound = false;
+    let sawUnavail = false;
+    let merged: T | undefined;
+
+    return {
+      /** Rend le résultat final si la marche s'arrête ici, sinon null. */
+      step(spec: NssSourceSpec, r: NssResult<T>): NssResult<T> | null {
+        if (r.status === 'NOTFOUND') sawNotFound = true;
+        if (r.status === 'UNAVAIL') sawUnavail = true;
+
+        const action = effectiveAction(spec, r.status);
+
+        if (r.status === 'SUCCESS' && r.entry !== undefined) {
+          merged = merged === undefined ? r.entry : mergeEntries(merged, r.entry);
+          if (action !== 'merge') return { status: 'SUCCESS', entry: merged };
+          return null;
+        }
+        if (action === 'return') {
+          return merged === undefined ? r : { status: 'SUCCESS', entry: merged };
+        }
+        return null;
+      },
+      finish(): NssResult<T> {
+        if (merged !== undefined) return { status: 'SUCCESS', entry: merged };
+        if (sawNotFound) return { status: 'NOTFOUND' };
+        if (sawUnavail) return { status: 'UNAVAIL' };
+        return { status: 'NOTFOUND' };
+      },
+    };
+  }
+
   private lookupUncached<T>(
     database: string,
     specs: NssSourceSpec[],
     invoke: (source: INssSource) => NssResult<T> | undefined,
   ): NssResult<T> {
     void database;
-    let sawNotFound = false;
-    let sawUnavail = false;
-    let merged: T | undefined;
+    const walk = this.startWalk<T>();
 
     for (const spec of specs) {
       const src = this.sources.get(spec.name);
       const r: NssResult<T> = src ? (invoke(src) ?? { status: 'UNAVAIL' }) : { status: 'UNAVAIL' };
-
-      if (r.status === 'NOTFOUND') sawNotFound = true;
-      if (r.status === 'UNAVAIL')  sawUnavail = true;
-
-      const action = effectiveAction(spec, r.status);
-
-      if (r.status === 'SUCCESS' && r.entry !== undefined) {
-        merged = merged === undefined ? r.entry : mergeEntries(merged, r.entry);
-        if (action !== 'merge') return { status: 'SUCCESS', entry: merged };
-        continue;
-      }
-
-      if (action === 'return') {
-        return merged === undefined ? r : { status: 'SUCCESS', entry: merged };
-      }
+      const stop = walk.step(spec, r);
+      if (stop) return stop;
     }
+    return walk.finish();
+  }
 
-    if (merged !== undefined) return { status: 'SUCCESS', entry: merged };
-    if (sawNotFound) return { status: 'NOTFOUND' };
-    if (sawUnavail)  return { status: 'UNAVAIL' };
-    return { status: 'NOTFOUND' };
+  /**
+   * Variante asynchrone de {@link lookup}, pour la base `hosts`. Une
+   * source sans jumeau asynchrone est interrogée par sa méthode
+   * synchrone : `files` lit le VFS et n'a rien à attendre.
+   *
+   * Rien n'est mis en cache ici — `cacheKeyFor` refuse déjà toute
+   * déclaration contenant `dns`, faute de révision pour l'estampiller.
+   */
+  async lookupAsync<T>(
+    database: string,
+    invoke: (source: INssSource) => NssResult<T> | Promise<NssResult<T>> | undefined,
+  ): Promise<NssResult<T>> {
+    const specs = sourcesFor(this.parsedConfig(), database);
+    const walk = this.startWalk<T>();
+
+    for (const spec of specs) {
+      const src = this.sources.get(spec.name);
+      const r: NssResult<T> = src ? (await invoke(src) ?? { status: 'UNAVAIL' }) : { status: 'UNAVAIL' };
+      const stop = walk.step(spec, r);
+      if (stop) return stop;
+    }
+    return walk.finish();
+  }
+
+  /** Contrepartie asynchrone de {@link lookupVia} (`getent -s <source>`). */
+  async lookupViaAsync<T>(
+    sourceName: string,
+    invoke: (source: INssSource) => NssResult<T> | Promise<NssResult<T>> | undefined,
+  ): Promise<NssResult<T>> {
+    const src = this.sources.get(sourceName);
+    if (!src) return { status: 'UNAVAIL' };
+    return await invoke(src) ?? { status: 'UNAVAIL' };
   }
 
   lookupVia<T>(

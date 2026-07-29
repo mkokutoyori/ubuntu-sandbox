@@ -137,7 +137,8 @@ import { DnsNssSource } from './nss/DnsNssSource';
 import { DynamicUserTable } from './nss/DynamicUserTable';
 import { SystemdNssSource } from './nss/SystemdNssSource';
 import { ETC_NETWORKS, ETC_PROTOCOLS, ETC_RPC, ETC_SERVICES } from './nss/SystemFiles';
-import { runGetent } from './nss/GetentCommand';
+import { runGetent, runGetentAsync } from './nss/GetentCommand';
+import type { GetentResult } from './nss/GetentCommand';
 import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 
@@ -2666,6 +2667,20 @@ export class LinuxCommandExecutor {
     return this.applyInterpreterResult(result, initialPwd, initialVars);
   }
 
+  /**
+   * `getent`, avec le droit d'attendre. Seule la base `hosts` en profite,
+   * mais c'est celle qui compte : sous DNSSEC ou DoT, la réponse ne peut
+   * pas revenir dans la pile d'appel de l'appelant.
+   */
+  getentAsync(args: string[]): Promise<GetentResult> {
+    return runGetentAsync(this.nss, args, this.filesNss);
+  }
+
+  /** Repli synchrone, pour les appels imbriqués qui ne peuvent pas attendre. */
+  getentSync(args: string[]): GetentResult {
+    return runGetent(this.nss, args, this.filesNss);
+  }
+
   private dispatchMaybeNetwork(
     argv: string[],
     env?: Record<string, string>,
@@ -4050,7 +4065,7 @@ export class LinuxCommandExecutor {
         // Real getent consults `/etc/nsswitch.conf` and walks the
         // declared sources per database. All output / exit-code logic
         // lives in the NSS module; we just pass the argv through.
-        return runGetent(this.nss, args, this.filesNss);
+        return this.getentSync(args);
       }
       case 'sudo': return this.handleSudoCmd(args);
 

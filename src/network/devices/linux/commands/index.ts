@@ -44,6 +44,7 @@ import { tcpdumpCommand } from './net/Tcpdump';
 import { arpingCommand } from './net/Arping';
 import { netplanCommand } from './net/Netplan';
 import { resolvectlCommand } from './net/Resolvectl';
+import { getentCommand } from './nss/Getent';
 import { networkctlCommand } from './net/Networkctl';
 import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
@@ -131,6 +132,7 @@ export {
   netplanCommand,
   networkctlCommand,
   resolvectlCommand,
+  getentCommand,
   nmcliCommand,
   ifupCommand,
   ifdownCommand,
@@ -228,6 +230,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   netplanCommand,
   networkctlCommand,
   resolvectlCommand,
+  getentCommand,
   nmcliCommand,
   ifupCommand,
   ifdownCommand,

@@ -135,6 +135,9 @@ export function parseResolvedConf(text: string | null): ResolvedGlobalConfig {
   return cfg;
 }
 
+/** Les types que le stub sait résoudre. */
+export type ResolvedQtype = 'A' | 'AAAA';
+
 export interface ResolvedQueryOutcome {
   addresses: string[];
   /** D'où vient la réponse — `resolvectl query` le dit à l'opérateur. */
@@ -149,6 +152,12 @@ export interface ResolvedQueryOutcome {
   dnssec: DnssecStatus | 'unset';
   /** True quand la réponse a voyagé chiffrée (DNS-over-TLS). */
   encrypted: boolean;
+  /**
+   * Ce que l'amont a répondu. `nodata` — le nom existe mais pas pour ce
+   * type — ne se confond pas avec `nxdomain` : une recherche A+AAAA dont
+   * seule la moitié existe est le cas courant, pas une erreur.
+   */
+  verdict: 'answer' | 'nodata' | 'nxdomain' | 'failure';
   /** Motif du refus, quand la réponse a été écartée. */
   refusedBecause?: 'bogus' | 'unsigned-but-required' | 'no-encrypted-transport';
 }
@@ -157,12 +166,15 @@ export interface UpstreamAnswer {
   addresses: string[];
   /** Enregistrements bruts, RRSIG compris quand le bit DO est posé. */
   records: readonly ResourceRecord<ResourceRecordData>[];
+  /** Le nom est inconnu de la zone, tous types confondus. */
+  nxdomain?: boolean;
 }
 
 export interface ResolvedDeps {
   /** Interroge réellement un serveur sur le câble. Null = pas de réponse. */
   queryUpstream(
-    server: string, name: string, dnssecOk: boolean, encrypted: boolean,
+    server: string, name: string, qtype: ResolvedQtype,
+    dnssecOk: boolean, encrypted: boolean,
   ): Promise<UpstreamAnswer | null>;
   /**
    * Variante synchrone, utilisée quand il n'y a rien à valider. Valider
@@ -171,7 +183,7 @@ export interface ResolvedDeps {
    * résolveur NSS synchrone du système peut continuer d'interroger le
    * stub dans la même pile d'appel.
    */
-  queryUpstreamSync?(server: string, name: string): UpstreamAnswer | null;
+  queryUpstreamSync?(server: string, name: string, qtype: ResolvedQtype): UpstreamAnswer | null;
   /** Valide une réponse signée en remontant la chaîne de confiance. */
   validate?(records: readonly ResourceRecord<ResourceRecordData>[]): Promise<DnssecStatus>;
   /**
@@ -195,6 +207,7 @@ export class ResolvedService {
   private readonly answers = new Map<string, {
     addresses: string[]; expiresAtMs: number;
     dnssec: DnssecStatus | 'unset'; encrypted: boolean;
+    verdict: ResolvedQueryOutcome['verdict'];
   }>();
 
   constructor(private readonly deps: ResolvedDeps) {
@@ -323,18 +336,27 @@ export class ResolvedService {
    * validation. Rend null quand la validation s'impose — l'appelant doit
    * alors passer par `resolve`.
    */
-  resolveSync(name: string, ttlSeconds = 60): ResolvedQueryOutcome | null {
+  /** La clé de cache : un nom seul ne suffit pas, A et AAAA diffèrent. */
+  private cacheKey(name: string, qtype: ResolvedQtype): string {
+    return `${name}|${qtype}`;
+  }
+
+  resolveSync(
+    name: string, qtype: ResolvedQtype = 'A', ttlSeconds = 60,
+  ): ResolvedQueryOutcome | null {
     const key = name.toLowerCase().replace(/\.$/, '');
+    const ck = this.cacheKey(key, qtype);
     const now = (this.deps.now ?? (() => Date.now()))();
 
     if (this.global.cache) {
-      const cached = this.answers.get(key);
+      const cached = this.answers.get(ck);
       if (cached && cached.expiresAtMs > now) {
         this.stats.transactions++;
         this.stats.cacheHits++;
         return {
           addresses: [...cached.addresses], origin: 'cache',
           link: null, server: null, dnssec: cached.dnssec, encrypted: cached.encrypted,
+          verdict: cached.verdict,
         };
       }
     }
@@ -343,32 +365,44 @@ export class ResolvedService {
 
     this.stats.transactions++;
     if (this.global.cache) {
-      this.answers.delete(key);
+      this.answers.delete(ck);
       this.stats.cacheMisses++;
     }
     if (!server) {
       this.stats.failedTransactions++;
       return {
         addresses: [], origin: 'none', link: null, server: null,
-        dnssec: 'unset', encrypted: false,
+        dnssec: 'unset', encrypted: false, verdict: 'failure',
       };
     }
-    const answer = this.deps.queryUpstreamSync(server, key);
+    const answer = this.deps.queryUpstreamSync(server, key, qtype);
     if (!answer || answer.addresses.length === 0) {
       this.stats.failedTransactions++;
-      return { addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted: false };
+      return {
+        addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted: false,
+        verdict: this.emptyVerdict(answer),
+      };
     }
     if (this.global.cache) {
-      this.answers.set(key, {
+      this.answers.set(ck, {
         addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
-        dnssec: 'unset', encrypted: false,
+        dnssec: 'unset', encrypted: false, verdict: 'answer',
       });
       this.stats.currentCacheSize = this.answers.size;
     }
     return {
       addresses: answer.addresses, origin: 'network', link, server,
-      dnssec: 'unset', encrypted: false,
+      dnssec: 'unset', encrypted: false, verdict: 'answer',
     };
+  }
+
+  /**
+   * Une réponse vide n'est pas forcément un échec : le serveur a pu dire
+   * « ce nom existe, mais pas pour ce type ».
+   */
+  private emptyVerdict(answer: UpstreamAnswer | null): ResolvedQueryOutcome['verdict'] {
+    if (!answer) return 'failure';
+    return answer.nxdomain ? 'nxdomain' : 'nodata';
   }
 
   /**
@@ -377,21 +411,25 @@ export class ResolvedService {
    * chiffrer demande une poignée de main et que valider demande de vraies
    * requêtes vers le haut de la chaîne de confiance (DNSKEY, DS).
    */
-  async resolve(name: string, ttlSeconds = 60): Promise<ResolvedQueryOutcome> {
+  async resolve(
+    name: string, qtype: ResolvedQtype = 'A', ttlSeconds = 60,
+  ): Promise<ResolvedQueryOutcome> {
     this.stats.transactions++;
     const key = name.toLowerCase().replace(/\.$/, '');
+    const ck = this.cacheKey(key, qtype);
     const now = (this.deps.now ?? (() => Date.now()))();
 
     if (this.global.cache) {
-      const cached = this.answers.get(key);
+      const cached = this.answers.get(ck);
       if (cached && cached.expiresAtMs > now) {
         this.stats.cacheHits++;
         return {
           addresses: [...cached.addresses], origin: 'cache',
           link: null, server: null, dnssec: cached.dnssec, encrypted: cached.encrypted,
+          verdict: cached.verdict,
         };
       }
-      if (cached) this.answers.delete(key);
+      if (cached) this.answers.delete(ck);
       this.stats.cacheMisses++;
     }
 
@@ -400,7 +438,7 @@ export class ResolvedService {
       this.stats.failedTransactions++;
       return {
         addresses: [], origin: 'none', link: null, server: null,
-        dnssec: 'unset', encrypted: false,
+        dnssec: 'unset', encrypted: false, verdict: 'failure',
       };
     }
 
@@ -411,7 +449,7 @@ export class ResolvedService {
     let answer: UpstreamAnswer | null = null;
     let encrypted = false;
     if (tls !== 'no') {
-      answer = await this.deps.queryUpstream(server, key, wantDnssec, true);
+      answer = await this.deps.queryUpstream(server, key, qtype, wantDnssec, true);
       encrypted = answer !== null;
     }
     // `yes` est strict : plutôt aucune réponse qu'une réponse en clair.
@@ -421,14 +459,18 @@ export class ResolvedService {
       this.stats.failedTransactions++;
       return {
         addresses: [], origin: 'none', link, server,
-        dnssec: 'unset', encrypted: false, refusedBecause: 'no-encrypted-transport',
+        dnssec: 'unset', encrypted: false, verdict: 'failure',
+        refusedBecause: 'no-encrypted-transport',
       };
     }
-    if (!answer) answer = await this.deps.queryUpstream(server, key, wantDnssec, false);
+    if (!answer) answer = await this.deps.queryUpstream(server, key, qtype, wantDnssec, false);
 
     if (!answer || answer.addresses.length === 0) {
       this.stats.failedTransactions++;
-      return { addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted };
+      return {
+        addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted,
+        verdict: this.emptyVerdict(answer),
+      };
     }
 
     let dnssec: DnssecStatus | 'unset' = 'unset';
@@ -442,26 +484,29 @@ export class ResolvedService {
         this.stats.failedTransactions++;
         return {
           addresses: [], origin: 'none', link, server,
-          dnssec, encrypted, refusedBecause: 'bogus',
+          dnssec, encrypted, verdict: 'failure', refusedBecause: 'bogus',
         };
       }
       if (dnssec === 'insecure' && mode === 'yes') {
         this.stats.failedTransactions++;
         return {
           addresses: [], origin: 'none', link, server,
-          dnssec, encrypted, refusedBecause: 'unsigned-but-required',
+          dnssec, encrypted, verdict: 'failure', refusedBecause: 'unsigned-but-required',
         };
       }
     }
 
     if (this.global.cache) {
-      this.answers.set(key, {
+      this.answers.set(ck, {
         addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
-        dnssec, encrypted,
+        dnssec, encrypted, verdict: 'answer',
       });
       this.stats.currentCacheSize = this.answers.size;
     }
-    return { addresses: answer.addresses, origin: 'network', link, server, dnssec, encrypted };
+    return {
+      addresses: answer.addresses, origin: 'network', link, server,
+      dnssec, encrypted, verdict: 'answer',
+    };
   }
 
   flushCaches(): void {
