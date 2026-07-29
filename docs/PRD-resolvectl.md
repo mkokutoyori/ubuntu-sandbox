@@ -367,9 +367,28 @@ C'est ce cache qu'un TTL nul vide, et c'est lui qui rend un adieu
 observable : sans écoute passive, une annonce partirait sans que rien
 ne puisse montrer qu'elle arrive.
 
-**Limites.** Le cache passif retient l'instance, son hôte et son port,
-pas ses métadonnées : le TXT reste demandé à la résolution. Le TTL des
-entrées entendues n'expire pas tout seul — seul un adieu les retire.
+**Expiration (§10).** Une entrée de ce cache vaut la durée annoncée, pas
+davantage. Un pair qui s'éteint brutalement n'émet aucun adieu : sans
+échéance, son service serait resté là indéfiniment. Une réannonce
+repousse l'échéance, ce qui est tout l'intérêt d'en émettre une.
+
+L'élagage se fait à la lecture et à chaque annonce entendue, plutôt que
+sur une minuterie par entrée. Le contrat observable — un service expiré
+n'est jamais rapporté — est tenu ; l'événement d'expiration part donc *à
+ou après* l'échéance, pas à la seconde près. Un cache passif n'a
+personne à prévenir dans l'intervalle.
+
+Le cache dit ce qu'on a **entendu** ; un parcours pose une vraie
+question. Les deux ne se contredisent pas : après expiration,
+`browse()` retrouve le service, simplement l'auditeur ne l'avait plus en
+mémoire. Une entrée expirée n'est pas une absence de service.
+
+**Limites.** Le cache retient l'instance, son hôte et son port, pas ses
+métadonnées : le TXT reste demandé à la résolution. Il n'y a pas de
+réinterrogation continue (§5.2), qui suppose un parcours actif inscrit
+dans la durée. Un adieu supprime immédiatement, là où la RFC recommande
+d'attendre une seconde pour laisser passer ce qui est en vol — sans
+effet observable sur une course que rien ici ne produit.
 
 ### 7.1 Le chemin asynchrone de la base `hosts`
 
@@ -409,8 +428,9 @@ NSS ; `resolveHostnameSync` lui reste réservé, avec la même limite.
 - **`resolvectl openpgp` / `tlsa`** : OPENPGPKEY et TLSA n'ont pas de
   source de données dans les zones du simulateur. `service` en a une
   depuis DNS-SD (§7.5) et existe.
-- **Expiration par TTL du cache passif de services** : une entrée
-  entendue n'est retirée que par un adieu explicite (§7.6).
+- **Réinterrogation continue** (RFC 6762 §5.2) : rafraîchir un
+  enregistrement à 80–95 % de son TTL suppose un parcours actif inscrit
+  dans la durée, que rien n'expose aujourd'hui.
 - **DoH et DoQ** : `DnsHttpsTransport`/`DnsQuicTransport` reposent encore
   sur `SimulatedTls` et migrent sous `PRD-HTTP.md`/`PRD-QUIC.md`.
 - **Épinglage du certificat DoT** (`DNSOverTLS=yes#nom`, vérification du

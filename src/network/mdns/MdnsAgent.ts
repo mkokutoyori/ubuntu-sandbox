@@ -39,6 +39,14 @@
  * soit pas décoratif, l'agent écoute aussi les annonces des autres et
  * tient un cache passif des services entendus — c'est lui qu'un TTL nul
  * vide, et il rend l'adieu observable.
+ *
+ * **Expiration (§10).** Une entrée de ce cache vaut la durée annoncée,
+ * pas davantage. Un pair qui s'éteint sans dire adieu ne laisse donc pas
+ * son service derrière lui indéfiniment : au bout du TTL, le cache
+ * l'oublie. C'est délibérément un cache *passif* — il n'y a pas de
+ * réinterrogation continue (§5.2), qui suppose un parcours actif ; un
+ * auditeur qui n'a rien réentendu depuis 120 s n'a effectivement plus
+ * de raison d'affirmer que le service est là.
  */
 import type { EndHost } from '@/network/devices/EndHost';
 import type { IPAddress, IPv6Address } from '@/network/core/types';
@@ -136,9 +144,20 @@ export class MdnsAgent {
   /**
    * Les services entendus des autres, appris de leurs annonces. Un TTL
    * nul les en retire (§10.1) : c'est ce qui donne un effet observable
-   * à un adieu.
+   * à un adieu. `expiresAtMs` porte l'échéance de §10.
    */
-  private readonly heard = new Map<string, { name: string; port: number; host: string }>();
+  private readonly heard = new Map<string, {
+    name: string; port: number; host: string; expiresAtMs: number;
+  }>();
+
+  /**
+   * L'horloge du cache. Injectable parce qu'un TTL DNS-SD vaut 120 s :
+   * sans cela, vérifier l'expiration demanderait d'attendre deux
+   * minutes, et l'on finirait par ne pas la vérifier du tout.
+   */
+  private nowMs: () => number = () => Date.now();
+
+  setClock(fn: () => number): void { this.nowMs = fn; }
 
   constructor(private readonly host: EndHost) {}
 
@@ -147,7 +166,32 @@ export class MdnsAgent {
 
   /** Les instances entendues sur le lien, telles que le cache les tient. */
   knownServices(): Array<{ name: string; port: number; host: string }> {
-    return [...this.heard.values()];
+    this.pruneExpired();
+    return [...this.heard.values()].map(({ name, port, host }) => ({ name, port, host }));
+  }
+
+  /**
+   * Retire les entrées dont la durée de vie est écoulée (§10).
+   *
+   * L'élagage se fait à la lecture et à chaque annonce entendue, plutôt
+   * que sur une minuterie par entrée : le contrat observable est qu'un
+   * service expiré ne soit jamais rapporté, et il est tenu. L'événement
+   * d'expiration part donc *à ou après* l'échéance, pas à la seconde
+   * près — un cache passif n'a personne à prévenir dans l'intervalle.
+   */
+  pruneExpired(): void {
+    const now = this.nowMs();
+    for (const [key, entry] of this.heard) {
+      if (entry.expiresAtMs > now) continue;
+      this.heard.delete(key);
+      getDefaultEventBus().publish({
+        topic: 'mdns.service.expired',
+        payload: {
+          deviceId: this.host.getId(), hostname: this.host.getHostname(),
+          name: entry.name, port: entry.port,
+        },
+      });
+    }
   }
 
   /**
@@ -176,12 +220,21 @@ export class MdnsAgent {
    * existe et où ; le même SRV à TTL nul dit qu'elle s'en va.
    */
   private observe(response: DnsMessage): void {
+    this.pruneExpired();
+    const now = this.nowMs();
     for (const rr of response.answers) {
       if (rr.data.type !== RRType.SRV) continue;
       const name = rr.name.toLowerCase().replace(/\.$/, '');
+      // §10.1 : un TTL nul est un adieu. La RFC recommande d'attendre une
+      // seconde avant de supprimer, pour laisser passer ce qui est en
+      // vol ; on supprime tout de suite, ce qui n'a d'effet observable
+      // que sur une course que rien ici ne produit.
       if (rr.ttl === 0) { this.heard.delete(name); continue; }
       const srv = rr.data as { port: number; target: string };
-      this.heard.set(name, { name, port: srv.port, host: srv.target });
+      this.heard.set(name, {
+        name, port: srv.port, host: srv.target,
+        expiresAtMs: now + rr.ttl * 1000,
+      });
     }
   }
 

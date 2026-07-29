@@ -49,4 +49,5 @@ export type MdnsDomainEvent =
   | { topic: 'mdns.conflict.detected'; payload: MdnsConflictPayload }
   | { topic: 'mdns.name.claimed'; payload: MdnsNameClaimedPayload }
   | { topic: 'mdns.service.announced'; payload: MdnsServicePayload }
-  | { topic: 'mdns.service.goodbye'; payload: MdnsServicePayload };
+  | { topic: 'mdns.service.goodbye'; payload: MdnsServicePayload }
+  | { topic: 'mdns.service.expired'; payload: MdnsServicePayload };
