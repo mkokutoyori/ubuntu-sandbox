@@ -37,6 +37,17 @@ export class PrivilegeEnforcer {
 
   private get currentUser(): string { return this.context.currentUser; }
 
+  /**
+   * The roles the session has enabled, or `null` when every granted role
+   * counts. Read from the live session so a `SET ROLE` issued mid-session
+   * takes effect on the very next statement.
+   */
+  private get enabledRoles(): ReadonlySet<string> | null {
+    const session = this.context.session as
+      { getEnabledRoles?: () => ReadonlySet<string> | null } | undefined;
+    return session?.getEnabledRoles?.() ?? null;
+  }
+
   /** Throws ORA-01031 if the current user lacks every one of the listed system privileges. */
   requireSystemPrivilege(...privileges: string[]): void {
     const user = this.currentUser;
@@ -48,7 +59,7 @@ export class PrivilegeEnforcer {
     const engine = this.catalog.getSecurityEngine();
     if (!engine) return;
     for (const p of privileges) {
-      if (engine.privileges.hasSystemPrivilege(user, p)) return;
+      if (engine.privileges.hasSystemPrivilege(user, p, this.enabledRoles)) return;
     }
     throw new OracleError(1031, 'insufficient privileges');
   }
@@ -64,7 +75,7 @@ export class PrivilegeEnforcer {
     if (targetSchema.toUpperCase() === user) return; // own schema
     const engine = this.catalog.getSecurityEngine();
     if (!engine) return;
-    if (!engine.privileges.hasSystemPrivilege(user, anyPrivilege)) {
+    if (!engine.privileges.hasSystemPrivilege(user, anyPrivilege, this.enabledRoles)) {
       throw new OracleError(1031, 'insufficient privileges');
     }
   }
@@ -83,11 +94,12 @@ export class PrivilegeEnforcer {
     if (targetUpper === user) return;
     const engine = this.catalog.getSecurityEngine();
     if (!engine) return;
-    if (engine.privileges.hasSystemPrivilege(user, `${operation} ANY TABLE`)) return;
+    const enabled = this.enabledRoles;
+    if (engine.privileges.hasSystemPrivilege(user, `${operation} ANY TABLE`, enabled)) return;
     const objNameUpper = objectName.toUpperCase();
-    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objNameUpper)) return;
+    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objNameUpper, enabled)) return;
     const hasAnyObjectPriv = OBJECT_PRIVILEGE_KINDS.some(op =>
-      engine.privileges.hasObjectPrivilege(user, op, targetUpper, objNameUpper));
+      engine.privileges.hasObjectPrivilege(user, op, targetUpper, objNameUpper, enabled));
     if (hasAnyObjectPriv) throw new OracleError(1031, 'insufficient privileges');
     throw new OracleError(942, 'table or view does not exist');
   }
@@ -132,7 +144,7 @@ export class PrivilegeEnforcer {
     const user = this.currentUser;
     if (user === 'SYS' || schema === user) return;
     const engine = this.catalog.getSecurityEngine();
-    if (!engine || engine.privileges.isDba(user)) return;
+    if (!engine || engine.privileges.isDba(user, this.enabledRoles)) return;
     const tabPrivs = this.catalog.getTablePrivilegeGrants();
     const holdsAllWithGrantOption = privileges.every(priv =>
       tabPrivs.some(p =>

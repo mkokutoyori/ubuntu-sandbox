@@ -615,6 +615,8 @@ export class OracleExecutor extends BaseExecutor {
         return this.executeSetTransaction(statement);
       case 'SetConstraintsStatement':
         return this.executeSetConstraints(statement);
+      case 'SetRoleStatement':
+        return this.executeSetRole(statement);
       case 'StartupStatement': return this.instanceAdmin.executeStartup(statement);
       case 'ShutdownStatement': return this.instanceAdmin.executeShutdown(statement);
       case 'AlterSystemStatement': return this.instanceAdmin.executeAlterSystem(statement);
@@ -761,6 +763,46 @@ export class OracleExecutor extends BaseExecutor {
       this.readOnlyTransaction = false;
     }
     return emptyResult('Transaction set.');
+  }
+
+  /**
+   * `SET ROLE` — replaces the session's enabled-role set wholesale.
+   *
+   * Only roles actually granted to the session user may be enabled;
+   * anything else is ORA-01924, and the statement is refused as a whole
+   * so a session never ends up half-switched. A role created
+   * `IDENTIFIED BY` demands its password (ORA-01979).
+   */
+  private executeSetRole(
+    stmt: import('../engine/parser/ASTNode').SetRoleStatement,
+  ): ResultSet {
+    const session = this.context.session as
+      { setEnabledRoles?: (roles: Iterable<string> | null) => void } | undefined;
+    const catalog = this.catalog as OracleCatalog;
+    const engine = catalog.getSecurityEngine();
+    const user = this.context.currentUser;
+    const granted = new Set(engine ? engine.privileges.getGrantedRoles(user) : []);
+
+    for (const { name, password } of stmt.roles) {
+      if (!granted.has(name)) {
+        throw new OracleError(1924, `role '${name}' not granted or does not exist`);
+      }
+      const required = catalog.getRolePassword(name);
+      if (required !== undefined && required !== password) {
+        throw new OracleError(1979, `missing or invalid password for role '${name}'`);
+      }
+    }
+
+    if (stmt.mode === 'NONE') {
+      session?.setEnabledRoles?.([]);
+    } else if (stmt.mode === 'ALL') {
+      const excluded = new Set(stmt.roles.map(r => r.name));
+      session?.setEnabledRoles?.(
+        excluded.size === 0 ? null : [...granted].filter(r => !excluded.has(r)));
+    } else {
+      session?.setEnabledRoles?.(stmt.roles.map(r => r.name));
+    }
+    return emptyResult('Role set.');
   }
 
   private requireWritableTransaction(): void {
@@ -1496,7 +1538,10 @@ export class OracleExecutor extends BaseExecutor {
     // (JOIN, GROUP BY, aggregates, HAVING, ORDER BY) can operate on
     // them exactly like a real table.
     const catalogName = ref.schema?.toUpperCase() === 'SYS' ? `SYS.${tableName}` : tableName;
-    const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(catalogName, this.context.currentUser);
+    const session = this.context.session as
+      { getEnabledRoles?: () => ReadonlySet<string> | null } | undefined;
+    const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(
+      catalogName, this.context.currentUser, session?.getEnabledRoles?.() ?? null);
     if (catalogResult && catalogResult.isQuery) {
       const prefix = alias || tableName;
       const columns: StorageColMeta[] = catalogResult.columns.map((c, i) => ({

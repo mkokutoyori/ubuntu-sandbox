@@ -1569,7 +1569,8 @@ export abstract class BaseParser {
     return { action: 'ADD_SUPPLEMENTAL_LOG_GROUP', logGroupName, columns, always };
   }
 
-  protected parseSetStatement(): import('./ASTNode').SetTransactionStatement | import('./ASTNode').SetConstraintsStatement {
+  protected parseSetStatement(): import('./ASTNode').SetTransactionStatement
+    | import('./ASTNode').SetConstraintsStatement | import('./ASTNode').SetRoleStatement {
     const pos = this.current().position;
     this.expectKeyword('SET');
     // SET TRANSACTION [READ ONLY|READ WRITE] [ISOLATION LEVEL …] [NAME 'x']
@@ -1603,11 +1604,40 @@ export abstract class BaseParser {
       this.consumeRestOfStatement();
       return { type: 'SetConstraintsStatement', position: pos, all, names: all ? undefined : names, mode };
     }
-    if (this.matchKeyword('ROLE')) {
-      this.consumeRestOfStatement();
-      return { type: 'SetTransactionStatement', position: pos } as import('./ASTNode').SetTransactionStatement;
-    }
+    if (this.matchKeyword('ROLE')) return this.parseSetRoleBody(pos);
     throw this.error(`Unsupported SET target: ${this.current().value}`);
+  }
+
+  /**
+   * Body of `SET ROLE`, after the `ROLE` keyword.
+   *
+   * `NONE` disables everything, `ALL [EXCEPT r, …]` enables every granted
+   * role but the named ones, and a bare list enables exactly those —
+   * each optionally carrying the password of a role created
+   * `IDENTIFIED BY`.
+   */
+  protected parseSetRoleBody(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').SetRoleStatement {
+    if (this.matchKeyword('NONE')) {
+      this.consumeRestOfStatement();
+      return { type: 'SetRoleStatement', position: pos, mode: 'NONE', roles: [] };
+    }
+    const roles: { name: string; password?: string }[] = [];
+    const all = this.matchKeyword('ALL');
+    if (all && !this.matchKeyword('EXCEPT')) {
+      this.consumeRestOfStatement();
+      return { type: 'SetRoleStatement', position: pos, mode: 'ALL', roles: [] };
+    }
+    do {
+      const name = this.expectIdentifier().toUpperCase();
+      let password: string | undefined;
+      if (this.matchKeyword('IDENTIFIED')) {
+        this.expectKeyword('BY');
+        password = this.expectIdentifierOrString();
+      }
+      roles.push({ name, password });
+    } while (this.match(TokenType.COMMA));
+    this.consumeRestOfStatement();
+    return { type: 'SetRoleStatement', position: pos, mode: all ? 'ALL' : 'LIST', roles };
   }
 
   protected parseFlashback(): import('./ASTNode').FlashbackStatement {

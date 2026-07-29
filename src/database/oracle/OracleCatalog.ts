@@ -1384,7 +1384,10 @@ export class OracleCatalog extends BaseCatalog {
 
   // ── Catalog view queries ─────────────────────────────────────────
 
-  queryCatalogView(viewName: string, currentUser: string): ResultSet | null {
+  queryCatalogView(
+    viewName: string, currentUser: string,
+    enabledRoles: ReadonlySet<string> | null = null,
+  ): ResultSet | null {
     const upper = viewName.toUpperCase();
 
     // V$ views
@@ -1429,6 +1432,7 @@ export class OracleCatalog extends BaseCatalog {
       runtime: this.instance.getRuntimeState(),
       catalog: this,
       currentUser,
+      enabledRoles,
     });
     if (fromRegistry) return fromRegistry;
 

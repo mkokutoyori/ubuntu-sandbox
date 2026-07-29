@@ -614,6 +614,18 @@ export interface SetTransactionStatement extends ASTNode {
   readOnly?: boolean;
 }
 
+/**
+ * `SET ROLE {role [IDENTIFIED BY pw] [, …] | ALL [EXCEPT role, …] | NONE}`.
+ * Replaces the session's enabled-role set wholesale — Oracle never adds
+ * incrementally.
+ */
+export interface SetRoleStatement extends ASTNode {
+  type: 'SetRoleStatement';
+  mode: 'ALL' | 'NONE' | 'LIST';
+  /** Roles to enable (`LIST`) or to leave out (`ALL EXCEPT`). */
+  roles: { name: string; password?: string }[];
+}
+
 export interface SetConstraintsStatement extends ASTNode {
   type: 'SetConstraintsStatement';
   all: boolean;
@@ -1163,6 +1175,7 @@ export type Statement =
   | CreateRoleStatement | DropRoleStatement
   // Transaction
   | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement | SetConstraintsStatement
+  | SetRoleStatement
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement

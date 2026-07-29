@@ -86,6 +86,28 @@ export class OracleSession {
    *  differs under definer-rights PL/SQL invocation. */
   currentUser: string;
 
+  /**
+   * Roles enabled right now — the set authorization actually consults,
+   * as opposed to the set of roles the user has been *granted*, which
+   * lives in the catalog and is what the administration views report.
+   * Confusing the two is what let `SET ROLE NONE` change nothing.
+   *
+   * `null` means "not yet resolved": every granted role counts, which
+   * is Oracle's own default (`DEFAULT ROLE ALL`) and keeps sessions
+   * created before any role handling behaving as they did.
+   */
+  private enabledRoles: ReadonlySet<string> | null = null;
+
+  /** Replace the enabled set wholesale — `SET ROLE` never adds to it. */
+  setEnabledRoles(roles: Iterable<string> | null): void {
+    this.enabledRoles = roles === null
+      ? null
+      : new Set([...roles].map(r => r.toUpperCase()));
+  }
+
+  /** `null` when every granted role counts; a set otherwise. */
+  getEnabledRoles(): ReadonlySet<string> | null { return this.enabledRoles; }
+
   // ── Authentication ──────────────────────────────────────────────
   readonly authenticationMethod: AuthenticationMethod;
   readonly authenticationType: AuthenticationType;
