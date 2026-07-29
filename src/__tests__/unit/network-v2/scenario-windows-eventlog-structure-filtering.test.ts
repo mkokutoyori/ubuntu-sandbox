@@ -59,8 +59,14 @@ describe('Scénario 1 (Windows) — observateur d\'événements : structure, Eve
       const patternOut = await run(sh, '(Get-WinEvent -ListLog "Microsoft-Windows-*").Count');
       expect(patternOut).toBe(allOut);
 
+      // Le motif est ignoré, et c'est ce que ce test mesure : la liste
+      // rendue contient `Security`, qui ne correspond pourtant pas à
+      // `Microsoft-Windows-*`. (L'énoncé vérifiait auparavant l'absence
+      // de tout canal `Microsoft-Windows-`, ce qui confondait deux
+      // choses : le filtre inopérant, et l'inexistence du canal
+      // PowerShell/Operational — lequel existe désormais.)
       const names = await run(sh, "Get-WinEvent -ListLog 'Microsoft-Windows-*' | Select-Object -ExpandProperty LogName");
-      expect(names).not.toMatch(/Microsoft-Windows-/);
+      expect(names).toMatch(/Security/);
     });
 
     it('Get-WinEvent -ListLog <journal précis inexistant> -ErrorAction Stop ne lève jamais d\'erreur (aucun journal Microsoft-Windows-*/Operational n\'existe réellement)', async () => {
@@ -134,14 +140,21 @@ describe('Scénario 1 (Windows) — observateur d\'événements : structure, Eve
       expect(ids).not.toContain(4647);
     });
 
-    it('les EventIDs PowerShell (4103/4104 journalisation de modules et de scripts) ne sont générés dans aucun journal', async () => {
+    it('sans la stratégie de journalisation, exécuter des commandes ne produit aucun 4104', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
       await run(sh, '$env:Test = 1');
       await run(sh, 'Get-Process | Select-Object -First 1');
 
-      const out = await run(sh, "Get-WinEvent -ListLog * | Select-Object -ExpandProperty LogName");
-      expect(out).not.toMatch(/PowerShell/i);
+      // Le canal existe désormais — c'est le cas sur tout Windows
+      // moderne — mais il reste vide tant que le Script Block Logging
+      // n'est pas demandé. Un canal absent et un canal vide ne se disent
+      // pas de la même façon, et c'est bien la stratégie qui décide.
+      const logs = await run(sh, "Get-WinEvent -ListLog * | Select-Object -ExpandProperty LogName");
+      expect(logs).toMatch(/Microsoft-Windows-PowerShell\/Operational/);
+
+      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-PowerShell/Operational'; Id = 4104 }");
+      expect(out).toMatch(/No events were found/i);
     });
 
     it('EventID 4697 (service installé) fait partie des EventIDs de configuration système réellement câblés', async () => {

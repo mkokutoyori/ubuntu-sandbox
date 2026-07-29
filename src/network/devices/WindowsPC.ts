@@ -47,6 +47,11 @@ import { MDNS_RECORD_TTL } from '../mdns/types';
 import {
   isLlmnrEnabled, isMdnsEnabled, type DnsClientQueryOptions,
 } from './windows/WinDnsClientPolicy';
+import {
+  isScriptBlockLoggingEnabled, isTranscriptionEnabled, transcriptDirectory,
+  transcriptFileName, transcriptHeader, scriptBlockId,
+  POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
+} from './windows/WinPowerShellLogging';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -472,6 +477,53 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   auditLogCleared(logName: string): void {
     new WindowsSecurityAudit(this.eventLog).auditLogCleared(
       logName, this.userMgr.currentUser || 'Administrator');
+  }
+
+  /** Quand la transcription de cette machine a commencé, et où. */
+  private transcriptStartedAt: Date | null = null;
+
+  /**
+   * Ce que PowerShell journalise d'une commande exécutée : le bloc dans
+   * le canal Operational (4104) si la stratégie l'exige, et la
+   * transcription sur disque si elle est demandée.
+   *
+   * Le bloc est journalisé *tel qu'il s'exécute*. C'est ce qui rend
+   * 4104 utile face à une obfuscation : un `-EncodedCommand` doit être
+   * décodé pour tourner, et c'est la forme décodée qui atterrit ici.
+   */
+  recordPowerShellExecution(scriptBlock: string, output: string): void {
+    const text = scriptBlock.trim();
+    if (!text) return;
+    if (isScriptBlockLoggingEnabled(this.registry)) {
+      this.eventLog.writeEventLog(
+        POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
+        'Information',
+        `Creating Scriptblock text (1 of 1):\n${text}\n\n`
+        + `ScriptBlock ID: ${scriptBlockId(text)}\nPath: `,
+        {
+          MessageNumber: '1', MessageTotal: '1',
+          ScriptBlockText: text, ScriptBlockId: scriptBlockId(text), Path: '',
+        });
+    }
+    if (isTranscriptionEnabled(this.registry)) this.appendTranscript(text, output);
+  }
+
+  /**
+   * Ajoute une commande et sa sortie à la transcription en cours, en
+   * créant le fichier — en-tête compris — à la première écriture.
+   */
+  private appendTranscript(command: string, output: string): void {
+    const dir = transcriptDirectory(this.registry);
+    if (!this.transcriptStartedAt) this.transcriptStartedAt = this.simulatedDate();
+    const path = `${dir}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
+    const existing = this.fs.readFile(path);
+    const head = existing.ok && existing.content !== undefined
+      ? existing.content
+      : transcriptHeader(
+        this.getHostname(), this.userMgr.currentUser || 'Administrator',
+        this.transcriptStartedAt);
+    this.fs.mkdirp(dir);
+    this.fs.createFile(path, `${head}PS> ${command}\n${output ? `${output}\n` : ''}`);
   }
 
   /**

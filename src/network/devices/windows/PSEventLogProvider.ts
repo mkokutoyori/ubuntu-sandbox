@@ -183,6 +183,15 @@ export class PSEventLogProvider {
       logName: 'Setup', maxSizeKB: 1028, overflow: 'OverwriteAsNeeded',
       entries: [],
     });
+    // Le canal où PowerShell dépose ses 4103/4104. Il existe sur tout
+    // Windows moderne, vide tant que la stratégie de journalisation
+    // n'est pas posée — un journal absent et un journal vide ne se
+    // disent pas de la même façon à qui l'interroge.
+    this.logs.set('microsoft-windows-powershell/operational', {
+      logName: 'Microsoft-Windows-PowerShell/Operational',
+      maxSizeKB: 15360, overflow: 'OverwriteAsNeeded',
+      entries: [],
+    });
     this.logs.set('forwardedevents', {
       logName: 'ForwardedEvents', maxSizeKB: 20480, overflow: 'OverwriteOlder',
       entries: [],
