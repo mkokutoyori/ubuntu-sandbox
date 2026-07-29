@@ -33,6 +33,31 @@ export const MDNS_LEGACY_TTL = 10;
 
 export const MDNS_TIMEOUT_MS = 1000;
 
+/** RFC 6762 §8.1 — trois sondages, espacés de 250 ms. */
+export const MDNS_PROBE_COUNT = 3;
+export const MDNS_PROBE_INTERVAL_MS = 250;
+
+/**
+ * RFC 6762 §9 — un hôte qui perd son nom en essaie un autre. Au-delà de
+ * cette borne il abandonne : la RFC impose de ralentir après quinze
+ * conflits en dix secondes, et boucler sans fin serait pire que se taire.
+ */
+export const MDNS_MAX_RENAMES = 10;
+
+/** Où en est la possession du nom (§8.1, §9). */
+export type MdnsNameState = 'idle' | 'probing' | 'claimed' | 'defeated';
+
+/**
+ * `alpha.local` → `alpha-2.local` → `alpha-3.local`. C'est la convention
+ * de renommage de RFC 6762 §9, celle qu'un utilisateur voit apparaître
+ * quand deux machines portent le même nom.
+ */
+export function nextCandidateName(base: string, attempt: number): string {
+  const label = base.replace(/\.local$/i, '');
+  const root = label.replace(/-\d+$/, '');
+  return attempt <= 1 ? `${root}.${MDNS_DOMAIN}` : `${root}-${attempt}.${MDNS_DOMAIN}`;
+}
+
 /** True pour un nom du domaine `.local`, seul terrain de mDNS. */
 export function isLocalName(name: string): boolean {
   const n = name.toLowerCase().replace(/\.$/, '');

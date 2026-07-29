@@ -216,8 +216,8 @@ rapportés — mais il faut dire ce qui est réellement fait :
 |---|---|
 | `DNSSEC=` | **Réel** : `DnsValidator` remonte la chaîne par de vraies requêtes DNSKEY/DS. `secure`, `bogus` et `insecure` sont tous les trois atteints ; `allow-downgrade` accepte une zone non signée, jamais une falsifiée. `resolvectl nta` soustrait un domaine à la validation |
 | `DNSOverTLS=` | **Réel** : `DnsTlsTransport` fait une vraie poignée de main TLS 1.3 (RFC 8446) sur le 853, avec PKI et ALPN `dot` exigée. `yes` refuse de retomber en clair, `opportunistic` y retombe |
-| `LLMNR=` | **Réel** (RFC 4795) : UDP/5355 sur 224.0.0.252. L'hôte répond pour son nom mono-label, en unicast vers le demandeur, et se tait pour tout autre nom. Le réglage ouvre ou ferme un vrai port |
-| `MulticastDNS=` | **Réel** (RFC 6762) : UDP/5353 sur 224.0.0.251, domaine `.local`. Réponse sur le groupe, unicast à TTL plafonné pour une requête ponctuelle (§6.7), annonce non sollicitée au démarrage (§8.3). Éteint par défaut, comme sur Ubuntu |
+| `LLMNR=` | **Réel** (RFC 4795) : UDP/5355 sur 224.0.0.252. L'hôte vérifie l'unicité de son nom au démarrage (§4.1), répond pour son nom mono-label en unicast, et se tait pour tout autre nom. Le réglage ouvre ou ferme un vrai port |
+| `MulticastDNS=` | **Réel** (RFC 6762) : UDP/5353 sur 224.0.0.251, domaine `.local`. Sondage avant revendication (§8.1), renommage sur conflit (§9), départage des sondages simultanés (§8.2), réponse sur le groupe, unicast à TTL plafonné pour une requête ponctuelle (§6.7), annonce après acquisition (§8.3). Éteint par défaut, comme sur Ubuntu |
 
 Plus aucun réglage de cette table n'est un texte sans effet.
 
@@ -257,16 +257,47 @@ lien ne fermait rien — le global valant encore `yes` — et
 `resolvectl mdns eth0 yes` restait sans effet sur une machine sans
 serveur DNS, faute de lien à consulter.
 
+### 7.4 Le conflit de noms, traité différemment par chaque RFC
+
+Les deux protocoles vérifient qu'un nom leur appartient avant de le
+défendre, et c'est là qu'ils divergent le plus.
+
+**LLMNR signale.** Au démarrage, l'hôte demande son propre nom au lien,
+trois fois (§4.1). Une réponse veut dire qu'un autre le porte : LLMNR
+n'arbitre pas et ne renomme pas — il pose le bit `C` dans ses réponses,
+et le demandeur décide. La réponse reste utilisable ; se taire
+priverait d'une information que personne d'autre n'a.
+
+**mDNS tranche.** L'hôte sonde son nom trois fois à 250 ms d'intervalle
+(§8.1) : une question `ANY` portant en section Authority les
+enregistrements qu'il *compte* poser. S'il reçoit une réponse, le nom
+est pris ; il passe à `alpha-2.local` et resonde (§9). Deux hôtes qui
+sondent en même temps ne peuvent compter l'un sur l'autre pour
+répondre — aucun ne possède encore le nom — alors ils comparent leurs
+enregistrements proposés et le plus grand l'emporte (§8.2). Sans ce
+départage, les deux renonceraient ou les deux revendiqueraient. Tant
+que le sondage dure, l'hôte **ne répond pas** pour le nom : ce serait
+affirmer la possession qu'il est en train de vérifier.
+
+**Un piège de l'en-tête, et un vrai défaut corrigé.** LLMNR redéfinit
+deux bits du header DNS (§2.1.1) : là où le DNS place `AA` (bit 10) il
+place `C` (Conflict), et là où il place `RD` (bit 8) il place `T`
+(Tentative). Le répondeur posait `aa: true` sur chaque réponse « parce
+qu'un répondeur LLMNR fait autorité » — il annonçait donc un conflit à
+chaque fois. `llmnrFlagOverrides`/`readLlmnrBits` (`llmnr/types.ts`)
+existent pour que l'aliasing soit écrit plutôt que deviné.
+
 **Limites assumées.** Le répondeur est unique pour l'hôte alors que le
 réglage est par lien : la granularité par lien du *répondeur* n'est pas
 modélisée, celle de la *résolution* l'est. Les groupes IPv6
 (`FF02::1:3`, `FF02::FB`) ne sont pas émis, la pile v6 n'ayant pas
-d'équivalent à l'émission vers un groupe arbitraire. Restent dehors, et
-c'est écrit dans l'en-tête de chaque agent : la détection de conflit de
-noms (LLMNR §4, mDNS §8.1), la suppression par réponses connues
-(§7.1) et DNS-SD (RFC 6763) — les deux premières supposent un état de
-possession disputé qui n'existe nulle part ici, la troisième est un
-protocole entier avec ses propres types SRV/TXT/PTR.
+d'équivalent à l'émission vers un groupe arbitraire. Le départage §8.2
+compare des adresses A triées plutôt que la forme canonique octet par
+octet de la RFC — même ordre pour les seuls enregistrements en jeu ici,
+mais c'est une simplification, pas la lettre. Restent dehors : la
+suppression par réponses connues (§7.1), optimisation de trafic sans
+effet observable ici, et DNS-SD (RFC 6763), protocole entier avec ses
+propres types SRV/TXT/PTR.
 
 ### 7.1 Le chemin asynchrone de la base `hosts`
 

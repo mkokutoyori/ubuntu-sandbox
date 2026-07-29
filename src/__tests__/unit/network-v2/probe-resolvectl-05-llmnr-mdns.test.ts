@@ -58,6 +58,11 @@ async function lab(): Promise<{ a: LinuxPC; b: LinuxPC; c: LinuxPC }> {
   return { a, b, c };
 }
 
+/** L'agent mDNS de l'hôte, pour attendre l'acquisition du nom. */
+function mdnsAgent(pc: LinuxPC): { whenReady(): Promise<void> } {
+  return (pc as unknown as { getMdnsAgent(): { whenReady(): Promise<void> } }).getMdnsAgent();
+}
+
 type McastHost = LinuxPC & {
   udpBind(p: number, l: (d: unknown) => void, n?: string): void;
   sendUdpDatagram(ip: IPAddress, dp: number, sp: number, payload: unknown, n?: number): boolean;
@@ -181,7 +186,10 @@ describe('Scénario 4 — mDNS, éteint par défaut comme sur Ubuntu', () => {
     const { a, b } = await lab();
     await a.executeCommand('sudo resolvectl mdns eth0 yes');
     await b.executeCommand('sudo resolvectl mdns eth0 yes');
-    await pause(120);
+    // Un répondeur mDNS ne répond qu'une fois son nom sondé et acquis
+    // (RFC 6762 §8.1) : attendre une durée fixe mesurerait la patience du
+    // test, pas le protocole.
+    await mdnsAgent(b).whenReady();
 
     const out = await a.executeCommand('resolvectl query bravo.local');
     expect(out).toContain('10.0.0.2');
@@ -201,7 +209,7 @@ describe('Scénario 4 — mDNS, éteint par défaut comme sur Ubuntu', () => {
     const { a, b } = await lab();
     await a.executeCommand('sudo resolvectl mdns eth0 yes');
     await b.executeCommand('sudo resolvectl mdns eth0 yes');
-    await pause(120);
+    await mdnsAgent(b).whenReady();
 
     expect(await a.executeCommand('resolvectl query delta.local; echo rc=$?')).toContain('rc=1');
   }, LONG);

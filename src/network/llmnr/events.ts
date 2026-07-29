@@ -14,6 +14,14 @@ export interface LlmnrRespondedPayload extends LlmnrDeviceRef {
   /** L'émetteur de la question — la réponse LLMNR est unicast. */
   to: string;
   toPort: number;
+  /** Le bit C de la réponse : le nom est connu comme disputé. */
+  conflict: boolean;
+}
+
+export interface LlmnrConflictPayload extends LlmnrDeviceRef {
+  name: string;
+  /** Les adresses des autres hôtes qui revendiquent le même nom. */
+  claimedBy: string[];
 }
 
 export interface LlmnrResolvedPayload extends LlmnrDeviceRef {
@@ -26,4 +34,5 @@ export interface LlmnrResolvedPayload extends LlmnrDeviceRef {
 export type LlmnrDomainEvent =
   | { topic: 'llmnr.query.sent'; payload: LlmnrQuerySentPayload }
   | { topic: 'llmnr.responded'; payload: LlmnrRespondedPayload }
-  | { topic: 'llmnr.resolved'; payload: LlmnrResolvedPayload };
+  | { topic: 'llmnr.resolved'; payload: LlmnrResolvedPayload }
+  | { topic: 'llmnr.conflict.detected'; payload: LlmnrConflictPayload };

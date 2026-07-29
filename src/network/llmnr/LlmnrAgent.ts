@@ -8,11 +8,15 @@
  * multicast, prétendre qu'un nom n'existe pas serait parler au nom des
  * autres.
  *
- * Ce qui est délibérément hors de portée, et pourquoi : la détection de
- * conflit de noms (§4, bit C et sondage au démarrage) suppose un état de
- * possession disputé que rien ici ne modélise, et le transport TCP/5355
- * (§2.4, réservé aux réponses tronquées) n'a pas d'objet tant qu'aucune
- * réponse ne dépasse un datagramme.
+ * **Unicité (§4).** Au démarrage, l'hôte demande son propre nom au lien.
+ * Si quelqu'un répond, le nom n'est pas à lui seul : LLMNR ne renomme
+ * pas — c'est mDNS qui fait cela — il le *signale*, en posant le bit C
+ * dans ses réponses. Pendant la vérification, le bit T dit que la
+ * possession est encore provisoire.
+ *
+ * Reste hors de portée : le transport TCP/5355 (§2.4, réservé aux
+ * réponses tronquées), sans objet tant qu'aucune réponse ne dépasse un
+ * datagramme.
  */
 import type { EndHost } from '@/network/devices/EndHost';
 import type { IPAddress, IPv6Address } from '@/network/core/types';
@@ -26,13 +30,25 @@ import {
   bindMulticastDns, unbindMulticastDns, queryMulticastDns,
   type McastDnsReply,
 } from '@/network/dns/transport/MulticastDnsTransport';
-import { LLMNR_BINDING, LLMNR_RECORD_TTL, LLMNR_TIMEOUT_MS } from './types';
+import {
+  LLMNR_BINDING, LLMNR_RECORD_TTL, LLMNR_TIMEOUT_MS,
+  LLMNR_UNIQUENESS_VERIFY_TIMES, llmnrFlagOverrides,
+  type LlmnrNameState,
+} from './types';
 import { getDefaultEventBus } from '@/events/EventBus';
 
 export class LlmnrAgent {
   private bound = false;
+  private state: LlmnrNameState = 'tentative';
+  private ready: Promise<void> | null = null;
 
   constructor(private readonly host: EndHost) {}
+
+  /** Où en est la possession du nom. */
+  nameState(): LlmnrNameState { return this.state; }
+
+  /** Résolue quand la vérification d'unicité du démarrage est terminée. */
+  whenReady(): Promise<void> { return this.ready ?? Promise.resolve(); }
 
   /** Le nom que cet hôte défend : son hostname, en un seul label. */
   ownName(): string {
@@ -57,19 +73,55 @@ export class LlmnrAgent {
     try {
       bindMulticastDns(this.host, LLMNR_BINDING, (q, src, sport) => this.respond(q, src, sport));
       this.bound = true;
-    } catch { /* port déjà tenu */ }
+    } catch { return; }
+    this.state = 'tentative';
+    // La vérification part en tâche de fond : un démon ne bloque pas son
+    // démarrage dessus, et il répond déjà — avec le bit T — pendant
+    // qu'elle dure.
+    this.ready = this.verifyUniqueness();
   }
 
   stop(): void {
     if (!this.bound) return;
     unbindMulticastDns(this.host, LLMNR_BINDING);
     this.bound = false;
+    this.state = 'tentative';
+  }
+
+  /**
+   * RFC 4795 §4.1 — l'hôte demande son propre nom au lien. Une réponse
+   * signifie qu'un autre le porte déjà.
+   *
+   * La question part {@link LLMNR_UNIQUENESS_VERIFY_TIMES} fois : une
+   * seule requête perdue ne doit pas faire conclure à l'unicité.
+   */
+  async verifyUniqueness(): Promise<void> {
+    const label = this.ownName();
+    for (let attempt = 0; attempt < LLMNR_UNIQUENESS_VERIFY_TIMES; attempt++) {
+      const holders = await this.askLink(label, LLMNR_TIMEOUT_MS);
+      if (holders.length > 0) {
+        this.state = 'conflicted';
+        getDefaultEventBus().publish({
+          topic: 'llmnr.conflict.detected',
+          payload: {
+            deviceId: this.host.getId(), hostname: this.host.getHostname(),
+            name: label, claimedBy: holders,
+          },
+        });
+        return;
+      }
+    }
+    this.state = 'unique';
   }
 
   /**
    * RFC 4795 §2.4 : on ne répond que si l'on possède le nom, et toujours
-   * en unicast vers l'émetteur. Le bit AA est posé — un répondeur LLMNR
-   * est par construction autorité pour ce qu'il annonce.
+   * en unicast vers l'émetteur.
+   *
+   * Les deux bits de l'en-tête disent l'état de la possession, et pas
+   * autre chose : `C` quand le nom est disputé, `T` tant qu'on le
+   * vérifie. Poser ici le bit « autorité » du DNS ordinaire reviendrait
+   * à annoncer un conflit à chaque réponse — la position est la même.
    */
   private respond(
     query: DnsMessage, sourceIP: IPAddress | IPv6Address, sourcePort: number,
@@ -86,15 +138,44 @@ export class LlmnrAgent {
     if (answers.length === 0) return null;
 
     const message = buildLegacyResponseMessage(query, 'NOERROR', answers);
+    const bits = llmnrFlagOverrides({
+      conflict: this.state === 'conflicted',
+      tentative: this.state === 'tentative',
+    });
     getDefaultEventBus().publish({
       topic: 'llmnr.responded',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: asked,
         addresses: answers.map((a) => a.value),
         to: sourceIP.toString(), toPort: sourcePort,
+        conflict: this.state === 'conflicted',
       },
     });
-    return { message: { ...message, flags: { ...message.flags, aa: true } }, unicast: true };
+    return { message: { ...message, flags: { ...message.flags, ...bits } }, unicast: true };
+  }
+
+  /**
+   * Pose la question au lien et rend les adresses annoncées. Le chemin
+   * est le même pour une résolution ordinaire et pour la vérification
+   * d'unicité : c'est la seule façon que les deux ne puissent pas
+   * diverger sur ce qui compte comme « quelqu'un a répondu ».
+   */
+  private async askLink(label: string, timeoutMs: number): Promise<string[]> {
+    const query = buildLegacyQueryMessage(nextDnsTransactionId(), label, 'A', {
+      recursionDesired: false,
+    });
+    if (!query) return [];
+    const responses = await queryMulticastDns(
+      this.host, LLMNR_BINDING, query, timeoutMs, { firstOnly: true });
+    const addresses: string[] = [];
+    for (const r of responses) {
+      for (const rr of r.answers) {
+        if (rr.data.type !== RRType.A) continue;
+        const ip = (rr.data as { address: { toString(): string } }).address.toString();
+        if (!addresses.includes(ip)) addresses.push(ip);
+      }
+    }
+    return addresses;
   }
 
   /**
@@ -108,32 +189,19 @@ export class LlmnrAgent {
     // une question qui ne regarde pas le lien.
     if (label.includes('.') || label === '') return [];
 
-    const query = buildLegacyQueryMessage(nextDnsTransactionId(), label, 'A', {
-      recursionDesired: false,
-    });
-    if (!query) return [];
-
     getDefaultEventBus().publish({
       topic: 'llmnr.query.sent',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: label,
       },
     });
-    const responses = await queryMulticastDns(this.host, LLMNR_BINDING, query, timeoutMs, { firstOnly: true });
-    const addresses: string[] = [];
-    for (const r of responses) {
-      for (const rr of r.answers) {
-        if (rr.data.type !== RRType.A) continue;
-        const ip = (rr.data as { address: { toString(): string } }).address.toString();
-        if (!addresses.includes(ip)) addresses.push(ip);
-      }
-    }
+    const addresses = await this.askLink(label, timeoutMs);
     if (addresses.length > 0) {
       getDefaultEventBus().publish({
         topic: 'llmnr.resolved',
         payload: {
           deviceId: this.host.getId(), hostname: this.host.getHostname(),
-          name: label, addresses, responders: responses.length,
+          name: label, addresses, responders: addresses.length,
         },
       });
     }

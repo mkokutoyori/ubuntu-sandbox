@@ -27,3 +27,37 @@ export const LLMNR_RECORD_TTL = 30;
 
 /** Délai d'attente d'une réponse, RFC 4795 §2.6 (LLMNR_TIMEOUT). */
 export const LLMNR_TIMEOUT_MS = 1000;
+
+/**
+ * RFC 4795 §4.1 — nombre de requêtes de vérification d'unicité envoyées
+ * au démarrage avant de considérer le nom comme à soi.
+ */
+export const LLMNR_UNIQUENESS_VERIFY_TIMES = 3;
+
+/**
+ * L'en-tête LLMNR **redéfinit deux bits** du header DNS (RFC 4795 §2.1.1).
+ * Aux positions où le DNS place AA et RD, LLMNR place :
+ *
+ * - bit 10 → `C` (Conflict) : le répondeur sait que le nom n'est pas unique ;
+ * - bit 8  → `T` (Tentative) : il est encore en train de le vérifier.
+ *
+ * Le codec de ce dépôt encode `flags.aa` en bit 10 et `flags.rd` en bit 8.
+ * Poser `aa: true` sur une réponse LLMNR ne dit donc pas « autorité », mais
+ * « conflit » — c'est exactement l'erreur que ces deux helpers existent pour
+ * empêcher de refaire.
+ */
+export interface LlmnrHeaderBits {
+  conflict: boolean;
+  tentative: boolean;
+}
+
+export function llmnrFlagOverrides(bits: LlmnrHeaderBits): { aa: boolean; rd: boolean } {
+  return { aa: bits.conflict, rd: bits.tentative };
+}
+
+export function readLlmnrBits(flags: { aa: boolean; rd: boolean }): LlmnrHeaderBits {
+  return { conflict: flags.aa, tentative: flags.rd };
+}
+
+/** Où en est le nom que cet hôte défend. */
+export type LlmnrNameState = 'tentative' | 'unique' | 'conflicted';

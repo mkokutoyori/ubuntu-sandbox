@@ -14,11 +14,19 @@
  *   avec le bit cache-flush posé pour remplacer ce que les pairs
  *   croyaient savoir.
  *
- * Délibérément hors de portée : le sondage de conflit préalable (§8.1),
- * la suppression par réponses connues (§7.1) et l'énumération de
- * services DNS-SD (RFC 6763). Les deux premiers demandent un état de
- * possession disputé qui n'existe nulle part ici ; le troisième est un
- * protocole à part entière, avec ses propres types SRV/TXT/PTR.
+ * **Sondage et conflit (§8.1, §8.2, §9).** Avant de revendiquer son nom,
+ * l'hôte le sonde trois fois : une question `ANY` portant en section
+ * Authority les enregistrements qu'il *compte* poser. Si quelqu'un
+ * répond, ou si un autre sondage pour le même nom porte des
+ * enregistrements qui l'emportent au départage lexicographique, le nom
+ * est perdu — l'hôte en essaie un autre (`alpha-2.local`) et resonde.
+ * C'est la différence de fond avec LLMNR, qui signale le conflit sans
+ * jamais renommer.
+ *
+ * Délibérément hors de portée : la suppression par réponses connues
+ * (§7.1) et l'énumération de services DNS-SD (RFC 6763) — la première
+ * est une optimisation de trafic sans effet observable ici, la seconde
+ * un protocole à part entière avec ses propres types SRV/TXT/PTR.
  */
 import type { EndHost } from '@/network/devices/EndHost';
 import type { IPAddress, IPv6Address } from '@/network/core/types';
@@ -34,7 +42,8 @@ import {
 } from '@/network/dns/transport/MulticastDnsTransport';
 import {
   MDNS_BINDING, MDNS_DOMAIN, MDNS_PORT, MDNS_RECORD_TTL, MDNS_LEGACY_TTL,
-  MDNS_TIMEOUT_MS, isLocalName,
+  MDNS_TIMEOUT_MS, MDNS_PROBE_COUNT, MDNS_PROBE_INTERVAL_MS, MDNS_MAX_RENAMES,
+  isLocalName, nextCandidateName, type MdnsNameState,
 } from './types';
 import { getDefaultEventBus } from '@/events/EventBus';
 
@@ -45,15 +54,42 @@ import { getDefaultEventBus } from '@/events/EventBus';
  */
 export const MDNS_CACHE_FLUSH = 0x8000;
 
+/**
+ * La clé de départage de §8.2. La RFC compare les enregistrements sous
+ * forme canonique, octet par octet ; ici les seuls enregistrements en
+ * jeu sont des adresses A, donc comparer leurs octets triés donne le
+ * même ordre — et c'est une simplification qu'il vaut mieux écrire que
+ * laisser deviner.
+ */
+function tiebreakKey(addresses: readonly string[]): string {
+  return [...addresses]
+    .map((ip) => ip.split('.').map((o) => o.padStart(3, '0')).join('.'))
+    .sort()
+    .join(',');
+}
+
 export class MdnsAgent {
   private bound = false;
+  private state: MdnsNameState = 'idle';
+  /** Le nom effectivement revendiqué — il diffère du nom d'hôte après renommage. */
+  private claimed: string | null = null;
+  private ready: Promise<void> | null = null;
 
   constructor(private readonly host: EndHost) {}
 
-  /** `<hostname>.local` — le seul nom que cet hôte défend. */
+  /** `<hostname>.local`, ou le nom de repli obtenu après un conflit. */
   ownName(): string {
+    return this.claimed ?? this.baseName();
+  }
+
+  private baseName(): string {
     return `${this.host.getHostname().split('.')[0].toLowerCase()}.${MDNS_DOMAIN}`;
   }
+
+  nameState(): MdnsNameState { return this.state; }
+
+  /** Résolue quand le sondage a tranché — nom acquis, ou abandonné. */
+  whenReady(): Promise<void> { return this.ready ?? Promise.resolve(); }
 
   private ownAddresses(): string[] {
     const out: string[] = [];
@@ -73,14 +109,98 @@ export class MdnsAgent {
       bindMulticastDns(this.host, MDNS_BINDING, (q, src, sport) => this.respond(q, src, sport));
       this.bound = true;
     } catch { return; }
-    this.announce();
+    // §8.1 : on ne s'annonce qu'après avoir sondé. Le sondage part en
+    // tâche de fond — un démon ne bloque pas son démarrage dessus.
+    this.ready = this.claimName();
   }
 
   stop(): void {
     if (!this.bound) return;
     unbindMulticastDns(this.host, MDNS_BINDING);
     this.bound = false;
+    this.state = 'idle';
+    this.claimed = null;
   }
+
+  /**
+   * RFC 6762 §8.1 puis §9 : sonder, et si le nom est pris, en essayer un
+   * autre. L'hôte ne s'annonce que le nom acquis.
+   */
+  private async claimName(): Promise<void> {
+    for (let attempt = 1; attempt <= MDNS_MAX_RENAMES; attempt++) {
+      const candidate = nextCandidateName(this.baseName(), attempt);
+      this.claimed = candidate;
+      this.state = 'probing';
+
+      if (await this.probe(candidate)) {
+        this.state = 'claimed';
+        getDefaultEventBus().publish({
+          topic: 'mdns.name.claimed',
+          payload: {
+            deviceId: this.host.getId(), hostname: this.host.getHostname(),
+            name: candidate, renamed: attempt > 1,
+          },
+        });
+        this.announce();
+        return;
+      }
+
+      getDefaultEventBus().publish({
+        topic: 'mdns.conflict.detected',
+        payload: {
+          deviceId: this.host.getId(), hostname: this.host.getHostname(),
+          name: candidate, attempt,
+        },
+      });
+    }
+    // §9 impose de ralentir plutôt que de boucler : au bout du compte,
+    // mieux vaut ne rien revendiquer que revendiquer n'importe quoi.
+    this.state = 'defeated';
+    this.claimed = null;
+  }
+
+  /**
+   * Un sondage est une question `ANY` portant en section Authority les
+   * enregistrements que l'on *compte* poser — c'est ce qui permet à deux
+   * hôtes qui sondent en même temps de se départager (§8.2) sans que
+   * l'un ni l'autre n'ait encore rien revendiqué.
+   *
+   * Rend true si le nom est libre.
+   */
+  private async probe(candidate: string): Promise<boolean> {
+    for (let i = 0; i < MDNS_PROBE_COUNT; i++) {
+      const query = buildLegacyQueryMessage(nextDnsTransactionId(), candidate, 'ANY', {
+        recursionDesired: false,
+      });
+      if (!query) return false;
+      const proposed = this.addressRecordsFor(candidate, MDNS_RECORD_TTL);
+      const probeMessage: DnsMessage = {
+        ...query,
+        authorities: buildLegacyResponseMessage(query, 'NOERROR', proposed).answers,
+      };
+      this.probing = { name: candidate, tiebreak: tiebreakKey(proposed.map((r) => r.value)) };
+
+      const responses = await queryMulticastDns(
+        this.host, MDNS_BINDING, probeMessage, MDNS_PROBE_INTERVAL_MS, { firstOnly: true });
+      // Une réponse au sondage veut dire que quelqu'un tient déjà le nom.
+      if (responses.some((r) => r.answers.some(
+        (rr) => rr.name.toLowerCase().replace(/\.$/, '') === candidate))) {
+        this.probing = null;
+        return false;
+      }
+      if (this.lostTiebreak) {
+        this.probing = null;
+        this.lostTiebreak = false;
+        return false;
+      }
+    }
+    this.probing = null;
+    return true;
+  }
+
+  /** Ce que cet hôte est en train de sonder, pour le départage §8.2. */
+  private probing: { name: string; tiebreak: string } | null = null;
+  private lostTiebreak = false;
 
   /**
    * RFC 6762 §8.3 — l'annonce non sollicitée. Un pair qui l'entend peut
@@ -104,8 +224,12 @@ export class MdnsAgent {
   }
 
   private addressRecords(ttl: number): DnsRecord[] {
+    return this.addressRecordsFor(this.ownName(), ttl);
+  }
+
+  private addressRecordsFor(name: string, ttl: number): DnsRecord[] {
     return this.ownAddresses().map((ip) => ({
-      name: this.ownName(), type: 'A' as const, value: ip, ttl,
+      name, type: 'A' as const, value: ip, ttl,
     }));
   }
 
@@ -135,6 +259,24 @@ export class MdnsAgent {
     const question = query.questions[0];
     if (!question) return null;
     const asked = question.qname.toLowerCase().replace(/\.$/, '');
+
+    // §8.2 — deux hôtes qui sondent le même nom en même temps ne peuvent
+    // pas compter l'un sur l'autre pour répondre : aucun ne le possède
+    // encore. Ils comparent alors les enregistrements qu'ils proposent,
+    // et celui qui vient après cède. Sans ce départage, les deux
+    // renonceraient ou les deux revendiqueraient.
+    if (this.probing && asked === this.probing.name && query.authorities.length > 0) {
+      const theirs = tiebreakKey(query.authorities
+        .filter((rr) => rr.data.type === RRType.A)
+        .map((rr) => (rr.data as { address: { toString(): string } }).address.toString()));
+      if (theirs > this.probing.tiebreak) this.lostTiebreak = true;
+      return null;
+    }
+
+    // Tant que le nom n'est pas acquis, on ne répond pas pour lui : ce
+    // serait affirmer une possession qu'on est justement en train de
+    // vérifier.
+    if (this.state !== 'claimed') return null;
     if (asked !== this.ownName()) return null;
     if (question.qtype !== RRType.A && question.qtype !== RRType.ANY) return null;
 
