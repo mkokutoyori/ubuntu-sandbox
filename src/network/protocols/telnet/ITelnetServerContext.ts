@@ -53,6 +53,12 @@ export interface ITelnetServerContext {
   createShell(username: string | null): TelnetVtyShell | null;
   /** Claims a VTY line; `null` when the pool is exhausted. */
   openSession(username: string, fromIp: string, peerPort: number): TelnetSessionHandle | null;
+  /**
+   * The terminal type the client announced. Learned from a
+   * subnegotiation that can land either side of the line being claimed,
+   * so it is reported whenever it arrives rather than at open time.
+   */
+  noteTerminalType?(id: string, terminalType: string): void;
   closeSession(id: string, reason: string): void;
   touchSession?(id: string, bytesIn: number, bytesOut: number): void;
   /** `exec-timeout` / `idle-timeout` of the line, in ms; `null` disables it. */

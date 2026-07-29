@@ -164,6 +164,16 @@ export class SshSessionRegistry {
     return this.snapshot(session, at);
   }
 
+  /**
+   * The client's announced terminal type, learned after the line was
+   * claimed — telnet negotiates it in parallel with the login dialog, so
+   * it is not always known when `open()` runs.
+   */
+  setTerminalType(id: string, terminalType: string): void {
+    const s = this.active.get(id);
+    if (s) s.terminalType = terminalType;
+  }
+
   touch(id: string, at: number = this.now(), bytesIn = 0, bytesOut = 0): void {
     const s = this.active.get(id);
     if (!s) return;
@@ -233,7 +243,8 @@ export class SshSessionRegistry {
     const rows: string[] = [header];
     for (const s of this.list(now)) {
       const delay = secondsToHms(s.idleSeconds);
-      rows.push(`+ ${(129 + s.lineIndex).toString().padEnd(5, ' ')} ${delay} SSH      ${s.fromIp.padEnd(20, ' ')} pass            N               ${s.user}`);
+      const type = s.localPort === 23 ? 'TEL' : 'SSH';
+      rows.push(`+ ${(129 + s.lineIndex).toString().padEnd(5, ' ')} ${delay} ${type.padEnd(8, ' ')} ${s.fromIp.padEnd(20, ' ')} pass            N               ${s.user}`);
     }
     return rows.join('\n');
   }

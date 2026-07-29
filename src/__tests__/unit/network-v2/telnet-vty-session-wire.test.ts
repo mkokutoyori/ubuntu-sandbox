@@ -25,6 +25,7 @@ import {
   encodeNegotiation, encodeSubnegotiation, parseTelnetChunk, toNvtText, fromNvtText,
 } from '@/network/protocols/telnet/TelnetCodec';
 import { TelnetNegotiator } from '@/network/protocols/telnet/TelnetNegotiator';
+import { TelnetClientSession } from '@/network/protocols/telnet/TelnetClientSession';
 
 const MASK = '255.255.255.0';
 const PC_IP = '10.0.0.1';
@@ -404,6 +405,69 @@ describe('Huawei telnet server — same wire, VRP wording', () => {
     client.send('quit');
     await settle();
     expect(huawei.getSshSessionRegistry().list()).toHaveLength(0);
+  });
+});
+
+describe('TelnetClientSession — the client half, on the same wire', () => {
+  async function openClient(pc: LinuxPC, ip: string): Promise<TelnetClientSession> {
+    const socket = await (pc as unknown as { tcpConnect: (h: string, p: number) => Promise<WireSocket | null> })
+      .tcpConnect(ip, 23);
+    if (!socket) throw new Error('no socket');
+    return new TelnetClientSession(socket);
+  }
+
+  it('reaches the EXEC prompt without the caller decoding a single option byte', async () => {
+    const { pc, cisco } = await buildCiscoLan();
+    const client = await openClient(pc, CISCO_IP);
+    await settle();
+    expect(client.drain()).toContain(`${cisco.getHostname()}>`);
+  });
+
+  it('runs a command and reads back what the device produced', async () => {
+    const { pc } = await buildCiscoLan();
+    const client = await openClient(pc, CISCO_IP);
+    await settle();
+    client.drain();
+    client.send('show ip interface brief');
+    await settle();
+    const out = client.drain();
+    expect(out).toContain('GigabitEthernet0/0');
+    expect(out).toContain(CISCO_IP);
+  });
+
+  it('answers the terminal-type subnegotiation, and the line records it', async () => {
+    const { pc, cisco } = await buildCiscoLan();
+    await openClient(pc, CISCO_IP);
+    await settle();
+    expect(cisco.getSshSessionRegistry().list()[0].terminalType).toBe('VT100');
+  });
+
+  it('`display users` on VRP shows a telnet line as TEL, not SSH', async () => {
+    const { pc, huawei } = await buildHuaweiLan();
+    await openClient(pc, HUAWEI_IP);
+    await settle();
+    expect(huawei.getSshSessionRegistry().formatDisplayUsers()).toMatch(/\bTEL\b/);
+  });
+
+  it('streams output to a sink as it arrives', async () => {
+    const { pc } = await buildCiscoLan();
+    const client = await openClient(pc, CISCO_IP);
+    await settle();
+    const seen: string[] = [];
+    client.onOutput((text) => seen.push(text));
+    client.send('show version');
+    await settle();
+    expect(seen.join('')).toContain('Cisco');
+  });
+
+  it('stops writing once the peer has closed the session', async () => {
+    const { pc, cisco } = await buildCiscoLan();
+    const client = await openClient(pc, CISCO_IP);
+    await settle();
+    client.send('exit');
+    await settle();
+    expect(cisco.getSshSessionRegistry().list()).toHaveLength(0);
+    expect(client.closed).toBe(true);
   });
 });
 

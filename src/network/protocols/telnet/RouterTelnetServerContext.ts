@@ -29,6 +29,7 @@ export interface RouterTelnetServerDeps {
   authenticateAaa(username: string, password: string): Promise<boolean>;
   createVtyShell(username?: string): TelnetVtyShell;
   openSession(username: string, fromIp: string, peerPort: number): TelnetSessionHandle | null;
+  noteTerminalType(id: string, terminalType: string): void;
   closeSession(id: string, reason: string): void;
   touchSession(id: string, bytesIn: number, bytesOut: number): void;
   idleTimeoutMs(): number | null;
@@ -75,6 +76,10 @@ export class RouterTelnetServerContext implements ITelnetServerContext {
 
   openSession(username: string, fromIp: string, peerPort: number): TelnetSessionHandle | null {
     return this.deps.openSession(username, fromIp, peerPort);
+  }
+
+  noteTerminalType(id: string, terminalType: string): void {
+    if (id) this.deps.noteTerminalType(id, terminalType);
   }
 
   closeSession(id: string, reason: string): void { this.deps.closeSession(id, reason); }

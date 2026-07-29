@@ -523,6 +523,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         });
         return record ? { id: record.id, line: record.line } : null;
       },
+      noteTerminalType: (id, terminalType) => {
+        this.getSshSessionRegistry().setTerminalType(id, terminalType);
+      },
       closeSession: (id, reason) => { this.getSshSessionRegistry().close(id, reason); },
       touchSession: (id, bytesIn, bytesOut) => {
         this.getSshSessionRegistry().touch(id, Date.now(), bytesIn, bytesOut);

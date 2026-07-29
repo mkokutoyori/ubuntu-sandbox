@@ -16,10 +16,10 @@ import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler } from '@/events/Scheduler';
 import type { TcpStream } from '@/network/tcp/types';
 import {
-  AYT, BRK, IP as TELNET_IP,
+  AYT, BRK, IP as TELNET_IP, WILL,
   OPT_ECHO, OPT_NEW_ENVIRON, OPT_SUPPRESS_GO_AHEAD, OPT_TERMINAL_SPEED,
   OPT_TERMINAL_TYPE, OPT_X_DISPLAY_LOCATION,
-  fromNvtText, parseTelnetChunk, toNvtText,
+  encodeSubnegotiation, fromNvtText, parseTelnetChunk, toNvtText,
 } from './TelnetCodec';
 import { TelnetNegotiator, type TelnetOptionPolicy } from './TelnetNegotiator';
 import type { ITelnetServerContext, TelnetVtyShell } from './ITelnetServerContext';
@@ -37,6 +37,10 @@ export const IOS_TELNET_OPTION_POLICY: TelnetOptionPolicy = {
 type Phase = 'username' | 'password' | 'exec' | 'closed';
 
 const DEFAULT_MAX_AUTH_ATTEMPTS = 3;
+
+/** Sub-option codes of RFC 1091's terminal-type negotiation. */
+const TERMINAL_TYPE_IS = 0;
+const TERMINAL_TYPE_SEND = 1;
 
 export class TelnetServerHandler {
   constructor(private readonly ctx: ITelnetServerContext) {}
@@ -67,6 +71,7 @@ class TelnetSession {
   private offAsyncOutput: (() => void) | null = null;
   private idleTimer: ReturnType<TimerSet['setTimeout']> | null = null;
   private busy: Promise<void> = Promise.resolve();
+  private terminalType: string | null = null;
 
   constructor(
     private readonly ctx: ITelnetServerContext,
@@ -98,9 +103,31 @@ class TelnetSession {
 
     const reply = this.negotiator.respond(parsed.negotiations);
     if (reply) this.send(reply);
+    this.askForTerminalType(parsed.negotiations);
 
+    for (const sub of parsed.subnegotiations) this.onSubnegotiation(sub.option, sub.params);
     for (const control of parsed.controls) this.onControl(control);
     if (parsed.data) this.onText(parsed.data);
+  }
+
+  /**
+   * RFC 1091: once the client agrees to describe its terminal, ask for
+   * the value. The answer lands in `show users` / `display users`.
+   */
+  private askForTerminalType(negotiations: readonly { verb: number; option: number }[]): void {
+    for (const n of negotiations) {
+      if (n.verb !== WILL || n.option !== OPT_TERMINAL_TYPE) continue;
+      if (!this.negotiator.isRemoteEnabled(OPT_TERMINAL_TYPE)) continue;
+      this.send(encodeSubnegotiation(OPT_TERMINAL_TYPE, [TERMINAL_TYPE_SEND]));
+    }
+  }
+
+  private onSubnegotiation(option: number, params: readonly number[]): void {
+    if (option !== OPT_TERMINAL_TYPE || params[0] !== TERMINAL_TYPE_IS) return;
+    this.terminalType = String.fromCharCode(...params.slice(1)) || null;
+    if (this.terminalType && this.sessionId) {
+      this.ctx.noteTerminalType?.(this.sessionId, this.terminalType);
+    }
   }
 
   /**
@@ -183,6 +210,7 @@ class TelnetSession {
       return;
     }
     this.sessionId = handle.id;
+    if (this.terminalType) this.ctx.noteTerminalType?.(handle.id, this.terminalType);
     this.username = username || null;
     this.shell = this.ctx.createShell(this.username);
     this.phase = 'exec';
