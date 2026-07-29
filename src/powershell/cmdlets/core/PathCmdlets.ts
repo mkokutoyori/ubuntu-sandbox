@@ -600,6 +600,55 @@ export class SetItemPropertyCmdlet implements ICmdlet {
   }
 }
 
+/**
+ * `New-ItemProperty` — crée une valeur dans une clé de registre.
+ *
+ * C'est la commande par laquelle on *ajoute* une valeur, là où
+ * `Set-ItemProperty` en modifie une : les deux écrivent, mais un script
+ * d'installation (ou de persistance) utilise la première. Elle
+ * n'existait pas du tout, si bien qu'une ligne
+ * `New-ItemProperty ... -PropertyType String` ne posait rien et ne
+ * disait rien — l'écriture disparaissait en silence.
+ *
+ * `-PropertyType` décide du type stocké : `DWord`/`QWord` gardent un
+ * nombre, tout le reste une chaîne.
+ */
+export class NewItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'new-itemproperty';
+  readonly parameters = ['Path', 'LiteralPath', 'Name', 'Value', 'PropertyType', 'Force', 'PassThru'] as const;
+  readonly displayName = 'New-ItemProperty';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[1] ?? '');
+    const raw  = ctx.named['value'] ?? ctx.positional[2];
+    const kind = psValueToString(ctx.named['propertytype'] ?? '').toLowerCase();
+    const numeric = kind === 'dword' || kind === 'qword';
+    const value: string | number = numeric
+      ? Number(psValueToString(raw ?? '0'))
+      : (typeof raw === 'number' ? raw : psValueToString(raw ?? ''));
+    if (!path) { ctx.emitError('New-ItemProperty requires -Path'); return null; }
+    if (!name) { ctx.emitError('New-ItemProperty requires -Name'); return null; }
+
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      const reg = ctx.providers.registry;
+      // Sans `-Force`, PowerShell exige que la clé existe déjà ; le
+      // fournisseur le dit lui-même par son message d'erreur.
+      const err = reg.setItemProperty(path, name, value);
+      if (err) { ctx.emitError(err); return null; }
+      return { [name]: value } as Record<string, PSValue>;
+    }
+    if (hivePathMissingDrive(path)) {
+      reportMissingDrive(ctx, 'New-ItemProperty', path);
+      return null;
+    }
+    requireRegistryProvider(path);
+    return null;
+  }
+}
+
 export class RemoveItemPropertyCmdlet implements ICmdlet {
   readonly name = 'remove-itemproperty';
   readonly parameters = ['Path', 'LiteralPath', 'Name', 'Force', 'Include', 'Exclude', 'Filter'] as const;

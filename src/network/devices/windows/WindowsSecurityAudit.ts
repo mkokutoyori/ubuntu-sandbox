@@ -46,6 +46,8 @@ export const SECURITY_EVENT = {
   PROCESS_CREATED: 4688,
   PROCESS_TERMINATED: 4689,
   PRIVILEGED_SERVICE_CALLED: 4673,
+  SCHEDULED_TASK_CREATED: 4698,
+  AUDIT_LOG_CLEARED: 1102,
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
   SERVICE_INSTALLED: 4697,
@@ -281,10 +283,52 @@ export class WindowsSecurityAudit {
 
   // ─── Object access (registry / filesystem, requires auditpol + SACL) ───
 
+  /**
+   * 4657 — modification d'une valeur du registre.
+   *
+   * L'ancienne et la nouvelle valeur sont tout l'intérêt de cet
+   * événement : savoir qu'une clé a changé sans savoir de quoi vers quoi
+   * ne dit rien. C'est ce qui distingue une écriture ordinaire d'une
+   * persistance posée sous `...\CurrentVersion\Run`.
+   */
   registryValueModified(objectPath: string, previousValue: string, newValue: string, changedBy: string): void {
+    const at = objectPath.lastIndexOf('\\');
     this.success(SECURITY_EVENT.REGISTRY_VALUE_MODIFIED,
       `A registry value was modified.\n\nObject:\n\tObject Name:\t${objectPath}\n\t` +
-      `Old Value:\t${previousValue}\n\tNew Value:\t${newValue}\n\nSubject:\n\tAccount Name:\t${changedBy}`);
+      `Old Value:\t${previousValue}\n\tNew Value:\t${newValue}\n\nSubject:\n\tAccount Name:\t${changedBy}`,
+      {
+        ObjectName: at > 0 ? objectPath.slice(0, at) : objectPath,
+        ObjectValueName: at > 0 ? objectPath.slice(at + 1) : '',
+        OldValue: previousValue,
+        NewValue: newValue,
+        ...splitAccount(changedBy),
+      });
+  }
+
+  /** 4698 — une tâche planifiée a été créée. */
+  scheduledTaskCreated(taskName: string, command: string, createdBy: string): void {
+    this.success(SECURITY_EVENT.SCHEDULED_TASK_CREATED,
+      `A scheduled task was created.\n\nTask Information:\n\tTask Name:\t${taskName}\n\t` +
+      `Task Content:\t${command}\n\nSubject:\n\tAccount Name:\t${createdBy}`,
+      {
+        TaskName: taskName, TaskContent: command, ...splitAccount(createdBy),
+      });
+  }
+
+  /**
+   * 1102 — le journal d'audit a été effacé.
+   *
+   * Windows l'écrit dans le journal Security *après* l'avoir vidé : c'est
+   * la première entrée du journal neuf, et souvent la seule trace qu'un
+   * effacement a eu lieu. Un effacement qui ne laisse rien serait un
+   * effacement parfait, ce que Windows refuse précisément de permettre.
+   */
+  auditLogCleared(logName: string, clearedBy: string): void {
+    this.sink.writeEventLog(SECURITY_LOG, 'Microsoft-Windows-Eventlog',
+      SECURITY_EVENT.AUDIT_LOG_CLEARED, 'SuccessAudit',
+      `The audit log was cleared.\n\nSubject:\n\tAccount Name:\t${clearedBy}\n\t` +
+      `Log:\t${logName}`,
+      { ...splitAccount(clearedBy), Channel: logName });
   }
 
   permissionChanged(objectPath: string, identity: string, permissions: string, changedBy: string): void {

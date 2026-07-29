@@ -46,6 +46,10 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
     it('gap confirmé : Phase 4 (persistance via la clé Run) ne génère jamais d\'EventID 4657 exploitable pour la timeline', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
+      // L'audit du registre est éteint par défaut : un attaquant qui pose
+      // sa persistance sur une machine non durcie ne laisse effectivement
+      // aucun 4657. Le durcissement fait partie du scénario.
+      await dc.executeCmdCommand('auditpol /set /subcategory:"Registry" /success:enable');
       await run(sh, 'New-Item -Path "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" -Force');
       await run(sh, 'New-ItemProperty -Path "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" -Name "UpdateCheck" -Value "C:\\Temp\\update.ps1" -PropertyType String');
 
@@ -56,6 +60,7 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
     it('gap confirmé : Phase 5 (tâche planifiée de persistance) ne génère jamais d\'EventID 4698 exploitable pour la timeline', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
+      await dc.executeCmdCommand('auditpol /set /subcategory:"Other Object Access Events" /success:enable');
       await run(sh, [
         '$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -File C:\\Temp\\update.ps1"',
         '$Trigger = New-ScheduledTaskTrigger -Daily -At "3:00AM"',

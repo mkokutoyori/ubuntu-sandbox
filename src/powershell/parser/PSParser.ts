@@ -1552,6 +1552,25 @@ export class PSParser {
       if (this.check(PSTokenType.DOT)) {
         const pos = this.pos_();
         this.advance();
+        // `$obj.'nom de propriété'` — la forme entre guillemets, seule
+        // façon de nommer une propriété qui n'est pas un identifiant
+        // simple. Sans elle, `$xml.Event.EventData.Data[0].'#text'` — la
+        // manière canonique de lire un champ d'EventData — laissait le
+        // point sans effet et rendait l'objet entier au lieu de la
+        // valeur. Le nom n'est pas développé : à ce stade seule la forme
+        // littérale est acceptée, la forme `."$var"` reste à faire.
+        if (this.check(PSTokenType.STRING_SINGLE) || this.check(PSTokenType.STRING_DOUBLE)) {
+          const member = this.advance().value;
+          if (this.check(PSTokenType.LPAREN)) {
+            this.advance();
+            const args = this.parseArgumentList();
+            this.expect(PSTokenType.RPAREN);
+            expr = { type: 'InvocationExpression', callee: makeMember(expr, member, false, pos), arguments: args, position: pos };
+          } else {
+            expr = makeMember(expr, member, false, pos);
+          }
+          continue;
+        }
         if (this.check(PSTokenType.WORD) || this.check(PSTokenType.NUMBER)) {
           // The lexer may bundle "Name.ToUpper" as a single WORD token (it
           // doesn't stop at '.').  Split on '.' so we get proper chained

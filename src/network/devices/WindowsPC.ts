@@ -60,7 +60,7 @@ import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { HostClock } from './host/lifecycle/HostClock';
-import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue } from './windows/PSRegistryProvider';
+import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue, type RegistryValueChange } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
@@ -404,7 +404,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.initDefaultSockets();
     this.wireReactiveProjections();
     this.auditPolicy.seedDefaults(type === 'windows-server' ? 'server' : 'client');
-    this.registry.onValueChanged = () => this.syncLinkLocalResponders();
+    this.registry.onValueChanged = (change) => {
+      this.syncLinkLocalResponders();
+      if (change) this.auditRegistryChange(change);
+    };
   }
 
   // ─── LLMNR / mDNS (client DNS Windows) ──────────────────────────
@@ -435,6 +438,42 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * /d 0` annoncerait « opération réussie » et le port 5355 resterait
    * ouvert.
    */
+  /**
+   * 4657 — toute écriture dans la base laisse une trace auditée.
+   *
+   * Le seul chemin réellement audité jusqu'ici était le changement de
+   * compte d'un service ; une valeur posée sous
+   * `...\CurrentVersion\Run` — la persistance la plus classique qui
+   * soit — ne produisait rien. Or ce n'est pas la clé qui doit décider,
+   * c'est la stratégie d'audit : elle est consultée ici, et elle seule.
+   */
+  private auditRegistryChange(change: RegistryValueChange): void {
+    if (!this.auditPolicy.isEnabled('Registry', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).registryValueModified(
+      `${change.path}\\${change.name}`,
+      change.previous === undefined ? '' : String(change.previous),
+      String(change.next),
+      this.userMgr.currentUser || 'Administrator',
+    );
+  }
+
+  /** 4698 — `Register-ScheduledTask` laisse désormais une trace. */
+  auditScheduledTaskCreated(taskName: string, command: string): void {
+    if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).scheduledTaskCreated(
+      taskName, command, this.userMgr.currentUser || 'Administrator');
+  }
+
+  /**
+   * 1102 — l'effacement d'un journal s'inscrit dans le journal Security,
+   * *après* le vidage. Sans cela, effacer ses traces ne laisserait
+   * aucune trace, ce que Windows refuse par construction.
+   */
+  auditLogCleared(logName: string): void {
+    new WindowsSecurityAudit(this.eventLog).auditLogCleared(
+      logName, this.userMgr.currentUser || 'Administrator');
+  }
+
   /**
    * `ProcessCreationIncludeCmdLine_Enabled` — la stratégie qui décide si
    * 4688 porte la ligne de commande. Elle existe parce qu'une ligne de

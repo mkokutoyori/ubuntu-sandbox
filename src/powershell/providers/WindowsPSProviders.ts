@@ -1283,7 +1283,11 @@ class WindowsRegistryAdapter implements IRegistryProvider {
 // ── Event-log adapter (minimal — returns parsed shape where possible) ──────
 
 class WindowsEventLogAdapter implements IEventLogProvider {
-  constructor(private readonly log: PSEventLogProvider) {}
+  constructor(
+    private readonly log: PSEventLogProvider,
+    /** L'appareil, pour l'audit 1102 — absent sur un hôte non-Windows. */
+    private readonly pc?: { auditLogCleared?(logName: string): void },
+  ) {}
 
   listLogs() {
     return this.log.getAllLogsStructured();
@@ -1305,7 +1309,13 @@ class WindowsEventLogAdapter implements IEventLogProvider {
   writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void {
     this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
   }
-  clearLog(logName: string): string { return this.log.clearEventLog(logName); }
+  clearLog(logName: string): string {
+    const out = this.log.clearEventLog(logName);
+    // 1102 s'écrit *après* le vidage : c'est la première entrée du
+    // journal neuf, et souvent la seule trace qu'un effacement a eu lieu.
+    if (!out) this.pc?.auditLogCleared?.(logName);
+    return out;
+  }
   newLog(logName: string, source: string): string { return this.log.newEventLog(logName, source); }
   limitLog(logName: string): void { this.log.limitEventLog(logName); }
 }
@@ -2019,6 +2029,10 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
   }
   registerTask(task: ScheduledTaskInfo): string {
     this.store().set(task.taskName.toLowerCase(), task);
+    // 4698 — une tâche planifiée est un mécanisme de persistance
+    // courant : la créer sans laisser de trace laissait un angle mort
+    // complet dans la piste d'audit.
+    this.pc.auditScheduledTaskCreated?.(task.taskName, task.command ?? '');
     return `\\${task.taskName}`;
   }
   unregisterTask(name: string): string {
@@ -2952,7 +2966,7 @@ export function createWindowsPSProviders(
     }),
     users:          new WindowsUserAdapter(pc),
     registry:       new WindowsRegistryAdapter(reg),
-    eventLog:       new WindowsEventLogAdapter(log),
+    eventLog:       new WindowsEventLogAdapter(log, pc),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(pc, vpn),
     scheduledTasks: new WindowsScheduledTaskAdapter(pc),

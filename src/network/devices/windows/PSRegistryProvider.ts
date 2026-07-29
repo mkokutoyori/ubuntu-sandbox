@@ -227,6 +227,17 @@ function parseRegistryPath(path: string): ParsedRegPath | null {
 
 // ─── Registry Provider ────────────────────────────────────────────────────────
 
+/**
+ * Ce qu'une écriture dans la base a changé — de quoi remplir un 4657,
+ * dont l'intérêt tient entièrement à l'ancienne et à la nouvelle valeur.
+ */
+export interface RegistryValueChange {
+  path: string;
+  name: string;
+  previous?: string | number;
+  next: string | number;
+}
+
 export class PSRegistryProvider {
   private hklm: RegistryKey;
   private hkcu: RegistryKey = buildHKCU();
@@ -240,14 +251,14 @@ export class PSRegistryProvider {
    * ouvert, ce qui est exactement le genre de réglage décoratif que ce
    * dépôt refuse.
    */
-  onValueChanged: (() => void) | null = null;
+  onValueChanged: ((change?: RegistryValueChange) => void) | null = null;
 
   constructor(product: WindowsProductIdentity = WINDOWS_CLIENT_PRODUCT_IDENTITY) {
     this.hklm = buildHKLM(product);
   }
 
-  private notifyChanged(): void {
-    this.onValueChanged?.();
+  private notifyChanged(change?: RegistryValueChange): void {
+    this.onValueChanged?.(change);
   }
 
   // ─── Internal navigation ──────────────────────────────────────────
@@ -450,8 +461,9 @@ export class PSRegistryProvider {
     const parsed = parseRegistryPath(path);
     if (!parsed) return;
     const key = this.ensurePath(parsed);
+    const previous = key.values.get(name.toLowerCase())?.value;
     seedValue(key, name, value, type);
-    this.notifyChanged();
+    this.notifyChanged({ path, name, previous, next: value });
   }
 
   setItemProperty(path: string, name: string, value: string | number): string {
@@ -460,8 +472,9 @@ export class PSRegistryProvider {
     const key = this.navigateTo(parsed);
     if (!key) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     const type: RegistryValue['type'] = typeof value === 'number' ? 'DWord' : 'String';
+    const previous = key.values.get(name.toLowerCase())?.value;
     key.values.set(name.toLowerCase(), { name, value, type });
-    this.notifyChanged();
+    this.notifyChanged({ path, name, previous, next: value });
     return '';
   }
 
@@ -473,8 +486,9 @@ export class PSRegistryProvider {
     if (!key.values.has(name.toLowerCase())) {
       return `Remove-ItemProperty : Property '${name}' does not exist at path '${path}'.`;
     }
+    const removed = key.values.get(name.toLowerCase())?.value;
     key.values.delete(name.toLowerCase());
-    this.notifyChanged();
+    this.notifyChanged({ path, name, previous: removed, next: '' });
     return '';
   }
 
