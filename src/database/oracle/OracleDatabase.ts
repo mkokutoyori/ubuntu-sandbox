@@ -186,6 +186,7 @@ export class OracleDatabase implements SqlCommandHost {
       authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
       instance: this.buildInstanceIdentity(),
     });
+    session.setEnabledRoles(this.resolveDefaultRoles(args.username.toUpperCase()));
     this.sessions.set(args.sid, session);
     if (args.type !== 'BACKGROUND') {
       this.instance.spawnServerProcess({
@@ -194,6 +195,22 @@ export class OracleDatabase implements SqlCommandHost {
       });
     }
     return session;
+  }
+
+  /**
+   * The roles a fresh session starts with, from `ALTER USER … DEFAULT
+   * ROLE …` — a clause `isDefaultRole()` already resolved correctly, but
+   * whose only consumer was `DBA_ROLE_PRIVS`'s `DEFAULT_ROLE` column:
+   * rendered in a view, never applied to a session.
+   *
+   * A password-protected role is never enabled by default whatever the
+   * clause says: demanding a password at `SET ROLE` is the whole point
+   * of putting one on the role.
+   */
+  private resolveDefaultRoles(username: string): string[] {
+    return this.securityEngine.privileges.getGrantedRoles(username)
+      .filter(r => this.catalog.getRolePassword(r) === undefined)
+      .filter(r => this.catalog.isDefaultRole(username, r));
   }
 
   /**

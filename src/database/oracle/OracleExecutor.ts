@@ -796,9 +796,11 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.mode === 'NONE') {
       session?.setEnabledRoles?.([]);
     } else if (stmt.mode === 'ALL') {
+      // `ALL` never reaches into a password-protected role: it would hand
+      // over exactly what the password was put there to withhold.
       const excluded = new Set(stmt.roles.map(r => r.name));
-      session?.setEnabledRoles?.(
-        excluded.size === 0 ? null : [...granted].filter(r => !excluded.has(r)));
+      session?.setEnabledRoles?.([...granted].filter(
+        r => !excluded.has(r) && catalog.getRolePassword(r) === undefined));
     } else {
       session?.setEnabledRoles?.(stmt.roles.map(r => r.name));
     }
