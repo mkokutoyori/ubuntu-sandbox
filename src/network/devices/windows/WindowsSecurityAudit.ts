@@ -45,10 +45,53 @@ export const SECURITY_EVENT = {
   GROUP_DELETED: 4734,
   PROCESS_CREATED: 4688,
   PROCESS_TERMINATED: 4689,
+  PRIVILEGED_SERVICE_CALLED: 4673,
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
   SERVICE_INSTALLED: 4697,
 } as const;
+
+/** Ce qu'un événement de suivi de processus sait de son sujet. */
+export interface ProcessAuditDetails {
+  ppid?: number;
+  parentName?: string;
+  owner?: string;
+  commandLine?: string;
+}
+
+/**
+ * `DOMAINE\compte` → les deux champs que Windows sépare. Un compte sans
+ * domaine laisse `SubjectDomainName` vide plutôt que de lui inventer
+ * une valeur.
+ */
+function splitAccount(account?: string): Record<string, string> {
+  if (!account) return {};
+  const at = account.indexOf('\\');
+  if (at < 0) return { SubjectUserName: account };
+  return {
+    SubjectDomainName: account.slice(0, at),
+    SubjectUserName: account.slice(at + 1),
+  };
+}
+
+/**
+ * Un identifiant de session, au format que Windows affiche : un LUID en
+ * hexadécimal. Il est alloué en séquence à partir d'une base au-dessus
+ * des sessions du noyau (0x3e7 est celle de SYSTEM), pour qu'une session
+ * ouverte ici ne puisse jamais porter le même numéro qu'une autre.
+ */
+let logonIdCounter = 0x10000;
+export function nextLogonId(): string {
+  logonIdCounter += 1;
+  return `0x${logonIdCounter.toString(16)}`;
+}
+
+/** Les comptes dont le jeton est élevé — administrateurs et SYSTEM. */
+function isElevatedAccount(account?: string): boolean {
+  if (!account) return false;
+  const leaf = account.slice(account.indexOf('\\') + 1).toLowerCase();
+  return leaf === 'administrator' || leaf === 'system' || leaf.endsWith('admin');
+}
 
 const SECURITY_LOG = 'Security';
 const AUDIT_SOURCE = 'Microsoft-Windows-Security-Auditing';
@@ -119,18 +162,48 @@ export class WindowsSecurityAudit {
 
   // ─── Logon / logoff ────────────────────────────────────────────────────
 
-  logonSuccess(name: string, logonType = 2, ipAddress?: string): void {
+  /**
+   * 4624 — ouverture de session réussie.
+   *
+   * `TargetLogonId` est l'identifiant de la session ouverte. C'est le
+   * seul lien entre ce 4624 et le 4634 qui le clôturera : sans lui, on
+   * voit des connexions et des déconnexions sans pouvoir dire lesquelles
+   * vont ensemble, donc sans pouvoir mesurer la durée d'une session.
+   */
+  logonSuccess(name: string, logonType = 2, ipAddress?: string, logonId?: string): void {
     this.success(SECURITY_EVENT.LOGON_SUCCESS, `An account was successfully logged on.\n\nLogon Type:\t\t${logonType}\nAccount Name:\t${name}`,
-      { TargetUserName: name, ...(ipAddress ? { IpAddress: ipAddress } : {}) });
+      {
+        TargetUserName: name,
+        LogonType: String(logonType),
+        TargetLogonId: logonId ?? nextLogonId(),
+        ...(ipAddress ? { IpAddress: ipAddress } : {}),
+      });
   }
 
-  logonFailure(name: string, ipAddress?: string): void {
-    this.failure(SECURITY_EVENT.LOGON_FAILURE, `An account failed to log on.\n\nAccount For Which Logon Failed:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, ...(ipAddress ? { IpAddress: ipAddress } : {}) });
+  /**
+   * 4625 — échec d'authentification.
+   *
+   * `Status` dit qu'il y a eu échec, `SubStatus` dit *lequel* : mot de
+   * passe faux (0xC000006A) et compte inexistant (0xC0000064) ne se
+   * traitent pas de la même façon, et c'est SubStatus qui les sépare.
+   */
+  logonFailure(name: string, ipAddress?: string, subStatus = '0xC000006A'): void {
+    this.failure(SECURITY_EVENT.LOGON_FAILURE, `An account failed to log on.\n\nAccount For Which Logon Failed:\n\tAccount Name:\t${name}\n\nFailure Information:\n\tStatus:\t\t0xC000006D\n\tSub Status:\t${subStatus}`,
+      {
+        TargetUserName: name,
+        Status: '0xC000006D',
+        SubStatus: subStatus,
+        ...(ipAddress ? { IpAddress: ipAddress } : {}),
+      });
   }
 
-  logoff(name: string): void {
-    this.success(SECURITY_EVENT.LOGOFF, `An account was logged off.\n\nSubject:\n\tAccount Name:\t${name}`);
+  logoff(name: string, logonType = 2, logonId?: string): void {
+    this.success(SECURITY_EVENT.LOGOFF, `An account was logged off.\n\nSubject:\n\tAccount Name:\t${name}\n\tLogon Type:\t${logonType}`,
+      {
+        TargetUserName: name,
+        LogonType: String(logonType),
+        TargetLogonId: logonId ?? nextLogonId(),
+      });
   }
 
   accountLockedOut(name: string): void {
@@ -139,12 +212,71 @@ export class WindowsSecurityAudit {
 
   // ─── Process tracking ──────────────────────────────────────────────────
 
-  processCreated(name: string, pid: number): void {
-    this.success(SECURITY_EVENT.PROCESS_CREATED, `A new process has been created.\n\nProcess Information:\n\tNew Process ID:\t0x${pid.toString(16)}\n\tNew Process Name:\t${name}`);
+  /**
+   * 4688 — création de processus.
+   *
+   * Les champs sont ceux que Windows nomme, et la distinction compte :
+   * `NewProcessId` est le processus créé, `ProcessId` son *parent*. Sans
+   * eux dans l'EventData, une chaîne parent → enfant ne se reconstruit
+   * pas, et c'est précisément ce qu'on cherche dans une investigation.
+   *
+   * `CommandLine` n'apparaît que si l'appelant l'a fourni : Windows ne
+   * la journalise que sous `ProcessCreationIncludeCmdLine_Enabled`, et
+   * l'inventer ici ferait croire à un réglage qui n'a pas été posé.
+   */
+  processCreated(name: string, pid: number, details: ProcessAuditDetails = {}): void {
+    const elevated = isElevatedAccount(details.owner);
+    this.success(SECURITY_EVENT.PROCESS_CREATED,
+      `A new process has been created.\n\nProcess Information:\n\tNew Process ID:\t0x${pid.toString(16)}\n\tNew Process Name:\t${name}`,
+      {
+        NewProcessName: name,
+        NewProcessId: `0x${pid.toString(16)}`,
+        ProcessId: `0x${(details.ppid ?? 0).toString(16)}`,
+        ParentProcessName: details.parentName ?? '',
+        ...splitAccount(details.owner),
+        // Un jeton d'administrateur est « complet » (%%1937) et porte
+        // l'étiquette d'intégrité haute ; tout autre compte reçoit le
+        // jeton par défaut. C'est ce couple qui distingue une élévation
+        // UAC d'une session administrateur directe.
+        TokenElevationType: elevated ? '%%1937' : '%%1936',
+        MandatoryLabel: elevated ? 'S-1-16-12288' : 'S-1-16-8192',
+        ...(details.commandLine ? { CommandLine: details.commandLine } : {}),
+      });
   }
 
-  processTerminated(name: string, pid: number): void {
-    this.success(SECURITY_EVENT.PROCESS_TERMINATED, `A process has exited.\n\nProcess Information:\n\tProcess ID:\t0x${pid.toString(16)}\n\tProcess Name:\t${name}`);
+  processTerminated(name: string, pid: number, details: ProcessAuditDetails = {}): void {
+    this.success(SECURITY_EVENT.PROCESS_TERMINATED,
+      `A process has exited.\n\nProcess Information:\n\tProcess ID:\t0x${pid.toString(16)}\n\tProcess Name:\t${name}`,
+      {
+        ProcessName: name,
+        ProcessId: `0x${pid.toString(16)}`,
+        ...splitAccount(details.owner),
+      });
+  }
+
+  /** 4673 — un appel de service privilégié. */
+  privilegedServiceCalled(
+    service: string, privilege: string, processName: string, account: string,
+  ): void {
+    this.success(SECURITY_EVENT.PRIVILEGED_SERVICE_CALLED,
+      `A privileged service was called.\n\nService:\n\tServer:\t${service}\n\t` +
+      `Service Name:\t${privilege}\n\nProcess:\n\tProcess Name:\t${processName}`,
+      {
+        ...splitAccount(account),
+        Service: service, PrivilegeList: privilege, ProcessName: processName,
+      });
+  }
+
+  /** 4672 — les privilèges d'un jeton à l'ouverture de session. */
+  specialPrivileges(account: string, privileges: readonly string[], logonId: string): void {
+    this.success(SECURITY_EVENT.SPECIAL_PRIVILEGES,
+      `Special privileges assigned to new logon.\n\nSubject:\n\tAccount Name:\t${account}\n\n` +
+      `Privileges:\t\t${privileges.join('\n\t\t\t')}`,
+      {
+        ...splitAccount(account),
+        SubjectLogonId: logonId,
+        PrivilegeList: privileges.join('\n\t\t\t'),
+      });
   }
 
   // ─── Object access (registry / filesystem, requires auditpol + SACL) ───

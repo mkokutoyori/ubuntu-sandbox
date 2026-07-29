@@ -396,6 +396,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
     this.procMgr.attachServiceManager(this.svcMgr, () => this.simulatedDate().getTime());
+    // Une seule horloge pour la machine : celle que `Get-Date` lit est
+    // celle qui horodate le journal, sans quoi un filtre temporel écarte
+    // les événements que la machine vient d'écrire.
+    this.eventLog.attachClock(() => this.simulatedDate().getTime());
     this.initEnv();
     this.initDefaultSockets();
     this.wireReactiveProjections();
@@ -431,6 +435,24 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * /d 0` annoncerait « opération réussie » et le port 5355 resterait
    * ouvert.
    */
+  /**
+   * `ProcessCreationIncludeCmdLine_Enabled` — la stratégie qui décide si
+   * 4688 porte la ligne de commande. Elle existe parce qu'une ligne de
+   * commande peut contenir un secret ; l'auditer est un choix, pas un
+   * défaut, et c'est ce choix qui rend visible une obfuscation
+   * `-EncodedCommand`.
+   */
+  isCommandLineAuditEnabled(): boolean {
+    const values = this.registry.getItemPropertyValues(
+      'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\Audit');
+    if (!values) return false;
+    for (const [name, value] of Object.entries(values)) {
+      if (name.toLowerCase() !== 'processcreationincludecmdline_enabled') continue;
+      return String(value).trim() !== '0' && String(value).trim() !== '';
+    }
+    return false;
+  }
+
   syncLinkLocalResponders(): void {
     if (!this.getIsPoweredOn()) return;
     const llmnr = this.getLlmnrAgent();
@@ -464,6 +486,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.securityAuditProjection?.dispose();
     this.securityAuditProjection = new WindowsSecurityAuditProjection(
       bus, new WindowsSecurityAudit(this.eventLog), this.id, this.auditPolicy,
+      () => this.isCommandLineAuditEnabled(),
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);

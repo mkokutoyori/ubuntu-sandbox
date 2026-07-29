@@ -57,6 +57,10 @@ export interface WinCommandContext {
   eventLog?: {
     getEntriesStructured: (logName: string, opts?: { newest?: number; entryType?: string; source?: string }) =>
       Array<{ source: string; eventId: number; message: string }> | null;
+    /** `wevtutil epl` — rend `null` en cas de succès, le refus sinon. */
+    exportLog?: (logName: string, destination: string, overwrite: boolean) => string | null;
+    /** `wevtutil cl` — vide réellement le journal. */
+    clearEventLog?: (logName: string) => string;
   };
   /** Device hostname */
   hostname: string;

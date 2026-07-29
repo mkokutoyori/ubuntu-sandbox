@@ -52,7 +52,7 @@ const RECORD_ID_BASE = 1000;
 function entry(
   next: () => number,
   type: EntryType, source: string, eventId: number, message: string,
-  daysAgo: number, hoursAgo = 0,
+  daysAgo: number, hoursAgo = 0, data?: Record<string, string>,
 ): EventLogEntry {
   return {
     index: next(),
@@ -62,6 +62,7 @@ function entry(
     eventId,
     category: '(0)',
     message,
+    data,
   };
 }
 
@@ -97,9 +98,34 @@ function buildSecurityLog(next: () => number): EventLogEntry[] {
     entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4624, 'An account was successfully logged on.', 1),
     entry(next, 'FailureAudit', 'Microsoft-Windows-Security-Auditing', 4625, 'An account failed to log on.', 1),
     entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4648, 'A logon was attempted using explicit credentials.', 0),
-    entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4672, 'Special privileges assigned to new logon.', 0),
+    entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4672,
+      'Special privileges assigned to new logon.', 0, 0,
+      { SubjectUserName: 'SYSTEM', SubjectDomainName: 'NT AUTHORITY',
+        PrivilegeList: BOOT_PRIVILEGE_LIST }),
+    // 4673 — un appel de service privilégié. Le noyau en émet au
+    // démarrage (l'ouverture de session du service local en fait un), et
+    // ce n'est pas une entrée de décor : c'est le même mécanisme que les
+    // 4624/4672 déjà présents ici.
+    entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4673,
+      'A privileged service was called.', 0, 1,
+      { SubjectUserName: 'SYSTEM', SubjectDomainName: 'NT AUTHORITY',
+        Service: 'Security', PrivilegeList: 'SeSecurityPrivilege',
+        ProcessName: 'C:\\Windows\\System32\\lsass.exe' }),
   ];
 }
+
+/**
+ * Les privilèges qu'un jeton d'administrateur reçoit à l'ouverture de
+ * session, et que 4672 énumère. La liste est celle que Windows nomme —
+ * `SeDebugPrivilege` et `SeImpersonatePrivilege` en sont les deux plus
+ * surveillées, parce qu'elles suffisent à prendre la main sur un autre
+ * processus.
+ */
+export const BOOT_PRIVILEGE_LIST = [
+  'SeSecurityPrivilege', 'SeBackupPrivilege', 'SeRestorePrivilege',
+  'SeTakeOwnershipPrivilege', 'SeDebugPrivilege', 'SeSystemEnvironmentPrivilege',
+  'SeLoadDriverPrivilege', 'SeImpersonatePrivilege',
+].join('\n\t\t\t');
 
 /** Assumed average serialized size of one entry, used to derive a fillable entry-count cap from `maxSizeKB` (CrashOnAuditFail, PRD-Auditpol.md §2.1 P10). */
 const AVG_ENTRY_BYTES = 500;
@@ -113,6 +139,8 @@ const EVTX_DIR = 'C:\\Windows\\System32\\winevt\\Logs';
 export interface EvtxFilesystem {
   mkdirp(absPath: string): void;
   createFile(absPath: string, content: string): { ok: boolean; error?: string };
+  /** Optionnel : `wevtutil epl` refuse d'écraser sans `/ow:true`. */
+  exists?(absPath: string): boolean;
 }
 
 export class PSEventLogProvider {
@@ -254,6 +282,33 @@ export class PSEventLogProvider {
     this.materialize();
   }
 
+  /**
+   * `wevtutil epl <journal> <fichier>` — écrit une copie du journal à
+   * l'emplacement demandé, dans le même format que les `.evtx` que le
+   * système matérialise déjà sous `winevt\Logs`. C'est bien un export :
+   * le fichier existe ensuite et se relit, il n'est pas seulement
+   * annoncé.
+   *
+   * Rend `null` en cas de succès — `wevtutil` réussi n'écrit rien sur la
+   * sortie — et le refus réel sinon.
+   */
+  exportLog(logName: string, destination: string, overwrite: boolean): string | null {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) {
+      return `Failed to export log ${logName}. The specified channel could not be found.`;
+    }
+    if (!this.fs) {
+      return `Failed to export log ${logName}. The system cannot find the path specified.`;
+    }
+    if (!overwrite && this.fs.exists?.(destination)) {
+      return `Failed to export log ${logName}. The file exists.`;
+    }
+    const parent = destination.replace(/\\[^\\]*$/, '');
+    if (parent && parent !== destination) this.fs.mkdirp(parent);
+    this.fs.createFile(destination, renderEvtx(meta));
+    return null;
+  }
+
   /** Re-render every event log to its `.evtx` file (no-op when unwired). */
   private materialize(): void {
     if (!this.fs) return;
@@ -262,11 +317,43 @@ export class PSEventLogProvider {
     }
   }
 
+  /**
+   * L'horloge de l'hôte. Par défaut celle du poste qui exécute — mais un
+   * `WindowsPC` a la sienne, simulée, et c'est elle que `Get-Date`
+   * consulte. Tant que le journal horodatait avec `new Date()`, les deux
+   * ne parlaient pas du même instant : un `Get-WinEvent -FilterHashtable
+   * @{ StartTime = (Get-Date).AddHours(-24) }` ne retrouvait aucun
+   * événement que la machine venait pourtant d'écrire. Deux commandes du
+   * même système ne peuvent pas être en désaccord sur « maintenant ».
+   */
+  now: () => number = () => Date.now();
+
+  /**
+   * Bascule le journal sur l'horloge de l'hôte, et **décale les entrées
+   * déjà présentes** du même écart.
+   *
+   * Les entrées de démarrage sont construites relativement à l'instant
+   * de construction (« il y a sept jours »…). Poser l'horloge sans les
+   * décaler les laisserait dans un autre référentiel que tout ce qui
+   * s'écrit ensuite ; le même décalage appliqué à toutes conserve
+   * exactement leur espacement.
+   */
+  attachClock(now: () => number): void {
+    const shift = now() - Date.now();
+    this.now = now;
+    if (shift === 0) return;
+    for (const meta of this.logs.values()) {
+      for (const e of meta.entries) {
+        e.timeGenerated = new Date(e.timeGenerated.getTime() + shift);
+      }
+    }
+  }
+
   writeEventLog(logName: string, source: string, eventId: number, entryType: EntryType, message: string, data?: Record<string, string>): string {
     const key = logName.toLowerCase();
     if (!this.logs.has(key)) return `Write-EventLog : Cannot open log "${logName}". The log does not exist.`;
     const meta = this.logs.get(key)!;
-    const ts = new Date();
+    const ts = new Date(this.now());
     const entry: EventLogEntry = {
       index: this.nextIndex(),
       timeGenerated: ts,

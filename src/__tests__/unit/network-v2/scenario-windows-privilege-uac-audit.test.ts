@@ -48,7 +48,12 @@ describe('Scénario 5 (Windows) — audit des privilèges et élévations : 4672
       const before = (dc.eventLog.getEntriesStructured('Security', { newest: 50 }) ?? [])
         .filter(e => e.eventId === 4672).length;
 
-      dc.getUserManager().checkPassword('Administrator', 'Admin@2025!');
+      // 4672 accompagne une ouverture de session *réussie* : c'est
+      // l'attribution des privilèges au jeton. Avec un mot de passe faux
+      // il n'y a pas de session, donc pas de privilèges à attribuer —
+      // l'énoncé d'origine authentifiait avec un mot de passe qui n'est
+      // pas celui du compte, et ne pouvait donc rien mesurer.
+      expect(dc.getUserManager().checkPassword('Administrator', 'admin')).toBe(true);
 
       const after = (dc.eventLog.getEntriesStructured('Security', { newest: 50 }) ?? [])
         .filter(e => e.eventId === 4672).length;

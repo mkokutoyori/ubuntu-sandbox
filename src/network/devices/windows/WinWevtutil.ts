@@ -82,7 +82,28 @@ export function cmdWevtutil(ctx: WinCommandContext, args: string[]): string {
 
   // wevtutil cl <log>
   if (args[0].toLowerCase() === 'cl' || args[0].toLowerCase() === 'clear-log') {
-    return args[1] ? `The ${args[1]} log has been cleared successfully.` : 'Usage: wevtutil cl <log>';
+    if (!args[1]) return 'Usage: wevtutil cl <log>';
+    // Un `cl` qui annonce l'effacement sans effacer serait exactement le
+    // genre d'affirmation sans fondement que ce dépôt traque : le vrai
+    // vide le journal, et n'écrit rien sur la sortie.
+    ctx.eventLog?.clearEventLog?.(args[1]);
+    return '';
+  }
+
+  // wevtutil epl <log> <fichier> [/ow:true]
+  if (args[0].toLowerCase() === 'epl' || args[0].toLowerCase() === 'export-log') {
+    const positional = args.slice(1).filter((a) => !a.startsWith('/'));
+    const [logName, destination] = positional;
+    if (!logName || !destination) {
+      return 'Usage: wevtutil epl <log> <exportFile> [/ow:true|false]';
+    }
+    const overwrite = args.some((a) => /^\/ow:true$/i.test(a));
+    if (!ctx.eventLog?.exportLog) {
+      return `Failed to export log ${logName}. The system cannot find the path specified.`;
+    }
+    // `wevtutil epl` qui réussit n'écrit rien : le silence *est* le
+    // succès, et c'est le fichier écrit qui en témoigne.
+    return ctx.eventLog.exportLog(logName, destination, overwrite) ?? '';
   }
 
   return WEVTUTIL_HELP;
