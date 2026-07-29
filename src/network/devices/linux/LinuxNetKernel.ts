@@ -153,6 +153,8 @@ export interface LinuxNetKernel {
   getResolvedService(): import('./net/ResolvedService').ResolvedService;
   /** Réécrit `/run/systemd/resolve/` après un changement de configuration. */
   publishResolvedState(): void;
+  /** Ouvre ou ferme les ports LLMNR/mDNS selon la configuration courante. */
+  syncLinkLocalResponders(): void;
 
   /** Voisins LLDP découverts sur le câble, tous ports ou un seul. */
   getLldpNeighbors(iface?: string): import('../../lldp/LldpAgent').LldpNeighbor[];

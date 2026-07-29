@@ -161,7 +161,9 @@ async function renderQuery(
       out.push(r.link ? `${nom}: ${addr} -- link: ${r.link}` : `${nom}: ${addr}`);
     }
     out.push('');
-    out.push(`-- Information acquired via protocol DNS in 0us.`);
+    // systemd nomme le protocole employé : c'est ce qui distingue un nom
+    // résolu par un serveur d'un nom résolu par le lien lui-même.
+    out.push(`-- Information acquired via protocol ${protocolLabel(r.protocol)} in 0us.`);
     out.push(
       `-- Data is authenticated: ${r.dnssec === 'secure' ? 'yes' : 'no'}; `
       + `Data was acquired via local or encrypted transport: ${r.encrypted ? 'yes' : 'no'}`,
@@ -169,6 +171,13 @@ async function renderQuery(
     out.push(`-- Data from: ${r.origin === 'cache' ? 'cache' : 'network'}`);
   }
   return { output: out.join('\n'), exitCode };
+}
+
+/** L'étiquette systemd du protocole ayant fourni la réponse. */
+function protocolLabel(protocol: 'dns' | 'llmnr' | 'mdns'): string {
+  if (protocol === 'llmnr') return 'LLMNR/IPv4';
+  if (protocol === 'mdns') return 'mDNS/IPv4';
+  return 'DNS';
 }
 
 function renderStatistics(ctx: LinuxCommandContext): string {
@@ -217,6 +226,9 @@ function runConfigVerb(ctx: LinuxCommandContext, verb: string, args: string[]): 
     case 'nta': cfg.negativeTrustAnchors = [...rest]; break;
   }
   ctx.net.publishResolvedState();
+  // Un `llmnr`/`mdns` qui ne ferait que stocker serait le défaut que
+  // cette série corrige : le réglage ouvre ou ferme un vrai port.
+  ctx.net.syncLinkLocalResponders();
   return { output: '', exitCode: 0 };
 }
 

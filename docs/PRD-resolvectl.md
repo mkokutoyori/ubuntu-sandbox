@@ -92,7 +92,7 @@ Aucune ligne de code n'est écrite dans le cadre de ce document.
 | 7 | `/etc/systemd/resolved.conf` n'existe pas (`ls /etc/systemd/` → `network system`) | Le fichier existe et gouverne les réglages globaux | Moyenne |
 | 8 | `/run/systemd/resolve/` n'existe pas : ni `stub-resolv.conf`, ni `resolv.conf` | Les deux fichiers d'exécution existent | Moyenne |
 | 9 | Aucune statistique : ni transactions, ni succès/échecs, ni taille de cache | `resolvectl statistics` rend des compteurs réels | Moyenne |
-| 10 | Aucune bascule de protocole (LLMNR, mDNS, DNSSEC, DNSoverTLS) | Réglables et rapportées ; DNSSEC et DoT réellement branchés — voir §7 | Moyenne |
+| 10 | Aucune bascule de protocole (LLMNR, mDNS, DNSSEC, DNSoverTLS) | Les quatre réellement branchées — voir §7 | Moyenne |
 | 11 | `DnsCache` n'a aucun compteur de hits/misses | Nécessaire pour #9 | Faible |
 | 12 | Aucun `resolvectl query` : pour interroger, il faut `dig` ou `getent` | `query` résout par le même chemin que le système | Élevée |
 
@@ -216,13 +216,57 @@ rapportés — mais il faut dire ce qui est réellement fait :
 |---|---|
 | `DNSSEC=` | **Réel** : `DnsValidator` remonte la chaîne par de vraies requêtes DNSKEY/DS. `secure`, `bogus` et `insecure` sont tous les trois atteints ; `allow-downgrade` accepte une zone non signée, jamais une falsifiée. `resolvectl nta` soustrait un domaine à la validation |
 | `DNSOverTLS=` | **Réel** : `DnsTlsTransport` fait une vraie poignée de main TLS 1.3 (RFC 8446) sur le 853, avec PKI et ALPN `dot` exigée. `yes` refuse de retomber en clair, `opportunistic` y retombe |
-| `LLMNR=` | **Réglage seul** : aucun émetteur/récepteur LLMNR n'existe. Rapporté par `status`, sans effet sur la résolution |
-| `MulticastDNS=` | **Réglage seul**, même raison |
+| `LLMNR=` | **Réel** (RFC 4795) : UDP/5355 sur 224.0.0.252. L'hôte répond pour son nom mono-label, en unicast vers le demandeur, et se tait pour tout autre nom. Le réglage ouvre ou ferme un vrai port |
+| `MulticastDNS=` | **Réel** (RFC 6762) : UDP/5353 sur 224.0.0.251, domaine `.local`. Réponse sur le groupe, unicast à TTL plafonné pour une requête ponctuelle (§6.7), annonce non sollicitée au démarrage (§8.3). Éteint par défaut, comme sur Ubuntu |
 
-Ces deux « réglage seul » doivent rester **visibles comme tels** dans la
-documentation et ne jamais faire croire à une résolution qui n'a pas
-lieu. Un réglage accepté qui ne fait rien est le défaut que toute cette
-série corrige ; le répéter ici serait incohérent.
+Plus aucun réglage de cette table n'est un texte sans effet.
+
+### 7.2 Le préalable : un hôte savait-il seulement parler à un groupe ?
+
+Non, et c'était le vrai obstacle. `EndHost.resolveRoute` n'avait aucune
+route pour 224.0.0.0/4 ni pour 255.255.255.255 : `sendUdpDatagram`
+rendait `false` sans rien émettre, y compris vers un groupe que l'hôte
+venait de rejoindre. En réception, `handleIPv4` jetait tout paquet
+multicast, faute d'être « pour nous » — alors même que le filtre L2
+l'avait laissé monter parce que la carte est abonnée au groupe.
+
+Les deux moitiés sont corrigées : la MAC de destination se déduit du
+groupe (RFC 1112 §6.4, via `ipv4MulticastToMac` déjà présent pour IGMP),
+la trame part sur chaque lien monté qui porte une adresse, avec TTL 1
+pour un groupe de lien ; et un datagramme multicast est livré à
+l'écouteur UDP, sans « port injoignable » en retour — répondre cela à un
+groupe désignerait un coupable qui n'a rien demandé.
+
+### 7.3 Règle de sélection, et ce qui la gouverne
+
+| Nom demandé | Protocole |
+|---|---|
+| `*.local` | mDNS seulement — jamais un serveur unicast (RFC 6762 §3) |
+| mono-label | DNS d'abord ; LLMNR quand le serveur ne sait pas, ou quand il n'y en a aucun |
+| autre | DNS |
+
+`resolvectl query` nomme le protocole employé (`-- Information acquired
+via protocol LLMNR/IPv4`), et une réponse venue du lien n'est jamais
+annoncée comme authentifiée : personne ne la signe.
+
+Le réglage global est **le défaut des liens**, pas un interrupteur
+indépendant. Un protocole de lien est donc actif dès qu'un lien
+l'autorise, et c'est le global qui tranche tant qu'aucun lien n'est
+configuré. Sans cette règle, `resolvectl llmnr eth0 no` sur l'unique
+lien ne fermait rien — le global valant encore `yes` — et
+`resolvectl mdns eth0 yes` restait sans effet sur une machine sans
+serveur DNS, faute de lien à consulter.
+
+**Limites assumées.** Le répondeur est unique pour l'hôte alors que le
+réglage est par lien : la granularité par lien du *répondeur* n'est pas
+modélisée, celle de la *résolution* l'est. Les groupes IPv6
+(`FF02::1:3`, `FF02::FB`) ne sont pas émis, la pile v6 n'ayant pas
+d'équivalent à l'émission vers un groupe arbitraire. Restent dehors, et
+c'est écrit dans l'en-tête de chaque agent : la détection de conflit de
+noms (LLMNR §4, mDNS §8.1), la suppression par réponses connues
+(§7.1) et DNS-SD (RFC 6763) — les deux premières supposent un état de
+possession disputé qui n'existe nulle part ici, la troisième est un
+protocole entier avec ses propres types SRV/TXT/PTR.
 
 ### 7.1 Le chemin asynchrone de la base `hosts`
 
@@ -261,8 +305,8 @@ NSS ; `resolveHostnameSync` lui reste réservé, avec la même limite.
 - **D-Bus** (`org.freedesktop.resolve1`) : accès direct en mémoire.
 - **`resolvectl service` / `openpgp` / `tlsa`** : SRV, OPENPGPKEY et TLSA
   n'ont pas de source de données dans les zones du simulateur.
-- **LLMNR et mDNS réels** : deux protocoles entiers, chacun de la taille
-  d'un PRD.
+- **DNS-SD** (RFC 6763) : l'énumération de services au-dessus de mDNS,
+  avec ses types SRV/TXT/PTR — un protocole à part entière.
 - **DoH et DoQ** : `DnsHttpsTransport`/`DnsQuicTransport` reposent encore
   sur `SimulatedTls` et migrent sous `PRD-HTTP.md`/`PRD-QUIC.md`.
 - **Épinglage du certificat DoT** (`DNSOverTLS=yes#nom`, vérification du

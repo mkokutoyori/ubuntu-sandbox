@@ -73,6 +73,7 @@ import {
   type ICMPErrorType,
 } from '../core/IcmpErrors';
 import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
+import { isMulticastIpv4, ipv4MulticastToMac } from '../core/ip';
 import { DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
@@ -1754,8 +1755,13 @@ export abstract class EndHost extends Equipment {
     const mask = port.getSubnetMask();
     const isBroadcast = ipPkt.destinationIP.toString() === '255.255.255.255'
       || (myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask));
+    // Un datagramme multicast n'est adressé à personne en particulier :
+    // sans cette branche il tombait dans le « pas pour nous » et l'hôte
+    // le jetait, alors que le filtre L2 l'avait justement laissé monter
+    // parce que la carte est abonnée au groupe.
+    const isMulticast = isMulticastIpv4(ipPkt.destinationIP.toString());
 
-    if (isForUs || isBroadcast) {
+    if (isForUs || isBroadcast || isMulticast) {
       // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first
       // fragment carries no L4 header for the firewall or upper layer to
       // inspect, so hold it here until the full datagram is back together.
@@ -1780,7 +1786,10 @@ export abstract class EndHost extends Equipment {
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_UDP) {
-        this.deliverUDP(portName, ipPkt, !!isBroadcast, srcMac);
+        // Un multicast sans écouteur se jette en silence, comme un
+        // broadcast : répondre « port injoignable » à un groupe
+        // désignerait un coupable qui n'a rien demandé.
+        this.deliverUDP(portName, ipPkt, !!isBroadcast || isMulticast, srcMac);
       } else if (ipPkt.protocol === IP_PROTO_GRE && this.greAgent) {
         const inner = this.greAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
         if (inner) this.handleIPv4(portName, inner, srcMac);
@@ -2341,7 +2350,7 @@ export abstract class EndHost extends Equipment {
     sourcePort: number,
     payload: unknown,
     payloadBytes: number = 0,
-    options: { df?: boolean } = {},
+    options: { df?: boolean; iface?: string } = {},
   ): boolean {
     const udpBase = { type: 'udp' as const, sourcePort, destinationPort, length: 8 + payloadBytes, payload };
     // Preserve the existing DF=1 default (every prior caller relied on
@@ -2359,6 +2368,15 @@ export abstract class EndHost extends Equipment {
       );
       this.deliverUDP('lo', localPkt, false);
       return true;
+    }
+
+    // Multicast et broadcast limité n'ont ni route ni voisin à résoudre :
+    // la MAC se déduit du groupe (RFC 1112 §6.4), et la trame part sur le
+    // lien. Sans cette branche, `resolveRoute` échouait et l'hôte ne
+    // pouvait rien émettre vers un groupe — pas même un groupe rejoint.
+    if (isMulticastIpv4(destinationIP.toString())
+      || destinationIP.toString() === '255.255.255.255') {
+      return this.sendUdpToGroup(destinationIP, udpBase, flags, options.iface);
     }
 
     const route = this.resolveRoute(destinationIP);
@@ -2391,6 +2409,52 @@ export abstract class EndHost extends Equipment {
       this.fwdQueueAndResolve(ipPkt, outPortName, route.nextHopIP, route.port);
     }
     return true;
+  }
+
+  /**
+   * Émission vers un groupe (ou le broadcast limité). Sans interface
+   * nommée, la trame part sur chaque lien monté qui porte une adresse —
+   * c'est le comportement d'un démon qui a rejoint le groupe sur tous ses
+   * liens, et c'est ce dont LLMNR et mDNS ont besoin.
+   */
+  private sendUdpToGroup(
+    group: IPAddress,
+    udpBase: Omit<UDPPacket, 'checksum'>,
+    flags: number,
+    iface?: string,
+  ): boolean {
+    const isLimitedBroadcast = group.toString() === '255.255.255.255';
+    const dstMAC = isLimitedBroadcast
+      ? MACAddress.broadcast()
+      : new MACAddress(ipv4MulticastToMac(group.toString()));
+
+    let sent = false;
+    for (const [name, port] of this.ports) {
+      if (name === 'lo') continue;
+      if (iface && name !== iface) continue;
+      if (!port.isOperationallyUp()) continue;
+      const srcIP = port.getIPAddress();
+      if (!srcIP) continue;
+
+      const udp: UDPPacket = {
+        ...udpBase,
+        checksum: computeUdpChecksum(udpBase, srcIP.toString(), group.toString()),
+      };
+      // TTL 1 : un groupe en 224.0.0.0/24 ne franchit jamais le lien
+      // (RFC 1112 §6.1), et c'est exactement ce que LLMNR et mDNS
+      // attendent.
+      const ttl = isLimitedBroadcast || group.toString().startsWith('224.0.0.')
+        ? 1 : this.defaultTTL;
+      const ipPkt = createIPv4Packet(
+        srcIP, group, IP_PROTO_UDP, ttl, udp, udp.length, { flags },
+      );
+      if (this.firewallFilter(name, ipPkt, 'out') !== 'accept') continue;
+      this.sendFrame(name, {
+        srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+      sent = true;
+    }
+    return sent;
   }
 
   public sendUdpDatagramTo(

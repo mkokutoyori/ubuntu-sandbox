@@ -87,6 +87,8 @@ import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCom
 import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { bindDnsTcpServer, unbindDnsTcpServer } from '../dns/transport/DnsTcpTransport';
 import { bindDnsTlsServer, unbindDnsTlsServer, DOT_PORT } from '../dns/transport/DnsTlsTransport';
+import { LlmnrAgent } from '../llmnr/LlmnrAgent';
+import { MdnsAgent } from '../mdns/MdnsAgent';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -414,6 +416,9 @@ export abstract class LinuxMachine extends EndHost
       this.socketTable.unbind('tcp', '0.0.0.0', DOT_PORT);
     });
     this.bindResolvedStub();
+    // LLMNR est actif par défaut sur Ubuntu, mDNS non — c'est ce que dit
+    // `resolved.conf` et ce que `syncLinkLocalResponders` applique.
+    this.syncLinkLocalResponders();
 
     this.bind9 = new Bind9Service(this, {
       read: (path) => this.executor.vfs.readFile(path),
@@ -657,6 +662,42 @@ export abstract class LinuxMachine extends EndHost
 
   // ─── systemd-resolved ────────────────────────────────────────────────
 
+  private _llmnrAgent: LlmnrAgent | null = null;
+  private _mdnsAgent: MdnsAgent | null = null;
+
+  /**
+   * Les deux résolveurs de lien de systemd-resolved. Ils ne sont pas de
+   * simples réglages : chacun tient un vrai port UDP sur son groupe
+   * multicast et répond pour le nom de cet hôte.
+   */
+  getLlmnrAgent(): LlmnrAgent {
+    if (!this._llmnrAgent) this._llmnrAgent = new LlmnrAgent(this);
+    return this._llmnrAgent;
+  }
+
+  getMdnsAgent(): MdnsAgent {
+    if (!this._mdnsAgent) this._mdnsAgent = new MdnsAgent(this);
+    return this._mdnsAgent;
+  }
+
+  /**
+   * Aligne les deux répondeurs sur la configuration : `no` les arrête,
+   * toute autre valeur les fait écouter. Rappelé à chaque changement de
+   * réglage, sans quoi `resolvectl llmnr eth0 no` n'aurait, une fois de
+   * plus, aucun effet.
+   */
+  syncLinkLocalResponders(): void {
+    const svc = this.getResolvedService();
+    // `resolve` autorise à interroger sans répondre : seul `yes` fait
+    // tenir le port. Le répondeur est unique pour l'hôte alors que le
+    // réglage est par lien : la granularité par lien du *répondeur*
+    // n'est donc pas modélisée, celle de la *résolution* l'est.
+    const llmnr = this.getLlmnrAgent();
+    const mdns = this.getMdnsAgent();
+    if (svc.linkLocalEnabled('llmnr', ['yes'])) llmnr.start(); else llmnr.stop();
+    if (svc.linkLocalEnabled('mdns', ['yes'])) mdns.start(); else mdns.stop();
+  }
+
   private _resolvedService: ResolvedService | null = null;
 
   /**
@@ -685,6 +726,8 @@ export abstract class LinuxMachine extends EndHost
         },
         validate: (records) => this.validateDnssec(records),
         hasTrustAnchors: () => this.dnssecAnchors.length > 0,
+        resolveLlmnr: (name) => this.getLlmnrAgent().resolve(name),
+        resolveMdns: (name) => this.getMdnsAgent().resolve(name),
       });
       this.loadResolvedConfig();
     }
@@ -2605,6 +2648,7 @@ export abstract class LinuxMachine extends EndHost
       },
       getResolvedService: () => this.getResolvedService(),
       publishResolvedState: () => this.publishResolvedState(),
+      syncLinkLocalResponders: () => this.syncLinkLocalResponders(),
       getLldpNeighbors: (iface?: string) => this.getLldpNeighbors(iface),
       getDhcpClient: (): DHCPClient => {
         return this.dhcpClient;

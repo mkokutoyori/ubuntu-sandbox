@@ -39,6 +39,8 @@ import type { GlbpDomainEvent } from '@/network/glbp/events';
 import type { BfdDomainEvent } from '@/network/bfd/events';
 import type { UdldDomainEvent } from '@/network/udld/events';
 import type { IgmpDomainEvent } from '@/network/igmp/events';
+import type { LlmnrDomainEvent } from '@/network/llmnr/events';
+import type { MdnsDomainEvent } from '@/network/mdns/events';
 import type { IgmpSnoopingDomainEvent } from '@/network/igmp-snooping/events';
 import type { PimSnoopingDomainEvent } from '@/network/pim-snooping/events';
 import type { PimDomainEvent } from '@/network/pim/events';
@@ -350,6 +352,8 @@ export type DomainEvent =
   | BfdDomainEvent
   | UdldDomainEvent
   | IgmpDomainEvent
+  | LlmnrDomainEvent
+  | MdnsDomainEvent
   | IgmpSnoopingDomainEvent
   | PimSnoopingDomainEvent
   | PimDomainEvent

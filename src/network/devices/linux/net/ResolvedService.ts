@@ -153,6 +153,12 @@ export interface ResolvedQueryOutcome {
   /** True quand la réponse a voyagé chiffrée (DNS-over-TLS). */
   encrypted: boolean;
   /**
+   * Par quel protocole la réponse est venue. `resolvectl query` le dit à
+   * l'opérateur, et c'est la seule façon de distinguer un nom résolu par
+   * le lien d'un nom résolu par un serveur.
+   */
+  protocol: 'dns' | 'llmnr' | 'mdns';
+  /**
    * Ce que l'amont a répondu. `nodata` — le nom existe mais pas pour ce
    * type — ne se confond pas avec `nxdomain` : une recherche A+AAAA dont
    * seule la moitié existe est le cas courant, pas une erreur.
@@ -192,7 +198,23 @@ export interface ResolvedDeps {
    * synchrone reste ouvert.
    */
   hasTrustAnchors?(): boolean;
+  /** Interroge le lien en LLMNR (RFC 4795) — noms mono-label. */
+  resolveLlmnr?(name: string): Promise<string[]>;
+  /** Interroge le lien en mDNS (RFC 6762) — noms `.local`. */
+  resolveMdns?(name: string): Promise<string[]>;
   now?(): number;
+}
+
+/** True pour un nom du domaine `.local`, terrain exclusif de mDNS. */
+export function isMdnsName(name: string): boolean {
+  const n = name.toLowerCase().replace(/\.$/, '');
+  return n === 'local' || n.endsWith('.local');
+}
+
+/** True pour un nom mono-label, seul terrain de LLMNR. */
+export function isLlmnrName(name: string): boolean {
+  const n = name.toLowerCase().replace(/\.$/, '');
+  return n !== '' && !n.includes('.');
 }
 
 export class ResolvedService {
@@ -208,6 +230,7 @@ export class ResolvedService {
     addresses: string[]; expiresAtMs: number;
     dnssec: DnssecStatus | 'unset'; encrypted: boolean;
     verdict: ResolvedQueryOutcome['verdict'];
+    protocol: ResolvedQueryOutcome['protocol'];
   }>();
 
   constructor(private readonly deps: ResolvedDeps) {
@@ -356,10 +379,13 @@ export class ResolvedService {
         return {
           addresses: [...cached.addresses], origin: 'cache',
           link: null, server: null, dnssec: cached.dnssec, encrypted: cached.encrypted,
-          verdict: cached.verdict,
+          verdict: cached.verdict, protocol: cached.protocol,
         };
       }
     }
+    // LLMNR et mDNS partent sur un groupe et attendent une réponse : ils
+    // ne peuvent pas tenir dans la pile d'appel, comme DNSSEC et DoT.
+    if (this.usesLinkLocal(key, null)) return null;
     const { server, link } = this.selectServer(key);
     if (this.requiresAsync(link, key) || !this.deps.queryUpstreamSync) return null;
 
@@ -372,7 +398,7 @@ export class ResolvedService {
       this.stats.failedTransactions++;
       return {
         addresses: [], origin: 'none', link: null, server: null,
-        dnssec: 'unset', encrypted: false, verdict: 'failure',
+        dnssec: 'unset', encrypted: false, verdict: 'failure', protocol: 'dns',
       };
     }
     const answer = this.deps.queryUpstreamSync(server, key, qtype);
@@ -380,20 +406,63 @@ export class ResolvedService {
       this.stats.failedTransactions++;
       return {
         addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted: false,
-        verdict: this.emptyVerdict(answer),
+        verdict: this.emptyVerdict(answer), protocol: 'dns',
       };
     }
     if (this.global.cache) {
       this.answers.set(ck, {
         addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
-        dnssec: 'unset', encrypted: false, verdict: 'answer',
+        dnssec: 'unset', encrypted: false, verdict: 'answer', protocol: 'dns',
       });
       this.stats.currentCacheSize = this.answers.size;
     }
     return {
       addresses: answer.addresses, origin: 'network', link, server,
-      dnssec: 'unset', encrypted: false, verdict: 'answer',
+      dnssec: 'unset', encrypted: false, verdict: 'answer', protocol: 'dns',
     };
+  }
+
+  /**
+   * Le réglage effectif de LLMNR / mDNS pour un lien. `resolve` autorise
+   * à interroger sans répondre, `yes` les deux, `no` ni l'un ni l'autre.
+   */
+  linkLocalMode(protocol: 'llmnr' | 'mdns', link: string | null): TriState {
+    return protocol === 'llmnr' ? this.llmnrFor(link) : this.mdnsFor(link);
+  }
+
+  /**
+   * Le réglage global n'est pas un interrupteur indépendant : c'est le
+   * défaut des liens qui n'en posent pas. Un protocole de lien est donc
+   * actif dès qu'un lien l'autorise — et quand aucun lien n'est encore
+   * configuré, c'est le global qui tranche.
+   *
+   * Sans cette règle, `resolvectl llmnr eth0 no` sur l'unique lien ne
+   * fermait rien, le global valant encore `yes` ; et à l'inverse
+   * `resolvectl mdns eth0 yes` restait sans effet sur une machine sans
+   * serveur DNS, faute de lien à consulter.
+   */
+  linkLocalEnabled(protocol: 'llmnr' | 'mdns', wanted: TriState[] = ['yes', 'resolve']): boolean {
+    const links = [...this.links.keys()];
+    if (links.length === 0) return wanted.includes(this.linkLocalMode(protocol, null));
+    return links.some((l) => wanted.includes(this.linkLocalMode(protocol, l)));
+  }
+
+  /**
+   * True si ce nom relève d'un résolveur de lien plutôt que du DNS. La
+   * règle est celle de systemd : `.local` à mDNS, mono-label à LLMNR, et
+   * seulement si le réglage l'autorise.
+   */
+  usesLinkLocal(name: string, link: string | null): 'llmnr' | 'mdns' | null {
+    const allowed = (protocol: 'llmnr' | 'mdns'): boolean => (
+      link ? this.linkLocalMode(protocol, link) !== 'no' : this.linkLocalEnabled(protocol)
+    );
+    if (isMdnsName(name)) {
+      return allowed('mdns') && this.deps.resolveMdns ? 'mdns' : null;
+    }
+    if (isLlmnrName(name)) {
+      return allowed('llmnr') && this.deps.resolveLlmnr ? 'llmnr' : null;
+    }
+    return null;
   }
 
   /**
@@ -426,7 +495,7 @@ export class ResolvedService {
         return {
           addresses: [...cached.addresses], origin: 'cache',
           link: null, server: null, dnssec: cached.dnssec, encrypted: cached.encrypted,
-          verdict: cached.verdict,
+          verdict: cached.verdict, protocol: cached.protocol,
         };
       }
       if (cached) this.answers.delete(ck);
@@ -434,11 +503,27 @@ export class ResolvedService {
     }
 
     const { server, link } = this.selectServer(key);
+
+    // Règle de systemd : `.local` appartient à mDNS et ne part jamais
+    // vers un serveur unicast (RFC 6762 §3) ; un nom mono-label est
+    // demandé au lien en LLMNR. Le DNS ne voit ni l'un ni l'autre.
+    const linkLocal = this.usesLinkLocal(key, link);
+    if (linkLocal === 'mdns') {
+      return this.finishLinkLocal(
+        'mdns', ck, link, qtype, now, ttlSeconds,
+        await this.deps.resolveMdns!(key));
+    }
+    if (linkLocal === 'llmnr' && !server) {
+      return this.finishLinkLocal(
+        'llmnr', ck, link, qtype, now, ttlSeconds,
+        await this.deps.resolveLlmnr!(key));
+    }
+
     if (!server) {
       this.stats.failedTransactions++;
       return {
         addresses: [], origin: 'none', link: null, server: null,
-        dnssec: 'unset', encrypted: false, verdict: 'failure',
+        dnssec: 'unset', encrypted: false, verdict: 'failure', protocol: 'dns',
       };
     }
 
@@ -459,17 +544,26 @@ export class ResolvedService {
       this.stats.failedTransactions++;
       return {
         addresses: [], origin: 'none', link, server,
-        dnssec: 'unset', encrypted: false, verdict: 'failure',
+        dnssec: 'unset', encrypted: false, verdict: 'failure', protocol: 'dns',
         refusedBecause: 'no-encrypted-transport',
       };
     }
     if (!answer) answer = await this.deps.queryUpstream(server, key, qtype, wantDnssec, false);
 
     if (!answer || answer.addresses.length === 0) {
+      // Le DNS n'a rien : c'est là que LLMNR prend le relais pour un nom
+      // mono-label, exactement comme systemd — le lien répond de ce que
+      // le serveur ignore.
+      if (linkLocal === 'llmnr') {
+        const viaLink = await this.deps.resolveLlmnr!(key);
+        if (viaLink.length > 0) {
+          return this.finishLinkLocal('llmnr', ck, link, qtype, now, ttlSeconds, viaLink);
+        }
+      }
       this.stats.failedTransactions++;
       return {
         addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted,
-        verdict: this.emptyVerdict(answer),
+        verdict: this.emptyVerdict(answer), protocol: 'dns',
       };
     }
 
@@ -484,14 +578,15 @@ export class ResolvedService {
         this.stats.failedTransactions++;
         return {
           addresses: [], origin: 'none', link, server,
-          dnssec, encrypted, verdict: 'failure', refusedBecause: 'bogus',
+          dnssec, encrypted, verdict: 'failure', protocol: 'dns', refusedBecause: 'bogus',
         };
       }
       if (dnssec === 'insecure' && mode === 'yes') {
         this.stats.failedTransactions++;
         return {
           addresses: [], origin: 'none', link, server,
-          dnssec, encrypted, verdict: 'failure', refusedBecause: 'unsigned-but-required',
+          dnssec, encrypted, verdict: 'failure', protocol: 'dns',
+          refusedBecause: 'unsigned-but-required',
         };
       }
     }
@@ -499,13 +594,53 @@ export class ResolvedService {
     if (this.global.cache) {
       this.answers.set(ck, {
         addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
-        dnssec, encrypted, verdict: 'answer',
+        dnssec, encrypted, verdict: 'answer', protocol: 'dns',
       });
       this.stats.currentCacheSize = this.answers.size;
     }
     return {
       addresses: answer.addresses, origin: 'network', link, server,
-      dnssec, encrypted, verdict: 'answer',
+      dnssec, encrypted, verdict: 'answer', protocol: 'dns',
+    };
+  }
+
+  /**
+   * Range une réponse venue du lien. Elle n'a ni serveur ni verdict
+   * DNSSEC : personne ne l'a signée, et prétendre le contraire serait
+   * exactement le genre d'affirmation que cette série corrige. Elle est
+   * en revanche mise en cache comme les autres, et le TTL court des deux
+   * protocoles est ce qui l'empêche de survivre au départ du pair.
+   */
+  private finishLinkLocal(
+    protocol: 'llmnr' | 'mdns',
+    ck: string,
+    link: string | null,
+    qtype: ResolvedQtype,
+    now: number,
+    ttlSeconds: number,
+    addresses: string[],
+  ): ResolvedQueryOutcome {
+    // Le lien ne parle qu'IPv4 ici : une question AAAA n'a pas de
+    // réponse à en tirer, et l'inventer serait mentir.
+    const usable = qtype === 'A' ? addresses : [];
+    if (usable.length === 0) {
+      this.stats.failedTransactions++;
+      return {
+        addresses: [], origin: 'none', link, server: null,
+        dnssec: 'unset', encrypted: false,
+        verdict: qtype === 'A' ? 'nxdomain' : 'nodata', protocol,
+      };
+    }
+    if (this.global.cache) {
+      this.answers.set(ck, {
+        addresses: [...usable], expiresAtMs: now + ttlSeconds * 1000,
+        dnssec: 'unset', encrypted: false, verdict: 'answer', protocol,
+      });
+      this.stats.currentCacheSize = this.answers.size;
+    }
+    return {
+      addresses: usable, origin: 'network', link, server: null,
+      dnssec: 'unset', encrypted: false, verdict: 'answer', protocol,
     };
   }
 
