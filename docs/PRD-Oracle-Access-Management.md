@@ -360,6 +360,46 @@ Aucun nouveau champ non plus : `rlsPolicies` porte déjà `statementTypes`,
 La fonction de politique est une vraie fonction PL/SQL du moteur ; elle rend
 une chaîne de prédicat, composée en `AND` avec le `WHERE` de la requête.
 
+**Livré en P4 (lecture).** `security/RlsPredicateApplier.ts` appelle la
+fonction de politique par le même chemin que n'importe quelle fonction
+stockée invoquée depuis SQL (`execScalarFunctionCall`), puis ré-analyse la
+chaîne rendue en expression — exactement comme `ConstraintValidator`
+ré-analyse une clause `CHECK` stockée, cache borné compris. Plusieurs
+politiques sur un même objet se composent en `AND` : une politique ne peut
+que restreindre.
+
+Le filtre est posé là où les lignes de la table de base sont lues
+(`loadTable`), pas sur le produit d'une jointure. C'est la sémantique
+d'Oracle, et cela lui fait couvrir d'un coup les jointures, les
+sous-requêtes et les corps de vue.
+
+Points de sémantique tranchés ici :
+
+- **Exemptions** : `SYS`, et le détenteur d'`EXEMPT ACCESS POLICY` (ajouté
+  au catalogue `systemPrivileges.ts`). Le propriétaire de l'objet, lui,
+  **est** soumis — c'est le piège classique de VPD, et le reproduire est
+  l'intérêt de l'exercice. Le §5 disait l'inverse ; c'était une erreur de
+  rédaction, corrigée.
+- **Un prédicat inanalysable rend ORA-28113**, il n'est pas ignoré. Un
+  filtre de sécurité qui disparaît en silence est pire qu'une requête en
+  erreur. Même code quand la fonction de politique n'existe pas.
+- **Un prédicat vide ne restreint rien**, comme en Oracle réel.
+- **Récursion** : une fonction de politique qui lit l'objet qu'elle protège
+  s'appellerait sans fin. La ré-entrée est bloquée et la lecture interne
+  passe non filtrée — Oracle lève ORA-28108 pour la boucle équivalente ;
+  ne pas boucler est le minimum, rendre l'erreur exacte ne l'est pas ici.
+
+**Défaut adjacent corrigé au passage.** `executeDbmsRlsCall` passe `''`
+pour un argument omis, et `addRlsPolicy` écrivait
+`p.statementTypes ?? 'SELECT,INSERT,UPDATE,DELETE'` : `''` n'étant ni `null`
+ni `undefined`, le défaut ne s'appliquait jamais et les cinq drapeaux
+tombaient à faux. Une politique posée sans `statement_types` — le cas
+courant — était donc désarmée pour tous les types d'instruction, et
+`DBA_POLICIES` affichait `SEL = NO`. Même cause pour `policy_type` (vide au
+lieu de `DYNAMIC`) et `policy_group` (vide au lieu de `SYS_DEFAULT`).
+Corrigé en `||` aux quatre endroits. Sans cela, P4 aurait filtré
+correctement… des politiques qui ne s'armaient jamais.
+
 Cas limites à traiter explicitement : prédicat vide ou `NULL` (aucun filtrage),
 fonction inexistante (ORA-28110 « policy function has error »), politique sur
 un objet dont le propriétaire exécute la requête (pas de filtrage).
@@ -385,7 +425,7 @@ jusqu'au vert, puis régression avant commit. Aucun stub, aucune duplication.
 | **P1** | `SET ROLE` au parseur + `activeRoles` sur `OracleSession` + séparation « rôles détenus » / « rôles actifs » dans `PrivilegeChecker` | `SET ROLE NONE` puis `SELECT` sur une table accessible par rôle → ORA-00942 ; `SESSION_ROLES` vide ; `SET ROLE reader` la rend de nouveau lisible ; `SET ROLE inconnu` → ORA-01924 |
 | **P2** | `DEFAULT ROLE` réellement consulté à l'ouverture de session ; rôles à mot de passe | `ALTER USER alice DEFAULT ROLE NONE` puis reconnexion → aucun rôle actif ; `SET ROLE secure_role IDENTIFIED BY …` accepté, mot de passe faux → ORA-01979 |
 | **P3** | `requireColumnAccess` branché sur les quatre chemins DML | `GRANT UPDATE (salary)` puis `UPDATE emp SET id = 9` → ORA-01031 ; `UPDATE emp SET salary = 1` → succès ; le détenteur du privilège table complet n'est pas gêné |
-| **P4** | `RlsPredicateApplier` — lecture (`SELECT`) | Politique rendant `id = 1` sur `EMP` : `SELECT` rend une ligne au lieu de deux ; politique désactivée → deux lignes ; `SYS` et le propriétaire voient tout |
+| **P4** | `RlsPredicateApplier` — lecture (`SELECT`) | Politique rendant `id = 1` sur `EMP` : `SELECT` rend une ligne au lieu de deux ; politique désactivée → deux lignes ; `SYS` et le détenteur d'`EXEMPT ACCESS POLICY` voient tout |
 | **P5** | VPD en écriture (`INSERT`/`UPDATE`/`DELETE`), `statement_types`, `sec_relevant_cols` | Une politique `SELECT` seule ne filtre pas un `DELETE` ; une politique à `sec_relevant_cols` ne s'active que si la colonne est référencée |
 | **P6** | `WITH ADMIN OPTION` (système + rôle) et cascade de `REVOKE` | Un utilisateur détenant `CREATE TABLE WITH ADMIN OPTION` peut le ré-accorder sans être DBA ; révoquer un privilège au milieu d'une chaîne d'octrois retire le bout de chaîne |
 | **P7** | Audit unifié écrivant, branché sur le point de décision existant | Politique `ACTIONS UPDATE ON hr.emp` activée `BY alice` : un `UPDATE` d'`alice` produit une ligne dans `UNIFIED_AUDIT_TRAIL`, un `UPDATE` de `bob` non ; `EXCEPT` respecté |

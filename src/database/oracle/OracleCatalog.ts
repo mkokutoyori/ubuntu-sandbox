@@ -1224,12 +1224,16 @@ export class OracleCatalog extends BaseCatalog {
     const parts = p.policyFunction.split('.');
     const pkg = parts.length === 2 ? parts[0].toUpperCase() : null;
     const fn = (parts.length === 2 ? parts[1] : parts[0]).toUpperCase();
-    const types = (p.statementTypes ?? 'SELECT,INSERT,UPDATE,DELETE').toUpperCase();
+    // `executeDbmsRlsCall` passes '' for an argument the caller omitted,
+    // and '' is neither null nor undefined — `??` would keep it and leave
+    // every flag false, disarming a policy Oracle arms for all statement
+    // types. The same holds for policy_type and policy_group below.
+    const types = (p.statementTypes || 'SELECT,INSERT,UPDATE,DELETE').toUpperCase();
     this.rlsPolicies.push({
       objectOwner: p.objectSchema.toUpperCase(),
       objectName: p.objectName.toUpperCase(),
       policyName: p.policyName.toUpperCase(),
-      policyGroup: (p.policyGroup ?? 'SYS_DEFAULT').toUpperCase(),
+      policyGroup: (p.policyGroup || 'SYS_DEFAULT').toUpperCase(),
       pfOwner: p.functionSchema.toUpperCase(),
       pfPackage: pkg,
       pfFunction: fn,
@@ -1241,8 +1245,8 @@ export class OracleCatalog extends BaseCatalog {
         idx: types.includes('INDEX'),
       },
       enabled: true,
-      secRelevantCols: (p.secRelevantCols ?? '').split(',').map(c => c.trim().toUpperCase()).filter(Boolean),
-      policyType: (p.policyType ?? 'DYNAMIC') as 'DYNAMIC',
+      secRelevantCols: (p.secRelevantCols || '').split(',').map(c => c.trim().toUpperCase()).filter(Boolean),
+      policyType: (p.policyType || 'DYNAMIC') as 'DYNAMIC',
     });
     if (p.policyGroup && p.policyGroup.toUpperCase() !== 'SYS_DEFAULT') {
       const key = `${p.objectSchema.toUpperCase()}.${p.objectName.toUpperCase()}.${p.policyGroup.toUpperCase()}`;

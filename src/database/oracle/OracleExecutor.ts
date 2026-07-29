@@ -29,6 +29,7 @@ import { makeSqlId } from './views/sqlId';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { collectSelectColumnUsage, BARE_STAR, type SelectColumnUsage } from './security/SelectColumnUsage';
+import { resolveRlsPredicate, type RlsHost, type RlsOperation, type RlsPolicyRecord } from './security/RlsPredicateApplier';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
 import { formatDateWithPattern, parseDateWithPattern, coerceDateValue } from './functions/dateSupport';
@@ -1490,6 +1491,39 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   /**
+   * Narrows a row source to what the object's VPD policies allow.
+   *
+   * Applied where the base table's rows are read, so a policy reaches
+   * joins, subqueries and view bodies alike, and — as in real Oracle —
+   * filters the base rows before any join rather than the join product.
+   */
+  private applyRlsPredicate(
+    schema: string, tableName: string, operation: RlsOperation,
+    rows: StorageRow[], columns: StorageColMeta[],
+  ): StorageRow[] {
+    const predicate = resolveRlsPredicate(this.rlsHost, schema, tableName, operation);
+    if (!predicate) return rows;
+    return rows.filter(row => this.evaluateCondition(predicate, row, columns));
+  }
+
+  private readonly rlsHost: RlsHost = {
+    policies: () => (this.catalog as OracleCatalog).getRlsPolicies() as readonly RlsPolicyRecord[],
+    currentUser: () => this.context.currentUser,
+    isExempt: (user) => {
+      const engine = (this.catalog as OracleCatalog).getSecurityEngine();
+      if (!engine) return false;
+      const session = this.context.session as
+        { getEnabledRoles?: () => ReadonlySet<string> | null } | undefined;
+      return engine.privileges.hasSystemPrivilege(
+        user, 'EXEMPT ACCESS POLICY', session?.getEnabledRoles?.() ?? null);
+    },
+    callFunction: (name, args) =>
+      this.commandHost
+        ? this.commandHost.execScalarFunctionCall(this, name, args)
+        : { handled: false, value: null },
+  };
+
+  /**
    * Refuses a SELECT that reads a column the session was never granted.
    *
    * The usage walk only runs for a table the user is actually restricted
@@ -1614,6 +1648,7 @@ export class OracleExecutor extends BaseExecutor {
     if (ref.asOf) {
       storageRows = this.flashbackRowsAt(schema, tableName, ref.asOf) ?? storageRows;
     }
+    storageRows = this.applyRlsPredicate(schema, tableName, 'SELECT', storageRows, meta.columns);
     const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
     // Prefix column names with alias or table name for disambiguation
