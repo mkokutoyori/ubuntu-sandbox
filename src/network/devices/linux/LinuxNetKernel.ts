@@ -155,6 +155,8 @@ export interface LinuxNetKernel {
   publishResolvedState(): void;
   /** Ouvre ou ferme les ports LLMNR/mDNS selon la configuration courante. */
   syncLinkLocalResponders(): void;
+  /** L'agent mDNS de l'hôte — parcours et résolution DNS-SD. */
+  getMdnsAgent(): import('@/network/mdns/MdnsAgent').MdnsAgent;
 
   /** Voisins LLDP découverts sur le câble, tous ports ou un seul. */
   getLldpNeighbors(iface?: string): import('../../lldp/LldpAgent').LldpNeighbor[];

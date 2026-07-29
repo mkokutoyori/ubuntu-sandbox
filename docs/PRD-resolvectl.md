@@ -294,10 +294,55 @@ modélisée, celle de la *résolution* l'est. Les groupes IPv6
 d'équivalent à l'émission vers un groupe arbitraire. Le départage §8.2
 compare des adresses A triées plutôt que la forme canonique octet par
 octet de la RFC — même ordre pour les seuls enregistrements en jeu ici,
-mais c'est une simplification, pas la lettre. Restent dehors : la
-suppression par réponses connues (§7.1), optimisation de trafic sans
-effet observable ici, et DNS-SD (RFC 6763), protocole entier avec ses
-propres types SRV/TXT/PTR.
+mais c'est une simplification, pas la lettre.
+
+### 7.5 Réponses connues (§7.1) et DNS-SD (RFC 6763)
+
+**Réponses connues.** Un interrogateur joint à sa question ce qu'il sait
+déjà ; le répondeur retire de sa réponse tout ce que l'autre a écrit, et
+se tait complètement s'il ne reste rien. Le seuil est celui de la RFC :
+la copie du demandeur n'est retenue que si son TTL dépasse la moitié de
+celui qu'on aurait servi — en dessous, elle est près d'expirer et il
+faut la rafraîchir. Le TTL de référence est celui de la réponse qu'on
+*aurait* faite, donc 10 s pour une requête ponctuelle (§6.7), pas 120.
+
+**DNS-SD.** Trois enregistrements décrivent un service, et rien de neuf
+ne circule sur le fil — c'est tout l'intérêt du protocole :
+
+| Question | Réponse |
+|---|---|
+| `_services._dns-sd._udp.local` PTR | les *types* présents sur le lien (§9) |
+| `_http._tcp.local` PTR | les *instances* de ce type (§4.1) |
+| `Mon serveur._http._tcp.local` SRV | l'hôte et le port (§5) |
+| … TXT | les métadonnées, un `clé=valeur` par segment (§6.1) |
+
+Le répondeur joint en additionnels ce que le demandeur voudra de toute
+façon ensuite (§12) : le SRV et le TXT derrière un PTR, l'adresse
+derrière un SRV — un seul aller-retour suffit à `resolvectl service`.
+
+**La publication passe par un fichier d'unité**, pas par une commande :
+`systemd-resolved` lit `/etc/systemd/dnssd/*.dnssd` (`systemd.dnssd(5)`),
+au même format que les `.network` de networkd, avec le même ordre
+`/etc` › `/run` › `/usr/lib`. Une unité sans `Name`, `Type` ou `Port`
+est ignorée plutôt que publiée à moitié.
+
+```ini
+[Service]
+Name=Mon serveur web
+Type=_http._tcp
+Port=80
+TxtText=path=/index.html
+```
+
+Le nom d'instance est libre — espaces et points compris (§4.1.1) : il
+est fait pour être lu. `parseInstanceName` découpe donc depuis la fin,
+seule façon correcte de séparer `Bureau 2.4._http._tcp.local`.
+
+**Limites.** Le registre synthétise les enregistrements à la demande et
+ne les annonce pas spontanément : un service publié est trouvé par
+parcours, pas par une annonce non sollicitée comme le nom d'hôte. Les
+sous-types (`_printer._sub._http._tcp`) et la mise à jour d'un service
+en cours de vie ne sont pas modélisés.
 
 ### 7.1 Le chemin asynchrone de la base `hosts`
 
@@ -334,10 +379,11 @@ NSS ; `resolveHostnameSync` lui reste réservé, avec la même limite.
 ## 8. Hors périmètre
 
 - **D-Bus** (`org.freedesktop.resolve1`) : accès direct en mémoire.
-- **`resolvectl service` / `openpgp` / `tlsa`** : SRV, OPENPGPKEY et TLSA
-  n'ont pas de source de données dans les zones du simulateur.
-- **DNS-SD** (RFC 6763) : l'énumération de services au-dessus de mDNS,
-  avec ses types SRV/TXT/PTR — un protocole à part entière.
+- **`resolvectl openpgp` / `tlsa`** : OPENPGPKEY et TLSA n'ont pas de
+  source de données dans les zones du simulateur. `service` en a une
+  depuis DNS-SD (§7.5) et existe.
+- **Sous-types DNS-SD** (`_printer._sub._http._tcp`) et mise à jour d'un
+  service publié en cours de vie.
 - **DoH et DoQ** : `DnsHttpsTransport`/`DnsQuicTransport` reposent encore
   sur `SimulatedTls` et migrent sous `PRD-HTTP.md`/`PRD-QUIC.md`.
 - **Épinglage du certificat DoT** (`DNSOverTLS=yes#nom`, vérification du

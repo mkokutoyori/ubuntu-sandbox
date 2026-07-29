@@ -89,6 +89,7 @@ import { bindDnsTcpServer, unbindDnsTcpServer } from '../dns/transport/DnsTcpTra
 import { bindDnsTlsServer, unbindDnsTlsServer, DOT_PORT } from '../dns/transport/DnsTlsTransport';
 import { LlmnrAgent } from '../llmnr/LlmnrAgent';
 import { MdnsAgent } from '../mdns/MdnsAgent';
+import { discoverDnssdFiles } from './linux/net/DnssdFiles';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -676,8 +677,26 @@ export abstract class LinuxMachine extends EndHost
   }
 
   getMdnsAgent(): MdnsAgent {
-    if (!this._mdnsAgent) this._mdnsAgent = new MdnsAgent(this);
+    if (!this._mdnsAgent) {
+      this._mdnsAgent = new MdnsAgent(this);
+      this.loadDnssdServices();
+    }
     return this._mdnsAgent;
+  }
+
+  /**
+   * Relit `/etc/systemd/dnssd/*.dnssd`. C'est ainsi que systemd publie un
+   * service — pas par une commande, mais par un fichier d'unité
+   * (`systemd.dnssd(5)`), au même format que les `.network` de networkd.
+   */
+  loadDnssdServices(): void {
+    const agent = this._mdnsAgent;
+    if (!agent) return;
+    const registry = agent.services();
+    registry.clear();
+    for (const file of discoverDnssdFiles(this.executor.vfs)) {
+      registry.publish(file.service);
+    }
   }
 
   /**
@@ -1005,7 +1024,10 @@ export abstract class LinuxMachine extends EndHost
       // `resolved.conf` n'était lu qu'à la toute première instanciation du
       // service : écrire `DNSOverTLS=` ou `DNSSEC=` puis redémarrer le
       // démon ne changeait rien, et le réglage global restait lettre morte.
-      if (name === 'systemd-resolved') this.loadResolvedConfig();
+      if (name === 'systemd-resolved') {
+        this.loadResolvedConfig();
+        this.loadDnssdServices();
+      }
     });
   }
 
@@ -2649,6 +2671,7 @@ export abstract class LinuxMachine extends EndHost
       getResolvedService: () => this.getResolvedService(),
       publishResolvedState: () => this.publishResolvedState(),
       syncLinkLocalResponders: () => this.syncLinkLocalResponders(),
+      getMdnsAgent: () => this.getMdnsAgent(),
       getLldpNeighbors: (iface?: string) => this.getLldpNeighbors(iface),
       getDhcpClient: (): DHCPClient => {
         return this.dhcpClient;

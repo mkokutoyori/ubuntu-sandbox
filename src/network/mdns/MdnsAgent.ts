@@ -23,10 +23,14 @@
  * C'est la différence de fond avec LLMNR, qui signale le conflit sans
  * jamais renommer.
  *
- * Délibérément hors de portée : la suppression par réponses connues
- * (§7.1) et l'énumération de services DNS-SD (RFC 6763) — la première
- * est une optimisation de trafic sans effet observable ici, la seconde
- * un protocole à part entière avec ses propres types SRV/TXT/PTR.
+ * **Réponses connues (§7.1).** Un interrogateur joint à sa question ce
+ * qu'il sait déjà ; un répondeur tait ce que l'autre a déjà, et se tait
+ * complètement quand il n'a rien à ajouter. Sur un groupe, répéter à
+ * tout le lien ce que le demandeur venait d'écrire serait du bruit pur.
+ *
+ * **DNS-SD (RFC 6763).** Le registre de services (`dnssd/`) répond aux
+ * questions PTR/SRV/TXT en plus des adresses de l'hôte : c'est le même
+ * répondeur, avec une source d'enregistrements de plus.
  */
 import type { EndHost } from '@/network/devices/EndHost';
 import type { IPAddress, IPv6Address } from '@/network/core/types';
@@ -46,6 +50,13 @@ import {
   isLocalName, nextCandidateName, type MdnsNameState,
 } from './types';
 import { getDefaultEventBus } from '@/events/EventBus';
+import { DnsSdRegistry } from '@/network/dnssd/DnsSdRegistry';
+import {
+  DNSSD_ENUM_NAME, parseInstanceName, serviceTypeName,
+  type ResolvedService,
+} from '@/network/dnssd/types';
+import { makeARecord } from '@/network/dns/wire/ResourceRecord';
+import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 
 /**
  * RFC 6762 §10.2 — le bit de poids fort de la classe d'un enregistrement
@@ -68,14 +79,55 @@ function tiebreakKey(addresses: readonly string[]): string {
     .join(',');
 }
 
+/**
+ * RFC 6762 §7.1 — un enregistrement déjà connu du demandeur est tu, à
+ * condition que le TTL qu'il annonce dépasse la moitié du nôtre : en
+ * dessous, sa copie est près d'expirer et il a besoin qu'on la
+ * rafraîchisse.
+ */
+function suppressKnown(
+  mine: ResourceRecord<ResourceRecordData>[],
+  known: readonly ResourceRecord<ResourceRecordData>[],
+): ResourceRecord<ResourceRecordData>[] {
+  if (known.length === 0) return mine;
+  return mine.filter((rr) => !known.some((k) => (
+    k.name.toLowerCase().replace(/\.$/, '') === rr.name.toLowerCase().replace(/\.$/, '')
+    && k.data.type === rr.data.type
+    && sameRdata(k.data, rr.data)
+    && k.ttl > rr.ttl / 2
+  )));
+}
+
+/**
+ * Comparaison de rdata par sérialisation : les données d'un
+ * enregistrement sont des valeurs simples, et les comparer champ à
+ * champ demanderait un cas par type sans rien gagner.
+ */
+function sameRdata(a: ResourceRecordData, b: ResourceRecordData): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function addressesOf(records: readonly ResourceRecord<ResourceRecordData>[]): string[] {
+  return records
+    .filter((rr) => rr.data.type === RRType.A)
+    .map((rr) => (rr.data as { address: { toString(): string } }).address.toString());
+}
+
 export class MdnsAgent {
   private bound = false;
   private state: MdnsNameState = 'idle';
   /** Le nom effectivement revendiqué — il diffère du nom d'hôte après renommage. */
   private claimed: string | null = null;
   private ready: Promise<void> | null = null;
+  private readonly sd = new DnsSdRegistry({
+    hostName: () => this.ownName(),
+    addresses: () => this.ownAddresses(),
+  });
 
   constructor(private readonly host: EndHost) {}
+
+  /** Le registre DNS-SD de cet hôte (RFC 6763). */
+  services(): DnsSdRegistry { return this.sd; }
 
   /** `<hostname>.local`, ou le nom de repli obtenu après un conflit. */
   ownName(): string {
@@ -277,29 +329,140 @@ export class MdnsAgent {
     // serait affirmer une possession qu'on est justement en train de
     // vérifier.
     if (this.state !== 'claimed') return null;
-    if (asked !== this.ownName()) return null;
-    if (question.qtype !== RRType.A && question.qtype !== RRType.ANY) return null;
 
     // §6.7 : un port source différent de 5353 trahit un demandeur
     // ponctuel, qui n'écoute pas le groupe et attend sa réponse pour lui.
     const legacy = sourcePort !== MDNS_PORT;
-    const records = this.addressRecords(legacy ? MDNS_LEGACY_TTL : MDNS_RECORD_TTL);
-    if (records.length === 0) return null;
+    const ttl = legacy ? MDNS_LEGACY_TTL : MDNS_RECORD_TTL;
+
+    const found = this.recordsFor(asked, question.qtype, ttl);
+    if (found.answers.length === 0) return null;
+
+    // §7.1 — retirer ce que le demandeur a déjà écrit dans sa question.
+    const answers = suppressKnown(found.answers, query.answers);
+    if (answers.length === 0) return null;
 
     const message = legacy
       // Une réponse ponctuelle rappelle la question et reprend l'ID, le
       // demandeur n'ayant que cela pour l'apparier.
-      ? buildLegacyResponseMessage(query, 'NOERROR', records)
-      : this.buildResponse(query.id, records, true);
+      ? { ...buildLegacyResponseMessage(query, 'NOERROR', []), answers, additionals: found.additionals }
+      : this.buildRecordResponse(query.id, answers, found.additionals);
 
     getDefaultEventBus().publish({
       topic: 'mdns.responded',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(),
-        name: asked, addresses: records.map((r) => r.value), legacy,
+        name: asked, addresses: addressesOf(answers), legacy,
       },
     });
     return { message, unicast: legacy };
+  }
+
+  /**
+   * Tout ce que cet hôte a à dire sur une question : ses propres
+   * adresses, et ce que le registre DNS-SD sait des services publiés.
+   */
+  private recordsFor(asked: string, qtype: number, ttl: number): {
+    answers: ResourceRecord<ResourceRecordData>[];
+    additionals: ResourceRecord<ResourceRecordData>[];
+  } {
+    if (asked === this.ownName() && (qtype === RRType.A || qtype === RRType.ANY)) {
+      return {
+        answers: this.ownAddresses().map((ip) => makeARecord(this.ownName(), ttl, ip)),
+        additionals: [],
+      };
+    }
+    return this.sd.answer(asked, qtype);
+  }
+
+  /** Une réponse mDNS portant des enregistrements déjà construits. */
+  private buildRecordResponse(
+    id: number,
+    answers: ResourceRecord<ResourceRecordData>[],
+    additionals: ResourceRecord<ResourceRecordData>[],
+  ): DnsMessage {
+    return {
+      id,
+      flags: {
+        qr: true, opcode: 0, aa: true, tc: false,
+        rd: false, ra: false, ad: false, cd: false, rcode: 0,
+      },
+      questions: [],
+      answers: answers.map((rr) => ({
+        ...rr, rrClass: (rr.rrClass ?? DnsClass.IN) | MDNS_CACHE_FLUSH,
+      })),
+      authorities: [],
+      additionals,
+    };
+  }
+
+  /**
+   * RFC 6763 §4.1 — « quelles instances de ce type sur le lien ? ».
+   * Rend les noms d'instance complets.
+   */
+  async browse(type: string, timeoutMs: number = MDNS_TIMEOUT_MS): Promise<string[]> {
+    const name = type === DNSSD_ENUM_NAME ? DNSSD_ENUM_NAME : serviceTypeName(type);
+    const found: string[] = [];
+    for (const r of await this.askLink(name, 'PTR', timeoutMs)) {
+      for (const rr of r.answers) {
+        if (rr.data.type !== RRType.PTR) continue;
+        const target = (rr.data as { ptrdname: string }).ptrdname;
+        if (!found.includes(target)) found.push(target);
+      }
+    }
+    return found;
+  }
+
+  /** Les types de services annoncés sur le lien (§9). */
+  browseTypes(timeoutMs: number = MDNS_TIMEOUT_MS): Promise<string[]> {
+    return this.browse(DNSSD_ENUM_NAME, timeoutMs);
+  }
+
+  /**
+   * RFC 6763 §5 — d'un nom d'instance à l'hôte, au port et aux
+   * métadonnées. Les additionnels de la réponse suffisent souvent : le
+   * répondeur y a déjà mis l'adresse de l'hôte (§12).
+   */
+  async resolveService(
+    fqdn: string, timeoutMs: number = MDNS_TIMEOUT_MS,
+  ): Promise<ResolvedService | null> {
+    const parsed = parseInstanceName(fqdn);
+    if (!parsed) return null;
+
+    for (const r of await this.askLink(fqdn, 'ANY', timeoutMs)) {
+      const all = [...r.answers, ...r.additionals];
+      const srv = all.find((rr) => rr.data.type === RRType.SRV);
+      if (!srv) continue;
+      const s = srv.data as { port: number; target: string };
+      const txt = all
+        .filter((rr) => rr.data.type === RRType.TXT)
+        .flatMap((rr) => [...(rr.data as { text: readonly string[] }).text])
+        .filter((seg) => seg !== '');
+      const addresses = all
+        .filter((rr) => rr.data.type === RRType.A
+          && rr.name.toLowerCase().replace(/\.$/, '') === s.target.toLowerCase())
+        .map((rr) => (rr.data as { address: { toString(): string } }).address.toString());
+      return {
+        instance: parsed.instance, type: parsed.type, domain: parsed.domain,
+        host: s.target, port: s.port, txt, addresses,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Pose une question sur le groupe et rend les réponses brutes. Les
+   * trois usages — adresse, parcours, résolution de service — passent
+   * par ici : c'est ce qui garantit qu'ils voient le même fil.
+   */
+  private async askLink(
+    name: string, qtype: string, timeoutMs: number,
+  ): Promise<DnsMessage[]> {
+    const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, {
+      recursionDesired: false,
+    });
+    if (!query) return [];
+    return queryMulticastDns(this.host, MDNS_BINDING, query, timeoutMs, { firstOnly: true });
   }
 
   /** Interroge le lien pour un nom `.local`. */
@@ -307,18 +470,13 @@ export class MdnsAgent {
     const target = name.toLowerCase().replace(/\.$/, '');
     if (!isLocalName(target)) return [];
 
-    const query = buildLegacyQueryMessage(nextDnsTransactionId(), target, 'A', {
-      recursionDesired: false,
-    });
-    if (!query) return [];
-
     getDefaultEventBus().publish({
       topic: 'mdns.query.sent',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: target,
       },
     });
-    const responses = await queryMulticastDns(this.host, MDNS_BINDING, query, timeoutMs, { firstOnly: true });
+    const responses = await this.askLink(target, 'A', timeoutMs);
     const addresses: string[] = [];
     for (const r of responses) {
       for (const rr of r.answers) {

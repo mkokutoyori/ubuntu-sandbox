@@ -20,7 +20,7 @@ const CONFIG_VERBS = new Set([
 ]);
 const ADMIN_VERBS = new Set([...CONFIG_VERBS, 'flush-caches', 'reset-statistics']);
 const KNOWN_VERBS = new Set([
-  'status', 'query', 'statistics', 'show-cache', ...ADMIN_VERBS,
+  'status', 'query', 'statistics', 'show-cache', 'service', ...ADMIN_VERBS,
 ]);
 
 interface Parsed {
@@ -173,6 +173,58 @@ async function renderQuery(
   return { output: out.join('\n'), exitCode };
 }
 
+/**
+ * `resolvectl service [[NOM] TYPE] DOMAINE` — DNS-SD (RFC 6763).
+ *
+ * Sans nom d'instance, la commande parcourt : elle demande au lien
+ * quelles instances du type existent, puis résout chacune. Avec un nom,
+ * elle ne résout que celle-là.
+ */
+async function renderService(
+  ctx: LinuxCommandContext, args: string[],
+): Promise<{ output: string; exitCode: number }> {
+  const agent = ctx.net.getMdnsAgent();
+  if (args.length === 0) {
+    return { output: 'resolvectl: service requires a type', exitCode: 1 };
+  }
+  // La forme est positionnelle : [NOM] TYPE DOMAINE, le domaine étant
+  // facultatif puisqu'il vaut `local` sur un lien.
+  const domain = args.length >= 2 && !args[args.length - 1].startsWith('_')
+    ? args[args.length - 1] : 'local';
+  const rest = domain === args[args.length - 1] ? args.slice(0, -1) : args;
+  const type = rest[rest.length - 1];
+  const instance = rest.length > 1 ? rest.slice(0, -1).join(' ') : null;
+
+  if (!type || !type.startsWith('_')) {
+    return { output: `resolvectl: '${type ?? ''}' is not a service type`, exitCode: 1 };
+  }
+
+  const cibles = instance
+    ? [`${instance}.${type}.${domain}`]
+    : await agent.browse(`${type}.${domain}`);
+
+  if (cibles.length === 0) {
+    return { output: `${type}.${domain}: no services found`, exitCode: 1 };
+  }
+
+  const out: string[] = [];
+  let found = 0;
+  for (const fqdn of cibles) {
+    const r = await agent.resolveService(fqdn);
+    if (!r) { out.push(`${fqdn}: Name or service not known`); continue; }
+    found++;
+    out.push(`${r.instance}`);
+    out.push(`    ${r.type}.${r.domain}`);
+    out.push(`    ${r.host}:${r.port}`);
+    for (const ip of r.addresses) out.push(`    ${ip}`);
+    for (const seg of r.txt) out.push(`    txt: ${seg}`);
+    out.push('');
+  }
+  if (found === 0) return { output: out.join('\n').trimEnd(), exitCode: 1 };
+  out.push('-- Information acquired via protocol mDNS/IPv4 in 0us.');
+  return { output: out.join('\n'), exitCode: 0 };
+}
+
 /** L'étiquette systemd du protocole ayant fourni la réponse. */
 function protocolLabel(protocol: 'dns' | 'llmnr' | 'mdns'): string {
   if (protocol === 'llmnr') return 'LLMNR/IPv4';
@@ -260,6 +312,7 @@ Commands:
   mdns [LINK [MODE]]           Get/set per-interface MulticastDNS mode
   dnssec [LINK [MODE]]         Get/set per-interface DNSSEC mode
   dnsovertls [LINK [MODE]]     Get/set per-interface DNS-over-TLS mode
+  service [[NAME] TYPE] DOMAIN Resolve DNS-SD services
   nta [LINK [DOMAIN...]]       Get/set per-interface DNSSEC NTA
   revert LINK                  Revert per-interface configuration`;
 
@@ -277,6 +330,8 @@ async function execute(
   switch (opts.verb) {
     case 'query':
       return await renderQuery(ctx, opts.args);
+    case 'service':
+      return await renderService(ctx, opts.args);
     case 'statistics':
       return { output: renderStatistics(ctx), exitCode: 0 };
     case 'reset-statistics':
