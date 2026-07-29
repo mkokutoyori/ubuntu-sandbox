@@ -142,6 +142,59 @@ export class PrivilegeChecker {
     );
   }
 
+  /**
+   * The columns `username` may touch for `privilege` on the object, or
+   * `null` when nothing restricts them — ownership, DBA, `<priv> ANY
+   * TABLE`, or a table-level grant, which in Oracle always covers every
+   * column. A returned set is exhaustive: a column absent from it is not
+   * granted, and a table-level grant added later widens back to `null`
+   * rather than intersecting.
+   *
+   * Holding no column grant at all is `null` too, not an empty set: that
+   * is not a restriction but a plain absence of privilege, and answering
+   * it is the object-level check's job — it alone knows whether to hide
+   * the object behind ORA-00942 or admit it with ORA-01031.
+   */
+  getColumnRestriction(
+    username: string,
+    privilege: string,
+    objectSchema: string,
+    objectName: string,
+    enabled: EnabledRoles = null,
+  ): ReadonlySet<string> | null {
+    const upper = username.toUpperCase();
+    const priv = privilege.toUpperCase();
+    const schema = objectSchema.toUpperCase();
+    const obj = objectName.toUpperCase();
+
+    if (upper === schema) return null;
+    if (this.hasSystemPrivilege(upper, 'DBA', enabled)) return null;
+    if (this.hasSystemPrivilege(upper, `${priv} ANY TABLE`, enabled)) return null;
+
+    const grantees = new Set<string>([upper, ...this.getEffectiveRoles(upper, enabled), 'PUBLIC']);
+    const cat = this.catalog as unknown as {
+      tabPrivileges: CatalogPrivilege[];
+      colPrivileges?: Array<{ grantee: string; privilege: string; objectSchema: string; objectName: string; columnName: string }>;
+    };
+    const tableMatch = cat.tabPrivileges.some(
+      (p) =>
+        grantees.has(p.grantee) &&
+        p.privilege === priv &&
+        p.objectSchema === schema &&
+        p.objectName === obj
+    );
+    if (tableMatch) return null;
+
+    const granted = new Set<string>();
+    for (const p of cat.colPrivileges ?? []) {
+      if (grantees.has(p.grantee) && p.privilege === priv
+        && p.objectSchema === schema && p.objectName === obj) {
+        granted.add(p.columnName.toUpperCase());
+      }
+    }
+    return granted.size > 0 ? granted : null;
+  }
+
   // ── DBA check ────────────────────────────────────────────────────
 
   isDba(username: string, enabled: EnabledRoles = null): boolean {

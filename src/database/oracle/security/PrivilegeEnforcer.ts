@@ -105,6 +105,44 @@ export class PrivilegeEnforcer {
   }
 
   /**
+   * The columns the current user may touch for `operation` on the object,
+   * or `null` when no column-level restriction applies. Callers use the
+   * `null` answer to skip building a column list at all, so the ordinary
+   * owner/DBA/table-privilege path stays exactly as cheap as before.
+   */
+  columnRestriction(
+    targetSchema: string, objectName: string, operation: DmlOperation,
+  ): ReadonlySet<string> | null {
+    const user = this.currentUser;
+    if (user === 'SYS') return null;
+    const engine = this.catalog.getSecurityEngine();
+    if (!engine) return null;
+    return engine.privileges.getColumnRestriction(
+      user, operation, targetSchema.toUpperCase(), objectName.toUpperCase(), this.enabledRoles);
+  }
+
+  /**
+   * Throws ORA-01031 when the statement touches a column the current user
+   * was not granted. A table-level grant covers every column, a column
+   * grant only its own, and the two add up — so the whole check collapses
+   * to "is every requested column inside the restriction set".
+   *
+   * Oracle refuses the statement as a whole: a single ungranted column in
+   * an otherwise-permitted list is enough, and nothing is silently pruned.
+   */
+  requireColumnAccess(
+    targetSchema: string, objectName: string, operation: DmlOperation, columns: Iterable<string>,
+  ): void {
+    const granted = this.columnRestriction(targetSchema, objectName, operation);
+    if (granted === null) return;
+    for (const col of columns) {
+      if (!granted.has(col.toUpperCase())) {
+        throw new OracleError(1031, 'insufficient privileges');
+      }
+    }
+  }
+
+  /**
    * Throws ORA-01917 if any grantee is neither a user nor a role — Oracle
    * refuses the entire GRANT/REVOKE statement before any mutation.
    */

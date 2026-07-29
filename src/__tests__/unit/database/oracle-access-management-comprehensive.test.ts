@@ -765,16 +765,19 @@ describe('12. Object-access enforcement under non-SYS sessions', () => {
     // dev_team has column-level SELECT on employee_id + first_name only.
     { sql: 'CONNECT dev_team/DevTeam1#@orcl',                                                           want: /\bConnected\b/i },
     { sql: 'SELECT employee_id, first_name FROM hr.employees FETCH FIRST 3 ROWS ONLY;',                 want: /\bFIRST_NAME\b/i },
-    // dev_team has only column-level SELECT on (employee_id, first_name).
-    // Real Oracle refuses with ORA-01031 when projecting a non-granted
-    // column; the simulator's column-restriction enforcement is partial
-    // — accept either the refusal or the actual value.
-    { sql: 'SELECT salary FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                   want: /(ORA-01031|^\s*\d+\s*$)/m },
+    // dev_team has only column-level SELECT on (employee_id, first_name),
+    // plus the PUBLIC grant on four others. SALARY is in neither, so the
+    // projection is refused.
+    { sql: 'SELECT salary FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                   want: /ORA-01031/ },
     // app_user — UNLIMITED TABLESPACE + write_role.
     { sql: 'CONNECT app_user/App1#@orcl',                                                               want: /\bConnected\b/i },
     { sql: 'CREATE TABLE app_user.demo (x NUMBER);',                                                    want: /Table created\./i },
     { sql: 'INSERT INTO app_user.demo VALUES (1);',                                                      want: /1 row created\./i },
-    { sql: 'SELECT * FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                        want: /\bFIRST_NAME\b/i },
+    // app_user's only read access to HR.EMPLOYEES is the PUBLIC
+    // column grant on (employee_id, first_name, last_name, email).
+    // `SELECT *` reaches past it, so it is refused as a whole rather
+    // than quietly pruned to the four granted columns.
+    { sql: 'SELECT * FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                        want: /ORA-01031/ },
     // PUBLIC SELECT on HR.REGIONS — readonly user can see it.
     { sql: 'CONNECT readonly/ReadOnly1#@orcl',                                                          want: /\bConnected\b/i },
     { sql: 'SELECT region_name FROM hr.regions ORDER BY region_id;',                                    want: /\bEurope\b/i },

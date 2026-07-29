@@ -318,6 +318,41 @@ colonnes ; un privilège **colonne** ne couvre que les siennes ; les deux
 s'additionnent. `SELECT *` sur une table dont seules certaines colonnes sont
 accordées rend ORA-01031, il n'élague pas silencieusement.
 
+**Livré en P3.** `PrivilegeChecker.getColumnRestriction()` rend l'ensemble
+des colonnes autorisées, ou `null` quand rien ne restreint — propriétaire,
+DBA, `<priv> ANY TABLE`, privilège table. `null` couvre aussi le cas « aucun
+octroi de colonne du tout » : ce n'est pas une restriction mais une absence
+de privilège, et trancher entre ORA-00942 et ORA-01031 reste le travail de
+`requireObjectAccess`, qui reste donc bien le premier maillon de la chaîne
+annoncée au §3.4. `requireColumnAccess` ne fait plus que l'inclusion.
+
+Les colonnes touchées sont calculées par l'appelant :
+`stmt.assignments` pour `UPDATE`, la liste `INSERT` (ou toutes les colonnes
+quand elle est omise), et pour `SELECT` un parcours d'AST
+(`security/SelectColumnUsage.ts`) couvrant liste de projection, `WHERE`,
+`GROUP BY`, `HAVING`, `ORDER BY` et `CONNECT BY` — lire une colonne dans un
+`WHERE` compte autant que la projeter. Le parcours ne se déclenche que si la
+table est effectivement restreinte, donc le chemin ordinaire ne coûte qu'une
+recherche.
+
+Trois écarts assumés, à ne pas confondre avec des oublis :
+
+- `DELETE` n'a pas de privilège de colonne en Oracle — rien à vérifier.
+- Le `WHERE` d'un `UPDATE` exige en Oracle réel le privilège `SELECT` sur
+  les colonnes lues. Ce n'est pas modélisé : seules les colonnes affectées
+  sont vérifiées, avec le privilège `UPDATE`.
+- Oracle réel n'accepte de colonnes que sur `INSERT`, `UPDATE` et
+  `REFERENCES` ; `GRANT SELECT (col) ON t` y est refusé, la voie officielle
+  étant une vue. Le parseur de ce simulateur l'accepte depuis l'origine et
+  `DBA_COL_PRIVS` l'affiche ; P3 le rend donc *effectif* plutôt que
+  décoratif. Refuser l'octroi serait le comportement fidèle, mais c'est une
+  décision de portée différente (elle casse des tests existants qui
+  l'exercent) et elle n'est pas prise ici.
+
+Un `*` de projection désigne toutes les colonnes ; celui de `COUNT(*)` non —
+il ne lit aucune colonne en particulier, et l'accès objet répond déjà à la
+question qu'il pose.
+
 ### 4.3 Prédicat VPD (objectif 3)
 
 Aucun nouveau champ non plus : `rlsPolicies` porte déjà `statementTypes`,

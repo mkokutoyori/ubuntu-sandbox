@@ -28,6 +28,7 @@ import { OracleError } from '../engine/types/DatabaseError';
 import { makeSqlId } from './views/sqlId';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
+import { collectSelectColumnUsage, BARE_STAR, type SelectColumnUsage } from './security/SelectColumnUsage';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
 import { formatDateWithPattern, parseDateWithPattern, coerceDateValue } from './functions/dateSupport';
@@ -1210,6 +1211,8 @@ export class OracleExecutor extends BaseExecutor {
       return this.executeSelectFromDual(stmt);
     }
 
+    this.enforceSelectColumnPrivileges(stmt);
+
     // ── Step 1: Build combined row set (FROM + JOINs) ──────────────
     const fromResult = this.resolveFromClause(stmt);
     let rows = fromResult.rows;
@@ -1484,6 +1487,54 @@ export class OracleExecutor extends BaseExecutor {
       out.push(row);
     }
     return out;
+  }
+
+  /**
+   * Refuses a SELECT that reads a column the session was never granted.
+   *
+   * The usage walk only runs for a table the user is actually restricted
+   * on, so ownership, DBA, `SELECT ANY TABLE` and plain table grants —
+   * every ordinary case — cost one lookup and nothing else.
+   *
+   * A bare column name is attributed to any FROM table that carries it.
+   * A name carried by two of them would be ORA-00918 in real Oracle, so
+   * the attribution is unambiguous wherever the query is legal at all.
+   * Views and dictionary sources have no storage metadata to enumerate
+   * and are left to the object-level check.
+   */
+  private enforceSelectColumnPrivileges(stmt: SelectStatement): void {
+    const refs: import('../engine/parser/ASTNode').TableRef[] = [];
+    for (const ref of stmt.from ?? []) if (ref.type === 'TableRef') refs.push(ref);
+    for (const join of stmt.joins ?? []) if (join.table.type === 'TableRef') refs.push(join.table);
+
+    let usage: SelectColumnUsage | null = null;
+    for (const ref of refs) {
+      const schema = this.resolveSchema(ref.schema);
+      const tableName = ref.name.toUpperCase();
+      const granted = this.privileges.columnRestriction(schema, tableName, 'SELECT');
+      if (granted === null) continue;
+      const meta = this.storage.getTableMeta(schema, tableName);
+      if (!meta) continue;
+
+      usage ??= collectSelectColumnUsage(stmt);
+      const tableColumns = meta.columns.map(c => c.name.toUpperCase());
+      const qualifiers = new Set<string>([tableName]);
+      if (ref.alias) qualifiers.add(ref.alias.toUpperCase());
+
+      const touched = new Set<string>();
+      for (const [qualifier, cols] of usage.qualified) {
+        if (qualifiers.has(qualifier)) for (const col of cols) touched.add(col);
+      }
+      for (const col of usage.unqualified) {
+        if (tableColumns.includes(col)) touched.add(col);
+      }
+      for (const star of usage.stars) {
+        if (star === BARE_STAR || qualifiers.has(star)) {
+          for (const col of tableColumns) touched.add(col);
+        }
+      }
+      this.privileges.requireColumnAccess(schema, tableName, 'SELECT', touched);
+    }
   }
 
   private loadTableReference(ref: import('../engine/parser/ASTNode').TableReference): { rows: StorageRow[]; columns: StorageColMeta[] } {
@@ -2556,6 +2607,8 @@ export class OracleExecutor extends BaseExecutor {
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'INSERT');
+    this.privileges.requireColumnAccess(schema, tableName, 'INSERT',
+      stmt.columns ?? tableMeta.columns.map(c => c.name));
     let insertedCount = 0;
 
     if (stmt.values) {
@@ -2660,6 +2713,8 @@ export class OracleExecutor extends BaseExecutor {
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'UPDATE');
+    this.privileges.requireColumnAccess(schema, tableName, 'UPDATE',
+      stmt.assignments.map(a => a.column));
 
     for (const assign of stmt.assignments) this.requireColumnIndex(tableMeta, assign.column);
 
