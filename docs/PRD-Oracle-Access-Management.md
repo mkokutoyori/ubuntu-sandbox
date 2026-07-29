@@ -535,6 +535,43 @@ le moteur peut honnêtement renseigner : `EVENT_TIMESTAMP`, `DBUSERNAME`,
 
 ---
 
+### 4.5 Authentification par proxy (objectif 7, phase P8)
+
+`ALTER USER alice GRANT CONNECT THROUGH appsrv` alimentait `proxyUsers` et
+`PROXY_USERS` affichait la ligne — et `CONNECT appsrv[alice]/App1234`
+rendait ORA-01017. La syntaxe `proxy[client]` n'était analysée nulle part :
+le nom d'utilisateur valait littéralement `appsrv[alice]`, un compte qui
+n'existe pas. Le magasin le disait de lui-même : « the simulator does not
+actually arbitrate connection routing ».
+
+Ce qui est livré : `CONNECT proxy[client]/mot_de_passe_du_proxy` ouvre une
+session **dont l'utilisateur est le client**. Le mot de passe vérifié est
+celui du **proxy** — c'est tout l'intérêt du mécanisme : le serveur
+applicatif n'a jamais eu celui de l'utilisateur final. `SHOW USER` rend le
+client, ses privilèges s'appliquent, et
+`SYS_CONTEXT('USERENV','PROXY_USER')` — attribut qui existait déjà sur
+`OracleSession` sans jamais être renseigné — nomme enfin le proxy.
+
+Ordre des contrôles : **l'autorisation avant le mot de passe**. Un proxy
+non autorisé reçoit ORA-28150 sans que la moindre tentative soit faite
+contre le compte du client, et un client inexistant rend le même
+ORA-28150 plutôt que d'avouer son absence.
+
+`WITH ROLE r` réutilise la machinerie de P1 : la session du proxy n'a que
+`r` d'actif, ce que `SESSION_ROLES` montre. Sans la clause, le client garde
+les rôles que son compte activerait.
+
+Corrigé au passage : `PROXY_USERS.AUTHORIZATION_CONSTRAINT` rendait « NO
+CLIENT ROLES MAY BE ACTIVATED » pour un octroi sans clause de rôle, alors
+qu'Oracle y met « PROXY MAY ACTIVATE ALL CLIENT ROLES » — la première
+formule correspond à `WITH NO ROLES`, une forme que le parseur n'accepte
+pas encore.
+
+Écarts assumés : `WITH NO ROLES` et `WITH ROLE ALL EXCEPT …` ne sont pas
+analysés ; l'authentification par proxy avec certificat ou identité
+d'entreprise (`AUTHENTICATION REQUIRED`) n'est pas modélisée ; et
+`V$SESSION` ne distingue pas encore une session mandatée.
+
 ## 5. Plan de mise en œuvre (TDD, par phases)
 
 Chaque phase suit la méthode du projet : test d'abord (vraies instructions SQL

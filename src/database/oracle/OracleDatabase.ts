@@ -172,7 +172,7 @@ export class OracleDatabase implements SqlCommandHost {
     sid: number; serial: number; username: string; schema?: string;
     osCtx: OsSecurityContext; authenticationMethod: AuthenticationMethod;
     type?: 'USER' | 'BACKGROUND'; authenticatedIdentity?: string;
-    transport?: ConnectTransport;
+    transport?: ConnectTransport; proxyUser?: string;
   }): OracleSession {
     const user = this.catalog.getUser(args.username.toUpperCase());
     const session = new OracleSession({
@@ -184,6 +184,7 @@ export class OracleDatabase implements SqlCommandHost {
       authenticationMethod: args.authenticationMethod,
       type: args.type,
       authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
+      proxyUser: args.proxyUser,
       instance: this.buildInstanceIdentity(),
     });
     session.setEnabledRoles(this.resolveDefaultRoles(args.username.toUpperCase()));
@@ -427,6 +428,7 @@ export class OracleDatabase implements SqlCommandHost {
     password: string,
     osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
     transport: ConnectTransport = 'beq',
+    proxyUser?: string,
   ): { sid: number; executor: OracleExecutor } {
     if (!this.instance.isOpen) {
       throw new Error(ORACLE_ERRORS.ORA_01034);
@@ -434,6 +436,22 @@ export class OracleDatabase implements SqlCommandHost {
 
     const upperUser = username.toUpperCase();
     const user = this.catalog.getUser(upperUser);
+
+    // Proxy connect (`CONNECT proxy[client]/proxy_password`): the
+    // password belongs to the proxy, the session belongs to the client.
+    // The authorisation is checked before the password so an
+    // unauthorised proxy learns nothing about the client's account.
+    const upperProxy = proxyUser?.toUpperCase();
+    let proxyGrant: { client: string; proxy: string; role: string | null } | undefined;
+    if (upperProxy) {
+      proxyGrant = this.catalog.getProxyUsers().find(
+        r => r.client === upperUser && r.proxy === upperProxy);
+      if (!proxyGrant) {
+        this.catalog.recordLogon(upperProxy, 0, 28150, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+        this.instance.logAlertEvent(`Failed proxy logon: ${upperProxy}[${upperUser}] ORA-28150`);
+        throw new Error(`ORA-28150: proxy not authorized to connect as client`);
+      }
+    }
 
     /**
      * Wrap a failed-auth throw so every rejection path also leaves a
@@ -465,8 +483,9 @@ export class OracleDatabase implements SqlCommandHost {
     } else {
       // Standard password authentication via SecurityEngine:
       // enforces lock, failed-login tracking, expiry.
-      const storedPassword = this.catalog.getStoredPassword(upperUser);
-      const authResult = this.securityEngine.authenticate(upperUser, password, this.catalog, storedPassword);
+      const authUser = upperProxy ?? upperUser;
+      const storedPassword = this.catalog.getStoredPassword(authUser);
+      const authResult = this.securityEngine.authenticate(authUser, password, this.catalog, storedPassword);
       if (!authResult.success) {
         failLogon(authResult.errorCode || 1017, authResult.message || ORACLE_ERRORS.ORA_01017);
       }
@@ -524,8 +543,11 @@ export class OracleDatabase implements SqlCommandHost {
     connInfo.authMethod = authMethod;
     const session = this.openSession({
       sid, serial, username: upperUser, osCtx, authenticationMethod: authMethod,
-      transport,
+      transport, proxyUser: upperProxy,
     });
+    // `WITH ROLE r` narrows the proxy session to that role alone; without
+    // the clause the client keeps the roles its account would enable.
+    if (proxyGrant?.role) session.setEnabledRoles([proxyGrant.role]);
 
     const context: ExecutionContext = {
       currentUser: upperUser,

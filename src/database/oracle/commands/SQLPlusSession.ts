@@ -220,7 +220,7 @@ export class SQLPlusSession {
    * Attempt to connect with username/password.
    * Returns output lines.
    */
-  login(username: string, password: string, asSysdba: boolean = false): string[] {
+  login(username: string, password: string, asSysdba: boolean = false, proxyUser?: string): string[] {
     const output: string[] = [];
 
     if (this.connected) {
@@ -238,7 +238,7 @@ export class SQLPlusSession {
         });
         this.asSysdba = true;
       } else {
-        result = this.db.connect(username, password, this.osCtx, this.transport);
+        result = this.db.connect(username, password, this.osCtx, this.transport, proxyUser);
         this.asSysdba = false;
       }
       this.executor = result.executor;
@@ -1281,7 +1281,17 @@ export class SQLPlusSession {
       this.transport = 'beq';
     }
 
-    const loginOutput = this.login(username, password, sysdba);
+    // `proxy[client]` — the proxy authenticates, the client owns the
+    // session. Only the bracketed form carries a proxy; everything else
+    // reaches login() exactly as before.
+    let proxyUser: string | undefined;
+    const proxyMatch = username.match(/^([^[\]]+)\[([^[\]]+)\]$/);
+    if (proxyMatch) {
+      proxyUser = proxyMatch[1].trim();
+      username = proxyMatch[2].trim();
+    }
+
+    const loginOutput = this.login(username, password, sysdba, proxyUser);
     return { output: loginOutput, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
