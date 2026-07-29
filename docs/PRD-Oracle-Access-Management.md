@@ -492,6 +492,41 @@ le monde.
 
 ### 4.4 Trace d'audit unifiée (objectif 6)
 
+**Livré en P7.** `CREATE AUDIT POLICY … ACTIONS UPDATE, DELETE ON SYS.emp`
+puis `AUDIT POLICY … BY alice` étaient acceptés et stockés,
+`AUDIT_UNIFIED_POLICIES` les affichait, et l'`UPDATE` d'alice ne produisait
+aucune ligne : aucun chemin d'écriture n'existait, alors que l'audit
+classique écrit réellement. Deux modèles coexistaient, l'un réel, l'autre
+décoratif, sans que rien ne le signale.
+
+Trois pièces manquaient, toutes ajoutées :
+
+- un **magasin** propre, `unifiedAuditTrail`, distinct de `auditTrail`
+  (SYS.AUD$) — l'audit unifié est un mécanisme séparé, avec sa propre
+  activation, et ses lignes nomment les politiques qui les ont produites ;
+- un **résolveur**, `matchingUnifiedAuditPolicies(user, action, owner,
+  name)` : une politique portant un objet ne vaut que pour lui, une
+  politique sans clause `ON` suit son action partout, et `ACTIONS ALL`
+  couvre tous les verbes ;
+- la colonne **`UNIFIED_AUDIT_POLICIES`** de `UNIFIED_AUDIT_TRAIL`, que la
+  vue n'avait pas — c'est elle qui rend la trace attribuable, et seules les
+  lignes issues d'une politique la portent.
+
+Le point d'appel est `recordAuditForStatement`, mais **avant** son retour
+anticipé : l'audit unifié ne passe pas par les options `AUDIT` classiques,
+et une instruction peut être prise par l'un, l'autre, les deux ou aucun.
+
+`AUDIT_UNIFIED_ENABLED_POLICIES` (nouvelle vue) manquait aussi : on pouvait
+armer une politique pour un utilisateur sans aucun moyen de le relire. Une
+politique armée pour tous s'y montre sous l'entité `ALL USERS`, comme en
+Oracle réel.
+
+Écarts assumés : la clause `ROLES` d'une politique (auditer l'usage d'un
+rôle) est stockée et affichée, pas appliquée ; les conditions
+`WHEN … EVALUATE PER …` ne sont pas modélisées ; et les colonnes de
+`UNIFIED_AUDIT_TRAIL` restent le sous-ensemble déjà en place, augmenté de
+`UNIFIED_AUDIT_POLICIES` — le vrai en compte plus de cent.
+
 Structure alignée sur `UNIFIED_AUDIT_TRAIL` réel, restreinte aux colonnes que
 le moteur peut honnêtement renseigner : `EVENT_TIMESTAMP`, `DBUSERNAME`,
 `ACTION_NAME`, `OBJECT_SCHEMA`, `OBJECT_NAME`, `SQL_TEXT`, `RETURN_CODE`,

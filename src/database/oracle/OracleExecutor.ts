@@ -361,6 +361,45 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  /**
+   * Writes a UNIFIED_AUDIT_TRAIL row when a unified audit policy covers
+   * this statement. Independent of the classic AUDIT options: the two
+   * mechanisms are enabled separately in Oracle, and a statement can be
+   * caught by one, the other, both or neither.
+   */
+  private recordUnifiedAuditForStatement(
+    action: string | undefined,
+    objInfo: { owner?: string; name?: string },
+    returncode: number,
+  ): void {
+    if (!action) return;
+    const catalog = this.catalog as OracleCatalog;
+    const username = this.context.currentSchema;
+    const policies = catalog.matchingUnifiedAuditPolicies(
+      username, action, objInfo.owner, objInfo.name);
+    if (policies.length === 0) return;
+
+    const fullSqlText = this._lastSqlText || '';
+    const session = this.context.session as
+      { osUser?: string; machine?: string; terminal?: string } | undefined;
+    catalog.recordUnifiedAudit({
+      sessionId: parseInt(this._sessionId, 10) || 0,
+      username,
+      actionName: action,
+      objName: objInfo.name ?? null,
+      objOwner: objInfo.owner ?? null,
+      returncode,
+      privUsed: null,
+      sqlText: fullSqlText.length > 2000 ? fullSqlText.slice(0, 2000) : fullSqlText,
+      statementType: action,
+      osUsername: session?.osUser ?? 'oracle',
+      userhost: session?.machine ?? 'localhost',
+      terminal: session?.terminal ?? 'pts/0',
+      timestamp: new Date(),
+      policies: policies.join(', '),
+    });
+  }
+
   private recordAuditForStatement(statement: Statement, returncode: number): void {
     const catalog = this.catalog as OracleCatalog;
     const actionName = this.getActionName(statement);
@@ -386,6 +425,12 @@ export class OracleExecutor extends BaseExecutor {
       ? (objectAuditMode !== undefined && objectAuditMode.success !== '-')
         || catalog.getStmtAuditOpts().some(o => o.auditOption === dmlAction && (o.userName === null || o.userName === this.context.currentSchema))
       : !!actionName;
+
+    // Unified auditing has its own enablement and does not go through the
+    // classic options above, so it is decided before their early return.
+    this.recordUnifiedAuditForStatement(
+      actionName ?? dmlAction, objInfo, returncode);
+
     if (!audited) {
       // Even when not audited at the statement level, fine-grained
       // audit may still apply to this object.

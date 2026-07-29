@@ -132,6 +132,16 @@ export interface AuditEntry {
   statementType: string | null;
 }
 
+/**
+ * A unified-audit trail row. Distinct from `AuditEntry` (SYS.AUD$) on
+ * purpose: unified auditing is a separate mechanism with its own
+ * enablement, and its rows name the policies that produced them.
+ */
+export interface UnifiedAuditEntry extends AuditEntry {
+  /** Policies that fired for this statement, comma-separated as Oracle does. */
+  policies: string;
+}
+
 /** Statement-level audit option shape */
 export interface StmtAuditOption {
   auditOption: string;
@@ -631,6 +641,67 @@ export class OracleCatalog extends BaseCatalog {
 
   /** Read-only snapshot of the audit trail (most recent last). */
   getAuditTrail(): readonly AuditEntry[] { return this.auditTrail; }
+
+  // ── Unified audit trail ────────────────────────────────────────
+
+  private unifiedAuditTrail: UnifiedAuditEntry[] = [];
+
+  /**
+   * Policies that would fire for this statement, in creation order.
+   *
+   * A policy carrying an object applies to that object alone; one
+   * without follows its action wherever it happens. `ACTIONS ALL`
+   * matches every action, which is what makes an object policy usable
+   * without listing each verb.
+   */
+  matchingUnifiedAuditPolicies(
+    username: string, action: string, objOwner?: string | null, objName?: string | null,
+  ): string[] {
+    const user = username.toUpperCase();
+    const act = action.toUpperCase();
+    const owner = objOwner?.toUpperCase();
+    const obj = objName?.toUpperCase();
+    const hits: string[] = [];
+    for (const p of this.unifiedAuditPolicies.values()) {
+      if (!p.enabled) continue;
+      if (p.enabledFor === null) {
+        if (p.exceptUsers.includes(user)) continue;
+      } else if (!p.enabledFor.includes(user)) {
+        continue;
+      }
+      if (!p.actions.includes('ALL') && !p.actions.includes(act)) continue;
+      if (p.objectName && (p.objectName !== obj || (p.objectSchema && p.objectSchema !== owner))) {
+        continue;
+      }
+      hits.push(p.name);
+    }
+    return hits;
+  }
+
+  recordUnifiedAudit(entry: UnifiedAuditEntry): void {
+    this.unifiedAuditTrail.push(entry);
+    if (this.unifiedAuditTrail.length > OracleCatalog.MAX_AUDIT_ENTRIES) {
+      this.unifiedAuditTrail.splice(0, this.unifiedAuditTrail.length - OracleCatalog.MAX_AUDIT_ENTRIES);
+    }
+  }
+
+  getUnifiedAuditTrail(): readonly UnifiedAuditEntry[] { return this.unifiedAuditTrail; }
+
+  /** One row per (policy, entity) enablement — AUDIT_UNIFIED_ENABLED_POLICIES. */
+  getEnabledUnifiedAuditPolicies(): { policyName: string; entityName: string; entityType: string }[] {
+    const rows: { policyName: string; entityName: string; entityType: string }[] = [];
+    for (const p of this.unifiedAuditPolicies.values()) {
+      if (!p.enabled) continue;
+      if (p.enabledFor === null) {
+        rows.push({ policyName: p.name, entityName: 'ALL USERS', entityType: 'USER' });
+      } else {
+        for (const u of p.enabledFor) {
+          rows.push({ policyName: p.name, entityName: u, entityType: 'USER' });
+        }
+      }
+    }
+    return rows;
+  }
 
   // ── Materialized views ────────────────────────────────────────────
   //

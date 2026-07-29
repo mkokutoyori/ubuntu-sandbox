@@ -28,7 +28,7 @@ registerView({
         e.userhost, e.terminal, e.osUsername,
         e.actionName, e.returncode, e.sqlText,
         e.objOwner, e.objName, e.statementType,
-        e.privUsed, entryId++,
+        e.privUsed, null, entryId++,
       ]);
     }
 
@@ -39,7 +39,7 @@ registerView({
         f.dbUser, 'localhost', 'pts/0', f.osUser,
         f.statementType, 0, f.sqlText,
         f.objectSchema, f.objectName, f.statementType,
-        f.policyName, entryId++,
+        f.policyName, null, entryId++,
       ]);
     }
 
@@ -55,7 +55,7 @@ registerView({
         t.role === 'SYSDBA' ? 'SYSDBA'
           : t.role === 'SYSOPER' ? 'SYSOPER'
           : 'CREATE SESSION',
-        entryId++,
+        null, entryId++,
       ]);
     }
 
@@ -67,7 +67,7 @@ registerView({
         a.username, 'localhost', 'pts/0', 'oracle',
         a.action, 0, a.sqlText,
         a.objectSchema, a.objectName, a.action,
-        `ORA_SIM_${a.classification}`, entryId++,
+        `ORA_SIM_${a.classification}`, null, entryId++,
       ]);
     }
 
@@ -78,7 +78,19 @@ registerView({
         v.username, 'localhost', 'pts/0', 'oracle',
         'POLICY VIOLATION', 20000, v.description,
         null, null, 'DV_RULE_SET',
-        v.policyName, entryId++,
+        v.policyName, null, entryId++,
+      ]);
+    }
+
+    // Rows produced by a unified audit policy (CREATE AUDIT POLICY …
+    // then AUDIT POLICY …). They alone carry UNIFIED_AUDIT_POLICIES.
+    for (const u of catalog.getUnifiedAuditTrail()) {
+      rows.push([
+        u.timestamp.toISOString(), 'Standard', u.sessionId, u.username,
+        u.userhost, u.terminal, u.osUsername,
+        u.actionName, u.returncode, u.sqlText,
+        u.objOwner, u.objName, u.statementType,
+        u.privUsed, u.policies, entryId++,
       ]);
     }
 
@@ -98,6 +110,7 @@ registerView({
         col.str('OBJECT_NAME', 128),
         col.str('STATEMENT_TYPE', 28),
         col.str('SYSTEM_PRIVILEGE_USED', 100),
+        col.str('UNIFIED_AUDIT_POLICIES', 400),
         col.num('ENTRY_ID'),
       ],
       rows,
