@@ -36,6 +36,12 @@ export interface CatalogPrivilege {
   grantable: boolean;
   objectSchema?: string;
   objectName?: string;
+  /**
+   * Who handed this privilege over. Only object privileges need it —
+   * revoking one cascades along the chain of grantors — but it is what
+   * DBA_TAB_PRIVS.GRANTOR reports either way.
+   */
+  grantor?: string;
 }
 
 export abstract class BaseCatalog {
@@ -132,26 +138,66 @@ export abstract class BaseCatalog {
     );
   }
 
-  grantTablePrivilege(grantee: string, privilege: string, objectSchema: string, objectName: string, grantable: boolean = false): void {
+  grantTablePrivilege(grantee: string, privilege: string, objectSchema: string, objectName: string, grantable: boolean = false, grantor: string = 'SYS'): void {
     const g = grantee.toUpperCase();
     const p = privilege.toUpperCase();
     const sch = objectSchema.toUpperCase();
     const obj = objectName.toUpperCase();
+    const gr = grantor.toUpperCase();
+    // Keyed by grantor too, like real DBA_TAB_PRIVS: the same user can
+    // hold one privilege from two people, and a revoke must be able to
+    // pull one without the other.
     const existing = this.tabPrivileges.find(x =>
-      x.grantee === g && x.privilege === p && x.objectSchema === sch && x.objectName === obj);
+      x.grantee === g && x.privilege === p && x.objectSchema === sch && x.objectName === obj
+      && (x.grantor ?? 'SYS') === gr);
     if (existing) {
       // Re-granting upgrades to WITH GRANT OPTION if asked.
       if (grantable) existing.grantable = true;
       return;
     }
-    this.tabPrivileges.push({ grantee: g, privilege: p, grantable, objectSchema: sch, objectName: obj });
+    this.tabPrivileges.push({
+      grantee: g, privilege: p, grantable, objectSchema: sch, objectName: obj, grantor: gr,
+    });
   }
 
+  /**
+   * Revokes an object privilege and everything that hung from it.
+   *
+   * Oracle cascades an object-privilege revoke: whoever the revokee had
+   * passed the privilege on to loses it in turn, down the whole chain.
+   * A grant the same user also holds from someone else survives — only
+   * the rows this revokee handed out are pulled.
+   */
   revokeTablePrivilege(grantee: string, privilege: string, objectSchema: string, objectName: string): void {
-    this.tabPrivileges = this.tabPrivileges.filter(
-      p => !(p.grantee === grantee.toUpperCase() && p.privilege === privilege.toUpperCase()
-        && p.objectSchema === objectSchema.toUpperCase() && p.objectName === objectName.toUpperCase())
-    );
+    const p = privilege.toUpperCase();
+    const sch = objectSchema.toUpperCase();
+    const obj = objectName.toUpperCase();
+    const onObject = (row: CatalogPrivilege): boolean =>
+      row.privilege === p && row.objectSchema === sch && row.objectName === obj;
+
+    const doomed = new Set<CatalogPrivilege>();
+    const queue: string[] = [];
+    for (const row of this.tabPrivileges) {
+      if (onObject(row) && row.grantee === grantee.toUpperCase()) {
+        doomed.add(row);
+        queue.push(row.grantee);
+      }
+    }
+    while (queue.length > 0) {
+      const victim = queue.shift()!;
+      // Someone who still holds the privilege from a surviving grant can
+      // still have passed it on — their own grants stay.
+      if (this.tabPrivileges.some(r => onObject(r) && r.grantee === victim && !doomed.has(r))) {
+        continue;
+      }
+      for (const row of this.tabPrivileges) {
+        if (onObject(row) && (row.grantor ?? 'SYS') === victim && !doomed.has(row)) {
+          doomed.add(row);
+          queue.push(row.grantee);
+        }
+      }
+    }
+    this.tabPrivileges = this.tabPrivileges.filter(row => !doomed.has(row));
   }
 
   grantRole(grantee: string, role: string, adminOption: boolean = false): void {

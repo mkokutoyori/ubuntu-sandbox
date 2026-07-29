@@ -174,6 +174,67 @@ export class PrivilegeEnforcer {
   }
 
   /**
+   * Throws ORA-01031 unless the current user may hand out every listed
+   * system privilege or role: SYS, DBA, `GRANT ANY PRIVILEGE`/`GRANT ANY
+   * ROLE`, or — the point of this check — holding that very privilege or
+   * role `WITH ADMIN OPTION`. Delegation is per privilege: the option on
+   * one says nothing about another.
+   */
+  requireGrantableSystemPrivileges(names: string[]): void {
+    const user = this.currentUser;
+    if (user === 'SYS') return;
+    const engine = this.catalog.getSecurityEngine();
+    if (!engine) return;
+    const enabled = this.enabledRoles;
+    if (engine.privileges.isDba(user, enabled)) return;
+
+    for (const name of names) {
+      const upper = name.toUpperCase();
+      const isRole = this.catalog.roleExists(upper);
+      const blanket = isRole ? 'GRANT ANY ROLE' : 'GRANT ANY PRIVILEGE';
+      if (engine.privileges.hasSystemPrivilege(user, blanket, enabled)) continue;
+      const delegated = isRole
+        ? this.catalog.getRoleGrants().some(
+          rg => rg.grantee === user && rg.role === upper && rg.adminOption)
+        : this.catalog.getSysPrivilegeGrants().some(
+          p => p.grantee === user && p.privilege === upper && p.grantable);
+      if (!delegated) throw new OracleError(1031, 'insufficient privileges');
+    }
+  }
+
+  /**
+   * Throws ORA-01927 unless the current user may take back the listed
+   * object privileges from `grantees`. Oracle lets you revoke only what
+   * you granted yourself, short of `GRANT ANY OBJECT PRIVILEGE`.
+   */
+  requireRevokableObjectPrivileges(
+    schema: string, objectName: string, privileges: string[], grantees: string[],
+  ): void {
+    const user = this.currentUser;
+    if (user === 'SYS') return;
+    const engine = this.catalog.getSecurityEngine();
+    if (!engine) return;
+    const enabled = this.enabledRoles;
+    if (engine.privileges.isDba(user, enabled)) return;
+    if (engine.privileges.hasSystemPrivilege(user, 'GRANT ANY OBJECT PRIVILEGE', enabled)) return;
+
+    const sch = schema.toUpperCase();
+    const obj = objectName.toUpperCase();
+    const rows = this.catalog.getTablePrivilegeGrants();
+    for (const grantee of grantees) {
+      const g = grantee.toUpperCase();
+      for (const priv of privileges) {
+        const p = priv.toUpperCase();
+        const row = rows.find(r =>
+          r.grantee === g && r.privilege === p && r.objectSchema === sch && r.objectName === obj);
+        if (row && (row.grantor ?? 'SYS') !== user) {
+          throw new OracleError(1927, 'cannot REVOKE privileges you did not grant');
+        }
+      }
+    }
+  }
+
+  /**
    * Throws ORA-01031 unless the current user may grant the listed object
    * privileges on `schema.objectName`: owner, SYS, DBA, or holder of every
    * privilege WITH GRANT OPTION.

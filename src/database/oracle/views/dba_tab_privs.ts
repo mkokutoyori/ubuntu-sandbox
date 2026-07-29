@@ -11,7 +11,7 @@ registerView({
   comment: 'Object privileges',
   query({ catalog, storage }) {
     const cat = catalog as unknown as {
-      getTablePrivilegeGrants(): { grantee: string; objectSchema?: string; objectName?: string; privilege: string; grantable?: boolean }[];
+      getTablePrivilegeGrants(): { grantee: string; objectSchema?: string; objectName?: string; privilege: string; grantable?: boolean; grantor?: string }[];
       getStoredUnits?: () => { schema: string; name: string; type: string }[];
       getDirectory?: (name: string) => unknown;
     };
@@ -31,7 +31,7 @@ registerView({
       p.objectName ?? '',
       p.privilege,
       p.grantable ? 'YES' : 'NO',
-      'SYS',
+      p.grantor ?? 'SYS',
       resolveType(p.objectSchema ?? 'SYS', p.objectName ?? ''),
     ]);
     return queryResult(

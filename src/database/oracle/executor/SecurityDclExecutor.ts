@@ -102,7 +102,7 @@ export class SecurityDclExecutor {
       this.privileges.requireGrantableObjectPrivileges('SYS', dirName, stmt.privileges);
       for (const grantee of grantees) {
         for (const priv of stmt.privileges) {
-          this.catalog.grantTablePrivilege(grantee, priv, 'SYS', dirName, stmt.withGrantOption);
+          this.catalog.grantTablePrivilege(grantee, priv, 'SYS', dirName, stmt.withGrantOption, this.context.currentUser);
         }
       }
       return emptyResult('Grant succeeded.');
@@ -132,13 +132,13 @@ export class SecurityDclExecutor {
               catalog.grantColumnPrivilege(grantee, priv, schema, stmt.objectName, c, user, stmt.withGrantOption);
             }
           } else {
-            catalog.grantTablePrivilege(grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
+            catalog.grantTablePrivilege(grantee, priv, schema, stmt.objectName, stmt.withGrantOption, user);
           }
         }
       }
     } else {
-      this.privileges.requireSystemPrivilege('GRANT ANY PRIVILEGE', 'GRANT ANY ROLE');
       const expanded = this.expandSystemPrivileges(stmt.privileges);
+      this.privileges.requireGrantableSystemPrivileges(expanded.map(e => e.name));
       for (const grantee of grantees) {
         for (const { name: priv } of expanded) {
           if (catalog.roleExists(priv)) {
@@ -196,6 +196,8 @@ export class SecurityDclExecutor {
     }
     if (stmt.objectName) {
       const schema = stmt.objectSchema || this.context.currentSchema;
+      this.privileges.requireRevokableObjectPrivileges(
+        schema, stmt.objectName, stmt.privileges, grantees);
       for (const grantee of grantees) {
         for (const priv of stmt.privileges) {
           const cols = stmt.privilegeColumns?.[priv.toUpperCase()];
@@ -208,6 +210,7 @@ export class SecurityDclExecutor {
       }
     } else {
       const expanded = this.expandSystemPrivileges(stmt.privileges);
+      this.privileges.requireGrantableSystemPrivileges(expanded.map(e => e.name));
       for (const grantee of grantees) {
         for (const entry of expanded) {
           const granteeU = grantee.toUpperCase();

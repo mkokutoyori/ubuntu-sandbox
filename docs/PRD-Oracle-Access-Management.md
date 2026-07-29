@@ -447,6 +447,49 @@ Cas limites à traiter explicitement : prédicat vide ou `NULL` (aucun filtrage)
 fonction inexistante (ORA-28110 « policy function has error »), politique sur
 un objet dont le propriétaire exécute la requête (pas de filtrage).
 
+### 4.3 bis Déléguer un droit et le reprendre (items 5 et 6, phase P6)
+
+Le §1.3 annonçait deux limites ; le sondage préalable en a trouvé quatre,
+dont une qui n'était pas dans l'inventaire et qui est la plus grave.
+
+**Un champ manquait avant tout le reste.** `CatalogPrivilege` ne portait pas
+de `grantor` et `DBA_TAB_PRIVS.GRANTOR` rendait la constante `'SYS'` : un
+octroi fait par `alice` était attribué à `SYS`. Sans savoir qui a donné
+quoi, aucune cascade n'est calculable. Le champ est ajouté, et il entre
+aussi dans la **clé d'unicité** d'une ligne : comme dans le vrai
+`DBA_TAB_PRIVS`, un utilisateur peut détenir le même privilège de deux
+personnes, et une révocation doit pouvoir en retirer un sans l'autre.
+Sans cela, un second octroi se serait fondu dans le premier et serait tombé
+avec lui.
+
+**`WITH ADMIN OPTION` ne déléguait rien.** L'option était stockée et rendue
+par `DBA_SYS_PRIVS`/`DBA_ROLE_PRIVS`, mais `SecurityDclExecutor` exigeait
+`GRANT ANY PRIVILEGE`/`GRANT ANY ROLE` pour tout octroi système.
+`requireGrantableSystemPrivileges` accepte désormais aussi le détenteur de
+ce privilège précis avec l'option — délégation par privilège, l'option sur
+l'un ne disant rien de l'autre.
+
+**N'importe qui pouvait révoquer n'importe quoi.** `executeRevoke` n'avait
+aucun contrôle d'autorisation, ni pour l'objet ni pour le système : un
+compte sans le moindre droit sur `SYS.EMP` exécutait
+`REVOKE SELECT ON SYS.emp FROM reader` — « Revoke succeeded. » C'est le
+défaut le plus sérieux de ce lot, et il n'était pas au §1.3. Un privilège
+objet ne se reprend maintenant que par son donneur (ORA-01927), à moins de
+détenir `GRANT ANY OBJECT PRIVILEGE` ou d'être DBA ; un privilège système
+ou un rôle demandent la même autorité que pour l'accorder.
+
+**L'asymétrie d'Oracle est reproduite, pas lissée.** La révocation d'un
+privilège **objet** cascade le long de la chaîne des donneurs ; celle d'un
+privilège **système** ou d'un **rôle** ne cascade pas. C'est contre-intuitif
+et documenté, donc testé dans les deux sens. La cascade épargne celui qui
+détient encore le privilège d'un autre donneur : ses propres octrois
+survivent, puisqu'il pouvait toujours les faire.
+
+Écart assumé : Oracle laisse le propriétaire d'un objet reprendre par
+`GRANT ANY OBJECT PRIVILEGE` un octroi consenti par un tiers ; ici le
+propriétaire non-DBA doit détenir ce privilège explicitement, comme tout
+le monde.
+
 ### 4.4 Trace d'audit unifiée (objectif 6)
 
 Structure alignée sur `UNIFIED_AUDIT_TRAIL` réel, restreinte aux colonnes que
