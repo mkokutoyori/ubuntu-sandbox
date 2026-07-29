@@ -57,6 +57,8 @@ import type { TcpStream } from '../tcp/types';
 import { verifyUdpChecksum } from '../tcp/types';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
+import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';
 import { FtpServer } from '../ftp/FtpServer';
 import { RouterSftpFileSystem } from '../protocols/ssh/sftp/RouterSftpFileSystem';
@@ -476,7 +478,60 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private bindTelnetListener(): void {
-    this.tcpv2.listen(23, { onAccept: () => {} });
+    this.tcpv2.listen(23, {
+      onAccept: (socket) => {
+        const handler = this.buildRouterTelnetServerHandler();
+        handler.register(socket as unknown as TcpStream, socket.remoteIp);
+      },
+    });
+  }
+
+  /**
+   * The VTY line's authentication mode, vendor-neutral. Cisco writes it
+   * as `login` / `login local` / `login authentication`, Huawei as
+   * `authentication-mode password|aaa|none`; the store keeps both, and
+   * the telnet dialog needs one answer.
+   */
+  private resolveVtyLoginMode(): 'none' | 'local' | 'aaa' | 'password' {
+    const block = this.vtyLineConfig.all()[0];
+    if (!block) return 'none';
+    if (block.login) return block.login;
+    if (block.authenticationMode === 'aaa') return 'aaa';
+    if (block.authenticationMode === 'password') return 'password';
+    return 'none';
+  }
+
+  /** Header printed above the telnet credential prompts — IOS wording by default. */
+  protected getVtyAuthHeader(): string { return 'User Access Verification'; }
+
+  private buildRouterTelnetServerHandler(): TelnetServerHandler {
+    const ctx = new RouterTelnetServerContext({
+      hostname: () => this.hostname,
+      loginMode: () => this.resolveVtyLoginMode(),
+      linePassword: () => this.vtyLineConfig.all()[0]?.linePassword ?? null,
+      authHeader: () => this.getVtyAuthHeader(),
+      loginBanner: () => this.getBanner('login') || null,
+      motd: () => this.getBanner('motd') || null,
+      admit: (ip) => this.vtyAdmissionVerdict('telnet', ip),
+      authenticateLocal: (user, password) => this.getCredentialStore().authenticate(user, password),
+      authenticateAaa: (user, password) => this.authenticateViaAaa(user, password),
+      createVtyShell: (user) => this.createVtyShell(user),
+      openSession: (user, fromIp, peerPort) => {
+        const record = this.getSshSessionRegistry().open({
+          user, privilege: this.resolveVtyExecLevel(user || undefined),
+          fromIp, authMethod: 'password', localPort: 23, peerPort,
+        });
+        return record ? { id: record.id, line: record.line } : null;
+      },
+      closeSession: (id, reason) => { this.getSshSessionRegistry().close(id, reason); },
+      touchSession: (id, bytesIn, bytesOut) => {
+        this.getSshSessionRegistry().touch(id, Date.now(), bytesIn, bytesOut);
+      },
+      idleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
+      recordAuthFailure: (user, ip) => this.recordSshLogin(user, ip, '', false),
+      recordLogin: (user, ip) => this.recordSshLogin(user, ip, '', true, undefined, 23),
+    });
+    return new TelnetServerHandler(ctx);
   }
 
   private telnetAllowedByTransport(): boolean {
@@ -3284,6 +3339,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   recordSshLogin(
     user: string, fromIp: string, _fromHost: string,
     accepted: boolean, _method?: 'password' | 'publickey' | 'keyboard-interactive',
+    localPort: number = 22,
   ): void {
     // Failures feed the same AAA event bus a native `CrossVendorSshHost
     // .evaluate()` login would — required so LoginBlocker/SecurityAuditLog
@@ -3301,7 +3357,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // exec paths) already manages its own session lifecycle explicitly.
     // Going through the bus here would double-book the vty line.
     this.getSecurityAuditLog().record('SEC_LOGIN', 5, 'LOGIN_SUCCESS',
-      `Login Success [user: ${user}] [Source: ${fromIp}] [localport: 22] [Reason: Login Authentication]`);
+      `Login Success [user: ${user}] [Source: ${fromIp}] [localport: ${localPort}] [Reason: Login Authentication]`);
   }
   getSshBanner(): string { return this.sshBannerText; }
   getSshMotd(): string { return ''; }

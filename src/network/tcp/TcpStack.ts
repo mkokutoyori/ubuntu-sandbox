@@ -93,6 +93,13 @@ export class TcpSocket {
   closed = false;
   closeReason: TcpCloseReason | null = null;
   connectRefused = false;
+  /**
+   * The handshake completed at least once. A peer that accepts and then
+   * closes straight away — a telnet VTY refusing the line, an SMTP server
+   * that greets with 421 — has an OPEN port; judging that off the socket's
+   * *current* state would call it refused, which is the opposite answer.
+   */
+  everEstablished = false;
   pendingSendQueue: unknown[] = [];
   closeAfterFlush = false;
   recvBuffer = '';
@@ -208,7 +215,16 @@ export class TcpSocket {
   }
 
   onData(handler: TcpDataHandler): () => void {
+    const first = this.dataHandlers.length === 0;
     this.dataHandlers.push(handler);
+    if (first && this.earlyData.length > 0) {
+      const backlog = this.earlyData;
+      this.earlyData = [];
+      this.earlyDataBytes = 0;
+      for (const chunk of backlog) {
+        try { handler(chunk); } catch { /* swallow per-handler */ }
+      }
+    }
     return () => {
       const i = this.dataHandlers.indexOf(handler);
       if (i !== -1) this.dataHandlers.splice(i, 1);
@@ -233,7 +249,29 @@ export class TcpSocket {
     }
   }
 
+  /**
+   * Data that arrived before the application attached its first
+   * `onData` handler, held until it does — a real socket keeps received
+   * bytes in its receive queue for exactly as long. Without this, every
+   * protocol where the server speaks first (telnet's option negotiation
+   * and login prompt, an SMTP 220 greeting) loses its opening burst,
+   * because the peer writes it synchronously inside `onAccept`, before
+   * `connect()` has even returned to the client.
+   *
+   * Bounded by the advertised receive window: past that a real stack
+   * stops accepting, it does not grow without limit.
+   */
+  private earlyData: unknown[] = [];
+  private earlyDataBytes = 0;
+
   _fireData(data: unknown): void {
+    if (this.dataHandlers.length === 0) {
+      const len = typeof data === 'string' ? data.length : 1;
+      if (this.earlyDataBytes + len > this.windowSize) return;
+      this.earlyData.push(data);
+      this.earlyDataBytes += len;
+      return;
+    }
     for (const h of [...this.dataHandlers]) {
       try { h(data); } catch { /* swallow per-handler */ }
     }
@@ -418,7 +456,7 @@ export class TcpStack {
   connectOutcome(remoteIp: string, remotePort: number): 'open' | 'refused' | 'timeout' {
     const socket = this.connect(remoteIp, remotePort);
     if (!socket) return 'timeout';
-    if (socket.state === 'established') {
+    if (socket.everEstablished) {
       socket.close();
       return 'open';
     }
@@ -1098,6 +1136,7 @@ export class TcpStack {
     if (socket.state === newState) return;
     const oldState = socket.state;
     socket.state = newState;
+    if (newState === 'established') socket.everEstablished = true;
     this.getBus().publish({
       topic: 'tcp.state.changed',
       payload: {

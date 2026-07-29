@@ -208,6 +208,9 @@ export class HuaweiRouter extends Router {
     return this.getHuaweiDebugService();
   }
 
+  /** VRP announces the incoming telnet login differently from IOS. */
+  protected override getVtyAuthHeader(): string { return 'Login authentication'; }
+
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
     if (ipPkt.protocol === IP_PROTO_IGMP) {
       this.igmpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);

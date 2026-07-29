@@ -3187,7 +3187,7 @@ export abstract class EndHost extends Equipment {
   tcpProbeSync(targetIP: IPAddress, port: number): boolean {
     const socket = this.tcpv2.connect(targetIP.toString(), port);
     if (!socket) return false;
-    const established = socket.state === 'established';
+    const established = socket.everEstablished;
     socket.close();
     return established;
   }
