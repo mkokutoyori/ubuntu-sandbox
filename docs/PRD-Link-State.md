@@ -160,8 +160,9 @@ attendre une frappe.
 
 ## 5. Hors périmètre
 
-- `ethtool` n'existe pas dans le simulateur (vérifié). Ajouter la commande
-  entière dépasse ce PRD ; `Link detected: no` n'est donc pas couvert.
+- ~~`ethtool` n'existe pas dans le simulateur~~ — **livré au §9**, une fois
+  la porteuse rendue réelle : `Link detected:` n'était rien d'autre
+  qu'elle, et c'est bien son absence qui rendait la commande impossible.
 - La migration exhaustive de tous les appelants de `getIsUp()` vers
   `isOperationallyUp()` est faite au cas par cas, guidée par les tests des
   phases ci-dessus, et non en un remplacement global.
@@ -420,3 +421,40 @@ chaîne du `ping` Windows (749 tests), plus les dix scénarios de panne et
 leurs probes (199 tests). `tsc` à 127, `eslint` inchangé — les trois
 erreurs de `WinCommandExecutor.ts` sont antérieures, vérifié par
 `git stash`.
+
+---
+
+## 9. `ethtool` — la commande que la porteuse a rendue possible
+
+Le §5 la déclarait hors périmètre, et la raison était juste : sa ligne
+la plus lue, `Link detected:`, n'est rien d'autre que la porteuse, et la
+porteuse n'existait pas. Depuis le §6 elle existe — et elle tient compte
+de l'émetteur d'en face —, si bien que la commande n'a plus rien à
+inventer.
+
+Les transcripts de debug en réclamaient trois formes, toutes livrées :
+
+| Forme | Ce qu'elle lit sur le `Port` |
+|---|---|
+| `ethtool <if>` | `hasCarrier()`, vitesse et duplex **négociés**, auto-négociation |
+| `ethtool -i <if>` | le nom de l'interface interrogée et son MTU réel |
+| `ethtool -S <if>` | les compteurs de trames, octets, erreurs, rejets et CRC |
+
+Rien n'est un gabarit : sur un lien mort la vitesse redevient `Unknown!`
+et le duplex `Unknown! (255)`, exactement comme le vrai `ethtool`, parce
+que c'est ce que le port répond. Et `Link detected: no` sort aussi bien
+d'un câble arraché que d'un port du commutateur désactivé ou d'un
+commutateur éteint — ce que le §6 a précisément rendu vrai.
+
+**Les formes d'écriture sont refusées** (`-s`, `-K`, `-G`, …) en nommant
+la raison : elles changeraient un matériel que ce simulateur ne modélise
+pas, et répondre `OK` sans rien faire ferait croire à l'opérateur qu'il
+a forcé une vitesse.
+
+### 9.1 Vérification
+
+`probe-ethtool-01-link-detected.test.ts` — 11 cas, dont les trois causes
+de perte de porteuse et la reprise. Régression : les suites `link-state`,
+`linux-ip-command`, les scénarios de panne et leurs probes, `networkctl`
+et les suites de commandes de base — 508 tests verts. `tsc` à 127,
+`eslint` propre.

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-07-30T18:11:28.140Z
+Generated: 2026-07-30T18:53:40.431Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -1035,22 +1035,22 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-07-30 18:11:31--  http://192.168.10.1
+  --2026-07-30 18:53:43--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-07-30 18:11:31--  http://192.168.10.1
+  --2026-07-30 18:53:43--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-07-30 18:11:31--  http://192.168.10.1
+  --2026-07-30 18:53:43--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-07-30 18:11:31--  http://192.168.10.99
+  --2026-07-30 18:53:43--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1273,11 +1273,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Jul 30 18:11 /tmp/id_rsa
-  -rw-r--r-- 1 root root 42 Jul 30 18:11 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Jul 30 18:53 /tmp/id_rsa
+  -rw-r--r-- 1 root root 42 Jul 30 18:53 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAmo54bkj9qq8 root@linux-server
+  ssh-rsa AAAAx56gyvsgwwn root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1286,7 +1286,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAsb6podhoc6 root@localhost
+  ssh-ed25519 AAAAeq6zguoajo root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1638,13 +1638,59 @@ $ [285/302]> nslookup -type=any example.com
 
 --- [286] § ethtool & MTU ---
 $ [286/302]> ethtool eth0
-  ethtool: command not found
+  Settings for eth0:
+  	Supported ports: [ TP ]
+  	Supported link modes:   10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Supported pause frame use: No
+  	Supports auto-negotiation: Yes
+  	Supported FEC modes: Not reported
+  	Advertised link modes:  10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Advertised pause frame use: No
+  	Advertised auto-negotiation: Yes
+  	Advertised FEC modes: Not reported
+  	Speed: Unknown!
+  	Duplex: Unknown! (255)
+  	Port: Twisted Pair
+  	PHYAD: 0
+  	Transceiver: internal
+  	Auto-negotiation: on
+  	MDI-X: off (auto)
+  	Supports Wake-on: pumbg
+  	Wake-on: d
+  	Current message level: 0x00000007 (7)
+  			       drv probe link
+  	Link detected: no
 
 $ [287/302]> ethtool -i eth0
-  ethtool: command not found
+  driver: e1000
+  version: 7.3.21-k8-NAPI
+  firmware-version: N/A
+  expansion-rom-version:
+  bus-info: 0000:00:03.0
+  supports-statistics: yes
+  supports-test: yes
+  supports-eeprom-access: yes
+  supports-register-dump: yes
+  supports-priv-flags: no
+  interface: eth0
+  mtu: 1500
 
 $ [288/302]> ethtool -S eth0
-  ethtool: command not found
+  NIC statistics (eth0):
+       rx_packets: 0
+       tx_packets: 0
+       rx_bytes: 0
+       tx_bytes: 0
+       rx_errors: 0
+       tx_errors: 0
+       rx_dropped: 0
+       tx_dropped: 4
+       rx_crc_errors: 0
+       collisions: 0
 
 $ [289/302]> ip link show eth0 | grep mtu
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000

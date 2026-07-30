@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-07-30T18:34:47.034Z
+Generated: 2026-07-30T18:53:25.063Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -1274,7 +1274,32 @@ Total steps: 340
   eth3            DOWN          
 
 [258/340] l1 l1$ ethtool eth0
-  ethtool: command not found
+  Settings for eth0:
+  	Supported ports: [ TP ]
+  	Supported link modes:   10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Supported pause frame use: No
+  	Supports auto-negotiation: Yes
+  	Supported FEC modes: Not reported
+  	Advertised link modes:  10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Advertised pause frame use: No
+  	Advertised auto-negotiation: Yes
+  	Advertised FEC modes: Not reported
+  	Speed: 100Mb/s
+  	Duplex: Full
+  	Port: Twisted Pair
+  	PHYAD: 0
+  	Transceiver: internal
+  	Auto-negotiation: on
+  	MDI-X: off (auto)
+  	Supports Wake-on: pumbg
+  	Wake-on: d
+  	Current message level: 0x00000007 (7)
+  			       drv probe link
+  	Link detected: yes
 
 [259/340] l2 l2$ ip -br addr
   lo              UP            127.0.0.1/8
@@ -1284,7 +1309,32 @@ Total steps: 340
   eth3            DOWN          
 
 [260/340] l2 l2$ ethtool eth0
-  ethtool: command not found
+  Settings for eth0:
+  	Supported ports: [ TP ]
+  	Supported link modes:   10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Supported pause frame use: No
+  	Supports auto-negotiation: Yes
+  	Supported FEC modes: Not reported
+  	Advertised link modes:  10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Advertised pause frame use: No
+  	Advertised auto-negotiation: Yes
+  	Advertised FEC modes: Not reported
+  	Speed: 100Mb/s
+  	Duplex: Full
+  	Port: Twisted Pair
+  	PHYAD: 0
+  	Transceiver: internal
+  	Auto-negotiation: on
+  	MDI-X: off (auto)
+  	Supports Wake-on: pumbg
+  	Wake-on: d
+  	Current message level: 0x00000007 (7)
+  			       drv probe link
+  	Link detected: yes
 
 [261/340] srv1 srv1$ ip -br addr
   lo              UP            127.0.0.1/8
@@ -1294,7 +1344,32 @@ Total steps: 340
   eth3            DOWN          
 
 [262/340] srv1 srv1$ ethtool eth0
-  ethtool: command not found
+  Settings for eth0:
+  	Supported ports: [ TP ]
+  	Supported link modes:   10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Supported pause frame use: No
+  	Supports auto-negotiation: Yes
+  	Supported FEC modes: Not reported
+  	Advertised link modes:  10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Advertised pause frame use: No
+  	Advertised auto-negotiation: Yes
+  	Advertised FEC modes: Not reported
+  	Speed: 100Mb/s
+  	Duplex: Full
+  	Port: Twisted Pair
+  	PHYAD: 0
+  	Transceiver: internal
+  	Auto-negotiation: on
+  	MDI-X: off (auto)
+  	Supports Wake-on: pumbg
+  	Wake-on: d
+  	Current message level: 0x00000007 (7)
+  			       drv probe link
+  	Link detected: yes
 
 [263/340] srv2 srv2$ ip -br addr
   lo              UP            127.0.0.1/8
@@ -1304,7 +1379,32 @@ Total steps: 340
   eth3            DOWN          
 
 [264/340] srv2 srv2$ ethtool eth0
-  ethtool: command not found
+  Settings for eth0:
+  	Supported ports: [ TP ]
+  	Supported link modes:   10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Supported pause frame use: No
+  	Supports auto-negotiation: Yes
+  	Supported FEC modes: Not reported
+  	Advertised link modes:  10baseT/Half 10baseT/Full
+  	                        100baseT/Half 100baseT/Full
+  	                        1000baseT/Full
+  	Advertised pause frame use: No
+  	Advertised auto-negotiation: Yes
+  	Advertised FEC modes: Not reported
+  	Speed: 100Mb/s
+  	Duplex: Full
+  	Port: Twisted Pair
+  	PHYAD: 0
+  	Transceiver: internal
+  	Auto-negotiation: on
+  	MDI-X: off (auto)
+  	Supports Wake-on: pumbg
+  	Wake-on: d
+  	Current message level: 0x00000007 (7)
+  			       drv probe link
+  	Link detected: yes
 
 [265/340] w1 w1$ ipconfig
   Windows IP Configuration
@@ -1334,12 +1434,12 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.129 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.031 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.568 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.444 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.031/1.580/2.129/0.549 ms
+  rtt min/avg/max/mdev = 1.444/2.006/2.568/0.562 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...

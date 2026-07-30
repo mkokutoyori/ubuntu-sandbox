@@ -22,6 +22,7 @@ import { arpCommand } from './net/Arp';
 import { ifconfigCommand } from './net/Ifconfig';
 import { pingCommand, ping6Command } from './net/Ping';
 import { tracerouteCommand } from './net/Traceroute';
+import { ethtoolCommand } from './net/Ethtool';
 import { routeCommand } from './net/Route';
 import { digCommand } from './dns/Dig';
 import { nslookupCommand } from './dns/Nslookup';
@@ -108,6 +109,7 @@ export {
   pingCommand,
   ping6Command,
   tracerouteCommand,
+  ethtoolCommand,
   routeCommand,
   ipCommand,
   digCommand,
@@ -209,6 +211,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   pingCommand,
   ping6Command,
   tracerouteCommand,
+  ethtoolCommand,
   routeCommand,
   ipCommand,
   digCommand,

@@ -184,7 +184,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
   'mkfs', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs', 'lvdisplay', 'vgdisplay', 'pvdisplay',
   // Networking
-  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat',
+  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat', 'ethtool',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
   'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump', 'tc',
   'iptables', 'iptables-save', 'iptables-restore',
