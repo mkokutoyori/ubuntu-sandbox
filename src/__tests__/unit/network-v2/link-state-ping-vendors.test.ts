@@ -31,14 +31,29 @@ function winTopo(): { win: WindowsPC; peer: LinuxPC; cable: Cable } {
 }
 
 describe('Windows ping on a severed link (docs/PRD-Link-State.md §4 #7, P4)', () => {
-  it('reports Destination host unreachable rather than a bare timeout', async () => {
+  it('reports a transmit failure rather than a bare timeout', async () => {
+    // Le critère §4 #7 du PRD demandait « Destination host unreachable »
+    // ici. L'intention était juste — un lien coupé ne se dit pas
+    // « Request timed out » — mais la chaîne ne l'était pas : sur un
+    // vrai Windows, une carte sans lien perd sa route et la pile refuse
+    // d'émettre, ce qui donne « PING: transmit failed. General
+    // failure. ». « Destination host unreachable » reste la bonne
+    // réponse pour une cible du même sous-réseau qui n'a pas répondu à
+    // l'ARP — c'est le cas suivant.
     const { win, cable } = winTopo();
     await win.executeCommand('ping -n 1 10.0.8.2');
     cable.disconnect();
 
     const out = await win.executeCommand('ping -n 2 10.0.8.2');
-    expect(out).toContain('Destination host unreachable');
+    expect(out).toContain('PING: transmit failed. General failure.');
     expect(out).not.toContain('Request timed out');
+  }, 30000);
+
+  it('a silent neighbour on an intact link is the unreachable case', async () => {
+    const { win } = winTopo();
+    const out = await win.executeCommand('ping -n 2 10.0.8.77');
+    expect(out).toContain('Reply from 10.0.8.1: Destination host unreachable.');
+    expect(out).not.toContain('PING: transmit failed');
   }, 30000);
 
   it('still succeeds while the cable is plugged in', async () => {

@@ -122,6 +122,17 @@ export interface WinCommandContext {
   getDHCPEventLog(): string[];
 
   // Network operations
+  /**
+   * The interface the IP layer would send this destination out of, and
+   * whether the destination sits on that interface's own subnet.
+   * `null` means no route at all.
+   *
+   * Windows decides what to print before the packet leaves: a send that
+   * the stack itself refuses reads `PING: transmit failed. General
+   * failure.`, which is a different event from a packet that left and
+   * drew no answer.
+   */
+  resolvePingEgress?(target: IPAddress): { port: Port; onLink: boolean } | null;
   executePingSequence(target: IPAddress, count: number, timeout?: number, ttl?: number): Promise<PingResult[]>;
   executeTraceroute(target: IPAddress, maxHops?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
 

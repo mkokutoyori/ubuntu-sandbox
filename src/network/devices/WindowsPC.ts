@@ -2864,6 +2864,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       syncDHCPEvents: () => this.syncDHCPEvents(),
       getDHCPEventLog: () => this.dhcpEventLog,
 
+      resolvePingEgress: (target: IPAddress) => {
+        const route = this.resolveRoute(target);
+        if (!route) return null;
+        // On-link means the next hop is the destination itself: the ARP
+        // that follows is for the target, and its failure is the target's
+        // silence rather than a broken path.
+        return { port: route.port, onLink: route.nextHopIP.toString() === target.toString() };
+      },
       executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number) =>
         this.executePingSequence(target, count, timeout, ttl),
       executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>

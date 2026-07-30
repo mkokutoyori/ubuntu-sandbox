@@ -226,6 +226,19 @@ export function parseWinPingArgs(args: string[]): ParsedWinPing {
   return result;
 }
 
+/**
+ * `PING: transmit failed. General failure.` — la pile refuse d'émettre.
+ * Windows n'imprime pas non plus le bloc des temps de trajet : il n'y a
+ * eu ni aller ni retour à mesurer.
+ */
+export function formatWinPingTransmitFailure(target: string, count: number, size: number): string {
+  const lines = Array.from({ length: count }, () => 'PING: transmit failed. General failure.');
+  return `\nPinging ${target} with ${size} bytes of data:\n` +
+         `${lines.join('\n')}\n\n` +
+         `Ping statistics for ${target}:\n` +
+         `    Packets: Sent = ${count}, Received = 0, Lost = ${count} (100% loss),`;
+}
+
 export function formatWinPingHeader(targetIP: IPAddress, size: number, hostname?: string): string {
   const dest = hostname ? `${hostname} [${targetIP}]` : `${targetIP}`;
   return `\nPinging ${dest} with ${size} bytes of data:`;
@@ -312,15 +325,7 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
     const anyUsable = [...ctx.ports.values()].some(
       (p) => p.getIsUp() && !p.isAdminDown(),
     );
-    if (!anyUsable) {
-      const cnt = parsed.count;
-      const transmitLines: string[] = [];
-      for (let i = 0; i < cnt; i++) transmitLines.push('PING: transmit failed. General failure.');
-      return `\nPinging ${parsed.targetStr} with ${parsed.size} bytes of data:\n` +
-             `${transmitLines.join('\n')}\n\n` +
-             `Ping statistics for ${parsed.targetStr}:\n` +
-             `    Packets: Sent = ${cnt}, Received = 0, Lost = ${cnt} (100% loss),`;
-    }
+    if (!anyUsable) return formatWinPingTransmitFailure(parsed.targetStr, parsed.count, parsed.size);
   }
 
   const isNumericIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(parsed.targetStr);
@@ -333,6 +338,19 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
   const targetIP = await ctx.resolveHostname(parsed.targetStr);
   if (!targetIP) {
     return `Ping request could not find host ${parsed.targetStr}. Please check the name and try again.`;
+  }
+
+  // What the stack decides before anything reaches the wire. A send it
+  // refuses is `transmit failed`, and no amount of waiting turns it into
+  // a timeout: no route at all, or an egress interface that cannot drive
+  // its wire — shut down, or with nothing on the far end.
+  const egress = ctx.resolvePingEgress?.(targetIP);
+  const selfAddressed = targetIP.isLoopback()
+    || [...ctx.ports.values()].some(p => p.getIPAddress()?.toString() === targetIP.toString());
+  if (!selfAddressed && ctx.resolvePingEgress) {
+    if (!egress || !egress.port.getIsUp() || egress.port.isAdminDown() || !egress.port.hasCarrier()) {
+      return formatWinPingTransmitFailure(parsed.targetStr, parsed.count, parsed.size);
+    }
   }
 
   const results = await ctx.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, parsed.ttl);
@@ -352,7 +370,11 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
     }
   }
 
-  return formatPingOutput(targetIP, parsed.count, parsed.size, results, hostname, parsed, routeHops);
+  const selfSourceIP = egress?.onLink ? egress.port.getIPAddress()?.toString() : undefined;
+  return formatPingOutput(
+    targetIP, parsed.count, parsed.size, results, hostname,
+    { ...parsed, selfSourceIP }, routeHops,
+  );
 }
 
 function formatPingOutput(
@@ -361,12 +383,20 @@ function formatPingOutput(
   size: number,
   results: PingResult[],
   hostname: string | undefined,
-  opts: ParsedWinPing,
+  opts: ParsedWinPing & { selfSourceIP?: string },
   routeHops: string[] = [],
 ): string {
   const lines: string[] = [formatWinPingHeader(targetIP, size, hostname)];
   if (results.length === 0) {
-    for (let i = 0; i < count; i++) lines.push('PING: transmit failed. General failure.');
+    // The path was usable — that was checked before sending — so an empty
+    // run means the probes left and drew nothing back. On the local
+    // subnet that is the target failing to answer ARP, which Windows
+    // reports from the sender's own address; anywhere else it is the
+    // ordinary timeout.
+    const line = opts.selfSourceIP
+      ? `Reply from ${opts.selfSourceIP}: Destination host unreachable.`
+      : 'Request timed out.';
+    for (let i = 0; i < count; i++) lines.push(line);
   } else {
     for (const r of results) lines.push(formatWinPingReplyLine(r, size));
   }

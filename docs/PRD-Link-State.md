@@ -142,8 +142,10 @@ attendre une frappe.
    `100% packet loss` (non-régression du résumé existant).
 6. `ping` **interactif** avec débranchement en cours de flux : les paquets
    qui suivent produisent une ligne visible (c'est B1, le symptôme rapporté).
-7. Windows `ping` sur lien coupé rend `Destination host unreachable.`
-   plutôt que `Request timed out.`.
+7. ~~Windows `ping` sur lien coupé rend `Destination host unreachable.`~~
+   **Corrigé au §8** : c'est `PING: transmit failed. General failure.`
+   qu'un vrai Windows rend là ; `Destination host unreachable.` est la
+   réponse d'une cible du même sous-réseau restée muette à l'ARP.
 8. Cisco / Huawei `ping` sur lien coupé rendent leur forme vendeur
    (`.....`, `success rate is 0 percent`).
 9. Une session TCP établie qui traverse le lien est resetée au débranchement ;
@@ -341,3 +343,80 @@ panneau. Régression e2e sur les specs touchant le canvas
 vert, et `cable-unplug` retrouve au passage son premier test. Unitaire :
 `unit/gui` + `unit/react`, 165 tests verts. `tsc` à 127, `eslint` propre
 sur les fichiers touchés.
+
+---
+
+## 8. `ping` Windows : trois échecs, trois phrases
+
+Signalé sur transcript réel : deux sorties que le simulateur ne
+produisait pas, depuis la même machine et à une commande d'intervalle.
+
+```
+C:\>ping 192.168.1.1
+PING: transmit failed. General failure.     (x4)
+
+C:\>ping 100.100.11.1
+Request timed out.                          (x4)
+```
+
+Windows ne dit pas « ça n'a pas marché » d'une seule façon, et la
+différence *est* le diagnostic :
+
+| Phrase | Ce qu'elle signifie |
+|---|---|
+| `PING: transmit failed. General failure.` | la pile refuse d'émettre : pas de route, ou interface incapable d'attaquer son fil |
+| `Reply from <soi>: Destination host unreachable.` | destination sur le lien, restée muette à l'ARP — c'est la pile locale qui renonce |
+| `Request timed out.` | la sonde est partie, rien n'est revenu |
+| `Reply from <routeur>: Destination host unreachable.` | un routeur a répondu ICMP unreachable |
+
+### 8.1 Ce qui n'allait pas
+
+`executePingSequence` réduit trois échecs distincts au même tableau
+vide : pas de route, ARP échoué, et l'envoi impossible. Le rendu
+choisissait alors `General failure` pour *toutes* les séquences sans
+résultat — sans jamais savoir laquelle.
+
+Et le test qui décidait d'émettre ne regardait que l'état de ligne
+(`getIsUp() && !isAdminDown()`), sur **n'importe quelle** interface de
+la machine. La porteuse n'y entrait pas. Résultat mesuré : un câble
+arraché rendait `Destination host unreachable`, une cible muette sur le
+lien rendait `General failure` — les deux bonnes réponses, chacune à la
+place de l'autre. Et `Request timed out.`, la sortie la plus courante
+d'un vrai Windows, n'apparaissait jamais.
+
+### 8.2 Ce qui a été fait
+
+La décision revient là où le vrai Windows la prend : **avant** que quoi
+que ce soit n'atteigne le fil. `resolvePingEgress(target)` répond par
+quelle interface ce paquet sortirait et si la destination est sur son
+propre sous-réseau. Sans route, ou si cette interface est désactivée ou
+sans porteuse, c'est `transmit failed` — et aucune attente ne
+transformera ce refus en délai dépassé.
+
+Le reste découle : une séquence vide sur un chemin déclaré praticable ne
+peut plus être qu'un silence. Sur le lien, c'est l'ARP resté sans
+réponse, que Windows rapporte depuis l'adresse de l'expéditeur ;
+ailleurs, c'est le timeout.
+
+Le bloc « Approximate round trip times » reste absent quand rien n'est
+revenu — il n'y a pas d'aller-retour à mesurer.
+
+### 8.3 Un critère du PRD démenti par le transcript
+
+Le §4 #7 demandait « Windows `ping` sur lien coupé rend
+`Destination host unreachable.` ». L'intention était juste — un lien
+coupé ne se dit pas « Request timed out » — mais la chaîne, non : une
+carte sans lien perd sa route, et la pile refuse d'émettre. Le critère
+et le test qui l'encodait sont corrigés, avec la raison écrite dedans ;
+`Destination host unreachable.` reste la bonne réponse pour le voisin
+muet, et un cas séparé la fige.
+
+### 8.4 Vérification
+
+`probe-winping-01-trois-issues.test.ts` — 10 cas couvrant les cinq
+situations d'échec, la réussite, et la reprise après rebranchement et
+remise sous tension. Régression sur les sept fichiers qui affirment une
+chaîne du `ping` Windows (749 tests), plus les dix scénarios de panne et
+leurs probes (199 tests). `tsc` à 127, `eslint` inchangé — les trois
+erreurs de `WinCommandExecutor.ts` sont antérieures, vérifié par
+`git stash`.
