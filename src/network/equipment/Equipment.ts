@@ -201,6 +201,7 @@ export abstract class Equipment {
       this._bootShown = false;
     }
     Logger.info(this.id, 'equipment:power', `${this.name}: powered ON`);
+    for (const port of this.ports.values()) port.setDevicePowered(true);
     if (!wasOn) {
       this.getBus().publish({
         topic: 'device.power-on',
@@ -215,6 +216,7 @@ export abstract class Equipment {
     // Clear boot flag so the next powerOn replays the boot banner.
     this._bootShown = false;
     Logger.info(this.id, 'equipment:power', `${this.name}: powered OFF`);
+    for (const port of this.ports.values()) port.setDevicePowered(false);
     if (wasOn) {
       this.getBus().publish({
         topic: 'device.power-off',

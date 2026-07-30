@@ -2339,7 +2339,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'cls':     return '';
       case 'doskey':  return this.cmdDoskey(args);
       case 'powershell':
+      case 'powershell.exe':
       case 'pwsh':
+      case 'pwsh.exe':
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,

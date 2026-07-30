@@ -50,9 +50,27 @@ const PS_SWITCH_FLAGS = new Set([
 ]);
 const PS_VALUE_FLAGS = new Set([
   '-executionpolicy', '-version', '-windowstyle', '-inputformat',
-  '-outputformat', '-encodedcommand', '-configurationname', '-file',
+  '-outputformat', '-encodedcommand', '-configurationname',
   '-psconsolefile',
 ]);
+
+/**
+ * `-File <path> [args…]`. It used to sit in PS_VALUE_FLAGS, which meant
+ * the path was recognised and then thrown away: `powershell -File x.ps1`
+ * printed nothing at all, and adding a script parameter made the whole
+ * line fall through to cmd.exe and come back as "powershell is not
+ * recognized". Everything after the path belongs to the script, exactly
+ * as the real host passes it.
+ */
+function extractFileInvocation(args: string[]): { path: string; scriptArgs: string[] } | null {
+  const idx = args.findIndex(a => /^-f(ile)?$/i.test(a));
+  if (idx === -1 || !args[idx + 1]) return null;
+  return { path: args[idx + 1], scriptArgs: args.slice(idx + 2) };
+}
+
+function quoteForPs(path: string): string {
+  return `'${path.replace(/'/g, "''")}'`;
+}
 
 function extractPsScript(args: string[]): string {
   const cIdx = args.findIndex(a => /^-c(ommand)?$/i.test(a));
@@ -72,6 +90,15 @@ export async function runPowerShellShim(
   ctx: PsCmdShimContext,
   args: string[],
 ): Promise<string> {
+  const file = extractFileInvocation(args);
+  if (file) {
+    if (!ctx.runFullPs) {
+      return `powershell : Cannot run "${file.path}" — no PowerShell engine is available on this host.`;
+    }
+    const call = [`& ${quoteForPs(file.path)}`, ...file.scriptArgs].join(' ');
+    return String(await ctx.runFullPs(call)).replace(/\s+$/, '');
+  }
+
   const raw = extractPsScript(args).trim();
   if (!raw) return '';
   const script = stripBalancedQuotes(raw);

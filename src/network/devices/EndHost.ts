@@ -212,6 +212,13 @@ export interface HostRouteEntry {
   metric: number;
   /** Routing table this route belongs to; omitted/254 = main. */
   table?: number;
+  /**
+   * The route's interface has no carrier. Linux keeps such a route in the
+   * table and flags it rather than withdrawing it — withdrawal is what
+   * taking the interface administratively down does. `ip route` renders
+   * the flag as a trailing `linkdown`.
+   */
+  linkdown?: boolean;
 }
 
 /** A policy-routing rule (`ip rule`): selects which table a lookup uses. */
@@ -223,6 +230,14 @@ export interface HostPolicyRule {
   toMask?: SubnetMask;
   fwmark?: number;
   table: number;
+}
+
+/**
+ * Interfaces with no wire behind them. They never lose carrier, so the
+ * link-derived route rules must not touch their routes.
+ */
+function isVirtualHostInterface(name: string): boolean {
+  return /^(lo|dummy|tun|tap|gre|sit|br|bond|virbr|docker|veth)/i.test(name);
 }
 
 function pickBestRouteInTable(destInt: number, table: HostRouteEntry[]): HostRouteEntry | null {
@@ -2913,13 +2928,28 @@ export abstract class EndHost extends Equipment {
    * from ports that were configured directly (backward compatibility).
    */
   private buildFullRoutingTable(): HostRouteEntry[] {
-    const table = [...this.routingTable];
+    // Connected routes are stored when the address is configured, so the
+    // stored copy predates any later link change: the two link-derived
+    // effects are applied here, on the way out, rather than left to a
+    // snapshot taken before the cable moved. Loopback and virtual
+    // interfaces are exempt — they have no wire to lose.
+    const table: HostRouteEntry[] = [];
+    for (const route of this.routingTable) {
+      const port = this.ports.get(route.iface);
+      if (!port || isVirtualHostInterface(route.iface)) { table.push(route); continue; }
+      if (route.type === 'connected' && (!port.getIsUp() || port.isAdminDown())) continue;
+      table.push(port.hasCarrier() ? route : { ...route, linkdown: true });
+    }
 
-    // Auto-detect connected routes from ports not already in the table
+    // Auto-detect connected routes from ports not already in the table.
+    // An interface taken administratively down loses its connected route
+    // outright, the way `ip link set dev eth0 down` flushes it; losing
+    // carrier only flags the route (see HostRouteEntry.linkdown).
     for (const [, port] of this.ports) {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
       if (!ip || !mask) continue;
+      if (!port.getIsUp() || port.isAdminDown()) continue;
 
       const portName = port.getName();
       const alreadyExists = table.some(
@@ -2934,6 +2964,7 @@ export abstract class EndHost extends Equipment {
           iface: portName,
           type: 'connected',
           metric: 0,
+          linkdown: !port.hasCarrier(),
         });
       }
     }
@@ -2949,6 +2980,7 @@ export abstract class EndHost extends Equipment {
           break;
         }
       }
+      const gwPort = gwIface ? this.ports.get(gwIface) : undefined;
       table.push({
         network: new IPAddress('0.0.0.0'),
         mask: new SubnetMask('0.0.0.0'),
@@ -2956,6 +2988,7 @@ export abstract class EndHost extends Equipment {
         iface: gwIface,
         type: 'default',
         metric: 0,
+        linkdown: gwPort ? !gwPort.hasCarrier() : undefined,
       });
     }
 

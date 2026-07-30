@@ -963,18 +963,40 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
-    it('124. should support timeout response markers (* * *) if gateway drops ICMP', async () => {
+    it('124. should support timeout response markers (* * *) for hops that never answer', async () => {
+      // This used to shut R2's Gi0/1 "to simulate drops", but that is the
+      // near end of the R1–R2 transit link (cable c3): taking it down
+      // makes R1 lose the link and answer Net unreachable, which is the
+      // opposite of a silent drop. Every other failure this simulator
+      // models answers something too — a downed interface gives !N, a
+      // powered-off destination gives !H, an ACL gives !A. Real silence
+      // is a probe that vanishes on the wire, so that is what this uses:
+      // a link that loses every frame. R1 still has carrier and a route,
+      // and forwards into nothing.
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      // Shutdown r2 interface GigabitEthernet0/1 to simulate drops
+      topo.c3.setPacketLossRate(1);
+
+      const output = await topo.pc1.executeCommand('traceroute -w 1 10.0.2.10');
+      expect(output).toContain('* * *');
+      // The first hop is on the near side of the lossy link and answers.
+      expect(output).toContain('10.0.1.1');
+    });
+
+    it('124b. a downed transit link is reported as unreachable, not as silence', async () => {
+      const topo = setupWANTopology();
+      await configureWANIPs(topo);
       await topo.r2.executeCommand('enable');
       await topo.r2.executeCommand('configure terminal');
       await topo.r2.executeCommand('interface GigabitEthernet0/1');
       await topo.r2.executeCommand('shutdown');
       await topo.r2.executeCommand('end');
 
+      // R2 stops driving its side of the link, so R1's own interface
+      // loses carrier and R1 — with no other path — says so.
       const output = await topo.pc1.executeCommand('traceroute -w 1 10.0.2.10');
-      expect(output).toContain('* * *');
+      expect(output).toContain('!N');
+      expect(output).not.toContain('10.0.12.2');
     });
 
     it('125. should support maximum trace queries limits securely', async () => {

@@ -310,16 +310,24 @@ export class PortActivityLogProjection {
       `IPv4: ${p.ip} duplicate arp reply received from ${p.foreignMac} on ${p.iface} (local ${p.localMac})`);
   }
 
+  /**
+   * A link change leaves two traces on a systemd host, from two different
+   * writers: the driver's own line, and networkd's — which is the one an
+   * operator greps for, since it is what the manager of the link says it
+   * saw.
+   */
   private onLinkUp(p: { deviceId: string; portName: string }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
       `${p.portName}: Link is Up - 1000 Mbps Full Duplex`);
+    this.logManager.logSystemd('systemd-networkd', `${p.portName}: Gained carrier`);
   }
 
   private onLinkDown(p: { deviceId: string; portName: string }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
       `${p.portName}: Link is Down`);
+    this.logManager.logSystemd('systemd-networkd', `${p.portName}: Lost carrier`);
   }
 
   private onDhcpGranted(p: {

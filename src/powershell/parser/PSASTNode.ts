@@ -56,6 +56,7 @@ export type PSStatement =
   | PSClassDefinition
   | PSEnumDefinition
   | PSReturnStatement
+  | PSExitStatement
   | PSBreakStatement
   | PSContinueStatement
   | PSThrowStatement
@@ -255,6 +256,12 @@ export interface PSEnumMember {
 
 export interface PSReturnStatement extends ASTBase {
   type: 'ReturnStatement';
+  value: PSExpression | null;
+}
+
+/** `exit [<code>]` — ends the running script and sets $LASTEXITCODE. */
+export interface PSExitStatement extends ASTBase {
+  type: 'ExitStatement';
   value: PSExpression | null;
 }
 

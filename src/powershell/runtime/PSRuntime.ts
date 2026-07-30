@@ -33,7 +33,7 @@ import type {
   PSPipelineStatement, PSAssignmentStatement,
   PSIfStatement, PSWhileStatement, PSDoWhileStatement, PSDoUntilStatement,
   PSForStatement, PSForeachStatement, PSSwitchStatement, PSTryStatement,
-  PSFunctionDefinition, PSReturnStatement, PSThrowStatement,
+  PSFunctionDefinition, PSReturnStatement, PSExitStatement, PSThrowStatement,
   PSPipeline, PSCommand,
   PSExpression, PSLiteralExpression, PSVariableExpression,
   PSBinaryExpression, PSUnaryExpression, PSRangeExpression,
@@ -51,6 +51,8 @@ import type {
 
 /** Thrown by return statements to unwind the call stack. */
 export class ReturnSignal   { constructor(public readonly value: PSValue) {} }
+/** `exit [<code>]` — unwinds to the script boundary, not just the function. */
+export class ExitSignal     { constructor(public readonly code: number) {} }
 /** Thrown by break statements inside loops. Carries optional label for labeled loops. */
 export class BreakSignal    { constructor(public readonly label?: string) {} }
 /** Thrown by continue statements inside loops. Carries optional label for labeled loops. */
@@ -493,7 +495,15 @@ export class PSRuntime {
     this.outputLines = [];
     this.indexFunctionSources(code);
     const ast = this.parseCached(code);
-    this.execTopLevel(ast.body.statements, this.global);
+    try {
+      this.execTopLevel(ast.body.statements, this.global);
+    } catch (e) {
+      // `exit` outside any script stops the remaining statements and
+      // records the code. It is an end, not an error, so what was already
+      // written stays written.
+      if (!(e instanceof ExitSignal)) throw e;
+      this.global.set('LASTEXITCODE', e.code);
+    }
     return this.outputLines.join('\n');
   }
 
@@ -577,7 +587,7 @@ export class PSRuntime {
       try {
         runOne(stmt);
       } catch (e) {
-        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
+        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
@@ -643,7 +653,7 @@ export class PSRuntime {
       try {
         runOne(stmt);
       } catch (e) {
-        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
+        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
@@ -698,7 +708,7 @@ export class PSRuntime {
       try {
         last = this.execStatement(stmt, env);
       } catch (e) {
-        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
+        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
@@ -732,6 +742,7 @@ export class PSRuntime {
       case 'FunctionDefinition':  result = this.execFunctionDef(node as PSFunctionDefinition, env); break;
       case 'ClassDefinition':     result = this.execClassDef(node as PSClassDefinition, env); break;
       case 'ReturnStatement':     return this.execReturn(node as PSReturnStatement, env);
+      case 'ExitStatement':       return this.execExit(node as PSExitStatement, env);
       case 'BreakStatement':      throw new BreakSignal((node as PSBreakStatement).label ?? undefined);
       case 'ContinueStatement':   throw new ContinueSignal((node as PSContinueStatement).label ?? undefined);
       case 'ThrowStatement':      return this.execThrow(node as PSThrowStatement, env);
@@ -1048,6 +1059,32 @@ export class PSRuntime {
   private aggregateCaptured(captured: PSValue[]): PSValue {
     if (captured.length === 0) return null;
     return captured.length === 1 ? captured[0] : captured;
+  }
+
+  /**
+   * A `.ps1` invoked as a command. This is where `exit` stops: it ends
+   * the script and sets $LASTEXITCODE, and the caller carries on — which
+   * is what separates a script from a function, where `exit` would keep
+   * unwinding.
+   */
+  private runScriptFile(
+    block: PSScriptBlock,
+    namedArgs: Record<string, PSValue>,
+    positionalArgs: PSValue[],
+    parentEnv: PSEnvironment,
+    pipelineInput?: PSValue,
+  ): PSValue {
+    try {
+      const value = this.invokeScriptBlock(block, namedArgs, positionalArgs, parentEnv, pipelineInput);
+      this.global.set('LASTEXITCODE', 0);
+      return value;
+    } catch (e) {
+      if (e instanceof ExitSignal) {
+        this.global.set('LASTEXITCODE', e.code);
+        return null;
+      }
+      throw e;
+    }
   }
 
   invokeScriptBlock(
@@ -1700,10 +1737,11 @@ export class PSRuntime {
     try {
       result = renderBody(node.tryBody);
     } catch (e) {
-      // Control-flow signals (return / break / continue) are not errors and
-      // must not be caught by `catch` — they propagate out of the try, with
-      // `finally` still running on the way. Mirrors PowerShell semantics.
-      if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) {
+      // Control-flow signals (return / break / continue / exit) are not
+      // errors and must not be caught by `catch` — they propagate out of
+      // the try, with `finally` still running on the way. Mirrors
+      // PowerShell semantics.
+      if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) {
         if (node.finallyBody) renderBody(node.finallyBody);
         throw e;
       }
@@ -1821,6 +1859,12 @@ export class PSRuntime {
     throw new ReturnSignal(val);
   }
 
+  private execExit(node: PSExitStatement, env: PSEnvironment): PSValue {
+    const raw = node.value ? this.evalExpr(node.value, env) : 0;
+    const code = Number(psValueToString(raw));
+    throw new ExitSignal(Number.isFinite(code) ? code : 0);
+  }
+
   private execThrow(node: PSThrowStatement, env: PSEnvironment): PSValue {
     const val = node.value ? this.evalExpr(node.value, env) : new PSRuntimeError('ScriptHalted');
     if (val instanceof Error) throw val;
@@ -1883,8 +1927,11 @@ export class PSRuntime {
           positional.push(this.evalExpr(a, env));
         return this.invokeScriptBlock(varVal as PSScriptBlock, named, positional, env, pipeInput);
       }
-      // Variable holds a non-scriptblock (array pipeline source, etc.)
-      return varVal;
+      // Variable holds a non-scriptblock (array pipeline source, etc.).
+      // Under `&` it names what to run — `& $path` on a variable holding
+      // a script path must run the script, not echo the path — so that
+      // case carries on to command resolution below.
+      if (!(nameNode as unknown as Record<string, unknown>).__callop__) return varVal;
     }
 
     // ScriptBlock in name position. Invoke only when the parser flagged it
@@ -1908,7 +1955,8 @@ export class PSRuntime {
     // If binary-operator parameters are present (e.g. `"hello" -match "..."` in pipeline
     // context where the parser couldn't parse it as a binary expression), apply them in order.
     // Note: operator params like -match have value=null; their right side is a positional arg.
-    if (this.isPureValueNode(nameNode, env)) {
+    const calledWithOperator = (nameNode as unknown as Record<string, unknown>).__callop__ === true;
+    if (!calledWithOperator && this.isPureValueNode(nameNode, env)) {
       let val = this.evalExpr(nameNode, env);
       if (node.parameters.length > 0 && node.parameters.every(p => PS_OPERATOR_PARAMS.has(p.name.toLowerCase()))) {
         const positionalQueue = node.arguments.map(a => this.evalExpr(a, env));
@@ -2011,7 +2059,7 @@ export class PSRuntime {
             body: ast.body,
             position: ast.position,
           } as PSScriptBlock;
-          return this.invokeScriptBlock(block, named, positional, env, pipeInput);
+          return this.runScriptFile(block, named, positional, env, pipeInput);
         }
       }
       return this.dispatchCmdlet(tname, positional, named, pipeInput, env);
@@ -2039,7 +2087,7 @@ export class PSRuntime {
           body: ast.body,
           position: ast.position,
         } as PSScriptBlock;
-        return this.invokeScriptBlock(block, named, positional, env, pipeInput);
+        return this.runScriptFile(block, named, positional, env, pipeInput);
       }
     }
 

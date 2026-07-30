@@ -30,7 +30,7 @@ import type {
   PSIfStatement, PSElseifClause, PSWhileStatement, PSDoWhileStatement,
   PSDoUntilStatement, PSForStatement, PSForeachStatement,
   PSSwitchStatement, PSSwitchClause, PSTryStatement, PSCatchClause,
-  PSFunctionDefinition, PSReturnStatement, PSBreakStatement,
+  PSFunctionDefinition, PSReturnStatement, PSExitStatement, PSBreakStatement,
   PSContinueStatement, PSThrowStatement, PSTrapStatement,
   PSScriptBlock, PSParamBlock, PSParamDeclaration, PSAttribute,
   PSExpression, PSLiteralExpression, PSVariableExpression,
@@ -159,6 +159,7 @@ export class PSParser {
         case 'class':     return this.parseClassDef();
         case 'enum':      return this.parseEnumDef();
         case 'return':    return this.parseReturnStatement();
+        case 'exit':      return this.parseExitStatement();
         case 'break':     return this.parseBreakStatement();
         case 'continue':  return this.parseContinueStatement();
         case 'throw':     return this.parseThrowStatement();
@@ -405,6 +406,12 @@ export class PSParser {
       const expr = this.parsePrimaryExpression();
       if (expr.type === 'ScriptBlock')
         (expr as unknown as Record<string, unknown>).__invoke__ = true;
+      // The `&` itself must survive parsing. Without this mark the head
+      // is just an expression again, so `& 'Get-Date'` and `& $path`
+      // evaluated to their own text and printed it instead of running
+      // anything — only the bare `& Get-Date` form ever worked, because
+      // a WORD head is not a value.
+      (expr as unknown as Record<string, unknown>).__callop__ = true;
       return expr;
     }
 
@@ -1175,6 +1182,19 @@ export class PSParser {
     const value = !this.isTerminator() && !this.isAtEnd() && this.canStartExpression()
       ? this.parseAssignmentRHS() : null;
     return { type: 'ReturnStatement', value, position: pos };
+  }
+
+  /**
+   * `exit [<code>]`. A keyword, not a command — without this the word
+   * fell through to command lookup and every script ending in `exit 0`
+   * closed on "the term 'exit' is not recognized".
+   */
+  private parseExitStatement(): PSExitStatement {
+    const pos = this.pos_();
+    this.expectWord('exit');
+    const value = !this.isTerminator() && !this.isAtEnd() && this.canStartExpression()
+      ? this.parseAssignmentRHS() : null;
+    return { type: 'ExitStatement', value, position: pos };
   }
 
   private parseBreakStatement(): PSBreakStatement {
