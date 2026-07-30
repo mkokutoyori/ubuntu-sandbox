@@ -77,12 +77,17 @@ describe('Scénario 1 (Windows) — observateur d\'événements : structure, Eve
   });
 
   describe('filtrage avancé via XPath (-FilterXml)', () => {
-    it('-FilterXml n\'est pas un paramètre reconnu par Get-WinEvent : la requête retombe sur l\'erreur de paramètres manquants', async () => {
+    it('-FilterXml applique la requête XPath de l\'énoncé', async () => {
       const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
       const sh = ps(pc);
       await run(sh, "$XPath_Connexions = '<QueryList><Query Id=\"0\" Path=\"Security\"><Select Path=\"Security\">*[System[(EventID=4624 or EventID=4625)]]</Select></Query></QueryList>'");
-      const out = await run(sh, 'Get-WinEvent -FilterXml $XPath_Connexions');
-      expect(out).toMatch(/requires -LogName, -FilterHashtable, or -ListLog/i);
+      const out = await run(sh, 'Get-WinEvent -FilterXml $XPath_Connexions | Select-Object -ExpandProperty Id');
+      const ids = out.split('\n').map((l) => l.trim()).filter(Boolean);
+      expect(ids.length).toBeGreaterThan(0);
+      expect(
+        new Set(ids),
+        'le filtre retient les deux EventID demandés, et rien d\'autre',
+      ).toEqual(new Set(['4624', '4625']));
     });
 
     it('à défaut de XPath, le filtre HashTable équivalent (LogName + Id, sans bornes temporelles) fonctionne réellement', async () => {

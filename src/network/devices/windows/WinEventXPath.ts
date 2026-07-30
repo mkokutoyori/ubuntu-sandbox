@@ -290,3 +290,95 @@ export function parseEventXPath(query: string): XPathParseResult {
 
   return refuse(`Selector "${t}" is not supported. Use System[...] or EventData[...].`);
 }
+
+// ─── QueryList ──────────────────────────────────────────────────────
+
+/** Un canal et le filtre à lui appliquer. */
+export interface XPathChannelQuery {
+  /** Le journal visé — `Path` de `<Select>`, ou celui de `<Query>`. */
+  path: string;
+  predicate: XPathPredicate;
+}
+
+export interface QueryListParseResult {
+  queries: XPathChannelQuery[];
+  error?: string;
+}
+
+/** Le contenu textuel et les attributs d'une balise, sans analyseur XML. */
+function matchElements(xml: string, tag: string): Array<{ attrs: string; body: string }> {
+  const out: Array<{ attrs: string; body: string }> = [];
+  const re = new RegExp(`<${tag}\\b([^>]*)>([\\s\\S]*?)</${tag}>`, 'gi');
+  for (const m of xml.matchAll(re)) out.push({ attrs: m[1], body: m[2] });
+  return out;
+}
+
+function attr(attrs: string, name: string): string | undefined {
+  return new RegExp(`\\b${name}\\s*=\\s*(['"])(.*?)\\1`, 'i').exec(attrs)?.[2];
+}
+
+function unescapeXml(s: string): string {
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+
+/**
+ * Analyse le `<QueryList>` que prend `Get-WinEvent -FilterXml`.
+ *
+ * La structure réelle enveloppe une requête XPath par canal :
+ *
+ *     <QueryList>
+ *       <Query Id="0" Path="Security">
+ *         <Select Path="Security">*[System[EventID=4624]]</Select>
+ *         <Suppress Path="Security">*[System[EventID=4634]]</Suppress>
+ *       </Query>
+ *     </QueryList>
+ *
+ * `Suppress` retire ce que `Select` a retenu — c'est le seul moyen
+ * d'écrire « tout sauf » dans ce langage, et l'ignorer rendrait des
+ * événements que la requête excluait explicitement.
+ *
+ * Comme ailleurs dans ce module, ce qui n'est pas compris est refusé.
+ */
+export function parseEventQueryList(xml: string): QueryListParseResult {
+  const text = xml.trim();
+  if (!/<QueryList\b/i.test(text)) {
+    return { queries: [], error: 'The filter XML must contain a <QueryList> element.' };
+  }
+  const queries: XPathChannelQuery[] = [];
+  for (const q of matchElements(text, 'Query')) {
+    const queryPath = attr(q.attrs, 'Path');
+    const selects = matchElements(q.body, 'Select');
+    const suppresses = matchElements(q.body, 'Suppress');
+    if (selects.length === 0) {
+      return { queries: [], error: 'A <Query> element must contain at least one <Select>.' };
+    }
+    for (const sel of selects) {
+      const path = attr(sel.attrs, 'Path') ?? queryPath;
+      if (!path) {
+        return { queries: [], error: 'A <Select> element must carry a Path attribute.' };
+      }
+      const parsed = parseEventXPath(unescapeXml(sel.body));
+      if (!parsed.predicate) return { queries: [], error: parsed.error };
+
+      // Les suppressions du même canal s'appliquent à cette sélection.
+      const excluders: XPathPredicate[] = [];
+      for (const sup of suppresses) {
+        const supPath = attr(sup.attrs, 'Path') ?? queryPath;
+        if (supPath?.toLowerCase() !== path.toLowerCase()) continue;
+        const supParsed = parseEventXPath(unescapeXml(sup.body));
+        if (!supParsed.predicate) return { queries: [], error: supParsed.error };
+        excluders.push(supParsed.predicate);
+      }
+      const keep = parsed.predicate;
+      queries.push({
+        path,
+        predicate: (e, now) => keep(e, now) && !excluders.some((x) => x(e, now)),
+      });
+    }
+  }
+  if (queries.length === 0) {
+    return { queries: [], error: 'The filter XML contains no <Query> element.' };
+  }
+  return { queries };
+}

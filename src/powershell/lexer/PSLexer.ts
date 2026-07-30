@@ -185,8 +185,7 @@ export class PSLexer {
     while (!this.eof()) {
       const c = this.ch();
       if (c === "'" && this.peek1() === "'") {
-        // Escaped literal quote ''
-        value += "''";
+        value += "'";
         this.advance();
         this.advance();
         continue;

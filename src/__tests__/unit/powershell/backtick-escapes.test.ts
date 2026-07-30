@@ -63,6 +63,23 @@ describe('backtick escapes — Write-Output', () => {
   });
 });
 
+describe("apostrophe doublée — l'échappement des chaînes simples", () => {
+  it("'' rend une apostrophe littérale", async () => {
+    const out = await run(createShell(), "Write-Output 'it''s'");
+    expect(out).toContain("it's");
+    expect(out).not.toContain("it''s");
+  });
+
+  it("une requête XPath citée par apostrophes doublées atteint la cmdlet intacte", async () => {
+    // Le cas qui l'a révélé : un filtre d'événement porte lui-même des
+    // apostrophes, et c'est la seule façon de le citer sans guillemets.
+    const out = await run(createShell(),
+      "Get-WinEvent -LogName System -FilterXPath '*[System[Provider[@Name=''Disk'']]]' | Select-Object -ExpandProperty Id");
+    expect(out).not.toMatch(/No events were found/i);
+    expect(out.trim()).toMatch(/^\d+$/m);
+  });
+});
+
 describe('backtick escapes — Set-Content round-trip', () => {
   it('Set-Content + Get-Content preserves a multi-line value', async () => {
     const sh = createShell();

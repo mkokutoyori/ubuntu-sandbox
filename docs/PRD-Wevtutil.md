@@ -386,7 +386,7 @@ une probe vérifie les deux.
 | `sl /ab:` (autoBackup) | **Refusé** — rien n'archive un journal plein ici |
 | `al` « implémenter ou retirer » | **Implémenté**, réduit à vérifier que le fichier existe : les messages sont déjà rendus, il n'y a pas de ressources de localisation à ajouter |
 | XPath : sous-ensemble | Livré, plus la forme `*[System[…]] and *[EventData[…]]` que Microsoft documente et que le plan avait oubliée |
-| `Get-WinEvent -FilterXml` | **Non fait.** `WinEventXPath` est écrit pour être partagé, mais le brancher sur `Get-WinEvent` reste à faire |
+| `Get-WinEvent -FilterXml` | **Fait** (voir §12) |
 
 ### Vérification
 
@@ -396,3 +396,61 @@ trois échecs restants (`scenario-10` MAC/L2, `scenario-20` Oracle,
 `cisco-wan` bail DHCP) échouent à l'identique au niveau de référence,
 vérifié par `git stash`. `tsc` à 127 erreurs et `eslint` inchangés,
 aucune sur les deux nouveaux fichiers.
+
+---
+
+## 12. Le branchement sur `Get-WinEvent`
+
+Le seul reste déclaré au §11 est livré : `Get-WinEvent` accepte
+désormais `-FilterXPath` et `-FilterXml`, et les deux passent par
+`WinEventXPath` — le même analyseur que `wevtutil qe /q:`.
+
+C'était l'intérêt de l'écrire à part. Deux analyseurs distincts pour un
+seul langage divergent toujours : l'un finit par comprendre une requête
+que l'autre refuse, et c'est l'utilisateur qui découvre laquelle. La
+probe `probe-wevtutil-05-filtre-partage.test.ts` tient l'invariant
+directement — pour cinq requêtes (EventID, « ou », niveau, fournisseur,
+absence de filtre) elle compare les EventID retenus par chaque surface et
+exige l'égalité, puis vérifie qu'une requête incomprise est refusée des
+deux côtés.
+
+### Ce que `-FilterXml` ajoute au-dessus de `-FilterXPath`
+
+`-FilterXPath` prend une requête nue et a besoin de `-LogName` pour
+savoir où la poser ; sans lui, la cmdlet le dit plutôt que de deviner un
+canal. `-FilterXml` prend l'enveloppe `QueryList` complète, qui porte le
+canal elle-même dans `Path` — c'est la forme que la console
+d'observateur d'événements exporte quand on construit un filtre à la
+souris, donc celle qu'on colle dans un script.
+
+`Suppress` est traité, et pas ignoré : il retranche de ce que `Select` a
+retenu. L'ignorer aurait rendu des événements que la requête excluait
+explicitement, c'est-à-dire le contraire de ce qui était demandé.
+
+Un canal inexistant dans l'enveloppe est signalé, pas rendu vide : « zéro
+événement » et « ce journal n'existe pas » ne se disent pas de la même
+façon à qui interroge. Une enveloppe qui n'est pas du XML de requête est
+refusée en nommant ce qui manque.
+
+### Un gap trouvé en chemin : l'apostrophe doublée
+
+Une requête XPath porte ses propres apostrophes (`Provider[@Name='Disk']`),
+et la seule façon de la citer en PowerShell sans guillemets est de les
+doubler. Le lexer les gardait telles quelles : `Write-Output 'it''s'`
+affichait `it''s`. Le commentaire du test qui figeait ce comportement
+annonçait pourtant que « l'évaluateur résout `''`→`'` » — sauf qu'aucun
+évaluateur ne le faisait, et rien en aval ne lisait autre chose que la
+valeur du jeton. Le lexer résout maintenant l'échappement, comme il le
+fait déjà pour les séquences backtick des chaînes doubles ; le test a été
+corrigé avec la raison écrite dedans, et le comportement de bout en bout
+est figé dans `backtick-escapes.test.ts`.
+
+### Vérification
+
+12 probes de plus. Régression : `unit/powershell`, `unit/terminal`,
+`unit/shell` (2953 tests), les 125 fichiers Windows de `network-v2`
+(1837 tests), et les scénarios AD/PowerShell (408 tests). Les trois
+échecs restants — `ssh-edge-cases` §E12, `scenario-20` Oracle, et les
+deux « gap confirmé » de `scenario-panne-09` — échouent à l'identique au
+niveau de référence, vérifié par `git stash`. `tsc` à 127 erreurs,
+`eslint` propre sur les fichiers touchés.
