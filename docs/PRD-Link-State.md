@@ -271,3 +271,73 @@ de lien, le routage ou l'extinction d'un équipement (2783 tests), plus
 au niveau de référence, vérifié par `git stash`. `tsc` rend exactement
 les mêmes 127 erreurs qu'avant (seuls des numéros de ligne bougent) et
 `eslint` les mêmes 10.
+
+---
+
+## 7. L'équivalent côté interface
+
+Le §6 a rendu la perte de porteuse vraie dans le moteur. Restait la
+question que l'utilisateur pose vraiment : **est-ce que ça se voit ?**
+
+Non. Le canvas ne savait rien en dire.
+
+### 7.1 Ce que l'interface montrait
+
+- **La ligne de connexion** prenait sa couleur de `getConnectionColor(type)`
+  — le *type de câble*. Un lien mort et un lien vivant étaient
+  rigoureusement identiques à l'écran.
+- **Le panneau de propriétés** affichait « Connected » dès que
+  `connections.some(...)` trouvait un câble. C'est la même erreur que
+  `show interfaces status` faisait côté CLI, et que le §6.4 a corrigée :
+  répondre « est-ce câblé ? » à la question « est-ce que ça passe ? ».
+- **Le store** ne transportait que `isUp: port.getIsUp()`, l'état de
+  ligne. La porteuse n'arrivait jamais jusqu'à React, donc aucun
+  composant n'aurait pu l'afficher même s'il l'avait voulu.
+
+Le §3.2 avait prévu ce cas : les consommateurs de `getIsUp()` migrent
+vers `isOperationallyUp()` « un par un, avec tests ». Celui-là ne l'avait
+jamais été.
+
+### 7.2 Ce qui a été fait
+
+`NetworkInterfaceConfig` porte maintenant `hasCarrier` et
+`isOperational` à côté de `isUp`. Le détail qui compte : les deux
+nouveaux champs sont **dans la comparaison de `sameInterfaces`**. Le
+store garde un instantané référentiellement stable pour éviter les
+re-rendus inutiles (rapport 09, item #52) ; oublier les nouveaux champs
+là aurait fait juger l'instantané inchangé quand seule la porteuse
+bouge, et le canvas serait resté figé — exactement le défaut #56, mais
+réintroduit par la porte de derrière.
+
+Le pont d'événements (`port.link.up` / `port.link.down`) n'a rien
+demandé de plus : le §6.2 fait justement émettre ces événements au pair
+quand l'émetteur d'en face s'éteint, donc le canal existait déjà.
+
+`ConnectionLine` rend un lien sans porteuse en rouge tireté, avec
+`data-link-state` et l'état écrit dans l'`aria-label` : une ligne rouge
+ne dit rien à un lecteur d'écran, ni à un opérateur daltonien. Le
+panneau distingue désormais trois réponses là où il n'en avait qu'une :
+`Connected`, `No carrier` (le câble est là, l'en-face n'émet pas) et
+`Admin down` (l'interface locale est descendue).
+
+### 7.3 Un défaut du harnais, trouvé en écrivant les specs
+
+Le **premier test de chaque fichier e2e** échouait sur `page.goto`, avec
+un dépassement de 15 s — y compris `cable-unplug.spec.ts`, antérieur à
+ces travaux. La première navigation d'un run paie la transformation à la
+demande de tout le graphe de modules par Vite ; les suivantes tapent le
+cache chaud en 3 s. Le budget `navigationTimeout` était simplement sous
+le coût réel : porté à 60 s, rien d'autre changé. Ce n'était pas une
+lenteur de l'application, et le relever ne peut pas rendre vert un test
+qui échouerait pour une vraie raison.
+
+### 7.4 Vérification
+
+`e2e/link-state-canvas.spec.ts` — 11 cas : les trois causes vues du
+canvas, la reprise dans les deux sens, et les quatre réponses du
+panneau. Régression e2e sur les specs touchant le canvas
+(`canvas-accessibility`, `canvas-cable-save-flow`, `connection-select`,
+`dnd-first-attempt`, `ping-unplug-transcript`, `cable-unplug`) : tout
+vert, et `cable-unplug` retrouve au passage son premier test. Unitaire :
+`unit/gui` + `unit/react`, 165 tests verts. `tsc` à 127, `eslint` propre
+sur les fichiers touchés.

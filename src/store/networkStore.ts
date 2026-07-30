@@ -28,7 +28,17 @@ export interface NetworkInterfaceConfig {
   ipAddress?: string;
   subnetMask?: string;
   macAddress?: string;
+  /** Line state — `shutdown` / `ip link set down`. Not the whole story. */
   isUp?: boolean;
+  /**
+   * Signal on the wire. False when the cable is out, but also when the
+   * far end stopped driving it — a shut peer port, a peer switched off.
+   * Without this the UI could only tell whether a cable was drawn, which
+   * is not what "connected" means (docs/PRD-Link-State.md §6).
+   */
+  hasCarrier?: boolean;
+  /** Line state, admin state and carrier all agreeing. */
+  isOperational?: boolean;
 }
 
 /**
@@ -199,7 +209,10 @@ function sameInterfaces(a: NetworkInterfaceConfig[], b: NetworkInterfaceConfig[]
     const x = a[i], y = b[i];
     if (x.id !== y.id || x.name !== y.name || x.type !== y.type
       || x.ipAddress !== y.ipAddress || x.subnetMask !== y.subnetMask
-      || x.macAddress !== y.macAddress || x.isUp !== y.isUp) return false;
+      || x.macAddress !== y.macAddress || x.isUp !== y.isUp
+      // Left out, the snapshot would be judged unchanged when only the
+      // carrier moved, and the canvas would keep the stale one forever.
+      || x.hasCarrier !== y.hasCarrier || x.isOperational !== y.isOperational) return false;
   }
   return true;
 }
@@ -235,6 +248,8 @@ function deviceToUI(device: Equipment): NetworkDeviceUI {
     subnetMask: port.getSubnetMask()?.toString(),
     macAddress: port.getMAC().toString(),
     isUp: port.getIsUp(),
+    hasCarrier: port.hasCarrier(),
+    isOperational: port.isOperationallyUp(),
   }));
 
   return {

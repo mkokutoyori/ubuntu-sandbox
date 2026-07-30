@@ -10,8 +10,7 @@ import { Connection, isConnectionActive } from '@/store/networkStore';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
 import {
   computeConnectionPath,
-  getConnectionColor,
-  getConnectionDash,
+  getLinkAppearance,
   computeInterfaceLabelPositions,
   getConnectionMidpointInfo
 } from './connection-line-logic';
@@ -39,8 +38,13 @@ function ConnectionLineImpl({ connection, devices }: ConnectionLineProps) {
 
   if (!sourceDevice || !targetDevice) return null;
 
-  const color = getConnectionColor(connection.type);
-  const dash = getConnectionDash(connection.type);
+  // Either end tells the same story — a link carries or it does not —
+  // so one missing carrier is enough to call the whole link down.
+  const sourceIface = sourceDevice.interfaces.find(i => i.id === connection.sourceInterfaceId);
+  const targetIface = targetDevice.interfaces.find(i => i.id === connection.targetInterfaceId);
+  const isOperational = (sourceIface?.isOperational ?? true) && (targetIface?.isOperational ?? true);
+
+  const { color, dash } = getLinkAppearance(connection.type, isOperational);
 
   const { path, midX, midY, curveFactor } = computeConnectionPath(
     { x: sourceDevice.x, y: sourceDevice.y },
@@ -55,9 +59,13 @@ function ConnectionLineImpl({ connection, devices }: ConnectionLineProps) {
   const midpointInfo = getConnectionMidpointInfo(connection);
   const adjustedMidY = midY + curveFactor * 0.2;
 
+  // The state belongs in the label, not only in the colour: a red line
+  // says nothing to a screen reader, and nothing to a colour-blind
+  // operator either.
   const connectionLabel =
     `${connection.type} cable: ${sourceDevice.name} ${connection.sourceInterfaceId} ` +
-    `to ${targetDevice.name} ${connection.targetInterfaceId}${isSelected ? ', selected' : ''}`;
+    `to ${targetDevice.name} ${connection.targetInterfaceId}` +
+    `, ${isOperational ? 'link up' : 'link down'}${isSelected ? ', selected' : ''}`;
 
   // A plain SVG shape has no way to receive keyboard focus or announce
   // itself to a screen reader, so a cable could only be selected/deleted
@@ -88,6 +96,7 @@ function ConnectionLineImpl({ connection, devices }: ConnectionLineProps) {
       tabIndex={0}
       aria-label={connectionLabel}
       aria-pressed={isSelected}
+      data-link-state={isOperational ? 'up' : 'down'}
       onFocus={() => selectConnection(connection.id)}
       onKeyDown={handleKeyDown}
     >

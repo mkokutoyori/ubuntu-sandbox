@@ -292,10 +292,19 @@ export function PropertiesPanel() {
           {expandedSections.includes('interfaces') && (
             <div className="px-3 pb-3 space-y-2 max-h-60 overflow-y-auto">
               {selectedDevice.interfaces.slice(0, 8).map(iface => {
-                const isConnected = connections.some(
+                // A cable being drawn is not the link being up: the peer
+                // may be shut down or switched off. The cable answers
+                // "is it wired?", the carrier answers "does it carry?",
+                // and the panel now says both instead of conflating them.
+                const isCabled = connections.some(
                   c => (c.sourceDeviceId === selectedDevice.id && c.sourceInterfaceId === iface.id) ||
                        (c.targetDeviceId === selectedDevice.id && c.targetInterfaceId === iface.id)
                 );
+                const isConnected = isCabled && iface.isOperational !== false;
+                const status = !isCabled ? null
+                  : iface.isOperational !== false ? 'Connected'
+                  : iface.isUp === false ? 'Admin down'
+                  : 'No carrier';
 
                 return (
                   <div
@@ -316,8 +325,13 @@ export function PropertiesPanel() {
                     {iface.ipAddress && (
                       <div className="text-green-400 mt-1">IP: {iface.ipAddress}</div>
                     )}
-                    {isConnected && (
-                      <div className="text-blue-400 mt-1">Connected</div>
+                    {status && (
+                      <div
+                        data-testid={`iface-status-${iface.name}`}
+                        className={cn('mt-1', isConnected ? 'text-blue-400' : 'text-red-400')}
+                      >
+                        {status}
+                      </div>
                     )}
                   </div>
                 );
