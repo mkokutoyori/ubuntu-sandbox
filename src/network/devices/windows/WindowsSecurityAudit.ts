@@ -47,6 +47,9 @@ export const SECURITY_EVENT = {
   PROCESS_TERMINATED: 4689,
   PRIVILEGED_SERVICE_CALLED: 4673,
   SCHEDULED_TASK_CREATED: 4698,
+  OBJECT_ACCESSED: 4663,
+  SHARE_ACCESSED: 5140,
+  SHARE_ADDED: 5142,
   AUDIT_LOG_CLEARED: 1102,
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
@@ -329,6 +332,46 @@ export class WindowsSecurityAudit {
       `The audit log was cleared.\n\nSubject:\n\tAccount Name:\t${clearedBy}\n\t` +
       `Log:\t${logName}`,
       { ...splitAccount(clearedBy), Channel: logName });
+  }
+
+  /**
+   * 4663 — « An attempt was made to access an object ».
+   *
+   * `AccessMask` est le code que Windows affiche pour l'opération :
+   * `%%4416` pour une lecture de données, `%%1537` pour une
+   * suppression. Ce sont ces codes que lit un script d'analyse, pas le
+   * texte du message.
+   */
+  objectAccessed(objectPath: string, access: string, accessMask: string, subject: string): void {
+    this.success(SECURITY_EVENT.OBJECT_ACCESSED,
+      `An attempt was made to access an object.\n\nObject:\n\tObject Type:\tFile\n\t` +
+      `Object Name:\t${objectPath}\n\nAccess Request Information:\n\tAccesses:\t${access}\n\t` +
+      `Access Mask:\t${accessMask}\n\nSubject:\n\tAccount Name:\t${subject}`,
+      {
+        ObjectServer: 'Security', ObjectType: 'File', ObjectName: objectPath,
+        AccessList: accessMask, AccessMask: accessMask, Accesses: access,
+        ...splitAccount(subject),
+      });
+  }
+
+  /** 5142 — un partage réseau a été ajouté. */
+  shareAdded(shareName: string, path: string, addedBy: string): void {
+    this.success(SECURITY_EVENT.SHARE_ADDED,
+      `A network share object was added.\n\nShare Information:\n\tShare Name:\t\\\\*\\${shareName}\n\t` +
+      `Share Path:\t${path}\n\nSubject:\n\tAccount Name:\t${addedBy}`,
+      { ShareName: `\\\\*\\${shareName}`, ShareLocalPath: path, ...splitAccount(addedBy) });
+  }
+
+  /** 5140 — un partage réseau a été atteint par un client. */
+  shareAccessed(shareName: string, path: string, subject: string, sourceAddress: string): void {
+    this.success(SECURITY_EVENT.SHARE_ACCESSED,
+      `A network share object was accessed.\n\nShare Information:\n\tShare Name:\t\\\\*\\${shareName}\n\t` +
+      `Share Path:\t${path}\n\nNetwork Information:\n\tSource Address:\t${sourceAddress}\n\n` +
+      `Subject:\n\tAccount Name:\t${subject}`,
+      {
+        ShareName: `\\\\*\\${shareName}`, ShareLocalPath: path,
+        IpAddress: sourceAddress, ...splitAccount(subject),
+      });
   }
 
   permissionChanged(objectPath: string, identity: string, permissions: string, changedBy: string): void {

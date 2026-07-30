@@ -1030,6 +1030,9 @@ export interface IFileSystemProvider {
   addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean;
   /** Enable/disable inheritance (real NTFS `SetAccessRuleProtection`/`icacls /inheritance:r`). Returns true on success. */
   setAclProtected(path: string, isProtected: boolean): boolean;
+  /** SACL — la liste d'audit, distincte de la DACL (`Get-Acl -Audit`). */
+  getAudit?(path: string): Array<{ principal: string; flags: Array<'success' | 'failure'>; permissions: string[] }>;
+  setAudit?(path: string, rules: Array<{ principal: string; flags: Array<'success' | 'failure'>; permissions: string[] }>): boolean;
 }
 
 export interface IRegistryProvider {

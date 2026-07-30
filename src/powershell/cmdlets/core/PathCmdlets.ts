@@ -871,11 +871,31 @@ export class GetAclCmdlet implements ICmdlet {
       IdentityReference: a.principal,
       IsInherited:       false,
     } as unknown as PSValue));
+    // La SACL — la liste d'audit — est rendue même sans `-Audit` : sur
+    // un vrai Windows le commutateur commande la *lecture* du
+    // descripteur, pas la présence de la propriété, et un objet non
+    // audité rend simplement une liste vide.
+    const auditArr: PSValue[] = (fs.getAudit?.(path) ?? []).map(a => ({
+      FileSystemRights:  a.permissions.join(', '),
+      AuditFlags:        a.flags.map(f => f === 'success' ? 'Success' : 'Failure').join(', '),
+      IdentityReference: a.principal,
+      IsInherited:       false,
+    } as unknown as PSValue));
     const result: Record<string, PSValue> = {
       Path:  path,
       Owner: acl.owner,
       Group: 'BUILTIN\\Administrators',
       Access: accessArr as PSValue,
+      Audit: auditArr as PSValue,
+      AddAuditRule: ((rule: PSValue) => { auditArr.push(rule); return null; }) as unknown as PSValue,
+      RemoveAuditRule: ((rule: PSValue) => {
+        const rec = rule as unknown as Record<string, PSValue>;
+        const identity = psValueToString(rec['IdentityReference'] ?? '');
+        const idx = auditArr.findIndex(a => psValueToString(
+          (a as unknown as Record<string, PSValue>)['IdentityReference'] ?? '') === identity);
+        if (idx >= 0) auditArr.splice(idx, 1);
+        return null;
+      }) as unknown as PSValue,
       AreAccessRulesProtected: false,
       AddAccessRule: ((rule: PSValue) => { accessArr.push(rule); return null; }) as unknown as PSValue,
       // Real .NET FileSystemSecurity.SetAccessRule replaces any existing
@@ -958,6 +978,24 @@ export class SetAclCmdlet implements ICmdlet {
       const permissions = rightsRaw.split(',').map(s => s.trim()).filter(Boolean);
       const type = psValueToString(rule['AccessControlType'] ?? 'Allow') === 'Deny' ? 'deny' as const : 'allow' as const;
       fs.addAce(path, { principal, type, permissions });
+    }
+    // La SACL est remplacée en bloc, pas fusionnée : `Set-Acl` applique
+    // un descripteur, il ne l'ajoute pas au précédent.
+    const audit = rec['Audit'];
+    if (Array.isArray(audit) && fs.setAudit) {
+      fs.setAudit(path, audit.map(a => {
+        const r = a as unknown as Record<string, PSValue>;
+        const flagsRaw = psValueToString(r['AuditFlags'] ?? 'Success').toLowerCase();
+        const flags: Array<'success' | 'failure'> = [];
+        if (flagsRaw.includes('success')) flags.push('success');
+        if (flagsRaw.includes('failure')) flags.push('failure');
+        return {
+          principal: psValueToString(r['IdentityReference'] ?? ''),
+          flags: flags.length ? flags : ['success' as const],
+          permissions: psValueToString(r['FileSystemRights'] ?? '')
+            .split(',').map(x => x.trim()).filter(Boolean),
+        };
+      }).filter(r => r.principal));
     }
     return null;
   }

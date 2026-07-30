@@ -102,8 +102,10 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     return this.fs().exists(this.abs(path));
   }
   readFile(path: string): string {
-    const r = this.fs().readFile(this.abs(path));
+    const abs = this.abs(path);
+    const r = this.fs().readFile(abs);
     if (!r.ok) throw new Error(r.error ?? `Cannot read ${path}`);
+    this.pc.auditObjectAccess?.(abs, 'ReadData', '%%4416');
     return r.content ?? '';
   }
   tailFile(path: string, lines: number): string[] {
@@ -148,6 +150,9 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
         : this.fs().rmdir(abs);
       if (!r.ok) throw new Error(r.error ?? `Cannot remove ${path}`);
     } else {
+      // L'audit précède la suppression : après, il n'y a plus d'objet
+      // dont lire la SACL.
+      this.pc.auditObjectAccess?.(abs, 'Delete', '%%1537');
       const r = this.fs().deleteFile(abs);
       if (!r.ok) throw new Error(r.error ?? `Cannot remove ${path}`);
     }
@@ -185,7 +190,11 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
   }
   addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean {
     const abs = this.abs(path);
+    const before = JSON.stringify(this.fs().getACL(abs));
     const ok = this.fs().addACE(abs, { ...ace });
+    if (ok && JSON.stringify(this.fs().getACL(abs)) !== before) {
+      this.pc.auditPermissionChange?.(abs, ace.principal, ace.permissions.join(', '));
+    }
     if (ok) {
       this.pc.getBus().publish({
         topic: 'windows.filesystem.acl-changed',
@@ -197,6 +206,22 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
           changedBy: this.pc.getUserManager().currentUser,
         },
       });
+    }
+    return ok;
+  }
+  getAudit(path: string) {
+    return this.fs().getSacl(this.abs(path));
+  }
+  setAudit(path: string, rules: Array<{ principal: string; flags: Array<'success' | 'failure'>; permissions: string[] }>): boolean {
+    const abs = this.abs(path);
+    const before = JSON.stringify(this.fs().getSacl(abs));
+    const ok = this.fs().setSacl(abs, rules);
+    // 4670 ne se déclenche que si le descripteur a *changé* : appliquer
+    // deux fois la même SACL ne modifie rien, et l'annoncer serait
+    // exactement le genre d'affirmation sans fondement qu'on traque.
+    if (ok && JSON.stringify(this.fs().getSacl(abs)) !== before) {
+      this.pc.auditPermissionChange?.(abs, rules.map((r) => r.principal).join(', '),
+        `SACL: ${rules.map((r) => r.permissions.join('/')).join(', ')}`);
     }
     return ok;
   }
@@ -347,7 +372,12 @@ class WindowsSmbAdapter implements ISmbProvider {
     for (const p of opts?.changeAccess ?? []) permissions.set(p, 'Change');
     for (const p of opts?.readAccess ?? []) permissions.set(p, 'Read');
     if (permissions.size === 0) permissions.set('Everyone', 'Read');
-    return this.pc.smbShares.add(name, path, { permissions });
+    const res = this.pc.smbShares.add(name, path, { permissions });
+    // 5142 — « un objet de partage réseau a été ajouté ». C'est
+    // l'événement de la *création* ; 5140 est celui de l'*accès*, et les
+    // confondre revient à croire qu'un partage créé a déjà été utilisé.
+    if (res.ok) this.pc.auditShareAdded?.(name, path);
+    return res;
   }
   removeShare(name: string) {
     this.requireRole();

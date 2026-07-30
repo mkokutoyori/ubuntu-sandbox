@@ -479,6 +479,51 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       logName, this.userMgr.currentUser || 'Administrator');
   }
 
+  /**
+   * 4663 — un objet audité vient d'être touché.
+   *
+   * Deux conditions, et les deux comptent : la sous-catégorie « File
+   * System » doit être activée *et* l'objet doit porter une SACL qui
+   * couvre cet accès. C'est ce couple qui fait de l'audit d'objets
+   * quelque chose d'utilisable : activer la stratégie sans poser de
+   * SACL noierait le journal sous chaque lecture de fichier du système.
+   */
+  auditObjectAccess(absPath: string, access: string, accessMask: string): void {
+    if (!this.auditPolicy.isEnabled('File System', 'success')) return;
+    const who = this.userMgr.currentUser || 'Administrator';
+    if (!this.fs.isAudited(absPath, who, access)) return;
+    new WindowsSecurityAudit(this.eventLog).objectAccessed(
+      absPath, access, accessMask, who);
+  }
+
+  /**
+   * 5142 — un partage réseau a été créé.
+   *
+   * Distinct de 5140, qui marque un *accès* à un partage : créer un
+   * partage et l'atteindre sont deux événements différents, et les
+   * confondre reviendrait à croire qu'un partage à peine créé a déjà
+   * servi.
+   */
+  auditShareAdded(shareName: string, path: string): void {
+    if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).shareAdded(
+      shareName, path, this.userMgr.currentUser || 'Administrator');
+  }
+
+  /** 5140 — un client a atteint un partage. */
+  auditShareAccessed(shareName: string, path: string, user: string, sourceAddress: string): void {
+    if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).shareAccessed(
+      shareName, path, user, sourceAddress);
+  }
+
+  /** 4670 — les permissions d'un objet du système de fichiers ont changé. */
+  auditPermissionChange(absPath: string, identity: string, permissions: string): void {
+    if (!this.auditPolicy.isEnabled('File System', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).permissionChanged(
+      absPath, identity, permissions, this.userMgr.currentUser || 'Administrator');
+  }
+
   /** Quand la transcription de cette machine a commencé, et où. */
   private transcriptStartedAt: Date | null = null;
 
