@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-07-24T16:41:53.545Z
+Generated: 2026-07-30T18:12:21.948Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -380,6 +380,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan10.lab
     Lease Time       : 1 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 25
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.1.4
     Bootfile         : boot1.bin
@@ -393,6 +397,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan20.lab
     Lease Time       : 2 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.2.4
     Bootfile         : boot2.bin
@@ -406,6 +414,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan30.lab
     Lease Time       : 3 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.3.4
     Bootfile         : boot3.bin
@@ -419,6 +431,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan40.lab
     Lease Time       : 4 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.4.4
     Bootfile         : boot4.bin
@@ -432,6 +448,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan50.lab
     Lease Time       : 5 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.5.4
     Bootfile         : boot5.bin
@@ -445,6 +465,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan60.lab
     Lease Time       : 6 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.6.4
     Bootfile         : boot6.bin
@@ -458,6 +482,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan70.lab
     Lease Time       : 7 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.7.4
     Bootfile         : boot7.bin
@@ -471,6 +499,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan80.lab
     Lease Time       : 8 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.8.4
     Bootfile         : boot8.bin
@@ -484,6 +516,10 @@ Total steps: 369
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
+    Total addresses  : 0
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Manual Binding   : 192.168.1.50/24
     Hardware Address : 0011.2233.4455
@@ -496,6 +532,10 @@ Total steps: 369
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : infinite
+    Total addresses  : 65534
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
 
 [123/369] r1 R1# show ip dhcp binding
@@ -526,6 +566,8 @@ Total steps: 369
 
 [126/369] r1 R1# show running-config | section dhcp
   service dhcp
+  ip dhcp excluded-address 192.168.1.1 192.168.1.20
+  ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
   ip dhcp pool VLAN10
    network 192.168.1.0 255.255.255.0
@@ -586,8 +628,6 @@ Total steps: 369
   !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
-  ip dhcp excluded-address 192.168.1.1 192.168.1.20
-  ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
 
 
@@ -1010,6 +1050,7 @@ Total steps: 369
 
 [232/369] r1 R1# show ip nat statistics
   Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Peak translations: 14
   Total translations: 14
   Static translations: 14
   Dynamic translations: 0
@@ -1018,6 +1059,21 @@ Total steps: 369
   Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+   -- static  192.168.1.11  10.0.0.11  refcount 0
+   -- static  192.168.1.12  10.0.0.12  refcount 0
+   -- static  192.168.1.13  10.0.0.13  refcount 0
+   -- static  192.168.1.14  10.0.0.14  refcount 0
+   -- static  192.168.1.15  10.0.0.15  refcount 0
+   -- static  192.168.1.16  10.0.0.16  refcount 0
+   -- static  192.168.1.17  10.0.0.17  refcount 0
+   -- static  192.168.1.18  10.0.0.18  refcount 0
+   -- static  192.168.1.19  10.0.0.19  refcount 0
+   -- static  192.168.1.20  10.0.0.20  refcount 0
+   -- static  192.168.1.100  10.0.0.100  refcount 0
+   -- static  192.168.1.101  10.0.0.100  refcount 0
+   -- static  192.168.1.102  10.0.0.100  refcount 0
+   -- static  192.168.1.150  10.0.0.150  refcount 0
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -1101,6 +1157,7 @@ Total steps: 369
 
 [253/369] r1 R1# show ip nat statistics
   Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Peak translations: 14
   Total translations: 14
   Static translations: 14
   Dynamic translations: 0
@@ -1111,6 +1168,21 @@ Total steps: 369
   Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
   Overloaded mappings: yes
   max-entries 10000
+  Static mappings:
+   -- static  192.168.1.11  10.0.0.11  refcount 0
+   -- static  192.168.1.12  10.0.0.12  refcount 0
+   -- static  192.168.1.13  10.0.0.13  refcount 0
+   -- static  192.168.1.14  10.0.0.14  refcount 0
+   -- static  192.168.1.15  10.0.0.15  refcount 0
+   -- static  192.168.1.16  10.0.0.16  refcount 0
+   -- static  192.168.1.17  10.0.0.17  refcount 0
+   -- static  192.168.1.18  10.0.0.18  refcount 0
+   -- static  192.168.1.19  10.0.0.19  refcount 0
+   -- static  192.168.1.20  10.0.0.20  refcount 0
+   -- static  192.168.1.100  10.0.0.100  refcount 0
+   -- static  192.168.1.101  10.0.0.100  refcount 0
+   -- static  192.168.1.102  10.0.0.100  refcount 0
+   -- static  192.168.1.150  10.0.0.150  refcount 0
   Dynamic mappings:
    -- Inside Source [acl 1] pool POOL1
    -- Inside Source [acl 1] pool POOL1
@@ -1148,7 +1220,7 @@ Total steps: 369
   IP NAT debugging is on
 
 [258/369] r1 R1# debug ip nat detailed
-  IP packet debugging is on for nat detailed
+  IP NAT debugging is on for detailed
 
 [259/369] r1 R1# undebug all
   All possible debugging has been turned off
@@ -1183,6 +1255,8 @@ Total steps: 369
   hostname R1
   !
   service dhcp
+  ip dhcp excluded-address 192.168.1.1 192.168.1.20
+  ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
   ip dhcp pool VLAN10
    network 192.168.1.0 255.255.255.0
@@ -1246,8 +1320,6 @@ Total steps: 369
   !
   ip dhcp pool MULTI
    network 10.50.0.0 255.255.0.0
-  ip dhcp excluded-address 192.168.1.1 192.168.1.20
-  ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1460,6 +1532,7 @@ Total steps: 369
 
 [281/369] r1 R1# show ip nat statistics
   Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Peak translations: 14
   Total translations: 14
   Static translations: 14
   Dynamic translations: 0
@@ -1470,6 +1543,21 @@ Total steps: 369
   Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
   Overloaded mappings: yes
   max-entries 10000
+  Static mappings:
+   -- static  192.168.1.11  10.0.0.11  refcount 0
+   -- static  192.168.1.12  10.0.0.12  refcount 0
+   -- static  192.168.1.13  10.0.0.13  refcount 0
+   -- static  192.168.1.14  10.0.0.14  refcount 0
+   -- static  192.168.1.15  10.0.0.15  refcount 0
+   -- static  192.168.1.16  10.0.0.16  refcount 0
+   -- static  192.168.1.17  10.0.0.17  refcount 0
+   -- static  192.168.1.18  10.0.0.18  refcount 0
+   -- static  192.168.1.19  10.0.0.19  refcount 0
+   -- static  192.168.1.20  10.0.0.20  refcount 0
+   -- static  192.168.1.100  10.0.0.100  refcount 0
+   -- static  192.168.1.101  10.0.0.100  refcount 0
+   -- static  192.168.1.102  10.0.0.100  refcount 0
+   -- static  192.168.1.150  10.0.0.150  refcount 0
   Dynamic mappings:
    -- Inside Source [acl 1] pool POOL1
    -- Inside Source [acl 1] pool POOL1
@@ -1490,6 +1578,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan10.lab
     Lease Time       : 1 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 25
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.1.4
     Bootfile         : boot1.bin
@@ -1503,6 +1595,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan20.lab
     Lease Time       : 2 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.2.4
     Bootfile         : boot2.bin
@@ -1516,6 +1612,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan30.lab
     Lease Time       : 3 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.3.4
     Bootfile         : boot3.bin
@@ -1529,6 +1629,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan40.lab
     Lease Time       : 4 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.4.4
     Bootfile         : boot4.bin
@@ -1542,6 +1646,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan50.lab
     Lease Time       : 5 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.5.4
     Bootfile         : boot5.bin
@@ -1555,6 +1663,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan60.lab
     Lease Time       : 6 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.6.4
     Bootfile         : boot6.bin
@@ -1568,6 +1680,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan70.lab
     Lease Time       : 7 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.7.4
     Bootfile         : boot7.bin
@@ -1581,6 +1697,10 @@ Total steps: 369
     DNS Server(s)    : 8.8.8.8, 8.8.4.4
     Domain Name      : vlan80.lab
     Lease Time       : 8 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Next Server      : 192.168.8.4
     Bootfile         : boot8.bin
@@ -1594,6 +1714,10 @@ Total steps: 369
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
+    Total addresses  : 0
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Manual Binding   : 192.168.1.50/24
     Hardware Address : 0011.2233.4455
@@ -1606,6 +1730,10 @@ Total steps: 369
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : infinite
+    Total addresses  : 65534
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
   
   Pool MULTI :
@@ -1614,6 +1742,10 @@ Total steps: 369
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
+    Total addresses  : 65534
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
 
 [284/369] r1 R1# show access-lists
@@ -1661,12 +1793,31 @@ Total steps: 369
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address fe80::ff:fe00:1%GigabitEthernet0/0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address 2001:db8:1::1 assigned
 
 [296/369] r1 R1# show snmp
   SNMP agent not enabled
@@ -1676,7 +1827,7 @@ Total steps: 369
 [297/369] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1451.922D0E56 (16:41:53.571 UTC Fri Jul 24 2026)
+  reference time is EE161285.FA5E353F (18:12:21.978 UTC Thu Jul 30 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1# show ntp associations
@@ -1685,7 +1836,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *16:41:53.000 UTC Fri Jul 24 2026
+  *18:12:21.000 UTC Thu Jul 30 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1710,6 +1861,12 @@ Total steps: 369
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [303/369] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -1868,6 +2025,8 @@ Total steps: 369
   hostname R1
   !
   service dhcp
+  ip dhcp excluded-address 192.168.1.1 192.168.1.20
+  ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
   ip dhcp pool VLAN10
    network 192.168.1.0 255.255.255.0
@@ -1931,8 +2090,6 @@ Total steps: 369
   !
   ip dhcp pool MULTI
    network 10.50.0.0 255.255.0.0
-  ip dhcp excluded-address 192.168.1.1 192.168.1.20
-  ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2075,16 +2232,109 @@ Total steps: 369
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
   
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.11              192.168.1.11           ---                    ---
+  ---  10.0.0.12              192.168.1.12           ---                    ---
+  ---  10.0.0.13              192.168.1.13           ---                    ---
+  ---  10.0.0.14              192.168.1.14           ---                    ---
+  ---  10.0.0.15              192.168.1.15           ---                    ---
+  ---  10.0.0.16              192.168.1.16           ---                    ---
+  ---  10.0.0.17              192.168.1.17           ---                    ---
+  ---  10.0.0.18              192.168.1.18           ---                    ---
+  ---  10.0.0.19              192.168.1.19           ---                    ---
+  ---  10.0.0.20              192.168.1.20           ---                    ---
+  tcp  10.0.0.100:8080        192.168.1.100:80       ---                    ---
+  tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
+  udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
+  ---  10.0.0.150             192.168.1.150          ---                    ---
+  ---  ---                    ---                    192.168.1.200          8.8.8.8
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Peak translations: 14
+  Total translations: 14
+  Static translations: 14
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  GigabitEthernet0/1
+  Inside interfaces:   GigabitEthernet0/0
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
+  Overloaded mappings: yes
+  max-entries 10000
+  Static mappings:
+   -- static  192.168.1.11  10.0.0.11  refcount 0
+   -- static  192.168.1.12  10.0.0.12  refcount 0
+   -- static  192.168.1.13  10.0.0.13  refcount 0
+   -- static  192.168.1.14  10.0.0.14  refcount 0
+   -- static  192.168.1.15  10.0.0.15  refcount 0
+   -- static  192.168.1.16  10.0.0.16  refcount 0
+   -- static  192.168.1.17  10.0.0.17  refcount 0
+   -- static  192.168.1.18  10.0.0.18  refcount 0
+   -- static  192.168.1.19  10.0.0.19  refcount 0
+   -- static  192.168.1.20  10.0.0.20  refcount 0
+   -- static  192.168.1.100  10.0.0.100  refcount 0
+   -- static  192.168.1.101  10.0.0.100  refcount 0
+   -- static  192.168.1.102  10.0.0.100  refcount 0
+   -- static  192.168.1.150  10.0.0.150  refcount 0
+  Dynamic mappings:
+   -- Inside Source [acl 1] pool POOL1
+   -- Inside Source [acl 1] pool POOL1
+   -- Inside Source [acl 2] overload
+  Pools:
+   POOL1: 10.0.0.50 - 10.0.0.60 — used 0/11 (0%)
+   POOL2: 10.0.0.70 - 10.0.0.80 — used 0/11 (0%)
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  
+  ------------------ show ip ospf neighbor ------------------
+  % OSPF is not configured
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address fe80::ff:fe00:1%GigabitEthernet0/0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address 2001:db8:1::1 assigned
 
 [313/369] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -2182,6 +2432,8 @@ Total steps: 369
   Current configuration : 2969 bytes
   hostname R1
   service dhcp
+  ip dhcp excluded-address 192.168.1.1 192.168.1.20
+  ip dhcp excluded-address 192.168.1.250 192.168.1.254
   ip dhcp pool VLAN10
    network 192.168.1.0 255.255.255.0
    default-router 192.168.1.1
@@ -2234,8 +2486,6 @@ Total steps: 369
    network 172.16.0.0 255.255.0.0
   ip dhcp pool MULTI
    network 10.50.0.0 255.255.0.0
-  ip dhcp excluded-address 192.168.1.1 192.168.1.20
-  ip dhcp excluded-address 192.168.1.250 192.168.1.254
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    ip helper-address 10.0.0.2
@@ -2465,6 +2715,7 @@ Total steps: 369
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
+    interface    Remove a virtual interface
     router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
@@ -2473,7 +2724,6 @@ Total steps: 369
     key          Key management
     crypto       Encryption and key management
     event        Embedded Event Manager
-    interface    Remove an interface
     vlan         Remove a VLAN
     line         Remove line configuration
 

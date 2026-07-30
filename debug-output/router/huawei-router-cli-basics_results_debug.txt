@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-07-29T07:33:59.602Z
+Generated: 2026-07-30T18:12:24.175Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-07-29 07:33:59
-  Wednesday
+  2026-07-30 18:12:24
+  Thursday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-29 07:33:59
+  CPU Usage Stat. Time : 2026-07-30 18:12:24
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-29 07:33:59
+  Memory utilization statistics at 2026-07-30 18:12:24
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -290,17 +290,17 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 11
-  2026-07-29 07:33:59 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-07-29 07:33:59 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-07-29 07:33:59 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-07-29 07:33:59 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-07-29 07:33:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-07-29 07:33:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-07-29 07:33:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-07-29 07:33:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-07-30 18:12:24 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-07-30 18:12:24 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-07-30 18:12:24 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-07-30 18:12:24 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-07-30 18:12:24 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-07-30 18:12:24 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-07-30 18:12:24 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-07-30 18:12:24 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1950,8 +1950,8 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-07-29 07:33:59
-  Wednesday
+  2026-07-30 18:12:24
+  Thursday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <Huawei> display lldp neighbor
@@ -1963,13 +1963,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-29 07:33:59
+  CPU Usage Stat. Time : 2026-07-30 18:12:24
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-07-29 07:33:59
+  Memory utilization statistics at 2026-07-30 18:12:24
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2011,28 +2011,28 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 22
-  2026-07-29 07:33:59 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-07-29 07:33:59 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-07-29 07:33:59 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-07-29 07:33:59 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-07-29 07:33:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-07-29 07:33:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-07-29 07:33:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-07-29 07:33:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-07-29 07:33:59 %01RIP/5/NOTIFICATIONS: RIP routing process started
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:21
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:21
-  2026-07-29 07:33:59 %01LLDP/6/INFORMATIONAL: LLDP enabled
-  2026-07-29 07:33:59 %01LLDP/6/INFORMATIONAL: LLDP disabled
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:179
-  2026-07-29 07:33:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to down
-  2026-07-29 07:33:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-07-29 07:33:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-07-29 07:33:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-07-29 07:33:59 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
+  2026-07-30 18:12:24 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-07-30 18:12:24 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-07-30 18:12:24 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-07-30 18:12:24 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-07-30 18:12:24 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-07-30 18:12:24 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-07-30 18:12:24 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-07-30 18:12:24 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-07-30 18:12:24 %01RIP/5/NOTIFICATIONS: RIP routing process started
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:21
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:21
+  2026-07-30 18:12:24 %01LLDP/6/INFORMATIONAL: LLDP enabled
+  2026-07-30 18:12:24 %01LLDP/6/INFORMATIONAL: LLDP disabled
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:179
+  2026-07-30 18:12:24 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to down
+  2026-07-30 18:12:24 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-07-30 18:12:24 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-07-30 18:12:24 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-07-30 18:12:24 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
 
 [244/304] r1 <Huawei> display trapbuffer
   Trapping buffer configuration and contents: enabled

@@ -15,10 +15,10 @@ Total steps: 339
 <empty>
 
 [3/339] rhq R-HQ# debug arp
-  IP ARP debugging is on
+  ARP packet debugging is on
 
 [4/339] rhq R-HQ# show debugging
-  IP ARP debugging is on
+  ARP packet debugging is on
 
 [5/339] rhq R-HQ# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -27,26 +27,41 @@ Total steps: 339
       Buffer logging: level debugging, 32768 bytes
       Trap logging: level informational
       Facility: local7
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       No active syslog hosts
   
   Log Buffer (32768 bytes):
   
-  %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  06-06 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
+  06-06 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
 
 [6/339] rdc R-DC# terminal monitor
 <empty>
 
 [7/339] rdc R-DC# debug arp
-  IP ARP debugging is on
+  ARP packet debugging is on
 
 [8/339] rdc R-DC# show debugging
-  IP ARP debugging is on
+  ARP packet debugging is on
 
 [9/339] rdc R-DC# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -55,17 +70,31 @@ Total steps: 339
       Buffer logging: level debugging, 32768 bytes
       Trap logging: level informational
       Facility: local7
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       No active syslog hosts
   
   Log Buffer (32768 bytes):
   
-  %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.3.3.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.13.2/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.23.1/255.255.255.252 assigned
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  06-06 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-HQ (GigabitEthernet0/2) discovered on GigabitEthernet0/1
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.3.3.1/255.255.255.0 assigned
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.13.2/255.255.255.252 assigned
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.23.1/255.255.255.252 assigned
 
 [10/339] swhq SW-HQ# enable
 <empty>
@@ -83,9 +112,25 @@ Total steps: 339
       Buffer logging: level debugging, 16384 bytes
       Trap logging: level informational
       Facility: local7
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (16384 bytes):
+  
+  06-06 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-HQ (GigabitEthernet0/0) discovered on FastEthernet0/1
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  06-06 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
+  06-06 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  06-06 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
+  06-06 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  06-06 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
+  06-06 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
 
 
 --- [14] § ARP — activation logs & debug (Huawei) ---
@@ -108,7 +153,20 @@ Total steps: 339
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 5
+  Current messages : 18
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/2, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/2, changed state to up
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 10.2.2.1/255.255.255.0 assigned
@@ -603,11 +661,11 @@ Total steps: 339
 
 [90/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.383 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.984 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.383/0.383/0.383/0.000 ms
+  rtt min/avg/max/mdev = 0.984/0.984/0.984/0.000 ms
 
 [91/339] lhq lhq$ arp -n 10.1.1.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -627,11 +685,11 @@ Total steps: 339
 
 [96/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.462 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=2.809 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.462/0.462/0.462/0.000 ms
+  rtt min/avg/max/mdev = 2.809/2.809/2.809/0.000 ms
 
 [97/339] lbr lbr$ arp -n 10.2.2.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -651,11 +709,11 @@ Total steps: 339
 
 [102/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.278 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.753 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.278/0.278/0.278/0.000 ms
+  rtt min/avg/max/mdev = 0.753/0.753/0.753/0.000 ms
 
 [103/339] ldc ldc$ arp -n 10.3.3.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -675,11 +733,11 @@ Total steps: 339
 
 [108/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.199 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.613 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.199/0.199/0.199/0.000 ms
+  rtt min/avg/max/mdev = 0.613/0.613/0.613/0.000 ms
 
 [109/339] srvdc srvdc$ arp -n 10.3.3.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -702,7 +760,7 @@ Total steps: 339
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [114/339] whq whq$ arp -a
   
@@ -739,11 +797,11 @@ Total steps: 339
 
 [120/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.247 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.616 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.247/0.247/0.247/0.000 ms
+  rtt min/avg/max/mdev = 0.616/0.616/0.616/0.000 ms
 
 [121/339] lhq lhq$ ip neigh show 10.1.1.1 dev eth0
   10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
@@ -757,11 +815,11 @@ Total steps: 339
 
 [124/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.258 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.546 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.258/0.258/0.258/0.000 ms
+  rtt min/avg/max/mdev = 0.546/0.546/0.546/0.000 ms
 
 [125/339] lbr lbr$ ip neigh show 10.2.2.1 dev eth0
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -775,11 +833,11 @@ Total steps: 339
 
 [128/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.187 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.427 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.187/0.187/0.187/0.000 ms
+  rtt min/avg/max/mdev = 0.427/0.427/0.427/0.000 ms
 
 [129/339] ldc ldc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -793,11 +851,11 @@ Total steps: 339
 
 [132/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.163 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.373 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.163/0.163/0.163/0.000 ms
+  rtt min/avg/max/mdev = 0.373/0.373/0.373/0.000 ms
 
 [133/339] srvdc srvdc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1089,6 +1147,7 @@ Total steps: 339
 --- [209] § Proxy ARP — Cisco ---
 [209/339] rhq R-HQ# show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
+    Description: LAN-HQ
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 10.1.1.1/24
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
@@ -1120,6 +1179,7 @@ Total steps: 339
 
 [213/339] rhq R-HQ(config-if)# do show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
+    Description: LAN-HQ
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 10.1.1.1/24
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
@@ -1145,6 +1205,7 @@ Total steps: 339
 
 [215/339] rhq R-HQ(config-if)# do show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
+    Description: LAN-HQ
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 10.1.1.1/24
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
@@ -1370,12 +1431,12 @@ Total steps: 339
 
 [264/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.380 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.550 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.528 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.543 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.380/0.465/0.550/0.085 ms
+  rtt min/avg/max/mdev = 0.528/0.536/0.543/0.008 ms
 
 [265/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=0
 <empty>
@@ -1388,12 +1449,12 @@ Total steps: 339
 
 [268/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.362 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.431 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.313 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.566 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.362/0.397/0.431/0.034 ms
+  rtt min/avg/max/mdev = 0.313/0.439/0.566/0.126 ms
 
 
 --- [269] § L2 — corrélation MAC/ARP sur switchs ---
@@ -1538,27 +1599,27 @@ Total steps: 339
 --- [298] § ARP — re-résolution complète après flush ---
 [298/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.252 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.301 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.252/0.252/0.252/0.000 ms
+  rtt min/avg/max/mdev = 0.301/0.301/0.301/0.000 ms
 
 [299/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.216 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.220 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.216/0.216/0.216/0.000 ms
+  rtt min/avg/max/mdev = 0.220/0.220/0.220/0.000 ms
 
 [300/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.139 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.229 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.139/0.139/0.139/0.000 ms
+  rtt min/avg/max/mdev = 0.229/0.229/0.229/0.000 ms
 
 [301/339] lhq lhq$ ip -s neigh
   10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
@@ -1567,19 +1628,19 @@ Total steps: 339
 
 [302/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.288 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.392 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.288/0.288/0.288/0.000 ms
+  rtt min/avg/max/mdev = 0.392/0.392/0.392/0.000 ms
 
 [303/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.129 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.161 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.129/0.129/0.129/0.000 ms
+  rtt min/avg/max/mdev = 0.161/0.161/0.161/0.000 ms
 
 [304/339] lbr lbr$ ip -s neigh
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -1587,19 +1648,19 @@ Total steps: 339
 
 [305/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.156 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.233 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.156/0.156/0.156/0.000 ms
+  rtt min/avg/max/mdev = 0.233/0.233/0.233/0.000 ms
 
 [306/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.123 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.184 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.123/0.123/0.123/0.000 ms
+  rtt min/avg/max/mdev = 0.184/0.184/0.184/0.000 ms
 
 [307/339] ldc ldc$ ip -s neigh
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1607,19 +1668,19 @@ Total steps: 339
 
 [308/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.201 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.257 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.201/0.201/0.201/0.000 ms
+  rtt min/avg/max/mdev = 0.257/0.257/0.257/0.000 ms
 
 [309/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.181 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.389 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.181/0.181/0.181/0.000 ms
+  rtt min/avg/max/mdev = 0.389/0.389/0.389/0.000 ms
 
 [310/339] srvdc srvdc$ ip -s neigh
   10.3.3.11 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
@@ -1799,17 +1860,32 @@ Total steps: 339
       Buffer logging: level debugging, 32768 bytes
       Trap logging: level informational
       Facility: local7
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       No active syslog hosts
   
   Log Buffer (32768 bytes):
   
-  %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  06-06 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
+  06-06 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
 
 [339/339] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -1818,7 +1894,20 @@ Total steps: 339
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 5
+  Current messages : 18
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/2, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/2, changed state to up
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 10.2.2.1/255.255.255.0 assigned

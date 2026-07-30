@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-07-24T16:42:10.432Z
+Generated: 2026-07-30T18:13:06.771Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -314,7 +314,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 49
+           Destinations : 49        Routes : 51
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -359,6 +359,8 @@ Total steps: 300
   172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
@@ -371,9 +373,11 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Table : Public
-  Summary Count : 1
+  Summary Count : 3
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
 
 
@@ -961,7 +965,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 49
+           Destinations : 49        Routes : 51
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1006,6 +1010,8 @@ Total steps: 300
   172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
@@ -1018,7 +1024,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Public routing table : STATIC
-           Destinations : 47        Routes : 47
+           Destinations : 47        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
@@ -1061,6 +1067,8 @@ Total steps: 300
   172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
@@ -1083,7 +1091,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 49
+           Destinations : 49        Routes : 51
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1128,6 +1136,8 @@ Total steps: 300
   172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
@@ -1140,7 +1150,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 49
+           Destinations : 49        Routes : 51
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1185,6 +1195,8 @@ Total steps: 300
   172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
@@ -1196,7 +1208,7 @@ Total steps: 300
 [194/300] r1 <R1> display ip routing-table limit
   Routing Table Limit:
     Configured : unlimited
-    Current    : 49
+    Current    : 51
 
 [195/300] r1 <R1> display router id
   Router ID: 192.168.1.1
@@ -1283,6 +1295,8 @@ Total steps: 300
   ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
   ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
   ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
@@ -1341,7 +1355,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 49
+           Destinations : 49        Routes : 51
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1386,6 +1400,8 @@ Total steps: 300
   172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
@@ -1398,9 +1414,9 @@ Total steps: 300
   Proto     route
   --------------------
   Direct    2
-  Static    47
+  Static    49
   --------------------
-  Total     49
+  Total     51
 
 [204/300] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -1506,8 +1522,8 @@ Total steps: 300
   No NTP associations
 
 [231/300] r1 <R1> display clock
-  2026-07-24 16:42:10
-  Friday
+  2026-07-30 18:13:06
+  Thursday
   Time Zone(UTC) : UTC
 
 [232/300] r1 <R1> display lldp neighbor
@@ -1519,13 +1535,13 @@ Total steps: 300
 [234/300] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-24 16:42:10
+  CPU Usage Stat. Time : 2026-07-30 18:13:06
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-24 16:42:10
+  Memory utilization statistics at 2026-07-30 18:13:06
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1566,7 +1582,20 @@ Total steps: 300
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 13
+  2026-07-30 18:13:06 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-07-30 18:13:06 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-07-30 18:13:06 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-07-30 18:13:06 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-07-30 18:13:06 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  2026-07-30 18:13:06 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-07-30 18:13:06 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-07-30 18:13:06 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-07-30 18:13:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-07-30 18:13:06 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-07-30 18:13:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-07-30 18:13:06 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  2026-07-30 18:13:06 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
 
 [240/300] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1703,6 +1732,8 @@ Total steps: 300
   ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
   ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
   ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
@@ -1819,6 +1850,8 @@ Total steps: 300
   ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
   ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
   ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
@@ -1882,6 +1915,8 @@ Total steps: 300
   ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
   ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
   ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
@@ -2035,6 +2070,7 @@ Total steps: 300
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
+    multicast      Disable multicast routing
     ike            Internet Key Exchange
     ipsec          IP Security
     ikev2          Internet Key Exchange version 2

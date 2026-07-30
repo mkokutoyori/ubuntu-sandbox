@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-07-24T16:25:10.693Z
+Generated: 2026-07-30T18:21:16.496Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 360
@@ -793,13 +793,13 @@ Total steps: 360
 --- [213] § connectivity: same VLAN across switches ---
 [213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.567 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.208 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.135 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.724 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.019 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.026 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.135/1.637/2.567/0.658 ms
+  rtt min/avg/max/mdev = 1.019/1.590/2.724/0.802 ms
 
 [214/360] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -810,13 +810,13 @@ Total steps: 360
 
 [215/360] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.493 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.115 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.844 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.706 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.191 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.956 ms
   
   --- 192.168.1.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.493/0.817/1.115/0.254 ms
+  rtt min/avg/max/mdev = 0.706/0.951/1.191/0.198 ms
 
 [216/360] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
@@ -917,12 +917,12 @@ Total steps: 360
 
 [228/360] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.564 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.808 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.549 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.795 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.564/0.686/0.808/0.122 ms
+  rtt min/avg/max/mdev = 0.549/0.672/0.795/0.123 ms
 
 
 --- [229] § voice VLAN ---
@@ -1562,6 +1562,7 @@ Total steps: 360
    no ip address
    shutdown
   !
+  logging buffered 4096 debugging
   end
 
 
@@ -1635,7 +1636,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [293/360] sw1 SW1# show interfaces FastEthernet0/4
-  FastEthernet0/4 is down, line protocol is down
+  FastEthernet0/4 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1656,7 +1657,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [294/360] sw1 SW1# show interfaces FastEthernet0/5
-  FastEthernet0/5 is down, line protocol is down
+  FastEthernet0/5 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0005 (bia 0200.0000.0005)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1677,7 +1678,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [295/360] sw1 SW1# show interfaces FastEthernet0/6
-  FastEthernet0/6 is down, line protocol is down
+  FastEthernet0/6 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0006 (bia 0200.0000.0006)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1698,7 +1699,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [296/360] sw1 SW1# show interfaces FastEthernet0/7
-  FastEthernet0/7 is down, line protocol is down
+  FastEthernet0/7 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0007 (bia 0200.0000.0007)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1719,7 +1720,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [297/360] sw1 SW1# show interfaces FastEthernet0/8
-  FastEthernet0/8 is down, line protocol is down
+  FastEthernet0/8 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0008 (bia 0200.0000.0008)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1740,7 +1741,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [298/360] sw1 SW1# show interfaces FastEthernet0/9
-  FastEthernet0/9 is down, line protocol is down
+  FastEthernet0/9 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0009 (bia 0200.0000.0009)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1761,7 +1762,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [299/360] sw1 SW1# show interfaces FastEthernet0/10
-  FastEthernet0/10 is down, line protocol is down
+  FastEthernet0/10 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.000a (bia 0200.0000.000a)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1782,7 +1783,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [300/360] sw1 SW1# show interfaces FastEthernet0/11
-  FastEthernet0/11 is down, line protocol is down
+  FastEthernet0/11 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.000b (bia 0200.0000.000b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1803,7 +1804,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [301/360] sw1 SW1# show interfaces FastEthernet0/12
-  FastEthernet0/12 is down, line protocol is down
+  FastEthernet0/12 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.000c (bia 0200.0000.000c)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1824,7 +1825,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [302/360] sw1 SW1# show interfaces FastEthernet0/13
-  FastEthernet0/13 is down, line protocol is down
+  FastEthernet0/13 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.000d (bia 0200.0000.000d)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1845,7 +1846,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [303/360] sw1 SW1# show interfaces FastEthernet0/14
-  FastEthernet0/14 is down, line protocol is down
+  FastEthernet0/14 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.000e (bia 0200.0000.000e)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1866,7 +1867,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [304/360] sw1 SW1# show interfaces FastEthernet0/15
-  FastEthernet0/15 is down, line protocol is down
+  FastEthernet0/15 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.000f (bia 0200.0000.000f)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1887,7 +1888,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [305/360] sw1 SW1# show interfaces FastEthernet0/16
-  FastEthernet0/16 is down, line protocol is down
+  FastEthernet0/16 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0010 (bia 0200.0000.0010)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1908,7 +1909,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [306/360] sw1 SW1# show interfaces FastEthernet0/17
-  FastEthernet0/17 is down, line protocol is down
+  FastEthernet0/17 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0011 (bia 0200.0000.0011)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1929,7 +1930,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [307/360] sw1 SW1# show interfaces FastEthernet0/18
-  FastEthernet0/18 is down, line protocol is down
+  FastEthernet0/18 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0012 (bia 0200.0000.0012)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1950,7 +1951,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [308/360] sw1 SW1# show interfaces FastEthernet0/19
-  FastEthernet0/19 is down, line protocol is down
+  FastEthernet0/19 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0013 (bia 0200.0000.0013)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1971,7 +1972,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [309/360] sw1 SW1# show interfaces FastEthernet0/20
-  FastEthernet0/20 is down, line protocol is down
+  FastEthernet0/20 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0014 (bia 0200.0000.0014)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1992,7 +1993,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [310/360] sw1 SW1# show interfaces FastEthernet0/21
-  FastEthernet0/21 is down, line protocol is down
+  FastEthernet0/21 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0015 (bia 0200.0000.0015)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2013,7 +2014,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [311/360] sw1 SW1# show interfaces FastEthernet0/22
-  FastEthernet0/22 is down, line protocol is down
+  FastEthernet0/22 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0016 (bia 0200.0000.0016)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2034,7 +2035,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [312/360] sw1 SW1# show interfaces FastEthernet0/23
-  FastEthernet0/23 is down, line protocol is down
+  FastEthernet0/23 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0017 (bia 0200.0000.0017)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2123,7 +2124,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [317/360] sw2 SW2# show interfaces FastEthernet0/4
-  FastEthernet0/4 is down, line protocol is down
+  FastEthernet0/4 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.001e (bia 0200.0000.001e)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2144,7 +2145,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [318/360] sw2 SW2# show interfaces FastEthernet0/5
-  FastEthernet0/5 is down, line protocol is down
+  FastEthernet0/5 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.001f (bia 0200.0000.001f)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2165,7 +2166,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [319/360] sw2 SW2# show interfaces FastEthernet0/6
-  FastEthernet0/6 is down, line protocol is down
+  FastEthernet0/6 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0020 (bia 0200.0000.0020)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2186,7 +2187,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [320/360] sw2 SW2# show interfaces FastEthernet0/7
-  FastEthernet0/7 is down, line protocol is down
+  FastEthernet0/7 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0021 (bia 0200.0000.0021)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2207,7 +2208,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [321/360] sw2 SW2# show interfaces FastEthernet0/8
-  FastEthernet0/8 is down, line protocol is down
+  FastEthernet0/8 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0022 (bia 0200.0000.0022)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2228,7 +2229,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [322/360] sw2 SW2# show interfaces FastEthernet0/9
-  FastEthernet0/9 is down, line protocol is down
+  FastEthernet0/9 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0023 (bia 0200.0000.0023)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2249,7 +2250,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [323/360] sw2 SW2# show interfaces FastEthernet0/10
-  FastEthernet0/10 is down, line protocol is down
+  FastEthernet0/10 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0024 (bia 0200.0000.0024)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2270,7 +2271,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [324/360] sw2 SW2# show interfaces FastEthernet0/11
-  FastEthernet0/11 is down, line protocol is down
+  FastEthernet0/11 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0025 (bia 0200.0000.0025)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2291,7 +2292,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [325/360] sw2 SW2# show interfaces FastEthernet0/12
-  FastEthernet0/12 is down, line protocol is down
+  FastEthernet0/12 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0026 (bia 0200.0000.0026)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2312,7 +2313,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [326/360] sw2 SW2# show interfaces FastEthernet0/13
-  FastEthernet0/13 is down, line protocol is down
+  FastEthernet0/13 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0027 (bia 0200.0000.0027)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2333,7 +2334,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [327/360] sw2 SW2# show interfaces FastEthernet0/14
-  FastEthernet0/14 is down, line protocol is down
+  FastEthernet0/14 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0028 (bia 0200.0000.0028)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2354,7 +2355,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [328/360] sw2 SW2# show interfaces FastEthernet0/15
-  FastEthernet0/15 is down, line protocol is down
+  FastEthernet0/15 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0029 (bia 0200.0000.0029)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2375,7 +2376,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [329/360] sw2 SW2# show interfaces FastEthernet0/16
-  FastEthernet0/16 is down, line protocol is down
+  FastEthernet0/16 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.002a (bia 0200.0000.002a)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2396,7 +2397,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [330/360] sw2 SW2# show interfaces FastEthernet0/17
-  FastEthernet0/17 is down, line protocol is down
+  FastEthernet0/17 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.002b (bia 0200.0000.002b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2417,7 +2418,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [331/360] sw2 SW2# show interfaces FastEthernet0/18
-  FastEthernet0/18 is down, line protocol is down
+  FastEthernet0/18 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.002c (bia 0200.0000.002c)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2438,7 +2439,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [332/360] sw2 SW2# show interfaces FastEthernet0/19
-  FastEthernet0/19 is down, line protocol is down
+  FastEthernet0/19 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.002d (bia 0200.0000.002d)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2459,7 +2460,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [333/360] sw2 SW2# show interfaces FastEthernet0/20
-  FastEthernet0/20 is down, line protocol is down
+  FastEthernet0/20 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.002e (bia 0200.0000.002e)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2480,7 +2481,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [334/360] sw2 SW2# show interfaces FastEthernet0/21
-  FastEthernet0/21 is down, line protocol is down
+  FastEthernet0/21 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.002f (bia 0200.0000.002f)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2501,7 +2502,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [335/360] sw2 SW2# show interfaces FastEthernet0/22
-  FastEthernet0/22 is down, line protocol is down
+  FastEthernet0/22 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0030 (bia 0200.0000.0030)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2522,7 +2523,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [336/360] sw2 SW2# show interfaces FastEthernet0/23
-  FastEthernet0/23 is down, line protocol is down
+  FastEthernet0/23 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0031 (bia 0200.0000.0031)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2548,7 +2549,7 @@ Total steps: 360
                   ^
 
 [338/360] core CORE# show interfaces FastEthernet0/1
-  FastEthernet0/1 is down, line protocol is down
+  FastEthernet0/1 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0035 (bia 0200.0000.0035)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2569,7 +2570,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [339/360] core CORE# show interfaces FastEthernet0/2
-  FastEthernet0/2 is down, line protocol is down
+  FastEthernet0/2 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0036 (bia 0200.0000.0036)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2590,7 +2591,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [340/360] core CORE# show interfaces FastEthernet0/3
-  FastEthernet0/3 is down, line protocol is down
+  FastEthernet0/3 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0037 (bia 0200.0000.0037)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2611,7 +2612,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [341/360] core CORE# show interfaces FastEthernet0/4
-  FastEthernet0/4 is down, line protocol is down
+  FastEthernet0/4 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0038 (bia 0200.0000.0038)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2632,7 +2633,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [342/360] core CORE# show interfaces FastEthernet0/5
-  FastEthernet0/5 is down, line protocol is down
+  FastEthernet0/5 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0039 (bia 0200.0000.0039)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2653,7 +2654,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [343/360] core CORE# show interfaces FastEthernet0/6
-  FastEthernet0/6 is down, line protocol is down
+  FastEthernet0/6 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.003a (bia 0200.0000.003a)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2674,7 +2675,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [344/360] core CORE# show interfaces FastEthernet0/7
-  FastEthernet0/7 is down, line protocol is down
+  FastEthernet0/7 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.003b (bia 0200.0000.003b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2695,7 +2696,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [345/360] core CORE# show interfaces FastEthernet0/8
-  FastEthernet0/8 is down, line protocol is down
+  FastEthernet0/8 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.003c (bia 0200.0000.003c)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2716,7 +2717,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [346/360] core CORE# show interfaces FastEthernet0/9
-  FastEthernet0/9 is down, line protocol is down
+  FastEthernet0/9 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.003d (bia 0200.0000.003d)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2737,7 +2738,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [347/360] core CORE# show interfaces FastEthernet0/10
-  FastEthernet0/10 is down, line protocol is down
+  FastEthernet0/10 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.003e (bia 0200.0000.003e)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2758,7 +2759,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [348/360] core CORE# show interfaces FastEthernet0/11
-  FastEthernet0/11 is down, line protocol is down
+  FastEthernet0/11 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.003f (bia 0200.0000.003f)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2779,7 +2780,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [349/360] core CORE# show interfaces FastEthernet0/12
-  FastEthernet0/12 is down, line protocol is down
+  FastEthernet0/12 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0040 (bia 0200.0000.0040)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2800,7 +2801,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [350/360] core CORE# show interfaces FastEthernet0/13
-  FastEthernet0/13 is down, line protocol is down
+  FastEthernet0/13 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0041 (bia 0200.0000.0041)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2821,7 +2822,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [351/360] core CORE# show interfaces FastEthernet0/14
-  FastEthernet0/14 is down, line protocol is down
+  FastEthernet0/14 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0042 (bia 0200.0000.0042)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2842,7 +2843,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [352/360] core CORE# show interfaces FastEthernet0/15
-  FastEthernet0/15 is down, line protocol is down
+  FastEthernet0/15 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0043 (bia 0200.0000.0043)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2863,7 +2864,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [353/360] core CORE# show interfaces FastEthernet0/16
-  FastEthernet0/16 is down, line protocol is down
+  FastEthernet0/16 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0044 (bia 0200.0000.0044)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2884,7 +2885,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [354/360] core CORE# show interfaces FastEthernet0/17
-  FastEthernet0/17 is down, line protocol is down
+  FastEthernet0/17 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0045 (bia 0200.0000.0045)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2905,7 +2906,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [355/360] core CORE# show interfaces FastEthernet0/18
-  FastEthernet0/18 is down, line protocol is down
+  FastEthernet0/18 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0046 (bia 0200.0000.0046)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2926,7 +2927,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [356/360] core CORE# show interfaces FastEthernet0/19
-  FastEthernet0/19 is down, line protocol is down
+  FastEthernet0/19 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0047 (bia 0200.0000.0047)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2947,7 +2948,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [357/360] core CORE# show interfaces FastEthernet0/20
-  FastEthernet0/20 is down, line protocol is down
+  FastEthernet0/20 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0048 (bia 0200.0000.0048)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2968,7 +2969,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [358/360] core CORE# show interfaces FastEthernet0/21
-  FastEthernet0/21 is down, line protocol is down
+  FastEthernet0/21 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.0049 (bia 0200.0000.0049)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2989,7 +2990,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [359/360] core CORE# show interfaces FastEthernet0/22
-  FastEthernet0/22 is down, line protocol is down
+  FastEthernet0/22 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.004a (bia 0200.0000.004a)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3010,7 +3011,7 @@ Total steps: 360
        0 input drops, 0 output drops
 
 [360/360] core CORE# show interfaces FastEthernet0/23
-  FastEthernet0/23 is down, line protocol is down
+  FastEthernet0/23 is down, line protocol is down (notconnect)
     Hardware is Fast Ethernet, address is 0200.0000.004b (bia 0200.0000.004b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-07-24T16:41:04.025Z
+Generated: 2026-07-30T18:11:52.709Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -885,43 +885,43 @@ Total steps: 388
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 2026-07-24 16:41:04
+  % Key pair was generated at: 2026-07-30 18:11:52
   Key name: default
    Storage Device: not specified
    Usage: Signature Key
    Key is not exportable.
    Key Data:
-   322E21CADA22639231D4E348F27999D032BC99DBA49F549FEA09CA2F15A54E87
-    CC58A10A268C258A2EFA054CA7A8A9BC147B1BDBA13A48278D99F7E3C040726B
-    5CE802CA4AA808EAFCF6A6C03174DC609AFC455BF7943D97FCE3102764405B87
-    90A8070A762D5AB26959BDC40EDFEBAC525E2C5BCC1335AF442912DB395BBE3B
-    3FAD77AA58D057D24D0DBE384E2216C02A9FCEBB131E459F6AC79DFF05EB9B37
-    86EDC8CA7786B4AA9D9BDC1CB377ADACB421569B147F5C27BD15BB935936BEBB
-    7850E46A9831262A9FF6E170E6CD76F0C23A6DFB111F821716F92BB7AB2F09B7
-    F5708A8AF9679152021BC454F124247C0B172ADBCD57316FC4425A8B7D99500B
+   6F28A4250E0406096710EDF77B9F9DB7FA98D9B4A6894684E762B2B0B0BCA080
+    BC981C25C39CCB19EFFCFF3390FD991B6EB806F4C015938C90ADF03C3B955B94
+    902F21A504084E91361B00FF971B3087F88AFCB4C87360BC6513B3380678DB70
+    68B5F4A52043FDF1812FFD3B708F477B7F07A4F458ACF7449634C5A480C396A4
+    FBD23F25AFDF5209030FB407EAB102079244F5D4AF6BAC640615A9C08334B630
+    650319454E12C739F8F1BD63CC0C6D6BAD9BD13415C3296CC70D6B6C5E3D6144
+    443498E5C97BCB5145774F4F65AA97F74F088D1448D7559CEC4A4A881A7C6B80
+    78A0FE054EF39E91C13773ABDADF924BC0B31374E7681DA4DEFF111449430D94
   
-  % Key pair was generated at: 2026-07-24 16:41:04
+  % Key pair was generated at: 2026-07-30 18:11:52
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   ED652A181281BBF80B6E65FA0AC094E2AC063229BCC546E56BAAF61D0831C0E5
-    EEAD7E984D117460BEBF393E3E38CCFEBD8181694A02BB5DE6884D11C4F21929
-    30D5A5985ABACDA06D577BF2083C6552439468291E12253D14C87E95B66BA075
-    251D5F182543EE588CFA24363EE346AEAA50FC692BDC1FA5F552C0A95FBC7F09
-    B2D6373885F85778AC34FE0AFF157612221C804951C1FC85085BB54DDCC9C555
-    6606F9D8F5A4FA40A627156E4B7682AEA52B09A97CDAA81DDD5D5C61BCCFB099
-    1C09A6F8C55DB280491B34429308760294AC4289EAB958FD7A9576050A3B1AE5
-    954FFE987ED192D86E6650A6044DD4DE36A440E9B7B1B645635ECBF962EF6879
-    9E4C085862B505B880C9865A10D09502DDE42AA99D00E8256D29107D42903685
-    B505E4D8746D2120E8E1619E548E3C1EB7C401E978C3079D31D06F719D630709
-    31A593D8512A73A0BB66AC52501BD2B2D58170A90627677D0F40A8F5B748BB15
-    B1EAD558E3915418B29C5C965577740E7FAE8CE96C44C325F8E0F309D0C49FE9
-    3785A1B832B3DB386D64EA6A055798329CA918893339A68534366FAD2876E7F5
-    9E0A0018558AE6C06CE1DDCE791F31CE68942A291F5B345DDDFA1EC123A1DE79
-    69DAA178B3E7F740E78FB0A2D1CE7E6263B06AC932F7223D802AC065DCE85885
-    756094D8CB0B2798BF91A90647886D3ED5F0F1697A5E4F85EB621E59AC7A5759
+   05D0C8274EDA403389E6DE95EDBBA775DE0ECBB6A0CA344E25BFF812105D7672
+    54EE66E79DF46DD35FCC7A91FA56D5A9CC8BA7B6275B4766BCA9C85E943AE026
+    6DC5A3278EDF6A6B2471171DBC6732652FD45C36AA25F7260DE12E1A539DF4D2
+    206ABCE73838C9DB4125BE199A62A1A94CAAD3368AE6CF3E9112F346003CE6E6
+    3CCF5E27DF00E053024A2FA52907AFC539F202D69B9BCE2EC74F9A2215739022
+    81BE9F07E4304E9378A203C120FA3119E2CECCF625F500467AFA2E8E0E5B14D6
+    7B709567F1BF818BD35A706DCEE5DE55DE09879625E78286504CF06A16018602
+    FE6B8147136CC01B70967F89EB062899F7961CB679A8219EDA86A9B6D8BAABB6
+    5EB4A067D05CC773DF766CB5AC439B15626DF9B65758570EC35D8FF22C09D4D2
+    E5DE12A7AC3C86537D00C4312EE860C97EEFF9362A5E1FA63A1C6BBE687AE8C6
+    EBF1C2671F56762BAB88BC3D4186FC85372A71368EE18A668C637CFA38F12472
+    9AFBEFA78339775B40D75EB9C31F95C986D74BB628D5347EEB578DA625B33086
+    B6E64467A7D5B1136FC46BC5CFB0742523AFEB169C6D436E5312A4825FC129C2
+    950F61875941AF538FD634615CF9C5790450D5766E408586287758EEBBDE9FB6
+    2BB30BA792A5174B3C033C8D5F2AFBB56508FFD6987134C683748ACA136871E2
+    4653D3C7C861BADB77A5402900F0BEF92D45B5368267B0DE10513C96B37C2616
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1523,6 +1523,7 @@ Total steps: 388
 
 [300/388] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
   Total translations: 0
   Static translations: 0
   Dynamic translations: 0
@@ -1531,6 +1532,8 @@ Total steps: 388
   Inside interfaces:   none
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -1762,12 +1765,31 @@ Total steps: 388
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  %SYS-6-INFORMATIONAL: User account 'admin' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
 
 [315/388] r1 R1# show snmp
   SNMP agent not enabled
@@ -1777,7 +1799,7 @@ Total steps: 388
 [316/388] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1420.0E978D4F (16:41:04.057 UTC Fri Jul 24 2026)
+  reference time is EE161268.C0C49BA5 (18:11:52.753 UTC Thu Jul 30 2026)
   clock offset is 0.00 msec
 
 [317/388] r1 R1# show ntp associations
@@ -1786,7 +1808,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1# show clock
-  *16:41:04.000 UTC Fri Jul 24 2026
+  *18:11:52.000 UTC Thu Jul 30 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1811,6 +1833,12 @@ Total steps: 388
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [322/388] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -2254,16 +2282,75 @@ Total steps: 388
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
   
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  No NAT translations.
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  
+  ------------------ show ip ospf neighbor ------------------
+  % OSPF is not configured
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  %SYS-6-INFORMATIONAL: User account 'admin' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
 
 [332/388] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -2913,6 +3000,7 @@ Total steps: 388
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
+    interface    Remove a virtual interface
     router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
@@ -2921,7 +3009,6 @@ Total steps: 388
     key          Key management
     crypto       Encryption and key management
     event        Embedded Event Manager
-    interface    Remove an interface
     vlan         Remove a VLAN
     line         Remove line configuration
 

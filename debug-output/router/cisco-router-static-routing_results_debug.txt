@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-07-24T16:41:47.075Z
+Generated: 2026-07-30T18:12:57.058Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -339,7 +339,7 @@ Total steps: 325
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
-  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
+  Gateway of last resort is 10.0.0.2 to network 0.0.0.0
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -383,12 +383,11 @@ Total steps: 325
   S    172.22.38.0/24 [1/0] via 10.0.0.2
   S    172.23.39.0/24 [1/0] via 10.0.0.2
   S    172.24.40.0/24 [1/0] via 10.0.0.2
-  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
-  S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
 
 [77/325] r1 R1# show ip cef
@@ -436,6 +435,7 @@ Total steps: 325
   172.22.38.0/24       10.0.0.2             GigabitEthernet0/1
   172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
   172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.2             GigabitEthernet0/1
   0.0.0.0/0            10.0.0.6             
   0.0.0.0/0            0.0.0.0              GigabitEthernet0/1
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
@@ -490,6 +490,7 @@ Total steps: 325
   172.22.38.0/24       10.0.0.2             GigabitEthernet0/1
   172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
   172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.2             GigabitEthernet0/1
   0.0.0.0/0            10.0.0.6             
   0.0.0.0/0            0.0.0.0              GigabitEthernet0/1
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
@@ -502,7 +503,7 @@ Total steps: 325
 [79/325] r1 R1# show ip route 0.0.0.0
   Routing entry for 0.0.0.0/0
     Known via "static", distance 1, metric 0
-  S* 0.0.0.0/0 via 10.0.0.6
+  S* 0.0.0.0/0 via 10.0.0.2
 
 
 --- [80] § IPv6 static ---
@@ -1123,7 +1124,7 @@ Total steps: 325
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
-  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
+  Gateway of last resort is 10.0.0.2 to network 0.0.0.0
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -1167,7 +1168,7 @@ Total steps: 325
   S    172.22.38.0/24 [1/0] via 10.0.0.2
   S    172.23.39.0/24 [1/0] via 10.0.0.2
   S    172.24.40.0/24 [1/0] via 10.0.0.2
-  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
@@ -1219,7 +1220,7 @@ Total steps: 325
   S    172.22.38.0/24 [1/0] via 10.0.0.2
   S    172.23.39.0/24 [1/0] via 10.0.0.2
   S    172.24.40.0/24 [1/0] via 10.0.0.2
-  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
@@ -1246,7 +1247,7 @@ Total steps: 325
 [211/325] r1 R1# show ip route profile
   Routing entry for 0.0.0.0/0
     Known via "static", distance 1, metric 0
-  S* 0.0.0.0/0 via 10.0.0.6
+  S* 0.0.0.0/0 via 10.0.0.2
 
 [212/325] r1 R1# show ip route vrf CUST
   % No such VRF, CUST
@@ -1299,6 +1300,7 @@ Total steps: 325
   172.22.38.0/24       10.0.0.2             GigabitEthernet0/1
   172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
   172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.2             GigabitEthernet0/1
   0.0.0.0/0            10.0.0.6             
   0.0.0.0/0            0.0.0.0              GigabitEthernet0/1
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
@@ -1311,7 +1313,7 @@ Total steps: 325
 [215/325] r1 R1# show ip static route
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
   
-  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
+  Gateway of last resort is 10.0.0.2 to network 0.0.0.0
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -1362,6 +1364,7 @@ Total steps: 325
   S    192.168.53.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    8.8.8.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.99.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S*    0.0.0.0/0 via 10.0.0.2, GigabitEthernet0/1
   S*    0.0.0.0/0 via 10.0.0.6, 
 
 
@@ -1389,7 +1392,7 @@ Total steps: 325
 [218/325] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 2461 bytes
+  Current configuration : 2495 bytes
   !
   hostname R1
   !
@@ -1448,6 +1451,7 @@ Total steps: 325
   ip route 172.22.38.0 255.255.255.0 10.0.0.2
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
   ip route 0.0.0.0 0.0.0.0 0.0.0.0
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
@@ -1556,7 +1560,7 @@ Total steps: 325
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
-  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
+  Gateway of last resort is 10.0.0.2 to network 0.0.0.0
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -1600,7 +1604,7 @@ Total steps: 325
   S    172.22.38.0/24 [1/0] via 10.0.0.2
   S    172.23.39.0/24 [1/0] via 10.0.0.2
   S    172.24.40.0/24 [1/0] via 10.0.0.2
-  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
@@ -1618,8 +1622,8 @@ Total steps: 325
   eigrp           0           0           0           0           0
   bgp             0           0           0           0           0
   rip             0           0           0           0           0
-  default         1           1           0           152         360
-  Total           50          50          0           7600        18000
+  default         2           2           0           304         720
+  Total           51          51          0           7752        18360
 
 [224/325] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1667,6 +1671,7 @@ Total steps: 325
 
 [237/325] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
   Total translations: 0
   Static translations: 0
   Dynamic translations: 0
@@ -1675,6 +1680,8 @@ Total steps: 325
   Inside interfaces:   none
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -1741,12 +1748,29 @@ Total steps: 325
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
 
 [252/325] r1 R1# show snmp
   SNMP agent not enabled
@@ -1756,7 +1780,7 @@ Total steps: 325
 [253/325] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E144B.1F7CED91 (16:41:47.123 UTC Fri Jul 24 2026)
+  reference time is EE1612A9.1FBE76C8 (18:12:57.124 UTC Thu Jul 30 2026)
   clock offset is 0.00 msec
 
 [254/325] r1 R1# show ntp associations
@@ -1765,7 +1789,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1# show clock
-  *16:41:47.000 UTC Fri Jul 24 2026
+  *18:12:57.000 UTC Thu Jul 30 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1790,6 +1814,12 @@ Total steps: 325
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [259/325] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -1877,6 +1907,7 @@ Total steps: 325
   172.22.38.0/24       10.0.0.2             GigabitEthernet0/1
   172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
   172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.2             GigabitEthernet0/1
   0.0.0.0/0            10.0.0.6             
   0.0.0.0/0            0.0.0.0              GigabitEthernet0/1
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
@@ -1991,7 +2022,7 @@ Total steps: 325
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 2461 bytes
+  Current configuration : 2495 bytes
   !
   hostname R1
   !
@@ -2050,6 +2081,7 @@ Total steps: 325
   ip route 172.22.38.0 255.255.255.0 10.0.0.2
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
   ip route 0.0.0.0 0.0.0.0 0.0.0.0
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
@@ -2074,7 +2106,7 @@ Total steps: 325
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
   
-  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
+  Gateway of last resort is 10.0.0.2 to network 0.0.0.0
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -2125,6 +2157,7 @@ Total steps: 325
   S    192.168.53.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    8.8.8.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.99.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S*    0.0.0.0/0 via 10.0.0.2, GigabitEthernet0/1
   S*    0.0.0.0/0 via 10.0.0.6, 
   
   ------------------ show interfaces ------------------
@@ -2219,16 +2252,73 @@ Total steps: 325
       Gateway         Distance      Last Update
     Distance: (default is 110)
   
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  No NAT translations.
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  
+  ------------------ show ip ospf neighbor ------------------
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
 
 [269/325] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -2312,7 +2402,7 @@ Total steps: 325
 [282/325] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 2461 bytes
+  Current configuration : 2495 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -2363,6 +2453,7 @@ Total steps: 325
   ip route 172.22.38.0 255.255.255.0 10.0.0.2
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
   ip route 0.0.0.0 0.0.0.0 0.0.0.0
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
@@ -2416,7 +2507,7 @@ Total steps: 325
   S    172.22.38.0/24 [1/0] via 10.0.0.2
   S    172.23.39.0/24 [1/0] via 10.0.0.2
   S    172.24.40.0/24 [1/0] via 10.0.0.2
-  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
@@ -2613,6 +2704,7 @@ Total steps: 325
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
+    interface    Remove a virtual interface
     router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
@@ -2621,7 +2713,6 @@ Total steps: 325
     key          Key management
     crypto       Encryption and key management
     event        Embedded Event Manager
-    interface    Remove an interface
     vlan         Remove a VLAN
     line         Remove line configuration
 

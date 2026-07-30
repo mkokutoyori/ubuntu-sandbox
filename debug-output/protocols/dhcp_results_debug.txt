@@ -21,7 +21,9 @@ Total steps: 300
   DHCP server packet debugging is on
 
 [5/300] rhq R-HQ# show debugging
-  No debug flags are enabled
+  DHCP server debugging is on
+  DHCP server packet debugging is on
+  DHCP server event debugging is on
 
 [6/300] rdc R-DC# terminal monitor
 <empty>
@@ -33,7 +35,9 @@ Total steps: 300
   DHCP server packet debugging is on
 
 [9/300] rdc R-DC# show debugging
-  No debug flags are enabled
+  DHCP server debugging is on
+  DHCP server packet debugging is on
+  DHCP server event debugging is on
 
 
 --- [10] § DHCP — activation logs & debug (Huawei) ---
@@ -94,10 +98,15 @@ Total steps: 300
     DNS Server(s)    : 10.3.3.10, 8.8.8.8
     Domain Name      : acme.example
     Lease Time       : 8 hours
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 9
+    Pending event    : none
     Current Bindings : 0
 
 [26/300] rhq R-HQ# show running-config | section dhcp
   service dhcp
+  ip dhcp excluded-address 10.1.1.1 10.1.1.9
   !
   ip dhcp pool LAN-HQ
    network 10.1.1.0 255.255.255.0
@@ -105,7 +114,6 @@ Total steps: 300
    dns-server 10.3.3.10 8.8.8.8
    domain-name acme.example
    lease 0
-  ip dhcp excluded-address 10.1.1.1 10.1.1.9
   !
 
 
@@ -144,6 +152,10 @@ Total steps: 300
     DNS Server(s)    : 10.3.3.10
     Domain Name      : not configured
     Lease Time       : 2 days
+    Total addresses  : 254
+    Leased addresses : 0
+    Excluded addresses : 10
+    Pending event    : none
     Current Bindings : 0
 
 
@@ -225,29 +237,29 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:47
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.10 from 10.1.1.1
-  bound to 10.1.1.10 -- renewal in 14400 seconds.
+  DHCPOFFER of 10.1.1.12 from 10.1.1.1
+  DHCPREQUEST of 10.1.1.12 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.12 from 10.1.1.1
+  bound to 10.1.1.12 -- renewal in 14400 seconds.
 
 [55/300] lhq lhq$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
       inet6 fe80::ff:fe00:47/64 scope link
          valid_lft forever preferred_lft forever
 
 [56/300] lhq lhq$ ip route show
-  10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.10 metric 0
+  10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.12 metric 0
   default via 10.1.1.1 dev eth0 proto dhcp
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.411 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.612 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.411/0.411/0.411/0.000 ms
+  rtt min/avg/max/mdev = 0.612/0.612/0.612/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -284,7 +296,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     IPv4 Address. . . . . . . . . . . : 10.1.1.13
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
@@ -305,7 +317,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.1.1.13(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 4:00:00 PM
@@ -362,29 +374,29 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:53
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.2.2.10 from 10.2.2.1
-  DHCPREQUEST of 10.2.2.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.2.2.10 from 10.2.2.1
-  bound to 10.2.2.10 -- renewal in 43200 seconds.
+  DHCPOFFER of 10.2.2.12 from 10.2.2.1
+  DHCPREQUEST of 10.2.2.12 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.12 from 10.2.2.1
+  bound to 10.2.2.12 -- renewal in 43200 seconds.
 
 [64/300] lbr lbr$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-      inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+      inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
       inet6 fe80::ff:fe00:53/64 scope link
          valid_lft forever preferred_lft forever
 
 [65/300] lbr lbr$ ip route show
-  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.10 metric 0
+  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.12 metric 0
   default via 10.2.2.1 dev eth0 proto dhcp
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.378 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.616 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.378/0.378/0.378/0.000 ms
+  rtt min/avg/max/mdev = 0.616/0.616/0.616/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -421,7 +433,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     IPv4 Address. . . . . . . . . . . : 10.2.2.13
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
@@ -442,7 +454,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4F
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.2.2.11(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.2.2.13(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Sunday, June 7, 2026 8:00:00 AM
@@ -499,47 +511,47 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:5b
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.3.3.11 from 10.3.3.1
-  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.3.3.11 from 10.3.3.1
-  bound to 10.3.3.11 -- renewal in 86400 seconds.
+  DHCPOFFER of 10.3.3.12 from 10.3.3.1
+  DHCPREQUEST of 10.3.3.12 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.12 from 10.3.3.1
+  bound to 10.3.3.12 -- renewal in 86400 seconds.
 
 [73/300] ldc ldc$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
       inet6 fe80::ff:fe00:5b/64 scope link
          valid_lft forever preferred_lft forever
 
 [74/300] ldc ldc$ ip route show
-  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.12 metric 0
   default via 10.3.3.1 dev eth0 proto dhcp
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.480 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.494 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.480/0.480/0.480/0.000 ms
+  rtt min/avg/max/mdev = 0.494/0.494/0.494/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.401 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=8.747 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.401/0.401/0.401/0.000 ms
+  rtt min/avg/max/mdev = 8.747/8.747/8.747/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.519 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.069 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.519/0.519/0.519/0.000 ms
+  rtt min/avg/max/mdev = 1.069/1.069/1.069/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -549,23 +561,23 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.366 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=1.016 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.366/0.366/0.366/0.000 ms
+  rtt min/avg/max/mdev = 1.016/1.016/1.016/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.503 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.582 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.503/0.503/0.503/0.000 ms
+  rtt min/avg/max/mdev = 0.582/0.582/0.582/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -582,8 +594,8 @@ Total steps: 300
 [82/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
-  10.1.1.11        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.12        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.13        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
 
 [83/300] rhq R-HQ# show ip dhcp pool
   Pool LAN-HQ :
@@ -592,6 +604,10 @@ Total steps: 300
     DNS Server(s)    : 10.3.3.10, 8.8.8.8
     Domain Name      : acme.example
     Lease Time       : 8 hours
+    Total addresses  : 254
+    Leased addresses : 2
+    Excluded addresses : 9
+    Pending event    : none
     Current Bindings : 2
 
 [84/300] rhq R-HQ# show ip dhcp server statistics
@@ -600,21 +616,21 @@ Total steps: 300
   Automatic bindings   2
   
   Message              Received
-  DHCPDISCOVER         2
+  DHCPDISCOVER         4
   DHCPREQUEST          2
   DHCPINFORM           0
   DHCPRELEASE          0
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            2
+  DHCPOFFER            4
   DHCPACK              2
   DHCPNAK              0
 
 [85/300] rdc R-DC# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.3.3.11        02:00:00:00:00:5B       6/8/2026, 8:00:00 AM    automatic
+  10.3.3.12        02:00:00:00:00:5B       6/8/2026, 8:00:00 AM    automatic
 
 [86/300] rdc R-DC# show ip dhcp pool
   Pool LAN-DC :
@@ -623,6 +639,10 @@ Total steps: 300
     DNS Server(s)    : 10.3.3.10
     Domain Name      : not configured
     Lease Time       : 2 days
+    Total addresses  : 254
+    Leased addresses : 1
+    Excluded addresses : 10
+    Pending event    : none
     Current Bindings : 1
 
 [87/300] rbr <R-BR> display ip pool name LAN-BR
@@ -639,9 +659,9 @@ Total steps: 300
 
 [88/300] rbr <R-BR> display dhcp server statistics
   DHCP server packets statistics:
-    Receive total: 4
-    Send total: 4
-    Discover: 2      Offer: 2
+    Receive total: 6
+    Send total: 6
+    Discover: 4      Offer: 4
     Request: 2       Ack: 2
     Nak: 0           Release: 0
     Inform: 0        Decline: 0
@@ -650,15 +670,15 @@ Total steps: 300
 [89/300] rbr <R-BR> display dhcp-server binding all
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.2.2.10        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
-  10.2.2.11        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.12        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.13        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
 
 
 --- [90] § DHCP — baux côté client ---
 [90/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.1.1.10;
+    fixed-address 10.1.1.12;
     option subnet-mask 255.255.255.0;
     option routers 10.1.1.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -672,7 +692,7 @@ Total steps: 300
 [91/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.1.1.10;
+    fixed-address 10.1.1.12;
     option subnet-mask 255.255.255.0;
     option routers 10.1.1.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -686,7 +706,7 @@ Total steps: 300
 [92/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
 
 [93/300] lhq lhq$ cat /etc/resolv.conf
   search acme.example
@@ -696,7 +716,7 @@ Total steps: 300
 [94/300] lbr lbr$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.2.2.10;
+    fixed-address 10.2.2.12;
     option subnet-mask 255.255.255.0;
     option routers 10.2.2.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -709,7 +729,7 @@ Total steps: 300
 [95/300] lbr lbr$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-      inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+      inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
 
 [96/300] lbr lbr$ cat /etc/resolv.conf
   nameserver 10.3.3.10
@@ -718,7 +738,7 @@ Total steps: 300
 [97/300] ldc ldc$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.3.3.11;
+    fixed-address 10.3.3.12;
     option subnet-mask 255.255.255.0;
     option routers 10.3.3.1;
     option domain-name-servers 10.3.3.10;
@@ -731,7 +751,7 @@ Total steps: 300
 [98/300] ldc ldc$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
 
 [99/300] ldc ldc$ cat /etc/resolv.conf
   nameserver 10.3.3.10
@@ -742,7 +762,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     IPv4 Address. . . . . . . . . . . : 10.1.1.13
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
@@ -773,7 +793,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
-     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     IPv4 Address. . . . . . . . . . . : 10.2.2.13
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
@@ -804,28 +824,24 @@ Total steps: 300
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
-  INIT state
-  DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.10 from 10.1.1.1
-  bound to 10.1.1.10 -- renewal in 14400 seconds.
+  INIT-REBOOT state
+  DHCPREQUEST for 10.1.1.12 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.12 from 10.1.1.1
+  bound to 10.1.1.12 -- renewal in 14400 seconds.
 
 [105/300] lhq lhq$ dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
-  INIT state
-  DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.10 from 10.1.1.1
-  bound to 10.1.1.10 -- renewal in 14400 seconds.
+  INIT-REBOOT state
+  DHCPREQUEST for 10.1.1.12 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.12 from 10.1.1.1
+  bound to 10.1.1.12 -- renewal in 14400 seconds.
 
 [106/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
 
 [107/300] whq whq$ ipconfig /renew
   Windows IP Configuration
@@ -838,29 +854,27 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     IPv4 Address. . . . . . . . . . . : 10.1.1.13
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
 
 [108/300] whq whq$ ipconfig | findstr IPv4
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     IPv4 Address. . . . . . . . . . . : 10.1.1.13
 
 [109/300] lbr lbr$ dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:00:00:53
   Sending on   LPF/eth0/02:00:00:00:00:53
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
-  INIT state
-  DHCPOFFER of 10.2.2.10 from 10.2.2.1
-  DHCPREQUEST of 10.2.2.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.2.2.10 from 10.2.2.1
-  bound to 10.2.2.10 -- renewal in 43200 seconds.
+  INIT-REBOOT state
+  DHCPREQUEST for 10.2.2.12 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.12 from 10.2.2.1
+  bound to 10.2.2.12 -- renewal in 43200 seconds.
 
 [110/300] lbr lbr$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-      inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+      inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
 
 [111/300] wbr wbr$ ipconfig /renew
   Windows IP Configuration
@@ -873,38 +887,36 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     IPv4 Address. . . . . . . . . . . : 10.2.2.13
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
 
 [112/300] wbr wbr$ ipconfig | findstr IPv4
-     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     IPv4 Address. . . . . . . . . . . : 10.2.2.13
 
 [113/300] ldc ldc$ dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:00:00:5b
   Sending on   LPF/eth0/02:00:00:00:00:5b
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
-  INIT state
-  DHCPOFFER of 10.3.3.11 from 10.3.3.1
-  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.3.3.11 from 10.3.3.1
-  bound to 10.3.3.11 -- renewal in 86400 seconds.
+  INIT-REBOOT state
+  DHCPREQUEST for 10.3.3.12 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.12 from 10.3.3.1
+  bound to 10.3.3.12 -- renewal in 86400 seconds.
 
 [114/300] ldc ldc$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
 
 [115/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
-  10.1.1.11        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.12        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.13        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
 
 [116/300] lhq lhq$ dhclient -r eth0
-  released 10.1.1.10
+  released 10.1.1.12
 
 [117/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -956,7 +968,7 @@ Total steps: 300
   
 
 [120/300] lbr lbr$ dhclient -r eth0
-  released 10.2.2.10
+  released 10.2.2.12
 
 [121/300] lbr lbr$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -1008,7 +1020,7 @@ Total steps: 300
   
 
 [124/300] ldc ldc$ dhclient -r eth0
-  released 10.3.3.11
+  released 10.3.3.12
 
 [125/300] ldc ldc$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -1031,10 +1043,10 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:47
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.10 from 10.1.1.1
-  bound to 10.1.1.10 -- renewal in 14400 seconds.
+  DHCPOFFER of 10.1.1.14 from 10.1.1.1
+  DHCPREQUEST of 10.1.1.14 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.14 from 10.1.1.1
+  bound to 10.1.1.14 -- renewal in 14400 seconds.
 
 [130/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -1068,9 +1080,9 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     IPv4 Address. . . . . . . . . . . : 10.1.1.15
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Default Gateway . . . . . . . . . : 
+     Default Gateway . . . . . . . . . : 10.1.1.1
   
 
 [132/300] lbr lbr$ ip addr flush dev eth0
@@ -1082,10 +1094,10 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:53
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.2.2.10 from 10.2.2.1
-  DHCPREQUEST of 10.2.2.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.2.2.10 from 10.2.2.1
-  bound to 10.2.2.10 -- renewal in 43200 seconds.
+  DHCPOFFER of 10.2.2.14 from 10.2.2.1
+  DHCPREQUEST of 10.2.2.14 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.14 from 10.2.2.1
+  bound to 10.2.2.14 -- renewal in 43200 seconds.
 
 [134/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -1119,9 +1131,9 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     IPv4 Address. . . . . . . . . . . : 10.2.2.15
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Default Gateway . . . . . . . . . : 
+     Default Gateway . . . . . . . . . : 10.2.2.1
   
 
 [136/300] ldc ldc$ ip addr flush dev eth0
@@ -1133,10 +1145,10 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:5b
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.3.3.11 from 10.3.3.1
-  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.3.3.11 from 10.3.3.1
-  bound to 10.3.3.11 -- renewal in 86400 seconds.
+  DHCPOFFER of 10.3.3.13 from 10.3.3.1
+  DHCPREQUEST of 10.3.3.13 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.13 from 10.3.3.1
+  bound to 10.3.3.13 -- renewal in 86400 seconds.
 
 
 --- [138] § DHCP — réservation / static binding ---
@@ -1168,6 +1180,10 @@ Total steps: 300
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
+    Total addresses  : 0
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Manual Binding   : 10.1.1.50/24
     Client Identifier: 0100.0000.0000.4b
@@ -1202,8 +1218,10 @@ Total steps: 300
 --- [153] § DHCP — exclusions & conflits ---
 [153/300] rhq R-HQ# show ip dhcp conflict
   IP address        Detection method   Detection time
-  
-  No conflicts detected.
+  10.1.1.10         ping               6/6/2026, 8:00:00 AM
+  10.1.1.11         ping               6/6/2026, 8:00:00 AM
+  10.1.1.12         ping               6/6/2026, 8:00:00 AM
+  10.1.1.13         ping               6/6/2026, 8:00:00 AM
 
 [154/300] rhq R-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1231,8 +1249,8 @@ Total steps: 300
 
 [161/300] rdc R-DC# show ip dhcp conflict
   IP address        Detection method   Detection time
-  
-  No conflicts detected.
+  10.3.3.11         ping               6/6/2026, 8:00:00 AM
+  10.3.3.12         ping               6/6/2026, 8:00:00 AM
 
 
 --- [162] § DHCP snooping — Cisco SW-HQ ---
@@ -1361,17 +1379,15 @@ Total steps: 300
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:00:00:5b
   Sending on   LPF/eth0/02:00:00:00:00:5b
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
-  INIT state
-  DHCPOFFER of 10.3.3.1 from 10.3.3.1
-  DHCPREQUEST of 10.3.3.1 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.3.3.1 from 10.3.3.1
-  bound to 10.3.3.1 -- renewal in 43200 seconds.
+  INIT-REBOOT state
+  DHCPREQUEST for 10.3.3.13 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.13 from 10.3.3.1
+  bound to 10.3.3.13 -- renewal in 43200 seconds.
 
 [198/300] ldc ldc$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.1/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.13/24 brd 10.3.3.255 dynamic scope global eth0
       inet6 fe80::ff:fe00:5b/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -1381,23 +1397,23 @@ Total steps: 300
   Automatic bindings   1
   
   Message              Received
-  DHCPDISCOVER         3
+  DHCPDISCOVER         4
   DHCPREQUEST          3
   DHCPINFORM           0
   DHCPRELEASE          1
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            3
+  DHCPOFFER            4
   DHCPACK              3
   DHCPNAK              0
 
 [200/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
-  10.1.1.11        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
-  10.3.3.1         02:00:00:00:00:5B       6/7/2026, 8:00:00 AM    automatic
+  10.1.1.14        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.15        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
+  10.3.3.13        02:00:00:00:00:5B       6/7/2026, 8:00:00 AM    automatic
 
 
 --- [201] § DHCP — statistiques & compteurs ---
@@ -1424,22 +1440,22 @@ Total steps: 300
   Automatic bindings   1
   
   Message              Received
-  DHCPDISCOVER         3
+  DHCPDISCOVER         4
   DHCPREQUEST          3
   DHCPINFORM           0
   DHCPRELEASE          1
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            3
+  DHCPOFFER            4
   DHCPACK              3
   DHCPNAK              0
 
 [203/300] rbr <R-BR> display dhcp server statistics
   DHCP server packets statistics:
-    Receive total: 14
-    Send total: 12
-    Discover: 6      Offer: 6
+    Receive total: 16
+    Send total: 14
+    Discover: 8      Offer: 8
     Request: 6       Ack: 6
     Nak: 0           Release: 2
     Inform: 0        Decline: 0
@@ -1451,21 +1467,21 @@ Total steps: 300
   Automatic bindings   2
   
   Message              Received
-  DHCPDISCOVER         6
+  DHCPDISCOVER         8
   DHCPREQUEST          6
   DHCPINFORM           0
   DHCPRELEASE          2
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            6
+  DHCPOFFER            8
   DHCPACK              6
   DHCPNAK              0
 
 [205/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.1.1.10;
+    fixed-address 10.1.1.14;
     option subnet-mask 255.255.255.0;
     option routers 10.1.1.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -1479,7 +1495,7 @@ Total steps: 300
 [206/300] lbr lbr$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.2.2.10;
+    fixed-address 10.2.2.14;
     option subnet-mask 255.255.255.0;
     option routers 10.2.2.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -1492,9 +1508,10 @@ Total steps: 300
 [207/300] ldc ldc$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.3.3.1;
+    fixed-address 10.3.3.13;
     option subnet-mask 255.255.255.0;
     option routers 10.3.3.1;
+    option domain-name-servers 10.3.3.10;
     option dhcp-server-identifier 10.3.3.1;
     renew 1780776000 Saturday 2026-06-06 20:00:00.000;
     rebind 1780808400 Sunday 2026-06-07 05:00:00.000;
@@ -1517,7 +1534,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.1.1.15(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 4:00:00 PM
@@ -1559,42 +1576,42 @@ Total steps: 300
 --- [209] § DHCP — matrice de connectivité post-bail ---
 [209/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.388 ms
   
   --- 10.1.1.11 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.388/0.388/0.388/0.000 ms
+  1 packets transmitted, 0 received, 100% packet loss
+  ping: destination host unreachable
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.195 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.439 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.195/0.195/0.195/0.000 ms
+  rtt min/avg/max/mdev = 0.439/0.439/0.439/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.397 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.732 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.397/0.397/0.397/0.000 ms
+  rtt min/avg/max/mdev = 0.732/0.732/0.732/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.237 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.592 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.237/0.237/0.237/0.000 ms
+  rtt min/avg/max/mdev = 0.592/0.592/0.592/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.754 ms
   
   --- 10.3.3.10 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.754/0.754/0.754/0.000 ms
 
 [214/300] whq whq$ ping -n 1 10.1.1.1
   
@@ -1614,7 +1631,7 @@ Total steps: 300
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [216/300] whq whq$ ping -n 1 10.3.3.1
   
@@ -1629,41 +1646,44 @@ Total steps: 300
 [217/300] whq whq$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Request timed out.
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 10.3.3.10:
-      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.711 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.471 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.711/0.711/0.711/0.000 ms
+  rtt min/avg/max/mdev = 0.471/0.471/0.471/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.229 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.209 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.229/0.229/0.229/0.000 ms
+  rtt min/avg/max/mdev = 0.209/0.209/0.209/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.245 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.348 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.245/0.245/0.245/0.000 ms
+  rtt min/avg/max/mdev = 0.348/0.348/0.348/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.578 ms
   
   --- 10.3.3.10 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.578/0.578/0.578/0.000 ms
 
 [222/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -1673,7 +1693,7 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [223/300] wbr wbr$ ping -n 1 10.2.2.1
   
@@ -1698,40 +1718,44 @@ Total steps: 300
 [225/300] wbr wbr$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Request timed out.
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 10.3.3.10:
-      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [226/300] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.369 ms
   
   --- 10.1.1.1 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.369/0.369/0.369/0.000 ms
 
 [227/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.336 ms
   
   --- 10.2.2.1 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.336/0.336/0.336/0.000 ms
 
 [228/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=64 time=0.010 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.169 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
+  rtt min/avg/max/mdev = 0.169/0.169/0.169/0.000 ms
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.446 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.270 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.446/0.446/0.446/0.000 ms
+  rtt min/avg/max/mdev = 0.270/0.270/0.270/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -1742,13 +1766,19 @@ Total steps: 300
     DNS Server(s)    : 10.3.3.10, 8.8.8.8
     Domain Name      : acme.example
     Lease Time       : 8 hours
+    Total addresses  : 254
+    Leased addresses : 2
+    Excluded addresses : 30
+    Pending event    : none
     Current Bindings : 2
 
 [231/300] rhq R-HQ# show ip dhcp binding 10.1.1.10
   IP address       Client-id/              Lease expiration        Type
-  10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
 
 [232/300] rhq R-HQ# show running-config | section ip dhcp
+  ip dhcp excluded-address 10.1.1.1 10.1.1.9
+  ip dhcp excluded-address 10.1.1.100 10.1.1.120
+  !
   ip dhcp pool LAN-HQ
    network 10.1.1.0 255.255.255.0
    default-router 10.1.1.1
@@ -1762,8 +1792,6 @@ Total steps: 300
   ip dhcp pool RELAY-DC
    network 10.3.3.0 255.255.255.0
    default-router 10.3.3.1
-  ip dhcp excluded-address 10.1.1.1 10.1.1.9
-  ip dhcp excluded-address 10.1.1.100 10.1.1.120
   !
 
 [233/300] rdc R-DC# show running-config | section ip dhcp
@@ -1776,8 +1804,8 @@ Total steps: 300
 [235/300] rbr <R-BR> display dhcp-server binding all
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.2.2.10        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
-  10.2.2.11        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.14        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.15        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
 
 [236/300] rbr <R-BR> display current-configuration configuration dhcp
   dhcp enable
@@ -1796,17 +1824,17 @@ Total steps: 300
   nameserver 8.8.8.8
 
 [238/300] lbr lbr$ ip route show default
-  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.10 metric 0
+  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.14 metric 0
   default via 10.2.2.1 dev eth0 proto dhcp
 
 [239/300] ldc ldc$ ip route show default
-  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.1 metric 0
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.13 metric 0
   default via 10.3.3.1 dev eth0 proto dhcp
 
 
 --- [240] § DHCP — DECLINE / INFORM / changement d'options ---
 [240/300] lhq lhq$ dhclient -r eth0
-  released 10.1.1.10
+  released 10.1.1.14
 
 [241/300] lhq lhq$ arp -s 10.1.1.30 02:00:00:00:00:30
 <empty>
@@ -1817,20 +1845,22 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:47
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.10 from 10.1.1.1
-  bound to 10.1.1.10 -- renewal in 14400 seconds.
+  DHCPOFFER of 10.1.1.14 from 10.1.1.1
+  DHCPREQUEST of 10.1.1.14 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.14 from 10.1.1.1
+  bound to 10.1.1.14 -- renewal in 14400 seconds.
 
 [243/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.14/24 brd 10.1.1.255 dynamic scope global eth0
 
 [244/300] rhq R-HQ# show ip dhcp conflict
   IP address        Detection method   Detection time
-  
-  No conflicts detected.
+  10.1.1.10         ping               6/6/2026, 8:00:00 AM
+  10.1.1.11         ping               6/6/2026, 8:00:00 AM
+  10.1.1.12         ping               6/6/2026, 8:00:00 AM
+  10.1.1.13         ping               6/6/2026, 8:00:00 AM
 
 [245/300] rhq R-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1885,9 +1915,9 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     IPv4 Address. . . . . . . . . . . : 10.1.1.16
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Default Gateway . . . . . . . . . : 
+     Default Gateway . . . . . . . . . : 10.1.1.1
   
 
 [254/300] whq whq$ ipconfig /all
@@ -1906,7 +1936,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.1.1.16(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 4:00:00 PM
@@ -2018,7 +2048,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.1.1.16(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 4:00:00 PM
@@ -2111,9 +2141,9 @@ Total steps: 300
 [286/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.3.3.1         02:00:00:00:00:5B       6/7/2026, 8:00:00 AM    automatic
-  10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
-  10.1.1.11        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
+  10.3.3.13        02:00:00:00:00:5B       6/7/2026, 8:00:00 AM    automatic
+  10.1.1.14        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.16        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
 
 [287/300] rbr <R-BR> display ip pool
   Pool-name      : LAN-BR
@@ -2134,6 +2164,10 @@ Total steps: 300
     DNS Server(s)    : 1.1.1.1, 8.8.4.4
     Domain Name      : acme.example
     Lease Time       : 8 hours
+    Total addresses  : 254
+    Leased addresses : 2
+    Excluded addresses : 30
+    Pending event    : none
     Current Bindings : 2
     NetBIOS Server(s): 10.3.3.10
     Option 42 (ip) : 10.3.3.10
@@ -2144,6 +2178,10 @@ Total steps: 300
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
+    Total addresses  : 0
+    Leased addresses : 0
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 0
     Manual Binding   : 10.1.1.50/24
     Client Identifier: 0100.0000.0000.4b
@@ -2154,13 +2192,17 @@ Total steps: 300
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
+    Total addresses  : 254
+    Leased addresses : 1
+    Excluded addresses : 0
+    Pending event    : none
     Current Bindings : 1
 
 [289/300] swhq SW-HQ# show ip dhcp snooping binding
   MacAddress          IP address        Lease(sec)  Type           VLAN  Interface
   ------------------  ----------------  ----------  -------------  ----  --------------------
-  02:00:00:00:00:47   10.1.1.10         28800       dynamic        1     FastEthernet0/2
-  02:00:00:00:00:4b   10.1.1.11         28800       dynamic        1     FastEthernet0/3
+  02:00:00:00:00:47   10.1.1.14         28800       dynamic        1     FastEthernet0/2
+  02:00:00:00:00:4b   10.1.1.16         28800       dynamic        1     FastEthernet0/3
   Total number of bindings: 2
 
 [290/300] swbr <SW-BR> display dhcp snooping user-bind all
@@ -2173,7 +2215,7 @@ Total steps: 300
 [291/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.14/24 brd 10.1.1.255 dynamic scope global eth0
 
 [292/300] whq whq$ ipconfig
   Windows IP Configuration
@@ -2181,7 +2223,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     IPv4 Address. . . . . . . . . . . : 10.1.1.16
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
@@ -2204,7 +2246,7 @@ Total steps: 300
 [293/300] lbr lbr$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-      inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+      inet 10.2.2.14/24 brd 10.2.2.255 dynamic scope global eth0
 
 [294/300] wbr wbr$ ipconfig
   Windows IP Configuration
@@ -2212,7 +2254,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
-     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     IPv4 Address. . . . . . . . . . . : 10.2.2.15
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
@@ -2235,7 +2277,7 @@ Total steps: 300
 [295/300] ldc ldc$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.1/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.13/24 brd 10.3.3.255 dynamic scope global eth0
 
 [296/300] rhq R-HQ# show ip dhcp server statistics
   Memory usage         36028
@@ -2243,14 +2285,14 @@ Total steps: 300
   Automatic bindings   3
   
   Message              Received
-  DHCPDISCOVER         10
+  DHCPDISCOVER         15
   DHCPREQUEST          10
   DHCPINFORM           0
   DHCPRELEASE          4
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            10
+  DHCPOFFER            15
   DHCPACK              10
   DHCPNAK              0
 
@@ -2260,22 +2302,22 @@ Total steps: 300
   Automatic bindings   1
   
   Message              Received
-  DHCPDISCOVER         3
+  DHCPDISCOVER         4
   DHCPREQUEST          3
   DHCPINFORM           0
   DHCPRELEASE          1
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            3
+  DHCPOFFER            4
   DHCPACK              3
   DHCPNAK              0
 
 [298/300] rbr <R-BR> display dhcp server statistics
   DHCP server packets statistics:
-    Receive total: 14
-    Send total: 12
-    Discover: 6      Offer: 6
+    Receive total: 16
+    Send total: 14
+    Discover: 8      Offer: 8
     Request: 6       Ack: 6
     Nak: 0           Release: 2
     Inform: 0        Decline: 0
@@ -2288,17 +2330,32 @@ Total steps: 300
       Buffer logging: level debugging, 32768 bytes
       Trap logging: level informational
       Facility: local7
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       No active syslog hosts
   
   Log Buffer (32768 bytes):
   
-  %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  06-06 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+  06-06 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
+  06-06 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
+  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
+  06-06 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
 
 [300/300] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -2307,7 +2364,20 @@ Total steps: 300
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 5
+  Current messages : 18
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/2, changed state to up
+  2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/2, changed state to up
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 10.2.2.1/255.255.255.0 assigned

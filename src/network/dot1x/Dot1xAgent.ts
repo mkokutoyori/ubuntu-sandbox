@@ -88,6 +88,21 @@ export class Dot1xAgent {
     this.transition(rt, newState, 'config');
   }
 
+  /**
+   * Quiet period — how long a port stays `held` after too many failed
+   * rounds before it will listen again. Applies to ports configured
+   * from now on, and to the named port immediately when given one.
+   */
+  setHoldTime(ms: number, portName?: string): void {
+    if (portName === undefined) {
+      this.config.defaultHoldMs = ms;
+      for (const rt of this.config.ports.values()) rt.holdMs = ms;
+      return;
+    }
+    const rt = this.config.ports.get(portName);
+    if (rt) rt.holdMs = ms;
+  }
+
   addLocalUser(username: string, password: string): void {
     this.config.localUsers.set(username, { username, password });
   }

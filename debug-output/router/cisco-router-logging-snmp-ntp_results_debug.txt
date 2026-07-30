@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-07-24T16:41:43.560Z
+Generated: 2026-07-30T18:11:57.320Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -170,7 +170,7 @@ Total steps: 322
       Buffer logging: level informational, 64000 bytes
       Trap logging: level notifications
       Facility: local6
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       Source interface: Loopback0
       Logging to 10.0.0.2
@@ -179,6 +179,23 @@ Total steps: 322
       Logging to 10.0.0.5
       Logging to 10.0.0.10
       Logging to 10.0.0.11
+  
+  Log Buffer (64000 bytes):
+  
+  07-30 18:11:57.253: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  07-30 18:11:57.254: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  07-30 18:11:57.254: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  07-30 18:11:57.257: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  07-30 18:11:57.316: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  07-30 18:11:57.316: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  07-30 18:11:57.318: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  07-30 18:11:57.318: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  07-30 18:11:57.319: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  07-30 18:11:57.324: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  07-30 18:11:57.326: %IFMGR-6-INFORMATIONAL: Interface Loopback0, IPv4 address 1.1.1.1/255.255.255.255 assigned
 
 [53/322] r1 R1# show logging history
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -187,7 +204,7 @@ Total steps: 322
       Buffer logging: level informational, 64000 bytes
       Trap logging: level notifications
       Facility: local6
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       Source interface: Loopback0
       Logging to 10.0.0.2
@@ -196,6 +213,23 @@ Total steps: 322
       Logging to 10.0.0.5
       Logging to 10.0.0.10
       Logging to 10.0.0.11
+  
+  Log Buffer (64000 bytes):
+  
+  07-30 18:11:57.253: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  07-30 18:11:57.254: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  07-30 18:11:57.254: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  07-30 18:11:57.257: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  07-30 18:11:57.316: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  07-30 18:11:57.316: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  07-30 18:11:57.318: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  07-30 18:11:57.318: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  07-30 18:11:57.319: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  07-30 18:11:57.324: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  07-30 18:11:57.326: %IFMGR-6-INFORMATIONAL: Interface Loopback0, IPv4 address 1.1.1.1/255.255.255.255 assigned
 
 [54/322] r1 R1# show archive
   No archives configured / no revisions captured.
@@ -487,7 +521,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1447.94BC6A7E (16:41:43.581 UTC Fri Jul 24 2026)
+  reference time is EE16126D.5645A1CA (18:11:57.337 UTC Thu Jul 30 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -509,14 +543,14 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  17:41:43.000 CET Fri Jul 24 2026
+  19:11:57.000 CET Thu Jul 30 2026
 
 [128/322] r1 R1# show clock detail
-  17:41:43.000 CET Fri Jul 24 2026
+  19:11:57.000 CET Thu Jul 30 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  16:41:43 UTC Fri Jul 24 2026
+  18:11:57 UTC Thu Jul 30 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -916,6 +950,12 @@ Total steps: 322
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [212/322] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -947,7 +987,7 @@ Total steps: 322
 [215/322] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 3656 bytes
+  Current configuration : 3693 bytes
   !
   hostname R1
   !
@@ -980,6 +1020,7 @@ Total steps: 322
   logging console warnings
   logging trap notifications
   logging facility local6
+  service timestamps log datetime msec
   logging source-interface Loopback0
   logging host 10.0.0.2
   logging host 10.0.0.3
@@ -1129,7 +1170,7 @@ Total steps: 322
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 790 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1238,6 +1279,7 @@ Total steps: 322
 
 [234/322] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
   Total translations: 0
   Static translations: 0
   Dynamic translations: 0
@@ -1246,6 +1288,8 @@ Total steps: 322
   Inside interfaces:   none
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -1301,7 +1345,7 @@ Total steps: 322
       Buffer logging: level informational, 64000 bytes
       Trap logging: level notifications
       Facility: local6
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       Source interface: Loopback0
       Logging to 10.0.0.2
@@ -1310,6 +1354,15 @@ Total steps: 322
       Logging to 10.0.0.5
       Logging to 10.0.0.10
       Logging to 10.0.0.11
+  
+  Log Buffer (64000 bytes):
+  
+  07-30 18:11:57.338: %NETFLOW-6-INFORMATIONAL: Collector 10.0.0.50 added
+  07-30 18:11:57.342: %CDP-6-INFORMATIONAL: CDP enabled
+  07-30 18:11:57.342: %CDP-6-INFORMATIONAL: CDP enabled
+  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
+  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
+  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
 
 [249/322] r1 R1# show snmp
   Chassis: R1-CHASSIS
@@ -1336,7 +1389,7 @@ Total steps: 322
 [250/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1447.99581062 (16:41:43.599 UTC Fri Jul 24 2026)
+  reference time is EE16126D.5BA5E353 (18:11:57.358 UTC Thu Jul 30 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1# show ntp associations
@@ -1349,7 +1402,7 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1# show clock
-  17:41:43.000 CET Fri Jul 24 2026
+  19:11:57.000 CET Thu Jul 30 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1376,6 +1429,12 @@ Total steps: 322
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [256/322] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -1463,7 +1522,7 @@ Total steps: 322
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 790 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1485,7 +1544,7 @@ Total steps: 322
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 790 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1532,7 +1591,7 @@ Total steps: 322
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 3656 bytes
+  Current configuration : 3693 bytes
   !
   hostname R1
   !
@@ -1565,6 +1624,7 @@ Total steps: 322
   logging console warnings
   logging trap notifications
   logging facility local6
+  service timestamps log datetime msec
   logging source-interface Loopback0
   logging host 10.0.0.2
   logging host 10.0.0.3
@@ -1719,7 +1779,7 @@ Total steps: 322
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 790 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1767,6 +1827,46 @@ Total steps: 322
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
   
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  No NAT translations.
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  
+  ------------------ show ip ospf neighbor ------------------
+  % OSPF is not configured
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level warnings
@@ -1774,7 +1874,7 @@ Total steps: 322
       Buffer logging: level informational, 64000 bytes
       Trap logging: level notifications
       Facility: local6
-      Timestamp logging: disabled
+      Timestamps logging: enabled
       Sequence numbers: disabled
       Source interface: Loopback0
       Logging to 10.0.0.2
@@ -1783,6 +1883,15 @@ Total steps: 322
       Logging to 10.0.0.5
       Logging to 10.0.0.10
       Logging to 10.0.0.11
+  
+  Log Buffer (64000 bytes):
+  
+  07-30 18:11:57.338: %NETFLOW-6-INFORMATIONAL: Collector 10.0.0.50 added
+  07-30 18:11:57.342: %CDP-6-INFORMATIONAL: CDP enabled
+  07-30 18:11:57.342: %CDP-6-INFORMATIONAL: CDP enabled
+  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
+  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
+  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
 
 [266/322] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -1871,7 +1980,7 @@ Total steps: 322
 [279/322] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 3656 bytes
+  Current configuration : 3693 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -1894,6 +2003,7 @@ Total steps: 322
   logging console warnings
   logging trap notifications
   logging facility local6
+  service timestamps log datetime msec
   logging source-interface Loopback0
   logging host 10.0.0.2
   logging host 10.0.0.3
@@ -2180,6 +2290,7 @@ Total steps: 322
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
+    interface    Remove a virtual interface
     router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
@@ -2188,7 +2299,6 @@ Total steps: 322
     key          Key management
     crypto       Encryption and key management
     event        Embedded Event Manager
-    interface    Remove an interface
     vlan         Remove a VLAN
     line         Remove line configuration
 

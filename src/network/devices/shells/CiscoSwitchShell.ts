@@ -2823,6 +2823,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
+    this.registerDot1x();
+
     this.configIfTrie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, false));
     });
@@ -4430,6 +4432,125 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       rows.push(row(`Vlan${svi.vlan}`, ip, method, status, proto));
     }
     return [header, ...rows].join('\n');
+  }
+
+  /**
+   * 802.1X on the Cisco side. `Dot1xAgent` is real — genuine EAP rounds,
+   * a RADIUS backend, and a port whose forwarding is actually gated on
+   * authorisation — and the Huawei shell has driven it all along. The
+   * Cisco switch built one and offered no way to reach it, so every
+   * `dot1x` line in a Catalyst lab came back `% Invalid input`.
+   *
+   * What the agent does not model is refused rather than accepted in
+   * silence: it authorises a port for one supplicant, so `host-mode`
+   * has nothing to vary, and it has no periodic re-authentication timer
+   * (its `reauthCount` counts EAP request retries, not re-auth cycles).
+   */
+  private registerDot1x(): void {
+    const agent = () => this.d().getDot1xAgent();
+
+    this.configTrie.register('dot1x system-auth-control', 'Enable 802.1X globally', () => {
+      agent().setSystemAuthControl(true);
+      return '';
+    });
+    this.configTrie.register('no dot1x system-auth-control', 'Disable 802.1X globally', () => {
+      agent().setSystemAuthControl(false);
+      return '';
+    });
+
+    // The PAE role registers the port with the authenticator; on its own
+    // it does not control anything — `port-control` decides that.
+    this.configIfTrie.registerGreedy('dot1x pae', '802.1X PAE role', (args) => {
+      const role = (args[0] ?? '').toLowerCase();
+      if (role !== 'authenticator') {
+        return '% Only the authenticator role is supported (no supplicant implementation).';
+      }
+      return this.applyToSelectedInterfaces(portName => {
+        agent().setPortMode(portName, 'disabled');
+        return '';
+      });
+    });
+    this.configIfTrie.register('no dot1x pae authenticator', 'Remove 802.1X PAE role', () =>
+      this.applyToSelectedInterfaces(portName => {
+        agent().setPortMode(portName, 'disabled');
+        return '';
+      }));
+
+    const MODES: Record<string, import('@/network/dot1x/types').Dot1xPortMode> = {
+      auto: 'auto',
+      'force-authorized': 'force-authorized',
+      'force-unauthorized': 'force-unauthorized',
+    };
+    this.configIfTrie.registerGreedy('dot1x port-control', '802.1X port control mode', (args) => {
+      const mode = MODES[(args[0] ?? '').toLowerCase()];
+      if (!mode) return '% Invalid input detected at \'^\' marker.';
+      return this.applyToSelectedInterfaces(portName => {
+        agent().setPortMode(portName, mode);
+        return '';
+      });
+    });
+
+    this.configIfTrie.registerGreedy('dot1x timeout', '802.1X timers', (args) => {
+      const which = (args[0] ?? '').toLowerCase();
+      const value = parseInt(args[1] ?? '', 10);
+      if (which !== 'quiet-period') {
+        return `% Only quiet-period is supported; this switch has no ${which || 'such'} timer.`;
+      }
+      if (isNaN(value) || value < 1 || value > 65535) return '% Invalid value, valid range is 1 to 65535.';
+      return this.applyToSelectedInterfaces(portName => {
+        agent().setHoldTime(value * 1000, portName);
+        return '';
+      });
+    });
+
+    this.configIfTrie.registerGreedy('dot1x host-mode', '802.1X host mode', () =>
+      '% Host modes are not supported: a port authorises a single supplicant.');
+    this.configIfTrie.register('dot1x reauthentication', 'Periodic re-authentication', () =>
+      '% Periodic re-authentication is not supported on this switch.');
+
+    this.privilegedTrie.registerGreedy('show dot1x', 'Display 802.1X state', (args) =>
+      this.showDot1x(args));
+  }
+
+  private showDot1x(args: string[]): string {
+    const agent = this.d().getDot1xAgent();
+    const cfg = agent.getConfig();
+    const head = [
+      `Sysauthcontrol              ${cfg.enabled ? 'Enabled' : 'Disabled'}`,
+      `Dot1x Protocol Version      2`,
+    ];
+    const first = (args[0] ?? '').toLowerCase();
+    if (args.length === 0 || first === 'all') {
+      const ports = agent.listPorts();
+      if (ports.length === 0) return head.join('\n');
+      const out = [...head];
+      for (const rt of ports) out.push('', ...this.dot1xPortBlock(rt));
+      return out.join('\n');
+    }
+    if (first === 'interface') {
+      const name = this.resolveInterfaceName(args.slice(1).join(' '));
+      const rt = name ? agent.getPortRuntime(name) : undefined;
+      if (!rt) return '% Dot1x is not enabled on the specified interface';
+      return this.dot1xPortBlock(rt).join('\n');
+    }
+    return '% Invalid input detected at \'^\' marker.';
+  }
+
+  private dot1xPortBlock(rt: import('@/network/dot1x/types').Dot1xPortRuntime): string[] {
+    return [
+      `Dot1x Info for ${rt.port}`,
+      '-----------------------------------',
+      `PAE                       = AUTHENTICATOR`,
+      `PortControl               = ${rt.mode.toUpperCase()}`,
+      `ControlDirection          = Both`,
+      `HostMode                  = SINGLE_HOST`,
+      `QuietPeriod               = ${Math.round(rt.holdMs / 1000)}`,
+      `MaxReq                    = ${rt.maxReauthReq}`,
+      `Status                    = ${rt.state.toUpperCase()}`,
+      `Authorized                = ${this.d().getDot1xAgent().isPortAuthorized(rt.port) ? 'YES' : 'NO'}`,
+      `Supplicant                = ${rt.lastSupplicantMac ?? 'none'}`,
+      `Identity                  = ${rt.identity ?? 'none'}`,
+    ];
   }
 
   /** `[no] shutdown` for either a physical port or a management SVI. */

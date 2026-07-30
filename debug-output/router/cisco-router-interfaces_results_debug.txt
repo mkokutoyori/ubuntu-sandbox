@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-07-24T16:42:00.074Z
+Generated: 2026-07-30T18:12:54.801Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -742,6 +742,7 @@ Total steps: 343
 --- [194] § per-interface show family ---
 [194/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
+    Description: ## LAN to L1 ##
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
@@ -774,11 +775,11 @@ Total steps: 343
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 192 bytes, 0 no buffer
+       4 packets input, 256 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 256 bytes, 0 underruns
+       5 packets output, 320 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -820,27 +821,35 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   Loopback1 is up, line protocol is up
+    Description: LOOP-1
     Hardware is Loopback
     Internet address is 10.255.255.1/32
   Loopback2 is up, line protocol is up
+    Description: LOOP-2
     Hardware is Loopback
     Internet address is 10.255.255.2/32
   Loopback3 is up, line protocol is up
+    Description: LOOP-3
     Hardware is Loopback
     Internet address is 10.255.255.3/32
   Loopback4 is up, line protocol is up
+    Description: LOOP-4
     Hardware is Loopback
     Internet address is 10.255.255.4/32
   Loopback5 is up, line protocol is up
+    Description: LOOP-5
     Hardware is Loopback
     Internet address is 10.255.255.5/32
   Loopback6 is up, line protocol is up
+    Description: LOOP-6
     Hardware is Loopback
     Internet address is 10.255.255.6/32
   Loopback7 is up, line protocol is up
+    Description: LOOP-7
     Hardware is Loopback
     Internet address is 10.255.255.7/32
   Loopback8 is up, line protocol is up
+    Description: LOOP-8
     Hardware is Loopback
     Internet address is 10.255.255.8/32
   Loopback100 is up, line protocol is up
@@ -867,6 +876,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
+    Description: VLAN20
     Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -887,6 +897,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
+    Description: VLAN30
     Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -907,6 +918,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
+    Description: VLAN40
     Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -927,6 +939,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
+    Description: VLAN50
     Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -947,6 +960,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
+    Description: VLAN60
     Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -967,6 +981,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
+    Description: VLAN70
     Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -987,6 +1002,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
+    Description: VLAN80
     Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1007,6 +1023,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
+    Description: VLAN90
     Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1027,6 +1044,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
+    Description: VLAN100
     Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1081,6 +1099,7 @@ Total steps: 343
 
 [195/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
+    Description: ## LAN to L1 ##
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
@@ -1103,6 +1122,7 @@ Total steps: 343
 
 [196/343] r1 R1# show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
+    Description: ## LAN to L1 ##
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
@@ -1223,11 +1243,11 @@ Total steps: 343
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 192 bytes, 0 no buffer
+       4 packets input, 256 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 256 bytes, 0 underruns
+       5 packets output, 320 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1245,11 +1265,11 @@ Total steps: 343
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 192 bytes, 0 no buffer
+       4 packets input, 256 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 256 bytes, 0 underruns
+       5 packets output, 320 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1261,7 +1281,7 @@ Total steps: 343
 [206/343] r1 R1# show interfaces GigabitEthernet0/1 accounting
   GigabitEthernet0/1
                   Protocol    Pkts In    Chars In    Pkts Out   Chars Out
-                      IP           3         192           4         256
+                      IP           4         256           5         320
 
 [207/343] r1 R1# show interfaces GigabitEthernet0/1 switchport
   Name: GigabitEthernet0/1
@@ -1270,10 +1290,10 @@ Total steps: 343
 [208/343] r1 R1# show interfaces GigabitEthernet0/1 stats
   GigabitEthernet0/1
             Switching path    Pkts In    Chars In    Pkts Out   Chars Out
-                 Processor          3         192           4         256
+                 Processor          4         256           5         320
                Route cache          0           0           0           0
         Distributed cache          0           0           0           0
-                    Total          3         192           4         256
+                    Total          4         256           5         320
 
 [209/343] r1 R1# show controllers GigabitEthernet0/1
   GigabitEthernet0/1 -
@@ -1732,6 +1752,7 @@ Total steps: 343
 
 [239/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
+    Description: ## LAN to L1 ##
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
@@ -1764,11 +1785,11 @@ Total steps: 343
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 192 bytes, 0 no buffer
+       4 packets input, 256 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 256 bytes, 0 underruns
+       5 packets output, 320 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1810,27 +1831,35 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   Loopback1 is up, line protocol is up
+    Description: LOOP-1
     Hardware is Loopback
     Internet address is 10.255.255.1/32
   Loopback2 is up, line protocol is up
+    Description: LOOP-2
     Hardware is Loopback
     Internet address is 10.255.255.2/32
   Loopback3 is up, line protocol is up
+    Description: LOOP-3
     Hardware is Loopback
     Internet address is 10.255.255.3/32
   Loopback4 is up, line protocol is up
+    Description: LOOP-4
     Hardware is Loopback
     Internet address is 10.255.255.4/32
   Loopback5 is up, line protocol is up
+    Description: LOOP-5
     Hardware is Loopback
     Internet address is 10.255.255.5/32
   Loopback6 is up, line protocol is up
+    Description: LOOP-6
     Hardware is Loopback
     Internet address is 10.255.255.6/32
   Loopback7 is up, line protocol is up
+    Description: LOOP-7
     Hardware is Loopback
     Internet address is 10.255.255.7/32
   Loopback8 is up, line protocol is up
+    Description: LOOP-8
     Hardware is Loopback
     Internet address is 10.255.255.8/32
   Loopback100 is up, line protocol is up
@@ -1857,6 +1886,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
+    Description: VLAN20
     Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1877,6 +1907,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
+    Description: VLAN30
     Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1897,6 +1928,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
+    Description: VLAN40
     Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1917,6 +1949,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
+    Description: VLAN50
     Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1937,6 +1970,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
+    Description: VLAN60
     Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1957,6 +1991,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
+    Description: VLAN70
     Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1977,6 +2012,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
+    Description: VLAN80
     Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1997,6 +2033,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
+    Description: VLAN90
     Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2017,6 +2054,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
+    Description: VLAN100
     Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2155,6 +2193,7 @@ Total steps: 343
 
 [255/343] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
   Total translations: 0
   Static translations: 0
   Dynamic translations: 0
@@ -2163,6 +2202,8 @@ Total steps: 343
   Inside interfaces:   none
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
   Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
@@ -2216,12 +2257,66 @@ Total steps: 343
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address fe80::ff:fe00:1%GigabitEthernet0/0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address 2001:db8:1::1 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, MTU changed to 1400
+  %IFMGR-6-INFORMATIONAL: Interface Loopback1, IPv4 address 10.255.255.1/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback2, IPv4 address 10.255.255.2/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback3, IPv4 address 10.255.255.3/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback4, IPv4 address 10.255.255.4/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback5, IPv4 address 10.255.255.5/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback6, IPv4 address 10.255.255.6/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback7, IPv4 address 10.255.255.7/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback8, IPv4 address 10.255.255.8/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback100, IPv4 address 172.31.0.1/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.10, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.20, IPv4 address 192.168.2.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.30, IPv4 address 192.168.3.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.40, IPv4 address 192.168.4.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.50, IPv4 address 192.168.5.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.60, IPv4 address 192.168.6.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.70, IPv4 address 192.168.7.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.80, IPv4 address 192.168.8.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.90, IPv4 address 192.168.9.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.100, IPv4 address 192.168.10.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.999, IPv4 address 192.168.99.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Tunnel0, IPv4 address 172.16.0.1/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Tunnel1, IPv4 address 172.16.0.5/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Tunnel2, IPv6 address fe80::ff:fe00:27%Tunnel2 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Tunnel2, IPv6 address 2001:db8:ffff::1 assigned
+  %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  %CDP-5-NOTIFICATIONS: Neighbor R2 expired on GigabitEthernet0/1
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
 
 [270/343] r1 R1# show snmp
   SNMP agent not enabled
@@ -2231,7 +2326,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE0E1458.1B645A1C (16:42:00.107 UTC Fri Jul 24 2026)
+  reference time is EE1612A6.D9DB22D0 (18:12:54.851 UTC Thu Jul 30 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -2240,7 +2335,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *16:42:00.000 UTC Fri Jul 24 2026
+  *18:12:54.000 UTC Thu Jul 30 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2265,6 +2360,12 @@ Total steps: 343
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [277/343] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -2338,6 +2439,7 @@ Total steps: 343
 
 [282/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
+    Description: ## LAN to L1 ##
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
@@ -2372,11 +2474,11 @@ Total steps: 343
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 192 bytes, 0 no buffer
+       4 packets input, 256 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 256 bytes, 0 underruns
+       5 packets output, 320 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2394,11 +2496,11 @@ Total steps: 343
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 192 bytes, 0 no buffer
+       4 packets input, 256 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 256 bytes, 0 underruns
+       5 packets output, 320 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2726,6 +2828,7 @@ Total steps: 343
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
+    Description: ## LAN to L1 ##
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
@@ -2758,11 +2861,11 @@ Total steps: 343
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 192 bytes, 0 no buffer
+       4 packets input, 256 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 256 bytes, 0 underruns
+       5 packets output, 320 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2804,27 +2907,35 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   Loopback1 is up, line protocol is up
+    Description: LOOP-1
     Hardware is Loopback
     Internet address is 10.255.255.1/32
   Loopback2 is up, line protocol is up
+    Description: LOOP-2
     Hardware is Loopback
     Internet address is 10.255.255.2/32
   Loopback3 is up, line protocol is up
+    Description: LOOP-3
     Hardware is Loopback
     Internet address is 10.255.255.3/32
   Loopback4 is up, line protocol is up
+    Description: LOOP-4
     Hardware is Loopback
     Internet address is 10.255.255.4/32
   Loopback5 is up, line protocol is up
+    Description: LOOP-5
     Hardware is Loopback
     Internet address is 10.255.255.5/32
   Loopback6 is up, line protocol is up
+    Description: LOOP-6
     Hardware is Loopback
     Internet address is 10.255.255.6/32
   Loopback7 is up, line protocol is up
+    Description: LOOP-7
     Hardware is Loopback
     Internet address is 10.255.255.7/32
   Loopback8 is up, line protocol is up
+    Description: LOOP-8
     Hardware is Loopback
     Internet address is 10.255.255.8/32
   Loopback100 is up, line protocol is up
@@ -2851,6 +2962,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
+    Description: VLAN20
     Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2871,6 +2983,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
+    Description: VLAN30
     Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2891,6 +3004,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
+    Description: VLAN40
     Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2911,6 +3025,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
+    Description: VLAN50
     Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2931,6 +3046,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
+    Description: VLAN60
     Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2951,6 +3067,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
+    Description: VLAN70
     Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2971,6 +3088,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
+    Description: VLAN80
     Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2991,6 +3109,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
+    Description: VLAN90
     Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -3011,6 +3130,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
+    Description: VLAN100
     Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -3066,16 +3186,110 @@ Total steps: 343
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
   
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  No NAT translations.
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  
+  ------------------ show ip ospf neighbor ------------------
+  % OSPF is not configured
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
-      Buffer logging: disabled
+      Buffer logging: level debugging, 4096 bytes
       Trap logging: level informational
       Facility: local7
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address fe80::ff:fe00:1%GigabitEthernet0/0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address 2001:db8:1::1 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, MTU changed to 1400
+  %IFMGR-6-INFORMATIONAL: Interface Loopback1, IPv4 address 10.255.255.1/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback2, IPv4 address 10.255.255.2/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback3, IPv4 address 10.255.255.3/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback4, IPv4 address 10.255.255.4/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback5, IPv4 address 10.255.255.5/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback6, IPv4 address 10.255.255.6/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback7, IPv4 address 10.255.255.7/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback8, IPv4 address 10.255.255.8/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Loopback100, IPv4 address 172.31.0.1/255.255.255.255 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.10, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.20, IPv4 address 192.168.2.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.30, IPv4 address 192.168.3.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.40, IPv4 address 192.168.4.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.50, IPv4 address 192.168.5.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.60, IPv4 address 192.168.6.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.70, IPv4 address 192.168.7.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.80, IPv4 address 192.168.8.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.90, IPv4 address 192.168.9.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.100, IPv4 address 192.168.10.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.999, IPv4 address 192.168.99.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Tunnel0, IPv4 address 172.16.0.1/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Tunnel1, IPv4 address 172.16.0.5/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Tunnel2, IPv6 address fe80::ff:fe00:27%Tunnel2 assigned
+  %IFMGR-6-INFORMATIONAL: Interface Tunnel2, IPv6 address 2001:db8:ffff::1 assigned
+  %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  %CDP-5-NOTIFICATIONS: Neighbor R2 expired on GigabitEthernet0/1
+  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
 
 [287/343] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -3607,6 +3821,7 @@ Total steps: 343
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
+    interface    Remove a virtual interface
     router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
@@ -3615,7 +3830,6 @@ Total steps: 343
     key          Key management
     crypto       Encryption and key management
     event        Embedded Event Manager
-    interface    Remove an interface
     vlan         Remove a VLAN
     line         Remove line configuration
 
