@@ -2995,6 +2995,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   // ─── DHCP Event Log ─────────────────────────────────────────────
 
+  /**
+   * Les identifiants que le client DHCP de Windows pose dans le journal
+   * Système. Repris tels quels du rendu que `wevtutil` fabriquait
+   * autrefois, pour que la transition ne déplace aucun numéro.
+   */
+  private static readonly DHCP_EVENT_IDS: Record<string, number> = {
+    INIT: 1000, DISCOVER: 1001, OFFER: 1002, REQUEST: 1003,
+    ACK: 1004, RELEASE: 1005, NAK: 1006, RENEW: 1007, RESET: 1008,
+  };
+
   private syncDHCPEvents(): void {
     for (const [name] of this.ports) {
       const logs = this.dhcpClient.getLogs(name);
@@ -3021,8 +3031,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private addDHCPEvent(type: string, message: string): void {
-    const timestamp = new Date().toISOString();
+    const timestamp = this.simulatedDate().toISOString();
     this.dhcpEventLog.push(`[${timestamp}] DHCP ${type}: ${message}`);
+    // Et dans le journal Système, pour de vrai. `wevtutil` synthétisait
+    // auparavant ces lignes à la volée dès que la ligne de commande
+    // contenait le mot « dhcp » ; désormais une requête XPath sur le
+    // fournisseur `Dhcp-Client` les trouve parce qu'elles y sont —
+    // c'est la même information, mais atteignable pour la bonne raison,
+    // et visible aussi de `Get-WinEvent` et de l'Observateur.
+    this.eventLog.writeEventLog(
+      'System', 'Dhcp-Client', WindowsPC.DHCP_EVENT_IDS[type] ?? 1000, 'Information',
+      message, { DhcpEventType: type });
   }
 
   // ─── systeminfo ────────────────────────────────────────────────

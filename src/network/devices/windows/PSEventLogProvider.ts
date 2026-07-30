@@ -31,6 +31,8 @@ export interface EventLogMetadata {
   maxSizeKB: number;
   overflow: 'OverwriteOlder' | 'DoNotOverwrite' | 'OverwriteAsNeeded';
   entries: EventLogEntry[];
+  /** `wevtutil sl /e:false` — absent vaut activé. */
+  enabled?: boolean;
 }
 
 // ─── Seed helpers ─────────────────────────────────────────────────────────────
@@ -141,6 +143,8 @@ export interface EvtxFilesystem {
   createFile(absPath: string, content: string): { ok: boolean; error?: string };
   /** Optionnel : `wevtutil epl` refuse d'écraser sans `/ow:true`. */
   exists?(absPath: string): boolean;
+  /** Optionnel : `wevtutil qe /lf:` relit un fichier exporté. */
+  readFile?(absPath: string): { ok: boolean; content?: string; error?: string };
 }
 
 export class PSEventLogProvider {
@@ -243,6 +247,61 @@ export class PSEventLogProvider {
     }));
   }
 
+  /**
+   * L'état d'un journal, tel que `wevtutil gl`/`gli` le rapportent.
+   *
+   * `oldestRecordNumber` et `numberOfLogRecords` sont réels — le plus
+   * petit index présent et le nombre d'entrées. `fileSize` est la taille
+   * du `.evtx` matérialisé : un fichier qui existe déjà, donc une taille
+   * mesurée et non inventée.
+   */
+  getLogStatus(logName: string): {
+    logName: string; enabled: boolean; maxSizeKB: number;
+    overflow: EventLogMetadata['overflow'];
+    numberOfLogRecords: number; oldestRecordNumber: number;
+    fileSize: number; lastWriteTime: Date | null;
+  } | null {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) return null;
+    const indexes = meta.entries.map((e) => e.index);
+    return {
+      logName: meta.logName,
+      enabled: meta.enabled !== false,
+      maxSizeKB: meta.maxSizeKB,
+      overflow: meta.overflow,
+      numberOfLogRecords: meta.entries.length,
+      oldestRecordNumber: indexes.length ? Math.min(...indexes) : 0,
+      fileSize: renderEvtx(meta).length,
+      lastWriteTime: meta.entries.length
+        ? meta.entries[meta.entries.length - 1].timeGenerated
+        : null,
+    };
+  }
+
+  /**
+   * `wevtutil sl` — modifie la configuration d'un journal.
+   *
+   * Un journal désactivé cesse réellement d'accepter des entrées : sans
+   * cela, `/e:false` serait un réglage décoratif, ce que ce dépôt
+   * n'accepte pas.
+   */
+  setLogConfig(logName: string, cfg: {
+    enabled?: boolean; maxSizeKB?: number; retention?: boolean;
+  }): string | null {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) return `Failed to read configuration for log ${logName}. The specified channel could not be found.`;
+    if (cfg.enabled !== undefined) meta.enabled = cfg.enabled;
+    if (cfg.maxSizeKB !== undefined) meta.maxSizeKB = cfg.maxSizeKB;
+    // La rétention a un effet réel : `DoNotOverwrite` est ce que lit
+    // `isLogFull`, donc ce qui décide si un journal saturé refuse
+    // d'écraser. `autoBackup` n'a rien derrière — rien n'archive un
+    // journal plein ici — et n'est donc pas modifiable : voir le refus
+    // de `/ab:` côté commande.
+    if (cfg.retention === true) meta.overflow = 'DoNotOverwrite';
+    else if (cfg.retention === false) meta.overflow = 'OverwriteAsNeeded';
+    return null;
+  }
+
   getEventLog(logName: string, opts: { newest?: number; entryType?: string; source?: string }): string {
     const key = logName.toLowerCase();
     const meta = this.logs.get(key);
@@ -318,6 +377,33 @@ export class PSEventLogProvider {
     return null;
   }
 
+  /**
+   * Relit un fichier produit par `exportLog` — la moitié manquante de
+   * l'aller-retour : exporter puis relire doit dire la même chose.
+   */
+  readExportedLog(path: string): string | null {
+    const r = this.fs?.readFile?.(path);
+    if (!r || !r.ok || r.content === undefined) return null;
+    return r.content;
+  }
+
+  /**
+   * `wevtutil al` — archive un journal exporté.
+   *
+   * Sur un vrai Windows, l'archivage ajoute les ressources de
+   * localisation pour que le fichier reste lisible sur une machine
+   * dépourvue des éditeurs d'origine. Ici les messages sont déjà rendus
+   * dans le fichier : il n'y a rien à ajouter, et l'opération se réduit
+   * à vérifier que le fichier existe. Le déclarer vaut mieux que
+   * simuler un enrichissement qui n'a pas lieu.
+   */
+  archiveExportedLog(path: string): string | null {
+    if (this.readExportedLog(path) === null) {
+      return `Failed to archive log file ${path}. The system cannot find the file specified.`;
+    }
+    return null;
+  }
+
   /** Re-render every event log to its `.evtx` file (no-op when unwired). */
   private materialize(): void {
     if (!this.fs) return;
@@ -362,6 +448,10 @@ export class PSEventLogProvider {
     const key = logName.toLowerCase();
     if (!this.logs.has(key)) return `Write-EventLog : Cannot open log "${logName}". The log does not exist.`;
     const meta = this.logs.get(key)!;
+    // Un journal désactivé refuse silencieusement, comme sur un vrai
+    // Windows : l'écriture n'échoue pas bruyamment, elle n'a simplement
+    // pas lieu. C'est ce qui rend `sl /e:false` observable.
+    if (meta.enabled === false) return '';
     const ts = new Date(this.now());
     const entry: EventLogEntry = {
       index: this.nextIndex(),

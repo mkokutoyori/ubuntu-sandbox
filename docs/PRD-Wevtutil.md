@@ -1,8 +1,9 @@
 # PRD — wevtutil : un utilitaire qui annonce douze commandes et en tient quatre
 
-> Document de conception. Ce qui est décrit en §1 est **mesuré** sur le
-> code au moment de la rédaction ; tout le reste est une proposition, pas
-> un état des lieux.
+> **État : livré.** Les quatre phases sont implémentées. Le §1 décrit
+> l'état *avant* travaux — il est conservé tel quel, parce qu'un PRD qui
+> réécrit son propre constat de départ perd ce qui le rendait utile.
+> Le §11 recense ce que la mise en œuvre a appris.
 
 ---
 
@@ -342,3 +343,56 @@ Puis **2**, qui ne coûte presque rien puisque les données existent. Puis
 **3**, la vraie pièce — et la seule dont un autre chantier dépend
 (`Get-WinEvent -FilterXml`). **4** en dernier, et `al` peut y être
 remplacé par un retrait de l'aide sans que personne n'y perde.
+
+
+---
+
+## 11. Ce que la mise en œuvre a appris
+
+Trois choses que la rédaction n'avait pas vues, et qui ont changé le
+travail.
+
+**Le détournement DHCP cachait un manque, pas un doublon.** Retirer la
+correspondance sur le mot « dhcp » (E3) ne suffisait pas : les
+événements du client DHCP ne vivaient nulle part dans un journal. Ils
+s'entassaient dans un tableau parallèle (`dhcpEventLog`) que `wevtutil`
+transformait en texte à la volée, et qu'il *fabriquait* — une entrée
+`INIT` inventée quand le tableau était vide. La requête XPath légitime
+de `dhcp_complete.test.ts` ne pouvait donc rien trouver une fois le
+détournement parti. Corrigé à la source : `addDHCPEvent` écrit
+maintenant une vraie entrée dans le journal Système sous le fournisseur
+`Dhcp-Client`, ce qui rend ces événements visibles aussi de
+`Get-WinEvent` et de l'Observateur — et non plus du seul `wevtutil`.
+
+**Le piège `/rd:` s'est refermé, exactement où le §8 l'annonçait.** Une
+suite demandait `wevtutil qe Security /c:5` et cherchait un événement
+qu'elle venait d'écrire. `wevtutil` lisant du plus ancien au plus récent,
+`/c:5` rend les cinq entrées de démarrage — un vrai Windows se comporte
+pareil. L'énoncé pose désormais `/rd:true`, ce qu'écrit un analyste qui
+cherche un fait récent.
+
+**`autoBackup` a été retiré du périmètre en cours de route.** Le §6
+prévoyait `sl /ab:`. La mesure a montré que `retention`
+(`DoNotOverwrite`) a un effet réel — c'est ce que lit `isLogFull` — mais
+que rien n'archive un journal plein. Implémenter `/ab:` aurait donc
+ajouté le réglage décoratif que ce document reproche à l'existant :
+l'option est refusée, `gl` affiche `autoBackup: false` en permanence, et
+une probe vérifie les deux.
+
+### Écart entre le plan et la livraison
+
+| Prévu | Livré |
+|---|---|
+| `sl /ab:` (autoBackup) | **Refusé** — rien n'archive un journal plein ici |
+| `al` « implémenter ou retirer » | **Implémenté**, réduit à vérifier que le fichier existe : les messages sont déjà rendus, il n'y a pas de ressources de localisation à ajouter |
+| XPath : sous-ensemble | Livré, plus la forme `*[System[…]] and *[EventData[…]]` que Microsoft documente et que le plan avait oubliée |
+| `Get-WinEvent -FilterXml` | **Non fait.** `WinEventXPath` est écrit pour être partagé, mais le brancher sur `Get-WinEvent` reste à faire |
+
+### Vérification
+
+41 probes sur les quatre phases. Régression : 2750 tests passants sur
+les fichiers touchant `wevtutil`, le journal d'événements ou DHCP ; les
+trois échecs restants (`scenario-10` MAC/L2, `scenario-20` Oracle,
+`cisco-wan` bail DHCP) échouent à l'identique au niveau de référence,
+vérifié par `git stash`. `tsc` à 127 erreurs et `eslint` inchangés,
+aucune sur les deux nouveaux fichiers.
