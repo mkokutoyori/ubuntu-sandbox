@@ -126,3 +126,63 @@ Régression : les six suites `dot1x-*`, `huawei-dot1x`, les suites du
 switch Cisco et `windows-server-nps` — 141 tests verts. Les neuf suites
 de transcripts `cisco-l2` régénérées : le fichier port-security passe de
 **52 refus à 6**. `tsc` à 127, `eslint` sans erreur nouvelle.
+
+---
+
+## 6. Deuxième lot — LACP, exactement la même forme
+
+Le §4 renvoyait l'EtherChannel à un lot suivant. Le voici, et le
+diagnostic était juste : `LacpAgent` fait tourner une vraie machine de
+réception 802.3ad, et **`setSystemPriority` et `setFastRate` n'étaient
+appelés de nulle part** — alors que le premier entre dans le départage
+d'agrégation (`compareSystemId`) et le second ré-arme réellement les
+temporisateurs (cadence d'annonce, `current_while` à 3 s au lieu de
+90 s). `show etherchannel` était la seule fenêtre sur l'ensemble.
+
+### 6.1 Livré, adossé à du réel
+
+| Commande | Ce qu'elle atteint |
+|---|---|
+| `lacp system-priority <1-65535>` | `setSystemPriority` — visible dans `show lacp sys-id` et dans le départage |
+| `lacp rate {fast\|normal}` | `setFastRate`, qui ré-arme les temporisateurs |
+| `lacp port-priority <1-65535>` | nouveau champ, qui **voyage dans la LACPDU** |
+| `show lacp {sys-id\|neighbor\|internal\|counters}` | partenaire appris, état, priorités, compteurs réels |
+| `show interfaces <if> etherchannel` | la vue par port de ce que `show etherchannel` donne par groupe |
+
+`lacp rate` est per-interface dans la grammaire IOS mais le moteur tient
+une cadence par équipement : c'est écrit à l'endroit du code où la
+divergence se produit.
+
+### 6.2 Refusé, en nommant la raison
+
+- **`port-channel load-balance`** — une grappe ne sert ici qu'à
+  regrouper des membres pour le spanning tree ; **rien ne répartit les
+  trames** entre eux. La méthode n'aurait rien à décider. Même
+  raisonnement que le `/ab:` de `wevtutil`.
+- **PAgP** — `channel-group … mode desirable|auto` était silencieusement
+  replié sur LACP actif/passif : on demandait PAgP et on émettait du
+  LACP, mensonge que l'opérateur n'avait aucun moyen de voir. Refusé en
+  nommant le protocole absent, comme `show pagp`.
+
+### 6.3 Un défaut trouvé en chemin
+
+`runSelection` décidait de la vivacité d'un membre avec
+`port.isConnected()` — « un câble est branché ». C'est le défaut
+corrigé au `PRD-Link-State.md` §6, resté ici : un membre dont le pair
+est désactivé ou hors tension restait agrégé alors qu'il ne portait
+plus rien. Il lit maintenant `isOperationallyUp()`, et deux cas de la
+probe le figent.
+
+### 6.4 Vérification
+
+`probe-lacp-01-cli-cisco.test.ts` — 16 cas. Régression : les suites
+LACP, STP, switch Cisco et Huawei, VRP et les scénarios de panne 01-03 —
+374 tests verts. Transcripts régénérés : `cisco-l2-05-etherchannel`
+passe de **54 refus à 6**, et l'ensemble du dossier `cisco-l2` de
+**227 à 86** sur les deux lots. `tsc` à 127, `eslint` sans erreur.
+
+Reste dans ce dossier, non traité : `storm-control`,
+`show interfaces status err-disabled`,
+`ip dhcp snooping information option`, et
+`show interfaces FastEthernet0/0` — ce dernier étant un refus correct,
+le port n'existant pas sur un châssis 24 ports.

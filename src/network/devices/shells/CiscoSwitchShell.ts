@@ -2053,6 +2053,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       const vlanMatch = args.join(' ').match(/^vl(?:an)?\s*(\d+)$/i);
       if (vlanMatch) return this.showSviInterface(parseInt(vlanMatch[1], 10));
+      // `show interfaces <if> etherchannel` — the per-port view of what
+      // `show etherchannel` gives for the whole group.
+      if (args.length > 1 && args[args.length - 1].toLowerCase() === 'etherchannel') {
+        const target = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!target || !this.d().getPort(target)) {
+          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+        }
+        return this.showInterfaceEtherchannel(target);
+      }
       const name = this.resolveInterfaceName(args.join(' '));
       if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
       return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
@@ -2807,8 +2816,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args[1].toLowerCase() !== 'mode') return '% Incomplete command.';
       const m = args[2].toLowerCase();
       let mode: 'active' | 'passive' | 'on';
-      if (m === 'active' || m === 'desirable') mode = 'active';
-      else if (m === 'passive' || m === 'auto') mode = 'passive';
+      // `desirable` and `auto` are PAgP modes. They used to be folded
+      // into LACP active/passive, so asking for PAgP silently put LACP
+      // frames on the wire — a lie the operator had no way to see.
+      if (m === 'desirable' || m === 'auto') {
+        return `% ${m} is a PAgP mode and PAgP is not implemented; use active, passive or on.`;
+      }
+      if (m === 'active') mode = 'active';
+      else if (m === 'passive') mode = 'passive';
       else if (m === 'on') mode = 'on';
       else return '% Invalid channel-group mode';
       return this.applyToSelectedInterfaces(portName => {
@@ -2824,6 +2839,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.registerDot1x();
+    this.registerLacp();
 
     this.configIfTrie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, false));
@@ -4432,6 +4448,156 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       rows.push(row(`Vlan${svi.vlan}`, ip, method, status, proto));
     }
     return [header, ...rows].join('\n');
+  }
+
+  /**
+   * The LACP knobs and views, same story as 802.1X: `LacpAgent` runs a
+   * genuine 802.3ad receive machine, and `setSystemPriority` /
+   * `setFastRate` — which really move the advertising cadence, the
+   * current_while timeout and the aggregation tie-break — were called
+   * from nowhere at all. `show etherchannel` was the only window onto
+   * any of it.
+   *
+   * `port-channel load-balance` is refused rather than stored: a bundle
+   * here groups members for STP and nothing distributes data frames
+   * across them, so the method would have nothing to decide.
+   */
+  private registerLacp(): void {
+    const agent = () => this.d().getLacpAgent();
+
+    this.configTrie.registerGreedy('lacp system-priority', 'LACP system priority', (args) => {
+      const v = parseInt(args[0] ?? '', 10);
+      if (isNaN(v) || v < 1 || v > 65535) return '% Invalid value, valid range is 1 to 65535.';
+      agent().setSystemPriority(v);
+      return '';
+    });
+
+    this.configTrie.registerGreedy('port-channel load-balance', 'EtherChannel load-balancing', () =>
+      '% Load-balancing is not supported: a bundle here groups members for spanning tree, '
+      + 'it does not distribute frames across them.');
+
+    this.configIfTrie.registerGreedy('lacp rate', 'LACPDU rate', (args) => {
+      const rate = (args[0] ?? '').toLowerCase();
+      if (rate !== 'fast' && rate !== 'normal') return '% Invalid input detected at \'^\' marker.';
+      // The engine keeps one rate for the whole device, so this is not
+      // per-interface the way IOS states it.
+      agent().setFastRate(rate === 'fast');
+      return '';
+    });
+
+    this.configIfTrie.registerGreedy('lacp port-priority', 'LACP port priority', (args) => {
+      const v = parseInt(args[0] ?? '', 10);
+      if (isNaN(v) || v < 1 || v > 65535) return '% Invalid value, valid range is 1 to 65535.';
+      return this.applyToSelectedInterfaces(portName => {
+        agent().setPortPriority(portName, v);
+        return '';
+      });
+    });
+
+    this.privilegedTrie.registerGreedy('show lacp', 'Display LACP state', (args) => this.showLacp(args));
+    this.privilegedTrie.registerGreedy('show pagp', 'Display PAgP state', () =>
+      '% PAgP is not implemented: this switch aggregates with LACP only.');
+  }
+
+  private showInterfaceEtherchannel(portName: string): string {
+    const agent = this.d().getLacpAgent();
+    const info = agent.getPortInfo(portName);
+    if (!info) return `Port ${portName} is not part of an EtherChannel`;
+    const group = agent.getAllGroups().find(g => g.id === info.groupId);
+    const partner = info.partner;
+    return [
+      `Port state    = ${info.bundled ? 'Up Mstr In-Bndl' : 'Down Not-in-Bndl'}`,
+      `Channel group = ${info.groupId}          Mode = ${info.mode}`,
+      `Port-channel  = ${group?.name ?? `Port-channel${info.groupId}`}`,
+      `Port index    = ${this.d().getPortNames().indexOf(portName)}`,
+      `Load          = 0x00`,
+      '',
+      'Local information:',
+      '                            LACP port    Admin     Oper    Port',
+      'Port      Flags   State     Priority     Key       Key     Number',
+      `${this.abbreviateInterface(portName).padEnd(10)}`
+      + `${(agent.getConfig().fastRate ? 'F' : 'S') + (info.mode === 'active' ? 'A' : 'P')}      `
+      + `${info.state.padEnd(10)}${String(info.portPriority).padEnd(13)}`
+      + `${String(info.groupId).padEnd(10)}${String(info.groupId).padEnd(8)}`
+      + `${this.d().getPortNames().indexOf(portName) + 1}`,
+      '',
+      'Partner information:',
+      partner
+        ? `          System ${partner.systemPriority},${partner.systemId}  Key ${partner.key}  Port ${partner.portNumber}`
+        : '          No partner learned on this port',
+    ].join('\n');
+  }
+
+  private showLacp(args: string[]): string {
+    const agent = this.d().getLacpAgent();
+    const cfg = agent.getConfig();
+    const what = (args[0] ?? '').toLowerCase();
+    const sysId = `${cfg.systemPriority}, ${cfg.systemId}`;
+
+    if (what === 'sys-id') return sysId;
+
+    const members = agent.getAllGroups().flatMap(g => g.members);
+    if (what === 'neighbor') {
+      if (members.length === 0) return 'Flags:  S - Device is requesting Slow LACPDUs';
+      const lines = [
+        'Flags:  S - Device is requesting Slow LACPDUs  F - Device is requesting Fast LACPDUs',
+        '        A - Device is in Active mode           P - Device is in Passive mode',
+        '',
+        'Port      Partner System ID          Age  Flags  Port Pri.  Oper Key  Port Number',
+      ];
+      for (const m of members) {
+        const p = m.partner;
+        lines.push(
+          `${this.abbreviateInterface(m.portName).padEnd(10)}`
+          + `${(p ? `${p.systemPriority},${p.systemId}` : 'none').padEnd(27)}`
+          + `${(p ? `${Math.round((Date.now() - m.lastRxMs) / 1000)}s` : '-').padEnd(5)}`
+          + `${(cfg.fastRate ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')}     `
+          + `${String(p?.portPriority ?? 0).padEnd(11)}`
+          + `${String(p?.key ?? 0).padEnd(10)}`
+          + `${p?.portNumber ?? 0}`,
+        );
+      }
+      return lines.join('\n');
+    }
+
+    if (what === 'internal') {
+      const lines = [
+        'Flags:  S - Device is requesting Slow LACPDUs  F - Device is requesting Fast LACPDUs',
+        '',
+        'Port      Flags  State     LACP Port Priority  Admin Key  Port Number',
+      ];
+      for (const m of members) {
+        lines.push(
+          `${this.abbreviateInterface(m.portName).padEnd(10)}`
+          + `${(cfg.fastRate ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')}     `
+          + `${m.state.padEnd(10)}`
+          + `${String(m.portPriority).padEnd(20)}`
+          + `${String(m.groupId).padEnd(11)}`
+          + `${this.d().getPortNames().indexOf(m.portName) + 1}`,
+        );
+      }
+      return lines.join('\n');
+    }
+
+    if (what === 'counters') {
+      const lines = [
+        '             LACPDUs         Marker      Marker Response    LACPDUs',
+        'Port       Sent   Recv     Sent   Recv     Sent   Recv      Pkts Err',
+        '---------------------------------------------------------------------',
+      ];
+      for (const m of members) {
+        const s = agent.getStatistics(m.portName);
+        lines.push(
+          `${this.abbreviateInterface(m.portName).padEnd(11)}`
+          + `${String(s.sent).padEnd(7)}${String(s.received).padEnd(9)}`
+          // Marker protocol (802.3ad §43.5) is not implemented here.
+          + `0      0        0      0         0`,
+        );
+      }
+      return lines.join('\n');
+    }
+
+    return '% Invalid input detected at \'^\' marker.';
   }
 
   /**

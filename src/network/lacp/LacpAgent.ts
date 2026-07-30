@@ -55,6 +55,18 @@ export class LacpAgent extends ReactiveAgentBase {
     this.recompute();
   }
 
+  /**
+   * `lacp port-priority`. Advertised to the partner, which is the
+   * field's real job; nothing here arbitrates on it, since this engine
+   * bundles every eligible member and has no cap to break ties over.
+   */
+  setPortPriority(portName: string, priority: number): void {
+    const p = this.config.ports.get(portName);
+    if (!p || priority < 0 || priority > 65535) return;
+    p.portPriority = priority;
+    this.advertise(portName);
+  }
+
   setFastRate(on: boolean): void {
     this.config.fastRate = on;
     if (this.config.enabled) {
@@ -79,7 +91,7 @@ export class LacpAgent extends ReactiveAgentBase {
     let p = this.config.ports.get(portName);
     if (!p) {
       p = {
-        portName, groupId, mode,
+        portName, groupId, mode, portPriority: 32768,
         state: 'standalone', partner: null,
         selected: false, bundled: false, lastRxMs: 0,
       };
@@ -166,7 +178,7 @@ export class LacpAgent extends ReactiveAgentBase {
       systemPriority: this.config.systemPriority,
       systemId: this.config.systemId,
       key: p.groupId,
-      portPriority: 32768,
+      portPriority: p.portPriority,
       portNumber: this.portNumberFor(portName),
       state: buildActorState(p.mode, p),
     };
@@ -310,7 +322,10 @@ export class LacpAgent extends ReactiveAgentBase {
       const oldState = p.state;
       const oldBundled = p.bundled;
       const port = this.host.getPort(p.portName);
-      const linkUp = !!port && port.getIsUp() && port.isConnected();
+      // « un câble est branché » ne suffit pas : un membre dont le pair
+      // est désactivé ou hors tension ne porte plus rien et doit quitter
+      // l'agrégat (docs/PRD-Link-State.md §6).
+      const linkUp = !!port && port.isOperationallyUp();
       if (!linkUp) {
         p.state = 'standalone'; p.selected = false; p.bundled = false;
       } else if (p.mode === 'on') {
