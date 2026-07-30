@@ -122,7 +122,16 @@ function formatArpTimeout(totalSec: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-export function showInterface(router: { _getPortsInternal: () => Map<string, import('../../../hardware/Port').Port>; getInterfaceDescription?: (n: string) => string | undefined }, ifName: string): string {
+/**
+ * `catalyst` adds the reason a switch port is down, in parentheses after
+ * the line-protocol state — `(notconnect)` for nothing on the wire,
+ * `(disabled)` for a shut port. A Catalyst prints it, a router does not,
+ * which is why it is asked for rather than guessed. `(err-disabled)` is
+ * the third reason IOS prints and is not covered: the errdisable cause
+ * lives on the switch's own bookkeeping, not on the Port this renderer
+ * is handed.
+ */
+export function showInterface(router: { _getPortsInternal: () => Map<string, import('../../../hardware/Port').Port>; getInterfaceDescription?: (n: string) => string | undefined }, ifName: string, catalyst = false): string {
   const ports = router._getPortsInternal();
   const port = ports.get(ifName);
   if (!port) {
@@ -132,7 +141,7 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
   }
 
   const isUp = port.getIsUp();
-  const connected = port.isConnected();
+  const connected = port.hasCarrier();
   const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(ifName);
   const ip = port.getIPAddress()?.toString() || 'unassigned';
   const maskObj = port.getSubnetMask();
@@ -149,8 +158,12 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
   const isTunnel = ifName.startsWith('Tunnel');
   const isLoopback = ifName.startsWith('Loopback');
 
+  const reason = !catalyst || isVirtual || lineProto === 'up'
+    ? ''
+    : (isUp ? ' (notconnect)' : ' (disabled)');
+
   const lines = [
-    `${ifName} is ${status}, line protocol is ${lineProto}`,
+    `${ifName} is ${status}, line protocol is ${lineProto}${reason}`,
   ];
 
   const descr = router.getInterfaceDescription?.(ifName) || port.getDescriptionText?.();

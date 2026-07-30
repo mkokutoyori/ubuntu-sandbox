@@ -37,6 +37,11 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
     it('gap confirmé : Phase 3 (powershell -EncodedCommand) ne génère jamais d\'EventID 4104 exploitable pour la timeline', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
+      // Le Script Block Logging est éteint par défaut sur un Windows
+      // réel : sans la stratégie, l'énoncé attendait un 4104 que rien
+      // n'avait demandé. C'est bien elle qui commande.
+      await run(sh, 'New-Item -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging" -Force');
+      await run(sh, 'Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging" -Name "EnableScriptBlockLogging" -Value 1');
       await run(sh, '$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(\'Get-Process | Select-Object Name, Id\'))');
 
       const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-PowerShell/Operational'; Id = 4104; StartTime = (Get-Date).AddHours(-2) }");
@@ -46,6 +51,10 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
     it('gap confirmé : Phase 4 (persistance via la clé Run) ne génère jamais d\'EventID 4657 exploitable pour la timeline', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
+      // L'audit du registre est éteint par défaut : un attaquant qui pose
+      // sa persistance sur une machine non durcie ne laisse effectivement
+      // aucun 4657. Le durcissement fait partie du scénario.
+      await dc.executeCmdCommand('auditpol /set /subcategory:"Registry" /success:enable');
       await run(sh, 'New-Item -Path "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" -Force');
       await run(sh, 'New-ItemProperty -Path "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" -Name "UpdateCheck" -Value "C:\\Temp\\update.ps1" -PropertyType String');
 
@@ -56,6 +65,7 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
     it('gap confirmé : Phase 5 (tâche planifiée de persistance) ne génère jamais d\'EventID 4698 exploitable pour la timeline', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
+      await dc.executeCmdCommand('auditpol /set /subcategory:"Other Object Access Events" /success:enable');
       await run(sh, [
         '$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -File C:\\Temp\\update.ps1"',
         '$Trigger = New-ScheduledTaskTrigger -Daily -At "3:00AM"',
@@ -77,9 +87,20 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
   });
 
   describe('reconstruction chronologique de l\'incident', () => {
-    it('la timeline reconstituée ne contient que la catégorie CONNEXION — toutes les autres catégories (PowerShell, registre, tâche planifiée, effacement) restent vides malgré un incident complet simulé', async () => {
+    it('la timeline reconstituée couvre les cinq catégories de l\'incident', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
+
+      // Une machine durcie : chacune de ces stratégies est éteinte par
+      // défaut sur un Windows réel, et c'est exactement ce qui décide de
+      // ce que la timeline pourra montrer. Sans elles, un attaquant
+      // traverse les phases 3 à 5 sans laisser de trace — ce que cet
+      // énoncé constatait autrefois, et qui n'était pas une fatalité du
+      // simulateur mais l'absence de tout durcissement.
+      await dc.executeCmdCommand('auditpol /set /subcategory:"Registry" /success:enable');
+      await dc.executeCmdCommand('auditpol /set /subcategory:"Other Object Access Events" /success:enable');
+      await run(sh, 'New-Item -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging" -Force');
+      await run(sh, 'Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging" -Name "EnableScriptBlockLogging" -Value 1');
 
       // Rejoue les 6 phases de l'incident.
       dc.getUserManager().checkPassword('bob', 'stolen-password');
@@ -107,10 +128,10 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
       ].join('\n'));
 
       expect(out).toMatch(/CONNEXION=[1-9]\d*/);
-      expect(out).toMatch(/POWERSHELL=0/);
-      expect(out).toMatch(/REGISTRE=0/);
-      expect(out).toMatch(/TACHE_PLANIFIEE=0/);
-      expect(out).toMatch(/JOURNAL_EFFACE=0/);
+      expect(out).toMatch(/POWERSHELL=[1-9]\d*/);
+      expect(out).toMatch(/REGISTRE=[1-9]\d*/);
+      expect(out).toMatch(/TACHE_PLANIFIEE=[1-9]\d*/);
+      expect(out).toMatch(/JOURNAL_EFFACE=[1-9]\d*/);
     });
   });
 });

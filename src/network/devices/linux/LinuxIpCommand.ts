@@ -57,6 +57,8 @@ export interface IpRouteEntry {
   metric: number;
   isDHCP: boolean;
   srcIp?: string;
+  /** The route's interface has no carrier; `ip route` renders `linkdown`. */
+  linkdown?: boolean;
 }
 
 export interface IpNeighborEntry {
@@ -1090,19 +1092,23 @@ function ipRouteShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
 
   const lines: string[] = [];
   for (const route of sorted) {
+    // A route whose interface has no carrier stays listed, with the flag
+    // the kernel sets on it — that is what tells an operator the route
+    // exists but nothing can leave through it.
+    const dead = route.linkdown ? ' linkdown' : '';
     if (route.type === 'default') {
       const proto = route.isDHCP ? 'dhcp' : 'static';
       const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
-      lines.push(`default via ${route.nextHop} dev ${route.iface} proto ${proto}${metricStr}`);
+      lines.push(`default via ${route.nextHop} dev ${route.iface} proto ${proto}${metricStr}${dead}`);
     } else if (route.type === 'connected') {
       const srcStr = route.srcIp ? ` src ${route.srcIp}` : '';
-      lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto kernel scope link${srcStr} metric ${route.metric}`);
+      lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto kernel scope link${srcStr} metric ${route.metric}${dead}`);
     } else if (route.nextHop) {
       // static via a gateway
-      lines.push(`${route.network}/${route.cidr} via ${route.nextHop} dev ${route.iface} proto static metric ${route.metric}`);
+      lines.push(`${route.network}/${route.cidr} via ${route.nextHop} dev ${route.iface} proto static metric ${route.metric}${dead}`);
     } else {
       // static on-link (dev route, no gateway)
-      lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto static scope link metric ${route.metric}`);
+      lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto static scope link metric ${route.metric}${dead}`);
     }
   }
 

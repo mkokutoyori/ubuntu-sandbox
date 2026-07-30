@@ -173,19 +173,29 @@ chmod +x /tmp/link-check.sh`);
       expect(await run('ping -c 1 192.168.10.254')).toContain('100% packet loss');
     });
 
-    it('gap confirmé : la route connectée devrait disparaître de la table quand la porteuse tombe', async () => {
-      // `docs/PRD-Link-State.md` §1.2 range « `ip route` retire la route
-      // connectée d'un port sans câble » parmi les comportements réputés
-      // corrects. La table conserve pourtant l'entrée après
-      // `cable.disconnect()` — soit le comportement a régressé, soit le
-      // constat du PRD n'a jamais été vrai pour une adresse posée par
-      // `ip addr add`.
+    it('la route connectée reste dans la table, marquée `linkdown`', async () => {
+      // `docs/PRD-Link-State.md` §1.2 rangeait « `ip route` retire la
+      // route connectée d'un port sans câble » parmi les comportements
+      // réputés corrects. Ni la régression ni le constat jamais vrai :
+      // le PRD confondait deux causes. Linux ne retire la route
+      // connectée que lorsque l'interface est descendue
+      // administrativement ; une simple perte de porteuse la conserve et
+      // la marque `linkdown` — c'est ce drapeau qui dit à
+      // l'administrateur que la route existe mais que rien ne peut
+      // sortir par là. Les deux cas sont vérifiés, ici et juste après.
       const avant = await run('ip route show');
       expect(avant).toContain('192.168.10.0/24');
+      expect(avant).not.toContain('linkdown');
 
       cable.disconnect();
       const apres = await run('ip route show');
-      expect(apres).not.toContain('192.168.10.0/24');
+      expect(apres).toContain('192.168.10.0/24');
+      expect(apres).toMatch(/192\.168\.10\.0\/24.*linkdown/);
+    });
+
+    it('l\'interface descendue administrativement, elle, perd sa route connectée', async () => {
+      await run('sudo ip link set eth0 down');
+      expect(await run('ip route show')).not.toContain('192.168.10.0/24');
     });
   });
 

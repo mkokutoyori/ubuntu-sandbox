@@ -35,7 +35,7 @@ import {
   GetChildItemCmdlet, GetContentCmdlet, SetContentCmdlet, AddContentCmdlet,
   NewItemCmdlet, RemoveItemCmdlet, CopyItemCmdlet, MoveItemCmdlet,
   OutFileCmdlet as OutFilePathCmdlet,
-  GetItemPropertyCmdlet, SetItemPropertyCmdlet, RemoveItemPropertyCmdlet, ClearItemPropertyCmdlet,
+  GetItemPropertyCmdlet, SetItemPropertyCmdlet, NewItemPropertyCmdlet, RemoveItemPropertyCmdlet, ClearItemPropertyCmdlet,
   GetItemCmdlet, SetItemCmdlet, GetAclCmdlet, SetAclCmdlet,
   RenameItemCmdlet, MkdirCmdlet, GetFileHashCmdlet, GetAuthenticodeSignatureCmdlet,
 } from './PathCmdlets';
@@ -71,7 +71,7 @@ import {
   NewNetNeighborCmdlet, RemoveNetNeighborCmdlet, SetNetNeighborCmdlet,
   TestConnectionCmdlet, ResolveDnsNameCmdlet, InvokeWebRequestCmdlet,
   GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
-  GetNetTCPConnectionCmdlet, HostnameCmdlet, WhoamiCmdlet,
+  GetNetTCPConnectionCmdlet, GetNetUDPEndpointCmdlet, HostnameCmdlet, WhoamiCmdlet,
   NewNetIPAddressCmdlet, RemoveNetIPAddressCmdlet,
   NewNetRouteCmdlet, RemoveNetRouteCmdlet,
   EnableNetAdapterCmdlet, DisableNetAdapterCmdlet, RenameNetAdapterCmdlet,
@@ -278,6 +278,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new MoveItemCmdlet());
   registry.register(new GetItemPropertyCmdlet());
   registry.register(new SetItemPropertyCmdlet());
+  registry.register(new NewItemPropertyCmdlet());
   registry.register(new RemoveItemPropertyCmdlet());
   registry.register(new ClearItemPropertyCmdlet());
   registry.register(new GetItemCmdlet());
@@ -356,6 +357,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetNetIPConfigurationCmdlet());
   registry.register(new GetNetRouteCmdlet());
   registry.register(new GetNetTCPConnectionCmdlet());
+  registry.register(new GetNetUDPEndpointCmdlet());
   registry.register(new GetNetNeighborCmdlet());
   registry.register(new NewNetNeighborCmdlet());
   registry.register(new RemoveNetNeighborCmdlet());

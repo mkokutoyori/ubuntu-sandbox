@@ -22,7 +22,7 @@ Ce qui fonctionne déjà correctement et ne doit **pas** être touché :
 | `Cable.disconnect()` notifie les deux ports (`Port.disconnectCable()`) et publie `cable.disconnected` | OK (`src/network/hardware/Cable.ts:201`) |
 | `Port.sendFrame()` jette la trame si `this.cable === null` | OK (`src/network/hardware/Port.ts:686`) |
 | `ping` **non-interactif** → `100% packet loss` | OK |
-| `ip route` retire la route connectée d'un port sans câble | OK |
+| ~~`ip route` retire la route connectée d'un port sans câble~~ | **Faux** — voir §6.3 |
 | `tcpConnectOutcome()` → `timeout` sur lien coupé | OK |
 
 Ce qui est cassé :
@@ -163,3 +163,111 @@ attendre une frappe.
 - La migration exhaustive de tous les appelants de `getIsUp()` vers
   `isOperationallyUp()` est faite au cas par cas, guidée par les tests des
   phases ci-dessus, et non en un remplacement global.
+
+---
+
+## 6. Deuxième passe — la porteuse vient d'en face
+
+Les scénarios de panne (`scenario-panne-01` à `-03`) ont montré que le
+modèle du §3.1 s'arrêtait au milieu du câble.
+
+### 6.1 Ce qui manquait
+
+`carrier = cable !== null && cable.getIsUp()` ne regarde que son propre
+côté. Or la porteuse, c'est du signal **reçu** : elle exige que
+l'émetteur d'en face soit allumé. Deux gestes très ordinaires
+l'éteignent, et aucun des deux n'était modélisé :
+
+- `shutdown` sur le port du switch — un vrai switch coupe l'émetteur du
+  port ;
+- l'équipement d'en face mis hors tension.
+
+Le poste raccordé restait donc en `LOWER_UP`, `carrier=1`, `state UP`,
+et son uplink continuait de s'afficher `connected` sur le switch de
+distribution alors que le switch d'accès était éteint.
+
+C'est ce qui privait le scénario 2 de tout son propos : il enseigne que
+**depuis le poste**, un câble débranché et un port désactivé sont
+indistinguables, et que seule la vue côté switch les sépare. Encore
+faut-il que le poste voie tomber sa porteuse dans les deux cas.
+
+### 6.2 Le terme qui manquait
+
+```
+isTransmitting() === isUp && !adminDown && équipement sous tension
+hasCarrier()     === câble présent && câble up && pair.isTransmitting()
+```
+
+Pas de récursion possible : `isTransmitting()` ne consulte jamais la
+porteuse. Le changement se **propage** en plus de se calculer — un port
+dont l'émetteur change prévient son pair, qui émet alors son propre
+`port.link.down`/`up`. La garde qui empêche les deux bouts de se
+notifier en boucle est le fait que le pair, re-sollicité, trouve son
+propre émetteur inchangé et s'arrête là. Brancher un câble ne propage
+rien : cela ne change pas l'émetteur, et `Cable.connect` notifie déjà
+les deux extrémités.
+
+`Equipment.powerOn`/`powerOff` marquent chacun de leurs ports. L'état de
+ligne du port de l'équipement éteint est laissé tel quel — personne ne
+lit les interfaces d'une machine hors tension, et y toucher aurait
+élargi la portée sans rien rendre observable.
+
+### 6.3 La route connectée : le §1.2 se trompait
+
+Le constat « `ip route` retire la route connectée d'un port sans
+câble », rangé parmi les comportements corrects, était faux — et ni une
+régression, ni une observation périmée : il confondait deux causes.
+
+- **Perte de porteuse, interface toujours up** : Linux **garde** la
+  route et la marque `linkdown`. C'est ce drapeau qui dit qu'une route
+  existe mais que rien ne peut sortir par là.
+- **Interface descendue administrativement** (`ip link set dev X down`) :
+  là, la route connectée est bel et bien retirée.
+
+Les deux sont implémentés, dans `EndHost.buildFullRoutingTable` — au
+moment de rendre la table plutôt qu'au moment de poser l'adresse, parce
+que la route connectée est stockée à la configuration de l'IP et que sa
+copie stockée est donc antérieure à tout changement de lien. Les
+interfaces virtuelles (`lo`, `tun`, `br`, …) en sont exemptées : elles
+n'ont pas de fil à perdre.
+
+### 6.4 Ce que la panne laisse comme traces
+
+- **`Lost carrier` / `Gained carrier`** — un hôte systemd garde deux
+  traces d'un changement de lien, écrites par deux auteurs : la ligne du
+  pilote (`eth0: Link is Down`, déjà présente) et celle de networkd, qui
+  est celle qu'on cherche puisqu'elle vient du gestionnaire du lien.
+- **`(notconnect)` / `(disabled)`** — un Catalyst nomme entre
+  parenthèses la cause de l'état bas, après `line protocol is down`. Un
+  routeur, non : `showInterface` prend donc le trait en paramètre plutôt
+  que de le deviner. `(err-disabled)`, troisième motif réel, n'est pas
+  couvert : la cause errdisable vit dans la comptabilité du switch, pas
+  sur le `Port` que ce rendu reçoit.
+- **`show interfaces status`** lisait `isConnected()` — « un câble est
+  branché » — au lieu de la porteuse. Un uplink vers un switch éteint
+  s'affichait donc `connected`.
+
+### 6.5 Ce que la correction a appris sur un test
+
+`tracert-ping` n° 124 coupait `R2 Gi0/1` « pour simuler des pertes ».
+C'est l'extrémité proche du lien de transit R1–R2 : R1 perd désormais sa
+porteuse et répond `!N (Net unreachable)` — le contraire d'une perte
+silencieuse. Toutes les pannes que ce simulateur modélise répondent
+d'ailleurs quelque chose : `!N` pour une interface tombée, `!H` pour une
+destination éteinte, `!A` pour une ACL. Le vrai silence est une sonde
+qui disparaît sur le fil, et c'est ce que le test utilise maintenant
+(`Cable.setPacketLossRate(1)`), avec un second cas qui fige le `!N`.
+
+### 6.6 Vérification
+
+24 probes (`probe-panne-01-porteuse-du-pair`,
+`probe-panne-02-scripts-powershell`) et les 120 tests des dix scénarios
+de panne. Régression : les 103 fichiers de `network-v2` touchant l'état
+de lien, le routage ou l'extinction d'un équipement (2783 tests), plus
+`unit/shell`, `unit/terminal`, `unit/gui`, `unit/react`, `unit/events`
+(1403 tests) et `unit/powershell` (1960 tests). Les six échecs restants
+— quatre dans `ssh-single-connection-per-login`, un dans
+`ssh-edge-cases` §E12, un dans `NAT.reactive` — échouent à l'identique
+au niveau de référence, vérifié par `git stash`. `tsc` rend exactement
+les mêmes 127 erreurs qu'avant (seuls des numéros de ligne bougent) et
+`eslint` les mêmes 10.

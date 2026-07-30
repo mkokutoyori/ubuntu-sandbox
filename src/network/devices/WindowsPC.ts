@@ -40,6 +40,18 @@ import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/Win
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
+import { LlmnrAgent } from '../llmnr/LlmnrAgent';
+import { LLMNR_RECORD_TTL } from '../llmnr/types';
+import { MdnsAgent } from '../mdns/MdnsAgent';
+import { MDNS_RECORD_TTL } from '../mdns/types';
+import {
+  isLlmnrEnabled, isMdnsEnabled, type DnsClientQueryOptions,
+} from './windows/WinDnsClientPolicy';
+import {
+  isScriptBlockLoggingEnabled, isTranscriptionEnabled, transcriptDirectory,
+  transcriptFileName, transcriptHeader, scriptBlockId,
+  POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
+} from './windows/WinPowerShellLogging';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -53,7 +65,7 @@ import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { HostClock } from './host/lifecycle/HostClock';
-import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue } from './windows/PSRegistryProvider';
+import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue, type RegistryValueChange } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
@@ -389,10 +401,211 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
     this.procMgr.attachServiceManager(this.svcMgr, () => this.simulatedDate().getTime());
+    // Une seule horloge pour la machine : celle que `Get-Date` lit est
+    // celle qui horodate le journal, sans quoi un filtre temporel écarte
+    // les événements que la machine vient d'écrire.
+    this.eventLog.attachClock(() => this.simulatedDate().getTime());
     this.initEnv();
     this.initDefaultSockets();
     this.wireReactiveProjections();
     this.auditPolicy.seedDefaults(type === 'windows-server' ? 'server' : 'client');
+    this.registry.onValueChanged = (change) => {
+      this.syncLinkLocalResponders();
+      if (change) this.auditRegistryChange(change);
+    };
+  }
+
+  // ─── LLMNR / mDNS (client DNS Windows) ──────────────────────────
+
+  private _llmnrAgent: LlmnrAgent | null = null;
+  private _mdnsAgent: MdnsAgent | null = null;
+
+  /**
+   * Les deux répondeurs de lien. Ce sont les mêmes agents que ceux de
+   * systemd-resolved côté Linux — LLMNR est d'ailleurs une invention de
+   * Microsoft, et un Windows le parle par défaut là où un Linux attend
+   * qu'on le lui demande. Ils ne dépendent que de l'`EndHost` : rien à
+   * spécialiser ici, seulement à brancher.
+   */
+  getLlmnrAgent(): LlmnrAgent {
+    if (!this._llmnrAgent) this._llmnrAgent = new LlmnrAgent(this);
+    return this._llmnrAgent;
+  }
+
+  getMdnsAgent(): MdnsAgent {
+    if (!this._mdnsAgent) this._mdnsAgent = new MdnsAgent(this);
+    return this._mdnsAgent;
+  }
+
+  /**
+   * Aligne les deux répondeurs sur la stratégie du registre. Rappelé à
+   * chaque écriture dans la base : sans cela, `reg add ... EnableMulticast
+   * /d 0` annoncerait « opération réussie » et le port 5355 resterait
+   * ouvert.
+   */
+  /**
+   * 4657 — toute écriture dans la base laisse une trace auditée.
+   *
+   * Le seul chemin réellement audité jusqu'ici était le changement de
+   * compte d'un service ; une valeur posée sous
+   * `...\CurrentVersion\Run` — la persistance la plus classique qui
+   * soit — ne produisait rien. Or ce n'est pas la clé qui doit décider,
+   * c'est la stratégie d'audit : elle est consultée ici, et elle seule.
+   */
+  private auditRegistryChange(change: RegistryValueChange): void {
+    if (!this.auditPolicy.isEnabled('Registry', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).registryValueModified(
+      `${change.path}\\${change.name}`,
+      change.previous === undefined ? '' : String(change.previous),
+      String(change.next),
+      this.userMgr.currentUser || 'Administrator',
+    );
+  }
+
+  /** 4698 — `Register-ScheduledTask` laisse désormais une trace. */
+  auditScheduledTaskCreated(taskName: string, command: string): void {
+    if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).scheduledTaskCreated(
+      taskName, command, this.userMgr.currentUser || 'Administrator');
+  }
+
+  /**
+   * 1102 — l'effacement d'un journal s'inscrit dans le journal Security,
+   * *après* le vidage. Sans cela, effacer ses traces ne laisserait
+   * aucune trace, ce que Windows refuse par construction.
+   */
+  auditLogCleared(logName: string): void {
+    new WindowsSecurityAudit(this.eventLog).auditLogCleared(
+      logName, this.userMgr.currentUser || 'Administrator');
+  }
+
+  /**
+   * 4663 — un objet audité vient d'être touché.
+   *
+   * Deux conditions, et les deux comptent : la sous-catégorie « File
+   * System » doit être activée *et* l'objet doit porter une SACL qui
+   * couvre cet accès. C'est ce couple qui fait de l'audit d'objets
+   * quelque chose d'utilisable : activer la stratégie sans poser de
+   * SACL noierait le journal sous chaque lecture de fichier du système.
+   */
+  auditObjectAccess(absPath: string, access: string, accessMask: string): void {
+    if (!this.auditPolicy.isEnabled('File System', 'success')) return;
+    const who = this.userMgr.currentUser || 'Administrator';
+    if (!this.fs.isAudited(absPath, who, access)) return;
+    new WindowsSecurityAudit(this.eventLog).objectAccessed(
+      absPath, access, accessMask, who);
+  }
+
+  /**
+   * 5142 — un partage réseau a été créé.
+   *
+   * Distinct de 5140, qui marque un *accès* à un partage : créer un
+   * partage et l'atteindre sont deux événements différents, et les
+   * confondre reviendrait à croire qu'un partage à peine créé a déjà
+   * servi.
+   */
+  auditShareAdded(shareName: string, path: string): void {
+    if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).shareAdded(
+      shareName, path, this.userMgr.currentUser || 'Administrator');
+  }
+
+  /** 5140 — un client a atteint un partage. */
+  auditShareAccessed(shareName: string, path: string, user: string, sourceAddress: string): void {
+    if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).shareAccessed(
+      shareName, path, user, sourceAddress);
+  }
+
+  /** 4670 — les permissions d'un objet du système de fichiers ont changé. */
+  auditPermissionChange(absPath: string, identity: string, permissions: string): void {
+    if (!this.auditPolicy.isEnabled('File System', 'success')) return;
+    new WindowsSecurityAudit(this.eventLog).permissionChanged(
+      absPath, identity, permissions, this.userMgr.currentUser || 'Administrator');
+  }
+
+  /** Quand la transcription de cette machine a commencé, et où. */
+  private transcriptStartedAt: Date | null = null;
+
+  /**
+   * Ce que PowerShell journalise d'une commande exécutée : le bloc dans
+   * le canal Operational (4104) si la stratégie l'exige, et la
+   * transcription sur disque si elle est demandée.
+   *
+   * Le bloc est journalisé *tel qu'il s'exécute*. C'est ce qui rend
+   * 4104 utile face à une obfuscation : un `-EncodedCommand` doit être
+   * décodé pour tourner, et c'est la forme décodée qui atterrit ici.
+   */
+  recordPowerShellExecution(scriptBlock: string, output: string): void {
+    const text = scriptBlock.trim();
+    if (!text) return;
+    if (isScriptBlockLoggingEnabled(this.registry)) {
+      this.eventLog.writeEventLog(
+        POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
+        'Information',
+        `Creating Scriptblock text (1 of 1):\n${text}\n\n`
+        + `ScriptBlock ID: ${scriptBlockId(text)}\nPath: `,
+        {
+          MessageNumber: '1', MessageTotal: '1',
+          ScriptBlockText: text, ScriptBlockId: scriptBlockId(text), Path: '',
+        });
+    }
+    if (isTranscriptionEnabled(this.registry)) this.appendTranscript(text, output);
+  }
+
+  /**
+   * Ajoute une commande et sa sortie à la transcription en cours, en
+   * créant le fichier — en-tête compris — à la première écriture.
+   */
+  private appendTranscript(command: string, output: string): void {
+    const dir = transcriptDirectory(this.registry);
+    if (!this.transcriptStartedAt) this.transcriptStartedAt = this.simulatedDate();
+    const path = `${dir}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
+    const existing = this.fs.readFile(path);
+    const head = existing.ok && existing.content !== undefined
+      ? existing.content
+      : transcriptHeader(
+        this.getHostname(), this.userMgr.currentUser || 'Administrator',
+        this.transcriptStartedAt);
+    this.fs.mkdirp(dir);
+    this.fs.createFile(path, `${head}PS> ${command}\n${output ? `${output}\n` : ''}`);
+  }
+
+  /**
+   * `ProcessCreationIncludeCmdLine_Enabled` — la stratégie qui décide si
+   * 4688 porte la ligne de commande. Elle existe parce qu'une ligne de
+   * commande peut contenir un secret ; l'auditer est un choix, pas un
+   * défaut, et c'est ce choix qui rend visible une obfuscation
+   * `-EncodedCommand`.
+   */
+  isCommandLineAuditEnabled(): boolean {
+    const values = this.registry.getItemPropertyValues(
+      'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\Audit');
+    if (!values) return false;
+    for (const [name, value] of Object.entries(values)) {
+      if (name.toLowerCase() !== 'processcreationincludecmdline_enabled') continue;
+      return String(value).trim() !== '0' && String(value).trim() !== '';
+    }
+    return false;
+  }
+
+  syncLinkLocalResponders(): void {
+    if (!this.getIsPoweredOn()) return;
+    const llmnr = this.getLlmnrAgent();
+    const mdns = this.getMdnsAgent();
+    if (isLlmnrEnabled(this.registry)) llmnr.start(); else llmnr.stop();
+    if (isMdnsEnabled(this.registry)) mdns.start(); else mdns.stop();
+  }
+
+  override powerOn(): void {
+    super.powerOn();
+    this.syncLinkLocalResponders();
+  }
+
+  override powerOff(): void {
+    this._llmnrAgent?.stop();
+    this._mdnsAgent?.stop();
+    super.powerOff();
   }
 
   /**
@@ -409,6 +622,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.securityAuditProjection?.dispose();
     this.securityAuditProjection = new WindowsSecurityAuditProjection(
       bus, new WindowsSecurityAudit(this.eventLog), this.id, this.auditPolicy,
+      () => this.isCommandLineAuditEnabled(),
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
@@ -1778,6 +1992,67 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /**
+   * Le nom relève-t-il de mDNS et de lui seul ?
+   *
+   * `.local` ne part jamais vers un serveur DNS unicast (RFC 6762 §3),
+   * et Windows respecte cette règle depuis la version 1703. Envoyer un
+   * `.local` au DNS reviendrait à demander à un serveur de trancher sur
+   * un espace de noms qui appartient au lien.
+   */
+  private isMdnsName(name: string): boolean {
+    const lower = name.toLowerCase().replace(/\.$/, '');
+    return lower.endsWith('.local') && lower.split('.').length === 2;
+  }
+
+  /** Un nom sans point : le domaine de LLMNR (RFC 4795 §2.1). */
+  private isLlmnrName(name: string): boolean {
+    const lower = name.toLowerCase().replace(/\.$/, '');
+    return lower !== '' && !lower.includes('.');
+  }
+
+  /**
+   * Le dernier recours du client DNS Windows : les deux protocoles de
+   * lien. `.local` va à mDNS, un nom mono-label à LLMNR — jamais
+   * l'inverse. Chacun n'est consulté que si la stratégie du registre le
+   * laisse actif ; c'est la même porte que celle qui décide de tenir le
+   * port, donc `EnableMulticast /d 0` ferme la résolution en même temps
+   * que le répondeur.
+   */
+  private resolveLinkLocalSync(name: string): string[] {
+    if (this.isMdnsName(name)) {
+      return isMdnsEnabled(this.registry) ? this.getMdnsAgent().resolveSync(name) : [];
+    }
+    if (this.isLlmnrName(name)) {
+      return isLlmnrEnabled(this.registry) ? this.getLlmnrAgent().resolveSync(name) : [];
+    }
+    return [];
+  }
+
+  private async resolveLinkLocal(name: string): Promise<string[]> {
+    if (this.isMdnsName(name)) {
+      return isMdnsEnabled(this.registry) ? this.getMdnsAgent().resolve(name) : [];
+    }
+    if (this.isLlmnrName(name)) {
+      return isLlmnrEnabled(this.registry) ? this.getLlmnrAgent().resolve(name) : [];
+    }
+    return [];
+  }
+
+  /**
+   * Une réponse de lien entre dans le cache du client DNS, avec son TTL.
+   * Sans cela `ipconfig /displaydns` et `Get-DnsClientCache` ne
+   * verraient jamais un nom que `ping` vient pourtant de résoudre — deux
+   * commandes du même système se contrediraient.
+   */
+  private cacheLinkLocalAnswer(name: string, addresses: readonly string[]): void {
+    if (addresses.length === 0) return;
+    const ttl = this.isMdnsName(name) ? MDNS_RECORD_TTL : LLMNR_RECORD_TTL;
+    this.dnsCache.store(name, addresses.map((ip) => ({
+      name, ttl, rrClass: 1, data: { type: RRType.A, address: new IPAddress(ip) },
+    })));
+  }
+
+  /**
    * Resolve a name to an IPv4 address, mirroring the Windows resolver
    * order: literal IP → hosts file → the machine's own name → DNS.
    * The DNS step queries each configured server over UDP/53 through the
@@ -1806,33 +2081,60 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         try { return new IPAddress(cached); } catch { void 0; }
       }
     }
-    for (const { server, qname } of this.dnsResolutionAttempts(name)) {
-      const response = await this.queryDnsServer(server, qname, 'A');
-      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-      if (aRecords.length > 0) {
-        this.dnsCache.store(qname, response!.answers);
-        return (aRecords[0].data as ARecordData).address;
+    if (!this.isMdnsName(name)) {
+      for (const { server, qname } of this.dnsResolutionAttempts(name)) {
+        const response = await this.queryDnsServer(server, qname, 'A');
+        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+        if (aRecords.length > 0) {
+          this.dnsCache.store(qname, response!.answers);
+          return (aRecords[0].data as ARecordData).address;
+        }
       }
+    }
+
+    // 5. Le lien, quand le DNS n'a rien su dire.
+    const linkLocal = await this.resolveLinkLocal(name);
+    if (linkLocal.length > 0) {
+      this.cacheLinkLocalAnswer(name, linkLocal);
+      try { return new IPAddress(linkLocal[0]); } catch { return null; }
     }
     return null;
   }
 
-  resolveDnsSync(name: string): string[] {
-    const hostsIp = this.readHostsFile().resolve(name, 4);
-    if (hostsIp) return [hostsIp];
-    for (const qname of this.dnsSearchCandidates(name)) {
-      const cached = this.dnsCache.lookup(qname, 'A');
-      if (cached) return [cached];
+  /**
+   * L'ordre du client DNS Windows, avec les restrictions que
+   * `Resolve-DnsName` sait poser : fichier hosts, cache, serveurs DNS,
+   * puis le lien. Chaque commutateur retire une étape — c'est ainsi que
+   * l'opérateur découvre *qui* a répondu, puisque la cmdlet ne le dit
+   * pas d'elle-même.
+   */
+  resolveDnsSync(name: string, options: DnsClientQueryOptions = {}): string[] {
+    const linkOnly = options.llmnrOnly === true;
+    if (!options.noHostsFile && !linkOnly) {
+      const hostsIp = this.readHostsFile().resolve(name, 4);
+      if (hostsIp) return [hostsIp];
     }
-    for (const { server, qname } of this.dnsResolutionAttempts(name)) {
-      const response = this.queryDnsServerSync(server, qname, 'A');
-      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-      if (aRecords.length > 0) {
-        this.dnsCache.store(qname, response!.answers);
-        return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
+    if (!linkOnly) {
+      for (const qname of this.dnsSearchCandidates(name)) {
+        const cached = this.dnsCache.lookup(qname, 'A');
+        if (cached) return [cached];
       }
     }
-    return [];
+    if (options.cacheOnly) return [];
+    if (!this.isMdnsName(name) && !linkOnly) {
+      for (const { server, qname } of this.dnsResolutionAttempts(name)) {
+        const response = this.queryDnsServerSync(server, qname, 'A');
+        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+        if (aRecords.length > 0) {
+          this.dnsCache.store(qname, response!.answers);
+          return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
+        }
+      }
+    }
+    if (options.dnsOnly) return [];
+    const linkLocal = this.resolveLinkLocalSync(name);
+    if (linkLocal.length > 0) this.cacheLinkLocalAnswer(name, linkLocal);
+    return linkLocal;
   }
 
   resolveDnsViaServerSync(name: string, server: string): string[] {
@@ -2037,7 +2339,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'cls':     return '';
       case 'doskey':  return this.cmdDoskey(args);
       case 'powershell':
+      case 'powershell.exe':
       case 'pwsh':
+      case 'pwsh.exe':
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
@@ -2693,6 +2997,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   // ─── DHCP Event Log ─────────────────────────────────────────────
 
+  /**
+   * Les identifiants que le client DHCP de Windows pose dans le journal
+   * Système. Repris tels quels du rendu que `wevtutil` fabriquait
+   * autrefois, pour que la transition ne déplace aucun numéro.
+   */
+  private static readonly DHCP_EVENT_IDS: Record<string, number> = {
+    INIT: 1000, DISCOVER: 1001, OFFER: 1002, REQUEST: 1003,
+    ACK: 1004, RELEASE: 1005, NAK: 1006, RENEW: 1007, RESET: 1008,
+  };
+
   private syncDHCPEvents(): void {
     for (const [name] of this.ports) {
       const logs = this.dhcpClient.getLogs(name);
@@ -2719,8 +3033,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private addDHCPEvent(type: string, message: string): void {
-    const timestamp = new Date().toISOString();
+    const timestamp = this.simulatedDate().toISOString();
     this.dhcpEventLog.push(`[${timestamp}] DHCP ${type}: ${message}`);
+    // Et dans le journal Système, pour de vrai. `wevtutil` synthétisait
+    // auparavant ces lignes à la volée dès que la ligne de commande
+    // contenait le mot « dhcp » ; désormais une requête XPath sur le
+    // fournisseur `Dhcp-Client` les trouve parce qu'elles y sont —
+    // c'est la même information, mais atteignable pour la bonne raison,
+    // et visible aussi de `Get-WinEvent` et de l'Observateur.
+    this.eventLog.writeEventLog(
+      'System', 'Dhcp-Client', WindowsPC.DHCP_EVENT_IDS[type] ?? 1000, 'Information',
+      message, { DhcpEventType: type });
   }
 
   // ─── systeminfo ────────────────────────────────────────────────

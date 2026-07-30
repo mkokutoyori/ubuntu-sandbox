@@ -11,6 +11,8 @@
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { WindowsSecurityAudit } from './WindowsSecurityAudit';
+import { nextLogonId } from './WindowsSecurityAudit';
+import { BOOT_PRIVILEGE_LIST } from './PSEventLogProvider';
 import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
   WindowsAccountChangedPayload,
@@ -32,6 +34,8 @@ export class WindowsSecurityAuditProjection {
     private readonly audit: WindowsSecurityAudit,
     private readonly deviceId: string,
     private readonly auditPolicy?: WindowsAuditPolicy,
+    /** Vrai quand `ProcessCreationIncludeCmdLine_Enabled` est posé. */
+    private readonly commandLineAudited?: () => boolean,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.account.changed', (e) => this.onAccountChanged(e.payload)),
@@ -94,11 +98,28 @@ export class WindowsSecurityAuditProjection {
     }
   }
 
+  /**
+   * L'identifiant de session en cours pour chaque compte connecté.
+   *
+   * C'est ce qui rend la corrélation possible : le 4634 doit porter le
+   * même `TargetLogonId` que le 4624 qui l'a ouverte, sinon on voit des
+   * connexions et des déconnexions sans savoir lesquelles vont ensemble.
+   */
+  private readonly openSessions = new Map<string, string>();
+
   private onLogon(p: WindowsLogonEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (p.success) {
       if (!this.gated('Logon', 'success')) return;
-      this.audit.logonSuccess(p.account, p.logonType);
+      const logonId = nextLogonId();
+      this.openSessions.set(p.account.toLowerCase(), logonId);
+      this.audit.logonSuccess(p.account, p.logonType, undefined, logonId);
+      // 4672 — un compte privilégié reçoit ses privilèges à l'ouverture
+      // de session, et Windows le journalise séparément du 4624. C'est
+      // l'événement qu'on surveille pour repérer une session à pouvoirs.
+      if (isPrivilegedAccount(p.account) && this.gated('Special Logon', 'success')) {
+        this.audit.specialPrivileges(p.account, ADMIN_PRIVILEGES, logonId);
+      }
     } else {
       if (!this.gated('Logon', 'failure')) return;
       this.audit.logonFailure(p.account);
@@ -108,7 +129,10 @@ export class WindowsSecurityAuditProjection {
   private onLogoff(p: WindowsLogoffEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Logoff', 'success')) return;
-    this.audit.logoff(p.account);
+    const key = p.account.toLowerCase();
+    const logonId = this.openSessions.get(key);
+    this.openSessions.delete(key);
+    this.audit.logoff(p.account, p.logonType, logonId);
   }
 
   private onGroupCreated(p: WindowsGroupEventPayload): void {
@@ -132,12 +156,32 @@ export class WindowsSecurityAuditProjection {
 
   private onProcess(p: WindowsProcessEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    const details = {
+      ppid: p.ppid, parentName: p.parentName, owner: p.owner,
+      // Windows ne journalise la ligne de commande que si la stratégie
+      // `ProcessCreationIncludeCmdLine_Enabled` est posée. La lire ici
+      // plutôt que d'inclure le champ inconditionnellement, c'est ce qui
+      // fait de ce réglage autre chose qu'une valeur décorative.
+      commandLine: this.commandLineAudited?.() ? p.commandLine : undefined,
+    };
     if (p.started) {
       if (!this.gated('Process Creation', 'success')) return;
-      this.audit.processCreated(p.name, p.pid);
+      this.audit.processCreated(p.name, p.pid, details);
     } else {
       if (!this.gated('Process Termination', 'success')) return;
-      this.audit.processTerminated(p.name, p.pid);
+      this.audit.processTerminated(p.name, p.pid, details);
     }
   }
+}
+
+/**
+ * Les privilèges qu'un jeton d'administrateur reçoit — la même liste que
+ * les entrées 4672 de démarrage, pour que les deux ne divergent pas.
+ */
+const ADMIN_PRIVILEGES = BOOT_PRIVILEGE_LIST.split('\n\t\t\t');
+
+/** Un compte qui ouvre une session à privilèges (4672). */
+function isPrivilegedAccount(account: string): boolean {
+  const leaf = account.slice(account.indexOf('\\') + 1).toLowerCase();
+  return leaf === 'administrator' || leaf === 'system' || leaf.endsWith('admin');
 }

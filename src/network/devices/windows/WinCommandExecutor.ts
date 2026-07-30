@@ -56,7 +56,34 @@ export interface WinCommandContext {
   /** Optional event-log provider — `wevtutil qe Security|System|...` reads here. */
   eventLog?: {
     getEntriesStructured: (logName: string, opts?: { newest?: number; entryType?: string; source?: string }) =>
-      Array<{ source: string; eventId: number; message: string }> | null;
+      Array<{
+        source: string; eventId: number; message: string;
+        index?: number; entryType?: string; timeGenerated?: Date;
+        data?: Record<string, string>;
+      }> | null;
+    /** `wevtutil el` — le vrai registre des journaux. */
+    getAllLogsStructured?: () => Array<{ logName: string; entries: number; maxSizeKB: number }>;
+    /** `wevtutil gl` / `gli` — configuration et statut d'un journal. */
+    getLogStatus?: (logName: string) => {
+      logName: string; enabled: boolean; maxSizeKB: number;
+      overflow: 'OverwriteOlder' | 'DoNotOverwrite' | 'OverwriteAsNeeded';
+      numberOfLogRecords: number; oldestRecordNumber: number;
+      fileSize: number; lastWriteTime: Date | null;
+    } | null;
+    /** `wevtutil sl` — rend `null` en cas de succès, le refus sinon. */
+    setLogConfig?: (logName: string, cfg: {
+      enabled?: boolean; maxSizeKB?: number; retention?: boolean;
+    }) => string | null;
+    /** `wevtutil epl` — rend `null` en cas de succès, le refus sinon. */
+    exportLog?: (logName: string, destination: string, overwrite: boolean) => string | null;
+    /** `wevtutil qe /lf:` — relit un fichier exporté. */
+    readExportedLog?: (path: string) => string | null;
+    /** `wevtutil al` — rend `null` en cas de succès, le refus sinon. */
+    archiveExportedLog?: (path: string) => string | null;
+    /** `wevtutil cl` — vide réellement le journal. */
+    clearEventLog?: (logName: string) => string;
+    /** L'horloge de l'hôte, pour les filtres `timediff`. */
+    now?: () => number;
   };
   /** Device hostname */
   hostname: string;

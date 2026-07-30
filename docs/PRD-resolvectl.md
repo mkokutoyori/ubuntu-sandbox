@@ -422,6 +422,105 @@ NSS ; `resolveHostnameSync` lui reste réservé, avec la même limite.
 
 ---
 
+### 7.7 Le même lien, vu depuis Windows
+
+LLMNR est une invention de Microsoft, et un Windows le parle par défaut.
+Ce simulateur en avait pourtant tiré une asymétrie difficile à défendre :
+tout ce qui précède ne valait que pour les hôtes Linux. Mesuré avant
+d'écrire une ligne — une machine Windows et une machine Linux sur le même
+commutateur, chacune sachant se nommer, ne se voyaient pas :
+
+| Mesure de départ | Résultat |
+|---|---|
+| `ping alpha` depuis Windows | `could not find host alpha` |
+| `Resolve-DnsName alpha` | `DNS name does not exist` |
+| `resolvectl query win10` depuis Linux | `Name or service not known` |
+| Ports 5355 / 5353 sur Windows | aucun |
+
+Les deux agents (`LlmnrAgent`, `MdnsAgent`) ne dépendaient que de
+`EndHost`, dont `WindowsPC` hérite : il n'y avait rien à spécialiser, et
+rien à dupliquer — seulement à brancher, et à trouver le bon interrupteur.
+
+**La commande qui les allume, elle, n'est pas la même.** Windows n'a pas
+de `resolvectl` ; il a une clé de stratégie, celle que pose l'objet de
+stratégie de groupe « Désactiver la résolution de noms multicast » et que
+tout guide de durcissement fait écrire à la main :
+
+```
+HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient
+    EnableMulticast : REG_DWORD  0 → LLMNR éteint
+    EnableMDNS      : REG_DWORD  0 → mDNS éteint
+```
+
+**L'absence de valeur vaut « activé ».** C'est l'état d'un Windows sorti
+de l'installation, pas un choix de ce simulateur — et c'est l'inverse du
+côté Linux, où `resolvectl mdns <lien> yes` est nécessaire. Cette
+asymétrie est celle des deux systèmes.
+
+Pour que le réglage ne soit pas décoratif, `PSRegistryProvider` notifie
+désormais après toute écriture (`onValueChanged`), quel que soit le
+chemin — `reg add` de cmd, `Set-ItemProperty` de PowerShell, stratégie de
+groupe. Sans ce fil, poser `EnableMulticast` à zéro aurait affiché
+« opération réussie » pendant que le port 5355 restait ouvert.
+
+**L'ordre de résolution** suit celui du client DNS de Windows : littéral
+→ fichier `hosts` → cache → serveurs DNS → lien. Un nom `.local` ne part
+**jamais** vers un serveur unicast (RFC 6762 §3, respecté par Windows
+depuis la version 1703) ; un nom mono-label va à LLMNR. Une réponse de
+lien entre dans le cache du client avec son TTL, faute de quoi
+`ipconfig /displaydns` et `Get-DnsClientCache` ne verraient pas un nom
+que `ping` vient pourtant de résoudre.
+
+`nslookup` reste en dehors : il parle directement aux serveurs, sans
+passer par le client DNS — c'est le comportement réel, et c'est ce qui
+permet de distinguer les deux.
+
+| Surface | État |
+|---|---|
+| Répondeur LLMNR / mDNS sur `WindowsPC` | Réel, mêmes agents que Linux |
+| `EnableMulticast` / `EnableMDNS` | Commandent l'écoute **et** la résolution |
+| `ping`, `Resolve-DnsName`, `resolveHostname` | Passent par le lien en dernier recours |
+| `Resolve-DnsName -DnsOnly / -LlmnrOnly / -NoHostsFile / -CacheOnly` | Réels — la cmdlet ne nommant pas le protocole qui a répondu, les poser est le seul moyen de le savoir |
+| `Get-NetUDPEndpoint` | Ajouté : le pendant UDP de `Get-NetTCPConnection`, qui manquait |
+| `netstat -an`, `Get-DnsClientCache`, `ipconfig /displaydns` | Cohérents avec ce que le lien a répondu |
+
+**Un appelant qui ne sait pas attendre.** Les cmdlets du client DNS de
+Windows n'ont pas de forme asynchrone, et `OracleExecutor` mis à part,
+`ICmdlet.execute` est synchrone de bout en bout. `queryMulticastDnsSync`
+existe pour cela : dans ce simulateur une trame est remise par appel
+direct, donc la réponse d'un pair arrive pendant l'envoi. C'est fidèle en
+*sémantique* — un résolveur système bloque son appelant, `gethostbyname`
+aussi — mais il n'y a pas de délai à attendre : un pair qui ne répond pas
+rend la main immédiatement, là où un vrai hôte patienterait sa seconde.
+
+**Un défaut voisin, révélé par les probes et corrigé.**
+`Set-ItemProperty -Path 'HKLM\SOFTWARE\...'` — la forme de `reg.exe`,
+sans les deux-points du lecteur PowerShell — ne passait aucun des deux
+tests de chemin et retombait sur un `return null` muet : ni erreur, ni
+effet. PowerShell réel répond `Cannot find drive. A drive with the name
+'HKLM' does not exist.` ; c'est désormais ce que rendent
+`Set-ItemProperty` et `Remove-ItemProperty`. Une écriture perdue qui se
+présente comme réussie est pire qu'un refus.
+
+**Hors périmètre, et pourquoi.**
+
+- **Publication DNS-SD depuis Windows.** Le répondeur mDNS intégré à
+  Windows répond pour le nom de la machine ; il ne publie pas de service.
+  Publier demande Bonjour (`dns-sd.exe`), qui n'est pas un composant du
+  système. Il n'y a donc pas d'équivalent natif aux unités
+  `/etc/systemd/dnssd/*.dnssd` du §7.5, et en inventer un serait ajouter
+  une surface que Windows n'a pas.
+- **Granularité par interface.** La clé
+  `...\Tcpip\Parameters\Interfaces\{GUID}\EnableMulticast` existe sur un
+  vrai Windows, mais ce simulateur n'a pas de modèle de GUID d'interface :
+  la stratégie est donc appliquée à l'hôte entier. C'est la même limite
+  que celle déjà déclarée côté Linux pour le *répondeur*.
+- **NetBIOS (`-NetbiosFallback`, `-LlmnrNetbiosOnly`).** `nbtstat` rend
+  une table de noms locale, mais aucune résolution NBNS ne circule sur le
+  fil ; ces deux commutateurs resteraient sans objet.
+
+---
+
 ## 8. Hors périmètre
 
 - **D-Bus** (`org.freedesktop.resolve1`) : accès direct en mémoire.
@@ -461,6 +560,7 @@ NSS ; `resolveHostnameSync` lui reste réservé, avec la même limite.
 | `probe-resolvectl-01-status-query.test.ts` | Phase 1 — dont **la corrélation `resolvectl query` ↔ `getent hosts`** |
 | `probe-resolvectl-02-stub-et-cache.test.ts` | Phase 2 — le stub répond pour de vrai, le cache sert et se vide |
 | `probe-resolvectl-03-par-lien.test.ts` | Phases 3 et 4 |
+| `probe-windows-01-noms-de-lien.test.ts` | §7.7 — les deux répondeurs sur Windows, la stratégie du registre, l'ordre de résolution, la cohérence du cache client |
 
 Mêmes règles de méthode : mesurer avant d'affirmer, ne jamais faire
 passer un test par la force, corréler deux commandes plutôt que figer une

@@ -204,6 +204,14 @@ export class PowerShellSubShell implements ISubShell {
       ? result.split('\n')
       : [];
 
+    // Le seul endroit par lequel passe une commande PowerShell exécutée
+    // sur cette machine — donc le seul où la journaliser une fois, ni
+    // plus ni moins. Les deux stratégies décident ; celle-ci ne fait
+    // qu'annoncer.
+    if (this.device instanceof WindowsPC) {
+      this.device.recordPowerShellExecution(trimmed, output.join('\n'));
+    }
+
     return {
       output,
       exit: false,

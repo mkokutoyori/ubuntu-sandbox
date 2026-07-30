@@ -19,6 +19,12 @@ export interface WindowsProcess {
   pid: number;
   name: string;
   ppid: number;
+  /**
+   * Ligne de commande complète. Par défaut le seul nom de l'image, ce
+   * qu'est bien la ligne de commande d'un processus lancé sans
+   * argument ; les appelants qui en ont une vraie la passent.
+   */
+  commandLine?: string;
   session: ProcessSession;
   sessionId: number;
   owner: string;
@@ -99,9 +105,16 @@ export class WindowsProcessManager {
   }
 
   private publishProcess(pid: number, name: string, started: boolean): void {
+    const proc = this.processes.get(pid);
     this.bus?.publish({
       topic: started ? 'windows.process.started' : 'windows.process.stopped',
-      payload: { deviceId: this.deviceId, pid, name, started },
+      payload: {
+        deviceId: this.deviceId, pid, name, started,
+        ppid: proc?.ppid,
+        parentName: proc ? this.processes.get(proc.ppid)?.name : undefined,
+        owner: proc?.owner,
+        commandLine: proc?.commandLine,
+      },
     });
   }
 
@@ -258,7 +271,7 @@ export class WindowsProcessManager {
   /** Spawn a new process (used by service start, etc.) */
   spawnProcess(name: string, ppid: number, owner: string, opts: {
     session?: ProcessSession; sessionId?: number; hostedServices?: string[];
-    systemOwned?: boolean;
+    systemOwned?: boolean; commandLine?: string;
   } = {}): WindowsProcess {
     const pid = this.allocatePid();
     const proc: WindowsProcess = {
@@ -278,6 +291,7 @@ export class WindowsProcessManager {
       critical: false,
       systemOwned: opts.systemOwned ?? false,
       hostedServices: opts.hostedServices ?? [],
+      commandLine: opts.commandLine ?? name,
     };
     this.processes.set(pid, proc);
     this.publishProcess(pid, name, true);
@@ -294,8 +308,8 @@ export class WindowsProcessManager {
     if (proc.systemOwned && !isAdmin) return `ERROR: Access is denied.`;
     if (proc.critical) return `ERROR: The process "${proc.name}" with PID ${pid} is critical and cannot be terminated.`;
 
-    this.processes.delete(pid);
     this.publishProcess(pid, proc.name, false);
+    this.processes.delete(pid);
     for (const serviceName of proc.hostedServices) {
       this.serviceManager?.recordCrash(serviceName, this.nowMs());
     }

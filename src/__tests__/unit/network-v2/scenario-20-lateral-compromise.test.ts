@@ -465,7 +465,12 @@ describe('Phase 10 — corrélation des journaux', () => {
     await LAB.wks.executeCommand(
       `powershell -Command "Write-EventLog -LogName Security -Source Microsoft-Windows-Security-Auditing -EventID 4624 -Message 'An account was successfully logged on: ${WIN_USER}'"`,
     );
-    const out = await LAB.wks.executeCommand('wevtutil qe Security /c:5 /f:text');
+    // `/rd:true` — `wevtutil` lit du plus ancien au plus récent par
+    // défaut, à l'inverse de `Get-WinEvent`. Sans lui, `/c:5` rend les
+    // cinq entrées de démarrage et jamais l'événement qu'on vient
+    // d'écrire. Un vrai Windows se comporte pareil : c'est ce que tape
+    // un analyste qui cherche un fait récent.
+    const out = await LAB.wks.executeCommand('wevtutil qe Security /c:5 /rd:true /f:text');
     expect(out).toMatch(/Event ID:\s*4624/);
     expect(out).toMatch(new RegExp(WIN_USER));
   });

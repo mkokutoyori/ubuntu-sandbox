@@ -57,7 +57,8 @@ import {
 } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsRecord } from '@/network/dns/compat/DnsWireCompat';
 import {
-  bindMulticastDns, unbindMulticastDns, queryMulticastDns, announceMulticastDns,
+  bindMulticastDns, unbindMulticastDns, queryMulticastDns, queryMulticastDnsSync,
+  announceMulticastDns,
   type McastDnsReply,
 } from '@/network/dns/transport/MulticastDnsTransport';
 import type { ServiceRegistration } from '@/network/dnssd/types';
@@ -597,15 +598,43 @@ export class MdnsAgent {
       },
     });
     const responses = await this.askLink(target, 'A', timeoutMs);
-    const addresses: string[] = [];
-    for (const r of responses) {
-      for (const rr of r.answers) {
-        if (rr.data.type !== RRType.A) continue;
-        if (rr.name.toLowerCase().replace(/\.$/, '') !== target) continue;
-        const ip = (rr.data as { address: { toString(): string } }).address.toString();
-        if (!addresses.includes(ip)) addresses.push(ip);
-      }
-    }
-    return addresses;
+    return addressesFor(responses, target);
   }
+
+  /**
+   * La même question, posée par un appelant qui ne sait pas attendre —
+   * les cmdlets du client DNS de Windows n'ont pas de forme
+   * asynchrone. Voir {@link queryMulticastDnsSync} pour ce que cela
+   * coûte en fidélité.
+   */
+  resolveSync(name: string): string[] {
+    const target = name.toLowerCase().replace(/\.$/, '');
+    if (!isLocalName(target)) return [];
+
+    getDefaultEventBus().publish({
+      topic: 'mdns.query.sent',
+      payload: {
+        deviceId: this.host.getId(), hostname: this.host.getHostname(), name: target,
+      },
+    });
+    const query = buildLegacyQueryMessage(nextDnsTransactionId(), target, 'A', {
+      recursionDesired: false,
+    });
+    if (!query) return [];
+    return addressesFor(queryMulticastDnsSync(this.host, MDNS_BINDING, query), target);
+  }
+}
+
+/** Les adresses annoncées pour ce nom exactement, sans doublon. */
+function addressesFor(responses: readonly DnsMessage[], target: string): string[] {
+  const addresses: string[] = [];
+  for (const r of responses) {
+    for (const rr of r.answers) {
+      if (rr.data.type !== RRType.A) continue;
+      if (rr.name.toLowerCase().replace(/\.$/, '') !== target) continue;
+      const ip = (rr.data as { address: { toString(): string } }).address.toString();
+      if (!addresses.includes(ip)) addresses.push(ip);
+    }
+  }
+  return addresses;
 }

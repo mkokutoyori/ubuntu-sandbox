@@ -242,6 +242,7 @@ export function buildIpCtx(
         srcIp: r.type === 'connected'
           ? net.getPorts().get(r.iface)?.getIPAddress()?.toString()
           : undefined,
+        linkdown: r.linkdown,
       }));
     },
     addDefaultRoute(gateway: IPAddress): string {

@@ -2054,7 +2054,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const vlanMatch = args.join(' ').match(/^vl(?:an)?\s*(\d+)$/i);
       if (vlanMatch) return this.showSviInterface(parseInt(vlanMatch[1], 10));
       const name = this.resolveInterfaceName(args.join(' '));
-      if (name && this.d().getPort(name)) return showInterface(this.d(), name);
+      if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
       return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
     });
 
@@ -3248,7 +3248,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showAllInterfacesDetail(): string {
     const sw = this.d();
-    return sw.getPortNames().map((n) => showInterface(sw, n)).join('\n');
+    return sw.getPortNames().map((n) => showInterface(sw, n, true)).join('\n');
   }
 
   private showTrunkTable(portNames: string[]): string {
@@ -3373,7 +3373,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const cfg = configs.get(portName);
       const shortName = this.abbreviateInterface(portName).padEnd(12);
       const desc = (sw.getInterfaceDescription(portName) || '').slice(0, 17).padEnd(19);
-      const connected = port.getIsUp() && port.isConnected();
+      const connected = port.getIsUp() && port.hasCarrier();
       const status = (port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled').padEnd(13);
       const vlanStr = cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1);
       const duplex = connected ? 'a-full' : 'auto';

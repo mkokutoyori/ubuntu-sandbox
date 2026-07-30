@@ -13,6 +13,9 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IEventLogProvider, EventLogEntryInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import {
+  parseEventXPath, parseEventQueryList, type XPathChannelQuery,
+} from '@/network/devices/windows/WinEventXPath';
 
 function requireEventLog(ctx: CmdletContext): IEventLogProvider {
   if (!ctx.providers.eventLog) {
@@ -181,7 +184,7 @@ export class GetWinEventCmdlet implements ICmdlet {
   readonly name = 'get-winevent';
   readonly displayName = 'Get-WinEvent';
   readonly aliases = [] as const;
-  readonly parameters = ['LogName', 'FilterHashtable', 'MaxEvents', 'ListLog', 'ListProvider'] as const;
+  readonly parameters = ['LogName', 'FilterHashtable', 'FilterXml', 'FilterXPath', 'MaxEvents', 'ListLog', 'ListProvider'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);
@@ -191,6 +194,29 @@ export class GetWinEventCmdlet implements ICmdlet {
         RecordCount: l.entries,
         MaximumSizeInBytes: l.maxSizeKB * 1024,
       } as Record<string, PSValue>)) as PSValue;
+    }
+
+    // `-FilterXml` et `-FilterXPath` partagent l'évaluateur XPath de
+    // `wevtutil qe /q:` — un seul langage de filtre pour les deux
+    // surfaces, écrit une fois. Sans ce partage, les deux commandes
+    // finiraient par ne pas comprendre les mêmes requêtes.
+    const xmlFilter = ctx.named['filterxml'];
+    if (xmlFilter !== undefined && xmlFilter !== null) {
+      return this.byXml(ctx, log, psValueToString(xmlFilter));
+    }
+    const xpathFilter = ctx.named['filterxpath'];
+    if (xpathFilter !== undefined && xpathFilter !== null) {
+      const channel = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
+      if (!channel) {
+        ctx.emitError('Get-WinEvent : -FilterXPath requires -LogName.');
+        return null;
+      }
+      const parsed = parseEventXPath(psValueToString(xpathFilter));
+      if (!parsed.predicate) {
+        ctx.emitError(`Get-WinEvent : ${parsed.error ?? 'The specified query is invalid.'}`);
+        return null;
+      }
+      return this.emit(ctx, log, [{ path: channel, predicate: parsed.predicate }]);
     }
 
     const filter = ctx.named['filterhashtable'];
@@ -245,5 +271,58 @@ export class GetWinEventCmdlet implements ICmdlet {
       MachineName:    e.data?.MachineName ?? localHostname,
       ToXml:          () => buildEventXml(e),
     } as Record<string, PSValue>)) as PSValue;
+  }
+
+  /** `-FilterXml` : un `<QueryList>` complet, canal(aux) compris. */
+  private byXml(ctx: CmdletContext, log: IEventLogProvider, xml: string): PSValue {
+    const parsed = parseEventQueryList(xml);
+    if (parsed.error) {
+      ctx.emitError(`Get-WinEvent : ${parsed.error}`);
+      return null;
+    }
+    return this.emit(ctx, log, parsed.queries);
+  }
+
+  /**
+   * Rend les événements retenus par une ou plusieurs requêtes de canal.
+   *
+   * Un canal inconnu est signalé plutôt qu'ignoré : une requête portant
+   * sur un journal qui n'existe pas doit le dire, sinon elle rend zéro
+   * événement et laisse croire que le filtre n'a rien trouvé.
+   */
+  private emit(
+    ctx: CmdletContext, log: IEventLogProvider, queries: XPathChannelQuery[],
+  ): PSValue {
+    const now = Date.now();
+    const localHostname = ctx.providers.network?.getHostname() ?? '';
+    const max = ctx.named['maxevents'] !== undefined ? Number(ctx.named['maxevents']) : undefined;
+    const known = new Set((log.listLogs() ?? []).map((l) => l.logName.toLowerCase()));
+
+    const rows: Array<Record<string, PSValue>> = [];
+    for (const q of queries) {
+      if (!known.has(q.path.toLowerCase())) {
+        ctx.emitError(`Get-WinEvent : There is not an event log on the localhost computer that matches "${q.path}".`);
+        return null;
+      }
+      for (const e of log.getEntries(q.path, {})) {
+        if (!q.predicate(e, now)) continue;
+        rows.push({
+          LogName: q.path,
+          Id: e.eventId,
+          Level: e.entryType,
+          ProviderName: e.source,
+          TimeCreated: e.timeGenerated,
+          Message: e.message,
+          RecordId: e.index,
+          MachineName: e.data?.MachineName ?? localHostname,
+          ToXml: () => buildEventXml(e),
+        } as Record<string, PSValue>);
+      }
+    }
+    if (rows.length === 0) {
+      ctx.emitError('No events were found that match the specified selection criteria.');
+      return [];
+    }
+    return (max !== undefined ? rows.slice(0, max) : rows) as PSValue;
   }
 }

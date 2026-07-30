@@ -117,6 +117,19 @@ export interface WindowsProcessEventPayload extends WindowsDeviceRef {
   name: string;
   /** True for a spawn, false for a termination. */
   started: boolean;
+  /** PID du parent — le `ProcessId` de 4688, distinct de `NewProcessId`. */
+  ppid?: number;
+  /** Nom du parent, quand il tourne encore (`ParentProcessName`). */
+  parentName?: string;
+  /** Compte sous lequel le processus s'exécute (`SubjectUserName`). */
+  owner?: string;
+  /**
+   * Ligne de commande complète. Windows ne la journalise dans 4688 que
+   * si `ProcessCreationIncludeCmdLine_Enabled` vaut 1 — c'est
+   * précisément ce réglage qui rend une obfuscation `-EncodedCommand`
+   * visible, et sans lui le champ n'existe pas.
+   */
+  commandLine?: string;
 }
 
 // ─── Port-proxy lifecycle (netsh interface portproxy) ───────────────────

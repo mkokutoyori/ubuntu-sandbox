@@ -102,8 +102,10 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     return this.fs().exists(this.abs(path));
   }
   readFile(path: string): string {
-    const r = this.fs().readFile(this.abs(path));
+    const abs = this.abs(path);
+    const r = this.fs().readFile(abs);
     if (!r.ok) throw new Error(r.error ?? `Cannot read ${path}`);
+    this.pc.auditObjectAccess?.(abs, 'ReadData', '%%4416');
     return r.content ?? '';
   }
   tailFile(path: string, lines: number): string[] {
@@ -148,6 +150,9 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
         : this.fs().rmdir(abs);
       if (!r.ok) throw new Error(r.error ?? `Cannot remove ${path}`);
     } else {
+      // L'audit précède la suppression : après, il n'y a plus d'objet
+      // dont lire la SACL.
+      this.pc.auditObjectAccess?.(abs, 'Delete', '%%1537');
       const r = this.fs().deleteFile(abs);
       if (!r.ok) throw new Error(r.error ?? `Cannot remove ${path}`);
     }
@@ -185,7 +190,11 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
   }
   addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean {
     const abs = this.abs(path);
+    const before = JSON.stringify(this.fs().getACL(abs));
     const ok = this.fs().addACE(abs, { ...ace });
+    if (ok && JSON.stringify(this.fs().getACL(abs)) !== before) {
+      this.pc.auditPermissionChange?.(abs, ace.principal, ace.permissions.join(', '));
+    }
     if (ok) {
       this.pc.getBus().publish({
         topic: 'windows.filesystem.acl-changed',
@@ -197,6 +206,22 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
           changedBy: this.pc.getUserManager().currentUser,
         },
       });
+    }
+    return ok;
+  }
+  getAudit(path: string) {
+    return this.fs().getSacl(this.abs(path));
+  }
+  setAudit(path: string, rules: Array<{ principal: string; flags: Array<'success' | 'failure'>; permissions: string[] }>): boolean {
+    const abs = this.abs(path);
+    const before = JSON.stringify(this.fs().getSacl(abs));
+    const ok = this.fs().setSacl(abs, rules);
+    // 4670 ne se déclenche que si le descripteur a *changé* : appliquer
+    // deux fois la même SACL ne modifie rien, et l'annoncer serait
+    // exactement le genre d'affirmation sans fondement qu'on traque.
+    if (ok && JSON.stringify(this.fs().getSacl(abs)) !== before) {
+      this.pc.auditPermissionChange?.(abs, rules.map((r) => r.principal).join(', '),
+        `SACL: ${rules.map((r) => r.permissions.join('/')).join(', ')}`);
     }
     return ok;
   }
@@ -347,7 +372,12 @@ class WindowsSmbAdapter implements ISmbProvider {
     for (const p of opts?.changeAccess ?? []) permissions.set(p, 'Change');
     for (const p of opts?.readAccess ?? []) permissions.set(p, 'Read');
     if (permissions.size === 0) permissions.set('Everyone', 'Read');
-    return this.pc.smbShares.add(name, path, { permissions });
+    const res = this.pc.smbShares.add(name, path, { permissions });
+    // 5142 — « un objet de partage réseau a été ajouté ». C'est
+    // l'événement de la *création* ; 5140 est celui de l'*accès*, et les
+    // confondre revient à croire qu'un partage créé a déjà été utilisé.
+    if (res.ok) this.pc.auditShareAdded?.(name, path);
+    return res;
   }
   removeShare(name: string) {
     this.requireRole();
@@ -1283,7 +1313,11 @@ class WindowsRegistryAdapter implements IRegistryProvider {
 // ── Event-log adapter (minimal — returns parsed shape where possible) ──────
 
 class WindowsEventLogAdapter implements IEventLogProvider {
-  constructor(private readonly log: PSEventLogProvider) {}
+  constructor(
+    private readonly log: PSEventLogProvider,
+    /** L'appareil, pour l'audit 1102 — absent sur un hôte non-Windows. */
+    private readonly pc?: { auditLogCleared?(logName: string): void },
+  ) {}
 
   listLogs() {
     return this.log.getAllLogsStructured();
@@ -1305,7 +1339,13 @@ class WindowsEventLogAdapter implements IEventLogProvider {
   writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void {
     this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
   }
-  clearLog(logName: string): string { return this.log.clearEventLog(logName); }
+  clearLog(logName: string): string {
+    const out = this.log.clearEventLog(logName);
+    // 1102 s'écrit *après* le vidage : c'est la première entrée du
+    // journal neuf, et souvent la seule trace qu'un effacement a eu lieu.
+    if (!out) this.pc?.auditLogCleared?.(logName);
+    return out;
+  }
   newLog(logName: string, source: string): string { return this.log.newEventLog(logName, source); }
   limitLog(logName: string): void { this.log.limitEventLog(logName); }
 }
@@ -1639,6 +1679,12 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return probe?.success ?? false;
   }
   resolveDns(name: string): string[] { return this.pc.resolveDnsSync(name); }
+  resolveDnsWithOptions(name: string, options: {
+    dnsOnly?: boolean; llmnrOnly?: boolean;
+    noHostsFile?: boolean; cacheOnly?: boolean;
+  }): string[] {
+    return this.pc.resolveDnsSync(name, options);
+  }
   resolveDnsViaServer(name: string, server: string): string[] { return this.pc.resolveDnsViaServerSync(name, server); }
   resolveDnsViaServerWithTtl(name: string, server: string): Array<{ ip: string; ttl: number }> {
     return this.pc.resolveDnsViaServerWithTtlSync(name, server);
@@ -1778,6 +1824,19 @@ class WindowsNetworkAdapter implements INetworkProvider {
         remotePort:    s.state === 'LISTEN' ? 0 : s.remotePort,
         state:         s.state === 'LISTEN' ? 'Listen' : s.state,
         pid:           s.pid,
+      }));
+  }
+
+  getUdpEndpoints() {
+    const table = (this.pc as unknown as { getSocketTable?: () => { getAll: () => Array<{ protocol: string; localAddress: string; localPort: number; pid: number; processName: string }> } }).getSocketTable?.();
+    if (!table) return [];
+    return table.getAll()
+      .filter(s => s.protocol.toLowerCase() === 'udp')
+      .map(s => ({
+        localAddress: s.localAddress,
+        localPort:    s.localPort,
+        pid:          s.pid,
+        processName:  s.processName,
       }));
   }
 
@@ -2000,6 +2059,10 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
   }
   registerTask(task: ScheduledTaskInfo): string {
     this.store().set(task.taskName.toLowerCase(), task);
+    // 4698 — une tâche planifiée est un mécanisme de persistance
+    // courant : la créer sans laisser de trace laissait un angle mort
+    // complet dans la piste d'audit.
+    this.pc.auditScheduledTaskCreated?.(task.taskName, task.command ?? '');
     return `\\${task.taskName}`;
   }
   unregisterTask(name: string): string {
@@ -2933,7 +2996,7 @@ export function createWindowsPSProviders(
     }),
     users:          new WindowsUserAdapter(pc),
     registry:       new WindowsRegistryAdapter(reg),
-    eventLog:       new WindowsEventLogAdapter(log),
+    eventLog:       new WindowsEventLogAdapter(log, pc),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(pc, vpn),
     scheduledTasks: new WindowsScheduledTaskAdapter(pc),

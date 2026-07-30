@@ -30,7 +30,7 @@ import type {
   PSIfStatement, PSElseifClause, PSWhileStatement, PSDoWhileStatement,
   PSDoUntilStatement, PSForStatement, PSForeachStatement,
   PSSwitchStatement, PSSwitchClause, PSTryStatement, PSCatchClause,
-  PSFunctionDefinition, PSReturnStatement, PSBreakStatement,
+  PSFunctionDefinition, PSReturnStatement, PSExitStatement, PSBreakStatement,
   PSContinueStatement, PSThrowStatement, PSTrapStatement,
   PSScriptBlock, PSParamBlock, PSParamDeclaration, PSAttribute,
   PSExpression, PSLiteralExpression, PSVariableExpression,
@@ -159,6 +159,7 @@ export class PSParser {
         case 'class':     return this.parseClassDef();
         case 'enum':      return this.parseEnumDef();
         case 'return':    return this.parseReturnStatement();
+        case 'exit':      return this.parseExitStatement();
         case 'break':     return this.parseBreakStatement();
         case 'continue':  return this.parseContinueStatement();
         case 'throw':     return this.parseThrowStatement();
@@ -405,6 +406,12 @@ export class PSParser {
       const expr = this.parsePrimaryExpression();
       if (expr.type === 'ScriptBlock')
         (expr as unknown as Record<string, unknown>).__invoke__ = true;
+      // The `&` itself must survive parsing. Without this mark the head
+      // is just an expression again, so `& 'Get-Date'` and `& $path`
+      // evaluated to their own text and printed it instead of running
+      // anything — only the bare `& Get-Date` form ever worked, because
+      // a WORD head is not a value.
+      (expr as unknown as Record<string, unknown>).__callop__ = true;
       return expr;
     }
 
@@ -1177,6 +1184,19 @@ export class PSParser {
     return { type: 'ReturnStatement', value, position: pos };
   }
 
+  /**
+   * `exit [<code>]`. A keyword, not a command — without this the word
+   * fell through to command lookup and every script ending in `exit 0`
+   * closed on "the term 'exit' is not recognized".
+   */
+  private parseExitStatement(): PSExitStatement {
+    const pos = this.pos_();
+    this.expectWord('exit');
+    const value = !this.isTerminator() && !this.isAtEnd() && this.canStartExpression()
+      ? this.parseAssignmentRHS() : null;
+    return { type: 'ExitStatement', value, position: pos };
+  }
+
   private parseBreakStatement(): PSBreakStatement {
     const pos = this.pos_();
     this.expectWord('break');
@@ -1552,6 +1572,25 @@ export class PSParser {
       if (this.check(PSTokenType.DOT)) {
         const pos = this.pos_();
         this.advance();
+        // `$obj.'nom de propriété'` — la forme entre guillemets, seule
+        // façon de nommer une propriété qui n'est pas un identifiant
+        // simple. Sans elle, `$xml.Event.EventData.Data[0].'#text'` — la
+        // manière canonique de lire un champ d'EventData — laissait le
+        // point sans effet et rendait l'objet entier au lieu de la
+        // valeur. Le nom n'est pas développé : à ce stade seule la forme
+        // littérale est acceptée, la forme `."$var"` reste à faire.
+        if (this.check(PSTokenType.STRING_SINGLE) || this.check(PSTokenType.STRING_DOUBLE)) {
+          const member = this.advance().value;
+          if (this.check(PSTokenType.LPAREN)) {
+            this.advance();
+            const args = this.parseArgumentList();
+            this.expect(PSTokenType.RPAREN);
+            expr = { type: 'InvocationExpression', callee: makeMember(expr, member, false, pos), arguments: args, position: pos };
+          } else {
+            expr = makeMember(expr, member, false, pos);
+          }
+          continue;
+        }
         if (this.check(PSTokenType.WORD) || this.check(PSTokenType.NUMBER)) {
           // The lexer may bundle "Name.ToUpper" as a single WORD token (it
           // doesn't stop at '.').  Split on '.' so we get proper chained

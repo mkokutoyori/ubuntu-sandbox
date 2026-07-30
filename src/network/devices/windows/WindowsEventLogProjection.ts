@@ -37,6 +37,7 @@ export interface WindowsEventLogSink {
     logName: string, source: string, eventId: number,
     entryType: 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit',
     message: string,
+    data?: Record<string, string>,
   ): string;
 }
 
@@ -202,6 +203,17 @@ export class WindowsEventLogProjection {
       `Service Type:  user mode service\n` +
       `Service Start Type:  demand start\n` +
       `Service Account:  ${p.account}`,
+      // L'ordre compte : un script lit `Data[0]` pour le nom du service,
+      // `Data[1]` pour le binaire. 7045 est le premier événement qu'on
+      // regarde quand un service inconnu apparaît, et un message en
+      // texte libre ne se dépouille pas.
+      {
+        ServiceName: p.serviceName,
+        ImagePath: p.binaryPath,
+        ServiceType: 'user mode service',
+        StartType: 'demand start',
+        AccountName: p.account,
+      },
     );
   }
 

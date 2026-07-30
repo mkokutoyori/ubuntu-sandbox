@@ -89,26 +89,41 @@ describe('Scénario 3 (Windows) — audit des processus : EventID 4688 et journa
       const out = await run(ps(dc), [
         '$Events = Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = 4688 }',
         '$xml = [xml]$Events[0].ToXml()',
-        'foreach ($field in @(\'NewProcessName\', \'ParentProcessName\', \'SubjectUserName\', \'NewProcessId\', \'ProcessId\')) {',
+        'foreach ($field in @(\'NewProcessName\', \'ParentProcessName\', \'SubjectDomainName\', \'SubjectUserName\', \'NewProcessId\', \'ProcessId\')) {',
         '  $val = $xml.Event.EventData.Data | Where-Object {$_.Name -eq $field} | Select-Object -ExpandProperty \'#text\'',
         '  Write-Output "$field=$val"',
         '}',
       ].join('\n'));
       expect(out).toContain('NewProcessName=cmd.exe');
       expect(out).toContain('ParentProcessName=');
-      expect(out).toContain('SubjectUserName=DC01\\Administrator');
+      // Windows sépare le domaine du compte dans l'EventData : la forme
+      // `DOMAINE\utilisateur` n'apparaît que dans le message rendu.
+      // L'énoncé d'origine attendait la forme jointe dans le champ
+      // structuré, ce qu'un vrai 4688 ne produit jamais.
+      expect(out).toContain('SubjectDomainName=DC01');
+      expect(out).toContain('SubjectUserName=Administrator');
     });
   });
 
   describe('détection de processus suspects (Find-SuspiciousProcesses)', () => {
     it('gap confirmé : un powershell.exe encodé (-EncodedCommand) n\'est jamais détecté, car CommandLine n\'existe jamais dans l\'EventData', async () => {
       const dc = new WindowsServer('DC01');
-      // Processus délibérément suspect (obfuscation PowerShell) — mais le
-      // simulateur ne propage aucune ligne de commande jusqu'à 4688 (voir
-      // section précédente), donc rien de cela ne peut jamais apparaître.
-      dc.getProcessManager().spawnProcess('powershell.exe', 620, 'DC01\\Administrator', {});
+      const sh = ps(dc);
+      // La ligne de commande n'entre dans 4688 que sous la stratégie qui
+      // l'autorise — c'est tout l'objet du réglage. Sans elle, la
+      // détection n'a rien à lire ; l'énoncé d'origine lançait le
+      // processus sans ligne de commande *et* sans la stratégie, donc
+      // cherchait un motif dans un champ qui n'avait aucune raison
+      // d'exister.
+      await run(sh, 'New-Item -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\Audit" -Force');
+      await run(sh, 'Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\Audit" -Name "ProcessCreationIncludeCmdLine_Enabled" -Value 1 -Type DWord');
 
-      const out = await run(ps(dc), [
+      // Processus délibérément suspect (obfuscation PowerShell).
+      dc.getProcessManager().spawnProcess('powershell.exe', 620, 'DC01\\Administrator', {
+        commandLine: 'powershell.exe -NoProfile -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAKQA=',
+      });
+
+      const out = await run(sh, [
         'function Find-SuspiciousProcesses {',
         '  $Events = Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = 4688 } -ErrorAction SilentlyContinue',
         '  $Suspicious = @()',

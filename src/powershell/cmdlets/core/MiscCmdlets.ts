@@ -73,6 +73,23 @@ export class NewObjectCmdlet implements ICmdlet {
         InheritedObjectType: psValueToString(args[5] ?? '00000000-0000-0000-0000-000000000000'),
       } as Record<string, PSValue>;
     }
+    // `FileSystemAuditRule` — la règle de SACL. Même forme que la règle
+    // d'accès, mais le dernier argument est un `AuditFlags`
+    // (`Success`/`Failure`/les deux) et non un `AccessControlType` : la
+    // SACL dit ce qu'on journalise, pas qui a le droit. Le test doit
+    // précéder celui de `filesystemaccessrule`, qui autrement le
+    // capturerait par sous-chaîne.
+    if (tname.includes('filesystemauditrule')) {
+      const args = newObjectCtorArgs(ctx);
+      const flags = args.length <= 3 ? args[2] : args[4];
+      return {
+        IdentityReference: psValueToString(args[0] ?? ''),
+        FileSystemRights: psValueToString(args[1] ?? ''),
+        InheritanceFlags: args.length <= 3 ? 'None' : psValueToString(args[2] ?? 'None'),
+        PropagationFlags: args.length <= 3 ? 'None' : psValueToString(args[3] ?? 'None'),
+        AuditFlags: psValueToString(flags ?? 'Success'),
+      } as Record<string, PSValue>;
+    }
     // Real .NET FileSystemAccessRule has two commonly-used overloads: the
     // short (identity, fileSystemRights, accessControlType) and the long
     // (identity, fileSystemRights, inheritanceFlags, propagationFlags,

@@ -1030,6 +1030,9 @@ export interface IFileSystemProvider {
   addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean;
   /** Enable/disable inheritance (real NTFS `SetAccessRuleProtection`/`icacls /inheritance:r`). Returns true on success. */
   setAclProtected(path: string, isProtected: boolean): boolean;
+  /** SACL — la liste d'audit, distincte de la DACL (`Get-Acl -Audit`). */
+  getAudit?(path: string): Array<{ principal: string; flags: Array<'success' | 'failure'>; permissions: string[] }>;
+  setAudit?(path: string, rules: Array<{ principal: string; flags: Array<'success' | 'failure'>; permissions: string[] }>): boolean;
 }
 
 export interface IRegistryProvider {
@@ -1177,6 +1180,16 @@ export interface INetworkProvider {
   traceRoute(target: string): string[];
   /** Resolve-DnsName */
   resolveDns(name: string): string[];
+  /**
+   * `Resolve-DnsName` avec ses restrictions d'ordre (`-DnsOnly`,
+   * `-LlmnrOnly`, `-NoHostsFile`, `-CacheOnly`) — la seule façon, la
+   * cmdlet ne nommant pas le protocole qui a répondu, de savoir laquelle
+   * des étapes a servi le nom.
+   */
+  resolveDnsWithOptions?(name: string, options: {
+    dnsOnly?: boolean; llmnrOnly?: boolean;
+    noHostsFile?: boolean; cacheOnly?: boolean;
+  }): string[];
   /** Resolve-DnsName -Server: query a specific resolver over the wire. */
   resolveDnsViaServer?(name: string, server: string): string[];
   /** Resolve-DnsName -Server, with each answer's real TTL (does not touch the client cache). */
@@ -1205,6 +1218,13 @@ export interface INetworkProvider {
   }): { ok: boolean; error?: string };
   /** Get-NetTCPConnection */
   getTcpConnections(): Array<{ localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }>;
+  /**
+   * `Get-NetUDPEndpoint` — le pendant UDP de `Get-NetTCPConnection`. UDP
+   * n'ayant pas d'état, un point de terminaison est une écoute et rien
+   * d'autre : c'est par là qu'on voit qu'un répondeur de lien tient
+   * réellement son port.
+   */
+  getUdpEndpoints?(): Array<{ localAddress: string; localPort: number; pid: number; processName: string }>;
   getFirewallRules(): Array<{ name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
   addFirewallRule(rule: { name: string; displayName?: string; enabled?: boolean; action: string; direction: string; protocol?: string; localPort?: string; remotePort?: string; description?: string }): void;
   setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string;

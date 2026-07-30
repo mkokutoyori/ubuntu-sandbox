@@ -24,6 +24,26 @@ function requireRegistryProvider(path: string): void {
   }
 }
 
+/**
+ * `HKLM\Logiciel\...` — une ruche, mais sans les deux-points du lecteur
+ * PowerShell. `reg.exe` écrit ainsi, PowerShell non : pour lui `HKLM`
+ * sans `:` n'est pas un lecteur, et il le dit.
+ *
+ * Sans ce garde, un tel chemin ne passait aucun des deux tests
+ * ci-dessus : l'écriture retombait sur un `return null` muet, et
+ * `Set-ItemProperty` rendait la main sans erreur ni effet. Une écriture
+ * perdue qui se présente comme réussie est pire qu'un refus.
+ */
+function hivePathMissingDrive(path: string): boolean {
+  return /^(HKLM|HKCU|HKCR|HKU|HKCC)\\/i.test(path);
+}
+
+function reportMissingDrive(ctx: CmdletContext, cmdlet: string, path: string): void {
+  const drive = /^([A-Z]+)\\/i.exec(path)?.[1] ?? path;
+  ctx.emitError(
+    `${cmdlet} : Cannot find drive. A drive with the name '${drive}' does not exist.`);
+}
+
 // ─── Split-Path ───────────────────────────────────────────────────────────
 
 export class SplitPathCmdlet implements ICmdlet {
@@ -571,6 +591,59 @@ export class SetItemPropertyCmdlet implements ICmdlet {
       if (!ctx.providers.registry) requireRegistryProvider(path);
       return ctx.providers.registry.setItemProperty(path, name, value);
     }
+    if (hivePathMissingDrive(path)) {
+      reportMissingDrive(ctx, 'Set-ItemProperty', path);
+      return null;
+    }
+    requireRegistryProvider(path);
+    return null;
+  }
+}
+
+/**
+ * `New-ItemProperty` — crée une valeur dans une clé de registre.
+ *
+ * C'est la commande par laquelle on *ajoute* une valeur, là où
+ * `Set-ItemProperty` en modifie une : les deux écrivent, mais un script
+ * d'installation (ou de persistance) utilise la première. Elle
+ * n'existait pas du tout, si bien qu'une ligne
+ * `New-ItemProperty ... -PropertyType String` ne posait rien et ne
+ * disait rien — l'écriture disparaissait en silence.
+ *
+ * `-PropertyType` décide du type stocké : `DWord`/`QWord` gardent un
+ * nombre, tout le reste une chaîne.
+ */
+export class NewItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'new-itemproperty';
+  readonly parameters = ['Path', 'LiteralPath', 'Name', 'Value', 'PropertyType', 'Force', 'PassThru'] as const;
+  readonly displayName = 'New-ItemProperty';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[1] ?? '');
+    const raw  = ctx.named['value'] ?? ctx.positional[2];
+    const kind = psValueToString(ctx.named['propertytype'] ?? '').toLowerCase();
+    const numeric = kind === 'dword' || kind === 'qword';
+    const value: string | number = numeric
+      ? Number(psValueToString(raw ?? '0'))
+      : (typeof raw === 'number' ? raw : psValueToString(raw ?? ''));
+    if (!path) { ctx.emitError('New-ItemProperty requires -Path'); return null; }
+    if (!name) { ctx.emitError('New-ItemProperty requires -Name'); return null; }
+
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      const reg = ctx.providers.registry;
+      // Sans `-Force`, PowerShell exige que la clé existe déjà ; le
+      // fournisseur le dit lui-même par son message d'erreur.
+      const err = reg.setItemProperty(path, name, value);
+      if (err) { ctx.emitError(err); return null; }
+      return { [name]: value } as Record<string, PSValue>;
+    }
+    if (hivePathMissingDrive(path)) {
+      reportMissingDrive(ctx, 'New-ItemProperty', path);
+      return null;
+    }
     requireRegistryProvider(path);
     return null;
   }
@@ -588,6 +661,10 @@ export class RemoveItemPropertyCmdlet implements ICmdlet {
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
       return ctx.providers.registry.removeItemProperty(path, name);
+    }
+    if (hivePathMissingDrive(path)) {
+      reportMissingDrive(ctx, 'Remove-ItemProperty', path);
+      return null;
     }
     requireRegistryProvider(path);
     return null;
@@ -794,11 +871,31 @@ export class GetAclCmdlet implements ICmdlet {
       IdentityReference: a.principal,
       IsInherited:       false,
     } as unknown as PSValue));
+    // La SACL — la liste d'audit — est rendue même sans `-Audit` : sur
+    // un vrai Windows le commutateur commande la *lecture* du
+    // descripteur, pas la présence de la propriété, et un objet non
+    // audité rend simplement une liste vide.
+    const auditArr: PSValue[] = (fs.getAudit?.(path) ?? []).map(a => ({
+      FileSystemRights:  a.permissions.join(', '),
+      AuditFlags:        a.flags.map(f => f === 'success' ? 'Success' : 'Failure').join(', '),
+      IdentityReference: a.principal,
+      IsInherited:       false,
+    } as unknown as PSValue));
     const result: Record<string, PSValue> = {
       Path:  path,
       Owner: acl.owner,
       Group: 'BUILTIN\\Administrators',
       Access: accessArr as PSValue,
+      Audit: auditArr as PSValue,
+      AddAuditRule: ((rule: PSValue) => { auditArr.push(rule); return null; }) as unknown as PSValue,
+      RemoveAuditRule: ((rule: PSValue) => {
+        const rec = rule as unknown as Record<string, PSValue>;
+        const identity = psValueToString(rec['IdentityReference'] ?? '');
+        const idx = auditArr.findIndex(a => psValueToString(
+          (a as unknown as Record<string, PSValue>)['IdentityReference'] ?? '') === identity);
+        if (idx >= 0) auditArr.splice(idx, 1);
+        return null;
+      }) as unknown as PSValue,
       AreAccessRulesProtected: false,
       AddAccessRule: ((rule: PSValue) => { accessArr.push(rule); return null; }) as unknown as PSValue,
       // Real .NET FileSystemSecurity.SetAccessRule replaces any existing
@@ -881,6 +978,24 @@ export class SetAclCmdlet implements ICmdlet {
       const permissions = rightsRaw.split(',').map(s => s.trim()).filter(Boolean);
       const type = psValueToString(rule['AccessControlType'] ?? 'Allow') === 'Deny' ? 'deny' as const : 'allow' as const;
       fs.addAce(path, { principal, type, permissions });
+    }
+    // La SACL est remplacée en bloc, pas fusionnée : `Set-Acl` applique
+    // un descripteur, il ne l'ajoute pas au précédent.
+    const audit = rec['Audit'];
+    if (Array.isArray(audit) && fs.setAudit) {
+      fs.setAudit(path, audit.map(a => {
+        const r = a as unknown as Record<string, PSValue>;
+        const flagsRaw = psValueToString(r['AuditFlags'] ?? 'Success').toLowerCase();
+        const flags: Array<'success' | 'failure'> = [];
+        if (flagsRaw.includes('success')) flags.push('success');
+        if (flagsRaw.includes('failure')) flags.push('failure');
+        return {
+          principal: psValueToString(r['IdentityReference'] ?? ''),
+          flags: flags.length ? flags : ['success' as const],
+          permissions: psValueToString(r['FileSystemRights'] ?? '')
+            .split(',').map(x => x.trim()).filter(Boolean),
+        };
+      }).filter(r => r.principal));
     }
     return null;
   }

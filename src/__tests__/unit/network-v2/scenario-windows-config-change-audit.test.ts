@@ -44,6 +44,11 @@ describe('Scénario 6 (Windows) — audit des changements de configuration : reg
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
       await run(sh, 'New-Item -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run" -Force');
+      // L'audit du registre est éteint par défaut sur un Windows réel :
+      // sans cette ligne, l'énoncé attendait un événement qu'aucune
+      // stratégie n'avait demandé. C'est la stratégie qui commande, et
+      // c'est ce que ce test vérifie désormais.
+      await dc.executeCmdCommand('auditpol /set /subcategory:"Registry" /success:enable');
       await run(sh, 'Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run" -Name "MandengTest" -Value "C:\\Temp\\test.exe" -Type String');
 
       const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4657; StartTime = (Get-Date).AddMinutes(-1) }");
@@ -99,6 +104,9 @@ describe('Scénario 6 (Windows) — audit des changements de configuration : reg
     it('gap confirmé : Register-ScheduledTask ne génère jamais d\'EventID 4698, aucune tâche planifiée n\'est jamais auditée', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
+      // 4698 relève de « Other Object Access Events », éteinte par
+      // défaut sur un Windows réel comme ici.
+      await dc.executeCmdCommand('auditpol /set /subcategory:"Other Object Access Events" /success:enable');
       await run(sh, [
         '$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File C:\\Temp\\update.ps1"',
         '$Trigger = New-ScheduledTaskTrigger -Daily -At "3:00AM"',

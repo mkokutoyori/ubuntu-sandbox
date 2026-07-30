@@ -227,12 +227,38 @@ function parseRegistryPath(path: string): ParsedRegPath | null {
 
 // ─── Registry Provider ────────────────────────────────────────────────────────
 
+/**
+ * Ce qu'une écriture dans la base a changé — de quoi remplir un 4657,
+ * dont l'intérêt tient entièrement à l'ancienne et à la nouvelle valeur.
+ */
+export interface RegistryValueChange {
+  path: string;
+  name: string;
+  previous?: string | number;
+  next: string | number;
+}
+
 export class PSRegistryProvider {
   private hklm: RegistryKey;
   private hkcu: RegistryKey = buildHKCU();
 
+  /**
+   * Notifié après toute écriture, quel qu'en soit le chemin — `reg add`
+   * de cmd, `Set-ItemProperty` de PowerShell, ou une stratégie de
+   * groupe. Sans ce fil, une valeur de stratégie qui commande un service
+   * ne serait relue qu'au prochain démarrage : poser `EnableMulticast`
+   * à zéro afficherait « opération réussie » pendant que le port reste
+   * ouvert, ce qui est exactement le genre de réglage décoratif que ce
+   * dépôt refuse.
+   */
+  onValueChanged: ((change?: RegistryValueChange) => void) | null = null;
+
   constructor(product: WindowsProductIdentity = WINDOWS_CLIENT_PRODUCT_IDENTITY) {
     this.hklm = buildHKLM(product);
+  }
+
+  private notifyChanged(change?: RegistryValueChange): void {
+    this.onValueChanged?.(change);
   }
 
   // ─── Internal navigation ──────────────────────────────────────────
@@ -362,6 +388,7 @@ export class PSRegistryProvider {
       return `Remove-Item : The item has children and the Recurse parameter was not specified. If you are sure you want to remove it and all its children, specify the Recurse parameter.`;
     }
     parent.subkeys.delete(leafKey);
+    this.notifyChanged();
     return '';
   }
 
@@ -434,7 +461,9 @@ export class PSRegistryProvider {
     const parsed = parseRegistryPath(path);
     if (!parsed) return;
     const key = this.ensurePath(parsed);
+    const previous = key.values.get(name.toLowerCase())?.value;
     seedValue(key, name, value, type);
+    this.notifyChanged({ path, name, previous, next: value });
   }
 
   setItemProperty(path: string, name: string, value: string | number): string {
@@ -443,7 +472,9 @@ export class PSRegistryProvider {
     const key = this.navigateTo(parsed);
     if (!key) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     const type: RegistryValue['type'] = typeof value === 'number' ? 'DWord' : 'String';
+    const previous = key.values.get(name.toLowerCase())?.value;
     key.values.set(name.toLowerCase(), { name, value, type });
+    this.notifyChanged({ path, name, previous, next: value });
     return '';
   }
 
@@ -455,7 +486,9 @@ export class PSRegistryProvider {
     if (!key.values.has(name.toLowerCase())) {
       return `Remove-ItemProperty : Property '${name}' does not exist at path '${path}'.`;
     }
+    const removed = key.values.get(name.toLowerCase())?.value;
     key.values.delete(name.toLowerCase());
+    this.notifyChanged({ path, name, previous: removed, next: '' });
     return '';
   }
 

@@ -477,8 +477,16 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
 
     it('should show DHCP client events in Event Log', async () => {
       const pc = new WindowsPC('windows-pc', 'WinPC');
-      
-      // Check DHCP events
+
+      // Une machine qui n'a jamais rien tenté n'a pas d'événement DHCP —
+      // l'implémentation précédente en fabriquait un quand le journal
+      // était vide, ce qui faisait passer ce test sur une entrée
+      // inventée. Le client tente ici une location pour de vrai (sans
+      // serveur sur le lien, donc un échec, mais un échec journalisé).
+      await pc.executeCommand('ipconfig /renew');
+
+      // La requête XPath porte sur le fournisseur, et les événements y
+      // répondent parce qu'ils sont réellement dans le journal Système.
       const events = await pc.executeCommand('wevtutil qe System /q:"*[System[Provider[@Name=\"Dhcp-Client\"]]]" /c:5 /rd:true /f:text');
       expect(events).toContain('Dhcp-Client');
     });

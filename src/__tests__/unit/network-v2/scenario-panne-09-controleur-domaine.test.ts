@@ -154,24 +154,30 @@ if ($Ldap.TcpTestSucceeded -and $Kerberos.TcpTestSucceeded) {
       expect(out).not.toMatch(/is not recognized/i);
     });
 
-    it('gap confirmé : `powershell -File <script.ps1>` n\'est pas reconnu', async () => {
-      // Les scripts de ce fichier sont donc lancés avec l'opérateur
-      // d'appel `& C:\\Scripts\\x.ps1`. Un vrai Windows accepte les deux.
+    it('`powershell -File <script.ps1>` lance le script et lui passe ses paramètres', async () => {
+      // `-File` était accepté puis jeté : la commande ne rendait rien du
+      // tout, et lui ajouter un paramètre de script faisait retomber
+      // toute la ligne sur cmd.exe.
       const out = await ps('powershell -File C:\\Scripts\\attente-dc.ps1 -Cible 192.168.10.10');
       expect(out).not.toMatch(/is not recognized/i);
+      expect(out).toMatch(/DC_DISPONIBLE=/);
     });
 
-    it('gap confirmé : `exit <code>` n\'est pas reconnu dans un script PowerShell', async () => {
-      // Conséquence directe : les scripts .ps1 de ce scénario ne peuvent
-      // pas propager de code de sortie et doivent tout exprimer via
-      // `Write-Output`.
+    it('`exit <code>` termine le script et renseigne $LASTEXITCODE', async () => {
       await ps(`Set-Content -Path C:\\Scripts\\code-sortie.ps1 -Value @'
 Write-Output "AVANT_EXIT"
 exit 3
+Write-Output "APRES_EXIT"
 '@`);
-      const out = await ps('& C:\\Scripts\\code-sortie.ps1');
+      // `psOn` ouvre une console neuve à chaque appel : le code de sortie
+      // ne survivrait pas d'un appel au suivant, il se lit donc dans la
+      // même invocation que l'exécution.
+      const out = await ps('& C:\\Scripts\\code-sortie.ps1\n$LASTEXITCODE');
       expect(out).toContain('AVANT_EXIT');
       expect(out).not.toMatch(/is not recognized/i);
+      // Ce qui suit `exit` ne s'exécute pas — c'est tout l'intérêt.
+      expect(out).not.toContain('APRES_EXIT');
+      expect(out.trim().split('\n').pop()!.trim()).toBe('3');
     });
   });
 

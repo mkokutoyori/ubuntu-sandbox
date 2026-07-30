@@ -149,10 +149,14 @@ describe('Group 2: String Literals', () => {
   });
 
   it("single-quoted string with escaped '' (doubled quote)", () => {
-    // In PS single-quoted strings, '' is the escape for a literal '
+    // In PS single-quoted strings, '' is the escape for a literal '.
+    // This assertion used to expect the raw "it''s", deferring the
+    // resolution to "the evaluator" — but no evaluator ever did it, so
+    // Write-Output 'it''s' printed it''s. The lexer resolves it now,
+    // and tok.value is the string's value, like every other token.
     const t = first("'it''s'");
     expect(t.type).toBe(PSTokenType.STRING_SINGLE);
-    expect(t.value).toBe("it''s");   // raw value preserved; evaluator resolves ''→'
+    expect(t.value).toBe("it's");
   });
 
   it('double-quoted "expandable" string', () => {

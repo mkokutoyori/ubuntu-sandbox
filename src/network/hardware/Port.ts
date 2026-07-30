@@ -74,6 +74,14 @@ export class Port {
   private ipv6Enabled: boolean = false;
   private isUp: boolean = true;
   private adminDown: boolean = false;
+  private devicePoweredOff: boolean = false;
+  /**
+   * Last value of {@link isTransmitting} propagated to the peer. Seeded
+   * with the initial field values so that plugging a cable — which does
+   * not change this port's transmitter — propagates nothing, leaving
+   * `Cable.connect`'s own notification of both ends the only one.
+   */
+  private lastTransmitting: boolean = true;
   private equipmentId: string = '';
   /**
    * The device this port is physically part of. Following a cable to its
@@ -616,13 +624,50 @@ export class Port {
   isAdminDown(): boolean { return this.adminDown; }
 
   /**
-   * Physical carrier — a cable is attached and the link itself is up.
-   * The simulator's equivalent of Linux's `NO-CARRIER` flag / Cisco's
-   * "line protocol is down": unplugging a cable never touches
-   * {@link getIsUp}, which stays the internal line state.
+   * Physical carrier — a cable is attached, the link itself is up, and
+   * the far end is actually driving the wire. The simulator's equivalent
+   * of Linux's `NO-CARRIER` flag / Cisco's "line protocol is down":
+   * unplugging a cable never touches {@link getIsUp}, which stays the
+   * internal line state.
+   *
+   * The far-end term is what makes a `shutdown` on a switch port, or the
+   * switch losing power, visible from the attached host — a real switch
+   * stops driving the pair, so the host sees exactly what an unplugged
+   * cable looks like (docs/PRD-Link-State.md §3.1). It cannot recurse:
+   * {@link isTransmitting} never consults the carrier.
    */
   hasCarrier(): boolean {
-    return this.cable !== null && this.cable.getIsUp();
+    if (this.cable === null || !this.cable.getIsUp()) return false;
+    const peer = this.getPeerPort();
+    return peer === null || peer.isTransmitting();
+  }
+
+  /**
+   * True when this port drives its side of the wire. Independent of what
+   * arrives from the far end, which is what keeps {@link hasCarrier}
+   * non-recursive.
+   */
+  isTransmitting(): boolean {
+    return this.isUp && !this.adminDown && !this.devicePoweredOff;
+  }
+
+  /** The port at the other end of the cable, if any. */
+  getPeerPort(): Port | null {
+    if (!this.cable) return null;
+    const a = this.cable.getPortA();
+    return a === this ? this.cable.getPortB() : a;
+  }
+
+  /**
+   * Follows the owning device's power state. A powered-off device stops
+   * driving every one of its ports, so its neighbours lose carrier — the
+   * port's own line state is deliberately left alone, since nothing reads
+   * an unpowered device's interfaces anyway.
+   */
+  setDevicePowered(on: boolean): void {
+    if (this.devicePoweredOff === !on) return;
+    this.devicePoweredOff = !on;
+    this.propagateCarrierToPeer();
   }
 
   /**
@@ -688,6 +733,21 @@ export class Port {
         ? { topic: 'port.link.up', payload: this.portRef() }
         : { topic: 'port.link.down', payload: { ...this.portRef(), adminDown: this.adminDown } },
     );
+    this.propagateCarrierToPeer();
+  }
+
+  /**
+   * Tells the far end its carrier moved, but only when this port's own
+   * transmitter actually changed. That guard is what stops the two ends
+   * from notifying each other forever: the peer's re-notification finds
+   * its own transmitter unchanged and stops there.
+   */
+  private propagateCarrierToPeer(): void {
+    const transmitting = this.isTransmitting();
+    if (transmitting === this.lastTransmitting) return;
+    this.lastTransmitting = transmitting;
+    const peer = this.getPeerPort();
+    if (peer) peer._notifyCarrierChange(peer.isOperationallyUp() ? 'up' : 'down');
   }
 
   // ─── Cable Connection ──────────────────────────────────────────

@@ -27,7 +27,7 @@ import {
 } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsRecord } from '@/network/dns/compat/DnsWireCompat';
 import {
-  bindMulticastDns, unbindMulticastDns, queryMulticastDns,
+  bindMulticastDns, unbindMulticastDns, queryMulticastDns, queryMulticastDnsSync,
   type McastDnsReply,
 } from '@/network/dns/transport/MulticastDnsTransport';
 import {
@@ -165,15 +165,41 @@ export class LlmnrAgent {
       recursionDesired: false,
     });
     if (!query) return [];
-    const responses = await queryMulticastDns(
-      this.host, LLMNR_BINDING, query, timeoutMs, { firstOnly: true });
-    const addresses: string[] = [];
-    for (const r of responses) {
-      for (const rr of r.answers) {
-        if (rr.data.type !== RRType.A) continue;
-        const ip = (rr.data as { address: { toString(): string } }).address.toString();
-        if (!addresses.includes(ip)) addresses.push(ip);
-      }
+    return announcedAddresses(await queryMulticastDns(
+      this.host, LLMNR_BINDING, query, timeoutMs, { firstOnly: true }));
+  }
+
+  /**
+   * La même question, sans rendre la main. Windows résout par des
+   * cmdlets qui n'ont pas de forme asynchrone, et un résolveur système
+   * bloque de toute façon son appelant ; voir
+   * {@link queryMulticastDnsSync} pour ce que cette forme ne modélise
+   * pas.
+   */
+  resolveSync(name: string): string[] {
+    const label = name.toLowerCase().replace(/\.$/, '');
+    if (label.includes('.') || label === '') return [];
+
+    getDefaultEventBus().publish({
+      topic: 'llmnr.query.sent',
+      payload: {
+        deviceId: this.host.getId(), hostname: this.host.getHostname(), name: label,
+      },
+    });
+    const query = buildLegacyQueryMessage(nextDnsTransactionId(), label, 'A', {
+      recursionDesired: false,
+    });
+    if (!query) return [];
+    const addresses = announcedAddresses(
+      queryMulticastDnsSync(this.host, LLMNR_BINDING, query));
+    if (addresses.length > 0) {
+      getDefaultEventBus().publish({
+        topic: 'llmnr.resolved',
+        payload: {
+          deviceId: this.host.getId(), hostname: this.host.getHostname(),
+          name: label, addresses, responders: addresses.length,
+        },
+      });
     }
     return addresses;
   }
@@ -207,4 +233,17 @@ export class LlmnrAgent {
     }
     return addresses;
   }
+}
+
+/** Les adresses annoncées par les répondeurs, sans doublon. */
+function announcedAddresses(responses: readonly DnsMessage[]): string[] {
+  const addresses: string[] = [];
+  for (const r of responses) {
+    for (const rr of r.answers) {
+      if (rr.data.type !== RRType.A) continue;
+      const ip = (rr.data as { address: { toString(): string } }).address.toString();
+      if (!addresses.includes(ip)) addresses.push(ip);
+    }
+  }
+  return addresses;
 }
