@@ -104,6 +104,17 @@ export interface WindowsWorkstationLockEventPayload extends WindowsDeviceRef {
   origin: 'user' | 'screensaver';
 }
 
+/**
+ * A Terminal Services (RDP) session disconnected without an explicit
+ * logoff, or reconnected to an existing disconnected session
+ * (PRD-Winlogon.md §2.1 P4) — 4779/4778, distinct from 4634 (logoff)
+ * because the underlying logon session stays open.
+ */
+export interface WindowsSessionLinkEventPayload extends WindowsDeviceRef {
+  account: string;
+  logonType: number;
+}
+
 // ─── Group lifecycle ────────────────────────────────────────────────────
 
 export interface WindowsGroupEventPayload extends WindowsDeviceRef {
@@ -169,6 +180,8 @@ export type WindowsDomainEvent =
   | { topic: 'windows.account.logoff'; payload: WindowsLogoffEventPayload }
   | { topic: 'windows.workstation.locked'; payload: WindowsWorkstationLockEventPayload }
   | { topic: 'windows.workstation.unlocked'; payload: WindowsWorkstationLockEventPayload }
+  | { topic: 'windows.session.disconnected'; payload: WindowsSessionLinkEventPayload }
+  | { topic: 'windows.session.reconnected'; payload: WindowsSessionLinkEventPayload }
   | { topic: 'windows.group.created'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.deleted'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.membership-changed'; payload: WindowsGroupMemberEventPayload }

@@ -847,10 +847,36 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           sessions: this.rdp.sessions,
           auth: {
             // logonType 10 (RemoteInteractive) — real Windows value for
-            // RDP, previously always the checkPassword default of 2
-            // (PRD-Winlogon.md §1.2 point 3).
-            checkLocal: (u, p) => Boolean(this.userMgr.getUser(u)?.enabled) && this.userMgr.checkPassword(u, p, 10),
+            // RDP. publishOnSuccess=false, publishOnFailure=false:
+            // reportLogon below is now the single publisher for every
+            // RDP logon outcome, local or domain (domain auth via
+            // tryDomainAuth never self-publishes at all) — the same fix
+            // P1 made for SSH (PRD-Winlogon.md §2.1 P4).
+            checkLocal: (u, p) => Boolean(this.userMgr.getUser(u)?.enabled) && this.userMgr.checkPassword(u, p, 10, false, false),
             checkDomain: (u, p) => Boolean(this.tryDomainAuth(u, p)?.ok),
+          },
+          // 4624/4625, logonType 10 — single source of truth for both
+          // the local and domain auth path (domain auth never
+          // published one on its own).
+          reportLogon: (user, success) => {
+            this.getBus().publish({
+              topic: 'windows.account.logon',
+              payload: { deviceId: this.id, account: user, success, logonType: 10 },
+            });
+          },
+          // 4778 — reconnection to an existing Disconnected session.
+          reportReconnect: (user) => {
+            this.getBus().publish({
+              topic: 'windows.session.reconnected',
+              payload: { deviceId: this.id, account: user, logonType: 10 },
+            });
+          },
+          // 4779 — transport dropped with no explicit logoff.
+          reportDisconnect: (user) => {
+            this.getBus().publish({
+              topic: 'windows.session.disconnected',
+              payload: { deviceId: this.id, account: user, logonType: 10 },
+            });
           },
         }).register(socket);
       },
@@ -2571,8 +2597,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return `'${args[0] ?? ''}' is not a recognized query type.`;
       }
       case 'qwinsta': return cmdQuerySession({ sessions: this.rdp.sessions });
-      case 'logoff': return cmdLogoff({ sessions: this.rdp.sessions }, args);
-      case 'rwinsta': return cmdLogoff({ sessions: this.rdp.sessions }, args);
+      case 'logoff':
+      case 'rwinsta': {
+        // 4634 (PRD-Winlogon.md §2.1 P4) — the session's userName has to
+        // be read before cmdLogoff removes the row from the table.
+        const targetSessionId = Number(args[0]);
+        const target = this.rdp.sessions.get(targetSessionId);
+        const out = cmdLogoff({ sessions: this.rdp.sessions }, args);
+        if (target && out === '') {
+          this.getBus().publish({
+            topic: 'windows.account.logoff',
+            payload: { deviceId: this.id, account: target.userName, logonType: 10 },
+          });
+        }
+        return out;
+      }
       case 'gpupdate': {
         const res = this.gpupdateForce();
         return res.ok

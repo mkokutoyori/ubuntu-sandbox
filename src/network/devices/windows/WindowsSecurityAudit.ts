@@ -58,6 +58,8 @@ export const SECURITY_EVENT = {
   WORKSTATION_UNLOCKED: 4801,
   SCREENSAVER_INVOKED: 4802,
   SCREENSAVER_DISMISSED: 4803,
+  SESSION_RECONNECTED: 4778,
+  SESSION_DISCONNECTED: 4779,
 } as const;
 
 /** Ce qu'un événement de suivi de processus sait de son sujet. */
@@ -255,6 +257,36 @@ export class WindowsSecurityAudit {
     const label = origin === 'screensaver' ? 'The screen saver was dismissed.' : 'The workstation was unlocked.';
     this.success(eventId, `${label}\n\nSubject:\n\tAccount Name:\t${name}`,
       { TargetUserName: name }, name);
+  }
+
+  /**
+   * 4778 — une session Terminal Services existante (`Disconnected`) a été
+   * reconnectée par le même utilisateur (PRD-Winlogon.md §2.1 P4). Réel
+   * Windows n'émet pas de nouveau 4624 pour ce cas : `logonId` porte donc
+   * l'identifiant de la session déjà ouverte, jamais un nouveau.
+   */
+  sessionReconnected(name: string, logonType = 10, logonId?: string): void {
+    this.success(SECURITY_EVENT.SESSION_RECONNECTED, `A session was reconnected to a Window Station.\n\nAccount Name:\t${name}\nLogon Type:\t\t${logonType}`,
+      {
+        TargetUserName: name,
+        LogonType: String(logonType),
+        TargetLogonId: logonId ?? nextLogonId(),
+      });
+  }
+
+  /**
+   * 4779 — une session Terminal Services a été déconnectée sans logoff
+   * explicite (câble coupé, client fermé) — la session reste ouverte
+   * côté serveur (contrairement à 4634), d'où `logonId` réutilisant celui
+   * du 4624 d'origine plutôt que d'en émettre un nouveau.
+   */
+  sessionDisconnected(name: string, logonType = 10, logonId?: string): void {
+    this.success(SECURITY_EVENT.SESSION_DISCONNECTED, `A session was disconnected from a Window Station.\n\nAccount Name:\t${name}\nLogon Type:\t\t${logonType}`,
+      {
+        TargetUserName: name,
+        LogonType: String(logonType),
+        TargetLogonId: logonId ?? nextLogonId(),
+      });
   }
 
   // ─── Process tracking ──────────────────────────────────────────────────

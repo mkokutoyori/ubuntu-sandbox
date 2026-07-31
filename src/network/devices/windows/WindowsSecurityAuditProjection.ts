@@ -25,6 +25,7 @@ import type {
   WindowsFileAclChangedPayload,
   WindowsServiceCreatedPayload,
   WindowsWorkstationLockEventPayload,
+  WindowsSessionLinkEventPayload,
 } from './events';
 
 export class WindowsSecurityAuditProjection {
@@ -44,6 +45,8 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.account.logoff', (e) => this.onLogoff(e.payload)),
       bus.subscribe('windows.workstation.locked', (e) => this.onWorkstationLocked(e.payload)),
       bus.subscribe('windows.workstation.unlocked', (e) => this.onWorkstationUnlocked(e.payload)),
+      bus.subscribe('windows.session.disconnected', (e) => this.onSessionDisconnected(e.payload)),
+      bus.subscribe('windows.session.reconnected', (e) => this.onSessionReconnected(e.payload)),
       bus.subscribe('windows.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('windows.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('windows.group.membership-changed', (e) => this.onMembership(e.payload)),
@@ -136,6 +139,28 @@ export class WindowsSecurityAuditProjection {
     const logonId = this.openSessions.get(key);
     this.openSessions.delete(key);
     this.audit.logoff(p.account, p.logonType, logonId);
+  }
+
+  /**
+   * 4779 — session RDP déconnectée sans logoff explicite. La session
+   * logique reste ouverte côté serveur (contrairement à 4634), donc on
+   * *lit* le `TargetLogonId` déjà attribué par le 4624 d'origine sans le
+   * retirer de `openSessions` — un `logoff`/`rwinsta` ultérieur pourra
+   * encore le corréler.
+   */
+  private onSessionDisconnected(p: WindowsSessionLinkEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Other Logon/Logoff Events', 'success')) return;
+    const logonId = this.openSessions.get(p.account.toLowerCase());
+    this.audit.sessionDisconnected(p.account, p.logonType, logonId);
+  }
+
+  /** 4778 — reconnexion à une session RDP existante ; pas de nouveau 4624. */
+  private onSessionReconnected(p: WindowsSessionLinkEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Other Logon/Logoff Events', 'success')) return;
+    const logonId = this.openSessions.get(p.account.toLowerCase());
+    this.audit.sessionReconnected(p.account, p.logonType, logonId);
   }
 
   private onWorkstationLocked(p: WindowsWorkstationLockEventPayload): void {

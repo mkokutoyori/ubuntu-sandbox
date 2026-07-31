@@ -487,16 +487,26 @@ export class WindowsUserManager {
    * a fresh logon session (4624) to resume an already-open one that was
    * merely locked — only 4801 (workstation unlocked) fires — but a
    * *failed* unlock attempt is exactly as real a failed authentication
-   * as any other, so the failure branches always publish regardless of
-   * this flag.
+   * as any other, so the failure branches published `false` by default.
+   *
+   * `publishOnFailure` (default true) exists for the RDP case
+   * (PRD-Winlogon.md §2.1 P4): `RdpServerHandler` is the single
+   * publisher for *both* outcomes there (it must be, since a
+   * domain-authenticated RDP logon never reaches this method at all —
+   * `tryDomainAuth` publishes nothing on its own), so the local-account
+   * path passes `publishOnSuccess=false, publishOnFailure=false` to stay
+   * out of the way entirely rather than double-publishing the failure
+   * half like the success half would.
    */
-  checkPassword(name: string, password: string, logonType = 2, publishOnSuccess = true): boolean {
+  checkPassword(name: string, password: string, logonType = 2, publishOnSuccess = true, publishOnFailure = true): boolean {
     const user = this.users.get(name.toLowerCase());
     if (user && (this.isLockedOut(name) || this.isPasswordExpired(name))) {
-      this.bus?.publish({
-        topic: 'windows.account.logon',
-        payload: { deviceId: this.deviceId, account: name, success: false, logonType },
-      });
+      if (publishOnFailure) {
+        this.bus?.publish({
+          topic: 'windows.account.logon',
+          payload: { deviceId: this.deviceId, account: name, success: false, logonType },
+        });
+      }
       return false;
     }
 
@@ -516,6 +526,7 @@ export class WindowsUserManager {
     }
 
     if (ok && !publishOnSuccess) return true;
+    if (!ok && !publishOnFailure) return false;
     this.bus?.publish({
       topic: 'windows.account.logon',
       payload: { deviceId: this.deviceId, account: name, success: ok, logonType },

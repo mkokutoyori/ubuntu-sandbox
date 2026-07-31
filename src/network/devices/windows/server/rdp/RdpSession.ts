@@ -132,11 +132,26 @@ export class RdpSessionTable {
     this.deviceId = deviceId;
   }
 
-  create(userName: string, clientAddress: string): number {
+  /**
+   * A new CredSSP logon for `userName`. If that user already has a
+   * `Disconnected` session on file, real Terminal Services resumes it
+   * (same session ID, no new logon session) rather than opening a
+   * second one — callers use `reconnected` to decide whether to report
+   * 4778 (reconnect) or a fresh logon (PRD-Winlogon.md §2.1 P4).
+   */
+  create(userName: string, clientAddress: string): { sessionId: number; reconnected: boolean } {
+    for (const [id, s] of this.sessions) {
+      if (s.state === 'Disconnected' && s.userName.toLowerCase() === userName.toLowerCase()) {
+        s.state = 'Active';
+        s.clientAddress = clientAddress;
+        this.bus.publish({ topic: 'rdp.session.established', payload: { deviceId: this.deviceId, sessionId: id, userName, clientAddress } });
+        return { sessionId: id, reconnected: true };
+      }
+    }
     const id = this.nextId++;
     this.sessions.set(id, { userName, state: 'Active', clientAddress });
     this.bus.publish({ topic: 'rdp.session.established', payload: { deviceId: this.deviceId, sessionId: id, userName, clientAddress } });
-    return id;
+    return { sessionId: id, reconnected: false };
   }
 
   list(): RdpSessionState[] {
@@ -146,6 +161,20 @@ export class RdpSessionTable {
   get(sessionId: number): RdpSessionState | null {
     const s = this.sessions.get(sessionId);
     return s ? { sessionId, ...s } : null;
+  }
+
+  /**
+   * The underlying transport dropped with no explicit `logoff`/`rwinsta`
+   * (a cable cut, the client closing) — the session stays on file as
+   * `Disconnected`, exactly like real Terminal Services, so a later
+   * reconnect from the same user resumes it instead of opening a new
+   * one. A no-op if the session was already logged off explicitly.
+   */
+  disconnect(sessionId: number): boolean {
+    const s = this.sessions.get(sessionId);
+    if (!s || s.state === 'Disconnected') return false;
+    s.state = 'Disconnected';
+    return true;
   }
 
   /** `logoff`/`rwinsta` — closes the session cleanly, removing it from the table (real `logoff` ends the session outright rather than just disconnecting it). */
@@ -162,6 +191,26 @@ export interface RdpServerContext {
   readonly tlsConfig: Omit<TlsServerConfig, 'alpnProtocols'>;
   readonly sessions: RdpSessionTable;
   readonly auth: CredSspAuthContext;
+  /**
+   * Audit-reporting callbacks (PRD-Winlogon.md §4.4) — same pattern as
+   * `WindowsSshServerContext`'s `reportLogon`/`reportLogoff`. Absent for
+   * a synthetic test context that has no need of audit; never required
+   * for RDP itself to function. `checkLocal`/`checkDomain` on `auth`
+   * must NOT also self-publish `windows.account.logon` when these are
+   * provided, or a successful logon would double-publish exactly like
+   * the SSH bug P1 fixed.
+   *
+   * No `reportLogoff` here, unlike the SSH context: this simulator
+   * models no client-initiated logoff PDU distinct from a plain
+   * transport drop (`reportDisconnect` below already covers that), and
+   * the only explicit-logoff signal that exists is the admin-side
+   * `logoff`/`rwinsta` CLI command, which runs against `RdpSessionTable`
+   * directly rather than a live per-connection context — its 4634 is
+   * published at that call site (`WindowsPC.executeCmdCommand`) instead.
+   */
+  reportLogon?: (user: string, success: boolean) => void;
+  reportDisconnect?: (user: string) => void;
+  reportReconnect?: (user: string) => void;
 }
 
 export class RdpServerHandler {
@@ -172,6 +221,20 @@ export class RdpServerHandler {
     let tls: TlsServerSession | null = null;
     let clientSeq = 0;
     let serverSeq = 0;
+    let boundSessionId: number | null = null;
+    let boundUserName: string | null = null;
+
+    socket.onClose(() => {
+      // A transport drop with no prior explicit `logoff`/`rwinsta` — the
+      // session stays on file as Disconnected (PRD-Winlogon.md §2.1 P4),
+      // not removed outright like an explicit logoff. `disconnect()` is
+      // a no-op if `logoff` already removed the session first, so this
+      // never double-reports.
+      if (boundSessionId === null || boundUserName === null) return;
+      if (this.ctx.sessions.disconnect(boundSessionId)) {
+        this.ctx.reportDisconnect?.(boundUserName);
+      }
+    });
 
     const unsubscribe = socket.onData((data) => {
       const bytes = toBytes(data);
@@ -200,7 +263,17 @@ export class RdpServerHandler {
       if (!req) return;
 
       const ok = verifyCredSsp(this.ctx.auth, req);
-      const sessionId = ok ? this.ctx.sessions.create(req.username, socket.remoteIp ?? '0.0.0.0') : undefined;
+      let sessionId: number | undefined;
+      if (ok) {
+        const result = this.ctx.sessions.create(req.username, socket.remoteIp ?? '0.0.0.0');
+        sessionId = result.sessionId;
+        boundSessionId = result.sessionId;
+        boundUserName = req.username;
+        if (result.reconnected) this.ctx.reportReconnect?.(req.username);
+        else this.ctx.reportLogon?.(req.username, true);
+      } else {
+        this.ctx.reportLogon?.(req.username, false);
+      }
       const respBytes = encodeCredSspResponse(ok, sessionId);
       const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls!.serverApplicationTrafficSecret!, serverSeq, respBytes);
       serverSeq = serverNextSeq;
