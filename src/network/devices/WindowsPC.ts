@@ -1234,6 +1234,68 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /**
+   * Domain-then-local credential resolution (PRD-Winlogon.md §1.3) —
+   * the same order `WindowsTerminalSession.verifyRemoteCredentials`
+   * already uses for SSH/RDP: `tryDomainAuth` first (only meaningful
+   * for a domain-qualified name on a joined machine), `checkPassword`
+   * local as the fallback. Shared by that method and by
+   * `unlockWorkstation` so the two never drift apart.
+   */
+  resolveLocalOrDomainCredentials(user: string, password: string, logonType = 2, publishOnSuccess = true): { ok: boolean; sam: string } {
+    const domainResult = this.tryDomainAuth(user, password);
+    if (domainResult !== null) return { ok: domainResult.ok, sam: domainResult.sam };
+    const ok = this.userMgr.checkPassword(user, password, logonType, publishOnSuccess);
+    return { ok, sam: user };
+  }
+
+  isLocked(): boolean { return this.locked; }
+
+  /**
+   * SAS-equivalent lock (PRD-Winlogon.md §2.1 P2/P3) — `rundll32
+   * user32.dll,LockWorkStation`, the `lock` console convenience, or a
+   * password-protected screensaver (`origin: 'screensaver'`) all funnel
+   * here. Idempotent: locking an already-locked workstation is a no-op,
+   * matching real Winlogon (no second 4800 for a redundant lock).
+   */
+  lockWorkstation(origin: 'user' | 'screensaver' = 'user'): void {
+    if (this.locked) return;
+    this.locked = true;
+    this.lockedBy = this.getCurrentUser();
+    this.lockOrigin = origin;
+    this.getBus().publish({
+      topic: 'windows.workstation.locked',
+      payload: { deviceId: this.id, account: this.lockedBy, origin },
+    });
+  }
+
+  /**
+   * Real credential check to leave the locked state — no scripted
+   * success. A wrong password leaves `locked` true and generates a 4625
+   * (via `checkPassword`'s own publish, logonType 7 = Unlock) exactly
+   * like any other failed authentication.
+   */
+  unlockWorkstation(user: string, password: string): { ok: boolean; message: string } {
+    if (!this.locked) return { ok: true, message: '' };
+    // logonType 7 (Unlock); publishOnSuccess=false — a successful
+    // unlock resumes the already-open session (4801 covers it), it
+    // does not open a fresh one (PRD-Winlogon.md §2.1 P2). A wrong
+    // password still publishes its own 4625 from inside checkPassword.
+    const result = this.resolveLocalOrDomainCredentials(user, password, 7, false);
+    if (!result.ok) {
+      return { ok: false, message: 'The user name or password is incorrect.' };
+    }
+    const origin = this.lockOrigin ?? 'user';
+    this.locked = false;
+    this.lockedBy = null;
+    this.lockOrigin = null;
+    this.getBus().publish({
+      topic: 'windows.workstation.unlocked',
+      payload: { deviceId: this.id, account: result.sam, origin },
+    });
+    return { ok: true, message: '' };
+  }
+
+  /**
    * Dial WinRM on a remote device over the real network (`Invoke-Command
    * -ComputerName`, `Enter-PSSession`, `Test-WSMan`). Real TCP handshake —
    * routing, cables, a stopped/unconfigured WinRM listener, and bad
@@ -1364,6 +1426,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private gpoAppliedNames: string[] = [];
   private gpoLastAppliedAt: Date | null = null;
   private gpoLogonBanner: { title: string; text: string } | null = null;
+
+  // ─── Workstation lock (PRD-Winlogon.md §2.1 P2/P3) ──────────────────
+  private locked = false;
+  private lockedBy: string | null = null;
+  private lockOrigin: 'user' | 'screensaver' | null = null;
   private gpoStartupScript: string | null = null;
 
   /**
@@ -2220,6 +2287,32 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     trimmed = trimmed.trim();
     if (!trimmed) return '';
+
+    // Workstation lock (PRD-Winlogon.md §2.1 P2/P3), checked before
+    // anything else — mirrors CrashOnAuditFail's gate just below.
+    // `unlock <user> <password>` is the one command that still runs
+    // while locked. Real Windows shows a graphical lock screen instead
+    // of a command prompt at all; this simulator is command-line-only,
+    // so a literal `unlock` command is the deliberate, documented
+    // substitute for typing into a masked password field — the
+    // password does appear in command echo/history as a result, a
+    // known and bounded simplification (§2.2 of the PRD).
+    const unlockMatch = /^unlock\s+(\S+)\s+(.+)$/i.exec(trimmed);
+    if (unlockMatch) {
+      const [, unlockUser, unlockPassword] = unlockMatch;
+      return this.unlockWorkstation(unlockUser, unlockPassword).message
+        || 'The workstation was unlocked successfully.';
+    }
+    if (this.locked) {
+      const banner = this.gpoLogonBanner
+        ? `${this.gpoLogonBanner.title}\n\n${this.gpoLogonBanner.text}\n\n`
+        : '';
+      return `${banner}This computer is locked.\nOnly ${this.lockedBy} or an administrator can unlock this computer.\nType UNLOCK <username> <password> to continue.`;
+    }
+    if (/^rundll32(?:\.exe)?\s+user32\.dll\s*,\s*LockWorkStation\s*$/i.test(trimmed) || /^lock$/i.test(trimmed)) {
+      this.lockWorkstation('user');
+      return '';
+    }
 
     if (this.isAuditFailBlocked() && !this.userMgr.isCurrentUserAdmin()) {
       return 'STOP: C0000244 {Audit Failed}\nAn attempt to generate a security audit failed.\nAn administrator must clear the Security event log or disable CrashOnAuditFail to continue.';

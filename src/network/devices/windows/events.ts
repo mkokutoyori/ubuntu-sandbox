@@ -98,6 +98,12 @@ export interface WindowsLogoffEventPayload extends WindowsDeviceRef {
   logonType: number;
 }
 
+/** `lockWorkstation()`/`unlockWorkstation()` (PRD-Winlogon.md §2.1 P2/P3) — a workstation lock and a password-protected screensaver share this same shape, distinguished only by `origin`. */
+export interface WindowsWorkstationLockEventPayload extends WindowsDeviceRef {
+  account: string;
+  origin: 'user' | 'screensaver';
+}
+
 // ─── Group lifecycle ────────────────────────────────────────────────────
 
 export interface WindowsGroupEventPayload extends WindowsDeviceRef {
@@ -161,6 +167,8 @@ export type WindowsDomainEvent =
   | { topic: 'windows.account.changed'; payload: WindowsAccountChangedPayload }
   | { topic: 'windows.account.logon'; payload: WindowsLogonEventPayload }
   | { topic: 'windows.account.logoff'; payload: WindowsLogoffEventPayload }
+  | { topic: 'windows.workstation.locked'; payload: WindowsWorkstationLockEventPayload }
+  | { topic: 'windows.workstation.unlocked'; payload: WindowsWorkstationLockEventPayload }
   | { topic: 'windows.group.created'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.deleted'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.membership-changed'; payload: WindowsGroupMemberEventPayload }

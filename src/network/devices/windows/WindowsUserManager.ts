@@ -475,14 +475,22 @@ export class WindowsUserManager {
   /**
    * `logonType` defaults to 2 (Interactive) — the console/`runas` case —
    * but every caller that authenticates over a specific protocol
-   * (SSH → 10 RemoteInteractive, RDP → 10, a future unlock-workstation
-   * flow → 7 Unlock) must pass its own real value. `checkPassword` used
-   * to hardcode 2 unconditionally, which made every non-interactive
-   * caller either silently mislabel its own `windows.account.logon`
-   * publish or (SSH) publish a second, correctly-typed one on top of
-   * this one — PRD-Winlogon.md §1.2 point 1.
+   * (SSH → 10 RemoteInteractive, RDP → 10, workstation unlock → 7
+   * Unlock) must pass its own real value. `checkPassword` used to
+   * hardcode 2 unconditionally, which made every non-interactive caller
+   * either silently mislabel its own `windows.account.logon` publish or
+   * (SSH) publish a second, correctly-typed one on top of this one —
+   * PRD-Winlogon.md §1.2 point 1.
+   *
+   * `publishOnSuccess` defaults to true. A successful workstation unlock
+   * (PRD-Winlogon.md §2.1 P2) passes false: real Windows does not open
+   * a fresh logon session (4624) to resume an already-open one that was
+   * merely locked — only 4801 (workstation unlocked) fires — but a
+   * *failed* unlock attempt is exactly as real a failed authentication
+   * as any other, so the failure branches always publish regardless of
+   * this flag.
    */
-  checkPassword(name: string, password: string, logonType = 2): boolean {
+  checkPassword(name: string, password: string, logonType = 2, publishOnSuccess = true): boolean {
     const user = this.users.get(name.toLowerCase());
     if (user && (this.isLockedOut(name) || this.isPasswordExpired(name))) {
       this.bus?.publish({
@@ -507,6 +515,7 @@ export class WindowsUserManager {
       }
     }
 
+    if (ok && !publishOnSuccess) return true;
     this.bus?.publish({
       topic: 'windows.account.logon',
       payload: { deviceId: this.deviceId, account: name, success: ok, logonType },

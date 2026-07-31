@@ -24,6 +24,7 @@ import type {
   WindowsServiceAccountChangedPayload,
   WindowsFileAclChangedPayload,
   WindowsServiceCreatedPayload,
+  WindowsWorkstationLockEventPayload,
 } from './events';
 
 export class WindowsSecurityAuditProjection {
@@ -41,6 +42,8 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.account.changed', (e) => this.onAccountChanged(e.payload)),
       bus.subscribe('windows.account.logon', (e) => this.onLogon(e.payload)),
       bus.subscribe('windows.account.logoff', (e) => this.onLogoff(e.payload)),
+      bus.subscribe('windows.workstation.locked', (e) => this.onWorkstationLocked(e.payload)),
+      bus.subscribe('windows.workstation.unlocked', (e) => this.onWorkstationUnlocked(e.payload)),
       bus.subscribe('windows.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('windows.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('windows.group.membership-changed', (e) => this.onMembership(e.payload)),
@@ -133,6 +136,18 @@ export class WindowsSecurityAuditProjection {
     const logonId = this.openSessions.get(key);
     this.openSessions.delete(key);
     this.audit.logoff(p.account, p.logonType, logonId);
+  }
+
+  private onWorkstationLocked(p: WindowsWorkstationLockEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Other Logon/Logoff Events', 'success')) return;
+    this.audit.workstationLocked(p.account, p.origin);
+  }
+
+  private onWorkstationUnlocked(p: WindowsWorkstationLockEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Other Logon/Logoff Events', 'success')) return;
+    this.audit.workstationUnlocked(p.account, p.origin);
   }
 
   private onGroupCreated(p: WindowsGroupEventPayload): void {

@@ -54,6 +54,10 @@ export const SECURITY_EVENT = {
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
   SERVICE_INSTALLED: 4697,
+  WORKSTATION_LOCKED: 4800,
+  WORKSTATION_UNLOCKED: 4801,
+  SCREENSAVER_INVOKED: 4802,
+  SCREENSAVER_DISMISSED: 4803,
 } as const;
 
 /** Ce qu'un événement de suivi de processus sait de son sujet. */
@@ -231,6 +235,26 @@ export class WindowsSecurityAudit {
 
   accountLockedOut(name: string): void {
     this.failure(SECURITY_EVENT.ACCOUNT_LOCKED_OUT, `A user account was locked out.\n\nAccount That Was Locked Out:\n\tAccount Name:\t${name}`);
+  }
+
+  /**
+   * 4800/4802 — le poste (ou son écran de veille) a été verrouillé.
+   * PRD-Winlogon.md §2.1 P2/P3 : même mécanisme de verrouillage, seul
+   * l'EventID change selon l'origine (`origin`).
+   */
+  workstationLocked(name: string, origin: 'user' | 'screensaver' = 'user'): void {
+    const eventId = origin === 'screensaver' ? SECURITY_EVENT.SCREENSAVER_INVOKED : SECURITY_EVENT.WORKSTATION_LOCKED;
+    const label = origin === 'screensaver' ? 'The screen saver was invoked.' : 'The workstation was locked.';
+    this.success(eventId, `${label}\n\nSubject:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name }, name);
+  }
+
+  /** 4801/4803 — le poste (ou son écran de veille) a été déverrouillé. */
+  workstationUnlocked(name: string, origin: 'user' | 'screensaver' = 'user'): void {
+    const eventId = origin === 'screensaver' ? SECURITY_EVENT.SCREENSAVER_DISMISSED : SECURITY_EVENT.WORKSTATION_UNLOCKED;
+    const label = origin === 'screensaver' ? 'The screen saver was dismissed.' : 'The workstation was unlocked.';
+    this.success(eventId, `${label}\n\nSubject:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name }, name);
   }
 
   // ─── Process tracking ──────────────────────────────────────────────────
