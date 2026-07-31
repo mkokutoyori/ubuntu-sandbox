@@ -147,6 +147,14 @@ export interface WindowsProcessEventPayload extends WindowsDeviceRef {
    * visible, et sans lui le champ n'existe pas.
    */
   commandLine?: string;
+  /** Real UAC elevation context, when the spawner knows it (PRD-Winlogon.md §2.1 P5) — see `WindowsProcess.elevation`. */
+  elevation?: 'full' | 'default' | 'limited';
+}
+
+/** `runas` — an explicit-credentials logon (PRD-Winlogon.md §2.1 P5, 4648): `subject` is the *caller's* account, `target` the account impersonated. */
+export interface WindowsExplicitCredentialsEventPayload extends WindowsDeviceRef {
+  subject: string;
+  target: string;
 }
 
 // ─── Port-proxy lifecycle (netsh interface portproxy) ───────────────────
@@ -182,6 +190,7 @@ export type WindowsDomainEvent =
   | { topic: 'windows.workstation.unlocked'; payload: WindowsWorkstationLockEventPayload }
   | { topic: 'windows.session.disconnected'; payload: WindowsSessionLinkEventPayload }
   | { topic: 'windows.session.reconnected'; payload: WindowsSessionLinkEventPayload }
+  | { topic: 'windows.account.explicit-credentials'; payload: WindowsExplicitCredentialsEventPayload }
   | { topic: 'windows.group.created'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.deleted'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.membership-changed'; payload: WindowsGroupMemberEventPayload }

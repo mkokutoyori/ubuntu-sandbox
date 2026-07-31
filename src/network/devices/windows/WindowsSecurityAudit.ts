@@ -60,6 +60,7 @@ export const SECURITY_EVENT = {
   SCREENSAVER_DISMISSED: 4803,
   SESSION_RECONNECTED: 4778,
   SESSION_DISCONNECTED: 4779,
+  EXPLICIT_CREDENTIALS_LOGON: 4648,
 } as const;
 
 /** Ce qu'un événement de suivi de processus sait de son sujet. */
@@ -68,6 +69,17 @@ export interface ProcessAuditDetails {
   parentName?: string;
   owner?: string;
   commandLine?: string;
+  /**
+   * Contexte d'élévation UAC réel (PRD-Winlogon.md §2.1 P5), quand
+   * l'appelant le connaît : `'full'` → runas explicite réussi (%%1937,
+   * intégrité haute) ; `'default'` → session déjà ouverte directement en
+   * administrateur, sans runas (%%1936) ; `'limited'` → membre du groupe
+   * Administrators qui exécute SANS élever (%%1938, jeton filtré — le
+   * cas UAC le plus fréquent, absent jusqu'ici). Absent (la majorité des
+   * spawns) → repli sur `isElevatedAccount()`, comportement historique
+   * inchangé.
+   */
+  elevation?: 'full' | 'default' | 'limited';
 }
 
 /**
@@ -102,6 +114,27 @@ function isElevatedAccount(account?: string): boolean {
   if (!account) return false;
   const leaf = account.slice(account.indexOf('\\') + 1).toLowerCase();
   return leaf === 'administrator' || leaf === 'system' || leaf.endsWith('admin');
+}
+
+/**
+ * TokenElevationType/MandatoryLabel pour un 4688 (PRD-Winlogon.md §2.1
+ * P5). `details.elevation`, quand fourni, porte la vérité — les trois
+ * vraies valeurs Windows. Absent (aucun appelant ne connaît encore le
+ * contexte réel), on retombe sur `isElevatedAccount()` : c'est le
+ * comportement historique, préservé bit pour bit pour ne rien casser.
+ */
+function resolveElevation(details: ProcessAuditDetails): { tokenElevationType: string; mandatoryLabel: string } {
+  switch (details.elevation) {
+    case 'full':    return { tokenElevationType: '%%1937', mandatoryLabel: 'S-1-16-12288' };
+    case 'limited': return { tokenElevationType: '%%1938', mandatoryLabel: 'S-1-16-8192' };
+    case 'default': return { tokenElevationType: '%%1936', mandatoryLabel: 'S-1-16-8192' };
+    default: {
+      const elevated = isElevatedAccount(details.owner);
+      return elevated
+        ? { tokenElevationType: '%%1937', mandatoryLabel: 'S-1-16-12288' }
+        : { tokenElevationType: '%%1936', mandatoryLabel: 'S-1-16-8192' };
+    }
+  }
 }
 
 const SECURITY_LOG = 'Security';
@@ -240,6 +273,19 @@ export class WindowsSecurityAudit {
   }
 
   /**
+   * 4648 — ouverture de session avec des identifiants explicites
+   * (PRD-Winlogon.md §2.1 P5). `runas` en est l'exemple réel : `subject`
+   * est le compte *appelant* (déjà connecté), `target` le compte
+   * impersonné — c'est ce couple qui distingue 4648 d'un 4624 normal, où
+   * Subject et TargetUserName seraient le même compte.
+   */
+  explicitCredentialsLogon(subject: string, target: string, targetServer = 'localhost'): void {
+    this.success(SECURITY_EVENT.EXPLICIT_CREDENTIALS_LOGON,
+      `A logon was attempted using explicit credentials.\n\nAccount Whose Credentials Were Used:\n\tAccount Name:\t${target}\n\nTarget Server:\n\tTarget Server Name:\t${targetServer}`,
+      { ...splitAccount(subject), TargetUserName: target, TargetServerName: targetServer }, subject);
+  }
+
+  /**
    * 4800/4802 — le poste (ou son écran de veille) a été verrouillé.
    * PRD-Winlogon.md §2.1 P2/P3 : même mécanisme de verrouillage, seul
    * l'EventID change selon l'origine (`origin`).
@@ -304,7 +350,7 @@ export class WindowsSecurityAudit {
    * l'inventer ici ferait croire à un réglage qui n'a pas été posé.
    */
   processCreated(name: string, pid: number, details: ProcessAuditDetails = {}): void {
-    const elevated = isElevatedAccount(details.owner);
+    const { tokenElevationType, mandatoryLabel } = resolveElevation(details);
     this.success(SECURITY_EVENT.PROCESS_CREATED,
       `A new process has been created.\n\nProcess Information:\n\tNew Process ID:\t0x${pid.toString(16)}\n\tNew Process Name:\t${name}`,
       {
@@ -313,12 +359,8 @@ export class WindowsSecurityAudit {
         ProcessId: `0x${(details.ppid ?? 0).toString(16)}`,
         ParentProcessName: details.parentName ?? '',
         ...splitAccount(details.owner),
-        // Un jeton d'administrateur est « complet » (%%1937) et porte
-        // l'étiquette d'intégrité haute ; tout autre compte reçoit le
-        // jeton par défaut. C'est ce couple qui distingue une élévation
-        // UAC d'une session administrateur directe.
-        TokenElevationType: elevated ? '%%1937' : '%%1936',
-        MandatoryLabel: elevated ? 'S-1-16-12288' : 'S-1-16-8192',
+        TokenElevationType: tokenElevationType,
+        MandatoryLabel: mandatoryLabel,
         ...(details.commandLine ? { CommandLine: details.commandLine } : {}),
       }, details.owner ?? 'SYSTEM');
   }

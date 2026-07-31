@@ -54,6 +54,18 @@ export interface WindowsProcess {
   hostedServices: string[];
   /** Per-simulated-second resource drift — undefined means static (no leak). */
   leakProfile?: ProcessLeakProfile;
+  /**
+   * Real UAC token-elevation context (PRD-Winlogon.md §2.1 P5), when a
+   * caller knows it: `'full'` — launched under an explicit `runas`
+   * elevation; `'default'` — a session already opened directly as
+   * administrator (no `runas` involved); `'limited'` — an
+   * Administrators-group member running *without* elevating (UAC's
+   * filtered token, %%1938). Undefined when no caller has this context
+   * (most spawns) — `WindowsSecurityAudit.processCreated` then falls
+   * back to its own name-based heuristic, exactly as before this field
+   * existed.
+   */
+  elevation?: 'full' | 'default' | 'limited';
 }
 
 /** Per-second growth rates driving a simulated resource leak (Get-Counter /
@@ -114,6 +126,7 @@ export class WindowsProcessManager {
         parentName: proc ? this.processes.get(proc.ppid)?.name : undefined,
         owner: proc?.owner,
         commandLine: proc?.commandLine,
+        elevation: proc?.elevation,
       },
     });
   }
@@ -271,7 +284,7 @@ export class WindowsProcessManager {
   /** Spawn a new process (used by service start, etc.) */
   spawnProcess(name: string, ppid: number, owner: string, opts: {
     session?: ProcessSession; sessionId?: number; hostedServices?: string[];
-    systemOwned?: boolean; commandLine?: string;
+    systemOwned?: boolean; commandLine?: string; elevation?: 'full' | 'default' | 'limited';
   } = {}): WindowsProcess {
     const pid = this.allocatePid();
     const proc: WindowsProcess = {
@@ -292,6 +305,7 @@ export class WindowsProcessManager {
       systemOwned: opts.systemOwned ?? false,
       hostedServices: opts.hostedServices ?? [],
       commandLine: opts.commandLine ?? name,
+      elevation: opts.elevation,
     };
     this.processes.set(pid, proc);
     this.publishProcess(pid, name, true);

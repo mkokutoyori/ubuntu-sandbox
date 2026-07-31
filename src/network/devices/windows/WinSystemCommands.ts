@@ -18,7 +18,7 @@ export interface WinSystemProcessManager {
     imageName: string,
     ppid: number,
     user: string,
-    options?: { session?: ProcessSession; sessionId?: number },
+    options?: { session?: ProcessSession; sessionId?: number; elevation?: 'full' | 'default' | 'limited' },
   ): unknown;
 }
 
@@ -60,6 +60,16 @@ export interface WinSystemContext {
   isServiceRunning(name: string): boolean;
   readonly scheduledTasks: Map<string, WinScheduledTask>;
   now(): Date;
+  /**
+   * Real UAC elevation context for a process `start`s right now
+   * (PRD-Winlogon.md §2.1 P5) — `'full'` while inside a `runas`-wrapped
+   * command, `'limited'` for an Administrators-group member running
+   * without having elevated, `undefined` otherwise (the 4688 falls back
+   * to its historical name-based heuristic). Optional so a synthetic
+   * test context that doesn't care about elevation keeps working
+   * unchanged.
+   */
+  elevationContext?(): 'full' | 'default' | 'limited' | undefined;
 }
 
 // ─── systeminfo ──────────────────────────────────────────────────────
@@ -206,6 +216,7 @@ export function cmdStart(ctx: WinSystemContext, args: string[]): string {
   const ppid = parent?.pid ?? 1;
   ctx.processManager.spawnProcess(imageName, ppid, ctx.currentUser, {
     session: 'Console', sessionId: 1,
+    elevation: ctx.elevationContext?.(),
   });
   return '';
 }

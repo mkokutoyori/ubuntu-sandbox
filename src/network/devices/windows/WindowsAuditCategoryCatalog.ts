@@ -35,7 +35,7 @@ export const AUDIT_CATEGORIES: readonly AuditSubcategoryDef[] = [
   { name: 'IPsec Driver', guid: '{0CCE9213-69AE-11D9-BED3-505054503030}', category: 'System', governs: [] },
   { name: 'Other System Events', guid: '{0CCE9214-69AE-11D9-BED3-505054503030}', category: 'System', governs: [] },
 
-  { name: 'Logon', guid: '{0CCE9215-69AE-11D9-BED3-505054503030}', category: 'Logon/Logoff', governs: [4624, 4625] },
+  { name: 'Logon', guid: '{0CCE9215-69AE-11D9-BED3-505054503030}', category: 'Logon/Logoff', governs: [4624, 4625, 4648] },
   { name: 'Logoff', guid: '{0CCE9216-69AE-11D9-BED3-505054503030}', category: 'Logon/Logoff', governs: [4634, 4647] },
   { name: 'Account Lockout', guid: '{0CCE9217-69AE-11D9-BED3-505054503030}', category: 'Logon/Logoff', governs: [4740, 4767] },
   { name: 'IPsec Main Mode', guid: '{0CCE9218-69AE-11D9-BED3-505054503030}', category: 'Logon/Logoff', governs: [] },

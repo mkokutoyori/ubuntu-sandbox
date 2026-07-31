@@ -26,6 +26,7 @@ import type {
   WindowsServiceCreatedPayload,
   WindowsWorkstationLockEventPayload,
   WindowsSessionLinkEventPayload,
+  WindowsExplicitCredentialsEventPayload,
 } from './events';
 
 export class WindowsSecurityAuditProjection {
@@ -47,6 +48,7 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.workstation.unlocked', (e) => this.onWorkstationUnlocked(e.payload)),
       bus.subscribe('windows.session.disconnected', (e) => this.onSessionDisconnected(e.payload)),
       bus.subscribe('windows.session.reconnected', (e) => this.onSessionReconnected(e.payload)),
+      bus.subscribe('windows.account.explicit-credentials', (e) => this.onExplicitCredentials(e.payload)),
       bus.subscribe('windows.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('windows.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('windows.group.membership-changed', (e) => this.onMembership(e.payload)),
@@ -163,6 +165,13 @@ export class WindowsSecurityAuditProjection {
     this.audit.sessionReconnected(p.account, p.logonType, logonId);
   }
 
+  /** 4648 — `runas` (ou tout logon à identifiants explicites) ; jamais gaté par 'Other Logon/Logoff Events' comme 4778/4779, gouverné par 'Logon' comme 4624/4625. */
+  private onExplicitCredentials(p: WindowsExplicitCredentialsEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Logon', 'success')) return;
+    this.audit.explicitCredentialsLogon(p.subject, p.target);
+  }
+
   private onWorkstationLocked(p: WindowsWorkstationLockEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Other Logon/Logoff Events', 'success')) return;
@@ -203,6 +212,7 @@ export class WindowsSecurityAuditProjection {
       // plutôt que d'inclure le champ inconditionnellement, c'est ce qui
       // fait de ce réglage autre chose qu'une valeur décorative.
       commandLine: this.commandLineAudited?.() ? p.commandLine : undefined,
+      elevation: p.elevation,
     };
     if (p.started) {
       if (!this.gated('Process Creation', 'success')) return;

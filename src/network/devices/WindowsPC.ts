@@ -1459,6 +1459,29 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private lockOrigin: 'user' | 'screensaver' | null = null;
   private gpoStartupScript: string | null = null;
 
+  /** Set only while a `runas`-wrapped command runs (PRD-Winlogon.md §2.1 P5) — see `runasHost()`. */
+  private pendingElevation: 'full' | null = null;
+
+  /**
+   * What TokenElevationType a process `start`ed right now should carry
+   * (PRD-Winlogon.md §2.1 P5 — the %%1938 case). A real `runas`
+   * elevation always wins; otherwise, an Administrators-group member is
+   * running *without* having elevated — the actual UAC filtered-token
+   * case, previously unmodeled entirely. The built-in `Administrator`/
+   * `SYSTEM` accounts are UAC-exempt in real Windows (no split token to
+   * filter), so they're excluded here and fall through to
+   * `processCreated`'s own name-based heuristic instead, which already
+   * resolves them to %%1937 — this method returning `undefined` for
+   * them is what preserves that existing behavior unchanged.
+   */
+  private resolveElevationForCurrentUser(): 'full' | 'default' | 'limited' | undefined {
+    if (this.pendingElevation) return this.pendingElevation;
+    const current = this.userMgr.currentUser;
+    const leaf = current.slice(current.indexOf('\\') + 1).toLowerCase();
+    if (leaf === 'administrator' || leaf === 'system') return undefined;
+    return this.userMgr.isCurrentUserAdmin() ? 'limited' : undefined;
+  }
+
   /**
    * `gpupdate /force` — pulls RSoP from the DC over the real network
    * (`GpoPullClient`, real LDAP) and applies it: the account-policy
@@ -3275,6 +3298,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       isServiceRunning: (name) => this.svcMgr.getService(name)?.state === 'Running',
       scheduledTasks: this.scheduledTasks,
       now: () => this.simulatedDate(),
+      elevationContext: () => this.resolveElevationForCurrentUser(),
     };
   }
 
@@ -3831,11 +3855,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       getUser: (name) => this.userMgr.getUser(name) ?? this.getDomainUserForRunas(name),
       getCurrentUser: () => this.userMgr.currentUser,
       setCurrentUser: (name) => this.setCurrentUser(name),
-      executeCmdCommand: (command) => this.executeCmdCommand(command),
-      onLogon: (userName) => {
+      // TokenElevationType %%1937 (PRD-Winlogon.md §2.1 P5) — any
+      // process a `start`-family command spawns while running under a
+      // real runas elevation carries `elevation: 'full'` instead of
+      // falling back to the name-based heuristic. Restored to null even
+      // if the wrapped command throws, so a failure never leaks
+      // elevation into whatever runs next.
+      executeCmdCommand: async (command) => {
+        this.pendingElevation = 'full';
+        try {
+          return await this.executeCmdCommand(command);
+        } finally {
+          this.pendingElevation = null;
+        }
+      },
+      onLogon: (userName, subject) => {
         this.getBus().publish({
           topic: 'windows.account.logon',
           payload: { deviceId: this.id, account: userName, success: true, logonType: 2 },
+        });
+        // 4648 (PRD-Winlogon.md §2.1 P5) — real explicit-credentials
+        // logon, dynamically generated with the actual caller/target
+        // pair instead of the one static demo entry seeded at boot.
+        this.getBus().publish({
+          topic: 'windows.account.explicit-credentials',
+          payload: { deviceId: this.id, subject, target: userName },
         });
       },
     };
