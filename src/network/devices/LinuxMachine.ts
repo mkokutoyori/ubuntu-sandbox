@@ -127,6 +127,7 @@ import {
   type LinuxFormatHelpers,
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
+import { splitRegistryStdin } from './linux/commands/registryStdin';
 import { evaluatePrivilegeRequirement, type PrivilegeRequirement } from './linux/iam/policy/CommandPrivilegePolicy';
 import { buildIpCtx } from './linux/commands/net/Ip';
 import { GreAgent, type GreHost } from '../gre/GreAgent';
@@ -378,13 +379,14 @@ export abstract class LinuxMachine extends EndHost
     // no visibility into this registry, so without this a script running
     // `named-checkconf` sees "command not found" even though the same
     // command works fine typed directly at the prompt.
-    this.executor._registryCommandHook = (cmd, args) => {
+    this.executor._registryCommandHook = (cmd, args, stdin) => {
       const registered = this.commands.get(cmd);
       if (!registered || !registered.needsNetworkContext) return null;
+      const { argv, input } = splitRegistryStdin(registered, args, stdin);
       if (registered.runWithStatusSync) {
-        return registered.runWithStatusSync(this.buildCommandContext(), args);
+        return registered.runWithStatusSync(this.buildCommandContext(), argv, input);
       }
-      const result = registered.run(this.buildCommandContext(), args);
+      const result = registered.run(this.buildCommandContext(), argv, input);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
@@ -465,10 +467,12 @@ export abstract class LinuxMachine extends EndHost
       if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
     });
 
-    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false) => {
+    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false, stdin) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
-      const args = argv.slice(1);
+      const split = splitRegistryStdin(cmd, argv.slice(1), stdin);
+      const args = split.argv;
+      const input = split.input;
       // A `cd` earlier in the same composite line (`cd /mnt && umount /mnt`)
       // only updates the interpreter's own PWD; `LinuxCommandExecutor.cwd`
       // is otherwise not synced until the whole line finishes. Commands
@@ -528,14 +532,14 @@ export abstract class LinuxMachine extends EndHost
       }
       const ctx = this.buildCommandContext();
       if (cmd.runWithStatusSync) {
-        try { return Promise.resolve(cmd.runWithStatusSync(ctx, args)); } finally { restore(); }
+        try { return Promise.resolve(cmd.runWithStatusSync(ctx, args, input)); } finally { restore(); }
       }
-      if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args).finally(restore);
+      if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args, input).finally(restore);
       // Match `_registryCommandHook`'s exit-code inference (used when this
       // same registry command is reached via the synchronous script
       // dispatch default case) so `$?`/`||` chaining behaves identically
       // regardless of which of the two bridges happened to run it.
-      return Promise.resolve(cmd.run(ctx, args)).then((output) => ({
+      return Promise.resolve(cmd.run(ctx, args, input)).then((output) => ({
         output,
         exitCode: this.inferRegistryExitCode(argv[0], output),
       })).finally(restore);

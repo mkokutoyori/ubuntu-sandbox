@@ -161,6 +161,9 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
   'expr', 'seq', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
+  // Text streams
+  'tac', 'nl', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
+  'column', 'split', 'base64', 'cksum', 'xxd',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
   'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
@@ -438,7 +441,7 @@ export class LinuxCommandExecutor {
    * bash script, not just from the top-level per-command dispatch. Returns
    * null when the command isn't a registered (synchronous) registry entry.
    */
-  _registryCommandHook: ((cmd: string, args: string[]) => { output: string; exitCode: number } | null) | null = null;
+  _registryCommandHook: ((cmd: string, args: string[], stdin?: string) => { output: string; exitCode: number } | null) | null = null;
   /**
    * Optional bridge to a registered `LinuxCommand`'s own declarative
    * `privilege` field, set by `LinuxMachine` alongside `_registryCommandHook`.
@@ -2539,7 +2542,7 @@ export class LinuxCommandExecutor {
         trimmed,
         'bash',
         [],
-        (argv, env, background, outputPiped) => this.dispatchFromInterpreter(argv, env, background, outputPiped),
+        (argv, env, background, outputPiped, stdin) => this.dispatchFromInterpreter(argv, env, background, outputPiped, stdin),
         initialVars,
         io,
         { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode },
@@ -2596,11 +2599,11 @@ export class LinuxCommandExecutor {
    * argv is not a network command and the synchronous dispatch applies.
    */
   private networkRunner:
-    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
+    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
     | null = null;
 
   setNetworkCommandRunner(
-    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
   ): void {
     this.networkRunner = runner;
   }
@@ -2657,7 +2660,7 @@ export class LinuxCommandExecutor {
       trimmed,
       'bash',
       [],
-      (argv, env, background) => this.dispatchMaybeNetwork(argv, env, background),
+      (argv, env, background, _outputPiped, stdin) => this.dispatchMaybeNetwork(argv, env, background, stdin),
       initialVars,
       io,
       { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
@@ -2685,11 +2688,12 @@ export class LinuxCommandExecutor {
     argv: string[],
     env?: Record<string, string>,
     background?: boolean,
+    stdin?: string,
   ): { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }> {
     if (!background && this.networkRunner && argv.length > 0) {
       const viaSudo = argv[0] === 'sudo';
       const effective = viaSudo ? argv.slice(1) : argv;
-      const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo) : null;
+      const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo, stdin) : null;
       if (pending) return pending;
       const suPending = this.trySuNetworkCommand(argv, env);
       if (suPending) return suPending;
@@ -2822,7 +2826,7 @@ export class LinuxCommandExecutor {
     command: string,
     run: (
       identity: { pid: number; ppid: number },
-      bridge: (argv: string[], env?: Record<string, string>) => { output: string; exitCode: number },
+      bridge: (argv: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number },
     ) => ScriptResult,
   ): { output: string; exitCode: number } {
     const ppid = this.currentBashPid();
@@ -2838,9 +2842,9 @@ export class LinuxCommandExecutor {
     });
     const killedCode = () =>
       128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
-    const bridge = (argv: string[], env?: Record<string, string>, background?: boolean) => {
+    const bridge = (argv: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
-      const result = this.dispatchFromInterpreter(argv, env, background);
+      const result = this.dispatchFromInterpreter(argv, env, background, outputPiped, stdin);
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
@@ -2878,7 +2882,7 @@ export class LinuxCommandExecutor {
     command: string,
     run: (
       identity: { pid: number; ppid: number },
-      bridge: (argv: string[], env?: Record<string, string>, background?: boolean) =>
+      bridge: (argv: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) =>
         { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }>,
     ) => Promise<ScriptResult>,
   ): Promise<{ output: string; exitCode: number }> {
@@ -2895,9 +2899,9 @@ export class LinuxCommandExecutor {
     });
     const killedCode = () =>
       128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
-    const bridge = async (argv: string[], env?: Record<string, string>, background?: boolean) => {
+    const bridge = async (argv: string[], env?: Record<string, string>, background?: boolean, _outputPiped?: boolean, stdin?: string) => {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
-      const result = await this.dispatchMaybeNetwork(argv, env, background);
+      const result = await this.dispatchMaybeNetwork(argv, env, background, stdin);
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
@@ -3003,6 +3007,7 @@ export class LinuxCommandExecutor {
     env?: Record<string, string>,
     background?: boolean,
     outputPiped?: boolean,
+    interpreterStdin?: string,
   ): { output: string; exitCode: number; backgroundPid?: number } {
     this._cmdEnv = env;
     if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
@@ -3143,7 +3148,16 @@ export class LinuxCommandExecutor {
 
     // Detect pipe input: the interpreter appends stdin content as last arg
     let stdin: string | undefined;
-    if (actualArgs.length > 0) {
+    // …but it also tells us, now, what that content actually was. When the
+    // caller passed it through, no detection is needed: the last word *is*
+    // stdin, even if it holds no newline (`printf abc | cmd`) — a case the
+    // heuristic below reads as a filename.
+    if (interpreterStdin !== undefined
+        && actualArgs.length > 0
+        && actualArgs[actualArgs.length - 1] === interpreterStdin) {
+      stdin = interpreterStdin;
+      actualArgs.pop();
+    } else if (actualArgs.length > 0) {
       const lastArg = actualArgs[actualArgs.length - 1];
       // Heuristic: if last arg contains newlines, it's likely pipe input
       if (lastArg?.includes('\n')) {
@@ -3447,7 +3461,7 @@ export class LinuxCommandExecutor {
       if (!this.vfs.exists(path)) return false;
       const result = runScriptContent(
         `. ${path}`, 'bash', [],
-        (argv, env, background, outputPiped) => this.dispatchFromInterpreter(argv, env, background, outputPiped),
+        (argv, env, background, outputPiped, stdin) => this.dispatchFromInterpreter(argv, env, background, outputPiped, stdin),
         vars, this.buildIOContext(),
         { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: 0 },
         this.aliases, this.functions,
@@ -4906,15 +4920,13 @@ export class LinuxCommandExecutor {
           }
         }
 
-        // `LinuxCommand.run()` has no dedicated stdin channel — registry
-        // commands that want piped content (e.g. `xxd` backing a vim
-        // `:%!xxd` filter) detect it the same way the async network-runner
-        // path already hands it to them: as a trailing positional argument.
-        // `stdin` was popped off `args` above for the switch cases here
-        // that consume it directly (`cat`, ...); re-append it so a registry
-        // command reached only through this default branch still sees it.
-        const registryArgs = stdin !== undefined ? [...args, stdin] : args;
-        const registryResult = this._registryCommandHook?.(cmd, registryArgs);
+        // `stdin` was popped off `args` above for the switch cases here that
+        // consume it directly (`cat`, …). Hand it to the registry through
+        // the channel `LinuxCommand` now declares, and let the hook decide
+        // what to do with it: a command that says `readsStdin` gets it as a
+        // parameter, one that doesn't gets it re-appended as the trailing
+        // word it used to arrive as.
+        const registryResult = this._registryCommandHook?.(cmd, args, stdin);
         if (registryResult) return registryResult;
 
         return { output: `${cmd}: command not found`, exitCode: 127 };

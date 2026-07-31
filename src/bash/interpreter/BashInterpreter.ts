@@ -65,6 +65,7 @@ export type ExternalCommandFn = (
   env?: Record<string, string>,
   background?: boolean,
   outputPiped?: boolean,
+  stdin?: string,
 ) => ExternalCommandResult | string | Promise<ExternalCommandResult | string>;
 
 /** A request the evaluation core yields to its driver. */
@@ -81,6 +82,18 @@ export interface ExternalRequest {
    * Pipeline/Redirection AST.
    */
   outputPiped?: boolean;
+  /**
+   * The content on this command's standard input — from a pipe, a `<`
+   * redirection or a herestring — or `undefined` when stdin is the
+   * terminal.
+   *
+   * It is *also* appended to `argv` as a trailing word, which is how every
+   * consumer has read it so far and stays the case here. That convention
+   * cannot express the difference between `cmd file` and `printf x | cmd`,
+   * since both arrive as one trailing word; this field can, and is what a
+   * driver should read when it needs to tell them apart.
+   */
+  stdin?: string;
 }
 
 /** The sans-IO evaluation type: yields external requests, receives results. */
@@ -283,7 +296,8 @@ export class BashInterpreter {
       let feed: ExternalCommandResult;
       try {
         const raw = this.executeCommand(
-          step.value.argv, step.value.env, step.value.background, step.value.outputPiped);
+          step.value.argv, step.value.env, step.value.background, step.value.outputPiped,
+          step.value.stdin);
         if (raw instanceof Promise) {
           feed = {
             output: `bash: ${step.value.argv[0]}: cannot run an asynchronous command in a synchronous shell\n`,
@@ -310,7 +324,8 @@ export class BashInterpreter {
       let feed: ExternalCommandResult;
       try {
         feed = normalizeResult(await this.executeCommand(
-          step.value.argv, step.value.env, step.value.background, step.value.outputPiped));
+          step.value.argv, step.value.env, step.value.background, step.value.outputPiped,
+          step.value.stdin));
       } catch (e) {
         if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);
@@ -838,7 +853,10 @@ export class BashInterpreter {
       const stdoutRedirected = node.redirections.some(r =>
         (r.op === '>' || r.op === '>>' || r.op === '>&') && (r.fd === undefined || r.fd === 1));
       const outputPiped = stdoutRedirected || this.nonLastPipelineStage;
-      const result = normalizeResult(yield { argv: fullArgs, env: envSnapshot, background, outputPiped });
+      const result = normalizeResult(yield {
+        argv: fullArgs, env: envSnapshot, background, outputPiped,
+        stdin: pipeInput || undefined,
+      });
       if (result.backgroundPid !== undefined) {
         this.env.set('!', String(result.backgroundPid));
       }
@@ -1010,7 +1028,9 @@ export class BashInterpreter {
     }
     const fullArgs = pipeInput ? [...target, pipeInput] : target;
     const envSnapshot = Object.fromEntries(this.env.getAll());
-    const result = normalizeResult(yield { argv: fullArgs, env: envSnapshot });
+    const result = normalizeResult(yield {
+      argv: fullArgs, env: envSnapshot, stdin: pipeInput || undefined,
+    });
     if (result.output) this.output.push(result.output);
     this.env.lastExitCode = result.exitCode;
   }

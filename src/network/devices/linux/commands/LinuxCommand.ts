@@ -80,6 +80,25 @@ export interface LinuxCommand {
    */
   readonly privilege?: PrivilegeRequirement;
 
+  /**
+   * True when the command reads standard input (`tac`, `nl`, `column`,
+   * `xxd`, …). The bridges that route a registry command — `LinuxMachine`'s
+   * `_registryCommandHook` for the synchronous/script path and its
+   * `setNetworkCommandRunner` for the async prompt path — then hand the
+   * piped content to the `stdin` parameter of `run()`/`runWithStatus()`
+   * rather than leaving it glued onto `args`.
+   *
+   * The flag is what makes that split decidable. The bash interpreter
+   * appends piped content as a trailing positional argument, and a
+   * measurement of what actually arrives shows the two cases are
+   * indistinguishable in shape: `printf abc | cmd -x` gives
+   * `['-x', 'abc']` and `cmd file.txt` gives `['file.txt']`. Guessing by
+   * "does it contain a newline" — the discriminator the switch-based
+   * dispatch and `xxd` used before this field existed — silently reads a
+   * single-line pipe as a filename.
+   */
+  readonly readsStdin?: boolean;
+
   // ─── Documentation ──────────────────────────────────────────────
 
   /** One-line usage string. Shown by `--help` and in the SYNOPSIS of `man`. */
@@ -104,8 +123,14 @@ export interface LinuxCommand {
    * Implementations MUST NOT import `EndHost`, `LinuxPC`, `LinuxServer` or
    * `LinuxMachine` directly. All machine state is accessed through the
    * narrow `LinuxCommandContext` passed here.
+   *
+   * `stdin` carries the piped content when the command declares
+   * `readsStdin` and something was actually piped in; it is `undefined`
+   * otherwise — which is the real distinction between `cmd < file` and
+   * `cmd file`, not an empty string. A command that ignores the parameter
+   * behaves exactly as before it existed.
    */
-  run(ctx: LinuxCommandContext, args: string[]): Promise<string> | string;
+  run(ctx: LinuxCommandContext, args: string[], stdin?: string): Promise<string> | string;
 
   /**
    * Optional status-aware execution used by the bash↔network bridge:
@@ -115,6 +140,7 @@ export interface LinuxCommand {
   runWithStatus?(
     ctx: LinuxCommandContext,
     args: string[],
+    stdin?: string,
   ): Promise<{ output: string; exitCode: number; stderr?: string }>;
 
   /**
@@ -130,6 +156,7 @@ export interface LinuxCommand {
   runWithStatusSync?(
     ctx: LinuxCommandContext,
     args: string[],
+    stdin?: string,
   ): { output: string; exitCode: number; stderr?: string };
 
   /**

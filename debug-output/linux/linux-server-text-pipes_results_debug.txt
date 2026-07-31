@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-text-pipes
-Generated: 2026-07-30T18:11:03.233Z
+Generated: 2026-07-31T00:10:33.041Z
 Engine: linux
 host=L-SRV-TXT-DBG (linux-server) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -206,7 +206,12 @@ $ [37/303]> cat fruits.txt - < /dev/null
   banane
 
 $ [38/303]> tac fruits.txt
-  tac: command not found
+  banane
+  fraise
+  pomme
+  cerise
+  pomme
+  banane
 
 $ [39/303]> cat fichier_inexistant_xyz
   cat: fichier_inexistant_xyz: No such file or directory
@@ -945,13 +950,23 @@ $ [165/303]> cat /etc/passwd | awk -F: '{print $1}' | head
 
 --- [166] § paste / join / rev / nl ---
 $ [166/303]> paste fruits.txt nombres.txt
-  paste: command not found
+  banane	3
+  pomme	1
+  CERISE	10
+  pomme	2
+  fraise	20
+  banane	1
 
 $ [167/303]> paste -d, fruits.txt nombres.txt
-  paste: command not found
+  banane,3
+  pomme,1
+  CERISE,10
+  pomme,2
+  fraise,20
+  banane,1
 
 $ [168/303]> paste -s fruits.txt
-  paste: command not found
+  banane	pomme	CERISE	pomme	fraise	banane
 
 $ [169/303]> rev fruits.txt
 <empty>
@@ -960,19 +975,44 @@ $ [170/303]> echo 'abcdef' | rev
   fedcba
 
 $ [171/303]> nl fruits.txt
-  nl: command not found
+       1	banane
+       2	pomme
+       3	CERISE
+       4	pomme
+       5	fraise
+       6	banane
 
 $ [172/303]> nl -ba fruits.txt
-  nl: command not found
+       1	banane
+       2	pomme
+       3	CERISE
+       4	pomme
+       5	fraise
+       6	banane
 
 $ [173/303]> fold -w 5 fruits.txt
-  fold: command not found
+  banan
+  e
+  pomme
+  CERIS
+  E
+  pomme
+  frais
+  e
+  banan
+  e
 
 $ [174/303]> column -t gens.csv
-  column: command not found
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
 
 $ [175/303]> column -s: -t gens.csv
-  column: command not found
+  alice  30  paris
+  bob    25  lyon
+  carol  35  paris
+  dan    28  nice
 
 
 --- [176] § pipelines composés ---
@@ -1122,19 +1162,30 @@ $ [211/303]> sort fruits2.txt > b.sorted
 <empty>
 
 $ [212/303]> comm a.sorted b.sorted
-  comm: command not found
+  		CERISE
+  		banane
+  		banane
+  fraise
+  	mangue
+  		pomme
+  		pomme
 
 $ [213/303]> comm -12 a.sorted b.sorted
-  comm: command not found
+  CERISE
+  banane
+  banane
+  pomme
+  pomme
 
 $ [214/303]> comm -3 a.sorted b.sorted
-  comm: command not found
+  fraise
+  	mangue
 
 $ [215/303]> cmp fruits.txt fruits2.txt
-  cmp: command not found
+  fruits.txt fruits2.txt differ: char 27, line 5
 
 $ [216/303]> cmp fruits.txt fruits.txt
-  cmp: command not found
+<empty>
 
 $ [217/303]> diff fichier_inexistant_xyz fruits.txt
   diff: fichier_inexistant_xyz: No such file or directory
@@ -1142,54 +1193,115 @@ $ [217/303]> diff fichier_inexistant_xyz fruits.txt
 
 --- [218] § découpe & assemblage — split/csplit ---
 $ [218/303]> split -l 2 seq.txt morceau_
-  split: command not found
+<empty>
 
 $ [219/303]> ls morceau_*
-  ls: cannot access 'morceau_*': No such file or directory
+  morceau_aa
+  morceau_ab
+  morceau_ac
+  morceau_ad
+  morceau_ae
+  morceau_af
+  morceau_ag
+  morceau_ah
+  morceau_ai
+  morceau_aj
 
 $ [220/303]> cat morceau_aa
-  cat: morceau_aa: No such file or directory
+  1
+  2
 
 $ [221/303]> split -n 3 seq.txt part_
-  split: command not found
+<empty>
 
 $ [222/303]> ls part_*
-  ls: cannot access 'part_*': No such file or directory
+  part_aa
+  part_ab
+  part_ac
 
 $ [223/303]> cat part_* | wc -l
-  1
+  20
 
 $ [224/303]> split -b 10 fruits.txt octets_
-  split: command not found
+<empty>
 
 $ [225/303]> ls octets_*
-  ls: cannot access 'octets_*': No such file or directory
+  octets_aa
+  octets_ab
+  octets_ac
+  octets_ad
 
 
 --- [226] § expansion & espaces — expand/fmt/pr ---
 $ [226/303]> expand -t 4 divers.txt
-  expand: command not found
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
 
 $ [227/303]> unexpand divers.txt
-  unexpand: command not found
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
 
 $ [228/303]> fmt -w 20 fruits.txt
-  fmt: command not found
+  banane pomme CERISE
+  pomme fraise banane
 
 $ [229/303]> fmt -s fruits.txt
-  fmt: command not found
+  banane
+  pomme
+  CERISE
+  pomme
+  fraise
+  banane
 
 $ [230/303]> pr -t fruits.txt
-  pr: command not found
+  banane
+  pomme
+  CERISE
+  pomme
+  fraise
+  banane
 
 $ [231/303]> pr -n fruits.txt
-  pr: command not found
+  
+  
+  Fri Jul 31 2026  fruits.txt  Page 1
+  
+  
+      1	banane
+      2	pomme
+      3	CERISE
+      4	pomme
+      5	fraise
+      6	banane
+  
+  
+  
+  
+  
 
 $ [232/303]> fold -w 3 fruits.txt
-  fold: command not found
+  ban
+  ane
+  pom
+  me
+  CER
+  ISE
+  pom
+  me
+  fra
+  ise
+  ban
+  ane
 
 $ [233/303]> fold -s -w 10 divers.txt
-  fold: command not found
+    espaces 
+   avant et 
+  apres  
+  MAJUSCULE 
+  minuscule
+  UNE LIGNE
 
 
 --- [234] § xargs & boucles ---
@@ -1296,16 +1408,16 @@ $ [260/303]> md5sum fruits.txt nombres.txt
   d477c7d63c0d6d3e48d6b8dd56d7d343  nombres.txt
 
 $ [261/303]> echo -n 'hello' | md5sum
-  md5sum: hello: No such file or directory
+  md5sum: missing file operand
 
 $ [262/303]> echo 'données' | base64
-  base64: command not found
+  ZG9ubsOpZXMK
 
 $ [263/303]> echo 'ZG9ubsOpZXMK' | base64 -d
-  base64: command not found
+  données
 
 $ [264/303]> cksum fruits.txt
-  cksum: command not found
+  3551067984 40 fruits.txt
 
 
 --- [265] § tee multi-cibles & /dev ---

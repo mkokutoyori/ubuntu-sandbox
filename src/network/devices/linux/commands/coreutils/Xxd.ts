@@ -53,9 +53,10 @@ export const xxdCommand: LinuxCommand = {
   // (see LinuxMachine.containsNetworkCommand / hasNetworkCommandIn) —
   // matches sibling non-networking utilities like `date`/`uname`/`chage`.
   needsNetworkContext: true,
+  readsStdin: true,
   usage: 'xxd [-l length] [-s offset] [-r] [FILE]',
   help: 'Show a hex + ASCII dump of a file (or reverse one back to raw bytes with -r), in the classic xxd 16-bytes-per-line format. Reads from stdin when piped (e.g. a `:%!xxd` filter inside vim) instead of a FILE argument.',
-  run(ctx: LinuxCommandContext, args: string[]): string {
+  run(ctx: LinuxCommandContext, args: string[], stdin?: string): string {
     let length: number | undefined;
     let offset = 0;
     let reverse = false;
@@ -69,17 +70,16 @@ export const xxdCommand: LinuxCommand = {
       positional.push(a);
     }
     const arg = positional[0];
-    // Piped stdin (from `cmd < file` or a vim `:%!xxd` filter) arrives as a
-    // trailing positional argument containing the actual content — always
-    // detectable because it contains a newline, which no real filesystem
-    // path ever can (the same discriminator `sudo -S` already relies on
-    // for its own piped-password argument).
-    const isStdin = arg !== undefined && arg.includes('\n');
+    // Piped stdin (from `cmd < file` or a vim `:%!xxd` filter) arrives on
+    // its own channel, declared by `readsStdin` — it used to be guessed
+    // from the trailing argument holding a newline, which read
+    // `printf abc | xxd` as a filename.
+    const isStdin = stdin !== undefined;
 
     if (reverse) {
       let dumpText: string;
       if (isStdin) {
-        dumpText = arg;
+        dumpText = stdin;
       } else if (arg !== undefined) {
         const absPath = ctx.executor.vfs.normalizePath(arg, ctx.executor.getCwd());
         const content = ctx.executor.vfs.readFile(absPath);
@@ -93,7 +93,7 @@ export const xxdCommand: LinuxCommand = {
 
     let bytes: Uint8Array;
     if (isStdin) {
-      bytes = new TextEncoder().encode(arg);
+      bytes = new TextEncoder().encode(stdin);
     } else {
       if (!arg) return 'xxd: usage: xxd [-l length] [-s offset] FILE';
       const absPath = ctx.executor.vfs.normalizePath(arg, ctx.executor.getCwd());

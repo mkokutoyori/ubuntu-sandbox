@@ -51,6 +51,7 @@ import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
 import { sshdCommand } from './net/Sshd';
 import { xxdCommand } from './coreutils/Xxd';
+import { TEXT_STREAM_COMMANDS } from './coreutils/TextStream';
 import { nftCommand } from './net/Nft';
 import { firewallCmdCommand } from './net/FirewallCmd';
 import { fail2banClientCommand } from './net/Fail2banClient';
@@ -196,6 +197,7 @@ export {
   hostnamectlCommand,
   timedatectlCommand,
   nprocCommand,
+  TEXT_STREAM_COMMANDS,
 };
 
 /**
@@ -295,4 +297,5 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   hostnamectlCommand,
   timedatectlCommand,
   nprocCommand,
+  ...TEXT_STREAM_COMMANDS,
 ];
