@@ -94,6 +94,13 @@ export class Cable {
   private readonly spec: CableSpec;
   private packetLossRate: number = 0;
   private corruptionRate: number = 0;
+  /** `tc qdisc ... netem delay <ms>` — added to `getPropagationDelay()`'s
+   *  physical-distance figure. Like that figure, this is exposed as
+   *  metadata for RTT reporting (ping) rather than an actual async delay
+   *  injected into frame delivery — `Cable.transmit()` stays synchronous
+   *  on the hot data-plane path; only the one consumer that reports a
+   *  wall-clock-shaped number to the user (ping's RTT) adds it in. */
+  private artificialDelayMs: number = 0;
   private stats: CableStats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0 };
 
   /** Reactive bus override (Phase 3 — defaults to singleton). */
@@ -140,6 +147,10 @@ export class Cable {
   getPropagationDelay(): number {
     return (this.lengthMeters * this.spec.propagationNsPerM) / 1_000_000;
   }
+
+  /** `tc qdisc ... netem delay` — see the field's own doc comment. */
+  getArtificialDelayMs(): number { return this.artificialDelayMs; }
+  setArtificialDelayMs(ms: number): void { this.artificialDelayMs = Math.max(0, ms); }
 
   // ─── Port Connections ──────────────────────────────────────────
 

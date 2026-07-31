@@ -66,6 +66,9 @@ export const KNOWN_WAIT_EVENTS: WaitEvent[] = [
   // Idle
   new WaitEvent(2723168908, 'PX Idle Wait',                   'Idle',        WAIT_CLASSES['Idle']),
   new WaitEvent(2723168909, 'pmon timer',                     'Idle',        WAIT_CLASSES['Idle']),
+  // Cluster (RAC Cache Fusion)
+  new WaitEvent(3871361734, 'gc cr request',                  'Cluster',     WAIT_CLASSES['Cluster'],     'file#', 'block#'),
+  new WaitEvent(3871361735, 'gc buffer busy',                 'Cluster',     WAIT_CLASSES['Cluster'],     'file#', 'block#'),
 ];
 
 /** Look up a wait event by name. */

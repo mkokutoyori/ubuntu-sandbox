@@ -1468,12 +1468,26 @@ export class OracleCatalog extends BaseCatalog {
   queryCatalogView(
     viewName: string, currentUser: string,
     enabledRoles: ReadonlySet<string> | null = null,
+    /**
+     * The querying session's OWN instance. On a standalone database this
+     * is always `this.instance` (the only one there is); on a RAC member
+     * whose catalog is SHARED with the rest of the cluster (see
+     * `OracleDatabase`'s `shared` constructor param), `this.instance`
+     * would otherwise always resolve to whichever node founded the
+     * cluster — every joining node's V$ queries (V$INSTANCE,
+     * V$SESSION, V$SYSSTAT, …) need to see THEIR OWN instance's state,
+     * not the founder's. `OracleExecutor` passes its own bound instance;
+     * defaulting to `this.instance` keeps every existing (non-RAC)
+     * caller's behaviour identical.
+     */
+    instanceOverride?: OracleInstance,
   ): ResultSet | null {
     const upper = viewName.toUpperCase();
+    const inst = instanceOverride ?? this.instance;
 
     // V$ views
     if (upper.startsWith('V$') || upper.startsWith('V_$')) {
-      return this.queryVDollar(upper.replace('V_$', 'V$'), currentUser);
+      return this.queryVDollar(upper.replace('V_$', 'V$'), currentUser, inst);
     }
 
     // GV$ views — in a real RAC cluster, GV$X = UNION ALL of every
@@ -1482,7 +1496,7 @@ export class OracleCatalog extends BaseCatalog {
     // prepend INST_ID = 1.
     if (upper.startsWith('GV$') || upper.startsWith('GV_$')) {
       const vName = upper.replace(/^GV_?\$/, 'V$');
-      const base = this.queryVDollar(vName, currentUser);
+      const base = this.queryVDollar(vName, currentUser, inst);
       if (!base || !base.isQuery) return base;
       return queryResult(
         [{ name: 'INST_ID', dataType: oracleNumber(10) }, ...base.columns],
@@ -1529,12 +1543,13 @@ export class OracleCatalog extends BaseCatalog {
 
   // ── V$ Dynamic Performance Views ─────────────────────────────────
 
-  private queryVDollar(name: string, _currentUser: string): ResultSet | null {
+  private queryVDollar(name: string, _currentUser: string, instanceOverride?: OracleInstance): ResultSet | null {
+    const inst = instanceOverride ?? this.instance;
     // Every V$ view is self-registered under views/*.ts.
     const fromRegistry = queryView(name, {
-      instance: this.instance,
+      instance: inst,
       storage: this.storage,
-      runtime: this.instance.getRuntimeState(),
+      runtime: inst.getRuntimeState(),
       catalog: this,
       currentUser: _currentUser,
     });

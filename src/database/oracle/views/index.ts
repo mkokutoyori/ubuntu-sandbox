@@ -85,6 +85,7 @@ import './product_component_version';
 import './dict_columns';
 import './v_active_instances';
 import './v_active_session_history';
+import './v_cluster_interconnects';
 import './v_archive_dest';
 import './v_archive_dest_status';
 import './v_archive_gap';

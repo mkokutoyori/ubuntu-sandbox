@@ -19,6 +19,9 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
 import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
+import { resolveRacMembership, joinOrCreateCluster, resetRacClusterRegistry } from '@/database/oracle/rac/RacClusterRegistry';
+import { attachRacCssAgent, _resetRacCssAgentAttachments } from '@/database/oracle/rac/RacCssAgent';
+import { attachRacCacheFusionAgent, _resetRacCacheFusionAgentAttachments } from '@/database/oracle/rac/RacCacheFusionAgent';
 
 /** Per-device Oracle database instances. */
 const oracleInstances: Map<string, OracleDatabase> = new Map();
@@ -45,7 +48,15 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     const dev = EquipmentRegistry.getInstance().getById(deviceId);
     if (dev) initOracleFilesystem(dev as import('@/network').HostCapableDevice);
 
-    db = new OracleDatabase();
+    // RAC detection (see RacClusterRegistry's doc comment for the
+    // two-part rule): a peer means this device is JOINING that peer's
+    // already-booted database — genuine shared storage, not a fresh one.
+    const racInfo = resolveRacMembership(deviceId, (id) => oracleInstances.has(id));
+    const racPrimaryDb = racInfo?.peerDeviceId ? oracleInstances.get(racInfo.peerDeviceId) : undefined;
+
+    db = racPrimaryDb
+      ? new OracleDatabase(undefined, { storage: racPrimaryDb.storage, catalog: racPrimaryDb.catalog })
+      : new OracleDatabase();
     // Phase 7c: wire bus + deviceId BEFORE startup so the boot sequence
     // (state-changed, background-process-started, alert log) is materialised
     // by the FS sync adapter without manual *ToDevice helper calls.
@@ -148,7 +159,10 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // (dbstart/systemd would have started it); `lsnrctl stop` still
     // takes it down realistically (ORA-12541 on @connects).
     db.instance.startListener();
-    installAllDemoSchemas(db);
+    // A RAC joiner shares the founding node's storage/catalog — installing
+    // the demo schemas again would try to re-CREATE the same USERS/tables
+    // against data that already has them.
+    if (!racPrimaryDb) installAllDemoSchemas(db);
     oracleInstances.set(deviceId, db);
     // The boot provisioning (initOracleFilesystem) wrote the seed
     // datafiles before the database existed — tell the FS sync they are
@@ -156,6 +170,26 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     sync.primeDatafiles(deviceId);
     sync.primeSgaMemory(deviceId);
     listenerTcp.primeListener(deviceId);
+
+    if (racInfo) {
+      // instance_name defaults to the SID (initParameters()); a RAC
+      // member's real identity is its own hostname, exactly like real
+      // V$INSTANCE on a lab built with Oracle's own racnode1/racnode2
+      // convention.
+      db.instance.setParameter('instance_name', racInfo.hostname);
+      db.instance.setParameter('cluster_database', 'TRUE');
+      const dbName = db.instance.getParameter('db_name') ?? ORACLE_CONFIG.SID;
+      // `primaryDeviceId` only takes effect the first time a cluster is
+      // created for this dbName (i.e. for the founding node) — a later
+      // joiner's call just adds a member to the existing entry.
+      joinOrCreateCluster(dbName, deviceId, {
+        deviceId, hostname: racInfo.hostname,
+        interconnectIp: racInfo.interconnectIp, interconnectIface: racInfo.interconnectIface,
+        db,
+      });
+      attachRacCssAgent(dbName);
+      attachRacCacheFusionAgent(dbName);
+    }
   }
   return db;
 }
@@ -203,7 +237,10 @@ export function createSQLPlusSession(
   const session = new SQLPlusSession(db);
   // A connect identifier means the session came in through the listener:
   // its dedicated server process is forked LOCAL=NO, not bequeath.
-  if (viaOracleNet) session.setTransport('tcp');
+  if (viaOracleNet) {
+    session.setTransport('tcp');
+    session.setConnectIdentifier(connectIdentifier);
+  }
   // Bind the launching shell's OS identity so bequeath connections
   // (`/ as sysdba`) are gated by real dba-group membership and the audit
   // trail records the real OSUSER/MACHINE instead of a hardcoded default.
@@ -323,6 +360,9 @@ export function resetAllOracleInstances(): void {
   oracleFilesystemInitialized.clear();
   DeviceCatalogRegistry._reset();
   DeviceConfigRegistry._reset();
+  resetRacClusterRegistry();
+  _resetRacCssAgentAttachments();
+  _resetRacCacheFusionAgentAttachments();
 }
 
 /**

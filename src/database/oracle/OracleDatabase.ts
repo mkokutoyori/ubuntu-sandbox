@@ -321,14 +321,34 @@ export class OracleDatabase implements SqlCommandHost {
     return this.instance.getUserActivityTracker()!;
   }
 
-  constructor(config?: Partial<OracleDatabaseConfig>) {
+  /**
+   * `shared` lets a RAC cluster member (see `database/oracle/rac/
+   * RacClusterRegistry.ts`) join an existing instance's PHYSICAL
+   * database instead of getting a fresh, empty one — genuine shared
+   * storage, exactly like real RAC: every node keeps its own
+   * `OracleInstance` (own SGA, sessions, wait events, identity) but all
+   * nodes read/write the SAME tables, rows and catalog. The handful of
+   * single-owner callbacks storage/catalog expose (alert sink, stored-
+   * unit/package-member providers, the catalog's securityEngine pointer)
+   * are only wired by the FOUNDING node when shared — a joining node
+   * would otherwise clobber them with its own (empty) callbacks. This is
+   * a deliberate, narrow simplification: those callbacks stay scoped to
+   * whichever node created the shared storage, so e.g. a PL/SQL unit
+   * compiled on a joining node won't appear via the catalog's stored-
+   * unit provider. None of this codebase's RAC tests exercise that path;
+   * a fuller fix would merge providers across members, which is out of
+   * scope here.
+   */
+  constructor(config?: Partial<OracleDatabaseConfig>, shared?: { storage: OracleStorage; catalog: OracleCatalog }) {
     this.instance = new OracleInstance(config);
-    this.storage = new OracleStorage();
-    // The instance checks datafile existence at OPEN time but does not
-    // own the storage layer — give it the canonical V$DATAFILE list.
-    this.instance.setDatafileLister(() => this.storage.listDatafiles());
-    this.storage.setAlertSink((message) => this.instance.logAlertEvent(message));
-    this.catalog = new OracleCatalog(this.storage, this.instance);
+    this.storage = shared?.storage ?? new OracleStorage();
+    if (!shared) {
+      // The instance checks datafile existence at OPEN time but does not
+      // own the storage layer — give it the canonical V$DATAFILE list.
+      this.instance.setDatafileLister(() => this.storage.listDatafiles());
+      this.storage.setAlertSink((message) => this.instance.logAlertEvent(message));
+    }
+    this.catalog = shared?.catalog ?? new OracleCatalog(this.storage, this.instance);
     // UTL_FILE resolves directory objects from the catalog and reads/writes
     // through the instance's host-VFS hooks (wired by the terminal layer).
     this.utlFile = new UtlFileEngine(
@@ -339,10 +359,12 @@ export class OracleDatabase implements SqlCommandHost {
         remove: (p) => this.instance.removeDeviceFile(p),
       },
     );
-    this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
-    this.catalog.setPackageMembersProvider(() => this.getPackageMembers());
     this.securityEngine = new SecurityEngine(this.catalog);
-    this.catalog.setSecurityEngine(this.securityEngine);
+    if (!shared) {
+      this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
+      this.catalog.setPackageMembersProvider(() => this.getPackageMembers());
+      this.catalog.setSecurityEngine(this.securityEngine);
+    }
     // Provision the predefined non-DEFAULT profiles (MONITORING_PROFILE,
     // ORA_STIG_PROFILE) so a fresh instance matches a real 19c install.
     provisionPredefinedProfiles(this.securityEngine.profiles);

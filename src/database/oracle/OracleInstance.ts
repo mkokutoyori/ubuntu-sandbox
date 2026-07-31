@@ -908,6 +908,10 @@ export class OracleInstance {
     p.set('db_unique_name', this.config.sid);
     p.set('instance_name', this.config.sid);
     p.set('service_names', this.config.serviceName);
+    // Real Oracle always exposes this parameter; RAC membership
+    // (RacClusterRegistry.joinOrCreateCluster) flips it to TRUE and
+    // overrides instance_name to the node's own hostname.
+    p.set('cluster_database', 'FALSE');
 
     // Memory
     p.set('db_block_size', String(this.config.dbBlockSize));

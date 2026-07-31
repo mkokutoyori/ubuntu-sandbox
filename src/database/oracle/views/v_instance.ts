@@ -9,6 +9,7 @@
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
+import { getClusterForDevice } from '../rac/RacClusterRegistry';
 
 registerView({
   name: 'V$INSTANCE',
@@ -34,12 +35,12 @@ registerView({
         { name: 'BLOCKED', dataType: oracleVarchar2(3) },
       ],
       [[
-        1, instance.config.sid, 'localhost', '19.0.0.0.0',
+        1, instance.getParameter('instance_name') ?? instance.config.sid, 'localhost', '19.0.0.0.0',
         instance.startupTime?.toISOString() ?? null,
         // Real V$INSTANCE.STATUS values: STARTED (nomount) / MOUNTED / OPEN.
         instance.state === 'NOMOUNT' ? 'STARTED'
           : instance.state === 'MOUNT' ? 'MOUNTED' : instance.state,
-        'NO',                                                    // PARALLEL — non-RAC
+        getClusterForDevice(instance.getDeviceId()) ? 'YES' : 'NO', // PARALLEL — YES for RAC
         1,                                                       // THREAD#
         instance.archiveLogMode ? 'STARTED' : 'STOPPED',         // ARCHIVER
         '',                                                      // LOG_SWITCH_WAIT

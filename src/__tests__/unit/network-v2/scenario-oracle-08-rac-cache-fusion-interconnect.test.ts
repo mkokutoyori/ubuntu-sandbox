@@ -96,7 +96,13 @@ describe('degrading the private interconnect measurably degrades Cache Fusion re
     const before = await node1.executeCommand('ping -c 1 192.168.1.2');
     const beforeMs = Number(/time=([\d.]+)/.exec(before)?.[1] ?? 0);
 
-    await node1.executeCommand('tc qdisc add dev eth1 root netem delay 200ms loss 10%');
+    // Delay only, no loss: this test is specifically about RTT being a
+    // deterministic reflection of the configured delay — pairing it with
+    // real, random per-packet loss (as the "gc buffer busy" wait-events
+    // test below deliberately does, since loss contributes to plausible
+    // GCS contention there) would make a single `ping -c 1` probe flaky
+    // for a reason unrelated to what this test verifies.
+    await node1.executeCommand('tc qdisc add dev eth1 root netem delay 200ms');
 
     const after = await node1.executeCommand('ping -c 1 192.168.1.2');
     const afterMs = Number(/time=([\d.]+)/.exec(after)?.[1] ?? 0);

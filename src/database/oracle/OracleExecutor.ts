@@ -1710,7 +1710,7 @@ export class OracleExecutor extends BaseExecutor {
     const session = this.context.session as
       { getEnabledRoles?: () => ReadonlySet<string> | null } | undefined;
     const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(
-      catalogName, this.context.currentUser, session?.getEnabledRoles?.() ?? null);
+      catalogName, this.context.currentUser, session?.getEnabledRoles?.() ?? null, this.instance);
     if (catalogResult && catalogResult.isQuery) {
       const prefix = alias || tableName;
       const columns: StorageColMeta[] = catalogResult.columns.map((c, i) => ({

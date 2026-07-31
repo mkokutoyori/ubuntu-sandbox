@@ -111,6 +111,15 @@ export class SQLPlusSession {
   /** Oracle Net client for CONNECT @identifier — injected by the terminal layer. */
   private tnsResolver: ((identifier: string) =>
     { ok: true; db: OracleDatabase } | { ok: false; error: string }) | null = null;
+  /** The connect identifier last used to reach `db` over 'tcp' transport
+   *  — reused by the per-statement reachability recheck below, and by an
+   *  in-session CONNECT user/pass@X. Null for a local bequeath session. */
+  private connectIdentifier: string | null = null;
+  /** Password from the last successful login/CONNECT — kept only so a
+   *  transparent TAF reconnect (see executeSql) can re-authenticate
+   *  against a newly-resolved address without prompting the user again,
+   *  exactly like a real Oracle client caches it for that purpose. */
+  private lastPassword: string = '';
   /**
    * OS identity of the process that launched sqlplus. Drives bequeath
    * (`/ AS SYSDBA`) group checks and the OSUSER/MACHINE audit columns.
@@ -202,6 +211,13 @@ export class SQLPlusSession {
     this.tnsResolver = resolver;
   }
 
+  /** Record the identifier the INITIAL `sqlplus user/pass@X` connected
+   *  with, so the per-statement reachability recheck (see executeSql) has
+   *  something to re-resolve — an in-session CONNECT updates this itself. */
+  setConnectIdentifier(identifier: string | null): void {
+    this.connectIdentifier = identifier;
+  }
+
   /**
    * Get the banner displayed when SQL*Plus starts.
    */
@@ -227,6 +243,7 @@ export class SQLPlusSession {
       this.disconnect();
     }
 
+    this.lastPassword = password;
     try {
       let result;
       if (asSysdba) {
@@ -296,6 +313,32 @@ export class SQLPlusSession {
     this.connected = false;
     this.currentUser = '';
     this.asSysdba = false;
+  }
+
+  /**
+   * Transparent TAF reconnect: an ADDRESS_LIST resolution just returned a
+   * different, still-reachable database than the one this session was
+   * bound to (see executeSql's per-statement recheck) — rebind to it with
+   * the same credentials the session originally connected with, exactly
+   * like a real Oracle client's FAILOVER_MODE reconnects without
+   * prompting. On failure the stale executor is left in place; the next
+   * statement's recheck will surface the failure via `!recheck.ok`.
+   */
+  private failoverReconnect(newDb: OracleDatabase): void {
+    this.db = newDb;
+    try {
+      const result = this.asSysdba
+        ? this.db.connectAsSysdba(this.osCtx, {
+            username: this.currentUser || 'SYS', password: this.lastPassword, transport: this.transport,
+          })
+        : this.db.connect(this.currentUser, this.lastPassword, this.osCtx, this.transport);
+      this.executor = result.executor;
+      this.sid = result.sid;
+    } catch {
+      /* Reconnect to the newly-resolved address failed too; leave the
+         stale executor bound so the caller's statement still errors out
+         through the normal `!this.executor` guard rather than throwing here. */
+    }
   }
 
   /**
@@ -698,6 +741,24 @@ export class SQLPlusSession {
   private executeSql(sql: string): SQLPlusResult {
     if (!this.connected || !this.executor) {
       return { output: ['ERROR:', ORACLE_ERRORS.ORA_01012], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    // A TCP session has no real per-statement network round trip in this
+    // simulator (SQL executes in-process against the bound OracleDatabase),
+    // so nothing else would ever notice the peer disappearing mid-session.
+    // Re-resolve the connect identifier before every statement: unchanged
+    // means nothing to do, a DIFFERENT reachable address means an
+    // ADDRESS_LIST/TAF failover just happened and the session transparently
+    // rebinds to it, and total resolution failure surfaces the same
+    // connection-loss error a real client's socket would report.
+    if (this.transport === 'tcp' && this.tnsResolver && this.connectIdentifier) {
+      const recheck = this.tnsResolver(this.connectIdentifier);
+      if (!recheck.ok) {
+        return { output: ['ERROR:', 'ORA-03135: connection lost contact'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      }
+      if (recheck.db !== this.db) {
+        this.failoverReconnect(recheck.db);
+      }
     }
 
     // &var / &&var substitution (SET DEFINE). SET VERIFY ON prints the
@@ -1227,6 +1288,7 @@ export class SQLPlusSession {
       // SYSDBA authenticates against the OS dba group, not the password
       // file.
       this.transport = 'beq';
+      this.connectIdentifier = null;
       if (sysdba) {
         const loginOutput = this.login('SYS', '', true);
         return { output: loginOutput, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
@@ -1266,6 +1328,7 @@ export class SQLPlusSession {
         // Re-bind the session to the resolved database (possibly remote).
         this.db = res.db;
         this.transport = 'tcp';
+        this.connectIdentifier = alias;
       } else {
         const outcome = this.db.instance.listener.attemptConnect(alias);
         if (outcome.ok === false) {
@@ -1275,10 +1338,12 @@ export class SQLPlusSession {
           };
         }
         this.transport = 'tcp';
+        this.connectIdentifier = alias;
       }
     } else {
       // No connect identifier → local bequeath; clear any stale 'tcp'.
       this.transport = 'beq';
+      this.connectIdentifier = null;
     }
 
     // `proxy[client]` — the proxy authenticates, the client owns the

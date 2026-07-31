@@ -2903,7 +2903,12 @@ export abstract class EndHost extends Equipment {
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
-      const rtt = performance.now() - sentAt;
+      // `tc qdisc ... netem delay` (Cable.artificialDelayMs) is metadata
+      // added to the reported RTT, not a real injected delay on the
+      // (synchronous, hot) frame-delivery path — same treatment as
+      // getPropagationDelay()'s own physical-distance figure.
+      const artificialDelayMs = port.getCable()?.getArtificialDelayMs() ?? 0;
+      const rtt = performance.now() - sentAt + artificialDelayMs;
       return {
         success: true,
         rttMs: rtt,
@@ -4150,7 +4155,12 @@ export abstract class EndHost extends Equipment {
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
-      const rtt = performance.now() - sentAt;
+      // `tc qdisc ... netem delay` (Cable.artificialDelayMs) is metadata
+      // added to the reported RTT, not a real injected delay on the
+      // (synchronous, hot) frame-delivery path — same treatment as
+      // getPropagationDelay()'s own physical-distance figure.
+      const artificialDelayMs = port.getCable()?.getArtificialDelayMs() ?? 0;
+      const rtt = performance.now() - sentAt + artificialDelayMs;
       return {
         success: true,
         rttMs: rtt,
