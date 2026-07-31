@@ -100,7 +100,25 @@ function isElevatedAccount(account?: string): boolean {
 
 const SECURITY_LOG = 'Security';
 const AUDIT_SOURCE = 'Microsoft-Windows-Security-Auditing';
-const SUBJECT = 'Subject:\n\tSecurity ID:\t\tS-1-5-21\n\tAccount Name:\t\tAdministrator';
+
+/**
+ * `Subject:` block for the free-text message. Real Windows Security
+ * events report the identity of the process that *raised* the audit —
+ * SYSTEM for anything the OS itself triggers (a fresh interactive
+ * logon, a process exit, an account lockout) — not the account the
+ * event is *about* (that's `TargetUserName`/`Account Name:` inside the
+ * event's own body, already correct everywhere in this file). Callers
+ * that know a real human/administrative actor performed the action
+ * (account/group management, `runas`, a privileged service call) pass
+ * it explicitly; PRD-Winlogon.md §1.2 point 2 documents the bug this
+ * replaces — a single hardcoded "Administrator" Subject regardless of
+ * who or what actually acted.
+ */
+function subjectBlock(actor: string): string {
+  return actor === 'SYSTEM'
+    ? 'Subject:\n\tSecurity ID:\t\tS-1-5-18\n\tAccount Name:\t\tSYSTEM'
+    : `Subject:\n\tSecurity ID:\t\tS-1-5-21\n\tAccount Name:\t\t${actor}`;
+}
 
 export class WindowsSecurityAudit {
   constructor(private readonly sink: SecurityEventSink) {}
@@ -109,44 +127,44 @@ export class WindowsSecurityAudit {
 
   accountCreated(name: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.ACCOUNT_CREATED, `A user account was created.\n\nNew Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName });
+      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   accountDeleted(name: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.ACCOUNT_DELETED, `A user account was deleted.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName });
+      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   accountEnabled(name: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.ACCOUNT_ENABLED, `A user account was enabled.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName });
+      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   accountDisabled(name: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.ACCOUNT_DISABLED, `A user account was disabled.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName });
+      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   passwordReset(name: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.PASSWORD_RESET, `An attempt was made to reset an account's password.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName });
+      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   accountChanged(name: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.ACCOUNT_CHANGED, `A user account was changed.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName });
+      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   // ─── Group lifecycle ───────────────────────────────────────────────────
 
   groupCreated(group: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.GROUP_CREATED, `A security-enabled local group was created.\n\nGroup:\n\tGroup Name:\t${group}`,
-      { TargetUserName: group, SubjectUserName: subjectUserName });
+      { TargetUserName: group, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   groupDeleted(group: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.GROUP_DELETED, `A security-enabled local group was deleted.\n\nGroup:\n\tGroup Name:\t${group}`,
-      { TargetUserName: group, SubjectUserName: subjectUserName });
+      { TargetUserName: group, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   groupMemberAdded(group: string, member: string, scope: 'Local' | 'Global' | 'Universal' = 'Local', subjectUserName = 'Administrator'): void {
@@ -154,7 +172,7 @@ export class WindowsSecurityAudit {
       : scope === 'Universal' ? SECURITY_EVENT.GROUP_MEMBER_ADDED_UNIVERSAL
       : SECURITY_EVENT.GROUP_MEMBER_ADDED;
     this.success(eventId, `A member was added to a security-enabled ${scope.toLowerCase()} group.\n\nMember:\t${member}\nGroup:\t${group}`,
-      { TargetUserName: group, MemberName: member, SubjectUserName: subjectUserName });
+      { TargetUserName: group, MemberName: member, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   groupMemberRemoved(group: string, member: string, scope: 'Local' | 'Global' | 'Universal' = 'Local', subjectUserName = 'Administrator'): void {
@@ -162,7 +180,7 @@ export class WindowsSecurityAudit {
       : scope === 'Universal' ? SECURITY_EVENT.GROUP_MEMBER_REMOVED_UNIVERSAL
       : SECURITY_EVENT.GROUP_MEMBER_REMOVED;
     this.success(eventId, `A member was removed from a security-enabled ${scope.toLowerCase()} group.\n\nMember:\t${member}\nGroup:\t${group}`,
-      { TargetUserName: group, MemberName: member, SubjectUserName: subjectUserName });
+      { TargetUserName: group, MemberName: member, SubjectUserName: subjectUserName }, subjectUserName);
   }
 
   // ─── Logon / logoff ────────────────────────────────────────────────────
@@ -246,7 +264,7 @@ export class WindowsSecurityAudit {
         TokenElevationType: elevated ? '%%1937' : '%%1936',
         MandatoryLabel: elevated ? 'S-1-16-12288' : 'S-1-16-8192',
         ...(details.commandLine ? { CommandLine: details.commandLine } : {}),
-      });
+      }, details.owner ?? 'SYSTEM');
   }
 
   processTerminated(name: string, pid: number, details: ProcessAuditDetails = {}): void {
@@ -256,7 +274,7 @@ export class WindowsSecurityAudit {
         ProcessName: name,
         ProcessId: `0x${pid.toString(16)}`,
         ...splitAccount(details.owner),
-      });
+      }, details.owner ?? 'SYSTEM');
   }
 
   /** 4673 — un appel de service privilégié. */
@@ -269,7 +287,7 @@ export class WindowsSecurityAudit {
       {
         ...splitAccount(account),
         Service: service, PrivilegeList: privilege, ProcessName: processName,
-      });
+      }, account);
   }
 
   /** 4672 — les privilèges d'un jeton à l'ouverture de session. */
@@ -281,7 +299,7 @@ export class WindowsSecurityAudit {
         ...splitAccount(account),
         SubjectLogonId: logonId,
         PrivilegeList: privileges.join('\n\t\t\t'),
-      });
+      }, account);
   }
 
   // ─── Object access (registry / filesystem, requires auditpol + SACL) ───
@@ -305,7 +323,7 @@ export class WindowsSecurityAudit {
         OldValue: previousValue,
         NewValue: newValue,
         ...splitAccount(changedBy),
-      });
+      }, changedBy);
   }
 
   /** 4698 — une tâche planifiée a été créée. */
@@ -315,7 +333,7 @@ export class WindowsSecurityAudit {
       `Task Content:\t${command}\n\nSubject:\n\tAccount Name:\t${createdBy}`,
       {
         TaskName: taskName, TaskContent: command, ...splitAccount(createdBy),
-      });
+      }, createdBy);
   }
 
   /**
@@ -351,7 +369,7 @@ export class WindowsSecurityAudit {
         ObjectServer: 'Security', ObjectType: 'File', ObjectName: objectPath,
         AccessList: accessMask, AccessMask: accessMask, Accesses: access,
         ...splitAccount(subject),
-      });
+      }, subject);
   }
 
   /** 5142 — un partage réseau a été ajouté. */
@@ -359,7 +377,7 @@ export class WindowsSecurityAudit {
     this.success(SECURITY_EVENT.SHARE_ADDED,
       `A network share object was added.\n\nShare Information:\n\tShare Name:\t\\\\*\\${shareName}\n\t` +
       `Share Path:\t${path}\n\nSubject:\n\tAccount Name:\t${addedBy}`,
-      { ShareName: `\\\\*\\${shareName}`, ShareLocalPath: path, ...splitAccount(addedBy) });
+      { ShareName: `\\\\*\\${shareName}`, ShareLocalPath: path, ...splitAccount(addedBy) }, addedBy);
   }
 
   /** 5140 — un partage réseau a été atteint par un client. */
@@ -371,28 +389,30 @@ export class WindowsSecurityAudit {
       {
         ShareName: `\\\\*\\${shareName}`, ShareLocalPath: path,
         IpAddress: sourceAddress, ...splitAccount(subject),
-      });
+      }, subject);
   }
 
   permissionChanged(objectPath: string, identity: string, permissions: string, changedBy: string): void {
     this.success(SECURITY_EVENT.PERMISSION_CHANGED,
       `Permissions on an object were changed.\n\nObject:\n\tObject Name:\t${objectPath}\n\t` +
-      `New Access:\t${identity}: ${permissions}\n\nSubject:\n\tAccount Name:\t${changedBy}`);
+      `New Access:\t${identity}: ${permissions}\n\nSubject:\n\tAccount Name:\t${changedBy}`,
+      undefined, changedBy);
   }
 
   serviceInstalled(serviceName: string, binaryPath: string, account: string, installedBy: string): void {
     this.success(SECURITY_EVENT.SERVICE_INSTALLED,
       `A service was installed in the system.\n\nService Information:\n\tService Name:\t${serviceName}\n\t` +
-      `Service File Name:\t${binaryPath}\n\tService Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`);
+      `Service File Name:\t${binaryPath}\n\tService Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`,
+      undefined, installedBy);
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────
 
-  private success(eventId: number, message: string, data?: Record<string, string>): void {
-    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'SuccessAudit', `${message}\n\n${SUBJECT}`, data);
+  private success(eventId: number, message: string, data?: Record<string, string>, actor = 'SYSTEM'): void {
+    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'SuccessAudit', `${message}\n\n${subjectBlock(actor)}`, data);
   }
 
-  private failure(eventId: number, message: string, data?: Record<string, string>): void {
-    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'FailureAudit', `${message}\n\n${SUBJECT}`, data);
+  private failure(eventId: number, message: string, data?: Record<string, string>, actor = 'SYSTEM'): void {
+    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'FailureAudit', `${message}\n\n${subjectBlock(actor)}`, data);
   }
 }

@@ -256,9 +256,11 @@ export class WindowsSshServerContext implements ISshServerContext {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
         if (!this.userAllowed(user)) { this.reportLogon?.(user, false); return false; }
         if (!this.config.passwordAuthentication) { this.reportLogon?.(user, false); return false; }
-        const ok = this.userManager.checkPassword(user, password);
-        this.reportLogon?.(user, ok);
-        return ok;
+        // logonType 10 (RemoteInteractive) — checkPassword itself now
+        // publishes the one and only windows.account.logon for this
+        // attempt (PRD-Winlogon.md §1.2 point 1); no separate
+        // reportLogon call here, or SSH would double-publish 4624/4625.
+        return this.userManager.checkPassword(user, password, 10);
       },
       // BRD SSH-03-R6: public-key authentication on Windows OpenSSH stores
       // authorized_keys per-user under C:\Users\<user>\.ssh\. Each line is

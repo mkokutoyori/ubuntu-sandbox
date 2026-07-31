@@ -846,7 +846,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           tlsConfig: { serverCert: this.getRdpTlsCertificate()!, serverPrivateKey: this.rdpTlsIdentity!.privateKey },
           sessions: this.rdp.sessions,
           auth: {
-            checkLocal: (u, p) => Boolean(this.userMgr.getUser(u)?.enabled) && this.userMgr.checkPassword(u, p),
+            // logonType 10 (RemoteInteractive) — real Windows value for
+            // RDP, previously always the checkPassword default of 2
+            // (PRD-Winlogon.md §1.2 point 3).
+            checkLocal: (u, p) => Boolean(this.userMgr.getUser(u)?.enabled) && this.userMgr.checkPassword(u, p, 10),
             checkDomain: (u, p) => Boolean(this.tryDomainAuth(u, p)?.ok),
           },
         }).register(socket);
