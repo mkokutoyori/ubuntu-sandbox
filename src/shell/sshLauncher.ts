@@ -19,9 +19,8 @@ import { isCredentialAuthenticator } from '@/network/equipment/HostCapabilities'
 import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
 import { WireRemoteShell } from './WireRemoteShell';
-import { openWireSshShell } from '@/terminal/ssh/wireSshLogin';
+import { openWireSshShell, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
-import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
 import { readForceCommand } from '@/network/devices/linux/network/LinuxSshClient';
@@ -482,18 +481,6 @@ export async function finalisePendingAuth(
     onClose: () => { if (session) registry?.close(session.id, 'logout'); },
   });
   return { kind: 'success', shell, banner };
-}
-
-/**
- * The password is already in hand at this point, so the connection needs
- * no keyboard: anything the SSH layer would ask goes nowhere.
- */
-function silentConnectIo(): QueuedTerminalIO {
-  return new QueuedTerminalIO({
-    writeLine: () => undefined,
-    beginPrompt: () => undefined,
-    endPrompt: () => undefined,
-  });
 }
 
 function firstConfiguredIp(dev: Equipment): string | undefined {

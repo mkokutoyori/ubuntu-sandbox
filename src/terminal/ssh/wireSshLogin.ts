@@ -63,6 +63,21 @@ export type WireSshLoginOutcome =
   | { kind: 'auth-failed' }
   | { kind: 'cancelled' };
 
+/**
+ * The password is already in hand at this point, so the connection needs
+ * no keyboard: anything the SSH layer would ask goes nowhere. Shared by
+ * every caller that has already collected the password through its own
+ * vendor-specific prompt (Linux/Windows/Cisco/Huawei outbound `ssh`) and
+ * just needs `SshSession.connect()` to authenticate silently with it.
+ */
+export function silentConnectIo(): QueuedTerminalIO {
+  return new QueuedTerminalIO({
+    writeLine: () => undefined,
+    beginPrompt: () => undefined,
+    endPrompt: () => undefined,
+  });
+}
+
 /** The TCP dialler this device exposes, whatever shape it comes in. */
 function tcpConnectorFor(device: Equipment): TcpConnector | null {
   const dev = device as unknown as {

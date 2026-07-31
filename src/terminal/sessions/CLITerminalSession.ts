@@ -31,6 +31,9 @@ import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import type { TelnetInteractiveSubShell } from '@/terminal/subshells/TelnetInteractiveSubShell';
 import { createSessionForDevice } from './sessionFactory';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
+import { IPAddress } from '@/network/core/types';
+import { openWireSshShell, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 
 /** Default pager page size — matches Cisco/Huawei `terminal length 24`. */
 const DEFAULT_PAGE_SIZE = 24;
@@ -449,9 +452,20 @@ export abstract class CLITerminalSession extends TerminalSession {
     // real IOS/VRP `ssh host` with no `-l`/`user@` defaults to 'admin'.
     const user = parsed.user ?? 'admin';
 
-    const found = findHostByAddress(host);
+    // Passing this.device as `from` restricts the search to what a real
+    // client can actually reach across the cable plant (docs/PRD-Link-
+    // State.md §2.1 P6) — a pulled cable stops the target from being
+    // found at all, not just from reporting a fake "interface down".
+    const found = findHostByAddress(host, undefined, this.device);
     if (!found) {
-      return [{ type: 'output', outputLines: [`ssh: Could not resolve hostname ${host}: Name or service not known`] }];
+      // A numeric IPv4 that nothing reachable owns is a routing failure
+      // ("No route to host"); a name that fails to resolve at all keeps
+      // the DNS-style error — matches the same distinction LinuxSshClient
+      // already draws for the non-interactive path.
+      const outputLines = [IPAddress.isValid(host)
+        ? `ssh: connect to host ${host} port ${port}: No route to host`
+        : `ssh: Could not resolve hostname ${host}: Name or service not known`];
+      return [{ type: 'output', outputLines }];
     }
     if (found.poweredOff || found.interfaceDown) {
       return [{ type: 'output', outputLines: [`ssh: connect to host ${host} port ${port}: No route to host`] }];
@@ -503,11 +517,36 @@ export abstract class CLITerminalSession extends TerminalSession {
       },
       {
         type: 'execute',
-        action: async () => {
+        action: async (context) => {
+          const password = context.values.get('cli_ssh_password') ?? '';
+          // Credentials are already known-good (the password step's own
+          // validation just checked them) — open the REAL wire connection
+          // they belong to so the remote sees a genuine TCP+SSH session
+          // (auth.log, tcpdump) instead of nothing at all, then hand the
+          // interactive experience to the existing in-memory child
+          // session: the real wire session has served its purpose
+          // (proving reachability and producing a real accept/auth log
+          // entry) and is torn down immediately rather than kept as the
+          // transport, since the child-session machinery below (tab
+          // completion, nested-ssh, foreground streaming) isn't yet
+          // ported onto the wire shell channel for every vendor.
+          const outcome = await openWireSshShell({
+            device: this.device,
+            localUser: user,
+            user, host, port,
+            io: silentConnectIo(),
+            password,
+            // 'accept-new' — not 'no' — so a first-seen host key is
+            // actually recorded (NoVerificationStrategy accepts silently
+            // but never saves).
+            strict: 'accept-new',
+          });
+          if (outcome.kind === 'connected') outcome.session.disconnect();
+
           const child = createSessionForDevice(remoteDevice, `${this.id}>ssh`);
           if (!child) return;
           const clientPort = 50_000 + (user.length * 7 % 10_000);
-          const serverIp = this.firstDeviceIp(remoteDevice) ?? host;
+          const serverIp = firstConfiguredIp(remoteDevice) ?? host;
           this.adoptRemoteChild(child, user, host, {
             SSH_CONNECTION: `${sourceIp} ${clientPort} ${serverIp} ${port}`,
             SSH_CLIENT: `${sourceIp} ${clientPort} ${port}`,
@@ -543,15 +582,6 @@ export abstract class CLITerminalSession extends TerminalSession {
     for (const out of result.output) this.addLine(out);
     if (result.exit) { sub.dispose(); this.telnetSubShell = null; }
     this.notify();
-  }
-
-  /** First configured IPv4 address on `dev`, or null. */
-  private firstDeviceIp(dev: Equipment): string | null {
-    for (const port of dev.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip) return ip.toString();
-    }
-    return null;
   }
 
   /**

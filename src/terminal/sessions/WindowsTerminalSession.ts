@@ -19,7 +19,6 @@ import {
   type InputMode,
 } from './TerminalSession';
 import { createSessionForDevice } from './sessionFactory';
-import { presentedHostKey } from '@/network/protocols/ssh/presentedHostKey';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
 import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
@@ -39,7 +38,9 @@ import {
   type PathpingStatsRow,
 } from '@/network/devices/windows/WinPathping';
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
-import type { IPAddress } from '@/network/core/types';
+import { IPAddress } from '@/network/core/types';
+import { openWireSshShell, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -55,7 +56,6 @@ import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
-import { SshKnownHostsFile } from '@/network/protocols/ssh/SshKnownHostsFile';
 import { parseRunasArgs, validateRunasUser, runasIncorrectPasswordMessage } from '@/network/devices/windows/WinRunas';
 import type { RunasUserSource } from '@/network/devices/windows/WinRunas';
 
@@ -270,7 +270,7 @@ export class WindowsTerminalSession extends TerminalSession {
       if (e.key === 'Enter') {
         const pw = this.getPasswordBuf();
         this.setPasswordBuf('');
-        this.submitSshPassword(pw);
+        void this.submitSshPassword(pw);
         return true;
       }
       if (e.key === 'c' && e.ctrlKey) {
@@ -978,14 +978,6 @@ export class WindowsTerminalSession extends TerminalSession {
     return { user: m[1] ?? loginUser, host: m[2], port, quiet };
   }
 
-  private firstDeviceIp(dev: Equipment): string | null {
-    for (const port of dev.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip) return ip.toString();
-    }
-    return null;
-  }
-
   /**
    * Validate the target and, on success, push a {@link RemoteDeviceSubShell}
    * onto the Windows sub-shell stack so the user lands in an interactive
@@ -1012,9 +1004,19 @@ export class WindowsTerminalSession extends TerminalSession {
     const localUser = dev.userMgr?.currentUser ?? 'User';
     const user = parsed.user ?? localUser;
 
-    const found = findHostByAddress(host);
+    // Passing this.device as `from` restricts the search to what a real
+    // client can actually reach across the cable plant (docs/PRD-Link-
+    // State.md §2.1 P6) — a pulled cable stops the target from being
+    // found at all, not just from reporting a fake "interface down".
+    const found = findHostByAddress(host, undefined, this.device);
     if (!found) {
-      this.addLine(`ssh: Could not resolve hostname ${host}: Name or service not known`);
+      // A numeric IPv4 that nothing reachable owns is a routing failure
+      // ("No route to host"); a name that fails to resolve at all keeps
+      // the DNS-style error — matches the same distinction LinuxSshClient
+      // already draws for the non-interactive path.
+      this.addLine(IPAddress.isValid(host)
+        ? `ssh: connect to host ${host} port ${port}: No route to host`
+        : `ssh: Could not resolve hostname ${host}: Name or service not known`);
       return true;
     }
     if (found.poweredOff || found.interfaceDown) {
@@ -1060,6 +1062,7 @@ export class WindowsTerminalSession extends TerminalSession {
       device: found.device,
       sourceIp,
       sourceHostname: dev.getHostname(),
+      localUser,
       quiet: parsed.quiet,
     };
     if (this.inputHostImpl.capabilities().interactive) {
@@ -1091,7 +1094,7 @@ export class WindowsTerminalSession extends TerminalSession {
         recordSshLogin?: (u: string, fromIp: string, fromHost: string, accepted: boolean) => void;
       };
       if (ok) {
-        this.submitSshPassword(pw);
+        await this.submitSshPassword(pw);
         return;
       }
       this.sshPasswordAttempts++;
@@ -1115,7 +1118,7 @@ export class WindowsTerminalSession extends TerminalSession {
   private pendingSshPush: {
     user: string; host: string; port: number;
     device: Equipment; sourceIp: string; sourceHostname: string;
-    quiet: boolean;
+    localUser: string; quiet: boolean;
   } | null = null;
 
   /**
@@ -1134,7 +1137,7 @@ export class WindowsTerminalSession extends TerminalSession {
   private sshPasswordAttempts = 0;
   private static readonly SSH_MAX_ATTEMPTS = 3;
 
-  private submitSshPassword(password: string): void {
+  private async submitSshPassword(password: string): Promise<void> {
     const pending = this.pendingSshPush;
     if (!pending) return;
 
@@ -1165,21 +1168,44 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    this.writeKnownHostsEntry(pending.device, pending.host);
+    this.pendingSshPush = null;
+    this.sshPasswordAttempts = 0;
+    this.inputMode = { type: 'normal' };
+
+    // Credentials are already known-good (verified above) — open the REAL
+    // wire connection they belong to so the remote sees a genuine TCP+SSH
+    // session (auth.log, tcpdump) instead of nothing at all, then hand the
+    // interactive experience to the existing in-memory child session — the
+    // real wire session has served its purpose (proving reachability and
+    // producing a real accept/auth log entry) and is torn down immediately
+    // rather than kept as the transport, since the child-session machinery
+    // below (tab completion, editors, nested-ssh, foreground streaming)
+    // isn't yet ported onto the wire shell channel for every vendor.
+    const outcome = await openWireSshShell({
+      device: this.device,
+      localUser: pending.localUser,
+      user: pending.user,
+      host: pending.host,
+      port: pending.port,
+      io: silentConnectIo(),
+      password,
+      // 'accept-new' — not 'no' — so a first-seen host key is actually
+      // recorded (NoVerificationStrategy accepts silently but never
+      // saves); matches the manual known_hosts write this replaced.
+      strict: 'accept-new',
+    });
+    if (outcome.kind === 'connected') outcome.session.disconnect();
 
     const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
     if (child) {
       const clientIp = this.firstLocalIp() ?? '0.0.0.0';
-      const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
+      const serverIp = firstConfiguredIp(pending.device) ?? pending.host;
       const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
       this.adoptRemoteChild(child, pending.user, pending.host, {
         SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
         SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
       }, { quiet: pending.quiet });
     }
-    this.pendingSshPush = null;
-    this.sshPasswordAttempts = 0;
-    this.inputMode = { type: 'normal' };
     this.notify();
   }
 
@@ -1360,40 +1386,6 @@ export class WindowsTerminalSession extends TerminalSession {
     const result = await dev.runAsUserVerified?.(pending.userName, pending.command, password) ?? '';
     if (result) this.emitWindowsOutput(result);
     this.notify();
-  }
-
-  /**
-   * Pick the kind of primary shell for the remote's vendor — the shell
-   * the user would land in if they were seated at the remote's console.
-   */
-  private writeKnownHostsEntry(remote: Equipment, host: string): void {
-    const localDev = this.device as unknown as {
-      fs?: {
-        readFile: (p: string) => { ok: boolean; content?: string };
-        createFile: (p: string, c: string) => { ok: boolean; error?: string };
-        exists: (p: string) => boolean;
-        mkdirp: (p: string) => void;
-      };
-      userMgr?: { currentUser: string };
-    };
-    if (!localDev.fs) return;
-    const key = presentedHostKey(remote);
-    if (!key) return;
-    // known_hosts is the *client's* record of hosts it has seen, so it
-    // belongs to the account running the client. Filing it under the
-    // remote account's name scattered it across profiles — and collided
-    // with the local one whenever the two names matched.
-    const localUser = localDev.userMgr?.currentUser ?? 'User';
-    const path = `C:\\Users\\${localUser}\\.ssh\\known_hosts`;
-    const dir = path.substring(0, path.lastIndexOf('\\'));
-    if (!localDev.fs.exists(dir)) localDev.fs.mkdirp(dir);
-    const existing = localDev.fs.readFile(path);
-    const body = existing.ok ? (existing.content ?? '') : '';
-    const file = SshKnownHostsFile.parse(body);
-    if (!file.find(host)) {
-      const updated = file.add({ hostnames: [host], keyType: key.keyType, publicKey: key.publicKey });
-      localDev.fs.createFile(path, updated.serialize());
-    }
   }
 
   private pickPrimaryShellKind(eq: Equipment): string {
