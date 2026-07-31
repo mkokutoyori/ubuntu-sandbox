@@ -136,9 +136,9 @@ tabulations. Trois écarts ont été corrigés dans ce sens :
 - **`pr` ne pagine pas vraiment.** Seuls `-t` et `-n` sont là ; une vraie
   pagination demanderait une géométrie de page que cet hôte ne modélise pas,
   et l'aide de la commande le dit.
-- **`bc` reste absent** — c'est le dernier refus des transcripts
-  `linux-text-pipes` (6 occurrences), et c'est un langage à part entière
-  (variables, fonctions, `scale`, `^`), pas un filtre de flux. Lot distinct.
+- **`bc` est traité à part** — voir `docs/PRD-Bc.md` : c'était le dernier
+  refus des transcripts, et c'est un langage à part entière, pas un filtre
+  de flux.
 - **L'heuristique de découpage n'a pas été retirée** de
   `dispatchFromInterpreter` : elle sert encore aux appelants qui ne
   transmettent pas de `stdin`. La supprimer demanderait de faire remonter le
@@ -148,14 +148,15 @@ tabulations. Trois écarts ont été corrigés dans ce sens :
 
 | Transcript                     | Refus avant | Refus après |
 |--------------------------------|-------------|-------------|
-| `linux-pc-text-pipes`          | 35          | 7           |
-| `linux-server-text-pipes`      | 35          | 7           |
+| `linux-pc-text-pipes`          | 35          | 1           |
+| `linux-server-text-pipes`      | 35          | 1           |
 | `linux-pc-system-disk`         | 22          | 20          |
 | `linux-server-system-disk`     | 22          | 20          |
 | autres transcripts linux       | inchangés   | inchangés   |
 
-Les 7 restants : 6 `bc`, et un `grepp` qui est une faute de frappe
-délibérée du transcript.
+Le refus restant est un `grepp` — une faute de frappe délibérée du
+transcript, qui doit continuer de répondre `command not found`. Les six
+autres étaient des `bc`, traités dans `docs/PRD-Bc.md`.
 
 ## 7. Sondes
 

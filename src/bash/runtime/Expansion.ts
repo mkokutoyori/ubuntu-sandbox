@@ -1045,6 +1045,10 @@ function tokenizeArith(expr: string, env: Environment): ArithToken[] {
       tokens.push({ type: 'op', value: '++' }); i += 2;
     } else if (ch === '-' && i + 1 < expr.length && expr[i + 1] === '-') {
       tokens.push({ type: 'op', value: '--' }); i += 2;
+    } else if (ch === '*' && expr[i + 1] === '*') {
+      // Doit être reconnu avant `*=` et avant le repli sur `*` seul, qui
+      // rendait `$((2 ** 8))` égal à zéro en lisant deux multiplications.
+      tokens.push({ type: 'op', value: '**' }); i += 2;
     } else if ((ch === '+' || ch === '-' || ch === '*' || ch === '/' || ch === '%')
                && i + 1 < expr.length && expr[i + 1] === '=') {
       tokens.push({ type: 'op', value: ch + '=' }); i += 2;
@@ -1285,7 +1289,7 @@ class ArithParser {
   private parseMultiplicative(): number {
     let val = this.parseUnary();
     while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
-           '*/%'.includes(this.tokens[this.pos].value)) {
+           ['*', '/', '%'].includes(this.tokens[this.pos].value)) {
       const op = this.tokens[this.pos].value;
       this.pos++;
       const right = this.parseUnary();
@@ -1293,6 +1297,21 @@ class ArithParser {
       val = op === '*' ? val * right : op === '/' ? Math.trunc(val / right) : val % right;
     }
     return val;
+  }
+
+  // power: postfix (** power)? — plus prioritaire que `*`, et associatif
+  // à droite, comme dans bash : 2**3**2 vaut 512, pas 64.
+  private parsePower(): number {
+    const base = this.parsePostfix();
+    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op'
+        && this.tokens[this.pos].value === '**') {
+      this.pos++;
+      const e = this.parseUnary();
+      // bash refuse un exposant négatif ; il ne le tronque pas à zéro.
+      if (e < 0) throw new ArithmeticError('exponent less than 0');
+      return Math.trunc(base ** e);
+    }
+    return base;
   }
 
   // unary: ! unary | - unary | ++name | --name | postfix
@@ -1315,7 +1334,7 @@ class ArithParser {
       }
       return 0;
     }
-    return this.parsePostfix();
+    return this.parsePower();
   }
 
   // postfix: primary (++ | --)?

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-text-pipes
-Generated: 2026-07-31T00:10:33.041Z
+Generated: 2026-07-31T00:26:48.068Z
 Engine: linux
 host=L-SRV-TXT-DBG (linux-server) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -1061,7 +1061,7 @@ $ [185/303]> seq 1 100 | awk '{s+=$1} END{print s}'
   5050
 
 $ [186/303]> seq 1 10 | paste -sd+ | bc
-  bc: command not found
+  55
 
 $ [187/303]> echo "1 2 3 4 5" | tr " " "\n" | sort -rn
   1
@@ -1354,16 +1354,16 @@ $ [243/303]> i=0; while [ $i -lt 3 ]; do echo "while $i"; i=$((i+1)); done
 
 --- [244] § calcul — bc/expr/let/$(()) ---
 $ [244/303]> echo "2 + 3" | bc
-  bc: command not found
+  5
 
 $ [245/303]> echo "10 / 3" | bc
-  bc: command not found
+  3
 
 $ [246/303]> echo "scale=2; 10/3" | bc
-  bc: command not found
+  3.33
 
 $ [247/303]> echo "2^10" | bc
-  bc: command not found
+  1024
 
 $ [248/303]> expr 5 + 3
   8
@@ -1384,13 +1384,13 @@ $ [253/303]> echo $((100 % 7))
   2
 
 $ [254/303]> echo $((2 ** 8))
-  0
+  256
 
 $ [255/303]> let x=5+5; echo $x
   10
 
 $ [256/303]> seq 1 10 | paste -sd+ - | bc
-  bc: command not found
+  55
 
 
 --- [257] § hachage & encodage — sums/base64/md5 ---

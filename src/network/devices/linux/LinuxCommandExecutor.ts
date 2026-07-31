@@ -163,7 +163,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
   'tac', 'nl', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
-  'column', 'split', 'base64', 'cksum', 'xxd',
+  'column', 'split', 'base64', 'cksum', 'xxd', 'bc',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
   'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
