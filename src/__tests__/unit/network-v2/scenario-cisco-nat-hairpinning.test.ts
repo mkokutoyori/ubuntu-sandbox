@@ -26,6 +26,7 @@ import type { TCPPacket } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 
 const GW_INSIDE = '192.168.10.254';
 const GW_OUTSIDE = '203.0.113.1';
@@ -147,8 +148,19 @@ describe('Scénario 6 (Cisco) — NAT Hairpinning : accès interne via l\'IP pub
     }
 
     it('après configuration, nc -z 203.0.113.10:1521 depuis PC-Linux-1 réussit', async () => {
-      const { pcLinux1 } = await labWithHairpinFix();
-      const out = await pcLinux1.executeCommand(`nc -z -w 1 ${ORACLE_PUBLIC_IP} 1521`);
+      const { pcLinux1, srvOracle } = await labWithHairpinFix();
+      // Boots srv-oracle's real Oracle instance and starts its listener
+      // as a genuine TcpStack.listen(1521, ...) — same bootstrap idiom
+      // scenario-oracle-01-tns-e2e-connection.test.ts uses. Without this,
+      // nothing actually answers on 1521 (a plain `nc -l` only registers
+      // in the cosmetic `ss`/`netstat` socket table, never the real TCP
+      // stack a remote SYN is handshaked against).
+      SqlPlusSubShell.create(srvOracle, ['/', 'as', 'sysdba']).subShell.dispose();
+      // `-v` is required to observe the explicit "succeeded" message —
+      // `nc -z` alone is silent on success, same convention already
+      // exercised by the "sans hairpinning" control test just above
+      // (silent success, loud failure — real netcat behavior).
+      const out = await pcLinux1.executeCommand(`nc -z -v -w 1 ${ORACLE_PUBLIC_IP} 1521`);
       expect(out).toMatch(/succeeded/i);
     });
 

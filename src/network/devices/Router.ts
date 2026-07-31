@@ -2686,6 +2686,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         },
       });
     }
+    // A client that just RELEASEd is the strongest possible signal that
+    // this address is free — stronger than staying silent about it. A
+    // stale ARP entry left over from while the lease was still active
+    // would otherwise make the next DISCOVER's `ip dhcp ping packets`
+    // pre-offer conflict check (isCandidateAddressInUse, which consults
+    // the ARP table before ever sending a real probe) falsely conclude
+    // the just-released address is still in use, skipping past it to
+    // the next one instead of re-offering it — the address a real
+    // Cisco IOS DHCP server, and this same client on its next DISCOVER,
+    // would expect back.
+    if (pkt.getMessageType() === 'DHCPRELEASE') this.arpTable.delete(pkt.ciaddr);
+
     const reply = buildDhcpServerReply(pkt, {
       server: this.dhcpServer,
       localGatewayIP: this.ports.get(inPort)?.getIPAddress()?.toString(),

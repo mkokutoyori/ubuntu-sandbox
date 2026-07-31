@@ -193,6 +193,23 @@ beforeAll(async () => {
   LAB = await buildLab();
 });
 
+// The global per-test reset (setupGlobalState.ts) clears EquipmentRegistry
+// before every `it()`, including ones after the first — but this file
+// builds its topology once in `beforeAll` rather than per-test, so the
+// LAB devices themselves survive (LAB still references the same live
+// Equipment instances) while their registry entries do not. Most
+// commands never notice (they walk Port/Cable references, not the
+// registry), but anything that resolves another device by IP/hostname
+// through EquipmentRegistry — e.g. Oracle Net's EZConnect host lookup —
+// would silently fail from the second test onward. Re-register the same
+// instances (no reconstruction, no state loss) after each reset.
+beforeEach(() => {
+  if (!LAB) return;
+  for (const device of Object.values(LAB)) {
+    EquipmentRegistry.getInstance().register(device);
+  }
+});
+
 describe('Phase 1 — vérification de la mauvaise segmentation VLAN', () => {
   it('Cisco show vlan brief : les VLAN Users, Servers, DB, Mgmt sont actifs', async () => {
     const out = await LAB.core.executeCommand('show vlan brief');

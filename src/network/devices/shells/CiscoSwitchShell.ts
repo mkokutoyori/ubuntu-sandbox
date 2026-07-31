@@ -2013,6 +2013,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return 'EtherChannel: no detail';
     });
 
+    // `show interfaces counters [<if>]` — registered on the `counters`
+    // node itself (already created, actionless, by the shared `show
+    // interfaces counters errors` registration above) so it gets an
+    // action too. Without this, `show interfaces` counters` and `...
+    // counters <if>` fell into that actionless intermediate node and
+    // dead-ended on "% Incomplete command." — the trie's own child-first
+    // lookahead (CommandTrie.ts) still routes `... counters errors`
+    // through to its own leaf action underneath, unaffected.
+    this.privilegedTrie.registerGreedy('show interfaces counters', 'Display interface counters', (args) => {
+      if (args.length === 0) return this.showInterfacesCounters(null);
+      const name = this.resolveInterfaceName(args.join(' '));
+      if (!name || !this.d().getPort(name)) {
+        return `% Invalid input detected at '^' marker.\nshow interfaces counters ${args.join(' ')}\n                ^`;
+      }
+      return this.showInterfacesCounters(name);
+    });
+
     this.privilegedTrie.registerGreedy('show interfaces', 'Display interface information', (args) => {
       if (args.length === 0) return this.showAllInterfacesDetail();
       const last = args[args.length - 1].toLowerCase();

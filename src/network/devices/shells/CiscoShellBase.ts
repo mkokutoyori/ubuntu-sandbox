@@ -1344,8 +1344,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
       `${showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize)}\n`
       + `Monitor parameter: ${this.terminalMonitor ? 'enabled' : 'disabled'}`);
-    trie.register('show processes memory', 'Display per-process memory', () =>
-      showProcessesMemory());
     trie.registerGreedy('show buffers', 'Display buffer pools', () =>
       showBuffers());
     trie.registerGreedy('show tcp', 'Display TCP connections', () =>

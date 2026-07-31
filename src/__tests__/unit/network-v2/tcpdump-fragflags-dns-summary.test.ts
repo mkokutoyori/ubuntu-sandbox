@@ -66,8 +66,18 @@ describe('tcpdump IP fragmentation flags + minimal DNS summary (PRD-tcpdump.md P
     await new Promise((resolve) => setTimeout(resolve, 50));
     const output = await pending;
 
-    expect(output).toMatch(/1\+ A\? www\.example\.com \(\d+\)/);
-    expect(output).toMatch(/1 1\/0\/0 A 10\.0\.1\.80 \(\d+\)/);
+    // The DNS transaction ID is not hardcoded to 1: `nextDnsTransactionId()`
+    // (DnsWireCompat.ts) is a single shared, monotonically-incrementing
+    // counter never reset between DNS "conversations" — and `dig`'s own
+    // query isn't the only thing drawing from it here. `buildDnsLab()`
+    // brings up both `pc` and `srv`'s interfaces, and each host's LLMNR
+    // agent self-announces its own name three times on link bring-up (RFC
+    // 4795 §4.1, see LlmnrAgent.ts), consuming IDs from the same counter
+    // before `dig` ever runs. Real `dig` also uses an unpredictable
+    // (random) query ID for cache-poisoning resistance, so an exact value
+    // was never a realistic assertion to begin with — match any ID instead.
+    expect(output).toMatch(/\d+\+ A\? www\.example\.com \(\d+\)/);
+    expect(output).toMatch(/\d+ 1\/0\/0 A 10\.0\.1\.80 \(\d+\)/);
     expect(output).not.toContain('UDP, length');
   }, 20000);
 

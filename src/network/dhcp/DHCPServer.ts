@@ -70,6 +70,17 @@ export class DHCPServer implements IProtocolEngine {
   /** Pending offers: IP → pending (reserved between DISCOVER and REQUEST) */
   private pendingOffers: Map<string, DHCPPendingOffer> = new Map();
 
+  /**
+   * clientId → the address it last held, kept even after the active
+   * binding is deleted on RELEASE/expiry. Every real DHCP server
+   * (including Cisco IOS's own pool database) re-offers a client its
+   * previous address on its next DISCOVER when that address is still
+   * free — RFC 2131 doesn't mandate it, but a plain `dhclient -r &&
+   * dhclient` hopping to a different address with nothing else on the
+   * network having claimed the old one is not how real DHCP behaves.
+   */
+  private releaseHistory: Map<string, { ip: string; poolName: string }> = new Map();
+
   /** `ip dhcp ping packets` (IOS default 2; `ip dhcp ping packets 0` disables the check) */
   private pingPacketCount = 2;
   /** `ip dhcp ping timeout` in milliseconds */
@@ -528,6 +539,24 @@ export class DHCPServer implements IProtocolEngine {
         }
       }
 
+      // Prefer re-offering the address this client held before its lease
+      // was released or expired (see releaseHistory's own doc comment),
+      // as long as nothing else has claimed it since.
+      const history = this.releaseHistory.get(params.clientMAC);
+      if (history && history.poolName === pool.name
+        && !this.bindings.has(history.ip) && !this.pendingOffers.has(history.ip)
+        && !this.isExcluded(history.ip) && !this.isConflicted(history.ip)) {
+        this.stats.offers++;
+        return {
+          ip: history.ip,
+          pool,
+          serverIdentifier: this.resolveServerId(pool),
+          xid: params.xid,
+          renewalTime: pool.renewalTime,
+          rebindingTime: pool.rebindingTime,
+        };
+      }
+
       // Allocate a new IP and create a pending offer
       const ip = this.findAvailableIP(pool, params.clientMAC);
       if (!ip) {
@@ -830,6 +859,7 @@ export class DHCPServer implements IProtocolEngine {
       for (const [ip, binding] of this.bindings) {
         if (binding.clientId === paramsOrMAC) {
           this.bindings.delete(ip);
+          this.releaseHistory.set(binding.clientId, { ip, poolName: binding.poolName });
           this.getBus().publish({
             topic: 'dhcp.pool.lease-released',
             payload: { ...this.deviceRef(), pool: binding.poolName, ip, reason: 'client-release' },
@@ -850,6 +880,7 @@ export class DHCPServer implements IProtocolEngine {
     if (binding.clientId !== params.clientMAC) return;
 
     this.bindings.delete(params.clientIP);
+    this.releaseHistory.set(binding.clientId, { ip: params.clientIP, poolName: binding.poolName });
     this.getBus().publish({
       topic: 'dhcp.pool.lease-released',
       payload: { ...this.deviceRef(), pool: binding.poolName, ip: params.clientIP, reason: 'client-release' },

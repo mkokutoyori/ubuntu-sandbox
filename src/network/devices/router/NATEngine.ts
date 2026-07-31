@@ -82,6 +82,19 @@ export interface NatSession {
   // Outside global (destination) address — completes the 4-tuple (RFC 2663 §3.6)
   outsideIP: string;
   outsidePort: number;
+  /**
+   * Outside *local* address:port (Cisco's "Outside local" column) — the
+   * address the packet was originally addressed to, before this router's
+   * own `translateInbound()` DNAT rewrote the destination. Equal to
+   * `outsideIP`/`outsidePort` for every ordinary session, where no
+   * destination-side translation happened. Differs only for a NAT
+   * hairpinning session (RFC 5382 §5): the inside client addressed the
+   * flow to the public/static-NAT address of another inside host, so
+   * "outside local" (what the client thinks it's talking to) and "outside
+   * global" (the real inside address, post-DNAT) genuinely diverge.
+   */
+  outsideLocalIP?: string;
+  outsideLocalPort?: number;
   /** Last-used time — refreshed on every hit (used both for "use:" and staleness). */
   timestamp: number;
   /** First-created time — set once, never refreshed (used for "create:"). */
@@ -375,6 +388,18 @@ export class NATEngine {
     const dstPort = getPacketDstPort(pkt);
     const proto = pkt.protocol;
 
+    // NAT translates unicast flows only (RFC 2663/5382 both assume a unicast
+    // 5-tuple). Broadcast (255.255.255.255) and multicast (224.0.0.0/4,
+    // covering both link-local control traffic like LLMNR/mDNS on
+    // 224.0.0.252:5355 and admin-scoped groups routed via PIM) are consumed
+    // or replicated per-hop by the router itself, never translated by real
+    // Cisco IOS NAT — they were never eligible for translation, so counting
+    // one as a "Miss" here would be counting ordinary background multicast
+    // chatter as a NAT health problem it isn't. `Router.processIPv4` only
+    // special-cases broadcast/multicast *after* calling `translateInbound`,
+    // so this check has to live here too rather than solely at the caller.
+    if (isBroadcastOrMulticastDest(dstIP)) return null;
+
     // ICMP error messages carry the offending packet as payload (RFC 5508 §3).
     // Translate the embedded original packet so the inside host can correlate it.
     if (proto === IP_PROTO_ICMP) {
@@ -468,6 +493,16 @@ export class NATEngine {
     const dstPort = getPacketDstPort(pkt);
     const proto   = pkt.protocol;
 
+    // Outside *local* address:port ("Cisco's "Outside local" column) — what
+    // the client actually addressed the packet to. For an ordinary session
+    // this is the same as `dstIP`/`dstPort` (no destination-side
+    // translation happened). For a hairpin flow, `aclMatchPkt` is the
+    // pre-DNAT packet (see doc comment above), so its destination is the
+    // public/static-NAT address the client targeted, distinct from `dstIP`
+    // (already rewritten to the real inside server by `translateInbound`).
+    const outsideLocalIP   = opts?.aclMatchPkt ? opts.aclMatchPkt.destinationIP.toString() : dstIP;
+    const outsideLocalPort = opts?.aclMatchPkt ? getPacketDstPort(opts.aclMatchPkt) : dstPort;
+
     // ICMP error messages: translate the embedded offending packet (RFC 5508 §3).
     if (proto === IP_PROTO_ICMP) {
       const icmp = pkt.payload as ICMPPacket;
@@ -541,6 +576,7 @@ export class NATEngine {
             localIP: srcIP, localPort: srcPort,
             globalIP, globalPort,
             outsideIP: dstIP, outsidePort: dstPort,
+            outsideLocalIP, outsideLocalPort,
             timestamp: Date.now(),
             createdAt: Date.now(),
             tcpState: proto === IP_PROTO_TCP ? 'syn-seen' : undefined,
@@ -609,6 +645,7 @@ export class NATEngine {
             localIP: srcIP, localPort: srcPort,
             globalIP: poolIP, globalPort: srcPort,
             outsideIP: dstIP, outsidePort: dstPort,
+            outsideLocalIP, outsideLocalPort,
             timestamp: Date.now(),
             createdAt: Date.now(),
             inIface,
@@ -672,15 +709,22 @@ export class NATEngine {
 
     for (const session of this.sessions.values()) {
       const protoName = protoToName(session.protocol);
-      const outside = session.outsideIP
+      const outsideGlobal = session.outsideIP
         ? `${session.outsideIP}:${session.outsidePort}`
         : '---';
+      // "Outside local" diverges from "Outside global" only for a hairpin
+      // session (see NatSession.outsideLocalIP doc comment) — every
+      // ordinary session has them equal, since `outsideLocalIP` defaults to
+      // `outsideIP` at creation time.
+      const outsideLocal = session.outsideLocalIP
+        ? `${session.outsideLocalIP}:${session.outsideLocalPort}`
+        : outsideGlobal;
       entries.push({
         proto: protoName,
         insideLocal:  `${session.localIP}:${session.localPort}`,
         insideGlobal: `${session.globalIP}:${session.globalPort}`,
-        outsideLocal: outside,
-        outsideGlobal: outside,
+        outsideLocal,
+        outsideGlobal,
         createdAtMs: session.createdAt,
         lastUsedMs: session.timestamp,
         timeoutMs: this.sessionTimeout(session),
@@ -975,6 +1019,19 @@ function getPacketSrcPort(pkt: IPv4Packet): number {
     if (icmp && icmp.type === 'icmp') return icmp.id ?? 0;
   }
   return 0;
+}
+
+/**
+ * True for the limited broadcast address (255.255.255.255) or any
+ * multicast destination (224.0.0.0/4 — both link-local, 224.0.0.0/24, and
+ * admin-scoped groups above it). Mirrors the same classification
+ * `Router.processIPv4` uses to special-case broadcast/multicast delivery,
+ * needed here too since `translateInbound` runs before that check.
+ */
+function isBroadcastOrMulticastDest(ip: string): boolean {
+  if (ip === '255.255.255.255') return true;
+  const first = Number(ip.split('.', 1)[0]);
+  return first >= 224 && first <= 239;
 }
 
 function getPacketDstPort(pkt: IPv4Packet): number {

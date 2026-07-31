@@ -9,12 +9,14 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
+import type { EthernetFrame, IPv4Packet, TCPPacket } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { TCP_TIME_WAIT_MS, TCP_DEFAULT_MSS } from '@/network/tcp/types';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
+import type { Port } from '@/network/hardware/Port';
 
 let scheduler: VirtualTimeScheduler;
 
@@ -205,11 +207,33 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
 
     it('une perte ponctuelle déclenche une retransmission et SACK est utilisé', async () => {
       const lan = buildHttpLan();
-      // Cable call 6 is the client's 2nd data segment (5 total, MSS=1460/
-      // 6000 octets), after the 3-way handshake (calls 1-3).
-      let calls = 0;
-      lan.cable.setPacketLossRate(0.999);
-      lan.cable.setRng(() => (++calls === 6 ? 0 : 1));
+      // A fixed cable-call index (the original "call 6") is not a reliable
+      // way to target "the client's 2nd data segment": each host's LLMNR
+      // agent self-announces its own name on interface bring-up (RFC 4795
+      // §4.1, LlmnrAgent.ts — real, deliberate multicast traffic, not
+      // routing noise, see CLAUDE.md), and the client also has to ARP-
+      // resolve the server's MAC before the handshake — both consume cable
+      // transmits before the handshake even starts, so "call 6" actually
+      // landed on the handshake's own SYN-ACK, not a data segment, and
+      // broke the connection outright. Instead, inspect each frame as it
+      // crosses the cable and drop exactly the 2nd real TCP segment
+      // carrying application data from the client to the server — robust
+      // to how much (or how little) preliminary L2/L3 chatter precedes it.
+      let clientDataSegmentsSeen = 0;
+      const origTransmit = lan.cable.transmit.bind(lan.cable);
+      lan.cable.transmit = ((frame: EthernetFrame, fromPort: Port) => {
+        const ip = frame.payload as Partial<IPv4Packet> | undefined;
+        const tcp = ip?.payload as Partial<TCPPacket> | undefined;
+        const dataLength = typeof tcp?.payload === 'string' ? tcp.payload.length : 0;
+        const isClientDataSegment = ip?.sourceIP?.toString() === CLIENT_IP
+          && ip?.destinationIP?.toString() === SERVER_IP
+          && tcp?.type === 'tcp' && dataLength > 0;
+        if (isClientDataSegment) {
+          clientDataSegmentsSeen++;
+          if (clientDataSegmentsSeen === 2) return false; // simulate loss
+        }
+        return origTransmit(frame, fromPort);
+      }) as typeof lan.cable.transmit;
 
       const received: string[] = [];
       const dump = await captureFullSession(lan, async (sock) => {

@@ -411,3 +411,114 @@ export function findHostByAddress(
   }
   return null;
 }
+
+/** Duck-typed surface a NAT-capable router exposes — same pattern as
+ *  `RouterAclSurface` above, avoiding a hard import of `Router`/`NATEngine`
+ *  from this Linux-command-side module. */
+interface RouterNatSurface {
+  _getNATEngine?(): {
+    translateInbound(pkt: IPv4Packet, inIface: string): IPv4Packet | null;
+    translateOutbound(
+      pkt: IPv4Packet, outIface: string, inIface: string,
+      opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
+    ): IPv4Packet | null;
+    isOutsideInterface(iface: string): boolean;
+  };
+  resolveRouteForHost?(destIp: string): { iface: string; nextHopIp: string } | null;
+}
+
+function packetDstPort(pkt: IPv4Packet): number {
+  const payload = pkt.payload as (UDPPacket | TCPPacket);
+  if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.destinationPort;
+  return 0;
+}
+
+/**
+ * Resolve a literal destination IP that isn't configured on any real
+ * interface — as happens for the public/static-NAT address of a NAT
+ * *hairpinning* target (RFC 5382 §5) — by walking the topology from
+ * `srcIp` to the first NAT-capable router and replaying exactly the two
+ * engine calls `Router.processIPv4`/`forwardPacket` would make for a real
+ * packet: `translateInbound()` (PREROUTING DNAT) followed by
+ * `translateOutbound()` (POSTROUTING SNAT, with `isHairpin` set whenever
+ * the DNAT'd destination routes back out a non-outside interface).
+ *
+ * This intentionally reuses the *production* NATEngine methods rather than
+ * re-deriving the answer from static config — so it has the same real
+ * side effects a live packet would (session creation, hit counters), and
+ * genuinely reflects the "sans hairpinning" gap: a static NAT entry alone
+ * (DNAT) is not enough, real Cisco IOS hairpinning also needs the source
+ * translated back out (SNAT), which only succeeds once the operator's
+ * `ip nat inside source list <acl> ... overload` rule ACL actually permits
+ * the flow — exactly the `ACL-HAIRPIN` configuration this models.
+ *
+ * Returns null when no reachable router's NAT config resolves `dstIp` at
+ * all, or when it resolves the destination (DNAT) but the corresponding
+ * source translation (SNAT) required for a hairpin flow would not
+ * actually succeed — both cases the caller (topology-bypass client
+ * commands like `nc`) should treat identically to "host not found".
+ */
+export function resolveNatHairpinHost(
+  srcIp: string,
+  dstIp: string,
+  dstPort: number,
+  proto: 'tcp' | 'udp',
+  from?: Equipment | null,
+): (RemoteHost & { port: number }) | null {
+  const startPorts: Port[] = [];
+  for (const dev of reachableDevices(from)) {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip && ip.toString() === srcIp) startPorts.push(port);
+    }
+  }
+  if (startPorts.length === 0) return null;
+
+  const pkt = proto === 'tcp'
+    ? synthSynPacket(srcIp, dstIp, dstPort)
+    : synthUdpPacket(srcIp, dstIp, dstPort);
+
+  const visited = new Set<string>();
+  const queue: Port[] = [...startPorts];
+  while (queue.length > 0) {
+    const port = queue.shift()!;
+    const key = `${port.getEquipmentId()}:${port.getName()}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (!port.getIsUp()) continue;
+    const cable = port.getCable();
+    if (!cable) continue;
+    const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+    if (!peerPort || !peerPort.getIsUp()) continue;
+    const peerDev = peerPort.getOwner() as Equipment | null;
+    if (!peerDev || !peerDev.getIsPoweredOn()) continue;
+
+    const router = peerDev as unknown as RouterNatSurface;
+    if (typeof router._getNATEngine === 'function' && typeof router.resolveRouteForHost === 'function') {
+      const engine = router._getNATEngine();
+      const inIface = peerPort.getName();
+      const dnatPkt = engine.translateInbound(pkt, inIface);
+      if (dnatPkt) {
+        const translatedDst = dnatPkt.destinationIP.toString();
+        const route = router.resolveRouteForHost(translatedDst);
+        if (route) {
+          const isHairpin = !engine.isOutsideInterface(route.iface) && translatedDst !== dstIp;
+          const snatPkt = engine.translateOutbound(dnatPkt, route.iface, inIface,
+            isHairpin ? { isHairpin: true, aclMatchPkt: pkt } : undefined);
+          // A non-hairpin DNAT (ordinary inbound port-forward) never needs
+          // SNAT to reach the destination — only a hairpin flow's session
+          // genuinely depends on the SNAT half succeeding too.
+          if (snatPkt || !isHairpin) {
+            const target = findHostByAddress(translatedDst, undefined, from);
+            if (target) return { ...target, port: packetDstPort(dnatPkt) };
+          }
+        }
+      }
+    }
+
+    for (const sibling of peerDev.getPorts()) {
+      if (sibling !== peerPort) queue.push(sibling);
+    }
+  }
+  return null;
+}

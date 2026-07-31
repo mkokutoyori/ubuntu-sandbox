@@ -52,7 +52,10 @@ describe('802.1Q Phase 5 — Cisco L2 protocol tunneling (l2protocol-tunnel stp)
     expect(p.getStpAgent().isRoot()).toBe(true);
 
     // Yet the two clients see each other end-to-end, as if directly wired.
-    expect(b.getStpAgent().getRootBridge().priority).toBe(4096);
+    // 4097, not 4096: real Cisco PVST+ extended system ID folds the VLAN
+    // number (1) into the low 12 bits of the advertised bridge priority
+    // (StpAgent.extendedSystemId/cstKey — PVST+/RSTP mode keys on VLAN 1).
+    expect(b.getStpAgent().getRootBridge().priority).toBe(4097);
     expect(b.getStpAgent().getRootPort()).toBe('FastEthernet0/1');
   });
 
@@ -105,7 +108,9 @@ describe('802.1Q Phase 5 — Huawei L2 protocol tunneling (bpdu-tunnel stp enabl
     new Cable('a-p').connect(a.getPort('GigabitEthernet0/0/1')!, p.getPort('GigabitEthernet0/0/1')!);
 
     expect(p.getStpAgent().isRoot()).toBe(true);
-    expect(b.getStpAgent().getRootBridge().priority).toBe(4096);
+    // 4097: VRP's default (non-MSTP) CST also keys on 1 — same extended
+    // system ID fold as Cisco PVST+ (StpAgent.cstKey/extendedSystemId).
+    expect(b.getStpAgent().getRootBridge().priority).toBe(4097);
     expect(b.getStpAgent().getRootPort()).toBe('GigabitEthernet0/0/1');
   });
 

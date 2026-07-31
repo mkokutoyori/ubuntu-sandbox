@@ -17,7 +17,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress } from '../../../../core/types';
-import { findHostByAddress, transitTcpAclVerdict, localDeviceOf } from '../../network/HostLookup';
+import { findHostByAddress, transitTcpAclVerdict, localDeviceOf, resolveNatHairpinHost } from '../../network/HostLookup';
 import { grabBanner as grabRemoteBanner } from './ServiceBannerGrab';
 import { makeArgCompleter } from '../completionHelpers';
 
@@ -194,7 +194,18 @@ export const ncCommand: LinuxCommand = {
       }
     }
 
-    const found = findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) }, localDeviceOf(ctx));
+    let found = findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) }, localDeviceOf(ctx));
+    // `host` may be a NAT hairpin target — the public/static-NAT address of
+    // another inside host, unreachable by `findHostByAddress` because it
+    // isn't configured on any real interface. Replay the real NAT engine's
+    // DNAT+SNAT decision before giving up (see resolveNatHairpinHost's own
+    // doc comment) — `effectivePort` becomes whatever port the translation
+    // actually resolves to, which can differ from what the user typed.
+    let effectivePort = port;
+    if (!found) {
+      const hairpin = resolveNatHairpinHost(sourceIp, host, port, 'tcp', localDeviceOf(ctx));
+      if (hairpin) { found = hairpin; effectivePort = hairpin.port; }
+    }
     if (!found) {
       return `nc: getaddrinfo for host "${host}" port ${port}: Name or service not known`;
     }
@@ -202,7 +213,7 @@ export const ncCommand: LinuxCommand = {
       return `nc: connect to ${found.ip} port ${port} (tcp) failed: No route to host`;
     }
 
-    if (transitTcpAclVerdict(sourceIp, found.ip, port, new Date(), localDeviceOf(ctx)) === 'deny') {
+    if (transitTcpAclVerdict(sourceIp, found.ip, effectivePort, new Date(), localDeviceOf(ctx)) === 'deny') {
       if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`;
       return '';
     }
@@ -210,7 +221,7 @@ export const ncCommand: LinuxCommand = {
       const msg = `nc: connect to ${found.ip} port ${port} (tcp) failed: Cannot assign requested address`;
       return verbose ? msg : '';
     }
-    const outcome = ctx.net.tcpConnectOutcome(found.ip, port);
+    const outcome = ctx.net.tcpConnectOutcome(found.ip, effectivePort);
     if (outcome === 'timeout') {
       if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`;
       return '';
@@ -223,19 +234,19 @@ export const ncCommand: LinuxCommand = {
     if (zero && verbose) return `Connection to ${host} ${port} port [tcp/*] succeeded!`;
     if (zero) return '';
 
-    const banner = grabRemoteBanner(found.device, port);
+    const banner = grabRemoteBanner(found.device, effectivePort);
     if (banner) {
       const srcPort = ctx.executor.getSocketTable()?.allocateEphemeralPort()
         ?? 49152 + Math.floor(Math.random() * 16000);
-      ctx.executor.captureLog.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port });
+      ctx.executor.captureLog.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port: effectivePort });
       const bannerBytes = new TextEncoder().encode(banner);
-      ctx.executor.captureLog.captureTcpData({ ip: found.ip, port }, { ip: sourceIp, port: srcPort }, bannerBytes);
+      ctx.executor.captureLog.captureTcpData({ ip: found.ip, port: effectivePort }, { ip: sourceIp, port: srcPort }, bannerBytes);
       const remoteCap = (found.device as unknown as { executor?: { captureLog?: {
         captureTcpHandshake(src: { ip: string; port: number }, dst: { ip: string; port: number }): void;
         captureTcpData(src: { ip: string; port: number }, dst: { ip: string; port: number }, payload: Uint8Array, seq?: number, ack?: number): void;
       } } }).executor?.captureLog;
-      remoteCap?.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port });
-      remoteCap?.captureTcpData({ ip: found.ip, port }, { ip: sourceIp, port: srcPort }, bannerBytes);
+      remoteCap?.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port: effectivePort });
+      remoteCap?.captureTcpData({ ip: found.ip, port: effectivePort }, { ip: sourceIp, port: srcPort }, bannerBytes);
       const printable = banner.replace(/\r\n$/, '');
       if (verbose) return `Connection to ${host} ${port} port [tcp/*] succeeded!\n${printable}`;
       return printable;
