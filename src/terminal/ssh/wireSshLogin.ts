@@ -95,12 +95,29 @@ function tcpConnectorFor(device: Equipment): TcpConnector | null {
 }
 
 /**
- * Connect and open an interactive shell channel. Returns what happened
- * rather than printing it — the caller owns its own terminal's wording.
+ * Outcome of the connect + authenticate half, with no shell asked for.
+ * Same failure shapes as {@link WireSshLoginOutcome} minus the channel.
  */
-export async function openWireSshShell(
+export type WireSshConnectOutcome =
+  | { kind: 'connected'; session: SshSession }
+  | Exclude<WireSshLoginOutcome, { kind: 'connected' }>;
+
+/**
+ * Connect and authenticate — nothing more.
+ *
+ * This is what a caller wants when it needs the login to be *real* (a TCP
+ * handshake on the cable, the server's own auth policy, an `Accepted
+ * password` in auth.log) but is not going to drive the session through
+ * the wire afterwards. Asking for a shell channel it will never type into
+ * would make the server open a login session and spawn a `-bash` it has
+ * to SIGHUP a moment later, narrating a login and a logout in syslog for
+ * a session the user never ended — the one thing the operator reading
+ * `/var/log/syslog` must not see, because a single `ssh` is a single
+ * login.
+ */
+export async function openWireSshConnection(
   req: WireSshLoginRequest,
-): Promise<WireSshLoginOutcome> {
+): Promise<WireSshConnectOutcome> {
   const tcpConnector = tcpConnectorFor(req.device);
   if (!tcpConnector) {
     return { kind: 'unreachable', message: `ssh: connect to host ${req.host} port ${req.port}: Network is unreachable` };
@@ -154,6 +171,20 @@ export async function openWireSshShell(
     return { kind: 'rejected', message: `${req.user}@${req.host}: Permission denied (publickey,password).` };
   }
 
+  return { kind: 'connected', session };
+}
+
+/**
+ * Connect and open an interactive shell channel. Returns what happened
+ * rather than printing it — the caller owns its own terminal's wording.
+ */
+export async function openWireSshShell(
+  req: WireSshLoginRequest,
+): Promise<WireSshLoginOutcome> {
+  const outcome = await openWireSshConnection(req);
+  if (outcome.kind !== 'connected') return outcome;
+
+  const { session } = outcome;
   const channelResult = session.openShellChannel();
   if (!isOk(channelResult)) {
     session.disconnect();

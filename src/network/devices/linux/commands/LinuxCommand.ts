@@ -10,6 +10,7 @@
 
 import type { LinuxCommandContext } from './LinuxCommandContext';
 import type { PrivilegeRequirement } from '../iam/policy/CommandPrivilegePolicy';
+import type { CriticalRequirement } from '../service/CriticalFiles';
 
 /**
  * Declarative specification of a single command-line option / flag.
@@ -98,6 +99,33 @@ export interface LinuxCommand {
    * single-line pipe as a filename.
    */
   readonly readsStdin?: boolean;
+
+  // ─── Files this command needs to exist ──────────────────────────
+
+  /**
+   * Where this command's executable lives on disk. Defaults to the shared
+   * `STANDARD_BIN_PATHS` table (`/bin/ls`, `/usr/bin/ssh`, …) and only
+   * needs setting for a command whose path is not in it.
+   *
+   * Declaring it is what makes `rm /bin/ls` mean something: the path is
+   * seeded into the VFS at boot, so its later absence is necessarily a
+   * deletion the user performed, and the dispatcher can answer
+   * `bash: /bin/ls: No such file or directory` with exit 127 exactly like
+   * a real shell (docs/PRD-Pannes.md §F7.7).
+   */
+  readonly binaryPath?: string;
+
+  /**
+   * Files, other than the executable itself, without which this command
+   * cannot work — the equivalent of a service's hard dependencies
+   * (docs/PRD-Pannes.md §6.2). `sudo` without `/etc/sudoers` is the
+   * canonical case: the binary is fine, the policy it needs is gone, and
+   * real sudo answers `sudo: /etc/sudoers is required`.
+   *
+   * Checked before `run()`, so the command never has to defend itself
+   * against a missing file it declared.
+   */
+  readonly criticalFiles?: readonly CriticalRequirement[];
 
   // ─── Documentation ──────────────────────────────────────────────
 

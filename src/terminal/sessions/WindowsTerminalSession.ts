@@ -39,7 +39,7 @@ import {
 } from '@/network/devices/windows/WinPathping';
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
-import { openWireSshShell, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import { openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -1177,11 +1177,22 @@ export class WindowsTerminalSession extends TerminalSession {
     // session (auth.log, tcpdump) instead of nothing at all, then hand the
     // interactive experience to the existing in-memory child session — the
     // real wire session has served its purpose (proving reachability and
-    // producing a real accept/auth log entry) and is torn down immediately
-    // rather than kept as the transport, since the child-session machinery
-    // below (tab completion, editors, nested-ssh, foreground streaming)
-    // isn't yet ported onto the wire shell channel for every vendor.
-    const outcome = await openWireSshShell({
+    // producing a real accept/auth log entry) while the interactive
+    // experience is served by the in-memory child session below, since
+    // the child-session machinery (tab completion, editors, nested-ssh,
+    // foreground streaming) isn't yet ported onto the wire shell channel
+    // for every vendor.
+    //
+    // Two things this must NOT do, both because a single `ssh` is a
+    // single login and the remote's `/var/log/syslog` is read by the
+    // learner:
+    //   - ask for a shell channel it will never type into (the server
+    //     would open a login session and SIGHUP the `-bash` it spawned
+    //     a moment later),
+    //   - hang the connection up before the user logs out (the server
+    //     would narrate a disconnect for a session still on screen).
+    // So: connection only, held open for as long as the child lives.
+    const outcome = await openWireSshConnection({
       device: this.device,
       localUser: pending.localUser,
       user: pending.user,
@@ -1194,10 +1205,11 @@ export class WindowsTerminalSession extends TerminalSession {
       // saves); matches the manual known_hosts write this replaced.
       strict: 'accept-new',
     });
-    if (outcome.kind === 'connected') outcome.session.disconnect();
+    const wire = outcome.kind === 'connected' ? outcome.session : null;
 
     const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
     if (child) {
+      if (wire) child.registerTearDown(() => wire.disconnect());
       const clientIp = this.firstLocalIp() ?? '0.0.0.0';
       const serverIp = firstConfiguredIp(pending.device) ?? pending.host;
       const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
@@ -1205,6 +1217,10 @@ export class WindowsTerminalSession extends TerminalSession {
         SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
         SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
       }, { quiet: pending.quiet });
+    } else {
+      // Nothing to attach the connection's lifetime to — let it go now
+      // rather than leak a socket the user can never close.
+      wire?.disconnect();
     }
     this.notify();
   }

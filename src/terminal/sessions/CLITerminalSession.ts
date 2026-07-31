@@ -32,7 +32,7 @@ import type { TelnetInteractiveSubShell } from '@/terminal/subshells/TelnetInter
 import { createSessionForDevice } from './sessionFactory';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { IPAddress } from '@/network/core/types';
-import { openWireSshShell, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import { openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 
 /** Default pager page size — matches Cisco/Huawei `terminal length 24`. */
@@ -524,13 +524,17 @@ export abstract class CLITerminalSession extends TerminalSession {
           // they belong to so the remote sees a genuine TCP+SSH session
           // (auth.log, tcpdump) instead of nothing at all, then hand the
           // interactive experience to the existing in-memory child
-          // session: the real wire session has served its purpose
-          // (proving reachability and producing a real accept/auth log
-          // entry) and is torn down immediately rather than kept as the
-          // transport, since the child-session machinery below (tab
+          // session, since the child-session machinery below (tab
           // completion, nested-ssh, foreground streaming) isn't yet
           // ported onto the wire shell channel for every vendor.
-          const outcome = await openWireSshShell({
+          //
+          // Two things this must NOT do, both because a single `ssh` is
+          // a single login and the remote's log is read by the learner:
+          // ask for a shell channel it will never type into (the server
+          // would open a login session and hang up the shell it spawned
+          // a moment later), or close the connection before the user
+          // logs out. So: connection only, held for the child's life.
+          const outcome = await openWireSshConnection({
             device: this.device,
             localUser: user,
             user, host, port,
@@ -541,10 +545,11 @@ export abstract class CLITerminalSession extends TerminalSession {
             // but never saves).
             strict: 'accept-new',
           });
-          if (outcome.kind === 'connected') outcome.session.disconnect();
+          const wire = outcome.kind === 'connected' ? outcome.session : null;
 
           const child = createSessionForDevice(remoteDevice, `${this.id}>ssh`);
-          if (!child) return;
+          if (!child) { wire?.disconnect(); return; }
+          if (wire) child.registerTearDown(() => wire.disconnect());
           const clientPort = 50_000 + (user.length * 7 % 10_000);
           const serverIp = firstConfiguredIp(remoteDevice) ?? host;
           this.adoptRemoteChild(child, user, host, {

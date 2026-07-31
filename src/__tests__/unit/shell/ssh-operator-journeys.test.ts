@@ -224,7 +224,19 @@ describe('SSH operator journeys — multi-step end-to-end scenarios', () => {
     await linuxSrv.executeCommand('systemctl reload ssh');
     await winSshLogin(t, 'ssh carl@10.0.0.3', 'carl');
     expectAnyLine(t, /Permission denied/);
+
+    // Deleting the config is NOT how you get the defaults back: sshd
+    // reads that file at start-up, so its absence is a start-up failure,
+    // not an empty ruleset (docs/PRD-Pannes.md §F7.1). The reload is
+    // refused and carl stays locked out.
     await linuxSrv.executeCommand('rm /etc/ssh/sshd_config');
+    const reload = await linuxSrv.executeCommand('systemctl reload ssh');
+    expect(reload).toMatch(/No such file or directory/);
+    await winSshLogin(t, 'ssh carl@10.0.0.3', 'carl');
+    expect(t.getPrompt()).not.toMatch(/carl@linuxSrv/);
+
+    // Writing a clean config is what actually reverses the incident.
+    await linuxSrv.executeCommand("sh -c 'echo \"PermitRootLogin prohibit-password\" > /etc/ssh/sshd_config'");
     await linuxSrv.executeCommand('systemctl reload ssh');
     await winSshLogin(t, 'ssh carl@10.0.0.3', 'carl');
     expect(t.getPrompt()).toMatch(/carl@linuxSrv/);

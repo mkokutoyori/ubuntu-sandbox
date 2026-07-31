@@ -136,6 +136,7 @@ import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerCon
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
 import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
+import { checkSshdCriticalFiles } from './linux/service/CriticalFiles';
 import { SshSessionTable } from './linux/network/SshSessionTable';
 import { renderWho } from './linux/network/whoFormatter';
 import { renderW } from './linux/network/wFormatter';
@@ -1955,6 +1956,13 @@ export abstract class LinuxMachine extends EndHost
     // systemd's ExecReload tests the config (`sshd -t`) before applying it:
     // register that pre-check so a malformed sshd_config aborts the reload.
     this.executor.serviceMgr.registerConfigCheck('ssh', () => {
+      // Existence comes first, and it is NOT the same question as content.
+      // Every reader of sshd_config does `?? ''`, so a deleted file used to
+      // validate as an empty one — which is legal — and sshd started on
+      // defaults as if nothing had happened (docs/PRD-Pannes.md §F7.1).
+      const files = checkSshdCriticalFiles(this.executor.vfs);
+      if (!files.ok) return files;
+
       const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
       const verdict = validateSshdConfig(raw);
       return verdict.ok

@@ -185,7 +185,12 @@ describe('SSH edge cases — redirection, pipes, banners, output formatting', ()
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     const fs = (winA as unknown as { fs: { readFile: (p: string) => { ok: boolean; content?: string } } }).fs;
-    const kh = fs.readFile('C:\\Users\\alice\\.ssh\\known_hosts');
+    // known_hosts belongs to the account running the CLIENT, not to the
+    // remote account being logged into: it records which host keys THIS
+    // machine's user has accepted. `ssh alice@…` from a box logged in as
+    // `User` therefore writes `C:\Users\User\.ssh\known_hosts`.
+    const localUser = (winA as unknown as { userMgr: { currentUser: string } }).userMgr.currentUser;
+    const kh = fs.readFile(`C:\\Users\\${localUser}\\.ssh\\known_hosts`);
     expect(kh.ok).toBe(true);
     expect(kh.content ?? '').toMatch(/10\.0\.0\.3/);
   });

@@ -9,7 +9,10 @@ import { loadSudoPolicy, type SudoActor } from './iam/SudoPolicyEngine';
 export interface SudoAuthorization {
   allowed: boolean;
   nopasswd: boolean;
-  reason: 'ok' | 'not-in-sudoers' | 'command-not-allowed' | 'unknown-target-user';
+  reason: 'ok' | 'not-in-sudoers' | 'command-not-allowed' | 'unknown-target-user'
+    /** `/etc/sudoers` itself is gone — a different failure from being
+     *  absent FROM it, and real sudo words it differently. */
+    | 'sudoers-missing';
   invokingUser: string;
   runasUser: string;
   hostname: string;
@@ -86,6 +89,9 @@ import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
 import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
 import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
+import {
+  STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
+} from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
@@ -1748,6 +1754,11 @@ export class LinuxCommandExecutor {
     const hostIps = this.getHostIps();
     const actor = this.sudoActor(invokingUser);
     const load = loadSudoPolicy(this.vfs);
+    // No policy file at all is not the same as "you are not in it": sudo
+    // cannot even decide, and says so (docs/PRD-Pannes.md §F7.5).
+    if (!this.vfs.exists('/etc/sudoers')) {
+      return { allowed: false, nopasswd: false, reason: 'sudoers-missing', invokingUser, runasUser, hostname };
+    }
     if (!load.ok || !load.engine || !load.engine.hasAnyAccess(actor, hostname, hostIps)) {
       return { allowed: false, nopasswd: false, reason: 'not-in-sudoers', invokingUser, runasUser, hostname, logfile: load.engine?.defaults.logfile };
     }
@@ -3023,6 +3034,14 @@ export class LinuxCommandExecutor {
     const cmd = argv[0];
     const args = argv.slice(1);
 
+    // Can this command run at all? A shipped binary the user has deleted
+    // makes the shell fail to exec it (127), and a command whose data file
+    // is gone refuses to work (1) — both with the real tool's own wording
+    // (docs/PRD-Pannes.md §F7.7). Only binaries the image really ships are
+    // judged, so this can never fire for a name that was never on disk.
+    const missing = checkCommandDependencies(this.vfs, cmd);
+    if (missing) return { output: missing.message, exitCode: missing.exitCode };
+
     if (cmd === 'wait')   return { output: this.handleWait(args), exitCode: 0 };
     if (cmd === 'jobs')   return { output: cmdJobs(args, this.jobsCmdContext()).output, exitCode: 0 };
     if (cmd === 'bg')     return { output: cmdBg(args, this.jobsCmdContext()).output, exitCode: 0 };
@@ -3065,6 +3084,13 @@ export class LinuxCommandExecutor {
 
       if (auth.reason === 'unknown-target-user') {
         return { output: `sudo: unknown user: ${sudoTargetUser}`, exitCode: 1 };
+      }
+      if (auth.reason === 'sudoers-missing') {
+        // Nothing is audited here: with no policy file sudo refuses before
+        // it has any notion of who may do what — and rsyslog is likely
+        // just as unreachable. This is also the moment a lab becomes
+        // unrecoverable without root, which is the lesson.
+        return { output: 'sudo: /etc/sudoers is required', exitCode: 1 };
       }
       if (auth.reason === 'not-in-sudoers') {
         // Real sudo audits the refusal too — `sudo: <u> : user NOT in
@@ -3519,6 +3545,16 @@ export class LinuxCommandExecutor {
   }
 
   private seedSetuidBinaries(): void {
+    // Every shipped binary is laid down first, so that a path missing later
+    // can only mean the user deleted it — that is what makes `rm /bin/ls`
+    // answerable at all (docs/PRD-Pannes.md §F7.7). Without this step a
+    // presence check would fire for paths the image never provisioned.
+    for (const declared of Object.values(STANDARD_BIN_PATHS)) {
+      const path = canonicalBinPath(declared);
+      if (!this.vfs.exists(path)) {
+        this.vfs.writeFile(path, '#!/bin/sh\n', 0, 0, 0o022);
+      }
+    }
     for (const name of SETUID_ROOT_BINARIES) {
       const path = resolveExePath(name);
       if (!this.vfs.exists(path)) {
@@ -7042,33 +7078,6 @@ function niceWrappedCommand(argv: string[]): string[] | null {
  * (optionally surrounded by whitespace) in the range 000..0777. Returns
  * the numeric mask, or null when the value is not a valid umask.
  */
-const STANDARD_BIN_PATHS: Record<string, string> = {
-  bash: '/bin/bash', sh: '/bin/sh', echo: '/bin/echo', cat: '/bin/cat',
-  ls: '/bin/ls', cp: '/bin/cp', mv: '/bin/mv', rm: '/bin/rm', touch: '/bin/touch',
-  mkdir: '/bin/mkdir', rmdir: '/bin/rmdir', ln: '/bin/ln', chmod: '/bin/chmod',
-  chown: '/bin/chown', chgrp: '/bin/chgrp', su: '/bin/su', sudo: '/usr/bin/sudo',
-  whoami: '/usr/bin/whoami', head: '/usr/bin/head', tail: '/usr/bin/tail',
-  grep: '/bin/grep', sed: '/bin/sed', awk: '/usr/bin/awk', sort: '/usr/bin/sort',
-  uniq: '/usr/bin/uniq', wc: '/usr/bin/wc', cut: '/usr/bin/cut', tr: '/usr/bin/tr',
-  date: '/bin/date', uname: '/bin/uname', hostname: '/bin/hostname',
-  ps: '/bin/ps', kill: '/bin/kill', tee: '/usr/bin/tee', find: '/usr/bin/find',
-  xargs: '/usr/bin/xargs', tar: '/bin/tar', gzip: '/bin/gzip', curl: '/usr/bin/curl',
-  wget: '/usr/bin/wget', ping: '/bin/ping', ssh: '/usr/bin/ssh', scp: '/usr/bin/scp',
-  sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
-  netstat: '/bin/netstat', ss: '/usr/sbin/ss', iptables: '/usr/sbin/iptables',
-  passwd: '/usr/bin/passwd', useradd: '/usr/sbin/useradd', userdel: '/usr/sbin/userdel',
-  usermod: '/usr/sbin/usermod', groupadd: '/usr/sbin/groupadd',
-  systemctl: '/bin/systemctl', service: '/usr/sbin/service',
-  crontab: '/usr/bin/crontab', 'run-parts': '/bin/run-parts',
-  auditctl: '/sbin/auditctl', ausearch: '/sbin/ausearch', aureport: '/sbin/aureport',
-  reboot: '/sbin/reboot', shutdown: '/sbin/shutdown', logger: '/usr/bin/logger',
-  journalctl: '/bin/journalctl', dmesg: '/bin/dmesg', logrotate: '/usr/sbin/logrotate',
-};
-
-function resolveExePath(name: string): string {
-  return STANDARD_BIN_PATHS[name] ?? `/usr/bin/${name}`;
-}
-
 function extractCommandHead(input: string): string | null {
   let s = input.trimStart();
   while (/^[A-Za-z_][A-Za-z_0-9]*=/.test(s)) {
