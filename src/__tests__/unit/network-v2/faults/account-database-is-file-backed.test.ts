@@ -139,6 +139,25 @@ describe('editing /etc/shadow changes authentication', () => {
     expect(mgr.checkPassword('bob', 'secret')).toBe(false);
   });
 
+  it('root\'s own secret round-trips through the file like anyone else\'s', async () => {
+    const d = await box();
+    const mgr = (d as unknown as {
+      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+    }).executor.userMgr;
+
+    // root used to be the one account the file could not describe: its
+    // password lived only in memory while `/etc/shadow` carried a bare `x`,
+    // so the very first reload lost it. If the files are the store, root
+    // has to be in them too.
+    expect(await run(d, 'grep "^root:" /etc/shadow')).toContain('$6$simulated$admin');
+    expect(mgr.checkPassword('root', 'admin')).toBe(true);
+
+    await run(d, `sed -i 's|^root:[^:]*:|root:$6$simulated$autre:|' /etc/shadow`);
+
+    expect(mgr.checkPassword('root', 'admin')).toBe(false);
+    expect(mgr.checkPassword('root', 'autre')).toBe(true);
+  });
+
   it('an account with no shadow line still exists — it just has no password', async () => {
     const d = await box();
 

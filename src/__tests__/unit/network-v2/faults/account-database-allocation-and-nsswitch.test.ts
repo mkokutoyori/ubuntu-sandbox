@@ -34,6 +34,16 @@ async function box(): Promise<LinuxPC> {
 const run = (d: LinuxPC, cmd: string) => d.executeCommand(cmd);
 const uidOf = (out: string): number => Number(/uid=(\d+)/.exec(out)?.[1] ?? -1);
 
+/** The manager itself — the model `su` and every permission check consult. */
+const mgrOf = (d: LinuxPC) => (d as unknown as {
+  executor: {
+    userMgr: {
+      getUser(u: string): { shell: string; uid: number } | undefined;
+      checkPassword(u: string, p: string): boolean;
+    };
+  };
+}).executor.userMgr;
+
 describe('id allocation reads the live database', () => {
   it('a uid added to /etc/passwd by hand pushes the next allocation past it', async () => {
     const d = await box();
@@ -235,6 +245,64 @@ describe('/etc/nsswitch.conf governs the account model', () => {
 
     expect(await run(d, 'getent group root')).toContain('root:x:0:');
     expect(await run(d, 'getent group sudo')).not.toContain('sudo:');
+  });
+
+  it('`[NOTFOUND=return]` cuts the chain for a name the file does not have', async () => {
+    const d = await box();
+    // The file stays in place; only the `root` LINE goes. That is a
+    // NOTFOUND for that name, not an unavailable source.
+    await run(d, `sed -i '/^root:/d' /etc/passwd`);
+    await run(d, `sed -i 's|^passwd:.*|passwd:         files [NOTFOUND=return] systemd|' /etc/nsswitch.conf`);
+
+    // Without the action, systemd would have synthesised root. The action
+    // says "files had its say, stop here" — so nothing does.
+    expect(mgrOf(d).getUser('root')).toBeUndefined();
+  });
+
+  it('but a MISSING file is UNAVAIL, not NOTFOUND — so the chain continues', async () => {
+    const d = await box();
+    await run(d, `sed -i 's|^passwd:.*|passwd:         files [NOTFOUND=return] systemd|' /etc/nsswitch.conf`);
+
+    await run(d, 'rm /etc/passwd');
+
+    // This is the distinction that actually bites. `files` never got as far
+    // as "not found" — it could not answer at all — so `NOTFOUND=return`
+    // never fires and nss-systemd still rescues root. Collapsing the two
+    // statuses would lock this machine out for good.
+    expect(mgrOf(d).getUser('root')?.uid).toBe(0);
+  });
+
+  it('`[UNAVAIL=return]` does stop the chain when the file is gone', async () => {
+    const d = await box();
+    await run(d, `sed -i 's|^passwd:.*|passwd:         files [UNAVAIL=return] systemd|' /etc/nsswitch.conf`);
+
+    await run(d, 'rm /etc/passwd');
+
+    // Same deletion, the matching action this time: now nothing rescues it.
+    expect(mgrOf(d).getUser('root')).toBeUndefined();
+  });
+
+  it('`[SUCCESS=continue]` lets a later source override an earlier answer', async () => {
+    const d = await box();
+    expect(mgrOf(d).getUser('root')?.shell).toBe('/bin/bash');
+
+    await run(d, `sed -i 's|^passwd:.*|passwd:         files [SUCCESS=continue] systemd|' /etc/nsswitch.conf`);
+
+    // Default SUCCESS=return freezes the file's answer; `continue` keeps
+    // walking and the last source to answer wins — so the synthetic record
+    // (/bin/sh) replaces the file's (/bin/bash).
+    expect(mgrOf(d).getUser('root')?.shell).toBe('/bin/sh');
+  });
+
+  it('an unknown source in the chain is skipped, not fatal', async () => {
+    const d = await box();
+
+    await run(d, `sed -i 's|^passwd:.*|passwd:         ldap files|' /etc/nsswitch.conf`);
+
+    // A source this build has no module for simply cannot answer; the rest
+    // of the line still works, which is what stops a stray entry from
+    // taking the machine down.
+    expect(await run(d, 'id bob')).toContain('(bob)');
   });
 
   it('an absent nsswitch.conf falls back to the built-in default', async () => {

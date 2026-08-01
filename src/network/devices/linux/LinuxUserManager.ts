@@ -28,8 +28,11 @@ import { LoginDefs } from './iam/fs/LoginDefs';
 import { UseraddDefaults } from './iam/fs/UseraddDefaults';
 import { IamFilesystem } from './iam/fs/IamFilesystem';
 import { IAM_PATHS } from './iam/fs/IamPaths';
-import { parseAccountDatabase } from './iam/fs/AccountDatabaseParser';
-import { parseNsswitchConf, sourcesFor, DEFAULT_NSSWITCH_CONF } from './nss/NssConfig';
+import { parseAccountDatabase, SIMULATED_HASH_PREFIX } from './iam/fs/AccountDatabaseParser';
+import {
+  parseNsswitchConf, sourcesFor, effectiveAction, DEFAULT_NSSWITCH_CONF,
+} from './nss/NssConfig';
+import type { NssSourceSpec } from './nss/types';
 import { SYNTH_PASSWD, SYNTH_GROUP } from './nss/SystemdNssSource';
 import { PasswordPolicy } from './iam/policy/PasswordPolicy';
 import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
@@ -146,9 +149,14 @@ export class LinuxUserManager {
 
   private initDefaults(): void {
     // System users
+    // root's secret is written in the SAME shape `passwd` uses, so it
+    // round-trips through `/etc/shadow` like any other account's. Storing
+    // it only in memory (with a bare `x` on disk) made root the one account
+    // the file could not describe — and it silently lost its password the
+    // moment anything re-read the database.
     this.addUser(new LinuxUserAccount({
       username: 'root', uid: 0, gid: 0, gecos: 'root', home: '/root', shell: '/bin/bash',
-      password: 'x', locked: false, systemAccount: true,
+      password: `${SIMULATED_HASH_PREFIX}admin`, locked: false, systemAccount: true,
     }));
     this.passwords.set('root', 'admin');
     this.addUser(new LinuxUserAccount({
@@ -272,105 +280,139 @@ export class LinuxUserManager {
   // pays one string compare per lookup and never re-parses.
 
   /**
-   * Is the `files` source enabled for this database in
-   * `/etc/nsswitch.conf`?
+   * The source list nsswitch declares for a database, actions included.
    *
-   * nsswitch decides which sources answer a lookup, and it governs the
-   * whole C library — `id`, `su`, every permission check — not just
-   * `getent`. Dropping `files` from the `passwd:` line therefore makes the
-   * accounts stop resolving even though `/etc/passwd` is perfectly intact,
-   * which is exactly the confusing failure the file exists to cause, and
-   * one that only makes sense if this manager honours it too.
-   *
-   * `compat` counts: it is the historical spelling that also reads the
-   * files. An absent nsswitch.conf falls back to glibc's built-in default,
-   * which includes `files` — a missing file does not disable name
-   * resolution.
+   * nsswitch governs the whole C library — `id`, `su`, every permission
+   * check — not just `getent`, so this manager has to walk the same chain.
+   * An absent nsswitch.conf falls back to glibc's compiled-in default,
+   * which lists `files`: a missing file does not disable name resolution.
    */
-  private nssSources(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): string[] {
+  private nssSpecs(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): NssSourceSpec[] {
     const conf = this.vfs.readFile(IAM_PATHS.nsswitchConf) ?? DEFAULT_NSSWITCH_CONF;
-    return sourcesFor(parseNsswitchConf(conf), database).map((src) => src.name);
+    return sourcesFor(parseNsswitchConf(conf), database);
+  }
+
+  /** `compat` is the historical spelling that also reads the files. */
+  private static isFilesSource(name: string): boolean {
+    return name === 'files' || name === 'compat';
   }
 
   private filesSourceEnabled(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): boolean {
-    return this.nssSources(database)
-      .some((name) => name === 'files' || name === 'compat');
+    return this.nssSpecs(database).some((s) => LinuxUserManager.isFilesSource(s.name));
   }
 
   /**
-   * Add what the sources AFTER `files` contribute.
+   * Walk a database's nsswitch chain, honouring the status actions.
    *
-   * glibc does not stop at the first source: NOTFOUND continues down the
-   * line, so `passwd: files systemd` means "the file, then whatever systemd
-   * knows". Honouring only the `files` entry made `passwd: systemd` a
-   * machine with no root at all — whereas nss-systemd(8) exists precisely
-   * so that root and nobody survive a corrupt or missing `/etc/passwd`.
+   * glibc neither stops at the first source nor blindly runs them all:
+   * each source's outcome is looked up in that source's own action table
+   * (`[NOTFOUND=return]`, `[SUCCESS=continue]`, …) and the answer decides
+   * whether the chain carries on. Defaults are SUCCESS=return,
+   * NOTFOUND=continue, UNAVAIL=continue, TRYAGAIN=continue.
    *
-   * A name already found earlier is never overwritten, which also matches
-   * nss-systemd's own rule: it synthesises those two only when they are not
-   * defined by other means, so the `/etc/passwd` entry always wins.
+   * The distinction that actually bites is UNAVAIL vs NOTFOUND, and it is
+   * why `entriesFrom` returns null rather than an empty map for a source
+   * that cannot answer at all: a MISSING `/etc/passwd` makes the files
+   * source UNAVAILABLE, whereas a present file that simply lacks the name
+   * is NOTFOUND. So `passwd: files [NOTFOUND=return] systemd` still lets
+   * systemd synthesise root once the file has been deleted — the
+   * `NOTFOUND=return` never fires, because files never got as far as "not
+   * found". Collapsing the two would lock that machine out for good.
+   *
+   * @param entriesFrom what a source provides, or null when it cannot answer.
+   * @param merge       how to combine two answers for the same name, for
+   *                    the `[SUCCESS=merge]` action.
    */
-  private applyNssChain(
-    users: Map<string, LinuxUserAccount>,
-    groups: Map<string, LinuxGroup>,
-  ): void {
-    for (const source of this.nssSources('passwd')) {
-      if (source !== 'systemd') continue;
-      for (const entry of Object.values(SYNTH_PASSWD)) {
-        if (users.has(entry.name)) continue;
-        users.set(entry.name, new LinuxUserAccount({
-          username: entry.name,
-          uid: entry.uid,
-          gid: entry.gid,
-          gecos: entry.gecos,
-          home: entry.dir,
-          shell: entry.shell,
-          // Synthesised, never authenticated against: these records carry no
-          // secret, so `su root` on a machine with no /etc/shadow still
-          // fails even though `id root` answers.
-          password: '*',
-          locked: true,
-          systemAccount: true,
-        }));
+  private walkNssChain<T>(
+    database: 'passwd' | 'group',
+    entriesFrom: (source: string) => Map<string, T> | null,
+    merge?: (existing: T, incoming: T) => T,
+  ): Map<string, T> {
+    const out = new Map<string, T>();
+    // Names an earlier source settled with SUCCESS=return — never revisited.
+    const settled = new Set<string>();
+
+    for (const spec of this.nssSpecs(database)) {
+      const provided = entriesFrom(spec.name);
+      if (provided === null) {
+        if (effectiveAction(spec, 'UNAVAIL') === 'return') break;
+        continue;
       }
-    }
-    for (const source of this.nssSources('group')) {
-      if (source !== 'systemd') continue;
-      for (const entry of Object.values(SYNTH_GROUP)) {
-        if (groups.has(entry.name)) continue;
-        groups.set(entry.name, new LinuxGroup({
-          name: entry.name, gid: entry.gid, systemGroup: true,
-        }));
+
+      const onSuccess = effectiveAction(spec, 'SUCCESS');
+      for (const [name, entry] of provided) {
+        if (settled.has(name)) continue;
+        const existing = out.get(name);
+        // `merge` combines this answer with what is already collected —
+        // glibc implements it for the group database, where it unions the
+        // member lists. Without a merger it degrades to `continue`.
+        out.set(name, existing !== undefined && merge && onSuccess === 'merge'
+          ? merge(existing, entry)
+          : entry);
+        // `return` (the default) freezes the answer; `continue`/`merge`
+        // let a later source contribute, glibc's last-wins behaviour.
+        if (onSuccess === 'return') settled.add(name);
       }
+
+      // Every name this source did NOT carry is a NOTFOUND for that name;
+      // `return` ends the chain, so nothing further can answer for them.
+      if (effectiveAction(spec, 'NOTFOUND') === 'return') break;
     }
+    return out;
+  }
+
+  /** The accounts nss-systemd(8) synthesises, as live account objects. */
+  private static systemdUsers(): Map<string, LinuxUserAccount> {
+    const out = new Map<string, LinuxUserAccount>();
+    for (const e of Object.values(SYNTH_PASSWD)) {
+      out.set(e.name, new LinuxUserAccount({
+        username: e.name, uid: e.uid, gid: e.gid, gecos: e.gecos,
+        home: e.dir, shell: e.shell,
+        // Synthesised, never authenticated against: these records carry no
+        // secret, so `id root` answers on a machine with no /etc/passwd
+        // while `su root` still fails.
+        password: '*', locked: true, systemAccount: true,
+      }));
+    }
+    return out;
+  }
+
+  private static systemdGroups(): Map<string, LinuxGroup> {
+    const out = new Map<string, LinuxGroup>();
+    for (const e of Object.values(SYNTH_GROUP)) {
+      out.set(e.name, new LinuxGroup({ name: e.name, gid: e.gid, systemGroup: true }));
+    }
+    return out;
   }
 
   /**
-   * Text of the four files as the name service is allowed to see it — so a
-   * database whose `files` source is switched off reads as empty, however
-   * intact the file on disk is.
+   * The four files exactly as they sit on disk — no nsswitch filtering.
+   * `null` means the file is absent, which the chain reads as UNAVAIL for
+   * the `files` source, distinct from a present-but-silent file.
    */
-  private accountDbText(): { passwd: string; shadow: string; group: string; gshadow: string } {
-    const read = (path: string, db: 'passwd' | 'group' | 'shadow' | 'gshadow'): string =>
-      this.filesSourceEnabled(db) ? this.vfs.readFile(path) ?? '' : '';
+  private accountDbText(): {
+    passwd: string | null; shadow: string | null; group: string | null; gshadow: string | null;
+  } {
     return {
-      passwd: read(IAM_PATHS.passwd, 'passwd'),
-      shadow: read(IAM_PATHS.shadow, 'shadow'),
-      group: read(IAM_PATHS.group, 'group'),
-      gshadow: read(IAM_PATHS.gshadow, 'gshadow'),
+      passwd: this.vfs.readFile(IAM_PATHS.passwd),
+      shadow: this.vfs.readFile(IAM_PATHS.shadow),
+      group: this.vfs.readFile(IAM_PATHS.group),
+      gshadow: this.vfs.readFile(IAM_PATHS.gshadow),
     };
   }
 
-  private static stamp(t: { passwd: string; shadow: string; group: string; gshadow: string }): string {
-    return `${t.passwd}\u0000${t.shadow}\u0000${t.group}\u0000${t.gshadow}`;
-  }
-
   /**
-   * `syncToFilesystem` writes the files unconditionally, so it must stamp
-   * what a READ would see — otherwise, with `files` switched off for a
-   * database, the write's own stamp would never match the (empty) view and
-   * every subsequent lookup would re-parse.
+   * What the cache is keyed on. `/etc/nsswitch.conf` is part of it because
+   * it decides which of the files above are consulted at all — editing it
+   * has to invalidate the cache just as editing `/etc/passwd` does.
    */
+  private currentStamp(): string {
+    const t = this.accountDbText();
+    const nss = this.vfs.readFile(IAM_PATHS.nsswitchConf);
+    return [t.passwd, t.shadow, t.group, t.gshadow, nss]
+      .map((v) => (v === null ? '\u0001' : v))
+      .join('\u0000');
+  }
 
   /** Content of the database as this manager last wrote or read it. */
   private lastKnownStamp: string | null = null;
@@ -384,25 +426,54 @@ export class LinuxUserManager {
    */
   private reloadIfChanged(): void {
     if (this.reloading) return;
-    const text = this.accountDbText();
-    const stamp = LinuxUserManager.stamp(text);
+    const stamp = this.currentStamp();
     if (stamp === this.lastKnownStamp) return;
 
     this.reloading = true;
     try {
-      const parsed = parseAccountDatabase(text, {
+      const text = this.accountDbText();
+      // The shadow secrets are only readable when the `shadow:` chain
+      // still names the files source; otherwise PAM has nothing to compare
+      // against, exactly as when the file itself is gone.
+      const parsed = parseAccountDatabase({
+        passwd: text.passwd ?? '',
+        shadow: this.filesSourceEnabled('shadow') ? text.shadow ?? '' : '',
+        group: text.group ?? '',
+        gshadow: text.gshadow ?? '',
+      }, {
         users: [...this.users.values()],
         groups: [...this.groups.values()],
       });
-      const users = new Map(parsed.users.map((u) => [u.username, u]));
-      const groups = new Map(parsed.groups.map((g) => [g.name, g]));
-      this.applyNssChain(users, groups);
-      this.users = users;
-      this.groups = groups;
+      const fromFiles = {
+        users: new Map(parsed.users.map((u) => [u.username, u])),
+        groups: new Map(parsed.groups.map((g) => [g.name, g])),
+      };
+
+      this.users = this.walkNssChain('passwd', (source) => {
+        if (LinuxUserManager.isFilesSource(source)) {
+          return text.passwd === null ? null : fromFiles.users;
+        }
+        return source === 'systemd' ? LinuxUserManager.systemdUsers() : null;
+      });
+      this.groups = this.walkNssChain('group', (source) => {
+        if (LinuxUserManager.isFilesSource(source)) {
+          return text.group === null ? null : fromFiles.groups;
+        }
+        return source === 'systemd' ? LinuxUserManager.systemdGroups() : null;
+      }, (existing, incoming) => {
+        // `[SUCCESS=merge]` on the group database unions the member lists,
+        // which is the one thing glibc implements it for.
+        existing.setMembers([...new Set([...existing.members, ...incoming.members])]);
+        return existing;
+      });
+
       // Only accounts whose stored secret still yields a cleartext keep a
       // usable password. A hand-edited hash therefore stops authenticating,
-      // which is the real consequence of editing one.
-      this.passwords = parsed.cleartext;
+      // which is the real consequence of editing one. A name the chain did
+      // not keep cannot authenticate either.
+      this.passwords = new Map(
+        [...parsed.cleartext].filter(([name]) => this.users.has(name)),
+      );
       this.lastKnownStamp = stamp;
     } finally {
       this.reloading = false;
@@ -1494,7 +1565,7 @@ export class LinuxUserManager {
     );
     // Record what we just wrote, so the next read does not mistake our own
     // projection for an operator's edit and re-parse it needlessly.
-    this.lastKnownStamp = LinuxUserManager.stamp(this.accountDbText());
+    this.lastKnownStamp = this.currentStamp();
   }
 }
 
