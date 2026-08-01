@@ -29,6 +29,7 @@ import { UseraddDefaults } from './iam/fs/UseraddDefaults';
 import { IamFilesystem } from './iam/fs/IamFilesystem';
 import { IAM_PATHS } from './iam/fs/IamPaths';
 import { parseAccountDatabase } from './iam/fs/AccountDatabaseParser';
+import { parseNsswitchConf, sourcesFor, DEFAULT_NSSWITCH_CONF } from './nss/NssConfig';
 import { PasswordPolicy } from './iam/policy/PasswordPolicy';
 import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
 import type { PasswordAgingPolicyInit } from './iam/policy/PasswordAgingPolicy';
@@ -85,11 +86,6 @@ export class LinuxUserManager {
   private groups: Map<string, LinuxGroup> = new Map();
   /** Plaintext password store for simulation (username → password) */
   private passwords: Map<string, string> = new Map();
-  /** UID/GID allocation cursors — seeded from the {@link LoginDefs} policy. */
-  private nextUid: number;
-  private nextGid: number;
-  private nextSystemUid: number;
-  private nextSystemGid: number;
   currentUser = 'root';
   currentUid = 0;
   currentGid = 0;
@@ -116,10 +112,6 @@ export class LinuxUserManager {
     this.useraddDefaults = UseraddDefaults.defaults();
     this.iamFs = new IamFilesystem(vfs);
     this.passwordPolicy = PasswordPolicy.defaults();
-    this.nextUid = this.loginDefs.uidMin;
-    this.nextGid = this.loginDefs.gidMin;
-    this.nextSystemUid = this.loginDefs.sysUidMin;
-    this.nextSystemGid = this.loginDefs.sysGidMin;
     this.initDefaults();
   }
 
@@ -190,15 +182,59 @@ export class LinuxUserManager {
 
   private addUser(u: LinuxUserAccount): void {
     this.users.set(u.username, u);
-    if (u.uid >= this.nextUid && u.uid < 65534) this.nextUid = u.uid + 1;
   }
 
   private addGroup(g: LinuxGroup): void {
     this.groups.set(g.name, g);
-    if (g.gid >= this.nextGid && g.gid < 65534) this.nextGid = g.gid + 1;
   }
 
   // ─── Public API ─────────────────────────────────────────────────
+
+  // ─── Allocating a new id ──────────────────────────────────────────────
+  //
+  // shadow-utils' own `find_new_uid()`: walk the database, take the highest
+  // id already used inside [MIN, MAX] and add one; if that runs past MAX,
+  // fall back to reusing the lowest free id in the range.
+  //
+  // The important part is WHERE the answer comes from. A stored cursor that
+  // only ever moved forward could not see an id an operator freed (or took)
+  // by editing `/etc/passwd` directly, so the next `useradd` would either
+  // skip a free id or, worse, hand out one already in the file. Scanning the
+  // live database means the allocation is always a fact about the current
+  // file, which is the only way the two can agree.
+
+  private allocateId(
+    taken: Iterable<number>, min: number, max: number,
+  ): number | null {
+    const used = new Set(taken);
+    let candidate = min;
+    for (const id of used) {
+      if (id >= min && id <= max && id >= candidate) candidate = id + 1;
+    }
+    if (candidate <= max) return candidate;
+    for (let id = min; id <= max; id++) if (!used.has(id)) return id;
+    return null;
+  }
+
+  /** Next free UID, or null when the range is exhausted. */
+  private allocateUid(system: boolean): number | null {
+    this.reloadIfChanged();
+    return this.allocateId(
+      [...this.users.values()].map((u) => u.uid),
+      system ? this.loginDefs.sysUidMin : this.loginDefs.uidMin,
+      system ? this.loginDefs.sysUidMax : this.loginDefs.uidMax,
+    );
+  }
+
+  /** Next free GID, or null when the range is exhausted. */
+  private allocateGid(system: boolean): number | null {
+    this.reloadIfChanged();
+    return this.allocateId(
+      [...this.groups.values()].map((g) => g.gid),
+      system ? this.loginDefs.sysGidMin : this.loginDefs.gidMin,
+      system ? this.loginDefs.sysGidMax : this.loginDefs.gidMax,
+    );
+  }
 
   // ─── The files ARE the account database ───────────────────────────────
   //
@@ -217,19 +253,54 @@ export class LinuxUserManager {
   // The comparison is on content, not a timer, so a machine nobody edits
   // pays one string compare per lookup and never re-parses.
 
-  /** Text of the four files as they currently sit on disk. */
+  /**
+   * Is the `files` source enabled for this database in
+   * `/etc/nsswitch.conf`?
+   *
+   * nsswitch decides which sources answer a lookup, and it governs the
+   * whole C library — `id`, `su`, every permission check — not just
+   * `getent`. Dropping `files` from the `passwd:` line therefore makes the
+   * accounts stop resolving even though `/etc/passwd` is perfectly intact,
+   * which is exactly the confusing failure the file exists to cause, and
+   * one that only makes sense if this manager honours it too.
+   *
+   * `compat` counts: it is the historical spelling that also reads the
+   * files. An absent nsswitch.conf falls back to glibc's built-in default,
+   * which includes `files` — a missing file does not disable name
+   * resolution.
+   */
+  private filesSourceEnabled(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): boolean {
+    const conf = this.vfs.readFile(IAM_PATHS.nsswitchConf) ?? DEFAULT_NSSWITCH_CONF;
+    return sourcesFor(parseNsswitchConf(conf), database)
+      .some((src) => src.name === 'files' || src.name === 'compat');
+  }
+
+  /**
+   * Text of the four files as the name service is allowed to see it — so a
+   * database whose `files` source is switched off reads as empty, however
+   * intact the file on disk is.
+   */
   private accountDbText(): { passwd: string; shadow: string; group: string; gshadow: string } {
+    const read = (path: string, db: 'passwd' | 'group' | 'shadow' | 'gshadow'): string =>
+      this.filesSourceEnabled(db) ? this.vfs.readFile(path) ?? '' : '';
     return {
-      passwd: this.vfs.readFile(IAM_PATHS.passwd) ?? '',
-      shadow: this.vfs.readFile(IAM_PATHS.shadow) ?? '',
-      group: this.vfs.readFile(IAM_PATHS.group) ?? '',
-      gshadow: this.vfs.readFile(IAM_PATHS.gshadow) ?? '',
+      passwd: read(IAM_PATHS.passwd, 'passwd'),
+      shadow: read(IAM_PATHS.shadow, 'shadow'),
+      group: read(IAM_PATHS.group, 'group'),
+      gshadow: read(IAM_PATHS.gshadow, 'gshadow'),
     };
   }
 
   private static stamp(t: { passwd: string; shadow: string; group: string; gshadow: string }): string {
     return `${t.passwd}\u0000${t.shadow}\u0000${t.group}\u0000${t.gshadow}`;
   }
+
+  /**
+   * `syncToFilesystem` writes the files unconditionally, so it must stamp
+   * what a READ would see — otherwise, with `files` switched off for a
+   * database, the write's own stamp would never match the (empty) view and
+   * every subsequent lookup would re-parse.
+   */
 
   /** Content of the database as this manager last wrote or read it. */
   private lastKnownStamp: string | null = null;
@@ -354,7 +425,8 @@ export class LinuxUserManager {
   // ─── User operations ──────────────────────────────────────────────
 
   useradd(username: string, opts: UseraddOptions = {}): string {
-    if (this.users.has(username)) return `useradd: user '${username}' already exists`;
+    // Through `getUser`, so a name added to /etc/passwd by hand is seen.
+    if (this.getUser(username)) return `useradd: user '${username}' already exists`;
 
     // UID — explicit (`-u`) or auto-allocated. Uniqueness enforced unless `-o`.
     let uid: number;
@@ -363,11 +435,12 @@ export class LinuxUserManager {
         return `useradd: UID ${opts.u} is not unique`;
       }
       uid = opts.u;
-      if (uid >= this.nextUid && uid < 65534) this.nextUid = uid + 1;
-    } else if (opts.r) {
-      uid = this.nextSystemUid++;
     } else {
-      uid = this.nextUid++;
+      const allocated = this.allocateUid(opts.r === true);
+      if (allocated === null) {
+        return 'useradd: can\'t get unique UID (no more available UIDs on the system)';
+      }
+      uid = allocated;
     }
 
     // Primary group resolution.
@@ -382,7 +455,11 @@ export class LinuxUserManager {
     } else {
       // Create a user-private group with the same name. System accounts get
       // their group from the system GID range too.
-      gid = opts.r ? this.nextSystemGid++ : this.nextGid++;
+      const allocatedGid = this.allocateGid(opts.r === true);
+      if (allocatedGid === null) {
+        return 'useradd: can\'t get unique GID (no more available GIDs on the system)';
+      }
+      gid = allocatedGid;
       const pg = new LinuxGroup({ name: username, gid, userPrivateGroup: true });
       this.addGroup(pg);
       userPrivateGroupCreated = true;
@@ -1018,8 +1095,15 @@ export class LinuxUserManager {
   // ─── Group operations ─────────────────────────────────────────────
 
   groupadd(name: string, opts: { g?: number } = {}): string {
-    if (this.groups.has(name)) return `groupadd: group '${name}' already exists`;
-    const gid = opts.g ?? this.nextGid++;
+    if (this.getGroup(name)) return `groupadd: group '${name}' already exists`;
+    let gid = opts.g;
+    if (gid === undefined) {
+      const allocated = this.allocateGid(false);
+      if (allocated === null) {
+        return 'groupadd: can\'t get unique GID (no more available GIDs on the system)';
+      }
+      gid = allocated;
+    }
     const group = new LinuxGroup({ name, gid });
     this.addGroup(group);
     this.syncToFilesystem();
