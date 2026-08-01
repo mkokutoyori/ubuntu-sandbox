@@ -17,6 +17,7 @@ import { CyclingPolicy, type CompletionPolicy } from '@/terminal/completion';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
+import { VRP_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
 
 const HUAWEI_THEME: TerminalTheme = {
   sessionType: 'huawei',
@@ -127,6 +128,8 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   protected getCtrlZCommand(): string { return 'return'; }
   protected getPagerIndicator(): string { return '  ---- More ----'; }
+
+  protected getTelnetDialect(): TelnetDialect { return VRP_TELNET; }
 
   protected isTopLevelExit(line: string): boolean {
     const w = line.trim().toLowerCase();

@@ -28,6 +28,7 @@ import { isInteractionPlanner, type InteractionPlanContext } from '@/shell/inter
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
+import type { TelnetDialect } from '@/terminal/subshells/telnetDialect';
 import type { TelnetInteractiveSubShell } from '@/terminal/subshells/TelnetInteractiveSubShell';
 import { createSessionForDevice } from './sessionFactory';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
@@ -105,6 +106,14 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   /** The pager indicator text */
   protected abstract getPagerIndicator(): string;
+
+  /**
+   * How this vendor's own telnet client words its transcript. A router
+   * that answered a refused connection with the BSD client's
+   * `telnet: connect to address …` was reporting a real event in another
+   * platform's voice.
+   */
+  protected abstract getTelnetDialect(): TelnetDialect;
 
   /**
    * Command-owned interactive flows (IoC): the DEVICE SHELL declares which
@@ -570,6 +579,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     const sub = await launchTelnet(args, {
       device: this.device,
       emit: (text) => this.addLine(text),
+      dialect: this.getTelnetDialect(),
     });
     if (!sub) { this.notify(); return; }
 

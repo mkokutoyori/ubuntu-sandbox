@@ -186,6 +186,12 @@ export class LoggingConfig {
       }),
       bus.subscribeWhere('tcp.connection.closed', isOurs, (e) => {
         const p = e.payload;
+        // Only connections this device ACCEPTED, mirroring the `passive`
+        // filter on `tcp.connection.opened` just above. A socket we
+        // dialled out ourselves is not a "Connection from" anybody, and
+        // logging it printed a server-shaped line on the console of the
+        // client whose own telnet had just been refused.
+        if (!p.passive) return;
         this.append('informational', 'sys',
           `Connection from ${p.remoteIp}:${p.remotePort} closed (${p.reason})`);
       }),

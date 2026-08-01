@@ -394,9 +394,19 @@ export class PortActivityLogProjection {
 
   private onTcpConnectionClosed(p: {
     deviceId: string; remoteIp: string; remotePort: number;
-    localIp: string; localPort: number; reason: string;
+    localIp: string; localPort: number; reason: string; passive: boolean;
   }): void {
     if (p.deviceId !== this.deviceId) return;
+    // Same filter as `onTcpConnectionOpened`: a socket we dialled out is
+    // not a "Connection from" anybody, and `sshd` has no business logging
+    // the close of a connection it never accepted.
+    // Same filter as `onTcpConnectionOpened`: a socket we dialled out is
+    // not a "Connection from" anybody, and `sshd` has no business logging
+    // the close of a connection it never accepted.
+    // Same filter as `onTcpConnectionOpened`: a socket we dialled out is
+    // not a "Connection from" anybody, and `sshd` has no business logging
+    // the close of a connection it never accepted.
+    if (!p.passive) return;
     const tag = this.tagForPort(p.localPort);
     this.logManager.logDaemon(
       tag,

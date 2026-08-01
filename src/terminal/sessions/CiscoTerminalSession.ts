@@ -22,6 +22,7 @@ import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSessi
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
+import { IOS_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
 
 const CISCO_THEME: TerminalTheme = {
   sessionType: 'cisco',
@@ -474,6 +475,8 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected getCtrlZCommand(): string { return 'end'; }
   protected getPagerIndicator(): string { return ' --More-- '; }
+
+  protected getTelnetDialect(): TelnetDialect { return IOS_TELNET; }
 
   protected isTopLevelExit(line: string): boolean {
     const w = line.trim().toLowerCase();

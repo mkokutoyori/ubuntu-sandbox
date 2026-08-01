@@ -2901,8 +2901,15 @@ export class LinuxTerminalSession extends TerminalSession {
       // do not duplicate it. Other errors have no prior warning, so display them here.
       if (errKind !== 'AUTH_FAILED') {
         const msg =
+          // A refused connection is `Connection refused`, not `No route to
+          // host` — the unreachable case was already decided above, by the
+          // liveness probe, before any session was opened, so reaching
+          // here means the path was fine and the far end said no. That is
+          // what a router in quiet-mode, a `transport input none`, or a
+          // stopped daemon look like from the client, and calling it a
+          // routing failure sends the operator to check cables instead.
           errKind === 'CONNECTION_REFUSED'
-            ? `ssh: connect to host ${host} port ${meta.port}: No route to host`
+            ? `ssh: connect to host ${host} port ${meta.port}: Connection refused`
             : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
             ? 'Host key verification failed.'
             : `${user}@${host}: Permission denied (publickey,password).`;

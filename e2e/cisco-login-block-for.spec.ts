@@ -85,10 +85,43 @@ function hasPasswordPrompt(page: Page): Promise<boolean> {
 async function sshAttempt(page: Page, host: string, password: string): Promise<void> {
   if (!(await hasPasswordPrompt(page))) {
     await typeCmd(page, `ssh admin@${host}`);
-    await page.waitForTimeout(200);
+    // The connection is a real TCP + SSH handshake, so the prompt (or an
+    // immediate refusal) takes a few ticks to materialise. Waiting a flat
+    // 200ms raced it, and an attempt that never got a prompt is an
+    // attempt the router never counted.
+    await expect
+      .poll(async () => (await hasPasswordPrompt(page)) || /refused|denied|closed/i.test(await modalText(page)),
+        { timeout: 8_000 })
+      .toBe(true);
   }
   if (await hasPasswordPrompt(page)) {
     await submitPassword(page, password);
+    await expect
+      .poll(async () => !(await hasPasswordPrompt(page)) || /denied/i.test(await modalText(page)),
+        { timeout: 8_000 })
+      .toBe(true);
+  }
+}
+
+/**
+ * Fail `attempts` logins, then drain whatever retries the connection that
+ * tripped the block still has left.
+ *
+ * A device-wide block does not reach back and sever the session already
+ * in flight — it only gates NEW admissions — so the tripping connection
+ * keeps its own OpenSSH-style 3-tries budget. Draining it is what makes
+ * "the next attempt never sees a prompt" mean the block, and not merely
+ * the tail of the previous connection.
+ *
+ * Note what is deliberately NOT asserted here: `% Blocking new login for
+ * N secs (quota exceeded)` is a message IOS logs on its OWN console and
+ * never sends to the client, so looking for it in the attacker's terminal
+ * would be asserting something real IOS does not do.
+ */
+async function bruteForceUntilBlocked(page: Page, host: string, attempts: number): Promise<void> {
+  for (let i = 0; i < attempts; i++) await sshAttempt(page, host, 'WrongPassword');
+  for (let i = 0; i < 3 && await hasPasswordPrompt(page); i++) {
+    await sshAttempt(page, host, 'WrongPassword');
   }
 }
 
@@ -111,7 +144,12 @@ async function buildLab(page: Page, x: { r: number; pc: number; pc2: number }): 
     for (const cmd of [
       'enable', 'configure terminal',
       'interface GigabitEthernet0/0', 'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'exit',
-      'interface GigabitEthernet0/1', 'ip address 10.0.0.99 255.255.255.0', 'no shutdown', 'exit',
+      // A SECOND subnet, not a second address in the first one: two
+      // interfaces sharing 10.0.0.0/24 is a configuration real IOS
+      // rejects outright, and here it left the router unable to answer
+      // on Gi0/1 at all — the whitelisted PC then failed for a routing
+      // reason that had nothing to do with the access-class.
+      'interface GigabitEthernet0/1', 'ip address 10.0.1.99 255.255.255.0', 'no shutdown', 'exit',
       'username admin privilege 15 secret Admin@2025',
       'ip domain-name lab.local', 'crypto key generate rsa modulus 2048',
       'line vty 0 4', 'login local', 'transport input ssh', 'exit',
@@ -120,7 +158,7 @@ async function buildLab(page: Page, x: { r: number; pc: number; pc2: number }): 
     const pcExec = pcDev.executeCommand as (cmd: string) => Promise<string>;
     await pcExec.call(pcDev, `sudo ip addr add 10.0.0.10/24 dev ${pcPort}`);
     const pc2Exec = pc2Dev.executeCommand as (cmd: string) => Promise<string>;
-    await pc2Exec.call(pc2Dev, `sudo ip addr add 10.0.0.199/24 dev ${pc2Port}`);
+    await pc2Exec.call(pc2Dev, `sudo ip addr add 10.0.1.199/24 dev ${pc2Port}`);
   }, { cisco, pc, pc2 });
   return { cisco, pc, pc2 };
 }
@@ -143,13 +181,20 @@ test.describe('Scénario 5 (e2e) — login block-for', () => {
     await closeTerminal(page);
 
     await openTerminal(page, pc);
-    for (let i = 0; i < 4; i++) await sshAttempt(page, '10.0.0.1', 'WrongPassword');
-    const before = await modalText(page);
-    expect(before).not.toContain('quota exceeded');
+    await bruteForceUntilBlocked(page, '10.0.0.1', 5);
 
-    await sshAttempt(page, '10.0.0.1', 'WrongPassword');
-    await waitForText(page, '% Blocking new login for 120 secs (quota exceeded)');
+    // The observable consequence, which is what the operator actually
+    // sees: a brand-new attempt is turned away before any password is
+    // ever asked for.
+    await typeCmd(page, 'ssh admin@10.0.0.1');
+    await waitForText(page, /Connection refused/);
     expect(await hasPasswordPrompt(page)).toBe(false);
+    await closeTerminal(page);
+
+    // …and the router says so in its own words, on its own console.
+    await openTerminal(page, cisco);
+    await typeCmd(page, 'show login');
+    await waitForText(page, 'Router presently in Quiet-Mode');
   });
 
   test("'show login' affiche l'état Quiet-Mode et le temps restant après déclenchement du blocage", async ({ page }) => {
@@ -163,8 +208,7 @@ test.describe('Scénario 5 (e2e) — login block-for', () => {
     await closeTerminal(page);
 
     await openTerminal(page, pc);
-    for (let i = 0; i < 3; i++) await sshAttempt(page, '10.0.0.1', 'WrongPassword');
-    await waitForText(page, 'quota exceeded');
+    await bruteForceUntilBlocked(page, '10.0.0.1', 3);
     await closeTerminal(page);
 
     await openTerminal(page, cisco);
@@ -180,7 +224,7 @@ test.describe('Scénario 5 (e2e) — login block-for', () => {
     await typeCmd(page, 'enable');
     await typeCmd(page, 'configure terminal');
     await typeCmd(page, 'ip access-list standard WHITELIST-LOGIN');
-    await typeCmd(page, 'permit 10.0.0.199 0.0.0.0');
+    await typeCmd(page, 'permit 10.0.1.199 0.0.0.0');
     await typeCmd(page, 'exit');
     await typeCmd(page, 'login quiet-mode access-class WHITELIST-LOGIN');
     await typeCmd(page, 'login block-for 120 attempts 3 within 30');
@@ -188,8 +232,7 @@ test.describe('Scénario 5 (e2e) — login block-for', () => {
     await closeTerminal(page);
 
     await openTerminal(page, pc);
-    for (let i = 0; i < 3; i++) await sshAttempt(page, '10.0.0.1', 'WrongPassword');
-    await waitForText(page, 'quota exceeded');
+    await bruteForceUntilBlocked(page, '10.0.0.1', 3);
 
     // Attacker's own PC (10.0.0.10, not whitelisted) is refused immediately.
     await typeCmd(page, 'ssh admin@10.0.0.1');
@@ -197,8 +240,12 @@ test.describe('Scénario 5 (e2e) — login block-for', () => {
     await closeTerminal(page);
 
     // The whitelisted PC (10.0.0.199) still reaches the password prompt.
+    //
+    // It dials 10.0.1.99, the router interface it is actually cabled to.
+    // 10.0.0.1 lives on the other segment, which PC2 cannot reach, so
+    // aiming there tested the cable plant rather than the access-class.
     await openTerminal(page, pc2);
-    await typeCmd(page, 'ssh admin@10.0.0.1');
+    await typeCmd(page, 'ssh admin@10.0.1.99');
     await waitForText(page, /password/i);
     await submitPassword(page, 'Admin@2025');
     await waitForText(page, /\w+[#>]\s*$/m, 8_000);

@@ -1126,7 +1126,7 @@ export class TcpStack {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         localIp: socket.localIp, localPort: socket.localPort,
         remoteIp: socket.remoteIp, remotePort: socket.remotePort,
-        reason,
+        reason, passive: socket.passive,
       },
     });
     try { socket._fireClose(reason); } catch (e) { Logger.warn(this.host.id, 'tcp:onClose', String(e)); }

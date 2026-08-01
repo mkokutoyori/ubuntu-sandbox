@@ -49,6 +49,7 @@ import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, gh
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
+import { WINDOWS_TELNET } from '@/terminal/subshells/telnetDialect';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
@@ -1350,6 +1351,7 @@ export class WindowsTerminalSession extends TerminalSession {
     const sub = await launchTelnet(args, {
       device: this.device,
       emit: (text, type) => this.addLine(text, type),
+      dialect: WINDOWS_TELNET,
     });
     if (!sub) { this.notify(); return; }
 

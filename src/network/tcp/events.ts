@@ -50,6 +50,14 @@ export interface TcpConnectionClosedPayload extends TcpDeviceRef {
   remoteIp: string;
   remotePort: number;
   reason: TcpCloseReason;
+  /**
+   * True when this device ACCEPTED the connection, false when it dialled
+   * out — the same flag `TcpConnectionOpenedPayload` already carries.
+   * Without it a subscriber cannot tell the two apart, which is how a
+   * router came to log its own refused outbound telnet as
+   * `Connection from 10.0.0.1:23 closed (rst)`.
+   */
+  passive: boolean;
 }
 
 export interface TcpListenerChangedPayload extends TcpDeviceRef {
