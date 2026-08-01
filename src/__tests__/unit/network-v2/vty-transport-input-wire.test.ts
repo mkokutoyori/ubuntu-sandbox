@@ -34,7 +34,11 @@ async function buildCiscoLan(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
     'enable', 'configure terminal',
     'interface GigabitEthernet0/0',
     `ip address ${CISCO_IP} ${MASK}`,
-    'no shutdown', 'end',
+    'no shutdown', 'exit',
+    // No RSA host keys, no SSH server on IOS — the listener this file is
+    // about only exists once they have been generated.
+    'ip domain-name lab.local', 'crypto key generate rsa modulus 2048',
+    'end',
   ]) await cisco.executeCommand(cmd);
   return { pc, cisco };
 }
@@ -51,6 +55,9 @@ async function buildHuaweiLan(): Promise<{ pc: LinuxPC; huawei: HuaweiRouter }> 
     'interface GigabitEthernet0/0/0',
     `ip address ${HUAWEI_IP} ${MASK}`,
     'undo shutdown', 'quit',
+    // VRP ne fait tourner aucun serveur STelnet sans paire de clés
+    // locale : la créer fait partie de la configuration réelle.
+    'rsa local-key-pair create',
   ]) await huawei.executeCommand(cmd);
   return { pc, huawei };
 }

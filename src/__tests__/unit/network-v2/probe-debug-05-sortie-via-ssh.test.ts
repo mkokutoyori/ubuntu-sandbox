@@ -102,7 +102,12 @@ async function labCisco(): Promise<LabCisco> {
 
   for (const c of [
     'enable', 'configure terminal', 'hostname R1',
-    'username admin privilege 15 secret adminpw', 'end',
+    'username admin privilege 15 secret adminpw',
+    // IOS ne fait tourner aucun serveur SSH sans clés RSA, et refuse de
+    // les générer sans nom de domaine : c'est la configuration réelle qui
+    // rend le routeur joignable en ssh.
+    'ip domain-name lab.local', 'crypto key generate rsa modulus 2048',
+    'end',
   ]) await routeur.executeCommand(c);
 
   return { routeur, poste, gLibre: g1 };
@@ -120,7 +125,11 @@ async function labHuawei(): Promise<{ routeur: HuaweiRouter; poste: LinuxPC }> {
     'local-user admin password irreversible-cipher adminpw',
     'local-user admin privilege level 15',
     'local-user admin service-type ssh terminal',
-    'quit', 'quit',
+    'quit',
+    // VRP ne fait tourner aucun serveur STelnet sans paire de clés
+    // locale : la créer fait partie de la configuration réelle.
+    'rsa local-key-pair create',
+    'quit',
   ]) await routeur.executeCommand(c);
 
   return { routeur, poste };

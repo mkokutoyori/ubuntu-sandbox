@@ -149,6 +149,10 @@ describe('the prompt contract stays optional (docs/PRD-SSH-Unification.md §4 #1
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('username admin privilege 15 secret adminpw');
+    // IOS runs no SSH server without RSA host keys, and refuses to
+    // generate them without a domain name.
+    await r.executeCommand('ip domain-name lab.local');
+    await r.executeCommand('crypto key generate rsa modulus 2048');
     await r.executeCommand('end');
 
     const channel = await openWireShell(pc, '10.0.2.2', 'admin', 'adminpw');

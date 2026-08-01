@@ -61,8 +61,22 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
 import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
+import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 
 export class CiscoRouter extends Router {
+  /**
+   * IOS runs no SSH server without RSA host keys. `crypto key generate
+   * rsa` is what actually brings SSH up, and `crypto key zeroize rsa`
+   * takes it back down — the router's own version of deleting a Linux
+   * host's `/etc/ssh/ssh_host_*_key` (docs/PRD-Pannes.md §F7.2).
+   *
+   * Read from the live key store rather than a separate flag, so the
+   * config and the service can never disagree.
+   */
+  override hasSshHostKeys(): boolean {
+    return getSecurityConfig(this).cryptoKeys.length > 0;
+  }
+
   installIkeCertAuth(config: {
     localCert: import('../pki/X509Certificate').X509Certificate;
     localKey: import('../pki/PkiKeyPair').PkiPrivateKey;

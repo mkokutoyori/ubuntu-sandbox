@@ -60,6 +60,11 @@ async function ciscoTarget(): Promise<CiscoRouter> {
   await r.executeCommand('configure terminal');
   await r.executeCommand('hostname R1');
   await r.executeCommand('username admin privilege 1 secret adminpw');
+  // IOS runs no SSH server without RSA host keys, and refuses to
+  // generate them without a domain name — this is the real setup that
+  // makes the router reachable over ssh, not decoration.
+  await r.executeCommand('ip domain-name lab.local');
+  await r.executeCommand('crypto key generate rsa modulus 2048');
   await r.executeCommand('end');
   return r;
 }

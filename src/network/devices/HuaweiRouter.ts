@@ -211,6 +211,21 @@ export class HuaweiRouter extends Router {
   /** VRP announces the incoming telnet login differently from IOS. */
   protected override getVtyAuthHeader(): string { return 'Login authentication'; }
 
+  /**
+   * VRP's counterpart of IOS's RSA host keys.
+   *
+   * `stelnet server enable` is not enough on its own: without a local key
+   * pair there is nothing for the server to present, and VRP refuses. So
+   * `rsa local-key-pair create` is what actually brings STelnet up and
+   * `rsa local-key-pair destroy` takes it back down — the same fault, and
+   * the same repair, as `crypto key generate`/`zeroize rsa` on the Cisco
+   * side (docs/PRD-Pannes.md §F7.2). `display rsa local-key-pair public`
+   * reads the same store, so the config and the service cannot disagree.
+   */
+  override hasSshHostKeys(): boolean {
+    return this.getKeypairService().list().length > 0;
+  }
+
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
     if (ipPkt.protocol === IP_PROTO_IGMP) {
       this.igmpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);

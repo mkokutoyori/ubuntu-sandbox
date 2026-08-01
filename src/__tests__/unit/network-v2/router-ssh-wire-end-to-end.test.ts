@@ -47,13 +47,22 @@ async function buildLan(): Promise<Lan> {
   for (const c of [
     'enable', 'configure terminal', 'hostname cisco1',
     'interface GigabitEthernet0/0',
-    `ip address 10.0.0.6 ${NETMASK}`, 'no shutdown', 'end',
+    `ip address 10.0.0.6 ${NETMASK}`,
+    'no shutdown', 'exit',
+    // IOS runs no SSH server without RSA host keys, and refuses to
+    // generate them without a domain name.
+    'ip domain-name lab.local', 'crypto key generate rsa modulus 2048',
+    'end',
   ]) await cisco.executeCommand(c);
 
   for (const c of [
     'system-view', 'sysname huawei1',
     'interface GigabitEthernet0/0/0',
-    `ip address 10.0.0.8 ${NETMASK}`, 'undo shutdown', 'quit', 'quit',
+    `ip address 10.0.0.8 ${NETMASK}`, 'undo shutdown', 'quit',
+    // VRP ne fait tourner aucun serveur STelnet sans paire de clés
+    // locale : la créer fait partie de la configuration réelle.
+    'rsa local-key-pair create',
+    'quit',
   ]) await huawei.executeCommand(c);
 
   await linux.executeCommand('ping -c 1 10.0.0.6');

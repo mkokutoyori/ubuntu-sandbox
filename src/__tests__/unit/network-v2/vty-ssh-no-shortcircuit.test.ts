@@ -22,7 +22,12 @@ async function configureCisco(router: CiscoRouter, ip: string): Promise<void> {
     'enable', 'configure terminal',
     'interface GigabitEthernet0/0',
     `ip address ${ip} ${MASK}`,
-    'no shutdown', 'end',
+    'no shutdown', 'exit',
+    // IOS runs no SSH server without RSA host keys, so generating them is
+    // part of "the router is reachable over ssh", not decoration — and the
+    // domain name is what IOS itself demands before it will generate any.
+    'ip domain-name lab.local', 'crypto key generate rsa modulus 2048',
+    'end',
   ]) await router.executeCommand(cmd);
 }
 
@@ -31,7 +36,11 @@ async function configureHuawei(router: HuaweiRouter, ip: string): Promise<void> 
     'system-view',
     'interface GigabitEthernet0/0/0',
     `ip address ${ip} ${MASK}`,
-    'undo shutdown', 'quit', 'quit',
+    'undo shutdown', 'quit',
+    // VRP ne fait tourner aucun serveur STelnet sans paire de clés
+    // locale : la créer fait partie de la configuration réelle.
+    'rsa local-key-pair create',
+    'quit',
   ]) await router.executeCommand(cmd);
 }
 

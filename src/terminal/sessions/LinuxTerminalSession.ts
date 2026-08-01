@@ -74,7 +74,7 @@ import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP'
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
-import { transportLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 import {
@@ -2998,10 +2998,14 @@ export class LinuxTerminalSession extends TerminalSession {
         this.activeSubShell = new SshInteractiveSubShell(
           session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
           promptHost, linuxRemoteDevice ?? undefined,
-          // Liveness of an OPEN session is read from its own socket, not
-          // provoked with a fresh handshake — otherwise every command
-          // would make the remote log an accept/close pair.
-          transportLiveness(session),
+          // Liveness of an OPEN session is read, never provoked with a
+          // fresh handshake — otherwise every command would make the
+          // remote log an accept/close pair. Two facts are read: this
+          // side's own socket, which knows when THIS link drops, and the
+          // path, which is the only thing that notices a cable pulled at
+          // the far end, a switch losing power in between, or the peer
+          // being switched off (docs/PRD-Pannes.md §F1, §F5).
+          establishedSessionLiveness(session, this.device, host),
           (footer) => this.onRemoteHangup(footer),
           (line) => this.addLine(line),
         );

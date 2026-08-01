@@ -168,7 +168,12 @@ async function buildSshLab(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
     'enable', 'configure terminal',
     'interface GigabitEthernet0/0',
     `ip address ${CISCO_IP} ${MASK}`,
-    'no shutdown', 'end',
+    'no shutdown', 'exit',
+    // IOS will not run an SSH server without RSA host keys, and will not
+    // generate them without a domain name — both are part of making the
+    // router reachable, not optional flavour.
+    'ip domain-name lab.local', 'crypto key generate rsa modulus 2048',
+    'end',
   ]) await cisco.executeCommand(cmd);
   return { pc, cisco };
 }

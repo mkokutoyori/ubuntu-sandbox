@@ -57,6 +57,11 @@ async function cisco(): Promise<CiscoRouter> {
   await r.executeCommand('configure terminal');
   await r.executeCommand('hostname R1');
   await r.executeCommand('username admin privilege 1 secret adminpw');
+  // IOS runs no SSH server without RSA host keys, and refuses to
+  // generate them without a domain name — this is the real setup that
+  // makes the router reachable over ssh, not decoration.
+  await r.executeCommand('ip domain-name lab.local');
+  await r.executeCommand('crypto key generate rsa modulus 2048');
   await r.executeCommand('end');
   return r;
 }
@@ -102,6 +107,8 @@ describe('Huawei contextual help over the wire', () => {
     await r.executeCommand('local-user admin privilege level 15');
     await r.executeCommand('local-user admin service-type ssh terminal');
     await r.executeCommand('quit');
+    // VRP ne fait tourner aucun serveur STelnet sans paire de clés locale.
+    await r.executeCommand('rsa local-key-pair create');
     await r.executeCommand('quit');
 
     const ch = await shellTo(r as never, '10.0.11.3', 'admin', 'adminpw');

@@ -24,7 +24,7 @@ import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshel
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
 import { readForceCommand } from '@/network/devices/linux/network/LinuxSshClient';
-import { transportLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { transportLiveness, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 
 /** Tokenise an ssh command line into flags, optional value, user/host, and remaining argv. */
 interface ParsedSshLine {
@@ -468,7 +468,12 @@ export async function finalisePendingAuth(
     `/home/${auth.user}`,
     () => outcome.session.disconnect(),
     promptHost, findLinuxMachineByIp(auth.host) ?? undefined,
-    transportLiveness(outcome.session),
+    // Socket AND path: this side's socket notices its own link dropping,
+    // the path notices everything that breaks at the other end or in
+    // between (docs/PRD-Pannes.md §F1, §F5).
+    auth.sourceDevice
+      ? establishedSessionLiveness(outcome.session, auth.sourceDevice, auth.host)
+      : transportLiveness(outcome.session),
   );
   const shell = new WireRemoteShell({
     device: auth.target,

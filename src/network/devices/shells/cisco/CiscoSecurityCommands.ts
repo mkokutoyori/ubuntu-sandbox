@@ -286,8 +286,26 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     }
     const generatedAtMs = Date.now();
     sec().cryptoKeys.push({ label, modulus, general, generatedAtMs });
+    // Generating the keys is what brings the SSH server up on IOS, so the
+    // listener has to follow — the config and the service cannot disagree.
+    (ctx.r() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
     const elapsedSec = Math.max(1, Math.round(modulus / 1024));
     return `The key modulus size is ${modulus} bits\n% Generating ${modulus} bit RSA keys, keys will be non-exportable...\n[OK] (elapsed time was ${elapsedSec} seconds)`;
+  });
+
+  trie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
+    const dev = ctx.r() as unknown as {
+      getManagementService?: () => { domainName?: string };
+      getHostname?: () => string;
+      _refreshSshAvailability?: () => void;
+    };
+    if (sec().cryptoKeys.length === 0) return '% No Signature RSA Keys found in configuration.';
+    const fqdn = `${dev.getHostname?.() ?? ''}.${dev.getManagementService?.().domainName ?? ''}`;
+    sec().cryptoKeys = [];
+    // Wiping the keys really disables SSH — this is the router's F7.2, and
+    // the classic way to lock yourself out of a box you reach over SSH.
+    dev._refreshSshAvailability?.();
+    return `% Keys to be removed are named ${fqdn}.`;
   });
 
   trie.registerGreedy('ip ssh', 'SSH config', (args) => {

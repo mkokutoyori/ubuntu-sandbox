@@ -190,9 +190,16 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     cli.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
-    srv.executeCommand('configure terminal');
-    srv.executeCommand('logging buffered 8000 informational');
-    srv.executeCommand('end');
+    // `enable` first: without it IOS rejects `configure terminal`, and
+    // every line below it, with "% Invalid input detected".
+    await Promise.resolve(srv.executeCommand('enable'));
+    await Promise.resolve(srv.executeCommand('configure terminal'));
+    await Promise.resolve(srv.executeCommand('logging buffered 8000 informational'));
+    // No RSA host keys, no SSH server on IOS — so no port 22 to connect
+    // to, and nothing to log.
+    await Promise.resolve(srv.executeCommand('ip domain-name lab.local'));
+    await Promise.resolve(srv.executeCommand('crypto key generate rsa modulus 2048'));
+    await Promise.resolve(srv.executeCommand('end'));
 
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('show logging'));
@@ -266,6 +273,13 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     new Cable('b').connect(srv.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+
+    // VRP ne fait tourner aucun serveur STelnet sans paire de clés
+    // locale : sans elle, il n'y a pas de port 22 à joindre, donc
+    // rien à journaliser.
+    await Promise.resolve(srv.executeCommand('system-view'));
+    await Promise.resolve(srv.executeCommand('rsa local-key-pair create'));
+    await Promise.resolve(srv.executeCommand('quit'));
 
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('display logbuffer'));

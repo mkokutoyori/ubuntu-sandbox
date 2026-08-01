@@ -464,7 +464,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private mountSshDaemon(): void {
     if (this._sshHandlerMounted) return;
     this._sshHandlerMounted = true;
-    this.bindSshListener();
+    // Same gate as `syncSshListener`: a box with no host keys has no SSH
+    // server to mount, at boot as much as after a `zeroize`. Binding here
+    // unconditionally and gating everywhere else would leave a fresh
+    // router listening while `show crypto key mypubkey rsa` says there is
+    // no key — the two must not be able to disagree.
+    if (this.sshServerEnabled && this.hasSshHostKeys()) this.bindSshListener();
     this.bindTelnetListener();
   }
 
@@ -543,8 +548,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   private syncSshListener(): void {
     const sshBound = this.tcpv2.listListeners().some(l => l.localPort === 22);
-    if (this.sshServerEnabled && !sshBound) this.bindSshListener();
-    if (!this.sshServerEnabled && sshBound) this.tcpv2.closeListener(22);
+    // Keys are part of "is the server up", not a separate switch: IOS
+    // refuses to listen without them.
+    const shouldListen = this.sshServerEnabled && this.hasSshHostKeys();
+    if (shouldListen && !sshBound) this.bindSshListener();
+    if (!shouldListen && sshBound) this.tcpv2.closeListener(22);
     const telnetWanted = this.telnetAllowedByTransport();
     const telnetBound = this.tcpv2.listListeners().some(l => l.localPort === 23);
     if (telnetWanted && !telnetBound) this.bindTelnetListener();
@@ -3264,6 +3272,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.syncSshListener();
   }
 
+  /**
+   * Does the box hold RSA host keys?
+   *
+   * IOS will not run an SSH server without them: `crypto key generate rsa`
+   * is what actually turns SSH on, and `crypto key zeroize rsa` turns it
+   * back off — which is the router's own version of deleting a Linux
+   * host's `/etc/ssh/ssh_host_*_key` (docs/PRD-Pannes.md §F7.2). Overridden
+   * by `CiscoRouter`, which owns the key store; a plain `Router` has no
+   * crypto configuration to consult and therefore never withholds SSH.
+   */
+  hasSshHostKeys(): boolean { return true; }
+
+  /**
+   * Re-evaluate whether the SSH listener should be up, after something
+   * that changes the answer without touching `transport input` — today,
+   * generating or zeroizing the host keys.
+   */
+  _refreshSshAvailability(): void {
+    if (this._sshHost) this._sshHost.setSshActive(this.isSshActive());
+    this.syncSshListener();
+  }
+
   // ─── FTP server surface (§2.1.20/P19) ───────────────────────────
   //
   // `ftp server enable` used to just flip a write-only toggle nothing
@@ -3365,7 +3395,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** SshExecTarget. */
   getSshHostname(): string { return this.hostname; }
-  isSshActive(): boolean { return this.sshServerEnabled; }
+  isSshActive(): boolean { return this.sshServerEnabled && this.hasSshHostKeys(); }
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
     return this.getSshHost().acceptsLogin(user);
   }
