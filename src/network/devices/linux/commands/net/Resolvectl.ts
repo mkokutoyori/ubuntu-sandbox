@@ -78,7 +78,13 @@ function protocolLines(svc: ResolvedService, link: string | null): string[] {
 
 /** Quel mode `/etc/resolv.conf` porte — premier diagnostic d'un admin. */
 function resolvConfMode(ctx: LinuxCommandContext): string {
-  const text = ctx.executor.vfs.readFile('/etc/resolv.conf') ?? '';
+  const text = ctx.executor.vfs.readFile('/etc/resolv.conf');
+  // `missing` est un mode à part entière de resolved, pas un repli : un
+  // fichier absent et un fichier vide ne se réparent pas pareil, et c'est
+  // précisément la ligne que l'admin lit en premier (docs/PRD-Pannes.md
+  // §F7.9). Les confondre — ce que faisait le `?? ''` — annonçait « uplink »,
+  // c'est-à-dire « resolved gère le fichier », pour un fichier inexistant.
+  if (text === null) return 'missing';
   if (text.includes(STUB_ADDRESS)) return 'stub';
   if (/managed by systemd-networkd/i.test(text)) return 'static';
   if (text.trim() === '') return 'uplink';

@@ -144,12 +144,17 @@ export class LinuxLogManager {
         if (e.payload.name === 'systemd-journald') this.journaldActive = false;
       }),
       bus.subscribeWhere('linux.service.started', isSyslog, (e) => {
-        if (e.payload.name !== 'systemd-journald') this.syslogDaemonActive = true;
+        if (e.payload.name !== 'systemd-journald') {
+          this.syslogDaemonActive = true;
+          // A starting daemon opens its files by name (§F7.11).
+          this.reopenLogFiles();
+        }
         if (e.payload.name === 'systemd-journald') this.journaldActive = true;
       }),
       bus.subscribeWhere('linux.service.restarted', isSyslog, () => {
         this.syslogDaemonActive = true;
         this.journaldActive = true;
+        this.reopenLogFiles();
       }),
     ];
   }
@@ -637,14 +642,72 @@ export class LinuxLogManager {
     return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
   }
 
+  /**
+   * Log files rsyslog currently holds open, and how much has been written
+   * into one after its name was removed (docs/PRD-Pannes.md §F7.11).
+   *
+   * A daemon writes through a file DESCRIPTOR, not through a path. It opens
+   * `/var/log/syslog` once at start-up and keeps that descriptor for its
+   * whole life, so `rm` only removes the NAME: the inode stays alive
+   * because rsyslog still references it, every subsequent line lands in a
+   * file nobody can open any more, and the disk space is not freed. This
+   * is the single most common "I deleted the log and the disk is still
+   * full" incident, and until now the simulator did the opposite of it —
+   * `appendToLogFile` recreated the path on the very next line, which is
+   * what would happen only if the daemon reopened by name each time.
+   */
+  private readonly openLogFiles = new Map<string, { lostLines: number; lostBytes: number }>();
+
   private appendToLogFile(path: string, line: string): void {
     const existing = this.vfs.readFile(path);
     if (existing !== null) {
       this.vfs.writeFile(path, existing + line + '\n', 0, 0, 0o022);
-    } else {
-      // Create log file if missing
-      this.vfs.createFileAt(path, line + '\n', 0o640, 0, 4); // syslog group = adm (4)
+      if (!this.openLogFiles.has(path)) {
+        this.openLogFiles.set(path, { lostLines: 0, lostBytes: 0 });
+      }
+      return;
     }
+
+    const held = this.openLogFiles.get(path);
+    if (held) {
+      // The descriptor outlived the name. The write succeeds — rsyslog has
+      // no way to notice — but it goes somewhere no path leads to, and the
+      // file stays absent until the daemon reopens it.
+      held.lostLines += 1;
+      held.lostBytes += line.length + 1;
+      return;
+    }
+
+    // Never opened: this is the daemon opening it for the first time, which
+    // really does create the file (syslog group = adm, gid 4).
+    this.vfs.createFileAt(path, line + '\n', 0o640, 0, 4);
+    this.openLogFiles.set(path, { lostLines: 0, lostBytes: 0 });
+  }
+
+  /**
+   * What rsyslog is writing into a deleted inode right now — the answer
+   * `lsof +L1` gives an operator who cannot work out where the disk went.
+   * Empty when nothing has been unlinked under the daemon.
+   */
+  deletedLogHandles(): Array<{ path: string; lostLines: number; lostBytes: number }> {
+    const out: Array<{ path: string; lostLines: number; lostBytes: number }> = [];
+    for (const [path, held] of this.openLogFiles) {
+      if (held.lostLines > 0 && this.vfs.readFile(path) === null) {
+        out.push({ path, lostLines: held.lostLines, lostBytes: held.lostBytes });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Drop every held descriptor, so the next line reopens by name and
+   * recreates the file. This is what `systemctl restart rsyslog` does (and
+   * what `logrotate`'s postrotate `kill -HUP` does for the same reason) —
+   * the only way back, and the reason the fix for a deleted log is to
+   * restart the daemon rather than to `touch` the file.
+   */
+  reopenLogFiles(): void {
+    this.openLogFiles.clear();
   }
 
   private filterEntries(unit: string, priority: number, pid: number): JournalEntry[] {

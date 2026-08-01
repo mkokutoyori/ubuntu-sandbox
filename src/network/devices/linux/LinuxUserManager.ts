@@ -27,6 +27,8 @@ import type { LinuxIamDomainEvent } from './iam/events';
 import { LoginDefs } from './iam/fs/LoginDefs';
 import { UseraddDefaults } from './iam/fs/UseraddDefaults';
 import { IamFilesystem } from './iam/fs/IamFilesystem';
+import { IAM_PATHS } from './iam/fs/IamPaths';
+import { parseAccountDatabase } from './iam/fs/AccountDatabaseParser';
 import { PasswordPolicy } from './iam/policy/PasswordPolicy';
 import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
 import type { PasswordAgingPolicyInit } from './iam/policy/PasswordAgingPolicy';
@@ -198,7 +200,84 @@ export class LinuxUserManager {
 
   // ─── Public API ─────────────────────────────────────────────────
 
+  // ─── The files ARE the account database ───────────────────────────────
+  //
+  // `/etc/passwd` and friends are not a rendering of the in-memory maps:
+  // they are the store, and the maps are a cache of them. Every read below
+  // first calls `reloadIfChanged()`, which re-parses the four files whenever
+  // their text differs from what this manager last wrote or read.
+  //
+  // That is what makes the two directions genuinely agree. `useradd` /
+  // `passwd` / `usermod` still write the files, and now `vim /etc/passwd`,
+  // `sed -i`, `rm /etc/shadow` or `cp /etc/passwd- /etc/passwd` change the
+  // ACCOUNTS — because the next lookup reads them back. Deleting the file
+  // does not need a special case any more: parsing nothing yields nothing,
+  // which is exactly what NSS does with no source to answer from.
+  //
+  // The comparison is on content, not a timer, so a machine nobody edits
+  // pays one string compare per lookup and never re-parses.
+
+  /** Text of the four files as they currently sit on disk. */
+  private accountDbText(): { passwd: string; shadow: string; group: string; gshadow: string } {
+    return {
+      passwd: this.vfs.readFile(IAM_PATHS.passwd) ?? '',
+      shadow: this.vfs.readFile(IAM_PATHS.shadow) ?? '',
+      group: this.vfs.readFile(IAM_PATHS.group) ?? '',
+      gshadow: this.vfs.readFile(IAM_PATHS.gshadow) ?? '',
+    };
+  }
+
+  private static stamp(t: { passwd: string; shadow: string; group: string; gshadow: string }): string {
+    return `${t.passwd}\u0000${t.shadow}\u0000${t.group}\u0000${t.gshadow}`;
+  }
+
+  /** Content of the database as this manager last wrote or read it. */
+  private lastKnownStamp: string | null = null;
+  /** Guards against re-entering the parser from inside a write. */
+  private reloading = false;
+
+  /**
+   * Re-read the account database when the files have changed underneath us.
+   * Called by every read path, so an external edit takes effect on the very
+   * next lookup — the same latency a real NSS cache has.
+   */
+  private reloadIfChanged(): void {
+    if (this.reloading) return;
+    const text = this.accountDbText();
+    const stamp = LinuxUserManager.stamp(text);
+    if (stamp === this.lastKnownStamp) return;
+
+    this.reloading = true;
+    try {
+      const parsed = parseAccountDatabase(text, {
+        users: [...this.users.values()],
+        groups: [...this.groups.values()],
+      });
+      this.users = new Map(parsed.users.map((u) => [u.username, u]));
+      this.groups = new Map(parsed.groups.map((g) => [g.name, g]));
+      // Only accounts whose stored secret still yields a cleartext keep a
+      // usable password. A hand-edited hash therefore stops authenticating,
+      // which is the real consequence of editing one.
+      this.passwords = parsed.cleartext;
+      this.lastKnownStamp = stamp;
+    } finally {
+      this.reloading = false;
+    }
+  }
+
+
+  /** True when `/etc/passwd` is absent — no source for NSS to answer from. */
+  isAccountDatabaseMissing(): boolean {
+    return this.vfs.readFile(IAM_PATHS.passwd) === null;
+  }
+
+  /** Same question for the password database (`/etc/shadow`). */
+  isShadowDatabaseMissing(): boolean {
+    return this.vfs.readFile(IAM_PATHS.shadow) === null;
+  }
+
   getUser(username: string): UserEntry | undefined {
+    this.reloadIfChanged();
     return this.users.get(username);
   }
 
@@ -208,6 +287,7 @@ export class LinuxUserManager {
   }
 
   getGroup(name: string): GroupEntry | undefined {
+    this.reloadIfChanged();
     return this.groups.get(name);
   }
 
@@ -216,6 +296,7 @@ export class LinuxUserManager {
   }
 
   getUserByUid(uid: number): UserEntry | undefined {
+    this.reloadIfChanged();
     for (const u of this.users.values()) {
       if (u.uid === uid) return u;
     }
@@ -223,6 +304,7 @@ export class LinuxUserManager {
   }
 
   getGroupByGid(gid: number): GroupEntry | undefined {
+    this.reloadIfChanged();
     for (const g of this.groups.values()) {
       if (g.gid === gid) return g;
     }
@@ -238,6 +320,7 @@ export class LinuxUserManager {
   }
 
   resolveUid(name: string): number {
+    this.reloadIfChanged();
     return this.users.get(name)?.uid ?? -1;
   }
 
@@ -246,6 +329,7 @@ export class LinuxUserManager {
   }
 
   getAllUsers(): UserEntry[] {
+    this.reloadIfChanged();
     return [...this.users.values()];
   }
 
@@ -255,6 +339,7 @@ export class LinuxUserManager {
 
   /** Get all groups a user belongs to */
   getUserGroups(username: string): GroupEntry[] {
+    this.reloadIfChanged();
     const user = this.users.get(username);
     if (!user) return [];
     const result: GroupEntry[] = [];
@@ -614,6 +699,13 @@ export class LinuxUserManager {
    * publishes a `linux.iam.user.locked-out` event.
    */
   checkPassword(username: string, password: string): boolean {
+    // Nothing file-specific to check here any more: with no /etc/shadow the
+    // reload simply yields no recoverable secret for anyone, so every
+    // password is refused — while the accounts themselves still parse out
+    // of /etc/passwd, which is why `id` keeps working and SSH public-key
+    // authentication (which never consults shadow) keeps letting people in.
+    // That dissociation is §F7.4, and it now falls out of the data.
+    this.reloadIfChanged();
     const account = this.users.get(username);
     // `usermod -L` / `passwd -l` prefixes the shadow hash with `!` —
     // no password, however correct, authenticates against it until
@@ -1023,8 +1115,18 @@ export class LinuxUserManager {
 
   id(username?: string): string {
     const name = username || this.currentUser;
+    this.reloadIfChanged();
     const user = this.users.get(name);
-    if (!user) return `id: '${name}': no such user`;
+    if (!user) {
+      // The ids the kernel gave THIS process outlive the database: a
+      // session already running keeps its uid/gid even when nothing can
+      // name them any more, so `id` prints the bare numbers rather than
+      // failing (docs/PRD-Pannes.md §F7.3). Asking about someone else is a
+      // pure lookup, and that does fail.
+      if (name !== this.currentUser) return `id: '${name}': no such user`;
+      const gids = this.getUserGroups(name).map((g) => g.gid).join(',');
+      return `uid=${this.currentUid} gid=${this.currentGid} groups=${gids || this.currentGid}`;
+    }
     const groups = this.getUserGroups(name);
     const primaryGroup = this.getGroupByGid(user.gid);
     const groupsStr = groups.map(g => `${g.gid}(${g.name})`).join(',');
@@ -1041,7 +1143,7 @@ export class LinuxUserManager {
     opts: { u?: boolean; g?: boolean; G?: boolean; n?: boolean; r?: boolean },
   ): string {
     const name = username || this.currentUser;
-    const user = this.users.get(name);
+    const user = this.getUser(name) ? this.users.get(name) : undefined;
     if (!user) return `id: '${name}': no such user`;
 
     const selectors = [opts.u, opts.g, opts.G].filter(Boolean).length;
@@ -1064,12 +1166,17 @@ export class LinuxUserManager {
   }
 
   whoami(): string {
+    // `whoami` is `getpwuid(geteuid())`. When the lookup finds nothing it
+    // fails naming the numeric id rather than inventing a name.
+    if (!this.getUserByUid(this.currentUid)) {
+      return `whoami: cannot find name for user ID ${this.currentUid}`;
+    }
     return this.currentUser;
   }
 
   groupsCmd(username?: string): string {
     const name = username || this.currentUser;
-    const user = this.users.get(name);
+    const user = this.getUser(name) ? this.users.get(name) : undefined;
     if (!user) return `groups: '${name}': no such user`;
     const groups = this.getUserGroups(name);
     const groupNames = groups.map(g => g.name).join(' ');
@@ -1228,6 +1335,9 @@ export class LinuxUserManager {
       [...this.users.values()],
       [...this.groups.values()],
     );
+    // Record what we just wrote, so the next read does not mistake our own
+    // projection for an operator's edit and re-parse it needlessly.
+    this.lastKnownStamp = LinuxUserManager.stamp(this.accountDbText());
   }
 }
 

@@ -6837,6 +6837,24 @@ export class LinuxCommandExecutor {
       }
     }
 
+    // Log files whose name was removed while rsyslog still holds them open
+    // (docs/PRD-Pannes.md §F7.11). Real lsof marks exactly these `(deleted)`,
+    // and it is the ONLY way to find out where the disk space went: the
+    // inode is still allocated, still growing, and no path leads to it.
+    if (filterInet === null) {
+      const rsyslog = procs.find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
+      for (const held of this.logMgr.deletedLogHandles()) {
+        if (filterPid !== null && rsyslog?.pid !== filterPid) continue;
+        if (filterUser !== null && (rsyslog?.user ?? 'root') !== filterUser) continue;
+        const pid = String(rsyslog?.pid ?? 0).padStart(5);
+        const user = (rsyslog?.user ?? 'root').padEnd(6);
+        lines.push(
+          `rsyslogd   ${pid}  ${user} 7w     REG    8,1 ${String(held.lostBytes).padStart(8)} `
+          + `${String(nodeSeq++).padStart(4)} ${held.path} (deleted)`,
+        );
+      }
+    }
+
     if (lines.length === 1) {
       if (filterPid !== null) return `lsof: PID ${filterPid}: No such process`;
       return '';
