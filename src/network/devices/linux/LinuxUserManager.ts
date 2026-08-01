@@ -30,9 +30,10 @@ import { IamFilesystem } from './iam/fs/IamFilesystem';
 import { IAM_PATHS } from './iam/fs/IamPaths';
 import { parseAccountDatabase, SIMULATED_HASH_PREFIX } from './iam/fs/AccountDatabaseParser';
 import {
-  parseNsswitchConf, sourcesFor, effectiveAction, DEFAULT_NSSWITCH_CONF,
+  parseNsswitchConf, sourcesFor, DEFAULT_NSSWITCH_CONF,
 } from './nss/NssConfig';
-import type { NssSourceSpec } from './nss/types';
+import type { NssSourceSpec, NssResult } from './nss/types';
+import { startNssWalk, type NssMerge } from './nss/chainWalk';
 import { SYNTH_PASSWD, SYNTH_GROUP } from './nss/SystemdNssSource';
 import { PasswordPolicy } from './iam/policy/PasswordPolicy';
 import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
@@ -302,13 +303,13 @@ export class LinuxUserManager {
   }
 
   /**
-   * Walk a database's nsswitch chain, honouring the status actions.
+   * Build a database's table by walking the nsswitch chain once per name.
    *
-   * glibc neither stops at the first source nor blindly runs them all:
-   * each source's outcome is looked up in that source's own action table
-   * (`[NOTFOUND=return]`, `[SUCCESS=continue]`, …) and the answer decides
-   * whether the chain carries on. Defaults are SUCCESS=return,
-   * NOTFOUND=continue, UNAVAIL=continue, TRYAGAIN=continue.
+   * The walk itself is `startNssWalk()` — the very same object `getent`
+   * drives. That is the whole point: the account model and the name
+   * service must answer identically, and they can only be relied on to do
+   * so if they run the same code rather than two readings of the same man
+   * page.
    *
    * The distinction that actually bites is UNAVAIL vs NOTFOUND, and it is
    * why `entriesFrom` returns null rather than an empty map for a source
@@ -320,43 +321,42 @@ export class LinuxUserManager {
    * found". Collapsing the two would lock that machine out for good.
    *
    * @param entriesFrom what a source provides, or null when it cannot answer.
-   * @param merge       how to combine two answers for the same name, for
-   *                    the `[SUCCESS=merge]` action.
+   * @param merge       how two answers for one name combine under
+   *                    `[SUCCESS=merge]`.
    */
   private walkNssChain<T>(
     database: 'passwd' | 'group',
     entriesFrom: (source: string) => Map<string, T> | null,
-    merge?: (existing: T, incoming: T) => T,
+    merge?: NssMerge<T>,
   ): Map<string, T> {
+    const specs = this.nssSpecs(database);
+    // Each source is consulted once for its whole table, then the per-name
+    // walk reads out of that — the sources are files and in-memory tables
+    // here, so asking them per name would re-parse for nothing.
+    const tables = specs.map((spec) => entriesFrom(spec.name));
+
+    const names = new Set<string>();
+    for (const table of tables) {
+      if (table) for (const name of table.keys()) names.add(name);
+    }
+
     const out = new Map<string, T>();
-    // Names an earlier source settled with SUCCESS=return — never revisited.
-    const settled = new Set<string>();
-
-    for (const spec of this.nssSpecs(database)) {
-      const provided = entriesFrom(spec.name);
-      if (provided === null) {
-        if (effectiveAction(spec, 'UNAVAIL') === 'return') break;
-        continue;
+    for (const name of names) {
+      const walk = startNssWalk<T>(merge);
+      let settled: NssResult<T> | null = null;
+      for (let i = 0; i < specs.length && settled === null; i++) {
+        const table = tables[i];
+        const r: NssResult<T> = table === null
+          ? { status: 'UNAVAIL' }
+          : table.has(name)
+            ? { status: 'SUCCESS', entry: table.get(name) }
+            : { status: 'NOTFOUND' };
+        settled = walk.step(specs[i], r);
       }
-
-      const onSuccess = effectiveAction(spec, 'SUCCESS');
-      for (const [name, entry] of provided) {
-        if (settled.has(name)) continue;
-        const existing = out.get(name);
-        // `merge` combines this answer with what is already collected —
-        // glibc implements it for the group database, where it unions the
-        // member lists. Without a merger it degrades to `continue`.
-        out.set(name, existing !== undefined && merge && onSuccess === 'merge'
-          ? merge(existing, entry)
-          : entry);
-        // `return` (the default) freezes the answer; `continue`/`merge`
-        // let a later source contribute, glibc's last-wins behaviour.
-        if (onSuccess === 'return') settled.add(name);
+      const result = settled ?? walk.finish();
+      if (result.status === 'SUCCESS' && result.entry !== undefined) {
+        out.set(name, result.entry);
       }
-
-      // Every name this source did NOT carry is a NOTFOUND for that name;
-      // `return` ends the chain, so nothing further can answer for them.
-      if (effectiveAction(spec, 'NOTFOUND') === 'return') break;
     }
     return out;
   }

@@ -33,6 +33,7 @@ import type {
   NssDatabaseConfig, NssEnumResult, NssResult, NssSourceSpec, NssStatus,
 } from './types';
 import { NssCache } from './NssCache';
+import { startNssWalk, type NssWalk } from './chainWalk';
 
 /**
  * Cache-invalidation signal — every IAM / host event that could change
@@ -42,13 +43,6 @@ import { NssCache } from './NssCache';
  * needing access to the bus types.
  */
 export type CacheInvalidationListener = (database: string) => void;
-
-function mergeEntries<T>(a: T, b: T): T {
-  if (Array.isArray(a) && Array.isArray(b)) {
-    return [...a, ...b] as unknown as T;
-  }
-  return a;
-}
 
 /**
  * Files a database can be produced from. A cached answer stamps the
@@ -181,41 +175,14 @@ export class NameServiceSwitch {
   }
 
   /**
-   * La marche `[STATUS=action]` de glibc, isolée de la façon dont chaque
-   * source est interrogée. Les chemins synchrone et asynchrone la
-   * pilotent tous les deux : dupliquer ces règles serait s'exposer à ce
-   * que `getent hosts` et `ping` finissent par ne plus décider pareil.
+   * La marche `[STATUS=action]` de glibc. La règle elle-même vit dans
+   * `chainWalk.ts` : le modèle de comptes (`LinuxUserManager`) la suit
+   * aussi, et deux copies seraient deux occasions de diverger — une
+   * machine où `getent passwd alice` et `id alice` ne répondent pas
+   * pareil est pire qu'une machine où les deux se trompent.
    */
-  private startWalk<T>() {
-    let sawNotFound = false;
-    let sawUnavail = false;
-    let merged: T | undefined;
-
-    return {
-      /** Rend le résultat final si la marche s'arrête ici, sinon null. */
-      step(spec: NssSourceSpec, r: NssResult<T>): NssResult<T> | null {
-        if (r.status === 'NOTFOUND') sawNotFound = true;
-        if (r.status === 'UNAVAIL') sawUnavail = true;
-
-        const action = effectiveAction(spec, r.status);
-
-        if (r.status === 'SUCCESS' && r.entry !== undefined) {
-          merged = merged === undefined ? r.entry : mergeEntries(merged, r.entry);
-          if (action !== 'merge') return { status: 'SUCCESS', entry: merged };
-          return null;
-        }
-        if (action === 'return') {
-          return merged === undefined ? r : { status: 'SUCCESS', entry: merged };
-        }
-        return null;
-      },
-      finish(): NssResult<T> {
-        if (merged !== undefined) return { status: 'SUCCESS', entry: merged };
-        if (sawNotFound) return { status: 'NOTFOUND' };
-        if (sawUnavail) return { status: 'UNAVAIL' };
-        return { status: 'NOTFOUND' };
-      },
-    };
+  private startWalk<T>(): NssWalk<T> {
+    return startNssWalk<T>();
   }
 
   private lookupUncached<T>(
