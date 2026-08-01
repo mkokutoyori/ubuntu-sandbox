@@ -63,14 +63,19 @@ describe('F7.3 — /etc/passwd deleted', () => {
     expect(await run(d, 'whoami')).toBe('whoami: cannot find name for user ID 1000');
   });
 
-  it('`ls -l` shows a numeric owner', async () => {
+  it('`ls -l` shows a numeric owner for a regular account', async () => {
     const d = pc();
-    expect(await run(d, 'ls -l /etc/hostname')).toContain('root');
+    await run(d, 'touch /home/user/note.txt');
+    expect(await run(d, 'ls -l /home/user/note.txt')).toContain('user');
 
     await run(d, 'sudo rm /etc/passwd');
 
-    const out = await run(d, 'ls -l /etc/hostname');
-    expect(out).toMatch(/\s0\s/);
+    const out = await run(d, 'ls -l /home/user/note.txt');
+    expect(out).toMatch(/\s1000\s/);
+    // …while a root-owned file still reads `root`, because nss-systemd(8)
+    // synthesises that name with no /etc/passwd at all. Both halves are
+    // real, and only the regular account actually loses its name.
+    expect(await run(d, 'ls -l /etc/hostname')).toContain('root');
   });
 
   it('`getent passwd` no longer enumerates the accounts', async () => {

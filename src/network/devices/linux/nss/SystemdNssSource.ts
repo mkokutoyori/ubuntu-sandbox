@@ -8,14 +8,20 @@ import type {
 
 const NOLOGIN = '/usr/sbin/nologin';
 
-const SYNTH_PASSWD: Record<string, NssPasswdEntry> = {
+/**
+ * The records nss-systemd(8) synthesises so a machine stays usable when
+ * `/etc/passwd` is corrupt or gone. Exported because `LinuxUserManager`
+ * follows the same nsswitch chain and must offer the same two names — one
+ * definition, not two that can drift.
+ */
+export const SYNTH_PASSWD: Record<string, NssPasswdEntry> = {
   root:   { name: 'root',   passwd: 'x', uid: 0,     gid: 0,     gecos: 'Super User',  dir: '/root', shell: '/bin/sh' },
   nobody: { name: 'nobody', passwd: 'x', uid: 65534, gid: 65534, gecos: 'User Nobody', dir: '/',     shell: NOLOGIN },
 };
 const SYNTH_PASSWD_BY_UID = new Map<number, NssPasswdEntry>([
   [0, SYNTH_PASSWD.root], [65534, SYNTH_PASSWD.nobody],
 ]);
-const SYNTH_GROUP: Record<string, NssGroupEntry> = {
+export const SYNTH_GROUP: Record<string, NssGroupEntry> = {
   root:   { name: 'root',   passwd: 'x', gid: 0,     members: [] },
   nobody: { name: 'nobody', passwd: 'x', gid: 65534, members: [] },
 };

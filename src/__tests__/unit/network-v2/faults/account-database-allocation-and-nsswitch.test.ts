@@ -110,6 +110,30 @@ describe('id allocation reads the live database', () => {
     expect(Number(line.split(':')[2])).toBe(2501);
   });
 
+  it('a system account (`useradd -r`) allocates DOWNWARD from SYS_UID_MAX', async () => {
+    const d = await box();
+
+    await run(d, 'useradd -r svcA');
+    await run(d, 'useradd -r svcB');
+
+    // Debian's SYS_UID_MAX is 999, and daemons really do get 999, 998, 997…
+    expect(uidOf(await run(d, 'id svcA'))).toBe(999);
+    expect(uidOf(await run(d, 'id svcB'))).toBe(998);
+  });
+
+  it('the two ranges grow APART, so filling one never eats the other', async () => {
+    const d = await box();
+    await run(d, 'useradd -r service');
+    await run(d, 'useradd -m humain');
+
+    // System ids come down from 999, regular ids climb from 1000. Had both
+    // grown upward they would meet at the boundary as soon as either range
+    // filled up — which is exactly why the real allocator uses opposite
+    // directions.
+    expect(uidOf(await run(d, 'id service'))).toBeLessThan(1000);
+    expect(uidOf(await run(d, 'id humain'))).toBeGreaterThanOrEqual(1000);
+  });
+
   it('a name added by hand is refused as a duplicate by useradd', async () => {
     const d = await box();
     await run(d, `sh -c "echo 'zoe:x:2000:2000:Zoe:/home/zoe:/bin/bash' >> /etc/passwd"`);
@@ -168,6 +192,48 @@ describe('/etc/nsswitch.conf governs the account model', () => {
     // The two databases are independent lines, and switching one off must
     // not switch off the other.
     expect(await run(d, 'id bob')).toContain('uid=');
+    expect(await run(d, 'getent group sudo')).not.toContain('sudo:');
+  });
+
+  it('`systemd` still answers for root and nobody when `files` is gone', async () => {
+    const d = await box();
+
+    await run(d, `sed -i 's|^passwd:.*|passwd:         systemd|' /etc/nsswitch.conf`);
+
+    // glibc does not stop at the first source, and nss-systemd(8) exists
+    // precisely so these two survive a corrupt or missing /etc/passwd.
+    // Honouring only the `files` entry left the machine with no root at all.
+    expect(await run(d, 'id root')).toContain('uid=0(root)');
+    expect(await run(d, 'id nobody')).toContain('65534');
+  });
+
+  it('but the synthesised root carries no password', async () => {
+    const d = await box();
+    await run(d, `sed -i 's|^passwd:.*|passwd:         systemd|' /etc/nsswitch.conf`);
+
+    const mgr = (d as unknown as {
+      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+    }).executor.userMgr;
+    // Resolving a name and authenticating it are different questions: the
+    // synthetic record makes the box usable, not open.
+    expect(mgr.checkPassword('root', 'admin')).toBe(false);
+  });
+
+  it('the file wins over the synthetic record when both could answer', async () => {
+    const d = await box();
+
+    // Default chain is `files systemd`, and root is in /etc/passwd, so the
+    // real entry (home /root, shell /bin/bash) must be the one that shows —
+    // nss-systemd only synthesises what is not defined by other means.
+    expect(await run(d, 'getent passwd root')).toContain('/bin/bash');
+  });
+
+  it('the chain applies to `group:` as well', async () => {
+    const d = await box();
+
+    await run(d, `sed -i 's|^group:.*|group:          systemd|' /etc/nsswitch.conf`);
+
+    expect(await run(d, 'getent group root')).toContain('root:x:0:');
     expect(await run(d, 'getent group sudo')).not.toContain('sudo:');
   });
 

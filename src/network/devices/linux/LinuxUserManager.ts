@@ -30,6 +30,7 @@ import { IamFilesystem } from './iam/fs/IamFilesystem';
 import { IAM_PATHS } from './iam/fs/IamPaths';
 import { parseAccountDatabase } from './iam/fs/AccountDatabaseParser';
 import { parseNsswitchConf, sourcesFor, DEFAULT_NSSWITCH_CONF } from './nss/NssConfig';
+import { SYNTH_PASSWD, SYNTH_GROUP } from './nss/SystemdNssSource';
 import { PasswordPolicy } from './iam/policy/PasswordPolicy';
 import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
 import type { PasswordAgingPolicyInit } from './iam/policy/PasswordAgingPolicy';
@@ -192,9 +193,20 @@ export class LinuxUserManager {
 
   // ─── Allocating a new id ──────────────────────────────────────────────
   //
-  // shadow-utils' own `find_new_uid()`: walk the database, take the highest
-  // id already used inside [MIN, MAX] and add one; if that runs past MAX,
-  // fall back to reusing the lowest free id in the range.
+  // shadow-utils' `find_new_uid()`, and the two halves of it really are
+  // different searches:
+  //
+  //   - a REGULAR account takes the highest id already used inside
+  //     [UID_MIN, UID_MAX] and adds one, falling back to the lowest free id
+  //     only once that runs past the ceiling;
+  //   - a SYSTEM account (`useradd -r`) searches DOWNWARD from SYS_UID_MAX
+  //     and takes the highest free id it finds.
+  //
+  // The directions are opposite on purpose: the two ranges are adjacent
+  // (…999 | 1000…), so growing them towards each other would have them
+  // collide as soon as either fills up. Growing them apart keeps the gap
+  // between them, which is why a real Debian box hands out 999, 998, 997…
+  // to daemons while users climb 1000, 1001, 1002…
   //
   // The important part is WHERE the answer comes from. A stored cursor that
   // only ever moved forward could not see an id an operator freed (or took)
@@ -204,9 +216,13 @@ export class LinuxUserManager {
   // file, which is the only way the two can agree.
 
   private allocateId(
-    taken: Iterable<number>, min: number, max: number,
+    taken: Iterable<number>, min: number, max: number, downward: boolean,
   ): number | null {
     const used = new Set(taken);
+    if (downward) {
+      for (let id = max; id >= min; id--) if (!used.has(id)) return id;
+      return null;
+    }
     let candidate = min;
     for (const id of used) {
       if (id >= min && id <= max && id >= candidate) candidate = id + 1;
@@ -223,6 +239,7 @@ export class LinuxUserManager {
       [...this.users.values()].map((u) => u.uid),
       system ? this.loginDefs.sysUidMin : this.loginDefs.uidMin,
       system ? this.loginDefs.sysUidMax : this.loginDefs.uidMax,
+      system,
     );
   }
 
@@ -233,6 +250,7 @@ export class LinuxUserManager {
       [...this.groups.values()].map((g) => g.gid),
       system ? this.loginDefs.sysGidMin : this.loginDefs.gidMin,
       system ? this.loginDefs.sysGidMax : this.loginDefs.gidMax,
+      system,
     );
   }
 
@@ -269,10 +287,62 @@ export class LinuxUserManager {
    * which includes `files` — a missing file does not disable name
    * resolution.
    */
-  private filesSourceEnabled(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): boolean {
+  private nssSources(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): string[] {
     const conf = this.vfs.readFile(IAM_PATHS.nsswitchConf) ?? DEFAULT_NSSWITCH_CONF;
-    return sourcesFor(parseNsswitchConf(conf), database)
-      .some((src) => src.name === 'files' || src.name === 'compat');
+    return sourcesFor(parseNsswitchConf(conf), database).map((src) => src.name);
+  }
+
+  private filesSourceEnabled(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): boolean {
+    return this.nssSources(database)
+      .some((name) => name === 'files' || name === 'compat');
+  }
+
+  /**
+   * Add what the sources AFTER `files` contribute.
+   *
+   * glibc does not stop at the first source: NOTFOUND continues down the
+   * line, so `passwd: files systemd` means "the file, then whatever systemd
+   * knows". Honouring only the `files` entry made `passwd: systemd` a
+   * machine with no root at all — whereas nss-systemd(8) exists precisely
+   * so that root and nobody survive a corrupt or missing `/etc/passwd`.
+   *
+   * A name already found earlier is never overwritten, which also matches
+   * nss-systemd's own rule: it synthesises those two only when they are not
+   * defined by other means, so the `/etc/passwd` entry always wins.
+   */
+  private applyNssChain(
+    users: Map<string, LinuxUserAccount>,
+    groups: Map<string, LinuxGroup>,
+  ): void {
+    for (const source of this.nssSources('passwd')) {
+      if (source !== 'systemd') continue;
+      for (const entry of Object.values(SYNTH_PASSWD)) {
+        if (users.has(entry.name)) continue;
+        users.set(entry.name, new LinuxUserAccount({
+          username: entry.name,
+          uid: entry.uid,
+          gid: entry.gid,
+          gecos: entry.gecos,
+          home: entry.dir,
+          shell: entry.shell,
+          // Synthesised, never authenticated against: these records carry no
+          // secret, so `su root` on a machine with no /etc/shadow still
+          // fails even though `id root` answers.
+          password: '*',
+          locked: true,
+          systemAccount: true,
+        }));
+      }
+    }
+    for (const source of this.nssSources('group')) {
+      if (source !== 'systemd') continue;
+      for (const entry of Object.values(SYNTH_GROUP)) {
+        if (groups.has(entry.name)) continue;
+        groups.set(entry.name, new LinuxGroup({
+          name: entry.name, gid: entry.gid, systemGroup: true,
+        }));
+      }
+    }
   }
 
   /**
@@ -324,8 +394,11 @@ export class LinuxUserManager {
         users: [...this.users.values()],
         groups: [...this.groups.values()],
       });
-      this.users = new Map(parsed.users.map((u) => [u.username, u]));
-      this.groups = new Map(parsed.groups.map((g) => [g.name, g]));
+      const users = new Map(parsed.users.map((u) => [u.username, u]));
+      const groups = new Map(parsed.groups.map((g) => [g.name, g]));
+      this.applyNssChain(users, groups);
+      this.users = users;
+      this.groups = groups;
       // Only accounts whose stored secret still yields a cleartext keep a
       // usable password. A hand-edited hash therefore stops authenticating,
       // which is the real consequence of editing one.
