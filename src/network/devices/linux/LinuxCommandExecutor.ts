@@ -957,7 +957,12 @@ export class LinuxCommandExecutor {
     if (this.socketTable) {
       // Log port activity *before* the port projection runs its initial
       // reconcile, so boot-time binds are recorded too.
-      this.portActivityLog = new PortActivityLogProjection(bus, this.logMgr, deviceId);
+      this.portActivityLog = new PortActivityLogProjection(
+        bus, this.logMgr, deviceId,
+        // The real daemon, from the real process table — so the pid in
+        // `sshd[<pid>]` is the one `ps aux | grep sshd` shows.
+        () => this.processMgr.list({ comm: 'sshd' })[0]?.pid,
+      );
       this.servicePortProjection = new ServicePortProjection(
         bus, deviceId, this.socketTable, this.serviceMgr,
       );

@@ -18,13 +18,10 @@
  * still appear (the filter must not silence real server logging), and
  * the outbound one must not.
  *
- * Scope, honestly: the same one-line filter was applied to the Linux
- * projection (`PortActivityLogProjection.onTcpConnectionClosed`) for the
- * same reason, but it has no test here. That projection did not attach to
- * a host built this way, so every assertion written against it passed
- * whether the filter was there or not — and an assertion that cannot fail
- * is worse than none. Covering it needs the projection's own wiring
- * understood first, which is a separate piece of work.
+ * The Linux half is exercised on a REAL machine — a real cable, a real
+ * ssh login — in `sshd-speaks-with-one-voice.test.ts`, which checks the
+ * whole chain the operator actually reads: the process table, the file
+ * rsyslog writes, and the journal.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

@@ -194,6 +194,12 @@ export class LinuxSshServerContext implements ISshServerContext {
       ? new SshSyslogger(this.vfs, this.events, {
           hostname: this.hostname,
           port: this.sshdConfig.listenPort,
+          // The pid of the REAL sshd in this machine's process table, not
+          // a fresh random one: `ps`, `sshd[<pid>]` in auth.log and
+          // `journalctl -u ssh` describe one daemon and must name it the
+          // same way. Falls back to the random default only when no sshd
+          // process exists to point at.
+          sshdPid: this.executor?.processMgr?.list({ comm: 'sshd' })[0]?.pid,
           // Hand the device's journal in so SSH events surface in
           // `journalctl -u sshd`, not just in /var/log/auth.log.
           logMgr: this.executor?.logMgr,

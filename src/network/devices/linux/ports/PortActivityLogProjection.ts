@@ -24,6 +24,14 @@ export class PortActivityLogProjection {
     bus: IEventBus,
     private readonly logManager: LinuxLogManager,
     private readonly deviceId: string,
+    /**
+     * The machine's actual sshd process, when it is running.
+     *
+     * `ps`, `/var/log/auth.log` and `journalctl -u ssh` all describe the
+     * same daemon; reading its pid from the real process table is what
+     * keeps them from naming three different ones.
+     */
+    private readonly sshdPid: () => number | undefined = () => undefined,
   ) {
     this.subscriptions.push(
       bus.subscribe('linux.port.bound', (e) => this.onBound(e.payload)),
@@ -370,9 +378,8 @@ export class PortActivityLogProjection {
     deviceId: string; localIp: string; localPort: number; added: boolean;
   }): void {
     if (p.deviceId !== this.deviceId) return;
-    const tag = this.tagForPort(p.localPort);
-    this.logManager.logDaemon(
-      tag,
+    this.logConnection(
+      p.localPort,
       p.added
         ? `Server listening on ${p.localIp} port ${p.localPort}.`
         : `Closed TCP listening socket ${p.localIp}:${p.localPort}`,
@@ -385,9 +392,8 @@ export class PortActivityLogProjection {
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (!p.passive) return;
-    const tag = this.tagForPort(p.localPort);
-    this.logManager.logDaemon(
-      tag,
+    this.logConnection(
+      p.localPort,
       `Accepted connection from ${p.remoteIp}:${p.remotePort} on ${p.localIp}:${p.localPort}`,
     );
   }
@@ -400,18 +406,34 @@ export class PortActivityLogProjection {
     // Same filter as `onTcpConnectionOpened`: a socket we dialled out is
     // not a "Connection from" anybody, and `sshd` has no business logging
     // the close of a connection it never accepted.
-    // Same filter as `onTcpConnectionOpened`: a socket we dialled out is
-    // not a "Connection from" anybody, and `sshd` has no business logging
-    // the close of a connection it never accepted.
-    // Same filter as `onTcpConnectionOpened`: a socket we dialled out is
-    // not a "Connection from" anybody, and `sshd` has no business logging
-    // the close of a connection it never accepted.
     if (!p.passive) return;
-    const tag = this.tagForPort(p.localPort);
-    this.logManager.logDaemon(
-      tag,
+    this.logConnection(
+      p.localPort,
       `Connection from ${p.remoteIp}:${p.remotePort} closed (${p.reason})`,
     );
+  }
+
+  /**
+   * Record one connection event under the facility its daemon really uses.
+   *
+   * sshd logs to authpriv, which is why an operator looks for SSH activity
+   * in `/var/log/auth.log`. Sending these lines through the daemon facility
+   * put them in `/var/log/syslog` while the authentications for the very
+   * same connection — written by `SshSyslogger`, which already calls
+   * `logAuth` — landed in auth.log: one daemon, one connection, two files,
+   * and the file everybody checks was the one missing half the story.
+   *
+   * The unit is `ssh` (Debian's unit name) while the tag stays `sshd` (what
+   * the binary calls itself), the same split `SshSyslogger` uses, so
+   * `journalctl -u ssh` shows both halves too.
+   */
+  private logConnection(localPort: number, message: string): void {
+    const tag = this.tagForPort(localPort);
+    if (tag === 'sshd') {
+      this.logManager.logAuth(tag, message, this.sshdPid(), 'ssh');
+      return;
+    }
+    this.logManager.logDaemon(tag, message);
   }
 
   private tagForPort(port: number): string {

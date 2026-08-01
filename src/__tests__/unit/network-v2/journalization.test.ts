@@ -125,13 +125,19 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       expect(output).toContain('direct stderr alert');
     });
 
-    it('12. should write to both syslog and auth.log if priority auth.err is selected', async () => {
+    it('12. should write an auth.err message to auth.log ONLY, never syslog', async () => {
       const pc = setupLinuxHost();
       await pc.executeCommand('logger -p auth.err "auth database connection lost"');
       const syslog = await pc.executeCommand('cat /var/log/syslog');
       const auth = await pc.executeCommand('cat /var/log/auth.log');
-      expect(syslog).toContain('auth database connection lost');
       expect(auth).toContain('auth database connection lost');
+      // Debian ships `*.*;auth,authpriv.none -/var/log/syslog`: the
+      // catch-all rule EXCLUDES authentication messages, because they can
+      // carry usernames and get their own, tighter-permissioned file.
+      // This case previously asserted the copy in both files — the
+      // behaviour the simulator had, not the one rsyslog is configured
+      // for.
+      expect(syslog).not.toContain('auth database connection lost');
     });
 
     it('13. should handle special characters and backslashes in logger argument inputs', async () => {

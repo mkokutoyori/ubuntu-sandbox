@@ -842,9 +842,22 @@ export class LinuxLogManager {
     return h ? h.trim() : this.hostname;
   }
 
+  /**
+   * Which files rsyslog copies a message into, per Debian's shipped
+   * `/etc/rsyslog.d/50-default.conf`.
+   *
+   * The catch-all line there is `*.*;auth,authpriv.none -/var/log/syslog`:
+   * authentication messages are deliberately EXCLUDED from syslog, because
+   * they can carry usernames and are given their own, more tightly
+   * permissioned file. Copying them into both meant every ssh login showed
+   * up twice on the same machine, and `/var/log/syslog` — the file people
+   * skim for "what is this host doing" — was full of auth noise that its
+   * real counterpart never contains.
+   */
   private routeLogFiles(facilityName: string, priority: number): string[] {
-    const files = ['/var/log/syslog'];
-    if (facilityName === 'auth' || facilityName === 'authpriv') files.push('/var/log/auth.log');
+    const isAuth = facilityName === 'auth' || facilityName === 'authpriv';
+    const files = isAuth ? [] : ['/var/log/syslog'];
+    if (isAuth) files.push('/var/log/auth.log');
     else if (facilityName === 'kern') files.push('/var/log/kern.log');
     else if (facilityName === 'cron') files.push('/var/log/cron.log');
     else if (facilityName === 'mail') {
@@ -955,27 +968,19 @@ export class LinuxLogManager {
       });
     }
 
-    // SSH daemon messages
-    const sshPid = 1234;
-    const sshMsgs = [
-      'Server listening on 0.0.0.0 port 22.',
-      'Server listening on :: port 22.',
-    ];
-    offset = 3.0;
-    for (const msg of sshMsgs) {
-      offset += 0.1;
-      this.journal.push({
-        timestamp: new Date(bt.getTime() + offset * 1000),
-        monotonicUsec: Math.floor(offset * 1000000),
-        priority: 6,
-        facility: 3, // daemon
-        unit: 'ssh',
-        tag: 'sshd',
-        message: msg,
-        pid: sshPid,
-        hostname: this.currentHostname(),
-      });
-    }
+    // No seeded sshd lines here, deliberately.
+    //
+    // `Server listening on 0.0.0.0 port 22.` is already produced by the
+    // real event — `tcp.listener.changed` when the ssh unit binds its
+    // socket — and `PortActivityLogProjection` writes it with the pid the
+    // daemon actually has in the process table. Seeding a copy meant the
+    // same machine showed that line twice, once under an invented
+    // `sshd[1234]` that `ps aux | grep sshd` never matched.
+    //
+    // Its IPv6 twin (`Server listening on :: port 22.`) is gone rather
+    // than kept: the simulator binds no IPv6 listener, so the line would
+    // announce a socket that does not exist — which is what an operator
+    // reading it would go on to test.
 
     // Auth/logind messages
     const logindPid = 456;
