@@ -186,7 +186,10 @@ async function sshInto(page: Page, user: string, password: string): Promise<void
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/');
+  // Same budget as the other CLI-driven specs: a router lab boots a real
+  // device and replays a full config through the real shell.
+  test.setTimeout(90_000);
+  await page.goto('/', { timeout: 45_000 });
   await waitForStore(page);
 });
 
@@ -194,7 +197,7 @@ test.describe('une panne physique sous une session SSH établie (cible Linux)', 
   test('nominal : la session répond avant toute panne', async ({ page }) => {
     const lab = await buildLab(page, 'linux-server');
     await openTerminal(page, lab.client);
-    await sshInto(page, 'user', 'admin');
+    await sshInto(page, 'alice', 'alice');
 
     await typeCommand(page, 'hostname');
     expect(await promptText(page)).not.toContain('Broken pipe');
@@ -203,7 +206,7 @@ test.describe('une panne physique sous une session SSH établie (cible Linux)', 
   test('le câble arraché À L\'AUTRE BOUT casse la session', async ({ page }) => {
     const lab = await buildLab(page, 'linux-server');
     await openTerminal(page, lab.client);
-    await sshInto(page, 'user', 'admin');
+    await sshInto(page, 'alice', 'alice');
 
     // Le lien du client reste parfaitement up : rien de son côté ne peut
     // le savoir. Seul le chemin le sait (docs/PRD-Pannes.md §F1).
@@ -216,7 +219,7 @@ test.describe('une panne physique sous une session SSH établie (cible Linux)', 
   test('un switch intermédiaire qui perd le courant casse la session', async ({ page }) => {
     const lab = await buildLab(page, 'linux-server');
     await openTerminal(page, lab.client);
-    await sshInto(page, 'user', 'admin');
+    await sshInto(page, 'alice', 'alice');
 
     await powerOff(page, lab.sw);
 
@@ -227,7 +230,7 @@ test.describe('une panne physique sous une session SSH établie (cible Linux)', 
   test('la machine distante éteinte casse la session', async ({ page }) => {
     const lab = await buildLab(page, 'linux-server');
     await openTerminal(page, lab.client);
-    await sshInto(page, 'user', 'admin');
+    await sshInto(page, 'alice', 'alice');
 
     await powerOff(page, lab.target);
 
@@ -238,7 +241,7 @@ test.describe('une panne physique sous une session SSH établie (cible Linux)', 
   test('après la coupure, on retrouve son propre shell — pas un shell fantôme', async ({ page }) => {
     const lab = await buildLab(page, 'linux-server');
     await openTerminal(page, lab.client);
-    await sshInto(page, 'user', 'admin');
+    await sshInto(page, 'alice', 'alice');
 
     await pullCable(page, lab.farCable);
     await typeCommand(page, 'hostname');
@@ -256,7 +259,7 @@ test.describe('arrêter sshd ne coupe PAS la session en cours', () => {
     const lab = await buildLab(page, 'linux-server');
 
     await openTerminal(page, lab.client);
-    await sshInto(page, 'user', 'admin');
+    await sshInto(page, 'alice', 'alice');
     await closeTerminal(page);
 
     // Depuis la console du serveur, pas depuis la session — c'est bien le
@@ -330,7 +333,12 @@ test.describe('F7.2 côté routeur — les clés RSA sont ce qui fait tourner SS
     await closeTerminal(page);
 
     await openTerminal(page, lab.target);
-    for (const c of ['enable', 'Admin@123', 'configure terminal', 'crypto key zeroize rsa', 'end']) {
+    // `enable secret` is set on this lab, so `enable` challenges — and the
+    // answer goes into the MASKED input, not the ordinary command line.
+    await typeCommand(page, 'enable');
+    await expect(inTerminal(page, 'Password').first()).toBeVisible({ timeout: 10_000 });
+    await typePassword(page, 'Admin@123');
+    for (const c of ['configure terminal', 'crypto key zeroize rsa', 'end']) {
       await typeCommand(page, c);
     }
     await closeTerminal(page);
