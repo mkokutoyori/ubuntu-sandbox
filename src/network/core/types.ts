@@ -91,6 +91,26 @@ export class MACAddress {
   static resetCounter(): void {
     macCounter = 0;
   }
+
+  /**
+   * Make sure the generator never hands out an address that is already in
+   * use — called when a MAC is restored from a saved topology rather than
+   * generated.
+   *
+   * The generator is a plain counter, so a restored address only stays
+   * unique if the counter is pushed past it: a topology whose devices were
+   * created and deleted before the save can hold a MAC numerically higher
+   * than the number of ports it contains, and the next device added after
+   * loading would otherwise be issued that very address. Addresses outside
+   * the generator's own `02:00:00:…` block (a hand-set MAC, a vendor OUI)
+   * are left alone — they were never drawn from this counter.
+   */
+  static reserve(mac: MACAddress): void {
+    const [b0, b1, b2, b3, b4, b5] = mac.getOctets();
+    if (b0 !== 0x02 || b1 !== 0x00 || b2 !== 0x00) return;
+    const value = (b3 << 16) | (b4 << 8) | b5;
+    if (value > macCounter) macCounter = value;
+  }
 }
 
 // ─── IPv4 Address ────────────────────────────────────────────────────

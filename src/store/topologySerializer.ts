@@ -6,8 +6,12 @@
  * import. The set is widened as new state surfaces become important:
  *
  *   - Per-interface: IP/mask, admin up/down, description, secondary IPs
+ *   - Per-interface: the NIC's MAC, and the physical layer (MTU, speed,
+ *                    duplex, auto-negotiation, bandwidth, delay)
+ *   - Per-cable:     admin state, injected loss/corruption/latency
  *   - Per-host:      default gateway, static routes, static ARP entries,
- *                    every Linux file that differs from a fresh boot
+ *                    every Linux OR Windows file that differs from a
+ *                    fresh filesystem
  *   - Per-switch:    VLAN database, switchport mode + VLAN assignment
  *   - Per-router/switch: the full vendor running-config/NVRAM text,
  *                    re-applied on import via a real CLI replay
@@ -27,7 +31,10 @@ import {
   Switch,
   type SwitchportMode,
 } from '@/network';
+import type { PortDuplex } from '@/network/core/types';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { buildConnection, type Connection } from './networkStore';
 
@@ -36,7 +43,8 @@ import { buildConnection, type Connection } from './networkStore';
  *  list in the header comment above: anything not listed there. */
 export const TOPOLOGY_SAVE_CAVEATS =
   "Terminal sessions, in-progress editors, and live TCP/SSH connections are not included — they close when this topology is loaded. " +
-  "Dynamic state (DHCP leases, OSPF/BGP-learned routes) reconverges from config after loading rather than being restored directly.";
+  "Dynamic state (DHCP leases, OSPF/BGP-learned routes) reconverges from config after loading rather than being restored directly. " +
+  "Linux firewall rules (iptables) and Oracle databases are not yet captured.";
 
 // ── Export schema ──
 
@@ -54,11 +62,30 @@ interface TopologySecondaryIpExport {
 
 interface TopologyInterfaceExport {
   name: string;
+  /**
+   * The NIC's burned-in address.
+   *
+   * Without it every import re-draws MACs from the generator, so a saved
+   * static ARP entry, a sticky port-security address or a DHCP
+   * reservation ends up naming hardware that no longer exists — the file
+   * and the machine it describes disagree the moment they are reloaded.
+   */
+  mac?: string;
   ipAddress?: string;
   subnetMask?: string;
   isUp?: boolean;
   description?: string;
   secondaryIPs?: TopologySecondaryIpExport[];
+  // ── Physical layer. Emitted only when it differs from a fresh port, so
+  // a plain topology file stays readable. A router recovers some of this
+  // through its running-config replay; a Linux or Windows host has no
+  // config text at all, so for those this is the only carrier.
+  mtu?: number;
+  speed?: number;
+  duplex?: PortDuplex;
+  autoNegotiation?: boolean;
+  bandwidthKbps?: number;
+  delayUs?: number;
 }
 
 interface TopologyStaticArpExport {
@@ -111,6 +138,18 @@ interface TopologyConnectionExport {
   targetDeviceId: string;
   targetInterfaceId: string;
   type: ConnectionType;
+  /**
+   * What was done TO the cable, as opposed to what it connects.
+   *
+   * A lab built to demonstrate a degraded link (docs/PRD-Pannes.md §F5)
+   * used to reload as a perfect one: only the endpoints were saved, so
+   * the injected loss, corruption, latency and the admin-down state were
+   * all dropped. Omitted when the cable is pristine.
+   */
+  isUp?: boolean;
+  packetLossRate?: number;
+  corruptionRate?: number;
+  artificialDelayMs?: number;
 }
 
 export interface TopologyExport {
@@ -130,8 +169,34 @@ function isCapturableVfsPath(path: string): boolean {
   return !VFS_SKIP_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
+/**
+ * A freshly-built `Port`'s physical defaults. Anything equal to these is
+ * left out of the file: an operator opening a topology should see what
+ * was configured, not a full dump of every field's factory value.
+ */
+const PORT_DEFAULTS = {
+  mtu: 1500,
+  speed: 1000,
+  duplex: 'full' as PortDuplex,
+  autoNegotiation: true,
+  bandwidthKbps: 0,
+} as const;
+
 function captureInterface(port: Port): TopologyInterfaceExport {
   const entry: TopologyInterfaceExport = { name: port.getName() };
+  entry.mac = port.getMAC().toString();
+  if (port.getMTU() !== PORT_DEFAULTS.mtu) entry.mtu = port.getMTU();
+  if (port.getSpeed() !== PORT_DEFAULTS.speed) entry.speed = port.getSpeed();
+  if (port.getDuplex() !== PORT_DEFAULTS.duplex) entry.duplex = port.getDuplex();
+  if (port.isNegotiationAuto() !== PORT_DEFAULTS.autoNegotiation) {
+    entry.autoNegotiation = port.isNegotiationAuto();
+  }
+  if (port.getBandwidthKbps() !== PORT_DEFAULTS.bandwidthKbps) {
+    entry.bandwidthKbps = port.getBandwidthKbps();
+  }
+  // Only an operator-set delay: the getter otherwise derives one from the
+  // link speed, which is already saved on its own.
+  if (port.hasExplicitDelayUs()) entry.delayUs = port.getDelayUs();
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
   if (ip) entry.ipAddress = ip.toString();
@@ -181,6 +246,45 @@ function captureLinuxFiles(device: LinuxMachine): TopologyFileExport[] {
   return out;
 }
 
+/**
+ * The Windows counterpart of {@link captureLinuxFiles}, and it exists for
+ * the same reason: everything the user created or edited, and nothing of
+ * the image it came with.
+ *
+ * Windows machines used to be exported with no filesystem at all — the
+ * capture was gated on `instanceof LinuxMachine`, so a lab that put a
+ * script, a config or a data file on a Windows host lost it silently on
+ * the first save. `WindowsFileSystem` is a different class from the Linux
+ * VFS with a different API, which is why this is a second walk rather
+ * than a shared one; the RULE is the same, only the traversal differs.
+ */
+function captureWindowsFiles(device: WindowsPC): TopologyFileExport[] {
+  const fs = device.getFileSystem();
+  const pristine = new WindowsFileSystem(device.getHostname());
+  const out: TopologyFileExport[] = [];
+  for (const dir of fs.listDirectoryRecursive('C:\\')) {
+    for (const e of dir.entries) {
+      if (e.entry.type !== 'file') continue;
+      const path = dir.path.endsWith('\\') ? dir.path + e.name : `${dir.path}\\${e.name}`;
+      const read = fs.readFile(path);
+      if (!read.ok || read.content === undefined) continue;
+      const base = pristine.readFile(path);
+      if (base.ok && base.content === read.content) continue;
+      out.push({ path, content: read.content });
+    }
+  }
+  return out;
+}
+
+function restoreWindowsFiles(device: WindowsPC, files: TopologyFileExport[]): void {
+  const fs = device.getFileSystem();
+  for (const f of files) {
+    const parent = f.path.slice(0, f.path.lastIndexOf('\\'));
+    if (parent) fs.mkdirp(parent);
+    fs.createFile(f.path, f.content);
+  }
+}
+
 function captureVlans(sw: Switch): TopologyVlanExport[] {
   const out: TopologyVlanExport[] = [];
   for (const v of sw.getVLANs().values()) {
@@ -203,6 +307,21 @@ function captureSwitchports(sw: Switch): TopologySwitchportExport[] {
     out.push(entry);
   }
   return out;
+}
+
+/**
+ * The live `Cable` a stored `Connection` describes.
+ *
+ * The store keeps connections as endpoint ids; the knobs an operator
+ * turned (loss, corruption, latency, admin state) live on the Cable
+ * object itself, reachable only through one of the two ports.
+ */
+function cableOf(
+  deviceInstances: Map<string, Equipment>,
+  c: Connection,
+): Cable | null {
+  const dev = deviceInstances.get(c.sourceDeviceId);
+  return dev?.getPort(c.sourceInterfaceId)?.getCable() ?? null;
 }
 
 // ── Export ──
@@ -253,6 +372,10 @@ export function exportTopology(
       const files = captureLinuxFiles(device);
       if (files.length > 0) entry.files = files;
     }
+    if (device instanceof WindowsPC) {
+      const files = captureWindowsFiles(device);
+      if (files.length > 0) entry.files = files;
+    }
     if (device instanceof Switch) {
       const vlans = captureVlans(device);
       if (vlans.length > 0) entry.vlans = vlans;
@@ -271,13 +394,24 @@ export function exportTopology(
     devices.push(entry);
   });
 
-  const conns: TopologyConnectionExport[] = connections.map((c) => ({
-    sourceDeviceId: c.sourceDeviceId,
-    sourceInterfaceId: c.sourceInterfaceId,
-    targetDeviceId: c.targetDeviceId,
-    targetInterfaceId: c.targetInterfaceId,
-    type: c.type,
-  }));
+  const conns: TopologyConnectionExport[] = connections.map((c) => {
+    const entry: TopologyConnectionExport = {
+      sourceDeviceId: c.sourceDeviceId,
+      sourceInterfaceId: c.sourceInterfaceId,
+      targetDeviceId: c.targetDeviceId,
+      targetInterfaceId: c.targetInterfaceId,
+      type: c.type,
+    };
+    const cable = cableOf(deviceInstances, c);
+    if (cable) {
+      if (!cable.getIsUp()) entry.isUp = false;
+      if (cable.getPacketLossRate() > 0) entry.packetLossRate = cable.getPacketLossRate();
+      if (cable.getCorruptionRate() > 0) entry.corruptionRate = cable.getCorruptionRate();
+      const delay = cable.getArtificialDelayMs();
+      if (delay > 0) entry.artificialDelayMs = delay;
+    }
+    return entry;
+  });
 
   return {
     version: 1,
@@ -388,6 +522,21 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       device.powerOff();
     }
 
+    // Before anything is cabled: the burned-in addresses. A switch that
+    // sees a frame the moment a link comes up would otherwise learn the
+    // generator's fresh address rather than the saved one.
+    for (const ifConfig of devData.interfaces) {
+      if (!ifConfig.mac) continue;
+      const port = device.getPort(ifConfig.name);
+      if (!port) continue;
+      try {
+        const mac = new MACAddress(ifConfig.mac);
+        port.setMAC(mac);
+        // Keep the generator from re-issuing it to a device added later.
+        MACAddress.reserve(mac);
+      } catch { /* malformed address in file — keep the generated one */ }
+    }
+
     if (device instanceof Switch) {
       restoreSwitchVlans(device, devData);
     }
@@ -408,7 +557,21 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       targetDevice, connData.targetInterfaceId,
       connData.type,
     );
-    if (connection) connections.push(connection);
+    if (connection) {
+      connections.push(connection);
+      const cable = sourceDevice.getPort(connData.sourceInterfaceId)?.getCable();
+      if (cable) {
+        if (connData.packetLossRate !== undefined) cable.setPacketLossRate(connData.packetLossRate);
+        if (connData.corruptionRate !== undefined) cable.setCorruptionRate(connData.corruptionRate);
+        if (connData.artificialDelayMs !== undefined) {
+          cable.setArtificialDelayMs(connData.artificialDelayMs);
+        }
+        // Last: pulling the cable down is what the other knobs are read
+        // through, and setting it first would fight the link-up the
+        // connection just produced.
+        if (connData.isUp === false) cable.setUp(false);
+      }
+    }
   }
 
   for (const devData of json.devices) {
@@ -443,6 +606,17 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
           } catch { /* malformed secondary — skip */ }
         }
       }
+      // Physical layer before the admin state, for the same reason as the
+      // cable: `setUp(false)` is the last word on the port.
+      if (ifConfig.mtu !== undefined) port.setMTU(ifConfig.mtu);
+      if (ifConfig.speed !== undefined) port.setSpeed(ifConfig.speed);
+      if (ifConfig.duplex !== undefined) port.setDuplex(ifConfig.duplex);
+      if (ifConfig.autoNegotiation !== undefined) {
+        port.setNegotiationAuto(ifConfig.autoNegotiation);
+        port.setAutoNegotiation(ifConfig.autoNegotiation);
+      }
+      if (ifConfig.bandwidthKbps !== undefined) port.setBandwidthKbps(ifConfig.bandwidthKbps);
+      if (ifConfig.delayUs !== undefined) port.setDelayUs(ifConfig.delayUs);
       if (ifConfig.isUp === false) port.setUp(false);
     }
 
@@ -481,6 +655,9 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     }
     if (devData.files && device instanceof LinuxMachine) {
       restoreLinuxFiles(device, devData.files);
+    }
+    if (devData.files && device instanceof WindowsPC) {
+      restoreWindowsFiles(device, devData.files);
     }
     if ((device instanceof Router || device instanceof Switch) && devData.runningConfigText) {
       await replayVendorConfig(device, devData.runningConfigText);

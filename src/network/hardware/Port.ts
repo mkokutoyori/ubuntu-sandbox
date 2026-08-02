@@ -120,6 +120,13 @@ export class Port {
   getDelayUs(): number {
     return this.delayUs ?? defaultInterfaceDelayUs(this.getNegotiatedSpeed());
   }
+  /**
+   * Whether a delay was set on this port, as opposed to derived from its
+   * speed. `getDelayUs()` always answers with a number, so it cannot tell
+   * the two apart — and a saved topology must record what the operator
+   * configured, not a value that follows from the speed it already saved.
+   */
+  hasExplicitDelayUs(): boolean { return this.delayUs !== null; }
   setDelayUs(v: number): void { this.delayUs = v; }
   /** Effective bandwidth (kbps): explicit `bandwidth` or the link speed. */
   getEffectiveBandwidthKbps(): number {
