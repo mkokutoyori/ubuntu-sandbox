@@ -31,6 +31,19 @@ export interface WinScheduledTask {
   intervalMs?: number;
   lastRunTime?: Date;
   lastResult?: string;
+  /**
+   * Ce que `schtasks /query /v` imprime en plus des trois colonnes du
+   * tableau. Rien ici n'est décoratif : chaque champ est ce que
+   * `/create` a reçu, et il n'y en a pas d'autre — un `Author` ou un
+   * `Run As User` inventé serait pire qu'absent.
+   */
+  author?: string;
+  runAsUser?: string;
+  scheduleType?: string;
+  startTime?: string;
+  startDate?: Date;
+  days?: string;
+  months?: string;
 }
 
 export interface WinSystemContext {
@@ -59,6 +72,16 @@ export interface WinSystemContext {
   readonly currentUser: string;
   isServiceRunning(name: string): boolean;
   readonly scheduledTasks: Map<string, WinScheduledTask>;
+  /**
+   * Ce que le planificateur consigne dans
+   * `Microsoft-Windows-TaskScheduler/Operational` — le journal où se lit
+   * l'historique d'une tâche sous Windows, et qui n'existait pas ici.
+   * Optionnel : `cmdSchtasks` reste utilisable sans journal.
+   */
+  onTaskRegistered?(task: WinScheduledTask): void;
+  onTaskDeleted?(taskName: string): void;
+  /** Démarrage manuel — le même que celui de `Start-ScheduledTask`. */
+  runTaskNow?(task: WinScheduledTask): void;
   now(): Date;
   /**
    * Real UAC elevation context for a process `start`s right now
@@ -250,9 +273,18 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
   const tn = flagVal('/tn');
 
   if (action === '/query') {
+    const all = Array.from(ctx.scheduledTasks.values());
     const filtered = tn
-      ? Array.from(ctx.scheduledTasks.values()).filter(t => t.taskName.toLowerCase() === tn.toLowerCase())
-      : Array.from(ctx.scheduledTasks.values());
+      ? all.filter(t => t.taskName.toLowerCase() === tn.toLowerCase())
+      : all;
+    // Un tableau vide se lisait « aucune tâche à montrer » alors que le
+    // nom demandé n'existe pas — le vrai le dit, comme `/delete` le fait
+    // déjà ici.
+    if (tn && filtered.length === 0) return 'ERROR: The system cannot find the file specified.';
+    const format = (flagVal('/fo') ?? 'TABLE').toUpperCase();
+    const verbose = flagIdx('/v') >= 0;
+    if (format === 'LIST') return renderSchtasksList(ctx, filtered, verbose);
+    if (format === 'CSV') return renderSchtasksCsv(ctx, filtered, verbose);
     const lines = [
       'Folder: \\',
       'TaskName                                 Next Run Time          Status',
@@ -266,26 +298,56 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
   }
   if (action === '/create') {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
-    const sc = flagVal('/sc')?.toUpperCase();
+    const tr = flagVal('/tr');
+    // Une tâche sans action est vide de sens ; le vrai la refuse.
+    if (!tr) return 'ERROR: The required parameter "/TR" is missing.';
+    // Écraser sans le dire ferait disparaître la tâche d'avant en silence.
+    if (ctx.scheduledTasks.has(tn.toLowerCase()) && flagIdx('/f') < 0) {
+      return `ERROR: The task "${tn}" already exists. Use /F to overwrite it.`;
+    }
+    const sc = flagVal('/sc')?.toUpperCase() ?? 'DAILY';
     const st = flagVal('/st');
     const mo = Number(flagVal('/mo')) || 1;
+    const d = flagVal('/d')?.toUpperCase();
+    const m = flagVal('/m')?.toUpperCase();
     const base = ctx.now();
     const task: WinScheduledTask = {
-      taskName: tn, taskPath: '\\', state: 'Ready', command: flagVal('/tr'),
+      taskName: tn, taskPath: '\\', state: 'Ready', command: tr,
+      author: `${ctx.hostname}\\${ctx.currentUser}`,
+      runAsUser: flagVal('/ru') ?? ctx.currentUser,
+      scheduleType: SCHEDULE_LABELS[sc] ?? sc,
+      startTime: st,
+      startDate: base,
+      days: d ?? (sc === 'DAILY' ? `Every ${mo} day(s)` : undefined),
+      months: m,
     };
     const recurUnit = sc === 'MINUTE' ? 60_000 : sc === 'HOURLY' ? 3_600_000 : sc === 'DAILY' ? 86_400_000 : 0;
     if (recurUnit > 0) {
       task.intervalMs = mo * recurUnit;
       task.runAt = st ? parseSchtasksTime(st, base) : new Date(base.getTime() + task.intervalMs);
-    } else if (st && (!sc || sc === 'ONCE')) {
+    } else if (sc === 'WEEKLY') {
+      // Une hebdomadaire tombe un jour nommé ; sans `/d`, le vrai retient
+      // le jour de la création.
+      task.intervalMs = 7 * 86_400_000 * mo;
+      task.runAt = nextWeekday(d, st, base);
+      task.days = d ?? WEEKDAY_ABBR[base.getDay()];
+    } else if (sc === 'MONTHLY') {
+      task.runAt = nextMonthly(Number(flagVal('/d')) || base.getDate(), st, base);
+      task.days = flagVal('/d') ?? String(base.getDate());
+    } else if (st && sc === 'ONCE') {
       task.runAt = parseSchtasksTime(st, base);
     }
+    // ONSTART, ONLOGON, ONIDLE et ONEVENT n'ont pas d'heure : leur
+    // déclencheur est un événement que rien ici ne produit. `N/A` est
+    // alors la vérité, pas une lacune d'affichage.
     ctx.scheduledTasks.set(tn.toLowerCase(), task);
+    ctx.onTaskRegistered?.(task);
     return `SUCCESS: The scheduled task "${tn}" has successfully been created.`;
   }
   if (action === '/delete') {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
     const removed = ctx.scheduledTasks.delete(tn.toLowerCase());
+    if (removed) ctx.onTaskDeleted?.(tn);
     return removed
       ? `SUCCESS: The scheduled task "${tn}" was successfully deleted.`
       : `ERROR: The system cannot find the file specified.`;
@@ -294,7 +356,10 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
     const task = ctx.scheduledTasks.get(tn.toLowerCase());
     if (!task) return 'ERROR: The system cannot find the file specified.';
-    runScheduledProgram(task, ctx.processManager, ctx.now());
+    // Par le même chemin que `Start-ScheduledTask`, pour que les deux
+    // laissent la même trace dans le journal.
+    if (ctx.runTaskNow) ctx.runTaskNow(task);
+    else runScheduledProgram(task, ctx.processManager, ctx.now());
     return `SUCCESS: Attempted to run the scheduled task "${tn}".`;
   }
   if (action === '/change') {
@@ -341,6 +406,107 @@ export function runScheduledProgram(
   });
 }
 
+/**
+ * Les champs de `schtasks /query`, du plus court au plus bavard.
+ *
+ * `/fo LIST` en donne cinq ; `/v` y ajoute tout ce que la tâche porte.
+ * Les valeurs figées (`Logon Mode`, `Idle Time`, `Power Management`, …)
+ * sont celles qu'une tâche créée en ligne de commande a réellement, et
+ * pas un remplissage : `schtasks /create` ne propose aucune option pour
+ * les changer, donc elles ne peuvent pas différer.
+ */
+function schtasksFields(ctx: WinSystemContext, t: WinScheduledTask, verbose: boolean): Array<[string, string]> {
+  const na = (v: string | undefined) => (v && v.length > 0 ? v : 'N/A');
+  const base: Array<[string, string]> = [
+    ['HostName', ctx.hostname],
+    ['TaskName', `${t.taskPath}${t.taskName}`],
+    ['Next Run Time', t.runAt ? fmtSchtasksDate(t.runAt) : 'N/A'],
+    ['Status', t.state],
+    ['Logon Mode', 'Interactive/Background'],
+  ];
+  if (!verbose) return base;
+  return [
+    ...base,
+    ['Last Run Time', t.lastRunTime ? fmtSchtasksDate(t.lastRunTime) : 'N/A'],
+    // 267011 : « la tâche n'a pas encore tourné ». C'est le code que le
+    // vrai affiche, et non un blanc.
+    ['Last Result', t.lastResult ?? (t.lastRunTime ? '0' : '267011')],
+    ['Author', na(t.author)],
+    ['Task To Run', na(t.command)],
+    ['Start In', 'N/A'],
+    ['Comment', 'N/A'],
+    ['Scheduled Task State', t.state === 'Disabled' ? 'Disabled' : 'Enabled'],
+    ['Idle Time', 'Disabled'],
+    ['Power Management', 'Stop On Battery Mode, No Start On Batteries'],
+    ['Run As User', na(t.runAsUser)],
+    ['Delete Task If Not Rescheduled', 'Disabled'],
+    ['Stop Task If Runs X Hours and X Mins', '72:00:00'],
+    ['Schedule', 'Scheduling data is not available in this format.'],
+    ['Schedule Type', na(t.scheduleType)],
+    ['Start Time', t.startTime ? fmtSchtasksClock(t.startTime) : 'N/A'],
+    ['Start Date', t.startDate ? fmtSchtasksDay(t.startDate) : 'N/A'],
+    ['End Date', 'N/A'],
+    ['Days', na(t.days)],
+    ['Months', na(t.months)],
+    ['Repeat: Every', 'Disabled'],
+    ['Repeat: Until: Time', 'Disabled'],
+    ['Repeat: Until: Duration', 'Disabled'],
+    ['Repeat: Stop If Still Running', 'Disabled'],
+  ];
+}
+
+function renderSchtasksList(ctx: WinSystemContext, tasks: WinScheduledTask[], verbose: boolean): string {
+  const out: string[] = ['Folder: \\'];
+  for (const t of tasks) {
+    const fields = schtasksFields(ctx, t, verbose);
+    const width = Math.max(...fields.map(([k]) => k.length)) + 2;
+    for (const [k, v] of fields) out.push(`${(k + ':').padEnd(width)}${v}`);
+    out.push('');
+  }
+  return out.join('\n');
+}
+
+function renderSchtasksCsv(ctx: WinSystemContext, tasks: WinScheduledTask[], verbose: boolean): string {
+  if (tasks.length === 0) return '';
+  const header = schtasksFields(ctx, tasks[0], verbose).map(([k]) => `"${k}"`).join(',');
+  const rows = tasks.map((t) =>
+    schtasksFields(ctx, t, verbose).map(([, v]) => `"${v}"`).join(','));
+  return [header, ...rows].join('\n');
+}
+
+/** Les libellés que `/query /v` imprime pour `Schedule Type`. */
+const SCHEDULE_LABELS: Record<string, string> = {
+  MINUTE: 'One Time Only, Minute', HOURLY: 'One Time Only, Hourly',
+  DAILY: 'Daily', WEEKLY: 'Weekly', MONTHLY: 'Monthly', ONCE: 'One Time Only',
+  ONSTART: 'At system start up', ONLOGON: 'At logon time', ONIDLE: 'On idle',
+};
+
+const WEEKDAY_ABBR = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+function nextWeekday(day: string | undefined, st: string | undefined, base: Date): Date {
+  const target = day ? WEEKDAY_ABBR.indexOf(day) : base.getDay();
+  const at = st ? parseSchtasksTime(st, base) : new Date(base);
+  if (target < 0) return at;
+  const out = new Date(at);
+  // `parseSchtasksTime` a déjà pu basculer au lendemain si l'heure était
+  // passée ; on avance ensuite jusqu'au bon jour.
+  while (out.getDay() !== target) out.setDate(out.getDate() + 1);
+  return out;
+}
+
+function nextMonthly(dayOfMonth: number, st: string | undefined, base: Date): Date {
+  const out = new Date(base);
+  out.setDate(Math.min(Math.max(dayOfMonth, 1), 31));
+  if (st) {
+    const t = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(st);
+    if (t) out.setHours(Number(t[1]), Number(t[2]), t[3] ? Number(t[3]) : 0, 0);
+  } else {
+    out.setHours(0, 0, 0, 0);
+  }
+  if (out.getTime() <= base.getTime()) out.setMonth(out.getMonth() + 1);
+  return out;
+}
+
 function parseSchtasksTime(st: string, base: Date): Date {
   const m = st.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) return new Date(base);
@@ -353,6 +519,21 @@ function parseSchtasksTime(st: string, base: Date): Date {
 function fmtSchtasksDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/** `03:00` tel que schtasks l'imprime : `3:00:00 AM`. */
+function fmtSchtasksClock(st: string): string {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(st);
+  if (!m) return st;
+  const h = Number(m[1]);
+  const suffix = h < 12 ? 'AM' : 'PM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${m[2]}:${m[3] ?? '00'} ${suffix}`;
+}
+
+function fmtSchtasksDay(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()}`;
 }
 
 // ─── nbtstat / wmic ──────────────────────────────────────────────────

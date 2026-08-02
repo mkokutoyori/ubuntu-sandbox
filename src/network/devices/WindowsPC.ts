@@ -3318,7 +3318,56 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       scheduledTasks: this.scheduledTasks,
       now: () => this.simulatedDate(),
       elevationContext: () => this.resolveElevationForCurrentUser(),
+      onTaskRegistered: (t) => this.logTaskRegistered(t.taskName),
+      onTaskDeleted: (name) => this.logTaskDeleted(name),
+      runTaskNow: (t) => this.runScheduledTaskNow(t),
     };
+  }
+
+  /**
+   * `Microsoft-Windows-TaskScheduler/Operational` — les quatre moments
+   * de la vie d'une tâche que Windows y consigne, et qu'on vient lire
+   * pour savoir pourquoi elle n'a pas fait ce qu'on croyait.
+   *
+   * Les identifiants et le texte suivent la documentation Microsoft ;
+   * faute de Windows sur la machine de mesure, ils n'ont pas pu être
+   * relevés sur un vrai journal.
+   */
+  private taskEvent(eventId: number, message: string, data: Record<string, string>): void {
+    this.eventLog.writeEventLog(
+      'Microsoft-Windows-TaskScheduler/Operational', 'Microsoft-Windows-TaskScheduler',
+      eventId, 'Information', message, data);
+  }
+
+  private logTaskRegistered(taskName: string): void {
+    this.taskEvent(106, `User "${this.userMgr.currentUser}" registered Task Scheduler task "\\${taskName}"`,
+      { TaskName: `\\${taskName}`, UserContext: this.userMgr.currentUser });
+  }
+
+  private logTaskDeleted(taskName: string): void {
+    this.taskEvent(141, `User "${this.userMgr.currentUser}" deleted Task Scheduler task "\\${taskName}"`,
+      { TaskName: `\\${taskName}`, UserName: this.userMgr.currentUser });
+  }
+
+  /**
+   * Démarrer une tâche à la main — `schtasks /run` et
+   * `Start-ScheduledTask` passent tous deux par ici, pour que l'un ne
+   * puisse pas faire ce que l'autre ne fait pas.
+   */
+  runScheduledTaskNow(task: WinSys.WinScheduledTask): void {
+    WinSys.runScheduledProgram(task, this.procMgr, this.simulatedDate());
+    this.runScheduledPowerShellScript(task.command);
+    if (task.command) this.logTaskRan(task.taskName, task.command);
+  }
+
+  /** 200 puis 201 : l'action démarre, l'action se termine. */
+  private logTaskRan(taskName: string, command: string): void {
+    this.taskEvent(200, `Task Scheduler launched action "${command}" in instance "\\${taskName}"`,
+      { TaskName: `\\${taskName}`, ActionName: command });
+    this.taskEvent(201, `Task Scheduler successfully completed task "\\${taskName}", action "${command}" with return code 0.`,
+      { TaskName: `\\${taskName}`, ActionName: command, ResultCode: '0' });
+    this.taskEvent(102, `Task Scheduler successfully finished "\\${taskName}" instance.`,
+      { TaskName: `\\${taskName}` });
   }
 
   simulatedDate(): Date {
@@ -3350,6 +3399,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       while (task.runAt && task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
         WinSys.runScheduledProgram(task, this.procMgr, now);
         this.runScheduledPowerShellScript(task.command);
+        if (task.command) this.logTaskRan(task.taskName, task.command);
         task.runAt = task.intervalMs
           ? new Date(task.runAt.getTime() + task.intervalMs)
           : undefined;

@@ -103,6 +103,8 @@ import {
 import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
   UnregisterScheduledTaskCmdlet, NewScheduledTaskTriggerCmdlet,
+  GetScheduledTaskInfoCmdlet, StartScheduledTaskCmdlet, StopScheduledTaskCmdlet,
+  EnableScheduledTaskCmdlet, DisableScheduledTaskCmdlet, SetScheduledTaskCmdlet,
   NewScheduledTaskActionCmdlet, NewScheduledTaskPrincipalCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
   GetCimInstanceCmdlet, GetCounterCmdlet,
 } from './SystemMgmtCmdlets';
@@ -414,6 +416,12 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetScheduledTaskCmdlet());
   registry.register(new RegisterScheduledTaskCmdlet());
   registry.register(new UnregisterScheduledTaskCmdlet());
+  registry.register(new GetScheduledTaskInfoCmdlet());
+  registry.register(new StartScheduledTaskCmdlet());
+  registry.register(new StopScheduledTaskCmdlet());
+  registry.register(new EnableScheduledTaskCmdlet());
+  registry.register(new DisableScheduledTaskCmdlet());
+  registry.register(new SetScheduledTaskCmdlet());
   registry.register(new NewScheduledTaskTriggerCmdlet());
   registry.register(new NewScheduledTaskActionCmdlet());
   registry.register(new NewScheduledTaskPrincipalCmdlet());
