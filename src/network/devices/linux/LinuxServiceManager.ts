@@ -21,6 +21,7 @@ import { SystemdJobEngine } from './systemd/SystemdJobEngine';
 import { TimerScheduler, type TimerEntry } from './systemd/TimerScheduler';
 import { parseTimeSpan } from './systemd/TimeSpan';
 import { EXIT_EXEC } from './systemd/ExitStatus';
+import { canonicalBinPath } from './service/CriticalFiles';
 import {
   runtimeArtifactsFor, runtimeDirectoryFor, UNIT_PIDFILE_DIRECTIVE, UNIT_RUNTIME_DIRECTORY,
 } from './service/RuntimeArtifacts';
@@ -644,7 +645,9 @@ export class LinuxServiceManager {
     // ever runs and the unit fails with 203/EXEC. This is what makes
     // `rm /usr/sbin/sshd` bite at the NEXT start while the already-running
     // process carries on (docs/PRD-Pannes.md §F5.10).
-    const exe = executablePathOf(u.execStart);
+    const exe = unitSuffix(u.name) === 'service'
+      ? canonicalBinPath(executablePathOf(u.execStart) ?? '')
+      : '';
     if (exe && !this.vfs.exists(exe)) {
       // The forked child IS the main process for Type=simple, so its failure
       // to exec is a main-process exit — that event is what puts the
@@ -1104,6 +1107,14 @@ export class LinuxServiceManager {
       // model carries them and the port projection can keep them coherent.
       unit.listenSockets = (this.listenerSpecFor(name)?.sockets ?? []).map((s) => ({ ...s }));
       this.units.set(name, unit);
+      // Lay the executable down as the unit appears, not once at boot for
+      // the vendor set. Seeding only at bootstrap meant an operator's own
+      // `.service` file — or any unit a lab writes later — named a binary
+      // the image had never provisioned, and §F5.10's check then failed
+      // its very first start with 203/EXEC. Same guard-rail as
+      // CriticalFiles.ts: only a binary the image actually laid down can
+      // ever be judged missing, so absence can only mean deletion.
+      this.seedUnitBinaries([unit]);
     }
 
     // Drop units that no longer have a backing file (and stop them).
@@ -1332,12 +1343,24 @@ export class LinuxServiceManager {
    * They are seeded from the units themselves rather than from a second
    * list, so the file that exists is exactly the one the unit will try to
    * exec; a list kept alongside could name a path no unit uses, or miss
-   * one a unit does.
+   * one a unit does. Called from `daemonReload` for EVERY unit as it is
+   * loaded — a unit an operator writes later has an `ExecStart=` too, and
+   * seeding only the vendor set at boot made §F5.10's check condemn it.
    */
-  private seedUnitBinaries(units: readonly { execStart: string }[]): void {
+  private seedUnitBinaries(units: readonly { name: string; execStart: string }[]): void {
     for (const u of units) {
-      const exe = executablePathOf(u.execStart);
-      if (!exe || this.vfs.exists(exe)) continue;
+      // A `.timer` or `.socket` has no `ExecStart=` — the default stamped
+      // in at load time is a placeholder, not a binary anybody execs.
+      if (unitSuffix(u.name) !== 'service') continue;
+      const declared = executablePathOf(u.execStart);
+      if (!declared) continue;
+      // The image ships the real merged-/usr layout, so `/bin/x` and
+      // `/usr/bin/x` are one file; writing to the un-normalised spelling
+      // would leave the path the unit actually execs still missing.
+      const exe = canonicalBinPath(declared);
+      if (this.vfs.exists(exe)) continue;
+      const dir = exe.slice(0, exe.lastIndexOf('/'));
+      if (dir) this.vfs.mkdirp(dir, 0o755, 0, 0);
       this.vfs.writeFile(exe, '#!/bin/sh\n', 0, 0, 0o022);
       this.vfs.chmod(exe, 0o755);
     }
@@ -1362,8 +1385,6 @@ export class LinuxServiceManager {
         }
       }
     }
-
-    this.seedUnitBinaries(units);
 
     for (const t of DEFAULT_TARGETS) {
       const path = `${SYSTEM_UNIT_DIR}/${t.name}`;

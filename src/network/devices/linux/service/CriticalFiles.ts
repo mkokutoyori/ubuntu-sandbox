@@ -158,6 +158,12 @@ export function resolveExePath(name: string): string {
 export function canonicalBinPath(path: string): string {
   if (path.startsWith('/bin/')) return `/usr${path}`;
   if (path.startsWith('/sbin/')) return `/usr${path}`;
+  // `/lib` is the third merged-/usr symlink, and it is the one the systemd
+  // helpers live behind (`/lib/systemd/systemd-resolved`). Leaving it out
+  // made those paths answer "absent" while the file sat at
+  // `/usr/lib/systemd/...`, which §F5.10's start-up check then read as a
+  // deleted binary and refused to start the unit.
+  if (path.startsWith('/lib/')) return `/usr${path}`;
   return path;
 }
 
