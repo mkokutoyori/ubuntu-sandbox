@@ -42,6 +42,22 @@ export type CLIMode =
   | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp'
   | 'config-access-map';
 
+/**
+ * Raised when a command needs a protocol this switch does not run.
+ *
+ * This shell also drives `GenericSwitch`, an unmanaged switch, which has
+ * none of the Cisco protocol agents (`CiscoSwitch` is the only device
+ * that creates them). Every command that read one crashed with
+ * `getXxxAgent is not a function` — twelve of them, `vlan <id>` among
+ * them, and one throw left the CLI stuck in a mode it could not leave.
+ *
+ * A dedicated error type, caught in exactly one place (`execute`), is
+ * what lets the `require*` accessors below sit inline in forty handlers
+ * without each one growing its own guard — and being a named type rather
+ * than a blanket `catch`, it cannot swallow a real bug.
+ */
+class UnsupportedOnThisSwitchError extends Error {}
+
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   // ─── Switch-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
@@ -76,6 +92,51 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.initializeCommands();
   }
 
+  // ─── Protocol agents this switch may not have ────────────────────
+  //
+  // An unmanaged switch runs none of these, so the honest answer to
+  // `show vtp status` or `switchport mode dynamic auto` on one is IOS's
+  // own answer for a command the platform does not have — not a table
+  // describing a protocol nobody is speaking, and not a crash.
+
+  private optionalAgent<T>(getter: string): T | null {
+    const dev = this.d() as unknown as Record<string, (() => T) | undefined>;
+    return dev[getter]?.call(dev) ?? null;
+  }
+  private requireAgent<T>(getter: string): T {
+    const agent = this.optionalAgent<T>(getter);
+    if (!agent) throw new UnsupportedOnThisSwitchError(getter);
+    return agent;
+  }
+
+  private optionalVtp(): import('../../vtp/VtpAgent').VtpAgent | null {
+    return this.optionalAgent('getVtpAgent');
+  }
+  private optionalDtp(): import('../../dtp/DtpAgent').DtpAgent | null {
+    return this.optionalAgent('getDtpAgent');
+  }
+  private requireVtp(): import('../../vtp/VtpAgent').VtpAgent {
+    return this.requireAgent('getVtpAgent');
+  }
+  private requireDtp(): import('../../dtp/DtpAgent').DtpAgent {
+    return this.requireAgent('getDtpAgent');
+  }
+  private requireStp(): import('../../stp/StpAgent').StpAgent {
+    return this.requireAgent('getStpAgent');
+  }
+  private requireLacp(): import('../../lacp/LacpAgent').LacpAgent {
+    return this.requireAgent('getLacpAgent');
+  }
+  private requireUdld(): import('../../udld/UdldAgent').UdldAgent {
+    return this.requireAgent('getUdldAgent');
+  }
+  private requireIgmpSnooping(): import('../../igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent {
+    return this.requireAgent('getIgmpSnoopingAgent');
+  }
+  private requirePimSnooping(): import('../../pim-snooping/PimSnoopingAgent').PimSnoopingAgent {
+    return this.requireAgent('getPimSnoopingAgent');
+  }
+
   // ─── ISwitchShell ────────────────────────────────────────────────
 
   execute(sw: CiscoSwitch, input: string): string {
@@ -83,7 +144,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.attachDebugSource(dbg);
     if (input.trim() === '' && !this.isCollectingBanner()) return this.drainDebugConsole();
     const before = dbg?.isStpEnabled() ? new Map(sw._getSTPStates()) : null;
-    let out = this.executeOnDevice(sw, input) as string;
+    let out: string;
+    try {
+      out = this.executeOnDevice(sw, input) as string;
+    } catch (e) {
+      // The one place a `require*` refusal becomes an answer. IOS's own
+      // wording for a command the platform does not have — an unmanaged
+      // switch has no VTP, no DTP, no EtherChannel to configure.
+      if (!(e instanceof UnsupportedOnThisSwitchError)) throw e;
+      return "% Invalid input detected at '^' marker.";
+    }
     if (before) {
       const events = this.stpDebugEvents(sw, before);
       if (events) out = out ? `${out}\n${events}` : events;
@@ -236,7 +306,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configVlanTrie.registerGreedy('name', 'Set VLAN name', (args) => {
       if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
       const ok = this.d().renameVLAN(this.selectedVlan, args[0]);
-      if (ok) this.d().getVtpAgent().onLocalVlanChange();
+      if (ok) this.optionalVtp()?.onLocalVlanChange();
       return ok ? '' : '% VLAN not found';
     });
 
@@ -524,7 +594,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── Show ──
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.registerGreedy('show dtp', 'Display DTP information', (args) => {
-        const dtp = this.d().getDtpAgent();
+        const dtp = this.requireDtp();
         const ports = this.d().getPortNames();
         if (args[0]?.toLowerCase() === 'interface' && args[1]) {
           const name = this.resolveInterfaceName(args.slice(1).join(' ')) ?? args.slice(1).join(' ');
@@ -1118,7 +1188,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private registerVtpCommands(): void {
     this.configTrie.registerGreedy('vtp domain', 'Set VTP domain', (args) => {
       if (args.length < 1) return '% Incomplete command.';
-      this.d().getVtpAgent().setDomain(args[0]);
+      this.requireVtp().setDomain(args[0]);
       return '';
     });
     this.configTrie.registerGreedy('vtp mode', 'Set VTP mode', (args) => {
@@ -1126,43 +1196,43 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (m !== 'server' && m !== 'client' && m !== 'transparent' && m !== 'off') {
         return '% Invalid VTP mode';
       }
-      this.d().getVtpAgent().setMode(m);
+      this.requireVtp().setMode(m);
       return '';
     });
     this.configTrie.registerGreedy('vtp password', 'Set VTP password', (args) => {
       if (args.length < 1) return '% Incomplete command.';
-      this.d().getVtpAgent().setPassword(args[0]);
+      this.requireVtp().setPassword(args[0]);
       return '';
     });
     this.configTrie.registerGreedy('vtp version', 'Set VTP version', (args) => {
       const v = parseInt(args[0] ?? '', 10);
       if (v !== 1 && v !== 2 && v !== 3) return '% Invalid VTP version';
-      this.d().getVtpAgent().setVersion(v as 1 | 2 | 3);
+      this.requireVtp().setVersion(v as 1 | 2 | 3);
       return '';
     });
     this.configTrie.register('vtp pruning', 'Enable VTP pruning', () => {
-      this.d().getVtpAgent().setPruning(true);
+      this.requireVtp().setPruning(true);
       return '';
     });
     this.configTrie.register('no vtp pruning', 'Disable VTP pruning', () => {
-      this.d().getVtpAgent().setPruning(false);
+      this.requireVtp().setPruning(false);
       return '';
     });
 
     this.privilegedTrie.registerGreedy('vtp primary', 'Force this switch to become the VTP Primary Server', (args) => {
       const force = args.some(a => a.toLowerCase() === 'force');
-      return this.d().getVtpAgent().becomePrimary(force).message;
+      return this.requireVtp().becomePrimary(force).message;
     });
 
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.register('show vtp password', 'Display the VTP password', () => {
-        const cfg = this.d().getVtpAgent().getConfig();
+        const cfg = this.requireVtp().getConfig();
         return cfg.password
           ? `VTP Password: ${cfg.password}`
           : 'The VTP password is not configured.';
       });
       t.register('show vtp status', 'Display VTP status', () => {
-        const cfg = this.d().getVtpAgent().getConfig();
+        const cfg = this.requireVtp().getConfig();
         const numVlans = this.d().getVLANs().size;
         const deviceId = this.formatMacCisco(new MACAddress(cfg.updaterMac));
         const updaterIp = cfg.lastUpdaterIdentity;
@@ -1211,7 +1281,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private registerUdldCommands(): void {
     this.configTrie.registerGreedy('udld', 'UDLD global configuration', (args) => {
       const a = (args[0] ?? '').toLowerCase();
-      const agent = this.d().getUdldAgent();
+      const agent = this.requireUdld();
       if (a === 'enable') { agent.setGlobalMode('normal'); return ''; }
       if (a === 'aggressive') { agent.setGlobalMode('aggressive'); return ''; }
       if (a === 'message' && args[1] === 'time') {
@@ -1225,24 +1295,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     this.configTrie.registerGreedy('no udld', 'Disable UDLD globally', () => {
-      this.d().getUdldAgent().setGlobalMode('disabled');
+      this.requireUdld().setGlobalMode('disabled');
       return '';
     });
     this.configIfTrie.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
       const ports = this.selectedPortsForConfigIf();
       const m = (args[0] ?? '').toLowerCase();
       const mode = m === 'aggressive' ? 'aggressive' : 'normal';
-      for (const p of ports) this.d().getUdldAgent().setPortMode(p, mode);
+      for (const p of ports) this.requireUdld().setPortMode(p, mode);
       return '';
     });
     this.configIfTrie.register('no udld port', 'Disable UDLD on this port', () => {
       const ports = this.selectedPortsForConfigIf();
-      for (const p of ports) this.d().getUdldAgent().setPortMode(p, 'disabled');
+      for (const p of ports) this.requireUdld().setPortMode(p, 'disabled');
       return '';
     });
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.registerGreedy('show udld', 'Display UDLD state', (args) => {
-        const agent = this.d().getUdldAgent();
+        const agent = this.requireUdld();
         const target = args[0];
         const ports = target
           ? agent.listPorts().filter(p => p.port === target || p.port.endsWith(target))
@@ -1283,7 +1353,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (!spec) return '% Incomplete command.';
     const port = this.resolvePortName(spec);
     if (!port) return `% Invalid interface ${spec}`;
-    this.d().getIgmpSnoopingAgent().setStaticRouterPort(vlan, port, on);
+    this.requireIgmpSnooping().setStaticRouterPort(vlan, port, on);
     return '';
   }
 
@@ -1294,7 +1364,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * disabling the querier — same as IOS.
    */
   private applySnoopingQuerier(vlan: number | null, rest: string[], on: boolean): string {
-    const agent = this.d().getIgmpSnoopingAgent();
+    const agent = this.requireIgmpSnooping();
     const kw = rest[0];
     if (kw === 'address') {
       if (on && !rest[1]) return '% Incomplete command.';
@@ -1319,7 +1389,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   /** `[no] ip pim snooping [vlan <n>]` — global or per-VLAN. */
   private applyPimSnooping(args: string[], on: boolean): string {
-    const agent = this.d().getPimSnoopingAgent();
+    const agent = this.requirePimSnooping();
     const a = args.map(s => s.toLowerCase());
     if (a.length === 0) { agent.setEnabled(on); return ''; }
     if (a[0] === 'vlan' && a[1]) {
@@ -1332,7 +1402,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private showPimSnooping(args: string[]): string {
-    const agent = this.d().getPimSnoopingAgent();
+    const agent = this.requirePimSnooping();
     const cfg = agent.getConfig();
     if (args.includes('neighbor')) {
       const rows = ['Vlan      Neighbor            Port', '----      --------            ----'];
@@ -1377,7 +1447,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private registerIgmpSnoopingCommands(): void {
     this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config', (args) => {
-      const agent = this.d().getIgmpSnoopingAgent();
+      const agent = this.requireIgmpSnooping();
       const a = args.map(s => s.toLowerCase());
       if (a.length === 0) { agent.setEnabled(true); return ''; }
       if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), true);
@@ -1394,7 +1464,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping', (args) => {
-      const agent = this.d().getIgmpSnoopingAgent();
+      const agent = this.requireIgmpSnooping();
       const a = args.map(s => s.toLowerCase());
       if (a.length === 0) { agent.setEnabled(false); return ''; }
       if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), false);
@@ -1411,7 +1481,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.registerGreedy('show ip igmp snooping', 'Display IGMP snooping state', (args) => {
-        const agent = this.d().getIgmpSnoopingAgent();
+        const agent = this.requireIgmpSnooping();
         const cfg = agent.getConfig();
         if (args.includes('groups')) {
           let vlanFilter: number | undefined;
@@ -1483,14 +1553,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args[0]?.toLowerCase() === 'mode' && args[1]) {
         this.stpMode = args[1];
         const m = args[1].toLowerCase();
-        this.d().getStpAgent().setMode(
+        this.requireStp().setMode(
           m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
       }
       if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
         const vlan = parseInt(args[1] ?? '', 10);
         const knob = args[2].toLowerCase();
         const n = parseInt(args[3] ?? '', 10);
-        const agent = this.d().getStpAgent();
+        const agent = this.requireStp();
         if (isNaN(vlan)) return "% Invalid input detected at '^' marker.";
         if (knob === 'priority' && !isNaN(n)) agent.setVlanPriority(vlan, n);
         else if (knob === 'hello-time' && !isNaN(n)) agent.setVlanHelloSec(vlan, n);
@@ -1504,24 +1574,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       if (args[0]?.toLowerCase() === 'priority') {
         const n = parseInt(args[1] ?? '', 10);
-        if (!isNaN(n)) this.d().getStpAgent().setBridgePriority(n);
+        if (!isNaN(n)) this.requireStp().setBridgePriority(n);
       }
       if (args[0]?.toLowerCase() === 'portfast') {
         const sub = args[1]?.toLowerCase();
-        const agent = this.d().getStpAgent();
+        const agent = this.requireStp();
         if (sub === 'default') agent.setPortfastDefault(true);
         else if (sub === 'bpduguard' && args[2]?.toLowerCase() === 'default') agent.setBpduGuardGlobal(true);
         else if (sub === 'bpdufilter' && args[2]?.toLowerCase() === 'default') agent.setBpduFilterGlobal(true);
       }
       if (args[0]?.toLowerCase() === 'loopguard' && args[1]?.toLowerCase() === 'default') {
-        this.d().getStpAgent().setLoopGuardGlobal(true);
+        this.requireStp().setLoopGuardGlobal(true);
       }
-      if (args[0]?.toLowerCase() === 'uplinkfast') this.d().getStpAgent().setUplinkFast(true);
-      if (args[0]?.toLowerCase() === 'backbonefast') this.d().getStpAgent().setBackboneFast(true);
+      if (args[0]?.toLowerCase() === 'uplinkfast') this.requireStp().setUplinkFast(true);
+      if (args[0]?.toLowerCase() === 'backbonefast') this.requireStp().setBackboneFast(true);
       if (args[0]?.toLowerCase() === 'pathcost' && args[1]?.toLowerCase() === 'method') {
         const m = args[2]?.toLowerCase();
         if (m !== 'long' && m !== 'short') return "% Invalid input detected at '^' marker.";
-        this.d().getStpAgent().setPathcostMethod(m);
+        this.requireStp().setPathcostMethod(m);
       }
       return '';
     });
@@ -1530,12 +1600,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const inst = parseInt(args[0] ?? '', 10);
         const prio = parseInt(args[2] ?? '', 10);
         if (isNaN(inst) || isNaN(prio)) return "% Invalid input detected at '^' marker.";
-        this.d().getStpAgent().setMstInstancePriority(inst, prio);
+        this.requireStp().setMstInstancePriority(inst, prio);
       }
       return '';
     });
     this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
-      const agent = this.d().getStpAgent();
+      const agent = this.requireStp();
       const a0 = args[0]?.toLowerCase();
       if (a0 === 'vlan' && args[1]) agent.setEnabled(false);
       else if (a0 === 'portfast') {
@@ -1555,7 +1625,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
       const a = args.map(s => s.toLowerCase());
-      const agent = this.d().getStpAgent();
+      const agent = this.requireStp();
       const head = a[0] ?? '';
       const isGuardRoot = head === 'guard' && a[1] === 'root';
       const isGuardLoop = head === 'guard' && a[1] === 'loop';
@@ -1594,7 +1664,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
       const a = args.map(s => s.toLowerCase());
-      const agent = this.d().getStpAgent();
+      const agent = this.requireStp();
       const noVlan = a[0] === 'vlan' ? parseInt(a[1], 10) : NaN;
       const noKnob = Number.isNaN(noVlan) ? a[0] : a[2];
       const noVlanArg = Number.isNaN(noVlan) ? undefined : noVlan;
@@ -1613,14 +1683,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // config-mst sub-mode
     this.configMstTrie.registerGreedy('name', 'Set MST region name', (a) => {
       this.stpAgentOf(this.d())?.setMstName(a.join(' '));
-      this.d().getVtpAgent().onLocalMstChange();
+      this.requireVtp().onLocalMstChange();
       return '';
     });
     this.configMstTrie.registerGreedy('revision', 'Set MST revision', (a) => {
       const n = parseInt(a[0], 10);
       if (!isNaN(n)) {
         this.stpAgentOf(this.d())?.setMstRevision(n);
-        this.d().getVtpAgent().onLocalMstChange();
+        this.requireVtp().onLocalMstChange();
       }
       return '';
     });
@@ -1628,7 +1698,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const id = parseInt(a[0], 10);
       if (!isNaN(id)) {
         this.stpAgentOf(this.d())?.mapMstInstance(id, a.slice(1).join(' '));
-        this.d().getVtpAgent().onLocalMstChange();
+        this.requireVtp().onLocalMstChange();
       }
       return '';
     });
@@ -1651,7 +1721,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const inst = parseInt(args[1], 10);
         if (!isNaN(inst)) ag?.unmapMstInstance(inst);
       }
-      this.d().getVtpAgent().onLocalMstChange();
+      this.requireVtp().onLocalMstChange();
       return '';
     });
     this.configMstTrie.registerGreedy('abort', 'Abort MST changes', () => {
@@ -1970,7 +2040,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', (args) => {
-      const lacp = this.d().getLacpAgent();
+      const lacp = this.requireLacp();
       const groups = lacp.getAllGroups();
       if (args[0]?.toLowerCase() === 'summary' || args.length === 0) {
         const lines = [
@@ -2251,12 +2321,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (ids.some(i => i >= 1002 && i <= 1005)) {
         return '% VLANs 1002-1005 are reserved for legacy FDDI/Token Ring use';
       }
-      if (ids.some(i => i > 1005) && !this.d().getVtpAgent().allowsExtendedRangeVlans()) {
+      if (ids.some(i => i > 1005) && this.optionalVtp()?.allowsExtendedRangeVlans() === false) {
         return '% Extended-range VLANs require VTP version 3 or transparent mode';
       }
       let created = false;
       for (const id of ids) if (!this.d().getVLAN(id)) { this.d().createVLAN(id); created = true; }
-      if (created) this.d().getVtpAgent().onLocalVlanChange();
+      if (created) this.optionalVtp()?.onLocalVlanChange();
       if (ids.length === 1) {
         this.selectedVlan = ids[0];
         this.mode = 'config-vlan';
@@ -2270,7 +2340,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (isNaN(id)) return '% Invalid VLAN ID';
       if (id === 1) return '% Default VLAN 1 may not be deleted.';
       const ok = this.d().deleteVLAN(id);
-      if (ok) this.d().getVtpAgent().onLocalVlanChange();
+      if (ok) this.optionalVtp()?.onLocalVlanChange();
       return ok ? '' : `% VLAN ${id} not found.`;
     });
 
@@ -2580,28 +2650,28 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     this.configIfTrie.register('switchport mode dynamic auto', 'Negotiate trunk via DTP (passive)', () => {
       return this.applyToSelectedInterfaces(portName => {
-        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-auto');
+        this.requireDtp().setAdminMode(portName, 'dynamic-auto');
         return '';
       });
     });
 
     this.configIfTrie.register('switchport mode dynamic desirable', 'Negotiate trunk via DTP (active)', () => {
       return this.applyToSelectedInterfaces(portName => {
-        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-desirable');
+        this.requireDtp().setAdminMode(portName, 'dynamic-desirable');
         return '';
       });
     });
 
     this.configIfTrie.register('switchport nonegotiate', 'Force trunk without DTP', () => {
       return this.applyToSelectedInterfaces(portName => {
-        this.d().getDtpAgent().setAdminMode(portName, 'nonegotiate');
+        this.requireDtp().setAdminMode(portName, 'nonegotiate');
         return '';
       });
     });
 
     this.configIfTrie.register('no switchport nonegotiate', 'Re-enable DTP negotiation', () => {
       return this.applyToSelectedInterfaces(portName => {
-        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-auto');
+        this.requireDtp().setAdminMode(portName, 'dynamic-auto');
         return '';
       });
     });
@@ -2844,13 +2914,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       else if (m === 'on') mode = 'on';
       else return '% Invalid channel-group mode';
       return this.applyToSelectedInterfaces(portName => {
-        this.d().getLacpAgent().addPortToGroup(portName, id, mode);
+        this.requireLacp().addPortToGroup(portName, id, mode);
         return '';
       });
     });
     this.configIfTrie.registerGreedy('no channel-group', 'Remove EtherChannel membership', () => {
       return this.applyToSelectedInterfaces(portName => {
-        this.d().getLacpAgent().removePort(portName);
+        this.requireLacp().removePort(portName);
         return '';
       });
     });
@@ -3298,12 +3368,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showTrunkTable(portNames: string[]): string {
     const sw = this.d();
-    const dtp = sw.getDtpAgent();
+    // A switch that does not run DTP never negotiates, so its operational
+    // mode IS the configured one — which is what makes `show interfaces
+    // trunk` a real answer on an unmanaged switch rather than a refusal.
+    const dtp = this.optionalDtp();
     const existing = [...sw.getVLANs().keys()].sort((a, b) => a - b);
     const trunks: Array<{ port: string; native: number; allowed: Set<number> }> = [];
     for (const p of portNames) {
       const c = sw.getSwitchportConfig(p);
-      if (c && dtp.getOperationalMode(p) === 'trunk') {
+      const isTrunk = dtp ? dtp.getOperationalMode(p) === 'trunk' : c?.mode === 'trunk';
+      if (c && isTrunk) {
         trunks.push({ port: this.abbreviateInterface(p), native: c.trunkNativeVlan, allowed: c.trunkAllowedVlans });
       }
     }
@@ -3327,16 +3401,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showSwitchportDetail(name: string): string {
     const c = this.d().getSwitchportConfig(name);
-    const dtp = this.d().getDtpAgent();
-    const admin = dtp.getAdminMode(name);
-    const oper = dtp.getOperationalMode(name);
+    // Same reasoning as `showTrunkTable`: with no DTP there is nothing to
+    // negotiate, so both modes come from the port's own configuration and
+    // negotiation reads Off — which is the truth about an unmanaged port,
+    // and keeps `show interfaces switchport` answering on one.
+    const dtp = this.optionalDtp();
+    const configured = c?.mode === 'trunk' ? 'trunk' : 'access';
+    const admin = dtp ? dtp.getAdminMode(name) : configured;
+    const oper = dtp ? dtp.getOperationalMode(name) : configured;
     const adminLabel =
       admin === 'trunk' || admin === 'nonegotiate' ? 'trunk'
       : admin === 'dynamic-auto' ? 'dynamic auto'
       : admin === 'dynamic-desirable' ? 'dynamic desirable'
       : 'static access';
     const operLabel = oper === 'trunk' ? 'trunk' : 'static access';
-    const negotiation = admin === 'access' || admin === 'nonegotiate' ? 'Off' : 'On';
+    // No DTP agent means nothing negotiates, whatever the mode says.
+    const negotiation = !dtp || admin === 'access' || admin === 'nonegotiate' ? 'Off' : 'On';
     const nativeVlan = c?.trunkNativeVlan ?? 1;
     const lines = [
       `Name: ${this.abbreviateInterface(name)}`,
@@ -4490,7 +4570,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * across them, so the method would have nothing to decide.
    */
   private registerLacp(): void {
-    const agent = () => this.d().getLacpAgent();
+    const agent = () => this.requireLacp();
 
     this.configTrie.registerGreedy('lacp system-priority', 'LACP system priority', (args) => {
       const v = parseInt(args[0] ?? '', 10);
@@ -4527,7 +4607,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private showInterfaceEtherchannel(portName: string): string {
-    const agent = this.d().getLacpAgent();
+    const agent = this.requireLacp();
     const info = agent.getPortInfo(portName);
     if (!info) return `Port ${portName} is not part of an EtherChannel`;
     const group = agent.getAllGroups().find(g => g.id === info.groupId);
@@ -4556,7 +4636,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private showLacp(args: string[]): string {
-    const agent = this.d().getLacpAgent();
+    const agent = this.requireLacp();
     const cfg = agent.getConfig();
     const what = (args[0] ?? '').toLowerCase();
     const sysId = `${cfg.systemPriority}, ${cfg.systemId}`;

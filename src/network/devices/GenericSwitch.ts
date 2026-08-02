@@ -42,7 +42,19 @@ export class GenericSwitch extends Switch {
     return [];
   }
 
-  getOSType(): string { return 'generic'; }
+  /**
+   * The CLI this switch actually runs.
+   *
+   * `getOSType()` is read everywhere as "which shell dialect is this" —
+   * `Router` delegates it straight to `this.shell.getOSType()`, and both
+   * `sessionFactory` and `primaryShellKindFor` dispatch on it. Answering
+   * `'generic'` therefore fell through to the POSIX default, so a switch
+   * whose only shell is `CiscoSwitchShell` was given a **bash** terminal
+   * in the UI: `exit` from `config-vlan` logged the operator out instead
+   * of going up one level, and the prompt, modes, Ctrl+Z and pager were
+   * all the wrong platform's. Nothing else read `'generic'`.
+   */
+  getOSType(): string { return 'cisco-ios'; }
 
   getBootSequence(): string {
     return [
