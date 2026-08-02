@@ -853,6 +853,10 @@ export class LinuxServiceManager {
     this.pendingReadiness.delete(name);
     this.emitStateChanged(u.name, 'activating', 'active');
     this.emitLifecycle('start', u.name);
+    // Un `Type=notify` passe par ici et non par `activate()` : le contrôle
+    // mémoire doit être aux DEUX endroits où une unité devient active,
+    // sinon la panne dépend du type de l'unité (§F5.9).
+    this.oomKillIfOverMemoryMax(u, serviceMemoryProfile(u.name).rss);
   }
 
   /**
@@ -1316,7 +1320,46 @@ export class LinuxServiceManager {
     u.state = 'active';
     this.writeRuntimeArtifacts(u);
     this.emitStateChanged(u.name, prev, 'active');
+    // §F5.9 — le service démarre, puis le noyau constate qu'il dépasse son
+    // plafond mémoire et le tue. L'ordre compte : sur un vrai système le
+    // processus EXISTE avant d'être tué, ce n'est pas un démarrage refusé.
+    this.oomKillIfOverMemoryMax(u, profile.rss);
     return { ok: true };
+  }
+
+  /**
+   * `MemoryMax=` dépassé ⇒ le OOM killer emporte le processus
+   * (docs/PRD-Pannes.md §F5.9).
+   *
+   * Le PRD borne lui-même le modèle : « pas de comptabilité mémoire
+   * réelle ». Ce qui est comparé est donc le RSS que le service déclare
+   * déjà — celui que `systemctl status` affiche et que `ps` montre — au
+   * plafond qu'un opérateur a posé avec `systemctl set-property`. Aucune
+   * allocation n'est simulée : on abaisse le plafond sous la taille connue
+   * du démon, et la panne se produit.
+   *
+   * Le résultat systemd est `oom-kill`, pas `exit-code` : c'est un
+   * mot-clé distinct parce que la cause est distincte, et c'est lui qui
+   * dit à l'opérateur de regarder la mémoire plutôt que la configuration.
+   */
+  private oomKillIfOverMemoryMax(u: LinuxService, rssKib: number): void {
+    // Lu sur le champ, pas via un accesseur optionnel : `u.getProperty?.()`
+    // n'existait pas et l'appel se réduisait silencieusement à `undefined`,
+    // donc le contrôle ne s'exécutait jamais.
+    const max = parseMemoryMax(u.memoryMax);
+    if (max === null || rssKib <= max) return;
+    const pid = u.mainPid;
+    if (pid === undefined) return;
+    // Le noyau tue par SIGKILL — le processus n'a aucun mot à dire, et
+    // c'est pour ça qu'il ne range rien derrière lui (§F5.2).
+    this.processMgr.kill(pid, 'SIGKILL');
+    this.noteMainExited(u.name, {
+      signal: 'SIGKILL',
+      diagnostic: `Out of memory: Killed process ${pid} (${u.name}) `
+        + `total-vm:${rssKib * 3}kB, anon-rss:${rssKib}kB, file-rss:0kB, `
+        + 'shmem-rss:0kB, UID:0 pgtables:64kB oom_score_adj:0',
+    });
+    this.markFailed(u.name, 'oom-kill');
   }
 
   /**
@@ -1514,6 +1557,19 @@ export class LinuxServiceManager {
 }
 
 // ─── Unit file rendering and parsing ──────────────────────────────────
+
+/**
+ * `MemoryMax=` en kibioctets. `infinity` (le défaut systemd) et une valeur
+ * absente rendent null : aucun plafond, donc rien à faire respecter.
+ */
+export function parseMemoryMax(value: string | undefined): number | null {
+  if (!value || value === 'infinity') return null;
+  const m = value.trim().match(/^(\d+)([KMG]?)$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const mult = m[2] === 'G' ? 1024 * 1024 : m[2] === 'M' ? 1024 : 1;
+  return n * mult;
+}
 
 /**
  * The executable an `ExecStart=` line runs — its first word, with

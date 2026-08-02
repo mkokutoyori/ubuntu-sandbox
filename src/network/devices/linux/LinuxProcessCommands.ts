@@ -372,6 +372,10 @@ export interface SysCtlResult {
 
 function unitFailedResult(u: ServiceUnit): string {
   if (u.failedReason === 'start-limit-hit') return 'start-limit-hit';
+  // `oom-kill` est un résultat systemd à part entière, distinct de
+  // `signal` : la cause est distincte, et c'est ce mot qui envoie
+  // l'opérateur regarder la mémoire plutôt que la configuration (§F5.9).
+  if (u.failedReason === 'oom-kill') return 'oom-kill';
   if (u.lastExit?.signal !== undefined) return 'signal';
   if (u.lastExit?.code !== undefined && u.lastExit.code !== 0) return 'exit-code';
   return 'exit-code';

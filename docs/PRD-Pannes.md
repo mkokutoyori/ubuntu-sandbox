@@ -1196,11 +1196,28 @@ Voir F1.10.
 - **Déclencheur.** Dépassement mémoire.
 - **Attendu réel.** `Out of memory: Killed process <pid>` dans `dmesg`,
   processus mort par `SIGKILL`.
-- **État actuel.** ❌ Pas de modèle mémoire.
-- **Cible.** Modélisable au niveau déclaratif : une limite mémoire par
-  service (`MemoryMax=`), et un dépassement **provoqué explicitement**
-  (commande de test, injection UI) tue le processus avec le bon message.
-  Pas de comptabilité mémoire réelle.
+- **État actuel.** ✅ Implémenté. `MemoryMax=` était déjà parsé et validé
+  par `systemctl set-property`, stocké, affiché par `systemctl show` — et
+  rien ne le faisait respecter. Troisième occurrence du même motif après
+  `df` (§F9.1) et `ulimit -u` (§F5.8) : un plafond qui vit dans la commande
+  qui l'affiche.
+- **Cible.** Atteinte, et bornée comme le PRD le demandait : aucune
+  comptabilité mémoire réelle. Ce qui est comparé est le RSS que le service
+  déclare déjà — celui que `systemctl status` affiche et que `ps` montre —
+  au plafond posé par une VRAIE commande, `systemctl set-property`. Aucune
+  allocation n'est simulée : on abaisse le plafond sous la taille connue du
+  démon, et la panne se produit.
+- **Deux points de fidélité.** L'ORDRE : le service démarre, PUIS le noyau
+  le tue — ce n'est pas un démarrage refusé, le processus a existé, et
+  c'est pourquoi `Main PID` porte un pid mort. Et `oom-kill` est un
+  résultat systemd distinct d'`exit-code` et de `signal` : c'est ce mot qui
+  envoie l'opérateur regarder la mémoire plutôt que la configuration.
+- **Le contrôle est aux deux endroits** où une unité devient active
+  (`activate()` et le chemin `Type=notify`), sinon la panne dépendrait du
+  type de l'unité.
+- **C'est ici qu'`ENOMEM` trouve sa place**, laissée ouverte en §F5.8 : la
+  mémoire épuisée et la table des processus pleine (`EAGAIN`) sont deux
+  pannes différentes, et le simulateur ne les confond pas.
 - **Observabilité.** `dmesg`, `journalctl -k`, `systemctl status` (`oom-kill`).
 - **Réparation.** Relever la limite ou réduire la charge.
 - **Sévérité.** `critical`.
@@ -2722,6 +2739,7 @@ src/__tests__/unit/network-v2/faults/
 ├── fault-sigkill-residues.test.ts      — F5.2
 ├── fault-uninterruptible-sleep.test.ts — F5.7
 ├── fault-process-table-full.test.ts    — F5.8
+├── fault-oom-kill.test.ts              — F5.9
 ├── fault-files-sshd.test.ts            — F7.1, F7.2
 ├── fault-files-binaries.test.ts        — F7.7, F7.8
 ├── fault-files-logs.test.ts            — F7.9–F7.11
@@ -2875,7 +2893,7 @@ Explicitement exclu, avec la raison. Ces points ne sont pas des oublis.
 | F5.6 | CPU à 100 % | ❌ Hors périmètre | — | — |
 | F5.7 | État D | ✅ | degraded | 4 |
 | F5.8 | Table de processus pleine | ✅ | critical | 7 |
-| F5.9 | OOM kill | ❌ Déclaratif | critical | 7 |
+| F5.9 | OOM kill | ✅ | critical | 7 |
 | F5.10 | Binaire supprimé sous le processus | ✅ | degraded/critical | 6 |
 | F6.1 | Service arrêté | ✅ | critical | 4 |
 | F6.2 | Service masqué | ✅ | critical | 4 |
