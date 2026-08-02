@@ -103,7 +103,21 @@ function scanLine(line: string, st: ScanState): void {
     }
 
     if (/\s/.test(ch)) { flush(); i++; continue; }
-    if (ch === ';' || ch === '&' || ch === '|') { flush(); cur = ''; words.push(ch === ';' ? ';' : ch + ch); i++; while (i < line.length && (line[i] === '&' || line[i] === '|')) i++; continue; }
+    if (ch === ';') { flush(); cur = ''; words.push(';'); i++; continue; }
+    // `&` and `|` come in runs, and WHICH run it is decides whether the
+    // command is finished. `cmd &` is a complete command put in the
+    // background; `cmd &&` is waiting for its right-hand side. The scanner
+    // used to record `ch + ch` for both, so a single `&` was read as `&&`
+    // and the terminal answered a `>` continuation prompt to a line real
+    // bash runs immediately. Push the operator that is actually there.
+    if (ch === '&' || ch === '|') {
+      flush();
+      cur = '';
+      let op = '';
+      while (i < line.length && (line[i] === '&' || line[i] === '|')) { op += line[i]; i++; }
+      words.push(op);
+      continue;
+    }
     cur += ch; i++;
   }
   flush();
@@ -115,9 +129,12 @@ function scanLine(line: string, st: ScanState): void {
     else if (w === 'do' || w === 'then') { /* structural, no stack change */ }
   }
 
-  // A line ending in a connector (| && ||) with nothing after is dangling.
+  // A line ending in a connector with nothing after it is dangling — bash
+  // asks for the right-hand side. A lone `&` is NOT one of them: it
+  // terminates the command and backgrounds it, so the line is finished.
   const lastWord = words[words.length - 1];
-  st.danglingConnector = lastWord === '|' || lastWord === '&&' || lastWord === '||';
+  st.danglingConnector = lastWord === '|' || lastWord === '||'
+    || lastWord === '&&' || lastWord === '|&';
 }
 
 export function analyzeBashInput(input: string): BashInputAnalysis {

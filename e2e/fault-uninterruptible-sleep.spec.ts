@@ -81,19 +81,34 @@ test.describe('§F5.7 — attente ininterruptible sur un montage mort', () => {
     expect(await modalText(page)).toContain('10.0.0.2:/export on /mnt/data type nfs');
   });
 
-  /**
-   * Ce que le navigateur peut montrer aujourd'hui s'arrête ici.
-   *
-   * La forme observable de §F5.7 est l'accès lancé en arrière-plan
-   * (`ls /mnt/data &`), et le terminal interactif laisse cette ligne sur
-   * un prompt de continuation `>` au lieu de l'exécuter : le `&` final y
-   * est traité comme une commande incomplète, alors que la même ligne
-   * passée à `executeCommand` la lance correctement. C'est une
-   * incohérence de la couche terminal, indépendante de ce chantier —
-   * découverte en écrivant ce spec, et signalée plutôt que contournée.
-   *
-   * Tant qu'elle n'est pas corrigée, l'état `D`, la résistance à
-   * `kill -9` et la délivrance du signal mis en attente sont couverts par
-   * le test unitaire, qui exerce le même chemin de code.
-   */
+  test('un accès en arrière-plan part en `D` et résiste à kill -9', async ({ page }) => {
+    await typeCmd(page, 'ls /mnt/data &');
+    const pid = await lastJobPid(page);
+
+    await typeCmd(page, 'ps aux');
+    const row = (await modalText(page)).split('\n')
+      .filter((l) => l.trim().split(/\s+/)[1] === pid).pop();
+    expect(row, 'le job devrait apparaître dans ps').toBeTruthy();
+    expect(row!.trim().split(/\s+/)[7]).toBe('D');
+
+    // `kill` ne dit rien : c'est ce qui égare l'opérateur.
+    await typeCmd(page, `kill -9 ${pid}`);
+    await typeCmd(page, 'ps aux');
+    const after = (await modalText(page)).split('\n')
+      .filter((l) => l.trim().split(/\s+/)[1] === pid && l.includes('/mnt/data')).pop();
+    expect(after, 'le processus aurait dû survivre au kill -9').toBeTruthy();
+  });
+
+  test('`umount -l` libère, et le signal en attente tombe enfin', async ({ page }) => {
+    await typeCmd(page, 'ls /mnt/data &');
+    const pid = await lastJobPid(page);
+    await typeCmd(page, `kill -9 ${pid}`);
+
+    await typeCmd(page, 'umount -l /mnt/data');
+
+    await typeCmd(page, 'ps aux');
+    const gone = (await modalText(page)).split('\n')
+      .filter((l) => l.trim().split(/\s+/)[1] === pid && l.includes('/mnt/data')).pop();
+    expect(gone, 'le kill -9 mis en attente aurait dû s\'appliquer').toBeFalsy();
+  });
 });

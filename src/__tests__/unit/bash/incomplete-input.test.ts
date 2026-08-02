@@ -110,3 +110,41 @@ describe('analyzeBashInput — << inside arithmetic is a shift, not a heredoc', 
     expect(r.heredocDelimiter).toBe('EOF');
   });
 });
+
+/**
+ * `&` et `&&` ne veulent pas dire la même chose, et le terminal en dépend.
+ *
+ * Le scanner enregistrait l'opérateur comme `ch + ch` : un `&` seul
+ * devenait `&&`, donc `ls /tmp &` — une commande COMPLÈTE mise en
+ * arrière-plan — était lue comme un connecteur en attente de son membre
+ * droit. Le terminal interactif répondait un prompt de continuation `>` à
+ * une ligne que bash exécute immédiatement, et le job n'était jamais
+ * lancé ; la même ligne passée à `executeCommand` marchait, d'où deux
+ * couches qui ne disaient pas la même chose de la même commande.
+ */
+describe('& met en arrière-plan, && attend la suite', () => {
+  it('une commande suivie de `&` est complète', () => {
+    expect(complete('ls /tmp &')).toBe(true);
+    expect(complete('sleep 100 &')).toBe(true);
+    // Sans espace non plus.
+    expect(complete('ls /tmp&')).toBe(true);
+  });
+
+  it('`&&` en fin de ligne attend toujours son membre droit', () => {
+    expect(complete('make &&')).toBe(false);
+  });
+
+  it('`|` et `||` en fin de ligne attendent aussi', () => {
+    expect(complete('ls |')).toBe(false);
+    expect(complete('ls ||')).toBe(false);
+  });
+
+  it('ce qui suit un `&` termine la ligne normalement', () => {
+    expect(complete('ls /tmp & echo suite')).toBe(true);
+  });
+
+  it('un `&` dans une chaîne ne compte pas', () => {
+    expect(complete('echo "a & b"')).toBe(true);
+    expect(complete("echo 'x && y'")).toBe(true);
+  });
+});

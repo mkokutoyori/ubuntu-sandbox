@@ -26,6 +26,12 @@
  * bout (même mur que `SELECT … FOR UPDATE` côté Oracle), donc la forme
  * observable est l'accès lancé en arrière-plan — ce qu'un opérateur fait de
  * toute façon dès qu'il soupçonne un montage mort.
+ *
+ * Écrire l'équivalent e2e a d'ailleurs révélé que le terminal interactif ne
+ * lançait PAS `ls /mnt/data &` : il répondait un prompt de continuation
+ * parce que `incompleteInput.ts` enregistrait un `&` seul comme `&&`. Cette
+ * incohérence est corrigée (`incomplete-input.test.ts`), et le spec e2e
+ * exerce donc bien le même scénario que ce fichier.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

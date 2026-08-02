@@ -1152,7 +1152,10 @@ Voir F1.10.
   `SELECT … FOR UPDATE` côté Oracle). La forme observable est l'accès lancé
   en arrière-plan — ce qu'un opérateur fait de toute façon dès qu'il
   soupçonne un montage mort. Corollaire hérité : `df` ne se fige pas non
-  plus (§F9.6 reste ouvert sur ce point).
+  plus (§F9.6 reste ouvert sur ce point). Écrire le spec e2e a révélé au
+  passage que le terminal interactif ne lançait pas `cmd &` du tout — un
+  `&` seul y était lu comme `&&`, donc comme un connecteur en attente ;
+  corrigé dans `src/bash/incompleteInput.ts`.
 - **Observabilité.** `ps` (`D`), `kill -9` sans effet et sans message,
   `mount`, la mort différée à la libération.
 - **Réparation.** Restaurer la ressource, ou `umount -l`.
