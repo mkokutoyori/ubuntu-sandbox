@@ -1047,15 +1047,38 @@ Voir F1.10.
 - **Attendu réel.** Mort immédiate, pas de nettoyage, fichiers de
   verrouillage et sockets laissés en place — ce qui empêche souvent le
   redémarrage.
-- **État actuel.** ⚠️ La mort est modélisée ; les **résidus** ne le sont
-  pas.
-- **Cible.** C'est le scénario pédagogique le plus riche de cette famille :
-  après un `kill -9`, le fichier PID (`/run/x.pid`) et le socket Unix
-  doivent subsister, et la relance doit échouer avec le message réel
-  (`address already in use` / `already running`) tant qu'on ne nettoie pas.
-- **Observabilité.** `ls /run/*.pid`, `ss -lx`, message d'échec de relance.
-- **Réparation.** Supprimer le fichier de verrou, puis relancer.
-- **Sévérité.** `critical`.
+- **État actuel.** ✅ Implémenté — mais **pas comme cette fiche
+  l'annonçait**, parce que la cible d'origine décrivait un mythe.
+  `service/RuntimeArtifacts.ts` déclare, par service, les fichiers que le
+  démon crée en tournant (le pendant de `CriticalFiles.ts`, qui déclare
+  ceux dont il ne peut pas se passer) : `activate()` les écrit,
+  `deactivate()` — l'arrêt propre, où le démon range — les efface, et un
+  `kill -9`, qui ne passe jamais par là, les laisse. Le fichier PID
+  survivant nomme alors un processus mort.
+- **Correction apportée à la cible.** « La relance doit échouer tant qu'on
+  ne nettoie pas » est faux sur une machine systemd moderne, et le simuler
+  aurait appris l'inverse du réel. Trois raisons, chacune vérifiée sur la
+  plateforme :
+  - le **port** est libéré par le noyau à la mort du processus (le 22
+    disparaît de `ss -ltn` puis revient), donc jamais d'`address already
+    in use` ;
+  - un **verrou `flock()`** — cron, atd — meurt avec son détenteur, donc un
+    fichier PID périmé n'empêche rien ;
+  - une **`RuntimeDirectory=`** est effacée par systemd dès que l'unité
+    quitte l'état actif, échec compris (`RuntimeDirectoryPreserve=no`, le
+    défaut), donc ce qu'un démon range là ne survit pas non plus.
+  La directive est désormais modélisée, ce qui donne le contraste qui fait
+  la leçon : au même `kill -9`, sshd laisse `/run/sshd.pid` derrière lui
+  et fail2ban ne laisse rien, parce que systemd possède `/run/fail2ban`.
+  **Le résidu est réel, visible et trompeur — mais il ne bloque rien**, et
+  l'opérateur qui accuse le fichier PID périmé se trompe de coupable.
+- **Observabilité.** `ls /run/*.pid`, `cat /run/sshd.pid` comparé à `ps`,
+  `ls /run/fail2ban`, `cat` de l'unité (`PIDFile=`, `RuntimeDirectory=`).
+  `ss -lx` n'est pas couvert : le `ss` de cette plateforme ne connaît pas
+  les sockets Unix.
+- **Réparation.** Aucune n'est nécessaire — c'est le résultat, et il est
+  volontairement enseigné comme tel.
+- **Sévérité.** `notice` (et non `critical` : rien n'est cassé).
 
 ### F5.3 — Processus zombie
 
@@ -2655,6 +2678,7 @@ src/__tests__/unit/network-v2/faults/
 ├── fault-routing.test.ts               — F4.*
 ├── fault-service-state-is-one-answer.test.ts — F5.*/F6.* : un service a UN état
 ├── fault-deleted-executable.test.ts    — F5.10
+├── fault-sigkill-residues.test.ts      — F5.2
 ├── fault-files-sshd.test.ts            — F7.1, F7.2
 ├── fault-files-binaries.test.ts        — F7.7, F7.8
 ├── fault-files-logs.test.ts            — F7.9–F7.11
@@ -2801,7 +2825,7 @@ Explicitement exclu, avec la raison. Ces points ne sont pas des oublis.
 | F4.9 | PAT saturé | ⚠️ | critical | 9 |
 | F4.10 | Routage asymétrique | ✅ | critical | 10 |
 | F5.1 | SIGTERM | ✅ | variable | 4 |
-| F5.2 | SIGKILL + résidus | ⚠️ Résidus absents | critical | 4 |
+| F5.2 | SIGKILL + résidus | ✅ | notice | 4 |
 | F5.3 | Zombie | ✅ | notice | 1 |
 | F5.4 | Orphelin | ✅ | notice | 1 |
 | F5.5 | Crash loop | ✅ | critical | 4 |

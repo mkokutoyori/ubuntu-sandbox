@@ -21,6 +21,9 @@ import { SystemdJobEngine } from './systemd/SystemdJobEngine';
 import { TimerScheduler, type TimerEntry } from './systemd/TimerScheduler';
 import { parseTimeSpan } from './systemd/TimeSpan';
 import { EXIT_EXEC } from './systemd/ExitStatus';
+import {
+  runtimeArtifactsFor, runtimeDirectoryFor, UNIT_PIDFILE_DIRECTIVE, UNIT_RUNTIME_DIRECTORY,
+} from './service/RuntimeArtifacts';
 import type { DynamicUserTable } from './nss/DynamicUserTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
 
@@ -915,6 +918,12 @@ export class LinuxServiceManager {
     if (!u) return;
     u.lastExit = { code: exit.code, signal: exit.signal };
     u.mainPid = undefined;
+    // The single point that records "the main process is gone", whatever
+    // killed it — so it is the single place systemd's own cleanup belongs.
+    // Spreading it over `markFailed`/`scheduleAutoRestart`/… would let the
+    // paths drift, and one of them forgetting is a residue that outlives
+    // what a real box would have wiped.
+    this.clearRuntimeDirectory(u);
     this.bus?.publish({
       topic: 'linux.service.main-exited',
       payload: {
@@ -930,6 +939,10 @@ export class LinuxServiceManager {
     const from = u.state;
     u.state = 'inactive';
     u.activeSince = undefined;
+    // Only reached for a CLEAN exit — the daemon ran its own cleanup on the
+    // way out, so its runtime files go with it. A death by signal never
+    // comes here, and that is what leaves the residue behind (§F5.2).
+    this.clearRuntimeArtifacts(u);
     this.emitStateChanged(name, from, 'inactive');
   }
 
@@ -1222,8 +1235,48 @@ export class LinuxServiceManager {
     u.mainPid = proc.pid;
     u.activeSince = new Date();
     u.state = 'active';
+    this.writeRuntimeArtifacts(u);
     this.emitStateChanged(u.name, prev, 'active');
     return { ok: true };
+  }
+
+  /**
+   * Create the files the daemon creates while it runs (§F5.2). Written here
+   * and removed in `deactivate` only — never on the exit path — because
+   * that IS the panne: a clean stop lets the daemon clean up, a `kill -9`
+   * gives it no chance and the files outlive it.
+   */
+  private writeRuntimeArtifacts(u: LinuxService): void {
+    const runtimeDir = runtimeDirectoryFor(u.name);
+    if (runtimeDir) this.vfs.mkdirp(runtimeDir, 0o755, 0, 0);
+    for (const a of runtimeArtifactsFor(u.name)) {
+      const dir = a.path.slice(0, a.path.lastIndexOf('/'));
+      if (dir) this.vfs.mkdirp(dir, 0o755, 0, 0);
+      // A pid file holds the main pid and a newline; a socket holds
+      // nothing readable — what matters about it is that it exists.
+      this.vfs.writeFile(a.path, a.kind === 'pidfile' ? `${u.mainPid}\n` : '', 0, 0, 0o022);
+    }
+  }
+
+  /** Remove them — the cleanup a daemon runs when it is asked to stop. */
+  private clearRuntimeArtifacts(u: LinuxService): void {
+    for (const a of runtimeArtifactsFor(u.name)) this.vfs.deleteFile(a.path);
+  }
+
+  /**
+   * systemd's own cleanup, not the daemon's: `RuntimeDirectory=` is
+   * removed as soon as the unit leaves the active state, **failure
+   * included**, because `RuntimeDirectoryPreserve=` defaults to `no`.
+   *
+   * This is why two daemons on one machine survive the same `kill -9`
+   * differently: sshd writes straight into `/run` and its pid file is
+   * still there afterwards, fail2ban writes into a directory systemd owns
+   * and nothing of its remains. Skipping this would make every residue
+   * look permanent, which is the opposite of what a real box does.
+   */
+  private clearRuntimeDirectory(u: LinuxService): void {
+    const dir = runtimeDirectoryFor(u.name);
+    if (dir) this.vfs.rmrf(dir);
   }
 
   private deactivate(u: LinuxService): OperationResult {
@@ -1231,9 +1284,13 @@ export class LinuxServiceManager {
     u.state = 'deactivating';
     if (unitSuffix(u.name) === 'timer') this.timerScheduler.disarm(u.name);
     if (u.mainPid !== undefined) {
+      // SIGTERM: the daemon gets to run its handler, and that is what
+      // removes the pid file. A SIGKILL never reaches this path.
       this.processMgr.kill(u.mainPid, 'SIGTERM');
+      this.clearRuntimeArtifacts(u);
       u.mainPid = undefined;
     }
+    this.clearRuntimeDirectory(u);
     if (u.dynamicUser && this.dynamicUsers) {
       this.dynamicUsers.release(u.user || u.name);
     }
@@ -1360,6 +1417,17 @@ function renderUnitFile(u: DefaultUnit): string {
   lines.push('[Service]');
   lines.push(`Type=${u.type}`);
   lines.push(`ExecStart=${u.execStart}`);
+  // Only the units Debian really gives the directive to. systemd is told
+  // where the pid lives when it cannot follow the fork itself; a
+  // `Type=simple` unit like cron never says, even though cron does write
+  // one (see service/RuntimeArtifacts.ts).
+  const pidFile = UNIT_PIDFILE_DIRECTIVE[u.name];
+  if (pidFile) lines.push(`PIDFile=${pidFile}`);
+  // The directive that decides whether this unit's residue survives a
+  // `kill -9` — systemd removes the directory the moment the unit stops
+  // OR fails (see service/RuntimeArtifacts.ts).
+  const runtimeDir = UNIT_RUNTIME_DIRECTORY[u.name];
+  if (runtimeDir) lines.push(`RuntimeDirectory=${runtimeDir}`);
   if (u.execReload) lines.push(`ExecReload=${u.execReload}`);
   if (u.user) lines.push(`User=${u.user}`);
   lines.push('Restart=on-failure');
