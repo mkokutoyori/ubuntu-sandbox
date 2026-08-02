@@ -23,6 +23,7 @@ export interface SudoAuthorization {
 import type { UserEntry } from './iam/LinuxUserAccount';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
+import { parseCrontab } from './cron/CrontabParser';
 import { cronAllowed } from './cron/CronPermissions';
 import { CronEngine } from './cron/CronEngine';
 import { SystemCron } from './cron/SystemCron';
@@ -5117,7 +5118,7 @@ export class LinuxCommandExecutor {
     }
 
     if (op === 'list') {
-      const content = this.cron.list(targetUser);
+      const content = this.readCrontabFile(targetUser);
       if (content === null) return { output: `no crontab for ${targetUser}`, exitCode: 1 };
       return { output: content, exitCode: 0 };
     }
@@ -5136,10 +5137,32 @@ export class LinuxCommandExecutor {
         content = this.vfs.readFile(this.vfs.normalizePath(fileArg!, this.cwd));
         if (content === null) return { output: `crontab: ${fileArg}: No such file or directory`, exitCode: 1 };
       }
+      // Une ligne fautive fait tout refuser : le vrai crontab n'installe
+      // pas la moitié d'un fichier, et laisse en place celui d'avant.
+      const errors = parseCrontab(content, { withUser: false }).errors;
+      if (errors.length > 0) {
+        const source = fileArg === '-' ? '-' : fileArg!;
+        const lines = errors.map((e) => `"${source}":${e.line}: ${e.reason}`);
+        lines.push('errors in crontab file, can\'t install.');
+        return { output: lines.join('\n'), exitCode: 1 };
+      }
       this.installCrontab(content, targetUser);
       return { output: '', exitCode: 0 };
     }
     return { output: 'usage: crontab [-u user] file\n       crontab [-u user] [-i] {-e | -l | -r}', exitCode: 1 };
+  }
+
+  /**
+   * Le crontab d'un utilisateur, tel qu'il est sur le disque. C'est la
+   * seule copie qui compte : `SystemCron` lit ce fichier pour décider
+   * quoi exécuter, donc `crontab -l` doit le lire aussi — sans quoi un
+   * `vim` sur le spool ferait tourner une tâche que `-l` ne montre pas.
+   */
+  private readCrontabFile(user: string): string | null {
+    const raw = this.vfs.readFile(`/var/spool/cron/crontabs/${user}`);
+    if (raw === null) return null;
+    const body = raw.split('\n').filter((l) => l.trim().length > 0);
+    return body.length > 0 ? body.join('\n') : null;
   }
 
   installCrontab(content: string, user: string): void {

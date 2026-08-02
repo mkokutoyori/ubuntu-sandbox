@@ -1,3 +1,6 @@
+/** Les cinq champs d'une ligne cron, tels que Vixie cron les nomme. */
+export type ScheduleField = 'minute' | 'hour' | 'day-of-month' | 'month' | 'day-of-week';
+
 const CRON_MACROS: Record<string, string> = {
   '@yearly': '0 0 1 1 *',
   '@annually': '0 0 1 1 *',
@@ -76,17 +79,39 @@ export class CronSchedule {
   }
 
   static parse(expr: string): CronSchedule | null {
+    const r = CronSchedule.parseDetailed(expr);
+    return r instanceof CronSchedule ? r : null;
+  }
+
+  /**
+   * Comme `parse`, mais nomme le champ fautif. Vixie cron ne dit pas
+   * « ligne invalide » : il dit lequel des cinq champs il n'a pas su lire
+   * (`bad minute`, `bad day-of-week`, …), et c'est ce que `crontab`
+   * imprime avant de refuser d'installer.
+   *
+   * Rend l'horaire, ou le nom du champ fautif — `instanceof` les
+   * distingue. Une union discriminée sur `ok: true`/`false` ne se
+   * réduirait pas ici : `strictNullChecks` est désactivé dans ce dépôt,
+   * et les types littéraux booléens s'y élargissent.
+   */
+  static parseDetailed(expr: string): CronSchedule | ScheduleField {
     const trimmed = expr.trim().toLowerCase();
     if (trimmed === '@reboot') return CronSchedule.reboot();
     const expanded = CRON_MACROS[trimmed] ?? expr.trim();
     const f = expanded.split(/\s+/);
-    if (f.length !== 5) return null;
+    // Un `@quelquechose` inconnu n'a pas de champ à incriminer ; le vrai
+    // s'arrête sur le premier, la minute.
+    if (f.length !== 5) return 'minute';
     const minutes = parseField(f[0], 0, 59);
+    if (!minutes) return 'minute';
     const hours = parseField(f[1], 0, 23);
+    if (!hours) return 'hour';
     const daysOfMonth = parseField(f[2], 1, 31);
+    if (!daysOfMonth) return 'day-of-month';
     const months = parseField(f[3], 1, 12, MONTH_NAMES);
+    if (!months) return 'month';
     const daysOfWeek = parseField(f[4], 0, 7, DOW_NAMES);
-    if (!minutes || !hours || !daysOfMonth || !months || !daysOfWeek) return null;
+    if (!daysOfWeek) return 'day-of-week';
     const normalizedDow = new Set<number>(daysOfWeek);
     if (normalizedDow.has(7)) normalizedDow.add(0);
     return new CronSchedule(

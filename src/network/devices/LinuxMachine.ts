@@ -958,7 +958,14 @@ export abstract class LinuxMachine extends EndHost
   private getCronEngine(): CronEngine {
     if (!this._cronEngine) {
       this._cronEngine = new CronEngine({
-        sources: [this.executor.cron, new SystemCron(this.executor.vfs)],
+        // Une seule source pour les crontabs utilisateur : le fichier.
+        // `LinuxCronManager` en tenait un double en mémoire tout en
+        // écrivant /var/spool/cron/crontabs, et les deux étaient énumérés
+        // — une tâche installée par `crontab -` s'exécutait donc deux fois
+        // par minute. Le fichier fait foi, comme sur un vrai système : il
+        // est ce que `SystemCron` lit, et ce qu'un `vim` sur le spool
+        // modifierait.
+        sources: [new SystemCron(this.executor.vfs)],
         runner: (command, ctx) => this.runCronJob(command, ctx),
         syslog: (tag, message) => this.executor.logMgr.logDaemon(tag, message),
         deliverMail: (recipient, body) => this.deliverCronMail(recipient, body),
