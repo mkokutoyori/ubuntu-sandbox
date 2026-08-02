@@ -2027,18 +2027,12 @@ class WindowsVpnAdapter implements IVpnProvider {
   }
 }
 
-// ── Scheduled tasks (simple in-memory, seeded with built-ins) ─────────────
-
-interface ScheduledTaskState {
-  readonly tasks: Map<string, ScheduledTaskInfo>;
-}
-
-const SEEDED_TASKS: ScheduledTaskInfo[] = [
-  { taskName: 'GoogleUpdateTaskUser',                taskPath: '\\',                            state: 'Ready' },
-  { taskName: 'OneDrive Standalone Update Task',     taskPath: '\\',                            state: 'Ready' },
-  { taskName: '.NET Framework NGEN v4.0.30319',      taskPath: '\\Microsoft\\Windows\\.NET',    state: 'Ready' },
-  { taskName: 'SimTestTask',                          taskPath: '\\',                            state: 'Ready' },
-];
+// ── Scheduled tasks ───────────────────────────────────────────────────────
+//
+// The seeded built-ins live on the device (`WindowsPC.scheduledTasks`),
+// which is what both `schtasks` and the cmdlets read; this file used to
+// keep a second, identical seed list of its own for a `shared` override
+// nobody ever passed. Removed — one table, on the machine.
 
 class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
   /**
@@ -2956,12 +2950,22 @@ class WindowsRemotingAdapter implements IRemotingProvider {
 // ── Public factory ─────────────────────────────────────────────────────────
 
 /**
- * Build a PSProviders bag backed by a real WindowsPC device. Optional
- * `shared.registry` / `eventLog` / `network` arguments let callers share
- * the same in-memory state with the legacy PowerShellExecutor, so changes
- * made through the interpreter are visible to fallback paths and vice
- * versa. When `shared.network` is omitted the adapter falls back to its
- * own (empty) maps — useful for standalone tests.
+ * Build a PSProviders bag backed by a real WindowsPC device.
+ *
+ * A machine has ONE registry, ONE event log and ONE set of network
+ * tables, and every door into it — the `reg`/`netsh` commands of `cmd`,
+ * the cmdlets of PowerShell, the legacy PowerShellExecutor — must reach
+ * that same store, or the same box answers two different things about
+ * itself depending on which shell you asked. So the default for every
+ * piece of shared state is the device's own field, never a fresh
+ * detached object: a caller that passes no `shared` bag gets a
+ * PowerShell wired to the real machine, not to a private copy of it.
+ * (The defaults used to be detached, and both production call sites
+ * spelled the six fields out by hand to avoid them — which worked right
+ * up until a third caller forgot.)
+ *
+ * The `shared` argument therefore exists only to let a caller substitute
+ * a store deliberately. Production callers can, and should, omit it.
  */
 export function createWindowsPSProviders(
   pc: WindowsPC,
@@ -2970,22 +2974,18 @@ export function createWindowsPSProviders(
     eventLog?:       PSEventLogProvider;
     network?:        NetworkStateRefs;
     vpn?:            VpnState;
-    scheduledTasks?: ScheduledTaskState;
   },
 ): PSProviders {
-  const reg = shared?.registry ?? new PSRegistryProvider();
-  const log = shared?.eventLog ?? new PSEventLogProvider();
+  const reg = shared?.registry ?? pc.registry;
+  const log = shared?.eventLog ?? pc.eventLog;
   const net = shared?.network ?? {
-    extraIPs:             new Map(),
-    extraRoutes:          new Map(),
-    adapterOverrides:     new Map(),
-    dynamicFirewallRules: new Map(),
-    networkProfiles:      new Map(),
+    extraIPs:             pc.extraIPs,
+    extraRoutes:          pc.extraRoutes,
+    adapterOverrides:     pc.adapterOverrides,
+    dynamicFirewallRules: pc.dynamicFirewallRules,
+    networkProfiles:      pc.networkProfiles,
   };
-  const vpn = shared?.vpn ?? { vpnConnections: new Map() };
-  const tasks = shared?.scheduledTasks ?? {
-    tasks: new Map(SEEDED_TASKS.map(t => [t.taskName.toLowerCase(), t])),
-  };
+  const vpn = shared?.vpn ?? { vpnConnections: pc.vpnConnections };
   return {
     filesystem:     new WindowsFileSystemAdapter(pc),
     services:       new WindowsServiceAdapter(pc),

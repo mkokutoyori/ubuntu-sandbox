@@ -301,18 +301,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   getPowerShellInterpreter(): PSInterpreter {
     if (!this.psInterpreter) {
-      this.psInterpreter = new PSInterpreter(createWindowsPSProviders(this, {
-        registry: this.registry,
-        eventLog: this.eventLog,
-        network: {
-          extraIPs: this.extraIPs,
-          extraRoutes: this.extraRoutes,
-          adapterOverrides: this.adapterOverrides,
-          dynamicFirewallRules: this.dynamicFirewallRules,
-          networkProfiles: this.networkProfiles,
-        },
-        vpn: { vpnConnections: this.vpnConnections },
-      }), { edition: this.getWindowsEdition() });
+      // No `shared` bag: the factory already defaults every store to this
+      // device's own registry / event log / network tables, so `reg` and
+      // the cmdlets cannot end up on two different copies of the machine.
+      this.psInterpreter = new PSInterpreter(
+        createWindowsPSProviders(this), { edition: this.getWindowsEdition() },
+      );
     }
     return this.psInterpreter;
   }

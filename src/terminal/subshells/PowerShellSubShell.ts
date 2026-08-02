@@ -71,18 +71,9 @@ export class PowerShellSubShell implements ISubShell {
     // executor. createWindowsPSProviders picks them up directly from the
     // device. Non-Windows devices keep the default NULL_PROVIDERS.
     this.interp = device instanceof WindowsPC
-      ? new PSInterpreter(createWindowsPSProviders(device, {
-          registry: device.registry,
-          eventLog: device.eventLog,
-          network: {
-            extraIPs:             device.extraIPs,
-            extraRoutes:          device.extraRoutes,
-            adapterOverrides:     device.adapterOverrides,
-            dynamicFirewallRules: device.dynamicFirewallRules,
-            networkProfiles:      device.networkProfiles,
-          },
-          vpn: { vpnConnections: device.vpnConnections },
-        }), { edition: device.getWindowsEdition() })
+      ? new PSInterpreter(
+          createWindowsPSProviders(device), { edition: device.getWindowsEdition() },
+        )
       : new PSInterpreter();
   }
 
