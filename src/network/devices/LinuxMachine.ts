@@ -25,6 +25,7 @@
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
+import { findHostByAddress } from './linux/network/HostLookup';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpStream } from '../tcp/types';
@@ -286,6 +287,12 @@ export abstract class LinuxMachine extends EndHost
     });
     this.executor.setSshHostKeyProbe((ip, port) =>
       probeSshHostKey(this.tcpv2.connect(ip, port)));
+    // Un montage réseau tient tant que son serveur est là. Aucun protocole
+    // NFS n'est implémenté ; ce qui décide, c'est le fait physique que le
+    // simulateur connaît vraiment — la machine est-elle encore atteignable
+    // à travers les câbles depuis celle-ci (docs/PRD-Pannes.md §F5.7).
+    this.executor.mountServerReachable = (host: string) =>
+      findHostByAddress(host, this.executor.vfs, this) !== null;
     this.executor.setEphemeralRangeApplier((min, max) => this.tcpv2.setEphemeralRange(min, max));
     this.executor.setEphemeralPoolFreeChecker(() => this.tcpv2.hasFreeEphemeralPort());
     const utmpSync = new UtmpSync(this.executor.vfs);

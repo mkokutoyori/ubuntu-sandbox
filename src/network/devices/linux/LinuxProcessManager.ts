@@ -19,6 +19,7 @@ import type { IEventBus } from '@/events/EventBus';
 import type { LinuxProcessServiceDomainEvent } from './events';
 import type { OSProcess } from '../os/OSProcess';
 import { LinuxProcess } from './process/LinuxProcess';
+import { UninterruptibleSleepTable } from './process/UninterruptibleSleep';
 
 /** Linux process states as reported by ps. */
 export type ProcessState =
@@ -233,6 +234,65 @@ export class LinuxProcessManager {
     return out.sort((a, b) => a.pid - b.pid);
   }
 
+  /**
+   * Qui dort en `D`, et les signaux que le noyau a acceptés pour eux sans
+   * pouvoir les appliquer (docs/PRD-Pannes.md §F5.7).
+   */
+  private readonly uninterruptible = new UninterruptibleSleepTable();
+
+  /**
+   * Le processus entre en attente ininterruptible sur `resource`. À partir
+   * de là, plus aucun signal ne l'atteint — `SIGKILL` compris.
+   */
+  enterUninterruptibleSleep(pid: number, resource: string): boolean {
+    const p = this.processes.get(pid);
+    if (!p) return false;
+    this.uninterruptible.enter(pid, resource);
+    this.transition(p, 'D');
+    return true;
+  }
+
+  /**
+   * La ressource est revenue (ou `umount -l` l'a détachée) : le processus
+   * quitte `D` et **encaisse alors tous les signaux mis en attente**, dans
+   * l'ordre d'arrivée. C'est le moment où un `kill -9` envoyé dix minutes
+   * plus tôt tue enfin le processus — le jeter aurait donné un processus
+   * qui survit à sa libération, ce qui n'arrive jamais.
+   */
+  wakeFromUninterruptibleSleep(pid: number): boolean {
+    const p = this.processes.get(pid);
+    const queued = this.uninterruptible.wake(pid);
+    if (!p) return false;
+    this.transition(p, 'S');
+    for (const signal of queued) {
+      if (!this.processes.has(pid)) break; // un signal précédent l'a tué
+      this.kill(pid, signal);
+    }
+    return true;
+  }
+
+  /** Réveille tout ce que cette ressource retenait. */
+  wakeAllBlockedOn(resource: string): number[] {
+    const pids = this.uninterruptible.pidsBlockedOn(resource);
+    for (const pid of pids) this.wakeFromUninterruptibleSleep(pid);
+    return pids;
+  }
+
+  /** Ce processus est-il hors de portée des signaux ? */
+  isUninterruptible(pid: number): boolean {
+    return this.uninterruptible.isBlocked(pid);
+  }
+
+  /** La ressource qui retient ce processus, pour un diagnostic. */
+  uninterruptibleResource(pid: number): string | undefined {
+    return this.uninterruptible.resourceFor(pid);
+  }
+
+  /** Les signaux acceptés mais pas encore délivrables. */
+  pendingSignals(pid: number): readonly Signal[] {
+    return this.uninterruptible.pendingFor(pid);
+  }
+
   /** Manually transition a process to a new state. */
   setState(pid: number, state: ProcessState): boolean {
     const p = this.processes.get(pid);
@@ -306,6 +366,16 @@ export class LinuxProcessManager {
     }
     if (!p) return false;
     if (pid === INIT_PID || pid === KTHREADD_PID) return false;
+
+    // §F5.7 — un processus en attente ininterruptible est hors de portée
+    // des signaux, `SIGKILL` compris. Le noyau ACCEPTE le signal (d'où le
+    // `true` : `kill` sort avec 0 et l'opérateur n'a aucun message
+    // d'erreur, ce qui est précisément ce qui rend la panne déroutante) et
+    // l'empile jusqu'à la sortie de `D`.
+    if (this.uninterruptible.isBlocked(pid)) {
+      this.uninterruptible.queue(pid, signal);
+      return true;
+    }
 
     switch (signal) {
       case 'SIGSTOP':
@@ -535,6 +605,9 @@ export class LinuxProcessManager {
    * Returns the number of children reparented.
    */
   private terminate(pid: number): number {
+    // Le pid est recyclable : sans cet oubli, un futur processus héritant
+    // du même numéro recevrait le `SIGKILL` destiné à son prédécesseur.
+    this.uninterruptible.forget(pid);
     let reparented = 0;
     for (const child of this.processes.values()) {
       if (child.ppid === pid) {

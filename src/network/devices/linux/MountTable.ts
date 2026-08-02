@@ -6,6 +6,7 @@ export interface MountEntryInit {
   fstype: string;
   options?: Iterable<string>;
   bindOrigin?: string;
+  serverHost?: string;
 }
 
 const OPTION_ORDER = [
@@ -13,12 +14,35 @@ const OPTION_ORDER = [
   'errors=remount-ro', 'bind',
 ];
 
+/**
+ * Le serveur d'une source de montage réseau : `host` dans `host:/export`
+ * (NFS) ou `//host/share` (CIFS). Null pour tout le reste — un chemin
+ * local n'a pas de serveur à perdre.
+ */
+export function parseNetworkServer(source: string, fstype: string): string | undefined {
+  if (/^nfs/.test(fstype)) {
+    const m = source.match(/^([^/:][^:]*):\//);
+    return m ? m[1] : undefined;
+  }
+  if (fstype === 'cifs' || fstype === 'smbfs') {
+    const m = source.match(/^\/\/([^/]+)\//);
+    return m ? m[1] : undefined;
+  }
+  return undefined;
+}
+
 export class MountEntry {
   source: string;
   target: string;
   fstype: string;
   readonly options: Set<string>;
   bindOrigin?: string;
+  /**
+   * Le serveur d'un montage réseau (`10.0.0.2` pour `10.0.0.2:/export`).
+   * Absent pour un montage local. C'est ce qui permet de savoir si la
+   * ressource est encore là — docs/PRD-Pannes.md §F5.7 / §F9.6.
+   */
+  serverHost?: string;
 
   constructor(init: MountEntryInit) {
     this.source = init.source;
@@ -27,6 +51,7 @@ export class MountEntry {
     this.options = new Set(init.options ?? ['rw', 'relatime']);
     if (!this.options.has('ro') && !this.options.has('rw')) this.options.add('rw');
     this.bindOrigin = init.bindOrigin;
+    this.serverHost = init.serverHost ?? parseNetworkServer(init.source, init.fstype);
   }
 
   get readOnly(): boolean {

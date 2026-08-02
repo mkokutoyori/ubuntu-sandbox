@@ -2039,6 +2039,28 @@ export class LinuxCommandExecutor {
     return lines.join('\n');
   }
 
+  /**
+   * Le serveur d'un montage réseau est-il encore joignable ? Fourni par
+   * l'équipement, qui seul connaît la topologie. Absent (tests unitaires
+   * sans réseau) ⇒ tout est joignable, donc aucune panne ne s'invente.
+   */
+  mountServerReachable?: (host: string) => boolean;
+
+  /**
+   * Le montage réseau MORT qui recouvre ce chemin, s'il y en a un
+   * (docs/PRD-Pannes.md §F5.7). Aucun protocole NFS n'est implémenté : ce
+   * qui décide, c'est que le serveur soit encore joignable dans la
+   * topologie — le fait physique que le simulateur connaît vraiment.
+   */
+  staleNetworkMount(path: string): MountEntry | null {
+    const probe = this.mountServerReachable;
+    if (!probe) return null;
+    const abs = this.vfs.normalizePath(path, this.cwd);
+    const entry = this.mountTable.resolve(abs);
+    if (!entry?.serverHost) return null;
+    return probe(entry.serverHost) ? null : entry;
+  }
+
   private spawnBackgroundJob(cmdLine: string, nohup: boolean): { pid: number; jobId: number } | null {
     const argv = simpleTokenize(cmdLine);
     if (argv.length === 0) return null;
@@ -2058,6 +2080,21 @@ export class LinuxCommandExecutor {
       tty: nohup ? '?' : 'pts/0',
       cwd: this.cwd,
     });
+    // §F5.7 — un accès à un montage réseau mort part en attente
+    // ininterruptible et n'en revient pas. Le job est enregistré mais son
+    // travail n'est jamais exécuté : c'est ce que « bloqué » veut dire, et
+    // c'est la seule forme observable ici, une commande au premier plan ne
+    // pouvant pas figer ce shell (limite assumée, cf. PRD §F5.7).
+    const deadMount = argv.slice(1)
+      .filter((a) => !a.startsWith('-'))
+      .map((a) => this.staleNetworkMount(a))
+      .find((m) => m !== null);
+    if (deadMount) {
+      const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
+      this.processMgr.enterUninterruptibleSleep(proc.pid, deadMount.target);
+      this.env.set('!', String(proc.pid));
+      return { pid: proc.pid, jobId: job.id };
+    }
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
     // `$!` — PID of the most-recently backgrounded process. Bash exposes
     // this through the special parameter table; we propagate it via the
@@ -3347,7 +3384,11 @@ export class LinuxCommandExecutor {
     if (positionals.length < 2) {
       return { output: `mount: ${positionals[0]}: can't find in /etc/fstab.`, exitCode: 1 };
     }
-    const source = this.vfs.normalizePath(positionals[0], this.cwd);
+    // `10.0.0.2:/export` is not a local path: normalising it would mangle
+    // the host part and lose the server the mount depends on.
+    const rawSource = positionals[0];
+    const isNetworkSource = /^nfs/.test(fstype ?? '') || fstype === 'cifs' || rawSource.startsWith('//');
+    const source = isNetworkSource ? rawSource : this.vfs.normalizePath(rawSource, this.cwd);
     const target = this.vfs.normalizePath(positionals[1], this.cwd);
     if (isLoop) {
       if (!this.vfs.exists(source)) {
@@ -3356,7 +3397,7 @@ export class LinuxCommandExecutor {
         }
         this.vfs.writeFile(source, '', 0, 0, 0o644);
       }
-    } else if (source.startsWith('/dev/') && !this.hardware.storage.some(d => d.partitions.some(p => `/dev/${p.name}` === source) || d.devicePath === source)) {
+    } else if (!isNetworkSource && source.startsWith('/dev/') && !this.hardware.storage.some(d => d.partitions.some(p => `/dev/${p.name}` === source) || d.devicePath === source)) {
       return { output: `mount: ${positionals[0]}: error: special device does not exist (No such file or directory)`, exitCode: 32 };
     }
     if (!this.vfs.exists(target)) return { output: `mount: ${positionals[1]}: No such file or directory`, exitCode: 32 };
@@ -3386,6 +3427,9 @@ export class LinuxCommandExecutor {
     if (!entry || !this.mountTable.umount(entry.target)) {
       return { output: `umount: ${raw}: not mounted.`, exitCode: 1 };
     }
+    // `umount -l` détache le montage : tout ce qu'il retenait en `D` est
+    // libéré, et encaisse alors les signaux mis en attente (§F5.7).
+    this.processMgr.wakeAllBlockedOn(entry.target);
     this.publishMountEvent('linux.mount.unmounted', entry);
     return { output: '', exitCode: 0 };
   }

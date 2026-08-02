@@ -1129,11 +1129,32 @@ Voir F1.10.
 
 - **Déclencheur.** Accès à un montage réseau mort.
 - **Attendu réel.** État `D`, insensible à `kill -9`.
-- **État actuel.** ❌ Non modélisé.
-- **Cible.** Modélisable de façon simple et fidèle : un processus en état
-  `D` refuse tout signal, y compris `SIGKILL`, jusqu'à ce que la ressource
-  revienne. Bon complément à F9.6 (montage réseau perdu).
-- **Observabilité.** `ps` (`D`), `kill -9` sans effet.
+- **État actuel.** ✅ Implémenté. L'état `D` existait dans le type
+  `ProcessState` et servait aux threads noyau, mais `kill()` ne le
+  consultait jamais. `process/UninterruptibleSleep.ts` tient la table
+  « qui dort sur quoi » et la file des signaux acceptés-mais-pas-encore-
+  délivrables.
+- **Le détail qui compte.** Le signal n'est pas perdu, il est MIS EN
+  ATTENTE : Linux l'empile et le délivre à l'instant où la tâche quitte
+  `D`. C'est ce qui rend la réparation spectaculaire — le processus meurt
+  d'un `kill -9` envoyé bien plus tôt, dès que la ressource revient. Le
+  jeter donnerait un processus qui survit à sa libération, ce qui n'arrive
+  jamais. Et `kill` REND UN SUCCÈS : le noyau accepte le signal, la
+  commande sort avec 0, l'opérateur n'a aucun message d'erreur — c'est
+  précisément ce qui rend la panne déroutante.
+- **Cause modélisée.** Un montage réseau dont le serveur a disparu, comme
+  annoncé. **Aucun protocole NFS n'est implémenté** : ce qui décide, c'est
+  que le serveur soit encore atteignable à travers les vrais câbles depuis
+  cette machine (`findHostByAddress`), le fait physique que le simulateur
+  connaît vraiment. `MountEntry.serverHost` porte l'hôte de `host:/export`.
+- **Limite assumée.** Un accès au PREMIER PLAN ne fige pas le shell : la
+  chaîne d'exécution est synchrone de bout en bout (même mur que
+  `SELECT … FOR UPDATE` côté Oracle). La forme observable est l'accès lancé
+  en arrière-plan — ce qu'un opérateur fait de toute façon dès qu'il
+  soupçonne un montage mort. Corollaire hérité : `df` ne se fige pas non
+  plus (§F9.6 reste ouvert sur ce point).
+- **Observabilité.** `ps` (`D`), `kill -9` sans effet et sans message,
+  `mount`, la mort différée à la libération.
 - **Réparation.** Restaurer la ressource, ou `umount -l`.
 - **Sévérité.** `degraded`.
 
@@ -2679,6 +2700,7 @@ src/__tests__/unit/network-v2/faults/
 ├── fault-service-state-is-one-answer.test.ts — F5.*/F6.* : un service a UN état
 ├── fault-deleted-executable.test.ts    — F5.10
 ├── fault-sigkill-residues.test.ts      — F5.2
+├── fault-uninterruptible-sleep.test.ts — F5.7
 ├── fault-files-sshd.test.ts            — F7.1, F7.2
 ├── fault-files-binaries.test.ts        — F7.7, F7.8
 ├── fault-files-logs.test.ts            — F7.9–F7.11
@@ -2830,7 +2852,7 @@ Explicitement exclu, avec la raison. Ces points ne sont pas des oublis.
 | F5.4 | Orphelin | ✅ | notice | 1 |
 | F5.5 | Crash loop | ✅ | critical | 4 |
 | F5.6 | CPU à 100 % | ❌ Hors périmètre | — | — |
-| F5.7 | État D | ❌ | degraded | 4 |
+| F5.7 | État D | ✅ | degraded | 4 |
 | F5.8 | Table de processus pleine | ❌ | critical | 7 |
 | F5.9 | OOM kill | ❌ Déclaratif | critical | 7 |
 | F5.10 | Binaire supprimé sous le processus | ✅ | degraded/critical | 6 |
