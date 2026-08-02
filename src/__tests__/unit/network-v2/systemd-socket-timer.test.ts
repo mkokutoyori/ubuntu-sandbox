@@ -167,7 +167,12 @@ describe('systemd .timer units', () => {
     expect(out.exitCode).toBe(0);
     expect(out.output).toContain('backup.timer');
     expect(out.output).toContain('backup.service');
-    expect(out.output).toContain('1 timers listed.');
+    // « 1 timers listed » datait d'une machine sans aucun timer d'usine.
+    // Ubuntu en livre six, désormais présents ici aussi, et `backup`
+    // s'ajoute à eux. Filtrer sur le nom montre celui qu'on visait.
+    const seul = cmdSystemctl(['list-timers', 'backup.timer'], sm);
+    expect(seul.output).toContain('1 timers listed.');
+    expect(seul.output).not.toContain('apt-daily');
   });
 });
 
