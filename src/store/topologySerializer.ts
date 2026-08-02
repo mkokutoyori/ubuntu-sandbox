@@ -9,8 +9,9 @@
  *   - Per-interface: the NIC's MAC, and the physical layer (MTU, speed,
  *                    duplex, auto-negotiation, bandwidth, delay)
  *   - Per-cable:     admin state, injected loss/corruption/latency
- *   - Per-host:      netfilter rules (via `iptables-save`), and the
- *                    Oracle database (accounts + a Data Pump dump)
+ *   - Per-host:      netfilter rules (via `iptables-save`), the systemd
+ *                    units' enable/active state, and the Oracle database
+ *                    (accounts + a Data Pump dump)
  *   - Per-host:      default gateway, static routes, static ARP entries,
  *                    every Linux OR Windows file that differs from a
  *                    fresh filesystem
@@ -129,6 +130,21 @@ interface TopologySwitchportExport {
 }
 
 /**
+ * A systemd unit's enablement and activation.
+ *
+ * Unlike the registry, this is NOT a diff, and the reason is the size of
+ * what is being described: a machine has a dozen or so units, so the
+ * whole table is readable in the file and needs no baseline to interpret
+ * — where a registry dump would have been hundreds of seeded values deep.
+ * The restore applies only what actually differs on the reopened machine.
+ */
+interface TopologyLinuxServiceExport {
+  name: string;
+  enabled: 'enabled' | 'disabled' | 'static' | 'masked';
+  active: boolean;
+}
+
+/**
  * A registry diff.
  *
  * Deletions are carried explicitly, and they are the reason this is a
@@ -199,6 +215,17 @@ interface TopologyDeviceExport {
    */
   iptablesRules?: string;
   ip6tablesRules?: string;
+  /**
+   * The machine's systemd units.
+   *
+   * `systemctl enable`/`disable` is symlink-backed and `systemctl
+   * start`/`stop` is not, but neither survived on its own: the file
+   * capture only records what EXISTS, so a `disable` — which works by
+   * REMOVING the `multi-user.target.wants` symlink — left no trace, and a
+   * reopened machine re-created the link at boot and started the service
+   * again. A lab whose whole point is a stopped daemon came back healthy.
+   */
+  linuxServices?: TopologyLinuxServiceExport[];
   /**
    * The device's Oracle database: its accounts, and a Data Pump dump of
    * everything they own. Absent on a machine that never opened one — the
@@ -600,6 +627,55 @@ function captureIptables(device: LinuxMachine): { v4?: string; v6?: string } {
   return out;
 }
 
+/** The device's systemd manager, reached the way the shell reaches it. */
+function serviceMgrOf(device: LinuxMachine): {
+  list(): Array<{ name: string; enabled: string; state: string }>;
+  enable(n: string): unknown; disable(n: string): unknown;
+  mask(n: string): unknown; unmask(n: string): unknown;
+  start(n: string): unknown; stop(n: string): unknown;
+} {
+  return (device as unknown as {
+    executor: { serviceMgr: ReturnType<typeof serviceMgrOf> };
+  }).executor.serviceMgr;
+}
+
+function captureLinuxServices(device: LinuxMachine): TopologyLinuxServiceExport[] {
+  return serviceMgrOf(device).list().map((u) => ({
+    name: u.name,
+    enabled: u.enabled as TopologyLinuxServiceExport['enabled'],
+    active: u.state === 'active',
+  }));
+}
+
+function restoreLinuxServices(
+  device: LinuxMachine, services: TopologyLinuxServiceExport[],
+): void {
+  const mgr = serviceMgrOf(device);
+  const live = new Map(mgr.list().map((u) => [u.name, u]));
+
+  for (const saved of services) {
+    const unit = live.get(saved.name);
+    if (!unit) continue; // a unit this build no longer ships — nothing to set
+
+    // Enablement first: it is what the SCM would have consulted at boot,
+    // and `mask` also blocks a start.
+    if (unit.enabled !== saved.enabled) {
+      if (saved.enabled === 'masked') mgr.mask(saved.name);
+      else {
+        if (unit.enabled === 'masked') mgr.unmask(saved.name);
+        // `static` has no [Install] section — there is nothing to link or
+        // unlink, so it is reported, never set.
+        if (saved.enabled === 'enabled') mgr.enable(saved.name);
+        else if (saved.enabled === 'disabled') mgr.disable(saved.name);
+      }
+    }
+
+    const isActive = unit.state === 'active';
+    if (saved.active && !isActive) mgr.start(saved.name);
+    if (!saved.active && isActive) mgr.stop(saved.name);
+  }
+}
+
 function restoreIptables(device: LinuxMachine, v4?: string, v6?: string): void {
   const exec = (device as unknown as {
     executor: {
@@ -714,6 +790,8 @@ export function exportTopology(
       const { v4, v6 } = captureIptables(device);
       if (v4) entry.iptablesRules = v4;
       if (v6) entry.ip6tablesRules = v6;
+      const services = captureLinuxServices(device);
+      if (services.length > 0) entry.linuxServices = services;
     }
     const oracle = captureOracleState(device.getId());
     if (oracle) entry.oracle = oracle;
@@ -1007,6 +1085,9 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     if (device instanceof LinuxMachine) {
       if (devData.files) restoreLinuxFiles(device, devData.files);
       restoreIptables(device, devData.iptablesRules, devData.ip6tablesRules);
+      // After the files, because a unit file the lab wrote has to exist
+      // before the manager can be asked to enable or start it.
+      if (devData.linuxServices) restoreLinuxServices(device, devData.linuxServices);
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {

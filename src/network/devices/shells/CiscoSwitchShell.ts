@@ -2998,6 +2998,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (stpAgent) for (const l of stpAgent.runningConfigGlobalLines()) lines.push(l);
     const vtpAgent = (sw as unknown as { getVtpAgent?: () => import('../../vtp/VtpAgent').VtpAgent }).getVtpAgent?.();
     if (vtpAgent) for (const l of vtpAgent.runningConfigGlobalLines()) lines.push(l);
+    // DTP and LACP are resolved the same way, and for the same reason: this
+    // shell also drives `GenericSwitch`, which runs neither protocol and
+    // therefore has no agent to ask. Reading them unconditionally threw
+    // `sw.getDtpAgent is not a function` here — inside the very function a
+    // topology SAVE goes through — so exporting any topology holding a
+    // generic switch failed outright, for every device in it, not just
+    // that one. An unmanaged port has no negotiated mode and no channel
+    // group, which is exactly what "no agent, no lines" renders.
+    const dtpAgent = (sw as unknown as { getDtpAgent?: () => import('../../dtp/DtpAgent').DtpAgent }).getDtpAgent?.();
+    const lacpAgent = (sw as unknown as { getLacpAgent?: () => import('../../lacp/LacpAgent').LacpAgent }).getLacpAgent?.();
     if (dai.vlans.size > 0 || dai.vlanAclFilters.size > 0) lines.push('!');
 
     const ports = sw._getPortsInternal();
@@ -3010,7 +3020,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push(`interface ${portName}`);
       const desc = descs.get(portName);
       if (desc) lines.push(` description ${desc}`);
-      const dtpAdmin = sw.getDtpAgent().getAdminMode(portName);
+      const dtpAdmin = dtpAgent?.getAdminMode(portName);
       if (cfg.mode === 'dot1q-tunnel') {
         lines.push(' switchport mode dot1q-tunnel');
       } else if (dtpAdmin === 'dynamic-auto') {
@@ -3053,7 +3063,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const l of this.renderPortSecurityLines(port)) lines.push(` ${l}`);
       if (cdpAgent) for (const l of cdpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
       if (lldpAgent) for (const l of lldpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
-      for (const l of sw.getLacpAgent().runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
+      if (lacpAgent) for (const l of lacpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }
