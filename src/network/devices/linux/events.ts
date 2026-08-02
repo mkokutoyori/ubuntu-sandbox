@@ -99,6 +99,14 @@ export interface ServiceFailedPayload extends ServiceRef {
 export interface ServiceMainExitedPayload extends ServiceRef {
   exitCode?: number;
   signal?: string;
+  /**
+   * Why the process could not run, when systemd knows more than the exit
+   * code — e.g. `Failed to locate executable /usr/sbin/sshd: No such file
+   * or directory`, which it journals just before the `status=203/EXEC`
+   * line. That sentence is the actual diagnosis; the number alone only
+   * says the exec failed.
+   */
+  diagnostic?: string;
 }
 
 export interface ServiceRestartScheduledPayload extends ServiceRef {

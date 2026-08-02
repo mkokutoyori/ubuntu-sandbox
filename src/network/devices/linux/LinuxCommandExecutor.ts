@@ -805,6 +805,7 @@ export class LinuxCommandExecutor {
           '',
         ].join('\n');
       });
+      this.materializeProcExe(pid);
       this.materializeProcFd(pid);
       this.materializedProcPids.add(pid);
     }
@@ -812,6 +813,28 @@ export class LinuxCommandExecutor {
     if (this.shellPid && !this.vfs.exists('/proc/self')) {
       this.vfs.createSymlink('/proc/self', String(this.shellPid), 0, 0);
     }
+  }
+
+  /**
+   * `/proc/<pid>/exe` — the symlink to the running executable.
+   *
+   * The kernel keeps the inode open, so the process survives the file
+   * being unlinked and the link target grows a ` (deleted)` suffix — the
+   * one place an operator can see that the binary on disk is gone while
+   * the daemon is still serving (docs/PRD-Pannes.md §F5.10). The suffix
+   * is recomputed on every read rather than stamped once, because
+   * restoring the binary must make it disappear again.
+   */
+  private materializeProcExe(pid: number): void {
+    const p = this.processMgr.get(pid);
+    // Kernel threads have no executable — `/proc/<pid>/exe` is empty for
+    // them on a real system, so there is nothing to link.
+    if (!p || !p.exe.startsWith('/')) return;
+    this.vfs.registerGeneratedSymlink(`/proc/${pid}/exe`, () => {
+      const live = this.processMgr.get(pid);
+      const exe = live?.exe ?? p.exe;
+      return this.vfs.exists(exe) ? exe : `${exe} (deleted)`;
+    }, p.uid, p.gid);
   }
 
   /** `/proc/<pid>/fd/` — stdin/stdout/stderr, any `OSProcess.openFiles`,
@@ -4902,7 +4925,10 @@ export class LinuxCommandExecutor {
           } else {
             const node = p.lstatNode();
             if (!node || node.type !== 'symlink') { failed = true; continue; }
-            out.push(node.target);
+            // Same string `ls -l` prints after the arrow — a link whose
+            // target is computed (`/proc/<pid>/exe`) must not read one way
+            // in `ls` and another in `readlink`.
+            out.push(this.vfs.linkTarget(node));
           }
         }
         return { output: out.join('\n'), exitCode: failed && out.length === 0 ? 1 : 0 };

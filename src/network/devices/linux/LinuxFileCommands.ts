@@ -362,7 +362,7 @@ function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath:
 
   // Symlink target
   if (inode.type === 'symlink') {
-    line += ` -> ${inode.target}`;
+    line += ` -> ${ctx.vfs.linkTarget(inode)}`;
   }
 
   return line;

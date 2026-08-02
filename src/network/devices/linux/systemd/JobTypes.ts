@@ -3,6 +3,8 @@ import type { DependencyGraph } from '@/network/devices/linux/systemd/Dependency
 export interface OperationResult {
   ok: boolean;
   error?: string;
+  /** `error` is a complete systemctl message; the caller must not prefix it. */
+  verbatim?: boolean;
 }
 
 export type JobType = 'start' | 'stop';
@@ -19,6 +21,8 @@ export interface JobResult {
   readonly unit: string;
   readonly outcome: JobOutcome;
   readonly error?: string;
+  /** Carried from the activation hook so the message reaches the caller intact. */
+  readonly verbatim?: boolean;
 }
 
 export interface JobEngineHooks {

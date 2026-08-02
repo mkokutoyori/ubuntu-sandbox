@@ -1147,11 +1147,24 @@ Voir F1.10.
 - **Attendu réel.** Le processus **continue de tourner** (l'inode est
   maintenu ouvert), mais tout redémarrage échoue. `ls -l /proc/<pid>/exe`
   montre `(deleted)`.
-- **État actuel.** ❌ Non modélisé.
-- **Cible.** Excellent scénario pédagogique, et peu coûteux : marquer le
-  processus, faire échouer la relance, afficher `(deleted)` dans
-  `/proc/<pid>/exe`.
-- **Observabilité.** `ls -l /proc/<pid>/exe`, `lsof | grep deleted`.
+- **État actuel.** ✅ Implémenté. Deux fondations manquaient et ont été
+  posées : les binaires nommés par `ExecStart=` existent désormais sur le
+  disque (seedés depuis les unités elles-mêmes, donc le fichier présent est
+  exactement celui que l'unité exécutera — avant, `rm /usr/sbin/sshd`
+  répondait « No such file or directory » et la panne ne pouvait pas être
+  provoquée), et `/proc/<pid>/exe` existe, en lien dont la cible est
+  **recalculée à chaque lecture** — remettre le binaire fait disparaître le
+  suffixe, ce qu'une chaîne figée à la création ne saurait pas faire.
+  `ls -l` et `readlink` lisent la même cible.
+- **Cible.** Atteinte. Le processus survit au `rm` et continue de servir sur
+  le fil ; le redémarrage suivant échoue en 203/EXEC (`Job for ssh.service
+  failed because the control process exited with error code.`), le port se
+  ferme et un client distant reçoit `Connection refused` ; le journal nomme
+  le fichier manquant (`Failed to locate executable … : No such file or
+  directory`) avant la ligne d'exit.
+- **Observabilité.** `ls -l /proc/<pid>/exe`, `readlink /proc/<pid>/exe`,
+  `systemctl status` (`status=203/EXEC`), `journalctl -u`. `lsof | grep
+  deleted` n'est pas couvert.
 - **Réparation.** Restaurer le binaire (réinstallation), puis relancer.
 - **Sévérité.** `degraded` (tourne encore) → `critical` (au redémarrage).
 
@@ -1672,10 +1685,17 @@ Voir F5.10 — le processus survit, la relance échoue.
 - **Déclencheur.** Écriture au-delà du quota configuré.
 - **Attendu réel.** `No space left on device` (ENOSPC). Effets en cascade :
   journalisation arrêtée, bases en erreur, sessions qui échouent.
-- **État actuel.** ❌ Le VFS n'a pas de notion de taille.
-- **Cible.** Capacité par point de montage, configurable (défaut : très
-  grand, donc invisible tant qu'on ne s'en sert pas). Comptabilité simple
-  (somme des tailles de fichiers). Message ENOSPC réel.
+- **État actuel.** ✅ Implémenté. La capacité appartient au système de
+  fichiers (`VirtualFileSystem.setCapacityBytes`), et `df` la LIT au lieu
+  d'afficher une constante à lui : le rapport et l'écriture suivante ne
+  peuvent plus se contredire. La vérification porte sur le **delta**, donc
+  remplacer un gros fichier par un autre de même taille passe, comme sur un
+  vrai volume. Corrigé au passage : `truncate -s` extrayait la taille de la
+  ligne de commande puis l'ignorait — il n'existait aucun moyen d'occuper
+  de la place, c'est-à-dire aucun moyen de provoquer la panne.
+- **Cible.** Atteinte (défaut 50 Gio, donc invisible tant qu'un TP ne
+  rétrécit pas le volume). Message ENOSPC réel, et le refus ne détruit
+  rien.
 - **Observabilité.** `df -h`, `du -sh`, message d'erreur.
 - **Réparation.** Supprimer des fichiers, agrandir.
 - **Sévérité.** `critical`.
@@ -1685,9 +1705,11 @@ Voir F5.10 — le processus survit, la relance échoue.
 - **Déclencheur.** Trop de petits fichiers.
 - **Attendu réel.** `No space left on device` **alors que `df -h` montre de
   la place** — le grand classique déroutant. Seul `df -i` révèle la cause.
-- **État actuel.** ❌ Non modélisé.
-- **Cible.** Compteur d'inodes séparé du volume. C'est peu de code pour un
-  scénario de diagnostic remarquable.
+- **État actuel.** ✅ Implémenté. Compteur d'inodes séparé du volume
+  (défaut 655 360) : `touch` et `mkdir` échouent en ENOSPC **alors que
+  `df -h` montre de la place**, et seul `df -i` explique. Supprimer un
+  fichier rend l'inode et l'écriture repasse.
+- **Cible.** Atteinte.
 - **Observabilité.** `df -i`.
 - **Sévérité.** `critical`.
 
@@ -2621,20 +2643,25 @@ tard.
 
 ### 26.1 Structure
 
+Cible (les familles non encore traitées n'ont pas de fichier) :
+
 ```
 src/__tests__/unit/network-v2/faults/
 ├── fault-registry.test.ts              — agrégation, idempotence, causalité
+├── fault-projection.test.ts            — projection vers les journaux
 ├── fault-physical.test.ts              — F1.*
 ├── fault-power.test.ts                 — F2.*
 ├── fault-switching.test.ts             — F3.*
 ├── fault-routing.test.ts               — F4.*
-├── fault-process.test.ts               — F5.*
-├── fault-service.test.ts               — F6.*
-├── fault-files-config.test.ts          — F7.1–F7.6, F7.14, F7.17
-├── fault-files-executable.test.ts      — F7.7, F7.8, F5.10
+├── fault-service-state-is-one-answer.test.ts — F5.*/F6.* : un service a UN état
+├── fault-deleted-executable.test.ts    — F5.10
+├── fault-files-sshd.test.ts            — F7.1, F7.2
+├── fault-files-binaries.test.ts        — F7.7, F7.8
+├── fault-files-logs.test.ts            — F7.9–F7.11
+├── fault-files-resolver.test.ts        — F7.12, F7.13
 ├── fault-files-identity.test.ts        — F7.3, F7.4, F8.*
-├── fault-resources.test.ts             — F9.*
-├── fault-application.test.ts           — F10.*
+├── fault-disk-full-and-inodes.test.ts  — F9.1, F9.2
+├── fault-ssh-session-*.test.ts         — pannes sous session établie
 └── scenario-fault-cascade-*.test.ts    — S1–S12
 ```
 
@@ -2782,7 +2809,7 @@ Explicitement exclu, avec la raison. Ces points ne sont pas des oublis.
 | F5.7 | État D | ❌ | degraded | 4 |
 | F5.8 | Table de processus pleine | ❌ | critical | 7 |
 | F5.9 | OOM kill | ❌ Déclaratif | critical | 7 |
-| F5.10 | Binaire supprimé sous le processus | ❌ | degraded/critical | 6 |
+| F5.10 | Binaire supprimé sous le processus | ✅ | degraded/critical | 6 |
 | F6.1 | Service arrêté | ✅ | critical | 4 |
 | F6.2 | Service masqué | ✅ | critical | 4 |
 | F6.3 | Service désactivé | ✅ | notice | 4 |
@@ -2821,8 +2848,8 @@ Explicitement exclu, avec la raison. Ces points ne sont pas des oublis.
 | F8.7 | Propriétaire orphelin | ❌ | notice | 6 |
 | F8.8 | Permissions de répertoire de service | ⚠️ | critical | 5 |
 | F8.9 | Suppression de root | ⚠️ | — | 6 |
-| F9.1 | Disque plein | ❌ | critical | 7 |
-| F9.2 | Inodes épuisés | ❌ | critical | 7 |
+| F9.1 | Disque plein | ✅ | critical | 7 |
+| F9.2 | Inodes épuisés | ✅ | critical | 7 |
 | F9.3 | FD épuisés | ❌ | critical | 7 |
 | F9.4 | Ports éphémères épuisés | ⚠️ | critical | 7 |
 | F9.6 | Montage réseau perdu | ❌ | critical | 7 |

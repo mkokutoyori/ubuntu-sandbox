@@ -11,6 +11,7 @@
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { LinuxLogManager } from './LinuxLogManager';
+import { exitStatusLabel } from './systemd/ExitStatus';
 import type {
   ServiceLifecyclePayload,
   ServiceMainExitedPayload,
@@ -51,6 +52,9 @@ export class LinuxServiceJournalProjection {
   private journalMainExit(p: ServiceMainExitedPayload): void {
     if (p.deviceId !== this.deviceId) return;
     const unit = `${p.name}.service`;
+    // systemd journals why the exec failed BEFORE the exit line, because
+    // the reason comes from the child and the status from the wait().
+    if (p.diagnostic) this.logManager.logSystemd(unit, `${unit}: ${p.diagnostic}`);
     if (p.signal !== undefined) {
       const short = p.signal.replace(/^SIG/, '');
       this.logManager.logSystemd(unit,
@@ -62,7 +66,7 @@ export class LinuxServiceJournalProjection {
       this.logManager.logSystemd(unit, `${unit}: Succeeded.`);
     } else {
       this.logManager.logSystemd(unit,
-        `${unit}: Main process exited, code=exited, status=${code}/FAILURE`);
+        `${unit}: Main process exited, code=exited, status=${code}/${exitStatusLabel(code)}`);
     }
   }
 

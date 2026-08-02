@@ -26,6 +26,7 @@ function loadAverage(running: number): string {
 }
 import { LinuxService } from './service/LinuxService';
 import { fullUnitName, unitSuffix } from './systemd/DependencyGraph';
+import { exitStatusLabel } from './systemd/ExitStatus';
 import { renderDependencyTree } from './systemd/DependencyTree';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
@@ -403,7 +404,7 @@ function unitProcessLine(u: ServiceUnit): string | null {
   if (!exit) return null;
   const cause = exit.signal !== undefined
     ? `code=killed, signal=${exit.signal.replace(/^SIG/, '')}`
-    : `code=exited, status=${exit.code ?? 0}/${(exit.code ?? 0) === 0 ? 'SUCCESS' : 'FAILURE'}`;
+    : `code=exited, status=${exit.code ?? 0}/${exitStatusLabel(exit.code ?? 0)}`;
   return `    Process: ExecStart=${u.execStart} (${cause})`;
 }
 
@@ -547,7 +548,9 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       const result = fn.call(sm, unit);
       if (!result.ok) {
         return {
-          output: `Failed to ${sub} ${fullUnitName(unit)}: ${result.error ?? 'unknown error'}`,
+          output: result.verbatim && result.error
+            ? result.error
+            : `Failed to ${sub} ${fullUnitName(unit)}: ${result.error ?? 'unknown error'}`,
           exitCode: 1,
         };
       }

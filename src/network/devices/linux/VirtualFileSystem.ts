@@ -30,6 +30,16 @@ export interface INode {
    * Writes to such a node are ignored.
    */
   generator?: () => string;
+  /**
+   * A symlink whose displayed target is produced on read.
+   *
+   * `/proc/<pid>/exe` needs this: the kernel appends ` (deleted)` once
+   * the executable is unlinked, and drops the suffix again if the file
+   * comes back, so the string cannot be stamped once at creation. Path
+   * RESOLUTION keeps using `target`, which stays the plain path — a
+   * deleted target then fails to resolve on its own, as it should.
+   */
+  targetGenerator?: () => string;
   /** Per-user POSIX ACLs (`setfacl -m u:name:rwx`). Empty / absent = no ACL. */
   aclUsers?: Map<string, number>;
   /** Per-group POSIX ACLs (`setfacl -m g:name:rwx`). */
@@ -704,6 +714,32 @@ export class VirtualFileSystem {
     }
 
     return false;
+  }
+
+  /**
+   * Register a symlink whose target STRING is produced on every read
+   * (`ls -l`, `readlink`), while `target` stays the plain path used for
+   * resolution. Idempotent: re-registering swaps the generator.
+   */
+  registerGeneratedSymlink(
+    path: string, generator: () => string, uid = 0, gid = 0,
+  ): void {
+    const existing = this.resolveInode(path, false);
+    if (existing && existing.type === 'symlink') {
+      existing.targetGenerator = generator;
+      return;
+    }
+    // The stored target is the resolvable one: strip whatever suffix the
+    // generator adds for display.
+    const plain = generator().replace(/ \(deleted\)$/, '');
+    if (!this.createSymlink(path, plain, uid, gid)) return;
+    const node = this.resolveInode(path, false);
+    if (node) node.targetGenerator = generator;
+  }
+
+  /** What `ls -l` and `readlink` print for a symlink. */
+  linkTarget(inode: INode): string {
+    return inode.targetGenerator ? inode.targetGenerator() : inode.target;
   }
 
   /**

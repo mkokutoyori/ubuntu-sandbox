@@ -70,7 +70,11 @@ export class SystemdJobEngine {
     const target = unitName(unit);
     const targetResult = results.find((r) => r.unit === target);
     if (targetResult && targetResult.outcome !== 'done' && targetResult.outcome !== 'skipped') {
-      return { ok: false, error: targetResult.error ?? `failed to start ${target}` };
+      return {
+        ok: false,
+        error: targetResult.error ?? `failed to start ${target}`,
+        verbatim: targetResult.verbatim,
+      };
     }
     return { ok: true };
   }
@@ -158,7 +162,7 @@ export class SystemdJobEngine {
       const outcome = this.hooks.activate(job.unit);
       results.set(job.unit, outcome.ok
         ? { unit: job.unit, outcome: 'done' }
-        : { unit: job.unit, outcome: 'failed', error: outcome.error });
+        : { unit: job.unit, outcome: 'failed', error: outcome.error, verbatim: outcome.verbatim });
     }
     return [...results.values()];
   }

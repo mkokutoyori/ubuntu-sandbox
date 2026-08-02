@@ -20,6 +20,7 @@ import { DependencyGraph, fullUnitName, unitSuffix, type UnitNode } from './syst
 import { SystemdJobEngine } from './systemd/SystemdJobEngine';
 import { TimerScheduler, type TimerEntry } from './systemd/TimerScheduler';
 import { parseTimeSpan } from './systemd/TimeSpan';
+import { EXIT_EXEC } from './systemd/ExitStatus';
 import type { DynamicUserTable } from './nss/DynamicUserTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
 
@@ -95,6 +96,14 @@ export interface ServiceManagerOptions {
 export interface OperationResult {
   ok: boolean;
   error?: string;
+  /**
+   * `error` is already a complete systemctl message and must be printed
+   * as-is. systemd has two shapes — `Failed to start X: <reason>` when the
+   * job could not even be queued, and `Job for X failed because …` when the
+   * job ran and the process died — and `systemctl` prints the second one
+   * alone. Without this flag the caller's prefix produced both at once.
+   */
+  verbatim?: boolean;
 }
 
 export interface ListFilter {
@@ -628,6 +637,34 @@ export class LinuxServiceManager {
     if (u.startLimitHit) {
       return { ok: false, error: `Unit ${u.name}.service has a start-limit-hit.` };
     }
+    // systemd execs the binary; if it is gone the child dies before it
+    // ever runs and the unit fails with 203/EXEC. This is what makes
+    // `rm /usr/sbin/sshd` bite at the NEXT start while the already-running
+    // process carries on (docs/PRD-Pannes.md §F5.10).
+    const exe = executablePathOf(u.execStart);
+    if (exe && !this.vfs.exists(exe)) {
+      // The forked child IS the main process for Type=simple, so its failure
+      // to exec is a main-process exit — that event is what puts the
+      // `status=203/EXEC` line in the journal, next to the same string
+      // `systemctl status` shows. The unit's own result stays `exit-code`,
+      // systemd's keyword for "the process exited non-zero".
+      this.noteMainExited(u.name, {
+        code: EXIT_EXEC,
+        diagnostic: `Failed to locate executable ${exe}: No such file or directory`,
+      });
+      this.markFailed(u.name, 'exit-code');
+      // The unit file itself is fine — it is the exec that failed — so
+      // this is systemd's control-process wording, not the "bad unit file
+      // setting" it reserves for a unit it could not even load.
+      return {
+        ok: false,
+        verbatim: true,
+        error: `Job for ${fullUnitName(u.name)} failed because the control `
+          + 'process exited with error code.\n'
+          + `See "systemctl status ${fullUnitName(u.name)}" and `
+          + `"journalctl -xeu ${fullUnitName(u.name)}" for details.`,
+      };
+    }
     const check = this.configChecks.get(u.name);
     if (check) {
       const verdict = check();
@@ -870,14 +907,20 @@ export class LinuxServiceManager {
     }
   }
 
-  noteMainExited(name: string, exit: { code?: number; signal?: string }): void {
+  noteMainExited(
+    name: string,
+    exit: { code?: number; signal?: string; diagnostic?: string },
+  ): void {
     const u = this.units.get(name);
     if (!u) return;
-    u.lastExit = exit;
+    u.lastExit = { code: exit.code, signal: exit.signal };
     u.mainPid = undefined;
     this.bus?.publish({
       topic: 'linux.service.main-exited',
-      payload: { deviceId: this.deviceId, name, exitCode: exit.code, signal: exit.signal },
+      payload: {
+        deviceId: this.deviceId, name,
+        exitCode: exit.code, signal: exit.signal, diagnostic: exit.diagnostic,
+      },
     });
   }
 
@@ -1221,6 +1264,28 @@ export class LinuxServiceManager {
     return out;
   }
 
+  /**
+   * Lay down the executable each unit's `ExecStart=` names.
+   *
+   * Nothing put daemon binaries on disk: `/usr/sbin/sshd` simply did not
+   * exist, so `rm /usr/sbin/sshd` answered "No such file or directory"
+   * and docs/PRD-Pannes.md §F5.10 — the process keeps running, the
+   * restart fails — could not even be staged.
+   *
+   * They are seeded from the units themselves rather than from a second
+   * list, so the file that exists is exactly the one the unit will try to
+   * exec; a list kept alongside could name a path no unit uses, or miss
+   * one a unit does.
+   */
+  private seedUnitBinaries(units: readonly { execStart: string }[]): void {
+    for (const u of units) {
+      const exe = executablePathOf(u.execStart);
+      if (!exe || this.vfs.exists(exe)) continue;
+      this.vfs.writeFile(exe, '#!/bin/sh\n', 0, 0, 0o022);
+      this.vfs.chmod(exe, 0o755);
+    }
+  }
+
   /** Install the vendor unit file set in /lib/systemd/system. */
   private bootstrapDefaultUnits(): void {
     this.vfs.mkdirp(SYSTEM_UNIT_DIR, 0o755, 0, 0);
@@ -1240,6 +1305,8 @@ export class LinuxServiceManager {
         }
       }
     }
+
+    this.seedUnitBinaries(units);
 
     for (const t of DEFAULT_TARGETS) {
       const path = `${SYSTEM_UNIT_DIR}/${t.name}`;
@@ -1266,6 +1333,18 @@ export class LinuxServiceManager {
 }
 
 // ─── Unit file rendering and parsing ──────────────────────────────────
+
+/**
+ * The executable an `ExecStart=` line runs — its first word, with
+ * systemd's own prefix characters (`-` ignore failure, `@` argv[0]
+ * override, `+`/`!` privilege modifiers) stripped. A relative or empty
+ * first word yields null: there is no file to talk about.
+ */
+export function executablePathOf(execStart: string | undefined): string | null {
+  const first = (execStart ?? '').trim().split(/\s+/)[0] ?? '';
+  const path = first.replace(/^[-@+!]+/, '');
+  return path.startsWith('/') ? path : null;
+}
 
 function renderTargetFile(t: DefaultTarget): string {
   return ['[Unit]', `Description=${t.description}`, ...(t.unitLines ?? []), ''].join('\n');
