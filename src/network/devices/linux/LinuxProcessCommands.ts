@@ -426,6 +426,21 @@ function formatTimerDelta(later: Date | null, earlier: Date | null): string {
   return `${Math.round(seconds / 86400)} days`;
 }
 
+/**
+ * The name of the unit's MAIN PROCESS, which is what systemd prints in
+ * `Main PID: 1234 (sshd)` — the executable's basename, not the unit's.
+ *
+ * It used to print the unit name, so `systemctl status ssh` claimed
+ * `(ssh)` while `ps` on the same machine showed `/usr/sbin/sshd -D`: two
+ * layers naming one process differently. Deriving it from the very
+ * `ExecStart=` the process was spawned from is what keeps them agreeing.
+ */
+function mainProcessName(u: ServiceUnit): string {
+  const exe = (u.execStart ?? '').trim().split(/\s+/)[0];
+  const base = exe.split('/').filter(Boolean).pop();
+  return base && base.length > 0 ? base : u.name;
+}
+
 /** Render the multi-line `systemctl status NAME` block for one unit. */
 function renderUnitStatus(u: ServiceUnit): string {
   const dot = u.state === 'active' ? '●' : u.state === 'failed' ? '×' : '○';
@@ -438,7 +453,7 @@ function renderUnitStatus(u: ServiceUnit): string {
   const processLine = u.state !== 'active' ? unitProcessLine(u) : null;
   if (processLine) lines.push(processLine);
   if (u.state === 'active' && u.mainPid !== undefined) {
-    lines.push(`   Main PID: ${u.mainPid} (${u.name})`);
+    lines.push(`   Main PID: ${u.mainPid} (${mainProcessName(u)})`);
     lines.push(`      Tasks: 1`);
     lines.push(`     Memory: ${(2 + (u.mainPid % 40) / 10).toFixed(1)}M`);
     lines.push(`        CPU: ${10 + (u.mainPid % 500)}ms`);
@@ -630,9 +645,14 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       return { output: sm.defaultTarget(), exitCode: 0 };
 
     case 'is-failed': {
+      // `is-failed` prints the unit's ACTIVE STATE and exits 0 only when
+      // it is `failed`. It used to print `active` for anything that was
+      // not failed, so a stopped unit answered `inactive` to `is-active`
+      // and `active` to `is-failed` — the same unit, the same instant,
+      // two contradictory answers.
       const u = sm.status(unit);
-      const failed = u?.state === 'failed';
-      return { output: failed ? 'failed' : 'active', exitCode: failed ? 0 : 1 };
+      const state = u?.state ?? 'inactive';
+      return { output: state, exitCode: state === 'failed' ? 0 : 1 };
     }
 
     case 'mask':
