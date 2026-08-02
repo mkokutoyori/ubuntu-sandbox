@@ -3,14 +3,19 @@ import type { MemoryProfile } from '../host/hardware';
 
 
 /**
- * Simulated capacity of the `/` filesystem. df shows the real used
- * bytes from the VFS measured against this ceiling — so writing a
- * 1 GB file shifts Used / Avail / Use% live, rather than reporting
- * a frozen "25%". Keeps the other rows (/boot, /u01, tmpfs) as
- * realistic constants because they represent virtual mounts the
- * simulator doesn't track yet.
+ * The `/` filesystem's size and inode count come from the VFS itself.
+ *
+ * They used to be constants here, so `df` reported a ceiling nothing
+ * enforced: a lab could fill the disk and every write still succeeded.
+ * The volume's capacity is the filesystem's own business — `df` reads
+ * it (docs/PRD-Pannes.md §F9.1/§F9.2), which is also what lets a lab
+ * shrink the volume and have BOTH the report and the next write agree.
+ * The other rows (/boot, /u01, tmpfs) stay realistic constants: they
+ * stand for mounts the simulator does not track yet.
  */
-const ROOT_FS_CAPACITY_KB = 52_428_800; // 50 GB
+function rootCapacityKb(ctx: ShellContext): number {
+  return Math.max(1, Math.floor(ctx.vfs.getCapacityBytes() / 1024));
+}
 
 /** Walk a directory tree and return cumulative file-byte total. */
 function vfsDirectorySize(ctx: ShellContext, absPath: string): number {
@@ -34,24 +39,6 @@ function vfsDirectorySize(ctx: ShellContext, absPath: string): number {
   return total;
 }
 
-/** Inode count under a directory (recursive). Used by `df -i`. */
-function vfsInodeCount(ctx: ShellContext, absPath: string): number {
-  const node = ctx.vfs.lstat(absPath);
-  if (!node) return 0;
-  if (node.type !== 'directory') return 1;
-  let count = 1;
-  const entries = ctx.vfs.listDirectory(absPath);
-  if (!entries) return count;
-  for (const { name, inode } of entries) {
-    if (name === '.' || name === '..') continue;
-    const childPath = absPath === '/' ? `/${name}` : `${absPath}/${name}`;
-    count += inode.type === 'directory'
-      ? vfsInodeCount(ctx, childPath)
-      : 1;
-  }
-  return count;
-}
-
 /** Format a kilobyte count as df-style human-readable string. */
 function formatKbHuman(kb: number): string {
   if (kb < 1024) return `${kb}K`;
@@ -72,12 +59,13 @@ function formatBytesHuman(bytes: number): string {
 interface DfEntry { fs: string; type: string; sizeKb: number; usedKb: number; availKb: number; usePct: number; mount: string; }
 
 function dfTable(ctx: ShellContext): DfEntry[] {
-  const rootUsedBytes = vfsDirectorySize(ctx, '/');
+  const capacityKb = rootCapacityKb(ctx);
+  const rootUsedBytes = ctx.vfs.usedBytes();
   const rootUsedKb = Math.max(1, Math.ceil(rootUsedBytes / 1024));
-  const rootAvailKb = Math.max(0, ROOT_FS_CAPACITY_KB - rootUsedKb);
-  const rootUsePct = Math.min(100, Math.ceil((rootUsedKb / ROOT_FS_CAPACITY_KB) * 100));
+  const rootAvailKb = Math.max(0, capacityKb - rootUsedKb);
+  const rootUsePct = Math.min(100, Math.ceil((rootUsedKb / capacityKb) * 100));
   return [
-    { fs: '/dev/sda1', type: 'ext4', sizeKb: ROOT_FS_CAPACITY_KB, usedKb: rootUsedKb, availKb: rootAvailKb, usePct: rootUsePct, mount: '/' },
+    { fs: '/dev/sda1', type: 'ext4', sizeKb: capacityKb, usedKb: rootUsedKb, availKb: rootAvailKb, usePct: rootUsePct, mount: '/' },
     { fs: 'tmpfs', type: 'tmpfs', sizeKb: 512000, usedKb: 0, availKb: 512000, usePct: 0, mount: '/dev/shm' },
     { fs: 'tmpfs', type: 'tmpfs', sizeKb: 5120, usedKb: 4, availKb: 5116, usePct: 1, mount: '/run/lock' },
     { fs: '/dev/sda2', type: 'ext4', sizeKb: 999424, usedKb: 148480, availKb: 782080, usePct: 16, mount: '/boot' },
@@ -146,11 +134,9 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
     rows = annotated;
   }
 
-  const rootUsedBytes = vfsDirectorySize(ctx, '/');
-  const rootUsedKb = Math.max(1, Math.ceil(rootUsedBytes / 1024));
-  const rootAvailKb = Math.max(0, ROOT_FS_CAPACITY_KB - rootUsedKb);
-  const rootUsePct = Math.min(100, Math.ceil((rootUsedKb / ROOT_FS_CAPACITY_KB) * 100));
-
+  // The `/` row's own figures come from `dfTable()` above; these four
+  // locals recomputed them and were read by nobody — dead since before
+  // this file stopped holding its own capacity constant.
   if (showType) {
     const header = human
       ? 'Filesystem     Type     Size  Used Avail Use% Mounted on'
@@ -163,8 +149,8 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
   }
 
   if (inodes) {
-    const rootInodes = vfsInodeCount(ctx, '/');
-    const rootInodeCap = 655_360;
+    const rootInodes = ctx.vfs.usedInodes();
+    const rootInodeCap = Math.max(1, ctx.vfs.getInodeCapacity());
     const rootInodeFree = Math.max(0, rootInodeCap - rootInodes);
     const rootInodePct = Math.min(100, Math.ceil((rootInodes / rootInodeCap) * 100));
     return [

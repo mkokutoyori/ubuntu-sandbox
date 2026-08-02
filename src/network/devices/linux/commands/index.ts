@@ -80,6 +80,7 @@ import { dmesgCommand } from './system/Dmesg';
 import { ufwCommand } from './system/Ufw';
 import { chownCommand } from './fs/Chown';
 import { chgrpCommand } from './fs/Chgrp';
+import { truncateCommand } from './fs/Truncate';
 import { mountCommand } from './fs/Mount';
 import { umountCommand } from './fs/Umount';
 import { mkfsCommand, mkfsExt4Command, mkfsXfsCommand, mkfsBtrfsCommand } from './fs/Mkfs';
@@ -172,6 +173,7 @@ export {
   ufwCommand,
   chownCommand,
   chgrpCommand,
+  truncateCommand,
   mountCommand,
   umountCommand,
   mkfsCommand,
@@ -273,6 +275,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ufwCommand,
   chownCommand,
   chgrpCommand,
+  truncateCommand,
   mountCommand,
   umountCommand,
   mkfsCommand,

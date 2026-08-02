@@ -63,10 +63,68 @@ export class VirtualFileSystem {
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
   private readOnlyResolver?: (path: string) => boolean;
+  /**
+   * How big this filesystem is, and how many inodes it has.
+   *
+   * `df -h` and `df -i` already reported real usage against these two
+   * numbers — but nothing enforced them, so the report was a rendering
+   * with no consequence: a lab could "fill the disk" and every write
+   * still succeeded (docs/PRD-Pannes.md §F9.1/§F9.2, both marked ❌).
+   * They are the filesystem's own business, so they live here and `df`
+   * reads them, rather than each of them holding its own constant.
+   *
+   * The defaults are the ones `df` used to hardcode, so an untouched
+   * machine is unchanged: a 50 GB root is invisible until a lab writes
+   * enough to matter, which is exactly the PRD's stated intent.
+   */
+  private capacityBytes = 50 * 1024 * 1024 * 1024;
+  private inodeCapacity = 655_360;
 
   constructor() {
     this.initializeRootFS();
   }
+
+  // ─── Capacity (docs/PRD-Pannes.md §F9.1, §F9.2) ──────────────────
+
+  getCapacityBytes(): number { return this.capacityBytes; }
+  getInodeCapacity(): number { return this.inodeCapacity; }
+  /** Shrink (or grow) the volume — how a lab stages a full disk. */
+  setCapacityBytes(bytes: number): void { this.capacityBytes = Math.max(0, bytes); }
+  setInodeCapacity(count: number): void { this.inodeCapacity = Math.max(0, count); }
+
+  /**
+   * Bytes in use — the sum of every file's reported size, which is what
+   * `du` and `ls -l` show, so the three agree by construction.
+   */
+  usedBytes(): number {
+    let total = 0;
+    for (const inode of this.inodes.values()) {
+      if (inode.type === 'directory' || inode.generator) continue;
+      total += inode.size;
+    }
+    return total;
+  }
+
+  /** Inodes in use — every object, directories included, as on ext4. */
+  usedInodes(): number { return this.inodes.size; }
+
+  freeBytes(): number { return Math.max(0, this.capacityBytes - this.usedBytes()); }
+  freeInodes(): number { return Math.max(0, this.inodeCapacity - this.usedInodes()); }
+
+  /**
+   * Would growing a file by `deltaBytes` fit? A shrink always fits.
+   *
+   * The check is on the DELTA, not the new size, because overwriting a
+   * 1 GB file with another 1 GB of content frees as much as it takes —
+   * refusing that on a full disk would be wrong.
+   */
+  private fitsBytes(deltaBytes: number): boolean {
+    if (deltaBytes <= 0) return true;
+    return this.usedBytes() + deltaBytes <= this.capacityBytes;
+  }
+
+  /** Is there an inode left for one more file or directory? */
+  private fitsInode(): boolean { return this.usedInodes() < this.inodeCapacity; }
 
   setReadOnlyResolver(resolver: (path: string) => boolean): void {
     this.readOnlyResolver = resolver;
@@ -443,6 +501,7 @@ export class VirtualFileSystem {
       const existing = this.inodes.get(existingId);
       if (existing && existing.type === 'file') {
         if (!this.canWriteFile(existing, uid, gid)) return null;
+        if (!this.fitsBytes(content.length - existing.size)) return null; // ENOSPC
         existing.content = content;
         existing.size = content.length;
         existing.mtime = Date.now();
@@ -451,6 +510,9 @@ export class VirtualFileSystem {
       return null; // Can't overwrite non-file
     }
 
+    // A new file costs an inode as well as its bytes; a volume can run
+    // out of either (docs/PRD-Pannes.md §F9.1, §F9.2).
+    if (!this.fitsInode() || !this.fitsBytes(content.length)) return null;
     const inode = this.allocInode('file', permissions, uid, gid);
     inode.content = content;
     inode.size = content.length;
@@ -590,6 +652,9 @@ export class VirtualFileSystem {
       if (inode.generator) return true;
       if (this.isReadOnly(path)) return false;
       if (!this.canWriteFile(inode, uid, gid)) return false;
+      const nextSize = declaredSizeBytes
+        ?? (append ? inode.content.length + content.length : content.length);
+      if (!this.fitsBytes(nextSize - inode.size)) return false; // ENOSPC
       const previous = inode.content;
       if (append) {
         inode.content += content;
@@ -618,7 +683,11 @@ export class VirtualFileSystem {
           this.mkdirp(parentDir, 0o755, uid, gid);
         }
       }
-      // Create new file
+      // Create new file. A declared size is what the file OCCUPIES, so it
+      // is what the volume has to have room for — checking only
+      // `content.length` here would let `truncate -s 1G` fit on a full
+      // disk, since its placeholder content is empty.
+      if (!this.fitsBytes(declaredSizeBytes ?? content.length)) return false; // ENOSPC
       const perms = 0o666 & ~umask;
       const newInode = this.createFileAt(path, content, perms, uid, gid);
       if (newInode !== null) {
@@ -700,6 +769,7 @@ export class VirtualFileSystem {
     const [parentInode, basename] = parent;
 
     if (parentInode.children.has(basename)) return false;
+    if (!this.fitsInode()) return false; // ENOSPC — a directory is an inode too
 
     const dirInode = this.allocInode('directory', permissions, uid, gid);
     const parentPath = path.split('/').filter(Boolean);

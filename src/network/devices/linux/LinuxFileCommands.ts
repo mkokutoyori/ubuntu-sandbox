@@ -49,12 +49,20 @@ export interface ShellContext {
 }
 
 export function cmdTouch(ctx: ShellContext, args: string[]): string {
+  const errors: string[] = [];
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
+    const existed = ctx.vfs.exists(path);
     ctx.vfs.touch(path, ctx.uid, ctx.gid, ctx.umask);
+    // A file that did not appear on a volume with no inodes left is the
+    // one refusal `touch` can hit here (docs/PRD-Pannes.md §F9.2) —
+    // permission cases are already reported by the caller.
+    if (!existed && !ctx.vfs.exists(path) && ctx.vfs.freeInodes() === 0) {
+      errors.push(`touch: cannot touch '${arg}': No space left on device`);
+    }
   }
-  return '';
+  return errors.join('\n');
 }
 
 export function cmdLs(ctx: ShellContext, args: string[]): string {
@@ -572,6 +580,11 @@ export function cmdMkdir(ctx: ShellContext, args: string[]): string {
         return `mkdir: cannot create directory '${p}': Permission denied`;
       }
       if (!ctx.vfs.mkdir(absPath, perms, ctx.uid, ctx.gid)) {
+        // A directory costs an inode; on an exhausted volume that is the
+        // real reason, and the one an operator has to be told about.
+        if (ctx.vfs.freeInodes() === 0) {
+          return `mkdir: cannot create directory '${p}': No space left on device`;
+        }
         return `mkdir: cannot create directory '${p}'`;
       }
     }

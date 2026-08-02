@@ -105,6 +105,7 @@ import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands'
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
 import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
+import { runTruncate } from './commands/fs/Truncate';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -4392,17 +4393,9 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: this.lastExitCode };
       }
 
-      case 'truncate': {
-        const files = args.filter((a, i) => !a.startsWith('-') && args[i - 1] !== '-s');
-        for (const p of files) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'w', 'truncate');
-          this.publishSyscall('truncate', abs);
-          const existing = this.vfs.resolveInode(abs);
-          if (!existing) this.vfs.writeFile(abs, '', this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
-        }
-        return { output: '', exitCode: 0 };
-      }
+      // `truncate` lives in `commands/fs/Truncate.ts` as a `LinuxCommand`;
+      // this case only routes to it, so there is one implementation.
+      case 'truncate': return runTruncate(this, args);
       // kill — send signal via process manager
       case 'kill': {
         this.publishSyscall('kill');
