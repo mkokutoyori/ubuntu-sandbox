@@ -136,6 +136,36 @@ const START_TYPE_NAMES: Record<ServiceStartType, string> = {
   Manual: 'DEMAND_START', Disabled: 'DISABLED',
 };
 
+/**
+ * The registry's view of a service — `HKLM:\SYSTEM\CurrentControlSet\
+ * Services\<name>`.
+ *
+ * A narrow port rather than the registry class itself, so this file does
+ * not depend on the registry (and so nothing here can reach past the
+ * three values the SCM actually projects).
+ */
+export interface ServiceRegistrySink {
+  upsertServiceKey(
+    name: string,
+    fields: { objectName: string; startCode: number; imagePath: string },
+  ): void;
+}
+
+/**
+ * Write a service's key. The projection lives here, next to the service
+ * it describes, because it has two callers that must not drift: the
+ * device keeping the live hive coherent, and the topology serializer
+ * deciding what in that hive is factory state rather than an operator's
+ * doing.
+ */
+export function projectServiceIntoRegistry(sink: ServiceRegistrySink, svc: WindowsService): void {
+  sink.upsertServiceKey(svc.name, {
+    objectName: svc.account,
+    startCode: START_TYPE_CODES[svc.startType] ?? 3,
+    imagePath: svc.binaryPath,
+  });
+}
+
 export class WindowsServiceManager {
   private services: Map<string, WindowsService> = new Map();
   /** Reactive sink — null until the device attaches its bus. */

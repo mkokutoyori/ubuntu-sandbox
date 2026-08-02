@@ -14,6 +14,10 @@
  *   - Per-host:      default gateway, static routes, static ARP entries,
  *                    every Linux OR Windows file that differs from a
  *                    fresh filesystem
+ *   - Per-Windows-host: the local SAM, the registry (as a diff against a
+ *                    pristine hive of the same edition, deletions
+ *                    included), and every service whose configuration or
+ *                    state is no longer the factory one
  *   - Per-switch:    VLAN database, switchport mode + VLAN assignment
  *   - Per-router/switch: the full vendor running-config/NVRAM text,
  *                    re-applied on import via a real CLI replay
@@ -38,6 +42,14 @@ import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { WindowsUser, WindowsGroup } from '@/network/devices/windows/WindowsUserManager';
+import {
+  PSRegistryProvider,
+  WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY,
+} from '@/network/devices/windows/PSRegistryProvider';
+import {
+  WindowsServiceManager, projectServiceIntoRegistry,
+  type WindowsService,
+} from '@/network/devices/windows/WindowsServiceManager';
 import {
   captureOracleState, restoreOracleState, type OracleTopologyState,
 } from '@/terminal/commands/database';
@@ -116,6 +128,52 @@ interface TopologySwitchportExport {
   trunkNativeVlan?: number;
 }
 
+/**
+ * A registry diff.
+ *
+ * Deletions are carried explicitly, and they are the reason this is a
+ * diff rather than a dump of what exists: half of what a lab does to the
+ * registry is REMOVE a seeded value or key ("disable this by deleting
+ * its policy"), and a capture that only listed what was present would
+ * bring every one of them back on the next load — the machine would
+ * silently undo the exercise.
+ */
+interface TopologyRegistryExport {
+  /** Keys the operator created, including the ones holding no value. */
+  keys?: string[];
+  /** Values added or changed, `{ path, name, value }`. */
+  values?: { path: string; name: string; value: string | number }[];
+  /** Seeded values the operator deleted. */
+  removedValues?: { path: string; name: string }[];
+  /** Seeded keys the operator deleted (the whole subtree with them). */
+  removedKeys?: string[];
+}
+
+/**
+ * A service that is no longer what the image shipped.
+ *
+ * `created` is present only for a service `sc create`/`New-Service`
+ * added, and carries what those commands themselves require; the other
+ * fields are the ones `sc config` can change, each present only when it
+ * differs from the factory service of the same name.
+ */
+interface TopologyWindowsServiceExport {
+  name: string;
+  created?: {
+    binaryPath: string;
+    displayName?: string;
+    description?: string;
+    account?: string;
+    dependencies?: string[];
+  };
+  state?: WindowsService['state'];
+  startType?: WindowsService['startType'];
+  displayName?: string;
+  description?: string;
+  account?: string;
+  dependencies?: string[];
+}
+
 interface TopologyDeviceExport {
   id: string;
   type: DeviceType;
@@ -158,6 +216,15 @@ interface TopologyDeviceExport {
    * `net user` did not have.
    */
   windowsAccounts?: { users: WindowsUser[]; groups: WindowsGroup[] };
+  /**
+   * The machine's registry, as a diff against a pristine hive of the same
+   * edition — the same rule the filesystem capture uses, for the same
+   * reason: a full dump of the seeded hive in every topology file would
+   * bury the one value a lab actually set.
+   */
+  registry?: TopologyRegistryExport;
+  /** Services whose configuration or state is no longer the factory one. */
+  windowsServices?: TopologyWindowsServiceExport[];
   vlans?: TopologyVlanExport[];
   switchports?: TopologySwitchportExport[];
   /** `show running-config`/`display current-configuration` text (Router/Switch). */
@@ -320,6 +387,200 @@ function restoreWindowsFiles(device: WindowsPC, files: TopologyFileExport[]): vo
 }
 
 /**
+ * A hive as the machine shipped it, to diff the live one against.
+ *
+ * Two things make it what a fresh machine of the same kind holds, and
+ * both matter. The seeded values differ between a client and a server
+ * install (build number, edition, `InstallationType`), which is what the
+ * product identity carries — diffing a server against a client hive
+ * would report those as operator changes and write them into every
+ * topology file. And `HKLM:\SYSTEM\CurrentControlSet\Services\<name>` is
+ * not seeded at all: the device projects it from the service table at
+ * boot, so a bare hive would report the whole subtree as new. Running
+ * the very same projection (`projectServiceIntoRegistry`) over a factory
+ * service manager is what makes the baseline honest.
+ */
+function pristineRegistry(device: WindowsPC): PSRegistryProvider {
+  const reg = new PSRegistryProvider(
+    device.getDeviceType() === 'windows-server'
+      ? WINDOWS_SERVER_PRODUCT_IDENTITY
+      : WINDOWS_CLIENT_PRODUCT_IDENTITY,
+  );
+  for (const svc of new WindowsServiceManager().getAllServices()) {
+    projectServiceIntoRegistry(reg, svc);
+  }
+  return reg;
+}
+
+/**
+ * Walk a hive through the very same public surface `reg query /s` uses —
+ * `listSubkeyNames` + `getItemPropertyValues` — so the capture can only
+ * ever see what an operator could have seen.
+ */
+function walkRegistry(
+  reg: PSRegistryProvider,
+  path: string,
+  visit: (path: string, values: Record<string, string | number>) => void,
+): void {
+  visit(path, reg.getItemPropertyValues(path) ?? {});
+  for (const sub of reg.listSubkeyNames(path)) walkRegistry(reg, `${path}\\${sub}`, visit);
+}
+
+function captureRegistry(device: WindowsPC): TopologyRegistryExport | undefined {
+  const live = device.registry;
+  const base = pristineRegistry(device);
+
+  const out: TopologyRegistryExport = {};
+  const keys: string[] = [];
+  const values: TopologyRegistryExport['values'] = [];
+
+  for (const hive of ['HKLM:', 'HKCU:']) {
+    walkRegistry(live, hive, (path, liveValues) => {
+      if (!base.testPath(path)) keys.push(path);
+      const baseValues = base.getItemPropertyValues(path) ?? {};
+      for (const [name, value] of Object.entries(liveValues)) {
+        if (baseValues[name] === value) continue;
+        values.push({ path, name, value });
+      }
+    });
+
+    // The other direction: what the pristine hive has and the live one
+    // no longer does.
+    const removedKeys: string[] = [];
+    const removedValues: TopologyRegistryExport['removedValues'] = [];
+    walkRegistry(base, hive, (path, baseValues) => {
+      if (!live.testPath(path)) {
+        // The parent already carries the whole subtree away with it.
+        if (!removedKeys.some((k) => path.startsWith(`${k}\\`))) removedKeys.push(path);
+        return;
+      }
+      const liveValues = live.getItemPropertyValues(path) ?? {};
+      for (const name of Object.keys(baseValues)) {
+        if (name in liveValues) continue;
+        removedValues.push({ path, name });
+      }
+    });
+    if (removedKeys.length > 0) out.removedKeys = [...(out.removedKeys ?? []), ...removedKeys];
+    if (removedValues.length > 0) {
+      out.removedValues = [...(out.removedValues ?? []), ...removedValues];
+    }
+  }
+
+  // A key that holds a captured value needs no separate entry — writing
+  // the value creates it.
+  const keysWithValues = new Set(values.map((v) => v.path));
+  const bareKeys = keys.filter((k) => !keysWithValues.has(k));
+  if (bareKeys.length > 0) out.keys = bareKeys;
+  if (values.length > 0) out.values = values;
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function restoreRegistry(device: WindowsPC, data: TopologyRegistryExport): void {
+  const reg = device.registry;
+  // Deletions first: a key removed wholesale must not take a value the
+  // same topology re-created inside it away with it.
+  for (const path of data.removedKeys ?? []) reg.removeItem(path, true);
+  for (const { path, name } of data.removedValues ?? []) reg.removeItemProperty(path, name);
+  for (const path of data.keys ?? []) reg.newItem(path, true);
+  for (const { path, name, value } of data.values ?? []) {
+    // `Set-ItemProperty` refuses a path that does not exist, exactly as
+    // the real cmdlet does — so create it the way `reg add` does first.
+    reg.newItem(path, true);
+    reg.setItemProperty(path, name, value);
+  }
+}
+
+/**
+ * What `sc config`/`sc create` changed about a service, and nothing else.
+ *
+ * The comparison is against a factory `WindowsServiceManager`, not
+ * against a hardcoded list here — the seeded services are its business,
+ * and a second copy of them in this file would drift the first time one
+ * is added.
+ */
+function captureWindowsServices(device: WindowsPC): TopologyWindowsServiceExport[] {
+  const base = new WindowsServiceManager();
+  const out: TopologyWindowsServiceExport[] = [];
+
+  for (const svc of device.getServiceManager().getAllServices()) {
+    const factory = base.getService(svc.name);
+    const entry: TopologyWindowsServiceExport = { name: svc.name };
+
+    if (!factory) {
+      entry.created = {
+        binaryPath: svc.binaryPath,
+        displayName: svc.displayName,
+        description: svc.description,
+        account: svc.account,
+        dependencies: svc.dependencies,
+      };
+    } else {
+      if (svc.displayName !== factory.displayName) entry.displayName = svc.displayName;
+      if (svc.description !== factory.description) entry.description = svc.description;
+      if (svc.account !== factory.account) entry.account = svc.account;
+      if (svc.dependencies.join(' ') !== factory.dependencies.join(' ')) {
+        entry.dependencies = svc.dependencies;
+      }
+    }
+    // Start type and state are compared against the factory service for a
+    // built-in and against what `sc create` itself produces for a new one.
+    const factoryStartType = factory?.startType ?? 'Manual';
+    const factoryState = factory?.state ?? 'Stopped';
+    if (svc.startType !== factoryStartType) entry.startType = svc.startType;
+    if (svc.state !== factoryState) entry.state = svc.state;
+
+    if (Object.keys(entry).length > 1) out.push(entry);
+  }
+  return out;
+}
+
+function restoreWindowsServices(
+  device: WindowsPC, services: TopologyWindowsServiceExport[],
+): void {
+  const mgr = device.getServiceManager();
+  // The restore speaks as an administrator because the operator who made
+  // these changes had to be one; the current user of the imported machine
+  // is nobody's decision yet.
+  const ADMIN = true;
+
+  for (const entry of services) {
+    if (entry.created && !mgr.getService(entry.name)) {
+      mgr.createService(entry.name, {
+        binaryPath: entry.created.binaryPath,
+        displayName: entry.created.displayName,
+        description: entry.created.description,
+        account: entry.created.account,
+        dependencies: entry.created.dependencies,
+      }, ADMIN);
+    }
+    const svc = mgr.getService(entry.name);
+    if (!svc) continue;
+
+    if (entry.displayName !== undefined) mgr.setDisplayName(entry.name, entry.displayName, ADMIN);
+    if (entry.description !== undefined) mgr.setDescription(entry.name, entry.description, ADMIN);
+    if (entry.account !== undefined) {
+      mgr.setAccount(entry.name, entry.account, ADMIN, 'NT AUTHORITY\\SYSTEM');
+    }
+    if (entry.dependencies !== undefined) mgr.setDependencies(entry.name, entry.dependencies, ADMIN);
+
+    // State BEFORE start type, because the SCM refuses to start a
+    // disabled service — and a service disabled while it was running is
+    // a real, and deliberately reproducible, machine state.
+    const target = entry.state ?? (entry.created ? 'Stopped' : svc.state);
+    if (target === 'Running' && svc.state !== 'Running') mgr.startService(entry.name, ADMIN);
+    if (target === 'Paused') {
+      if (svc.state !== 'Running' && svc.state !== 'Paused') mgr.startService(entry.name, ADMIN);
+      mgr.pauseService(entry.name, ADMIN);
+    }
+    if (target === 'Stopped' && svc.state !== 'Stopped') {
+      mgr.stopServiceCascade(entry.name, ADMIN);
+    }
+    if (entry.startType !== undefined) mgr.setStartType(entry.name, entry.startType, ADMIN);
+  }
+}
+
+/**
  * A rule set is worth saving only if it says something. `iptables-save`
  * on an untouched machine still prints its header, the `*filter` table
  * and the three default chains — writing that into every topology would
@@ -463,6 +724,10 @@ export function exportTopology(
       if (files.length > 0) entry.files = files;
       const mgr = device.getUserManager();
       entry.windowsAccounts = { users: mgr.getAllUsers(), groups: mgr.getAllGroups() };
+      const registry = captureRegistry(device);
+      if (registry) entry.registry = registry;
+      const services = captureWindowsServices(device);
+      if (services.length > 0) entry.windowsServices = services;
     }
     if (device instanceof Switch) {
       const vlans = captureVlans(device);
@@ -754,6 +1019,13 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
           devData.windowsAccounts.groups,
         );
       }
+      // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\
+      // Services\<name>` is a projection of the service table, written by
+      // the device itself, so restoring a service rewrites part of the
+      // hive. Replaying the captured registry afterwards means the machine
+      // ends up showing exactly what was saved, projection included.
+      if (devData.windowsServices) restoreWindowsServices(device, devData.windowsServices);
+      if (devData.registry) restoreRegistry(device, devData.registry);
     }
     if ((device instanceof Router || device instanceof Switch) && devData.runningConfigText) {
       await replayVendorConfig(device, devData.runningConfigText);

@@ -60,7 +60,7 @@ import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection } from './windows/WindowsServicePortProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
 import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
-import { WindowsServiceManager, START_TYPE_CODES } from './windows/WindowsServiceManager';
+import { WindowsServiceManager, projectServiceIntoRegistry } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
@@ -690,11 +690,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private syncServiceRegistryKey(serviceName: string): void {
     const svc = this.svcMgr.getService(serviceName);
     if (!svc) return;
-    this.registry.upsertServiceKey(svc.name, {
-      objectName: svc.account,
-      startCode: START_TYPE_CODES[svc.startType] ?? 3,
-      imagePath: svc.binaryPath,
-    });
+    projectServiceIntoRegistry(this.registry, svc);
   }
 
   private initDefaultSockets(): void {
