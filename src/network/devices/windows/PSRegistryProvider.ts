@@ -452,6 +452,18 @@ export class PSRegistryProvider {
   }
 
   /**
+   * The other half of `upsertServiceKey`: `sc delete` removes the key as
+   * well as the service. Leaving it behind would have the SCM re-read a
+   * service on the next boot that nobody can start.
+   */
+  removeServiceKey(name: string): void {
+    const services = this.navigateTo({
+      hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services'],
+    });
+    services?.subkeys.delete(name.toLowerCase());
+  }
+
+  /**
    * `gpupdate` writing a `Set-GPRegistryValue` policy entry into the local
    * hive — unlike the interactive `Set-ItemProperty` cmdlet, real Group
    * Policy Client creates whatever key path is missing (it isn't asking

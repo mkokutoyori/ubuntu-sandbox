@@ -47,7 +47,7 @@ import {
   WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY,
 } from '@/network/devices/windows/PSRegistryProvider';
 import {
-  WindowsServiceManager, projectServiceIntoRegistry,
+  WindowsServiceManager,
   type WindowsService,
 } from '@/network/devices/windows/WindowsServiceManager';
 import {
@@ -406,9 +406,7 @@ function pristineRegistry(device: WindowsPC): PSRegistryProvider {
       ? WINDOWS_SERVER_PRODUCT_IDENTITY
       : WINDOWS_CLIENT_PRODUCT_IDENTITY,
   );
-  for (const svc of new WindowsServiceManager().getAllServices()) {
-    projectServiceIntoRegistry(reg, svc);
-  }
+  new WindowsServiceManager().attachRegistrySink(reg);
   return reg;
 }
 

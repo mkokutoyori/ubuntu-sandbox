@@ -149,6 +149,8 @@ export interface ServiceRegistrySink {
     name: string,
     fields: { objectName: string; startCode: number; imagePath: string },
   ): void;
+  /** `sc delete` takes the key with it — the SCM reads that key on boot. */
+  removeServiceKey(name: string): void;
 }
 
 /**
@@ -168,6 +170,8 @@ export function projectServiceIntoRegistry(sink: ServiceRegistrySink, svc: Windo
 
 export class WindowsServiceManager {
   private services: Map<string, WindowsService> = new Map();
+  /** Where this SCM's services show up in the registry — null until attached. */
+  private registrySink: ServiceRegistrySink | null = null;
   /** Reactive sink — null until the device attaches its bus. */
   private bus: IEventBus | null = null;
   private deviceId = '';
@@ -196,6 +200,28 @@ export class WindowsServiceManager {
     bus.subscribe('device.power-on', (e) => {
       if (e.payload.id === deviceId) this.applyBootStartupPolicy();
     });
+  }
+
+  /**
+   * Attach the machine's registry, and project every service into it.
+   *
+   * `HKLM:\SYSTEM\CurrentControlSet\Services\<name>` is where the SCM's
+   * configuration LIVES on a real Windows box — `sc qc` and `reg query`
+   * are two readings of one fact, and they must not be able to disagree.
+   * Writing through a sink held here rather than from a subscriber
+   * outside is what guarantees that: a mutation cannot forget to
+   * announce itself, because there is nothing to announce.
+   */
+  attachRegistrySink(sink: ServiceRegistrySink): void {
+    this.registrySink = sink;
+    for (const svc of this.services.values()) projectServiceIntoRegistry(sink, svc);
+  }
+
+  /** Re-project one service after a change to what the key carries. */
+  private syncRegistry(name: string): void {
+    if (!this.registrySink) return;
+    const svc = this.services.get(name.toLowerCase());
+    if (svc) projectServiceIntoRegistry(this.registrySink, svc);
   }
 
   /** Start types the SCM brings up unattended on boot, before any user logs on. */
@@ -376,6 +402,9 @@ export class WindowsServiceManager {
       builtIn: true,
       critical: opts.critical ?? false,
     });
+    // A role/feature install adds services after boot — their keys have to
+    // appear too, exactly as `sc create`'s does.
+    this.syncRegistry(name);
   }
 
   // ─── Queries ─────────────────────────────────────────────────────
@@ -624,6 +653,9 @@ export class WindowsServiceManager {
     const svc = this.services.get(name.toLowerCase());
     if (!svc) return `The specified service does not exist.`;
     svc.startType = startType;
+    // The `Start` value IS this setting on a real machine; leaving it
+    // behind is what made `sc qc` and `reg query` contradict each other.
+    this.syncRegistry(name);
     return '';
   }
 
@@ -663,6 +695,7 @@ export class WindowsServiceManager {
     if (!svc) return `The specified service does not exist.`;
     const previousAccount = svc.account;
     svc.account = account;
+    this.syncRegistry(name);
     this.bus?.publish({
       topic: 'windows.service.account-changed',
       payload: {
@@ -698,6 +731,7 @@ export class WindowsServiceManager {
       processName: name.toLowerCase() + '.exe',
       builtIn: false,
     });
+    this.syncRegistry(name);
     this.bus?.publish({
       topic: 'windows.service.created',
       payload: {
@@ -715,6 +749,7 @@ export class WindowsServiceManager {
     if (svc.builtIn) return `Cannot delete built-in service '${svc.name}'.`;
     if (svc.state === 'Running') return `The service must be stopped before deleting.`;
     this.services.delete(name.toLowerCase());
+    this.registrySink?.removeServiceKey(svc.name);
     return '';
   }
 

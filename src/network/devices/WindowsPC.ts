@@ -60,7 +60,7 @@ import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection } from './windows/WindowsServicePortProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
 import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
-import { WindowsServiceManager, projectServiceIntoRegistry } from './windows/WindowsServiceManager';
+import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
@@ -393,6 +393,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // it can never drift from the accounts that actually exist.
     this.fs.createFile('C:\\users.txt', this.userMgr.renderUsersDoc());
     this.svcMgr = new WindowsServiceManager();
+    // One machine, one service configuration: the SCM writes its own keys
+    // under `HKLM:\SYSTEM\CurrentControlSet\Services`, so `sc qc` and
+    // `reg query` cannot end up describing the same service differently.
+    this.svcMgr.attachRegistrySink(this.registry);
     this.procMgr = new WindowsProcessManager();
     this.procMgr.attachServiceManager(this.svcMgr, () => this.simulatedDate().getTime());
     // Une seule horloge pour la machine : celle que `Get-Date` lit est
@@ -653,13 +657,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       this.runRecoveryCommand(e.payload.command);
     });
 
-    this._serviceRegistrySyncOff?.();
-    this._serviceRegistrySyncOff = bus.subscribe('windows.service.account-changed', (e) => {
-      if (e.payload.deviceId !== this.id) return;
-      this.syncServiceRegistryKey(e.payload.serviceName);
-    });
-    for (const svc of this.svcMgr.getAllServices()) this.syncServiceRegistryKey(svc.name);
-
     this._processSocketReaperOff?.();
     this._processSocketReaperOff = bus.subscribe('windows.process.stopped', (e) => {
       const payload = e.payload as { pid: number; name: string };
@@ -684,14 +681,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private _processSocketReaperOff: (() => void) | null = null;
   private _recoveryRunOff: (() => void) | null = null;
-  private _serviceRegistrySyncOff: (() => void) | null = null;
-
-  /** Keeps `HKLM:\SYSTEM\CurrentControlSet\Services\<name>` coherent with the live service. */
-  private syncServiceRegistryKey(serviceName: string): void {
-    const svc = this.svcMgr.getService(serviceName);
-    if (!svc) return;
-    projectServiceIntoRegistry(this.registry, svc);
-  }
 
   private initDefaultSockets(): void {
     // OpenSSH Server — SFTP transport
