@@ -28,6 +28,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { LinuxServer } from '@/network/devices/LinuxServer';
+import { getOracleDatabase, resetAllOracleInstances } from '@/terminal/commands/database';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
@@ -41,6 +43,7 @@ const MASK = new SubnetMask('255.255.255.0');
 
 beforeEach(() => {
   EquipmentRegistry.getInstance().clear();
+  resetAllOracleInstances();
 });
 
 /** Save and reopen, exactly as the UI does — through JSON, not by reference. */
@@ -230,5 +233,131 @@ describe('a reloaded Windows host keeps its files', () => {
     // C: tree.
     expect((json.devices[0].files ?? []).length).toBeLessThan(20);
     expect((json.devices[0].files ?? []).some((f) => f.path.includes('ssh_host'))).toBe(true);
+  });
+});
+
+describe('a reloaded host keeps its firewall', () => {
+  it('an iptables rule survives, and still filters', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    await pc.executeCommand('sudo iptables -A INPUT -p tcp --dport 23 -j DROP');
+
+    const back = await roundTrip([pc], []);
+    const pc2 = byName(back, 'PC1') as LinuxPC;
+
+    // Netfilter rules are kernel state, not files, which is why a real
+    // machine persists them with `iptables-save` and reloads them with
+    // `iptables-restore`. The round-trip goes through those very
+    // commands, so the machine's own parser reads back what its own
+    // formatter wrote.
+    expect(await pc2.executeCommand('sudo iptables -S')).toContain('--dport 23');
+  });
+
+  it('a machine that never touched the firewall writes no rules', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+
+    const json = exportTopology('lab', new Map<string, Equipment>([[pc.getId(), pc]]), []);
+
+    // `iptables-save` on an untouched host still prints its header, the
+    // `*filter` table and the three built-in chains. Writing that into
+    // every topology would bury the one line a lab actually added.
+    expect(json.devices[0].iptablesRules).toBeUndefined();
+  });
+});
+
+describe('a reloaded server keeps its Oracle database', () => {
+  it('a table created in a lab comes back with its rows', async () => {
+    const srv = new LinuxServer('linux-server', 'DB1');
+    const db = getOracleDatabase(srv.getId());
+    const sys = db.connectAsSysdba().executor;
+    db.executeSql(sys, 'CREATE TABLE scott.parc (id NUMBER, site VARCHAR2(20))');
+    db.executeSql(sys, "INSERT INTO scott.parc VALUES (1, 'Douala')");
+
+    const back = await roundTrip([srv], []);
+    const db2 = getOracleDatabase(byName(back, 'DB1').getId());
+
+    // Data travels as a Data Pump dump — `expdp`/`impdp` is how a DBA
+    // really moves a database, so the round-trip uses the transport the
+    // product itself provides.
+    const rows = db2.executeSql(db2.connectAsSysdba().executor, 'SELECT site FROM scott.parc');
+    expect(JSON.stringify(rows)).toContain('Douala');
+  });
+
+  it('an account created in a lab can still log in after reloading', async () => {
+    const srv = new LinuxServer('linux-server', 'DB1');
+    const db = getOracleDatabase(srv.getId());
+    db.executeSql(db.connectAsSysdba().executor, 'CREATE USER mandeng IDENTIFIED BY secret1A');
+
+    const back = await roundTrip([srv], []);
+    const db2 = getOracleDatabase(byName(back, 'DB1').getId());
+
+    // The secret travels with the account: recreating it under another
+    // password would leave a lab whose `connect mandeng/secret1A` no
+    // longer works — and Data Pump deliberately carries no accounts, so
+    // without this the dump would import nothing at all (ORA-01918).
+    expect(db2.catalog.userExists('MANDENG')).toBe(true);
+    expect(db2.catalog.getStoredPassword('MANDENG')).toBe('secret1A');
+  });
+
+  it('a host that never opened a database gets no Oracle section', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+
+    const json = exportTopology('lab', new Map<string, Equipment>([[pc.getId(), pc]]), []);
+
+    // The capture peeks at the instance registry instead of asking for a
+    // database: asking would install Oracle on every host in the lab.
+    expect(json.devices[0].oracle).toBeUndefined();
+  });
+});
+
+describe('a reloaded Windows host keeps its accounts', () => {
+  /**
+   * A Windows host boots as `User`, who is not an administrator, so
+   * `net user /add` is correctly denied. Labs elevate first; the tests
+   * do the same, the way the other Windows suites in this repo do.
+   */
+  async function adminHost(): Promise<WindowsPC> {
+    const win = new WindowsPC('windows-pc', 'WIN');
+    win.getUserManager().currentUser = 'Administrator';
+    await win.executeCommand('net user labuser Passw0rd! /add');
+    return win;
+  }
+
+  it('an account created in a lab is still there, with its password', async () => {
+    const win = await adminHost();
+    const before = win.getUserManager().getUser('labuser');
+    expect(before, 'the lab really created the account').toBeDefined();
+
+    const back = await roundTrip([win], []);
+    const win2 = byName(back, 'WIN') as WindowsPC;
+    const after = win2.getUserManager().getUser('labuser');
+
+    // `C:\\users.txt` travelled with the filesystem all along, but it is
+    // a RENDERING of the account store — restoring it gave a machine
+    // where `type C:\\users.txt` listed an account `net user` did not
+    // have. Exactly the trap `/etc/passwd` used to be on the Linux side.
+    expect(after).toBeDefined();
+    expect(after!.sid).toBe(before!.sid);
+    expect(after!.password).toBe(before!.password);
+  });
+
+  it('the account is usable, not just present', async () => {
+    const win = await adminHost();
+
+    const back = await roundTrip([win], []);
+    const win2 = byName(back, 'WIN') as WindowsPC;
+
+    expect(await win2.executeCommand('net user')).toContain('labuser');
+  });
+
+  it('group membership survives', async () => {
+    const win = await adminHost();
+    await win.executeCommand('net localgroup Administrators labuser /add');
+
+    const back = await roundTrip([win], []);
+    const win2 = byName(back, 'WIN') as WindowsPC;
+
+    // An account restored outside its groups is an account that has lost
+    // every right the lab gave it.
+    expect(win2.getUserManager().isAdmin('labuser')).toBe(true);
   });
 });

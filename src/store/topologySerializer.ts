@@ -9,6 +9,8 @@
  *   - Per-interface: the NIC's MAC, and the physical layer (MTU, speed,
  *                    duplex, auto-negotiation, bandwidth, delay)
  *   - Per-cable:     admin state, injected loss/corruption/latency
+ *   - Per-host:      netfilter rules (via `iptables-save`), and the
+ *                    Oracle database (accounts + a Data Pump dump)
  *   - Per-host:      default gateway, static routes, static ARP entries,
  *                    every Linux OR Windows file that differs from a
  *                    fresh filesystem
@@ -35,6 +37,10 @@ import type { PortDuplex } from '@/network/core/types';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
+import type { WindowsUser, WindowsGroup } from '@/network/devices/windows/WindowsUserManager';
+import {
+  captureOracleState, restoreOracleState, type OracleTopologyState,
+} from '@/terminal/commands/database';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { buildConnection, type Connection } from './networkStore';
 
@@ -43,8 +49,7 @@ import { buildConnection, type Connection } from './networkStore';
  *  list in the header comment above: anything not listed there. */
 export const TOPOLOGY_SAVE_CAVEATS =
   "Terminal sessions, in-progress editors, and live TCP/SSH connections are not included — they close when this topology is loaded. " +
-  "Dynamic state (DHCP leases, OSPF/BGP-learned routes) reconverges from config after loading rather than being restored directly. " +
-  "Linux firewall rules (iptables) and Oracle databases are not yet captured.";
+  "Dynamic state (DHCP leases, OSPF/BGP-learned routes) reconverges from config after loading rather than being restored directly.";
 
 // ── Export schema ──
 
@@ -124,6 +129,35 @@ interface TopologyDeviceExport {
   staticRoutes?: TopologyRouteExport[];
   staticArp?: TopologyStaticArpExport[];
   files?: TopologyFileExport[];
+  /**
+   * `iptables-save` / `ip6tables-save` text.
+   *
+   * Netfilter rules are kernel state, not files — which is exactly why a
+   * real machine persists them with `iptables-save` and reloads them with
+   * `iptables-restore`. Capturing the same text and feeding it back
+   * through the same commands means the round-trip uses the machine's own
+   * parser rather than a second one written here, which would understand
+   * a narrower grammar than the one the operator typed.
+   */
+  iptablesRules?: string;
+  ip6tablesRules?: string;
+  /**
+   * The device's Oracle database: its accounts, and a Data Pump dump of
+   * everything they own. Absent on a machine that never opened one — the
+   * capture peeks at the instance registry rather than asking for a
+   * database, which would install Oracle on every host in the topology.
+   */
+  oracle?: OracleTopologyState;
+  /**
+   * A Windows host's local SAM.
+   *
+   * `C:\\users.txt` is captured with the rest of the filesystem, but it is
+   * a RENDERING of the account store, not the store — exactly the trap
+   * `/etc/passwd` used to be on the Linux side. Restoring the file alone
+   * gave a machine where `type C:\\users.txt` listed an account that
+   * `net user` did not have.
+   */
+  windowsAccounts?: { users: WindowsUser[]; groups: WindowsGroup[] };
   vlans?: TopologyVlanExport[];
   switchports?: TopologySwitchportExport[];
   /** `show running-config`/`display current-configuration` text (Router/Switch). */
@@ -285,6 +319,53 @@ function restoreWindowsFiles(device: WindowsPC, files: TopologyFileExport[]): vo
   }
 }
 
+/**
+ * A rule set is worth saving only if it says something. `iptables-save`
+ * on an untouched machine still prints its header, the `*filter` table
+ * and the three default chains — writing that into every topology would
+ * bury the one line a lab actually added.
+ */
+function meaningfulRuleSet(text: string): boolean {
+  return text.split('\n').some((l) => l.startsWith('-A') || l.startsWith('-I'));
+}
+
+function captureIptables(device: LinuxMachine): { v4?: string; v6?: string } {
+  const exec = (device as unknown as {
+    executor: { iptables: { executeSave(): string }; ip6tables: { executeSave(): string } };
+  }).executor;
+  const out: { v4?: string; v6?: string } = {};
+  const v4 = exec.iptables.executeSave();
+  if (meaningfulRuleSet(v4)) out.v4 = v4;
+  const v6 = exec.ip6tables.executeSave();
+  if (meaningfulRuleSet(v6)) out.v6 = v6;
+  return out;
+}
+
+function restoreIptables(device: LinuxMachine, v4?: string, v6?: string): void {
+  const exec = (device as unknown as {
+    executor: {
+      iptables: { executeRestore(t: string): unknown };
+      ip6tables: { executeRestore(t: string): unknown };
+    };
+  }).executor;
+  if (v4) exec.iptables.executeRestore(v4);
+  if (v6) exec.ip6tables.executeRestore(v6);
+}
+
+/**
+ * JSON has no Date, so a round-tripped account carries strings where the
+ * model expects `Date` — and `passwordLastSet.getTime()` would throw the
+ * first time a policy checked whether the password had expired.
+ */
+function reviveWindowsUsers(users: readonly WindowsUser[]): WindowsUser[] {
+  return users.map((u) => ({
+    ...u,
+    passwordLastSet: new Date(u.passwordLastSet),
+    lastLogon: u.lastLogon === null ? null : new Date(u.lastLogon),
+    lockedUntil: u.lockedUntil === null ? null : new Date(u.lockedUntil),
+  }));
+}
+
 function captureVlans(sw: Switch): TopologyVlanExport[] {
   const out: TopologyVlanExport[] = [];
   for (const v of sw.getVLANs().values()) {
@@ -371,10 +452,17 @@ export function exportTopology(
     if (device instanceof LinuxMachine) {
       const files = captureLinuxFiles(device);
       if (files.length > 0) entry.files = files;
+      const { v4, v6 } = captureIptables(device);
+      if (v4) entry.iptablesRules = v4;
+      if (v6) entry.ip6tablesRules = v6;
     }
+    const oracle = captureOracleState(device.getId());
+    if (oracle) entry.oracle = oracle;
     if (device instanceof WindowsPC) {
       const files = captureWindowsFiles(device);
       if (files.length > 0) entry.files = files;
+      const mgr = device.getUserManager();
+      entry.windowsAccounts = { users: mgr.getAllUsers(), groups: mgr.getAllGroups() };
     }
     if (device instanceof Switch) {
       const vlans = captureVlans(device);
@@ -653,11 +741,19 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
         } catch { /* malformed entry — skip */ }
       }
     }
-    if (devData.files && device instanceof LinuxMachine) {
-      restoreLinuxFiles(device, devData.files);
+    if (device instanceof LinuxMachine) {
+      if (devData.files) restoreLinuxFiles(device, devData.files);
+      restoreIptables(device, devData.iptablesRules, devData.ip6tablesRules);
     }
-    if (devData.files && device instanceof WindowsPC) {
-      restoreWindowsFiles(device, devData.files);
+    if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
+    if (device instanceof WindowsPC) {
+      if (devData.files) restoreWindowsFiles(device, devData.files);
+      if (devData.windowsAccounts) {
+        device.getUserManager().restoreAccounts(
+          reviveWindowsUsers(devData.windowsAccounts.users),
+          devData.windowsAccounts.groups,
+        );
+      }
     }
     if ((device instanceof Router || device instanceof Switch) && devData.runningConfigText) {
       await replayVendorConfig(device, devData.runningConfigText);

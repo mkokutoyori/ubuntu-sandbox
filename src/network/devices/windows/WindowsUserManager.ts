@@ -235,6 +235,26 @@ export class WindowsUserManager {
     this.groups.set(g.name.toLowerCase(), g);
   }
 
+  /**
+   * Put back accounts and groups exactly as they were — used when a saved
+   * topology is reopened.
+   *
+   * Deliberately not `createUser`/`net user /add`: that path mints a fresh
+   * SID, resets the password through the complexity policy and clears the
+   * lockout counters, so a restored machine would look right in
+   * `net user` while every ACL naming the old SID pointed at nobody and
+   * the lab's own password no longer worked. Restoring is not creating.
+   *
+   * Existing entries are overwritten rather than skipped: the machine
+   * boots with its built-in accounts, and the saved copy of `Administrator`
+   * (renamed, disabled, whatever the lab did to it) is the one that must
+   * win.
+   */
+  restoreAccounts(users: readonly WindowsUser[], groups: readonly WindowsGroup[]): void {
+    for (const u of users) this.addUser(u);
+    for (const g of groups) this.addGroup(g);
+  }
+
   // ─── User Queries ────────────────────────────────────────────────
 
   getUser(name: string): WindowsUser | undefined {

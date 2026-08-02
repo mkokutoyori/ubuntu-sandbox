@@ -18,6 +18,8 @@ import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
 import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
+import { DataPumpEngine } from '@/database/oracle/datapump/DataPumpEngine';
+import type { CatalogUser } from '@/database/engine/catalog/BaseCatalog';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 import { resolveRacMembership, joinOrCreateCluster, resetRacClusterRegistry } from '@/database/oracle/rac/RacClusterRegistry';
 import { attachRacCssAgent, _resetRacCssAgentAttachments } from '@/database/oracle/rac/RacCssAgent';
@@ -319,6 +321,58 @@ export function createSQLPlusSession(
  */
 export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | undefined {
   return oracleInstances.get(deviceId);
+}
+
+/**
+ * A device's Oracle database, as a topology file can carry it.
+ *
+ * Two mechanisms, both the real ones. The DATA travels as a Data Pump
+ * dump — `expdp`/`impdp` is how a DBA actually moves a database, and
+ * `DataPumpEngine` is a faithful transport rather than a cosmetic
+ * artifact. The ACCOUNTS travel beside it because Data Pump deliberately
+ * does not carry them: real `impdp` outside FULL mode raises ORA-01918
+ * when the target user is missing, and this engine reproduces that. A
+ * dump restored into a database with no accounts would import nothing
+ * and say so table by table.
+ */
+export interface OracleTopologyState {
+  users: Array<{ record: CatalogUser; password?: string }>;
+  dump: unknown;
+}
+
+/**
+ * Capture, WITHOUT booting an instance on a device that never had one.
+ * `getOracleDatabase` provisions and starts a database on first access,
+ * so using it here would give every Linux host in a topology an Oracle
+ * installation it never had.
+ */
+export function captureOracleState(deviceId: string): OracleTopologyState | null {
+  const db = getRegisteredOracleDatabase(deviceId);
+  if (!db) return null;
+  const users = db.catalog.getAllUsers().map((record) => ({
+    record,
+    password: db.catalog.getStoredPassword(record.username),
+  }));
+  const { dump } = new DataPumpEngine(db).export({ full: true });
+  return { users, dump };
+}
+
+/** Rebuild the database a topology file describes, accounts first. */
+export function restoreOracleState(deviceId: string, state: OracleTopologyState): void {
+  const db = getOracleDatabase(deviceId);
+  for (const u of state.users) {
+    if (!db.catalog.userExists(u.record.username)) db.catalog.createUser(u.record);
+    // The secret travels too: recreating an account under a different
+    // password would leave a lab whose `connect scott/tiger` no longer
+    // works, which is worse than not restoring the account at all.
+    if (u.password !== undefined) db.catalog.setPassword(u.record.username, u.password);
+  }
+  const parsed = DataPumpEngine.parse(JSON.stringify(state.dump));
+  // REPLACE, not SKIP: the freshly-booted instance already carries the
+  // demo schemas, so a saved table of the same name must overwrite the
+  // stock one rather than be quietly skipped — otherwise the lab's data
+  // is the one thing the reload throws away.
+  if (parsed) new DataPumpEngine(db).import(parsed, { tableExistsAction: 'REPLACE' });
 }
 
 export function removeOracleDatabase(deviceId: string): void {
