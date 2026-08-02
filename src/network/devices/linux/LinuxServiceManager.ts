@@ -139,6 +139,74 @@ const DEFAULT_TARGETS: readonly DefaultTarget[] = [
   { name: 'remote-fs.target', description: 'Remote File Systems' },
   { name: 'network-pre.target', description: 'Preparation for Network' },
   { name: 'network.target', description: 'Network', unitLines: ['After=network-pre.target'] },
+  { name: 'timers.target', description: 'Timer Units', unitLines: ['After=basic.target'] },
+];
+
+/**
+ * Les unités `.timer` livrées par Ubuntu, avec leur service associé.
+ *
+ * `systemctl list-timers` annonçait « 0 timers listed » sur une machine
+ * neuve : le mécanisme fonctionnait, mais aucun timer n'était fourni, et
+ * la fonction paraissait absente. Un Ubuntu réel en expose six d'emblée.
+ *
+ * Le contenu est recopié des fichiers de `/lib/systemd/system` d'une
+ * machine Ubuntu — d'où les `OnCalendar=` inhabituels : `*-*-* 6,18:00`
+ * pour apt, `Sun *-*-* 03:10:00` pour e2scrub, et un
+ * `systemd-tmpfiles-clean` qui n'a pas de calendrier du tout mais un
+ * `OnBootSec=`/`OnUnitActiveSec=`. Ils ne sont pas inventés, et c'est ce
+ * qui en fait un banc d'essai honnête pour l'analyseur calendaire.
+ */
+interface DefaultTimer {
+  name: string;
+  description: string;
+  timerLines: string[];
+  serviceDescription: string;
+  execStart: string;
+}
+
+const DEFAULT_TIMERS: readonly DefaultTimer[] = [
+  {
+    name: 'apt-daily',
+    description: 'Daily apt download activities',
+    timerLines: ['OnCalendar=*-*-* 6,18:00', 'RandomizedDelaySec=12h', 'Persistent=true'],
+    serviceDescription: 'Daily apt download activities',
+    execStart: '/usr/lib/apt/apt.systemd.daily update',
+  },
+  {
+    name: 'apt-daily-upgrade',
+    description: 'Daily apt upgrade and clean activities',
+    timerLines: ['OnCalendar=*-*-* 6:00', 'RandomizedDelaySec=60m', 'Persistent=true'],
+    serviceDescription: 'Daily apt upgrade and clean activities',
+    execStart: '/usr/lib/apt/apt.systemd.daily install',
+  },
+  {
+    name: 'fstrim',
+    description: 'Discard unused filesystem blocks once a week',
+    timerLines: ['OnCalendar=weekly', 'AccuracySec=1h', 'Persistent=true', 'RandomizedDelaySec=100min'],
+    serviceDescription: 'Discard unused filesystem blocks on all mounted filesystems',
+    execStart: '/usr/sbin/fstrim --listed-in /etc/fstab:/proc/self/mountinfo --verbose --quiet-unsupported',
+  },
+  {
+    name: 'motd-news',
+    description: 'Message of the Day',
+    timerLines: ['OnCalendar=00,12:00:00', 'RandomizedDelaySec=12h', 'Persistent=true', 'OnStartupSec=1min'],
+    serviceDescription: 'Message of the Day',
+    execStart: '/usr/bin/env python3 /usr/lib/ubuntu-motd/motd-news --force',
+  },
+  {
+    name: 'e2scrub_all',
+    description: 'Periodic ext4 Online Metadata Check for All Filesystems',
+    timerLines: ['OnCalendar=Sun *-*-* 03:10:00', 'RandomizedDelaySec=60', 'Persistent=true'],
+    serviceDescription: 'Online ext4 Metadata Check for All Filesystems',
+    execStart: '/usr/sbin/e2scrub_all -A -r',
+  },
+  {
+    name: 'systemd-tmpfiles-clean',
+    description: 'Daily Cleanup of Temporary Directories',
+    timerLines: ['OnBootSec=15min', 'OnUnitActiveSec=1d'],
+    serviceDescription: 'Cleanup of Temporary Directories',
+    execStart: '/usr/bin/systemd-tmpfiles --clean',
+  },
 ];
 
 // ─── Default unit definitions ─────────────────────────────────────────
@@ -1390,6 +1458,41 @@ export class LinuxServiceManager {
       const path = `${SYSTEM_UNIT_DIR}/${t.name}`;
       if (!this.vfs.exists(path)) {
         this.vfs.writeFile(path, renderTargetFile(t), 0, 0, 0o022);
+      }
+    }
+
+    for (const t of DEFAULT_TIMERS) {
+      const timerPath = `${SYSTEM_UNIT_DIR}/${t.name}.timer`;
+      if (!this.vfs.exists(timerPath)) {
+        this.vfs.writeFile(timerPath, [
+          '[Unit]',
+          `Description=${t.description}`,
+          '',
+          '[Timer]',
+          ...t.timerLines,
+          '',
+          '[Install]',
+          'WantedBy=timers.target',
+          '',
+        ].join('\n'), 0, 0, 0o022);
+      }
+      // Le service que le timer déclenche. Sans lui, `list-timers`
+      // afficherait une colonne ACTIVATES qui ne désigne rien.
+      const servicePath = `${SYSTEM_UNIT_DIR}/${t.name}.service`;
+      if (!this.vfs.exists(servicePath)) {
+        this.vfs.writeFile(servicePath, [
+          '[Unit]',
+          `Description=${t.serviceDescription}`,
+          '',
+          '[Service]',
+          'Type=oneshot',
+          `ExecStart=${t.execStart}`,
+          '',
+        ].join('\n'), 0, 0, 0o022);
+      }
+      const linkPath = `${WANTS_DIR}/${t.name}.timer`;
+      if (!this.vfs.existsNoFollow(linkPath)) {
+        this.vfs.createSymlink(linkPath, timerPath, 0, 0);
       }
     }
   }

@@ -1,3 +1,5 @@
+import { nextElapseOf } from './CalendarSpec';
+
 export interface TimerSpec {
   unit: string;
   activates: string;
@@ -56,7 +58,7 @@ export class TimerScheduler {
     const candidates: number[] = [];
     const span = spec.onActiveSec ?? spec.onBootSec ?? spec.onUnitActiveSec;
     if (span !== undefined) candidates.push(now.getTime() + span * 1000);
-    const calendar = nextCalendarElapse(spec.onCalendar, now);
+    const calendar = nextElapseOf(spec.onCalendar, now);
     if (calendar !== null) candidates.push(calendar.getTime());
     return candidates.length > 0 ? new Date(Math.min(...candidates)) : null;
   }
@@ -66,29 +68,8 @@ export class TimerScheduler {
     if (spec.onUnitActiveSec !== undefined) {
       candidates.push(firedAt.getTime() + spec.onUnitActiveSec * 1000);
     }
-    const calendar = nextCalendarElapse(spec.onCalendar, firedAt);
+    const calendar = nextElapseOf(spec.onCalendar, firedAt);
     if (calendar !== null) candidates.push(calendar.getTime());
     return candidates.length > 0 ? new Date(Math.min(...candidates)) : null;
-  }
-}
-
-function nextCalendarElapse(expression: string | undefined, after: Date): Date | null {
-  if (!expression) return null;
-  const next = new Date(after);
-  switch (expression) {
-    case 'minutely':
-      next.setSeconds(0, 0);
-      next.setMinutes(next.getMinutes() + 1);
-      return next;
-    case 'hourly':
-      next.setMinutes(0, 0, 0);
-      next.setHours(next.getHours() + 1);
-      return next;
-    case 'daily':
-      next.setHours(0, 0, 0, 0);
-      next.setDate(next.getDate() + 1);
-      return next;
-    default:
-      return null;
   }
 }

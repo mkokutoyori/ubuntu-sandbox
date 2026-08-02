@@ -278,14 +278,56 @@ Windows et de `crontab` sur la machine de mesure, les libellés de
 (Microsoft, Vixie cron) sans avoir été relevés sur un binaire. Les
 comportements, eux, sont vérifiés par sonde.
 
-### Phase 2 — Ce qui ne part jamais
+### Phase 2 — Ce qui ne part jamais — **livrée**
 
-| # | Objectif | Critère de recette |
-|---|---|---|
-| P2.1 | `OnCalendar` calendaire réel (L2) | `*-*-* *:*:00`, `Mon *-*-* 06:00:00`, `*-*-01 00:00:00`, `weekly`, `monthly`, `03:00` donnent un `NEXT` daté et déclenchent |
-| P2.2 | Les six timers d'usine d'Ubuntu (L3) | `systemctl list-timers` en liste six sur une machine neuve |
-| P2.3 | `@reboot` au démarrage du service (L5) | `systemctl restart cron` exécute les lignes `@reboot` |
-| P2.4 | `systemctl enable --now` (L6) | active et démarre l'unité en une commande |
+| # | Objectif | Critère de recette | État |
+|---|---|---|---|
+| P2.1 | `OnCalendar` calendaire réel (L2) | les formes calendaires donnent un `NEXT` daté et déclenchent | ✅ |
+| P2.2 | Les six timers d'usine d'Ubuntu (L3) | `systemctl list-timers` en liste six sur une machine neuve | ✅ |
+| P2.3 | `@reboot` au démarrage du service (L5) | `systemctl restart cron` exécute les lignes `@reboot` | ✅ |
+| P2.4 | `systemctl enable --now` (L6) | active et démarre l'unité en une commande | ✅ |
+
+#### Comment chacun a été réglé
+
+- **P2.1** — un vrai analyseur de `systemd.time(7)`
+  (`systemd/CalendarSpec.ts`) : raccourcis, jour de semaine seul, en
+  liste ou en intervalle, listes et intervalles de dates et d'heures,
+  pas `début/incrément`, heure seule, date seule. **Vérifié contre le
+  vrai** : les vingt-neuf expressions du tableau de sondes ont été
+  passées à `systemd-analyze calendar` avec la même base de temps et
+  `--iterations=2`, et les deux sorties sont identiques — y compris les
+  pièges (`weekly` vaut « lundi minuit » et non « dans sept jours »,
+  `0/15` court jusqu'au bout du champ, une date fixe passée rend
+  « never »).
+- **P2.2** — les six unités sont **recopiées** des fichiers de
+  `/lib/systemd/system` d'un vrai Ubuntu, pas inventées : d'où
+  `*-*-* 6,18:00` pour apt, `Sun *-*-* 03:10:00` pour e2scrub, et un
+  `systemd-tmpfiles-clean` qui n'a pas de calendrier mais un
+  `OnBootSec=`/`OnUnitActiveSec=`. Elles servent donc aussi de banc
+  d'essai à l'analyseur.
+- **P2.3** — le cycle de vie du service pilote maintenant le moteur. Le
+  point non évident : `restart()` démarre **puis** annonce le
+  redémarrage, si bien qu'écouter `start` *et* `restart` faisait partir
+  les lignes `@reboot` en double. Écouter `start` seul suffit.
+- **P2.4** — les options se glissent avant le nom d'unité ; le nom est
+  désormais le premier mot qui n'est pas une option, et `--now` enchaîne
+  le `start`/`stop`.
+
+#### Deux défauts trouvés en route, corrigés avec
+
+- `systemctl list-timers` écrivait la colonne UNIT à largeur fixe :
+  `systemd-tmpfiles-clean.timer` débordait sur ACTIVATES et les deux se
+  lisaient collés. La largeur se cale sur le plus long nom présent.
+- `systemctl list-timers <unité>` acceptait son argument puis l'ignorait
+  et affichait toute la table.
+
+#### Effet de bord mesuré
+
+Les 14 échecs pré-existants de `systemd-socket-timer.test.ts` — signalés
+comme tels lors de la phase 1 — **disparaissent** : ils tenaient tous à
+l'absence d'échéance calendaire. Le quinzième cas, qui affirmait
+« 1 timers listed », a été mis à jour avec sa raison : il datait d'une
+machine sans aucun timer d'usine.
 
 ### Phase 3 — Ce qui manque aux vues
 

@@ -505,7 +505,12 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
   // Bare option invocations (`systemctl --failed`, `--type=service`,
   // `-t service`) are listing requests in real systemd.
   if (sub.startsWith('-') && sub !== '--version') sub = 'list-units';
-  const unit = resolveUnitAlias((args[1] || '').replace(/\.service$/, ''));
+  // Les options se glissent avant le nom d'unité : `enable --now cron`
+  // faisait chercher une unité nommée « --now ». Le nom est le premier
+  // mot qui n'est pas une option.
+  const operands = args.slice(1).filter((a) => !a.startsWith('-'));
+  const withNow = args.slice(1).some((a) => a === '--now');
+  const unit = resolveUnitAlias((operands[0] || '').replace(/\.service$/, ''));
 
   if (!sub) {
     return {
@@ -577,14 +582,23 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       if (!result.ok) {
         return { output: `Failed to ${sub} unit: ${result.error ?? 'unknown error'}`, exitCode: 1 };
       }
+      // `--now` enchaîne l'action correspondante — c'est la forme la plus
+      // courante pour poser un timer (`enable --now mon.timer`).
+      if (withNow) {
+        const act = sub === 'enable' ? sm.start(unit) : sm.stop(unit);
+        if (!act.ok) {
+          return { output: `Failed to ${sub === 'enable' ? 'start' : 'stop'} ${unit}: ${act.error ?? 'unknown error'}`, exitCode: 1 };
+        }
+      }
+      const suffix = unitSuffix(unit) === 'service' ? `${unit}.service` : unit;
       if (sub === 'enable') {
         return {
-          output: `Created symlink /etc/systemd/system/multi-user.target.wants/${unit}.service → /usr/lib/systemd/system/${unit}.service.`,
+          output: `Created symlink /etc/systemd/system/multi-user.target.wants/${suffix} → /usr/lib/systemd/system/${suffix}.`,
           exitCode: 0,
         };
       }
       return {
-        output: `Removed /etc/systemd/system/multi-user.target.wants/${unit}.service.`,
+        output: `Removed /etc/systemd/system/multi-user.target.wants/${suffix}.`,
         exitCode: 0,
       };
     }
@@ -731,15 +745,26 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
 
     case 'list-timers': {
       const now = new Date();
-      const timers = sm.timerEntries();
-      const lines = ['NEXT                          LEFT      LAST                          PASSED    UNIT                ACTIVATES'];
+      // `list-timers mon.timer` ne montre que celui-là — l'argument était
+      // accepté puis ignoré, et la commande répondait toute la table.
+      const wanted = operands.map((o) => (o.includes('.') ? o : `${o}.timer`));
+      const timers = sm.timerEntries()
+        .filter((t) => wanted.length === 0 || wanted.includes(t.unit));
+      // La colonne UNIT se cale sur le plus long nom présent : à largeur
+      // fixe, `systemd-tmpfiles-clean.timer` débordait sur ACTIVATES et
+      // les deux se lisaient collés.
+      const unitWidth = Math.max(20, ...timers.map((t) => t.unit.length + 1));
+      const lines = [
+        'NEXT'.padEnd(30) + 'LEFT'.padEnd(10) + 'LAST'.padEnd(30)
+        + 'PASSED'.padEnd(10) + 'UNIT'.padEnd(unitWidth) + 'ACTIVATES',
+      ];
       for (const t of timers) {
         lines.push([
           formatTimerDate(t.next).padEnd(30),
           formatTimerDelta(t.next, now).padEnd(10),
           formatTimerDate(t.last).padEnd(30),
           formatTimerDelta(now, t.last).padEnd(10),
-          t.unit.padEnd(20),
+          t.unit.padEnd(unitWidth),
           fullUnitName(t.activates),
         ].join(''));
       }

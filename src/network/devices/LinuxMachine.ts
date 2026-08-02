@@ -454,6 +454,23 @@ export abstract class LinuxMachine extends EndHost
       else if (event === 'stop') this.stopScriptRunner(name);
     });
 
+    // `@reboot` ne partait jamais : `fireReboot()` n'est appelé que par
+    // `CronEngine.start()`, et `cronTick` ne rallume le moteur que s'il
+    // le trouve éteint — or un `systemctl restart cron` ne le fait pas
+    // passer par `stop()`. Le cycle de vie du service le dit ici.
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'cron') return;
+      const engine = this.getCronEngine();
+      if (event === 'stop') { engine.stop(); return; }
+      // `start` seul, pas `restart` : `restart()` démarre puis annonce le
+      // redémarrage, si bien qu'écouter les deux faisait partir les
+      // lignes `@reboot` en double.
+      if (event === 'start') {
+        engine.stop();
+        engine.start();
+      }
+    });
+
     // PRD-Iptables-UFW.md Phase 5 (objectifs A.1/A.2): systemctl start ufw
     // (and the boot-time activation of enabled units) reconciles the live
     // firewall with /etc/ufw/ufw.conf instead of always turning it on.
