@@ -170,8 +170,8 @@ ticker. C'est le pendant du moteur cron autonome côté Linux, et il manque.
 d'ailleurs le message de `/change` (« The scheduled task was
 created/modified successfully ») au lieu du sien.
 
-**W3 — `Get-ScheduledTask -TaskName` filtre de façon incohérente.** Mesuré
-sur la même machine, à la suite :
+**W3 — `Get-ScheduledTask -TaskName` filtre en sous-chaîne.** Mesuré sur
+la même machine, à la suite :
 
 | Commande | Résultat |
 |---|---|
@@ -179,9 +179,17 @@ sur la même machine, à la suite :
 | `-TaskName Absente` | rien — correct |
 | `-TaskName T` (créée par `schtasks`) | **les cinq tâches** |
 
-Une tâche créée par `schtasks` est donc visible dans la liste mais
-introuvable par le filtre, qui retombe alors sur l'ensemble. Deux magasins
-qui ne se voient qu'à moitié.
+> **Correction.** Ce document a d'abord conclu à « deux magasins qui ne se
+> voient qu'à moitié ». C'était faux, et la lecture du code au moment
+> d'implémenter l'a montré : `WindowsScheduledTaskAdapter.store()` rend
+> la carte `scheduledTasks` de l'appareil, exactement celle que `schtasks`
+> écrit. Le magasin est bien unique.
+>
+> Le vrai défaut est plus simple : `listTasks` comparait avec `includes`.
+> `-TaskName T` retenait donc toute tâche dont le nom **contient** un
+> « t » — c'est-à-dire quatre des cinq. `SimTestTask` semblait filtrer
+> correctement parce qu'aucun autre nom ne le contient. Un filtre en
+> sous-chaîne, pas deux magasins.
 
 **W4 — `/query /tn <inexistante>` rend un tableau vide** au lieu de
 `ERROR: The system cannot find the file specified.` — message que
@@ -231,15 +239,44 @@ couche PowerShell, pas au planificateur ; notés pour ne pas les redécouvrir.
 
 Par ordre de gravité mesurée, pas par facilité.
 
-### Phase 1 — Ce qui répond faux
+### Phase 1 — Ce qui répond faux — **livrée**
 
-| # | Objectif | Critère de recette |
-|---|---|---|
-| P1.1 | Supprimer la double exécution du crontab utilisateur (L1) | un `cronTick` ⇒ une exécution, une ligne syslog |
-| P1.2 | Un ticker de tâches Windows (W1) | une tâche `/sc minute /mo 1` s'exécute sans appel à `advanceTime` |
-| P1.3 | `/change /disable` et `/end` changent l'état (W2) | `Status` passe à `Disabled` dans `schtasks` **et** dans `Get-ScheduledTask` ; `/end` rend son propre message |
-| P1.4 | Un seul magasin de tâches Windows (W3) | une tâche créée par `schtasks` est trouvée par `Get-ScheduledTask -TaskName`, et inversement |
-| P1.5 | `crontab -` refuse une syntaxe invalide (L4) | `bidon` et `99 * * * *` rendent l'erreur du vrai et **n'installent rien** ; le crontab précédent survit |
+| # | Objectif | Critère de recette | État |
+|---|---|---|---|
+| P1.1 | Supprimer la double exécution du crontab utilisateur (L1) | un `cronTick` ⇒ une exécution, une ligne syslog | ✅ |
+| P1.2 | Un ticker de tâches Windows (W1) | une tâche `/sc minute /mo 1` s'exécute sans appel à `advanceTime` | ✅ |
+| P1.3 | `/change /disable` et `/end` changent l'état (W2) | `Status` passe à `Disabled` dans `schtasks` **et** dans `Get-ScheduledTask` ; `/end` rend son propre message | ✅ |
+| P1.4 | `Get-ScheduledTask -TaskName` désigne un nom (W3) | un nom court ne ramasse plus toute la table ; `*` et `?` restent | ✅ |
+| P1.5 | `crontab -` refuse une syntaxe invalide (L4) | `bidon` et `99 * * * *` rendent l'erreur du vrai et **n'installent rien** ; le crontab précédent survit | ✅ |
+
+#### Comment chacun a été réglé
+
+- **P1.1** — `LinuxCronManager` gardait une copie en mémoire pendant que
+  `installCrontab` écrivait aussi `/var/spool/cron/crontabs`, et le moteur
+  énumérait les deux. Le fichier fait désormais foi, seul, et `crontab -l`
+  le lit lui aussi : un `vim` sur le spool se voit maintenant dans `-l`,
+  là où il faisait tourner une ligne invisible.
+- **P1.5** — la détection existait déjà en entier : `parseCrontab` relevait
+  les lignes fautives depuis toujours, personne ne lisait ses `errors`.
+  Il a fallu y ajouter le *nom* du champ (`CronSchedule.parseDetailed`)
+  pour dire `bad minute` plutôt que « ligne invalide ».
+- **P1.2** — `HostClock` n'avance que sur `advance()`. Un minuteur qui se
+  serait contenté d'appeler `fireDueScheduledTasks` aurait relu
+  éternellement la même heure : le tour fait donc avancer l'horloge de la
+  machine d'une minute, et `simulatedDate()` reste la seule heure — celle
+  qui déclenche et celle que `schtasks /query` affiche.
+- **P1.3** — `/change` et `/end` partageaient un `return` en dur. Ils ont
+  chacun leur traitement, `/disable` pose l'état, et `fireDueScheduledTasks`
+  saute une tâche désactivée — tandis qu'un `/run` manuel reste possible,
+  comme dans le vrai planificateur.
+- **P1.4** — `includes` remplacé par une correspondance exacte insensible à
+  la casse, `*` et `?` traduits en expression régulière.
+
+**Réserve, la même que partout ailleurs dans ce document** : faute de
+Windows et de `crontab` sur la machine de mesure, les libellés de
+`/change`, `/end` et du refus de `crontab` suivent les formats documentés
+(Microsoft, Vixie cron) sans avoir été relevés sur un binaire. Les
+comportements, eux, sont vérifiés par sonde.
 
 ### Phase 2 — Ce qui ne part jamais
 
@@ -294,16 +331,23 @@ vérification de `cron.allow`/`cron.deny` (L10).
 
 ## 6. Sondes prévues
 
-- `probe-cron-01-declenchement.test.ts` — une exécution par minute, la
-  trace syslog, l'environnement, `MAILTO`, `@reboot`, `/etc/cron.d`.
-- `probe-cron-02-refus.test.ts` — les syntaxes invalides refusées, le
-  crontab précédent intact, `-u` sans privilège.
+Écrites, pour la phase 1 :
+
+- `probe-cron-01-une-seule-fois.test.ts` — une exécution par minute et une
+  seule ligne syslog, `/etc/cron.d` compté pour un, le spool comme seule
+  vérité, les cinq champs nommés au refus, le crontab précédent qui
+  survit, et ce qui reste valable (macros, pas, listes, `MAILTO`).
+- `probe-schtasks-01-etat-et-horloge.test.ts` — `/disable` observable des
+  deux côtés, `/enable`, le message propre de `/end`, le filtre exact et
+  ses jokers, une tâche qui part sans `advanceTime`, une tâche désactivée
+  qui ne part pas, et un planificateur arrêté qui ne déclenche rien.
+
+À écrire avec les phases suivantes :
+
 - `probe-timer-01-oncalendar.test.ts` — les six formes calendaires, `NEXT`
   daté, déclenchement effectif, les timers d'usine.
-- `probe-schtasks-01-etat.test.ts` — `/disable` observable des deux côtés,
-  `/query` d'une absente, `/create` sans `/tr`, l'écrasement.
-- `probe-schtasks-02-declenchement.test.ts` — une tâche part sans
-  `advanceTime`, et laisse une trace dans le journal Operational.
+- `probe-schtasks-02-vues.test.ts` — `/query` d'une absente, `/create`
+  sans `/tr`, l'écrasement, `/fo LIST /v`, le journal Operational.
 
 Chacune suit la règle de ce dépôt : les sorties attendues sont relevées sur
 le vrai binaire quand il est disponible sur la machine de mesure, et le

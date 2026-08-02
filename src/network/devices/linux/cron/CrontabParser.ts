@@ -1,4 +1,4 @@
-import { CronSchedule } from './CronSchedule';
+import { CronSchedule, type ScheduleField } from './CronSchedule';
 
 export interface CrontabEntry {
   schedule: CronSchedule;
@@ -8,10 +8,22 @@ export interface CrontabEntry {
   rawLine: string;
 }
 
+/**
+ * Une ligne refusée, avec ce que Vixie cron en dirait : `bad minute`,
+ * `bad day-of-week`, `bad command`. Le parseur relevait déjà les lignes
+ * fautives ; il dit maintenant pourquoi, ce qui est ce qu'il faut pour
+ * que `crontab` refuse d'installer en le motivant.
+ */
+export interface CrontabError {
+  line: number;
+  raw: string;
+  reason: `bad ${ScheduleField}` | 'bad command';
+}
+
 export interface ParsedCrontab {
   env: Record<string, string>;
   entries: CrontabEntry[];
-  errors: Array<{ line: number; raw: string }>;
+  errors: CrontabError[];
 }
 
 const ENV_ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/;
@@ -31,7 +43,7 @@ function isMacro(token: string): boolean {
 export function parseCrontab(content: string, opts: { withUser: boolean }): ParsedCrontab {
   const env: Record<string, string> = {};
   const entries: CrontabEntry[] = [];
-  const errors: Array<{ line: number; raw: string }> = [];
+  const errors: CrontabError[] = [];
 
   const lines = content.split('\n');
   for (let i = 0; i < lines.length; i++) {
@@ -46,28 +58,26 @@ export function parseCrontab(content: string, opts: { withUser: boolean }): Pars
     }
 
     const tokens = line.split(/\s+/);
-    let schedule: CronSchedule | null;
-    let rest: string[];
-    if (isMacro(tokens[0])) {
-      schedule = CronSchedule.parse(tokens[0]);
-      rest = tokens.slice(1);
-    } else {
-      schedule = CronSchedule.parse(tokens.slice(0, 5).join(' '));
-      rest = tokens.slice(5);
-    }
+    const macro = isMacro(tokens[0]);
+    const parsed = CronSchedule.parseDetailed(
+      macro ? tokens[0] : tokens.slice(0, 5).join(' '));
+    const rest = macro ? tokens.slice(1) : tokens.slice(5);
 
-    if (!schedule) { errors.push({ line: i + 1, raw }); continue; }
+    if (!(parsed instanceof CronSchedule)) {
+      errors.push({ line: i + 1, raw, reason: `bad ${parsed}` });
+      continue;
+    }
 
     let user: string | undefined;
     if (opts.withUser) {
       user = rest.shift();
-      if (!user) { errors.push({ line: i + 1, raw }); continue; }
+      if (!user) { errors.push({ line: i + 1, raw, reason: 'bad command' }); continue; }
     }
 
     const command = rest.join(' ').trim();
-    if (command === '') { errors.push({ line: i + 1, raw }); continue; }
+    if (command === '') { errors.push({ line: i + 1, raw, reason: 'bad command' }); continue; }
 
-    entries.push({ schedule, user, command, env: { ...env }, rawLine: line });
+    entries.push({ schedule: parsed, user, command, env: { ...env }, rawLine: line });
   }
 
   return { env, entries, errors };

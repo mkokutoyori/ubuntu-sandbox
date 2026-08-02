@@ -209,6 +209,9 @@ function parseFindstrFilter(filter: string): { patterns: string[]; ignoreCase: b
   return { patterns: positional, ignoreCase, invert, count };
 }
 
+/** Le pas du planificateur de tâches — la minute, comme sous Windows. */
+const TASK_TICK_MS = 60_000;
+
 export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
   /** DHCP event log for Windows Event Viewer */
@@ -598,12 +601,49 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   override powerOn(): void {
     super.powerOn();
     this.syncLinkLocalResponders();
+    this.startScheduledTaskTicker();
   }
 
   override powerOff(): void {
     this._llmnrAgent?.stop();
     this._mdnsAgent?.stop();
+    if (this.taskTimer !== null) {
+      this.hostTimers.clear(this.taskTimer);
+      this.taskTimer = null;
+    }
     super.powerOff();
+  }
+
+  private taskTimer: symbol | null = null;
+
+  /**
+   * Le pendant de `startCronTicker` côté Linux, qui manquait.
+   *
+   * Le moteur existait — `fireDueScheduledTasks` relance vraiment le
+   * programme et réarme la tâche — mais il n'était atteint que par
+   * `advanceTime`, appelé nulle part hors des tests. Une tâche planifiée
+   * ne partait donc jamais d'elle-même : c'était de la planification sans
+   * horloge.
+   *
+   * La minute est la granularité du planificateur Windows comme de cron ;
+   * elle borne aussi le nombre de réveils dans un lab qui tourne long.
+   *
+   * Le tour fait avancer `HostClock` d'autant, et c'est indispensable :
+   * cette horloge ne bouge que sur `advance()`, si bien qu'un minuteur qui
+   * se contenterait d'appeler `fireDueScheduledTasks` relirait éternellement
+   * la même heure et ne trouverait jamais rien à faire. `simulatedDate()`
+   * reste ainsi la seule heure de la machine — celle qui déclenche et celle
+   * que `schtasks /query` affiche.
+   */
+  private startScheduledTaskTicker(): void {
+    if (this.taskTimer !== null) return;
+    this.taskTimer = this.hostTimers.setInterval(() => this.scheduledTaskTick(), TASK_TICK_MS);
+  }
+
+  /** Un tour d'horloge du planificateur. Exposé pour que les tests le
+   *  battent sans attendre une minute, comme `cronTick` côté Linux. */
+  scheduledTaskTick(): void {
+    this.advanceTime(TASK_TICK_MS);
   }
 
   /**
@@ -3303,6 +3343,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (this.svcMgr.getService('Schedule')?.state !== 'Running') return;
     const now = this.simulatedDate();
     for (const task of this.scheduledTasks.values()) {
+      // Désactiver une tâche coupe ses déclencheurs — c'est le sens de
+      // `schtasks /change /disable`. Un `/run` manuel reste possible.
+      if (task.state === 'Disabled') continue;
       let guard = 0;
       while (task.runAt && task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
         WinSys.runScheduledProgram(task, this.procMgr, now);

@@ -2047,9 +2047,18 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
 
   listTasks(nameFilter?: string): ScheduledTaskInfo[] {
     const all = Array.from(this.store().values());
-    return nameFilter
-      ? all.filter(t => t.taskName.toLowerCase().includes(nameFilter.toLowerCase()))
-      : all;
+    if (!nameFilter) return all;
+    // `-TaskName` désigne un nom, pas un fragment. Le filtre comparait en
+    // sous-chaîne : `-TaskName T` rendait alors toute tâche dont le nom
+    // contient un « t », c'est-à-dire presque toutes. Le vrai fait une
+    // correspondance exacte, insensible à la casse, et n'accepte que `*`
+    // et `?` comme jokers.
+    const pattern = new RegExp(
+      '^' + nameFilter.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+      'i',
+    );
+    return all.filter((t) => pattern.test(t.taskName));
   }
   registerTask(task: ScheduledTaskInfo): string {
     this.store().set(task.taskName.toLowerCase(), task);

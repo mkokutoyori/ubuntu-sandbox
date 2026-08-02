@@ -297,8 +297,26 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     runScheduledProgram(task, ctx.processManager, ctx.now());
     return `SUCCESS: Attempted to run the scheduled task "${tn}".`;
   }
-  if (action === '/end' || action === '/change') {
-    return 'SUCCESS: The scheduled task was created/modified successfully.';
+  if (action === '/change') {
+    if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+    const task = ctx.scheduledTasks.get(tn.toLowerCase());
+    if (!task) return 'ERROR: The system cannot find the file specified.';
+    const has = (name: string) => flagIdx(name) >= 0;
+    // L'état demandé était jusqu'ici accepté puis perdu : la commande
+    // répondait SUCCESS et `/query` affichait toujours Ready.
+    if (has('/disable')) task.state = 'Disabled';
+    if (has('/enable')) task.state = 'Ready';
+    const tr = flagVal('/tr');
+    if (tr !== undefined) task.command = tr;
+    const st = flagVal('/st');
+    if (st !== undefined) task.runAt = parseSchtasksTime(st, ctx.now());
+    return `SUCCESS: The parameters of scheduled task "${tn}" have been changed.`;
+  }
+  if (action === '/end') {
+    if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+    const task = ctx.scheduledTasks.get(tn.toLowerCase());
+    if (!task) return 'ERROR: The system cannot find the file specified.';
+    return `SUCCESS: The scheduled task "${tn}" has been terminated.`;
   }
   return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
 }
@@ -310,7 +328,9 @@ export function runScheduledProgram(
 ): void {
   task.lastRunTime = now;
   task.lastResult = '0x0';
-  task.state = 'Ready';
+  // Une exécution ne réveille pas une tâche désactivée : désactiver coupe
+  // les déclencheurs, et un `/run` manuel ne rend pas la tâche active.
+  if (task.state !== 'Disabled') task.state = 'Ready';
   if (!task.command) return;
   const target = task.command.replace(/^["']|["']$/g, '');
   const leaf = target.split(/[\\/]/).pop() ?? target;
