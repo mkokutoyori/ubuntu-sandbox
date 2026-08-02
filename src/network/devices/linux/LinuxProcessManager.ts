@@ -293,6 +293,68 @@ export class LinuxProcessManager {
     return this.uninterruptible.pendingFor(pid);
   }
 
+  /**
+   * `RLIMIT_NPROC` — le nombre de processus qu'un UID peut avoir en vie
+   * SUR TOUTE LA MACHINE (docs/PRD-Pannes.md §F5.8).
+   *
+   * Le comptage est par utilisateur réel, pas par shell : c'est ce qui fait
+   * qu'une fork bomb d'un utilisateur laisse root travailler, et donc ce
+   * qui rend la panne réparable depuis une autre session. Compter par shell
+   * donnerait une machine qu'on ne peut plus sauver.
+   *
+   * La valeur par défaut est celle que `ulimit -u` affichait déjà, donc une
+   * machine intacte ne voit jamais la limite.
+   */
+  static readonly DEFAULT_NPROC = 15730;
+  private readonly nprocLimits = new Map<number, number>();
+
+  /** La limite en vigueur pour cet UID. */
+  nprocLimit(uid: number): number {
+    return this.nprocLimits.get(uid) ?? LinuxProcessManager.DEFAULT_NPROC;
+  }
+
+  /**
+   * La limite DURE : le plafond que la souple ne peut pas dépasser. Seul
+   * root la change, et c'est elle qui décide si un utilisateur peut se
+   * sortir tout seul de la panne.
+   */
+  private readonly nprocHardLimits = new Map<number, number>();
+
+  nprocHardLimit(uid: number): number {
+    return this.nprocHardLimits.get(uid) ?? LinuxProcessManager.DEFAULT_NPROC;
+  }
+
+  setNprocHardLimit(uid: number, limit: number): void {
+    this.nprocHardLimits.set(uid, limit);
+    // Une dure abaissée sous la souple emporte la souple avec elle.
+    if (this.nprocLimit(uid) > limit) this.nprocLimits.set(uid, limit);
+  }
+
+  /** `ulimit -u N` — la limite souple, celle que `fork()` consulte. */
+  setNprocLimit(uid: number, limit: number): void {
+    this.nprocLimits.set(uid, limit);
+  }
+
+  /** Combien de processus vivants appartiennent à cet UID. */
+  countForUid(uid: number): number {
+    let n = 0;
+    for (const p of this.processes.values()) if (p.uid === uid) n++;
+    return n;
+  }
+
+  /**
+   * Un `fork()` de cet UID peut-il aboutir ?
+   *
+   * root en est exempt, et ce n'est pas une facilité : le noyau saute le
+   * contrôle pour qui détient `CAP_SYS_RESOURCE`/`CAP_SYS_ADMIN`
+   * (`kernel/fork.c`), ce qui est précisément ce qui laisse un
+   * administrateur reprendre la main sur une machine saturée.
+   */
+  canFork(uid: number): boolean {
+    if (uid === 0) return true;
+    return this.countForUid(uid) < this.nprocLimit(uid);
+  }
+
   /** Manually transition a process to a new state. */
   setState(pid: number, state: ProcessState): boolean {
     const p = this.processes.get(pid);

@@ -1166,10 +1166,27 @@ Voir F1.10.
 - **Déclencheur.** Fork bomb, ou limite `ulimit -u` atteinte.
 - **Attendu réel.** `fork: Cannot allocate memory` / `Resource temporarily
   unavailable`.
-- **État actuel.** ❌ Pas de limite.
-- **Cible.** Limite configurable par utilisateur (`ulimit -u`), message réel
-  au dépassement. Ne **pas** simuler une fork bomb qui ferait effectivement
-  ramer le navigateur : plafonner et refuser.
+- **État actuel.** ✅ Implémenté. `ulimit` était une table de dix-huit
+  lignes codées en dur : `max user processes (-u) 15730` était AFFICHÉE et
+  jamais consultée, et `ulimit -u 5` ne faisait rien. La limite vit
+  désormais dans `LinuxProcessManager` (soft/hard), `ulimit -u` la lit et
+  l'écrit, `ulimit -a` affiche la même, et `fork()` la fait respecter.
+- **Cible.** Atteinte, sans simuler la moindre fork bomb : on abaisse le
+  plafond et on refuse, le navigateur n'a rien à ramer.
+- **Deux règles qui décident si la panne est réparable.** Le comptage est
+  par **UID réel sur toute la machine** (`RLIMIT_NPROC`), pas par shell —
+  compter par shell donnerait une machine qu'on ne peut plus sauver ; et
+  **root en est exempt**, parce que le noyau saute le contrôle pour qui
+  détient `CAP_SYS_RESOURCE`/`CAP_SYS_ADMIN` (`kernel/fork.c`). La règle
+  soft/hard est celle de POSIX : un utilisateur remonte sa limite souple
+  jusqu'à la dure, jamais au-delà.
+- **Message.** Celui de bash, avec ses quatre tentatives
+  (`bash: fork: retry: Resource temporarily unavailable` ×4 puis
+  `bash: fork: Resource temporarily unavailable`) — c'est cette répétition
+  qui fait reconnaître la panne.
+- **Hors périmètre, et distinct.** `fork: Cannot allocate memory` est
+  `ENOMEM`, un épuisement mémoire, pas une limite `ulimit` : c'est une
+  autre panne et elle n'est pas modélisée. `ulimit -u` rend `EAGAIN`.
 - **Observabilité.** Message d'erreur, `ulimit -u`, `ps | wc -l`.
 - **Réparation.** Tuer les processus, relever la limite.
 - **Sévérité.** `critical`.
@@ -2704,6 +2721,7 @@ src/__tests__/unit/network-v2/faults/
 ├── fault-deleted-executable.test.ts    — F5.10
 ├── fault-sigkill-residues.test.ts      — F5.2
 ├── fault-uninterruptible-sleep.test.ts — F5.7
+├── fault-process-table-full.test.ts    — F5.8
 ├── fault-files-sshd.test.ts            — F7.1, F7.2
 ├── fault-files-binaries.test.ts        — F7.7, F7.8
 ├── fault-files-logs.test.ts            — F7.9–F7.11
@@ -2856,7 +2874,7 @@ Explicitement exclu, avec la raison. Ces points ne sont pas des oublis.
 | F5.5 | Crash loop | ✅ | critical | 4 |
 | F5.6 | CPU à 100 % | ❌ Hors périmètre | — | — |
 | F5.7 | État D | ✅ | degraded | 4 |
-| F5.8 | Table de processus pleine | ❌ | critical | 7 |
+| F5.8 | Table de processus pleine | ✅ | critical | 7 |
 | F5.9 | OOM kill | ❌ Déclaratif | critical | 7 |
 | F5.10 | Binaire supprimé sous le processus | ✅ | degraded/critical | 6 |
 | F6.1 | Service arrêté | ✅ | critical | 4 |

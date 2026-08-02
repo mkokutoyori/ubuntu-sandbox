@@ -2032,6 +2032,10 @@ export class LinuxCommandExecutor {
       cmdLine = cmdLine.replace(/^nohup\s+/, '');
     }
 
+    // §F5.8 — la table des processus de cet utilisateur est pleine : le
+    // `fork()` échoue et le job n'existe jamais.
+    const refusal = this.forkRefusal();
+    if (refusal) return refusal;
     const spawned = this.spawnBackgroundJob(cmdLine, nohup);
     if (!spawned) return null;
     const lines: string[] = [];
@@ -2060,6 +2064,26 @@ export class LinuxCommandExecutor {
     const entry = this.mountTable.resolve(abs);
     if (!entry?.serverHost) return null;
     return probe(entry.serverHost) ? null : entry;
+  }
+
+  /**
+   * Le transcript exact de bash quand `fork()` rend EAGAIN : il réessaie
+   * quatre fois avant d'abandonner (`execute_cmd.c`), et c'est cette
+   * répétition qui fait reconnaître la panne sur une vraie machine.
+   */
+  private static readonly FORK_EAGAIN = [
+    'bash: fork: retry: Resource temporarily unavailable',
+    'bash: fork: retry: Resource temporarily unavailable',
+    'bash: fork: retry: Resource temporarily unavailable',
+    'bash: fork: retry: Resource temporarily unavailable',
+    'bash: fork: Resource temporarily unavailable',
+  ].join('\n');
+
+  /** Message d'échec de fork si la limite de l'UID courant est atteinte. */
+  forkRefusal(): string | null {
+    return this.processMgr.canFork(this.ctx().uid)
+      ? null
+      : LinuxCommandExecutor.FORK_EAGAIN;
   }
 
   private spawnBackgroundJob(cmdLine: string, nohup: boolean): { pid: number; jobId: number } | null {
@@ -4052,9 +4076,42 @@ export class LinuxCommandExecutor {
           const lines: string[] = [];
           for (const [k, [label, val]] of Object.entries(table)) {
             if (k === '-a') continue;
-            lines.push(`${label} ${val}`);
+            // `-a` et `-u` doivent dire la même chose de la même limite.
+            const shown = k === '-u'
+              ? String(this.processMgr.nprocLimit(this.ctx().uid))
+              : val;
+            lines.push(`${label} ${shown}`);
           }
           return { output: lines.join('\n'), exitCode: 0 };
+        }
+        // `-u` est la seule limite que le système fait vraiment respecter
+        // (§F5.8) : elle vit donc dans le gestionnaire de processus, et
+        // `ulimit` la lit au lieu d'afficher une constante à lui. Les
+        // autres lignes du tableau restent décoratives, et le tableau est
+        // l'endroit honnête pour le dire.
+        if (flag === '-u') {
+          const uid = this.ctx().uid;
+          const value = args[1];
+          if (value === undefined) {
+            return { output: String(this.processMgr.nprocLimit(uid)), exitCode: 0 };
+          }
+          const n = value === 'unlimited' ? Number.MAX_SAFE_INTEGER : Number(value);
+          if (!Number.isFinite(n) || n < 0) {
+            return { output: `bash: ulimit: ${value}: invalid number`, exitCode: 1 };
+          }
+          // La vraie règle est soft/hard : un utilisateur non privilégié
+          // remonte sa limite SOUPLE jusqu'à la limite DURE, jamais
+          // au-delà — seul root relève la dure. C'est ce qui rend la panne
+          // réparable sans root tant qu'on n'a pas touché au plafond dur,
+          // et irréparable autrement.
+          if (uid !== 0 && n > this.processMgr.nprocHardLimit(uid)) {
+            return {
+              output: 'bash: ulimit: max user processes: cannot modify limit: Operation not permitted',
+              exitCode: 1,
+            };
+          }
+          this.processMgr.setNprocLimit(uid, n);
+          return { output: '', exitCode: 0 };
         }
         const entry = table[flag];
         if (!entry) {
