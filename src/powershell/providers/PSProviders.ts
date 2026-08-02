@@ -1280,6 +1280,23 @@ export interface ScheduledTaskInfo {
   runAt?: Date;
   intervalMs?: number;
   principal?: { userId: string; runLevel: string };
+  /** Renseigné par le planificateur après chaque exécution. */
+  lastRunTime?: Date;
+  lastResult?: string;
+  /**
+   * Ce que `schtasks /query /v` imprime en plus des trois colonnes.
+   * Décrit la même ligne de la même table que `WinScheduledTask` : une
+   * tâche posée par `Register-ScheduledTask` doit se relire par `schtasks`
+   * aussi complètement qu'une posée par `/create`, sans quoi la moitié de
+   * la vue détaillée dépend de la commande qui a créé la tâche.
+   */
+  author?: string;
+  runAsUser?: string;
+  scheduleType?: string;
+  startTime?: string;
+  startDate?: Date;
+  days?: string;
+  months?: string;
 }
 
 export interface IScheduledTaskProvider {
@@ -1288,6 +1305,13 @@ export interface IScheduledTaskProvider {
   unregisterTask(name: string): string;
   /** The device's own simulated clock — anchors trigger `-At` times. */
   now?(): Date;
+  /**
+   * Change one task in place — what `Enable-`, `Disable-` and
+   * `Set-ScheduledTask` do. Returns an error message, or `''`.
+   */
+  updateTask?(name: string, patch: Partial<ScheduledTaskInfo>): string;
+  /** Run a task now, whatever its trigger says — `Start-ScheduledTask`. */
+  runTask?(name: string): string;
 }
 
 export interface DiskInfo {

@@ -32,9 +32,20 @@ beforeEach(() => { EquipmentRegistry.resetInstance(); });
 function lab(): { pc: LinuxPC; tick: (minute: number) => void } {
   const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
   pc.powerOn();
+  // Le minuteur autonome de cron est un vrai `setInterval` de 60 s. Ces
+  // cas comptent les exécutions d'une minute pilotée à la main : si la
+  // suite est lente au point de franchir une minute réelle, ce minuteur
+  // tombe en plus et ajoute une trace, et la sonde mesure alors la charge
+  // de la machine au lieu de cron. On le coupe ; c'est l'horloge du test
+  // qui fait foi.
+  const machine = pc as unknown as {
+    cronTick(at?: Date): void;
+    cronTimer: symbol | null;
+    hostTimers: { clear(id: symbol): void };
+  };
+  if (machine.cronTimer) { machine.hostTimers.clear(machine.cronTimer); machine.cronTimer = null; }
   const base = Date.now();
-  const t = pc as unknown as { cronTick(at?: Date): void };
-  return { pc, tick: (minute) => t.cronTick(new Date(base + minute * 60_000)) };
+  return { pc, tick: (minute) => machine.cronTick(new Date(base + minute * 60_000)) };
 }
 
 describe('Scénario 1 — une minute, une exécution', () => {

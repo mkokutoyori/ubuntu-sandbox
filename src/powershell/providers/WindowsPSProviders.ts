@@ -2061,6 +2061,11 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     return all.filter((t) => pattern.test(t.taskName));
   }
   registerTask(task: ScheduledTaskInfo): string {
+    // L'identité qui enregistre est celle de la session, pas un paramètre :
+    // le cmdlet ne la connaît pas, la machine si. Sans elle `schtasks
+    // /query /v` rendait « Author: N/A » sur une tâche pourtant nommée.
+    task.author ??= `${this.pc.getHostname()}\\${this.pc.getCurrentUser()}`;
+    task.runAsUser ??= this.pc.getCurrentUser();
     this.store().set(task.taskName.toLowerCase(), task);
     // 4698 — une tâche planifiée est un mécanisme de persistance
     // courant : la créer sans laisser de trace laissait un angle mort
@@ -2070,6 +2075,20 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
   }
   unregisterTask(name: string): string {
     return this.store().delete(name.toLowerCase()) ? '' : `Cannot find scheduled task '${name}'.`;
+  }
+  updateTask(name: string, patch: Partial<ScheduledTaskInfo>): string {
+    const task = this.store().get(name.toLowerCase());
+    if (!task) return `Cannot find scheduled task '${name}'.`;
+    Object.assign(task, patch);
+    return '';
+  }
+  runTask(name: string): string {
+    const task = this.store().get(name.toLowerCase());
+    if (!task) return `Cannot find scheduled task '${name}'.`;
+    // Le même chemin que `schtasks /run` : un démarrage manuel, qui vaut
+    // même pour une tâche désactivée.
+    (this.pc as unknown as { runScheduledTaskNow(t: ScheduledTaskInfo): void }).runScheduledTaskNow(task);
+    return '';
   }
   now(): Date {
     return this.pc.simulatedDate();

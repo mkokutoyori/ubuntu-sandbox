@@ -196,6 +196,15 @@ export class PSEventLogProvider {
       maxSizeKB: 15360, overflow: 'OverwriteAsNeeded',
       entries: [],
     });
+    // Le canal où le planificateur consigne l'histoire de chaque tâche —
+    // enregistrée, démarrée, action lancée puis terminée. C'est là qu'on
+    // va voir pourquoi une tâche n'a pas fait ce qu'on croyait ; sans
+    // lui, `Get-WinEvent` répondait que le journal n'existe pas.
+    this.logs.set('microsoft-windows-taskscheduler/operational', {
+      logName: 'Microsoft-Windows-TaskScheduler/Operational',
+      maxSizeKB: 10240, overflow: 'OverwriteAsNeeded',
+      entries: [],
+    });
     this.logs.set('forwardedevents', {
       logName: 'ForwardedEvents', maxSizeKB: 20480, overflow: 'OverwriteOlder',
       entries: [],

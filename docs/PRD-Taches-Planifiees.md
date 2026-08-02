@@ -329,17 +329,91 @@ l'absence d'échéance calendaire. Le quinzième cas, qui affirmait
 « 1 timers listed », a été mis à jour avec sa raison : il datait d'une
 machine sans aucun timer d'usine.
 
-### Phase 3 — Ce qui manque aux vues
+### Phase 3 — Ce qui manque aux vues — **livrée**
 
-| # | Objectif | Critère de recette |
-|---|---|---|
-| P3.1 | `schtasks /query /fo LIST /v` (W5) | le format verbeux, avec ses champs réels |
-| P3.2 | `/query /tn <absente>` rend l'erreur (W4) | même message que `/delete` |
-| P3.3 | `/create` exige `/tr` ; refuse d'écraser sans `/f` (W6, W7) | messages du vrai |
-| P3.4 | `New-ScheduledTaskTrigger` honore `-Daily`/`-Weekly` et analyse `3am` (W9) | le déclencheur rendu correspond aux arguments |
-| P3.5 | `/sc weekly` calcule sa date (W8) | `Next Run Time` daté |
-| P3.6 | Le journal TaskScheduler/Operational (W11) | 106 (enregistrée), 200/201 (début/fin d'action), 102 (terminée) |
-| P3.7 | Les cmdlets manquantes (W10) | `Get-ScheduledTaskInfo`, `Start`/`Stop`/`Enable`/`Disable`/`Set` |
+| # | Objectif | Critère de recette | État |
+|---|---|---|---|
+| P3.1 | `schtasks /query /fo LIST /v` (W5) | le format verbeux, avec ses champs réels | ✅ |
+| P3.2 | `/query /tn <absente>` rend l'erreur (W4) | même message que `/delete` | ✅ |
+| P3.3 | `/create` exige `/tr` ; refuse d'écraser sans `/f` (W6, W7) | messages du vrai | ✅ |
+| P3.4 | `New-ScheduledTaskTrigger` honore `-Daily`/`-Weekly` et analyse `3am` (W9) | le déclencheur rendu correspond aux arguments | ✅ |
+| P3.5 | `/sc weekly` calcule sa date (W8) | `Next Run Time` daté | ✅ |
+| P3.6 | Le journal TaskScheduler/Operational (W11) | 106 (enregistrée), 200/201 (début/fin d'action), 102 (terminée) | ✅ |
+| P3.7 | Les cmdlets manquantes (W10) | `Get-ScheduledTaskInfo`, `Start`/`Stop`/`Enable`/`Disable`/`Set` | ✅ |
+
+#### Comment chacun a été réglé
+
+- **P3.1** — `WinScheduledTask` porte désormais ce que la vue verbeuse
+  imprime en plus des trois colonnes : `author`, `runAsUser`,
+  `scheduleType`, `startTime`, `startDate`, `days`, `months`. Rien n'y
+  est décoratif — chaque champ est ce que `/create` a reçu. Les champs
+  que la machine ne sait pas produire (`Comment`, `Start In`,
+  `Idle Time`, les quatre lignes `Repeat:`) gardent la valeur constante
+  qu'un vrai Windows leur donne quand rien n'est configuré, relevée sur
+  une trace réelle.
+- **P3.2/P3.3** — trois refus qui n'existaient pas : un `/tn` inconnu
+  répondait par une table vide, un `/create` sans `/tr` posait une tâche
+  sans action, et un `/create` sur un nom déjà pris écrasait la tâche
+  d'avant en silence.
+- **P3.4** — `Once` était rendu vrai dès que `-Once` était absent : un
+  `-Daily` explicite ressortait donc en déclencheur ponctuel. Et `-At`
+  passait par `new Date('3am')`, qui rend une date invalide — le
+  déclencheur portait une date de 2001. `parseTriggerAt` lit `3am`,
+  `2:30pm`, `15:00` et un `[datetime]`, et bascule au lendemain si
+  l'heure est passée, comme le vrai.
+- **P3.5** — `weekly`, `monthly` et `onstart` étaient acceptés puis
+  rangés sans date de départ : la tâche s'affichait `N/A` pour toujours.
+  `weekly` tombe sur le jour nommé par `/d` (le jour de la création sans
+  `/d`), `monthly` sur le quantième, `onstart` reste sans heure — c'est
+  un événement, pas un calendrier.
+- **P3.6** — le canal `Microsoft-Windows-TaskScheduler/Operational`
+  n'existait pas. Les quatre identifiants du cycle de vie y sont émis :
+  106 à l'enregistrement, 141 à la suppression, 200 au lancement de
+  l'action, 201 à sa fin avec son code de retour, 102 à la fin de la
+  tâche.
+- **P3.7** — cinq cmdlets ajoutées par-dessus le magasin déjà partagé.
+  `Set-ScheduledTask` et `Enable`/`Disable` passent par un
+  `updateTask` unique, `Start` par le même chemin que `schtasks /run`,
+  de sorte qu'une tâche désactivée démarre quand même à la main.
+
+#### Un défaut trouvé en route, hors planificateur
+
+La composition que Microsoft documente —
+`$a = New-ScheduledTaskAction …; Register-ScheduledTask -Action $a` —
+ne marchait pas, et le planificateur n'y était pour rien. Le raccourci
+cmd de PowerShell (`PowerShellCmdShim`) découpe la ligne sur `;` et
+traite lui-même les affectations, dans une table qui ne sait retenir que
+du **texte** : l'objet y perdait sa nature, et la phrase suivante, elle,
+partait au vrai moteur — qui n'avait jamais vu la variable. Le
+`-Action` arrivait donc à `null`, silencieusement.
+
+Deux corrections, du même côté : une affectation dont la droite est un
+cmdlet part maintenant **entière** au vrai moteur, qui garde l'objet et
+la relit sur les phrases suivantes ; et, dans l'autre sens, les
+variables de texte que le raccourci détient sont réinjectées dans le
+code confié au moteur — `$h = hostname; Write-Output $h` rendait une
+ligne vide. Un nom que le moteur possède déjà n'est jamais écrasé par la
+copie du raccourci.
+
+Corrigé avec : une tâche posée par `Register-ScheduledTask` se relisait
+par `schtasks /query /v` avec `Author`, `Run As User` et
+`Schedule Type` à `N/A`. L'identité qui enregistre est celle de la
+session — le cmdlet ne la connaît pas, la machine si — et le type
+d'horaire se déduit du déclencheur reçu.
+
+#### Ce qui n'a pas été fait, et pourquoi
+
+- **L'analyseur d'arguments PowerShell coupe un mot nu sur `/`, `:`, `*`
+  et `%`** (`PSLexer.isWordStopChar`). `-Execute C:\x.exe` et
+  `-LogName Microsoft-Windows-X/Operational` demandent donc des
+  guillemets ici, là où le vrai accepte les deux formes. C'est un défaut
+  commun à tous les arguments — le canal
+  `Microsoft-Windows-PowerShell/Operational`, antérieur à ce lot, a le
+  même — et non du planificateur ; les sondes l'écrivent au cas
+  concerné plutôt que de le contourner en silence.
+- **Le nombre d'exécutions manquées** (`NumberOfMissedRuns`) est rendu à
+  zéro : rien ne compte les tours où la machine était éteinte, et
+  inventer un chiffre serait pire que d'en donner un honnête.
 
 ### Phase 4 — Le reste
 
@@ -384,12 +458,25 @@ vérification de `cron.allow`/`cron.deny` (L10).
   ses jokers, une tâche qui part sans `advanceTime`, une tâche désactivée
   qui ne part pas, et un planificateur arrêté qui ne déclenche rien.
 
-À écrire avec les phases suivantes :
+Écrites, pour la phase 2 :
 
 - `probe-timer-01-oncalendar.test.ts` — les six formes calendaires, `NEXT`
   daté, déclenchement effectif, les timers d'usine.
-- `probe-schtasks-02-vues.test.ts` — `/query` d'une absente, `/create`
-  sans `/tr`, l'écrasement, `/fo LIST /v`, le journal Operational.
+
+Écrites, pour la phase 3 :
+
+- `probe-schtasks-02-vues-et-journal.test.ts` — `/query` d'une absente,
+  `/create` sans `/tr`, l'écrasement, `/fo LIST`, `/fo CSV`, `/fo LIST /v`,
+  `weekly`/`monthly`/`onstart` datés, les quatre identifiants du journal
+  Operational, les cinq cmdlets, et la composition par variables.
+
+Une correction de sonde, notée ici parce qu'elle ressemble à un échec et
+n'en est pas : `probe-cron-01` pilotait l'horloge à la main pendant que le
+minuteur autonome de cron — un vrai `setInterval` de 60 s — tournait
+toujours. Sous une suite assez lente pour franchir une minute réelle, ce
+minuteur tombait en plus et la sonde comptait deux exécutions ; elle
+mesurait la charge de la machine, pas cron. Le minuteur est désormais
+coupé dans le banc, et l'horloge du test fait seule foi.
 
 Chacune suit la règle de ce dépôt : les sorties attendues sont relevées sur
 le vrai binaire quand il est disponible sur la machine de mesure, et le
