@@ -235,24 +235,80 @@ Le reste de la surface SQL moderne refusée, par famille :
 
 Classé par rapport entre ce que ça débloque et ce que ça coûte.
 
-1. **La cohérence de `which`** (5 noms). Aucune nouvelle fonctionnalité
-   à écrire pour supprimer la contradiction : soit implémenter, soit
-   retirer de la liste. C'est le seul défaut du lot qui fait *mentir* la
-   machine plutôt que la laisser incomplète.
-2. **Colonnes `IDENTITY` Oracle.** Une fonctionnalité d'analyseur,
+1. ✅ **La cohérence de `which`** (5 noms). Aucune nouvelle
+   fonctionnalité à écrire pour supprimer la contradiction : soit
+   implémenter, soit retirer de la liste. C'est le seul défaut du lot
+   qui fait *mentir* la machine plutôt que la laisser incomplète.
+2. ✅ **Colonnes `IDENTITY` Oracle.** Une fonctionnalité d'analyseur,
    quarante étapes débloquées dans une seule suite.
-3. **Le système de fichiers IOS** (`dir`/`more`/`verify`/`delete` +
+3. ✅ **Le système de fichiers IOS** (`dir`/`more`/`verify`/`delete` +
    `boot system`/`config-register`). Un chapitre entier de cours, et le
    socle de l'exercice de récupération de mot de passe.
-4. **`mac address-table static`.** Le sujet déclaré d'une suite de 346
-   étapes.
-5. **`timeout -s`** et **`wget` sur IP littérale.** Deux corrections
+4. ✅ **`mac address-table static`.** Le sujet déclaré d'une suite de
+   346 étapes.
+5. ✅ **`timeout -s`** et **`wget` sur IP littérale.** Deux corrections
    d'une ligne chacune, du même genre que celles de la phase 4.
-6. **Les utilitaires Linux absents** (§3). Quatorze commandes, sans
+6. ✅ **Les utilitaires Linux absents** (§3). Quatorze commandes, sans
    dépendance entre elles — un lot qui se découpe librement.
 7. **LoopBack Huawei** et les `display` manquants.
 8. **EIGRP mode nommé, `show storm-control`, BGP peer-group.** Le plus
    coûteux, et le moins bloquant.
+
+### Un défaut de la priorité 3, trouvé après coup
+
+La priorité 3 avait été livrée **sans test**, et c'est ce qui a laissé
+passer ceci : `show boot` était inscrit deux fois dans l'arbre de
+commandes — la nouvelle version branchée sur le magasin vivant, et une
+vieille figée (`showBoot()` de `CiscoCommonShow`) qui rendait
+« Configuration register is 0x2102 » en dur. `CommandTrie` laisse
+silencieusement la dernière inscription écraser la précédente, et la
+figée était déclarée plus loin dans le fichier : `show boot` répondait
+donc toujours 0x2102, **y compris après `config-register 0x2142`**, pile
+dans l'exercice de récupération de mot de passe que la priorité 3 visait,
+pendant que `show bootvar` annonçait 0x2142. Deux commandes synonymes qui
+se contredisaient.
+
+Le garde-fou qui l'a attrapé est `command-trie-hygiene.test.ts`, un test
+qui existait déjà et qui n'était simplement pas dans le lot de fichiers
+que j'avais fait tourner. La vieille fonction a été **supprimée** plutôt
+qu'ajoutée à la liste d'exceptions du test : elle ne pouvait rien dire de
+vrai sur un registre devenu modifiable. La priorité 3 a maintenant sa
+sonde (`probe-ios-01-systeme-de-fichiers.test.ts`, 9 cas), qui vérifie
+aussi ce que rien ne vérifiait — que le magasin flash est bien par
+équipement et persistant.
+
+### Ce que le lot 6 a coûté, et ce qu'il a fallu mesurer
+
+Les quatorze sont écrites comme des `LinuxCommand` (sonde
+`probe-utils-01-quatorze-absentes.test.ts`, 41 cas). Trois d'entre elles
+n'étaient PAS de simples habillages, et c'est là que le travail était :
+
+- **`lsmod`/`modinfo`** n'avaient aucune donnée derrière : il n'existait
+  pas de notion de module. Une liste en dur n'aurait décrit aucun état,
+  alors `kernel/KernelModuleTable.ts` en est un vrai — la table est
+  **dérivée du matériel** (le pilote listé est celui de la carte réseau
+  de la machine, la version celle de son noyau), « Used by » est
+  l'inverse calculé des dépendances déclarées plutôt qu'une donnée
+  parallèle, et `/proc/modules` est la source dont `lsmod` n'est que le
+  lecteur — les deux vues ne peuvent donc pas diverger.
+- **`pmap`** totalise exactement le `vsize` que `ps` annonce pour le même
+  PID, mais le *découpage* en régions n'a aucune source (pas de
+  `/proc/<pid>/maps`, pas de chargeur ELF). C'est écrit dans le fichier :
+  le total est mesuré, la répartition est une illustration cohérente.
+- **`yes`** ne peut pas être infini ici — le tube du simulateur est
+  séquentiel, chaque étage s'exécutant en entier avant le suivant. Le
+  flux est donc borné, et la borne est écrite dans la commande plutôt que
+  subie.
+
+Quatre écarts n'ont été trouvés qu'en comparant à un vrai binaire
+installé pour l'occasion (`tree`, `ncal`, `lm-sensors`), pas en relisant
+une documentation : le corps de `cal` fait **toujours six semaines**
+(deux lignes blanches après février), l'année de `cal 2026` est centrée
+sur les grilles **séparateurs exclus** (28 espaces, pas 30),
+`lsb_release -cs` est une option **groupée** que `args.includes('-c')`
+ne voit pas, et le décompte de `tree` porte sur ce qui a été **listé**,
+pas parcouru. Les quatre sont des erreurs que j'avais écrites et que la
+mesure a corrigées.
 
 ---
 

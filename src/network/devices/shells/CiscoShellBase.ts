@@ -35,7 +35,7 @@ import {
   showCdp, showLldp, showSnmp, showSnmpCommunity, showSnmpHost,
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
   showNtpStatus, showNtpAssociations,
-  showLine, showIpSsh, showSshSessions, showHosts, showVrf, showBoot,
+  showLine, showIpSsh, showSshSessions, showHosts, showVrf,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
@@ -576,7 +576,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('pwd', 'Display current working directory', () => 'flash:');
 
     trie.register('show bootvar', 'Display boot variables', () => this.fs().renderBootvar());
-    trie.register('show boot', 'Display boot variables', () => this.fs().renderBootvar());
+    // Greedy comme l'inscription figée qu'elle remplace, pour que
+    // `show boot` suivi d'un mot continue de résoudre.
+    trie.registerGreedy('show boot', 'Display boot variables', () => this.fs().renderBootvar());
   }
 
   /** `dir nvram:` — deux entrées, comme sur le vrai. */
@@ -1439,7 +1441,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
     trie.register('show ip vrf', 'Display VRFs', () => showVrf(this.d()));
     trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf(this.d()));
-    trie.registerGreedy('show boot', 'Display boot variables', () => showBoot());
     trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
       showRedundancy());
     trie.registerGreedy('show file', 'Display file systems', () =>
