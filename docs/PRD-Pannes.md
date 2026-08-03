@@ -1245,7 +1245,8 @@ Voir F1.10.
   directory`) avant la ligne d'exit.
 - **Observabilité.** `ls -l /proc/<pid>/exe`, `readlink /proc/<pid>/exe`,
   `systemctl status` (`status=203/EXEC`), `journalctl -u`. `lsof | grep
-  deleted` n'est pas couvert.
+  deleted` est couvert depuis §F9.3, qui a fait des journaux tenus ouverts
+  par rsyslog de vrais descripteurs du processus.
 - **Réparation.** Restaurer le binaire (réinstallation), puis relancer.
 - **Sévérité.** `degraded` (tourne encore) → `critical` (au redémarrage).
 
@@ -1798,9 +1799,33 @@ Voir F5.10 — le processus survit, la relance échoue.
 
 - **Déclencheur.** Dépassement de `ulimit -n`.
 - **Attendu réel.** `Too many open files` (EMFILE).
-- **État actuel.** ❌ Non modélisé.
-- **Cible.** Limite par processus, message réel. Cohérent avec F5.8.
-- **Observabilité.** `ulimit -n`, `lsof | wc -l`, `/proc/<pid>/fd`.
+- **État actuel.** ✅ Implémenté. `ulimit -n` affichait `open files (-n)
+  1024` et rien ne le consultait — quatrième occurrence du motif après `df`
+  (§F9.1), `ulimit -u` (§F5.8) et `MemoryMax=` (§F5.9).
+- **Une seule table de descripteurs.** `process/FileDescriptorTable.ts`
+  calcule les descripteurs d'un processus à partir des trois sources d'un
+  vrai processus, dans l'ordre où le noyau les attribue : 0/1/2, puis les
+  fichiers, puis les sockets. `/proc/<pid>/fd`, `lsof` et le plafond lisent
+  cette table et rien d'autre. Deux numérotations d'une même table
+  finiraient par diverger, et une machine où `ls /proc/<pid>/fd` et `lsof`
+  ne s'accordent pas est pire qu'une machine où les deux se trompent :
+  plus rien dans le diagnostic ne tomberait juste.
+- **Sockets.** Une socket EST un descripteur : `SocketTable` reçoit un
+  garde injecté et refuse par `EMFILE: Too many open files`. Elle ne
+  connaît ni les rlimits ni les processus — elle demande la permission.
+- **Fichiers.** Le descripteur que rsyslog garde sur `/var/log/syslog`
+  (§F7.11) appartient désormais au PROCESSUS rsyslog, plus au gestionnaire
+  de logs. Un rsyslog qui redémarre est un processus neuf, donc ses
+  descripteurs partent avec l'ancien : les laisser ferait apparaître dans
+  `lsof` un descripteur appartenant à un pid mort.
+- **root n'est PAS exempt**, contrairement à `RLIMIT_NPROC` : le noyau ne
+  fait pas d'exception de capacité pour `RLIMIT_NOFILE`.
+- **Simplification assumée.** La limite est modélisée par UID comme
+  `RLIMIT_NPROC`, alors que la vraie est par processus et s'hérite au fork
+  — ce simulateur n'a pas d'héritage de rlimits. Un second shell du même
+  utilisateur voit donc la même valeur au lieu de sa propre copie.
+- **Observabilité.** `ulimit -n`, `lsof` (y compris `(deleted)`, ce qui
+  ferme la lacune que §F5.10 signalait), `/proc/<pid>/fd`.
 - **Sévérité.** `critical`.
 
 ### F9.4 — Ports éphémères épuisés
@@ -2740,6 +2765,7 @@ src/__tests__/unit/network-v2/faults/
 ├── fault-uninterruptible-sleep.test.ts — F5.7
 ├── fault-process-table-full.test.ts    — F5.8
 ├── fault-oom-kill.test.ts              — F5.9
+├── fault-fd-table.test.ts              — F9.3
 ├── fault-files-sshd.test.ts            — F7.1, F7.2
 ├── fault-files-binaries.test.ts        — F7.7, F7.8
 ├── fault-files-logs.test.ts            — F7.9–F7.11
@@ -2935,7 +2961,7 @@ Explicitement exclu, avec la raison. Ces points ne sont pas des oublis.
 | F8.9 | Suppression de root | ⚠️ | — | 6 |
 | F9.1 | Disque plein | ✅ | critical | 7 |
 | F9.2 | Inodes épuisés | ✅ | critical | 7 |
-| F9.3 | FD épuisés | ❌ | critical | 7 |
+| F9.3 | FD épuisés | ✅ | critical | 7 |
 | F9.4 | Ports éphémères épuisés | ⚠️ | critical | 7 |
 | F9.6 | Montage réseau perdu | ❌ | critical | 7 |
 | F9.7 | ARP saturé / empoisonné | ✅ | degraded | 9 |
