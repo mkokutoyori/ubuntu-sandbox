@@ -1852,6 +1852,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');
     this.privilegedTrie.registerGreedy('no debug port-security', 'Disable port-security debug', () => genericDebug()?.disable('port-security') ?? '');
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
+    // `clear ip eigrp neighbors` : la commande promet de rejeter les
+    // adjacences, elle doit donc vraiment les rejeter — sinon elle serait
+    // acceptée sans rien faire, ce qui est pire que refusée.
+    this.privilegedTrie.registerGreedy('clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
+      const dev = this.d() as unknown as {
+        getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
+      };
+      const e = dev.getEIGRPEngine?.();
+      if (!e) return '';
+      const quoi = (args[0] ?? 'neighbors').toLowerCase();
+      if (quoi === 'traffic') e.resetTraffic?.();
+      else e.clearNeighbors?.();
+      return '';
+    });
     this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
       this.attachLoggingToDevice(this.d());
       (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
