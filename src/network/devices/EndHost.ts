@@ -1712,6 +1712,20 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * Evaluate nat OUTPUT-chain DNAT/REDIRECT rules against this host's own
+   * locally-generated traffic, before it picks an egress route — real on
+   * Linux exactly like PREROUTING is for network-arriving traffic.
+   * Subclasses override to implement iptables nat OUTPUT chain.
+   * Returns null (no NAT) by default.
+   */
+  protected evaluateNatOutput(
+    _srcIP: string, _dstIP: IPAddress, _dstPort: number, _srcPort: number,
+    _protocol: number, _tentativeOutIface: string,
+  ): { action: string; address?: string } | null {
+    return null;
+  }
+
+  /**
    * Evaluate ip6tables PREROUTING DNAT rules for a packet destined to this
    * host itself, before local delivery. There is no IPv6 counterpart to
    * `evaluateNat`/POSTROUTING here: end hosts don't forward IPv6 packets
@@ -1796,6 +1810,15 @@ export abstract class EndHost extends Equipment {
         const { ip, port } = parseNatAddress(preNat.address);
         ipPkt = rewriteNatAddress(ipPkt, 'dst', ip, port);
       } catch { /* keep original */ }
+    } else if (preNat && preNat.action === 'REDIRECT') {
+      // REDIRECT has no --to-destination to read: real Linux maps the
+      // destination to this box's own address on the interface that
+      // received the packet (`--to-ports` optionally changes the port).
+      const localIP = this.ports.get(portName)?.getIPAddress();
+      if (localIP) {
+        const portNum = preNat.address ? parseInt(preNat.address, 10) : NaN;
+        ipPkt = rewriteNatAddress(ipPkt, 'dst', localIP.toString(), Number.isNaN(portNum) ? undefined : portNum);
+      }
     }
 
     // Check if packet is for us
@@ -2405,6 +2428,33 @@ export abstract class EndHost extends Equipment {
     payloadBytes: number = 0,
     options: { df?: boolean; iface?: string } = {},
   ): boolean {
+    // OUTPUT: nat OUTPUT-chain DNAT/REDIRECT applies to this host's own
+    // outbound traffic before the loopback/local-delivery decision below,
+    // mirroring real Linux's early routing decision + LOCAL_OUT hook
+    // ordering. Skipped for multicast/broadcast/loopback — none is a
+    // realistic DNAT/REDIRECT target and no rule ever matches them.
+    if (!destinationIP.isLoopback()
+      && !isMulticastIpv4(destinationIP.toString())
+      && destinationIP.toString() !== '255.255.255.255') {
+      const tentativeRoute = this.resolveRoute(destinationIP);
+      const outputNat = this.evaluateNatOutput(
+        tentativeRoute?.port.getIPAddress()?.toString() ?? '0.0.0.0',
+        destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '',
+      );
+      if (outputNat?.action === 'REDIRECT') {
+        // No --to-destination to read: real Linux maps a locally-generated
+        // packet's destination to loopback (there is no "incoming
+        // interface" for traffic this host originates itself).
+        const portNum = outputNat.address ? parseInt(outputNat.address, 10) : NaN;
+        destinationIP = new IPAddress('127.0.0.1');
+        if (!Number.isNaN(portNum)) destinationPort = portNum;
+      } else if (outputNat?.action === 'DNAT' && outputNat.address) {
+        const { ip, port } = parseNatAddress(outputNat.address);
+        destinationIP = new IPAddress(ip);
+        if (port !== undefined) destinationPort = port;
+      }
+    }
+
     const udpBase = { type: 'udp' as const, sourcePort, destinationPort, length: 8 + payloadBytes, payload };
     // Preserve the existing DF=1 default (every prior caller relied on
     // it); pass { df: false } to originate fragmentable UDP traffic that

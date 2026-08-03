@@ -103,6 +103,20 @@ const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'icmpv6', 'ipv6-i
 const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
 const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN', 'MARK', 'NOTRACK']);
 
+// Real netfilter's xt_nat hook mask (verified against a real `iptables`
+// binary, not assumed): DNAT/REDIRECT only take effect before a routing
+// decision is made (PREROUTING for network-arriving traffic, OUTPUT for
+// locally-generated traffic); SNAT/MASQUERADE only after one (POSTROUTING),
+// with SNAT additionally valid in INPUT for a packet already decided as
+// locally-destined. `-A INPUT -j DNAT` is rejected on real Linux, not
+// silently accepted — this table is what lets that rejection be real here.
+const NAT_TARGET_HOOKS: Record<string, string[]> = {
+  DNAT: ['PREROUTING', 'OUTPUT'],
+  REDIRECT: ['PREROUTING', 'OUTPUT'],
+  SNAT: ['POSTROUTING', 'INPUT'],
+  MASQUERADE: ['POSTROUTING'],
+};
+
 // ─── Manager ─────────────────────────────────────────────────────────
 
 export type IptablesServiceResolver = (port: number, proto: string) => string | null;
@@ -243,10 +257,13 @@ export class LinuxIptablesManager {
   }
 
   /**
-   * Evaluate nat table for a packet (PREROUTING or POSTROUTING).
-   * Returns DNAT/SNAT/MASQUERADE target info or null.
+   * Evaluate nat table for a packet (PREROUTING, OUTPUT, or POSTROUTING —
+   * OUTPUT is a locally-generated packet's own DNAT/REDIRECT hook, real on
+   * Linux exactly like PREROUTING's, just before that host's own outbound
+   * routing decision instead of an arriving one).
+   * Returns DNAT/SNAT/MASQUERADE/REDIRECT target info or null.
    */
-  evaluateNat(pkt: PacketInfo, hook: 'PREROUTING' | 'POSTROUTING'): NatResult | null {
+  evaluateNat(pkt: PacketInfo, hook: 'PREROUTING' | 'OUTPUT' | 'POSTROUTING'): NatResult | null {
     const natTable = this.tables.get('nat');
     if (!natTable) return null;
     const chain = natTable.chains.get(hook);
@@ -923,8 +940,30 @@ export class LinuxIptablesManager {
     if (r.target && !VALID_TARGETS.has(r.target) && !table.chains.has(r.target)) {
       return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     }
+    const natErr = this.natTargetChainError(table, cn, r.target, 'RULE_APPEND');
+    if (natErr) return { output: natErr, exitCode: 4 };
     ch.rules.push(r);
     return { output: '', exitCode: 0 };
+  }
+
+  /**
+   * Reject a nat-table target in a built-in chain its real netfilter hook
+   * mask doesn't cover (see NAT_TARGET_HOOKS) — e.g. `-A INPUT -j DNAT`.
+   * A jump into a user-defined chain isn't traced back to which built-in
+   * chain(s) can reach it, so only direct rules on a built-in chain are
+   * checked here, matching the scope already accepted elsewhere in this
+   * manager for chain-reachability analysis.
+   */
+  private natTargetChainError(
+    table: IptablesTable, chainName: string, target: string,
+    op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
+  ): string | null {
+    if (table.name !== 'nat') return null;
+    const allowedChains = NAT_TARGET_HOOKS[target];
+    if (!allowedChains) return null;
+    if (!TABLE_BUILTIN_CHAINS.nat.includes(chainName)) return null;
+    if (allowedChains.includes(chainName)) return null;
+    return `iptables v1.8.7 (nf_tables):  ${op} failed (Invalid argument): rule in chain ${chainName}`;
   }
 
   // ─── -D ────────────────────────────────────────────────────────
@@ -971,6 +1010,8 @@ export class LinuxIptablesManager {
 
     const r = this.parseRule(ruleArgs);
     if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const natErrI = this.natTargetChainError(table, cn, r.target, 'RULE_INSERT');
+    if (natErrI) return { output: natErrI, exitCode: 4 };
     ch.rules.splice(Math.min(pos - 1, ch.rules.length), 0, r);
     return { output: '', exitCode: 0 };
   }
@@ -986,6 +1027,8 @@ export class LinuxIptablesManager {
     if (isNaN(num) || num < 1 || num > ch.rules.length) return { output: 'iptables: Index of replacement too big.', exitCode: 1 };
     const r = this.parseRule(args.slice(2));
     if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const natErrR = this.natTargetChainError(table, cn, r.target, 'RULE_REPLACE');
+    if (natErrR) return { output: natErrR, exitCode: 4 };
     ch.rules[num - 1] = r;
     return { output: '', exitCode: 0 };
   }

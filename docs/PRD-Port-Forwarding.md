@@ -477,10 +477,12 @@ traité et un oubli.
    le port ET recalculer les checksums L3+L4 — livré (§3 Phase 5).**
    Cf. §3 Phase 5 pour la limite restante (pas d'un-NAT/conntrack sur la
    voie retour, séparée et hors périmètre).
-8. **[Hôte Linux, Mineur] Documenter/décider du sort de `-j REDIRECT`** et
-   des chaînes `INPUT`/`OUTPUT` de la table `nat`, aujourd'hui du pur décor
-   CLI (§1.B) — cas d'usage rare en topologie pédagogique, décision de
-   conception à trancher en revue détaillée plutôt qu'à câbler par défaut.
+8. **[Hôte Linux, Mineur] `-j REDIRECT` et chaînes `INPUT`/`OUTPUT` de la
+   table `nat` — livré (§3 Phase 6).** Décision retenue : câbler le
+   comportement réel (validation par chaîne + REDIRECT en PREROUTING +
+   DNAT/REDIRECT en OUTPUT pour UDP local), plutôt que documenter comme
+   non câblé. Cf. §3 Phase 6 pour ce qui reste honnêtement non câblé (TCP
+   en chaîne OUTPUT, SNAT en chaîne INPUT).
 9. **[Hôte Windows, Moyen] Construire un vrai relais applicatif pour
    `netsh interface portproxy`.** Corriger la caractérisation « solide » des
    PRDs existants — aujourd'hui aucune donnée ne circule (§1.C). Le relais
@@ -740,14 +742,92 @@ trafic routé/switché/reçu avant le code spécifique au NAT).
   14 fichiers iptables/ip6tables/UDP/fragmentation + 65 tests TCP de base,
   tous verts.
 
-### Phase 6 — Hôte Linux : `-j REDIRECT` et chaînes `nat` INPUT/OUTPUT (objectif 8)
+### Phase 6 — Hôte Linux : `-j REDIRECT` et chaînes `nat` INPUT/OUTPUT (objectif 8) — livrée
 
-- **Décision de conception à trancher avant le code** : câbler `REDIRECT`
-  (probable réutilisation du chemin DNAT existant vers l'adresse locale) ou
-  le documenter explicitement comme non câblé (mineur, cas d'usage de proxy
-  transparent rare en topologie pédagogique) — même choix de portée que
-  `PRD-NAT-Port-Forwarding.md` a fait pour `route-map`/`dns-map`. Pas de
-  travail de code proposé tant que cette décision n'est pas prise.
+**Décision retenue** : câbler le comportement réel plutôt que documenter
+`REDIRECT` comme non câblé. Le périmètre exact a été établi empiriquement,
+contre un vrai binaire `iptables` (v1.8.10, disponible dans le bac à sable
+de développement) plutôt que supposé de mémoire :
+
+| Cible | Chaînes réellement acceptées (vérifié) |
+|---|---|
+| DNAT | PREROUTING, OUTPUT |
+| REDIRECT | PREROUTING, OUTPUT |
+| SNAT | POSTROUTING, INPUT |
+| MASQUERADE | POSTROUTING uniquement |
+
+`-A INPUT -j DNAT` échoue réellement sur un vrai Linux avec
+`RULE_APPEND failed (Invalid argument): rule in chain INPUT` (exit 4) — ce
+n'est pas un détail théorique, c'est ce que le noyau répond. Trois volets
+livrés dans `LinuxIptablesManager.ts`/`EndHost.ts`/`LinuxMachine.ts` :
+
+1. **Validation CLI par chaîne** (`natTargetChainError()`, table
+   `NAT_TARGET_HOOKS`) : `cmdAppend`/`cmdInsert`/`cmdReplace` rejettent
+   désormais un DNAT/REDIRECT/SNAT/MASQUERADE placé dans une chaîne native
+   de la table `nat` que son masque de hook réel ne couvre pas, avec le
+   message et le code de sortie exacts observés ci-dessus (`RULE_INSERT`/
+   `RULE_REPLACE` pour `-I`/`-R`). Une chaîne utilisateur n'est pas
+   remontée jusqu'à la ou les chaînes natives qui peuvent y sauter — hors
+   périmètre, comme le reste de l'analyse d'atteignabilité des chaînes
+   dans ce fichier.
+2. **REDIRECT en PREROUTING** — `EndHost.handleIPv4` consomme désormais
+   `preNat.action === 'REDIRECT'` (auparavant parsé par le CLI puis jamais
+   lu par le plan de données) : la destination est réécrite vers l'adresse
+   locale du port d'entrée (il n'y a pas de `--to-destination` à lire pour
+   REDIRECT, seulement un `--to-ports` optionnel), en réutilisant
+   `rewriteNatAddress()`/`parseNatAddress()` de la Phase 5.
+3. **DNAT/REDIRECT en OUTPUT** pour le trafic UDP généré localement — un
+   nouveau point d'extension `EndHost.evaluateNatOutput()` (implémenté dans
+   `LinuxMachine.ts` via `executor.iptables.evaluateNat(pkt, 'OUTPUT')`,
+   `evaluateNat()` élargi pour accepter ce hook) est consulté au tout début
+   de `sendUdpDatagram()`, avant la livraison locale/multicast/broadcast —
+   à l'image de l'ordre réel de Linux (décision de routage précoce, puis
+   hook LOCAL_OUT, puis re-décision si la destination a changé). REDIRECT
+   correspond au cas réel « pas de `--to-destination` » : le datagramme est
+   mappé vers l'adresse de boucle locale, jamais vers une interface de
+   sortie (il n'y a pas d'« interface entrante » pour un paquet que cet
+   hôte origine lui-même).
+
+**Constat empirique notable, documenté honnêtement dans le test** :
+REDIRECT-en-PREROUTING retombe dans la même asymétrie de voie retour que
+le DNAT inter-hôtes de la Phase 5, même quand l'adresse de destination ne
+change pas. Dès que le PORT de destination change, le SYN-ACK renvoyé porte
+ce nouveau port source — qui ne correspond plus à ce que le client a
+composé — et le démultiplexage à 4-uplets exact de `TcpStack` ne reconnaît
+toujours pas la réponse. Ce n'est donc pas une particularité du cas
+« redirection vers un autre hôte » : c'est la même cause profonde (absence
+de table de sessions retour/un-NAT pour ce moteur iptables), qui touche
+aussi bien une redirection vers un port local différent. Le test TCP de
+cette phase s'arrête donc, comme celui de la Phase 5, à « le SYN atteint le
+port redirigé », pas à l'établissement complet.
+
+**Délibérément non câblé, et documenté comme tel plutôt que silencieusement
+absent** :
+- **TCP en chaîne OUTPUT** : contrairement à UDP (`sendUdpDatagram`, un
+  point d'entrée unique déjà équipé du hook `firewallFilter('out')`),
+  `TcpStack.transmit()`/`shipSegment()` n'a AUCUN point d'extension chaîne
+  `OUTPUT` — ni pour la table `filter`, ni a fortiori pour `nat` — un
+  segment TCP sortant issu d'un socket local ne traverse aujourd'hui aucune
+  évaluation firewall/NAT locale. Corriger cela reviendrait à greffer un
+  nouveau point d'extension sur le chemin d'émission le plus chaud du
+  moteur TCP tout entier — un chantier séparé, plus large, non entrepris
+  ici.
+- **SNAT en chaîne INPUT** : réel sur Linux (vérifié ci-dessus) mais sans
+  aucun point d'ancrage architectural dans ce simulateur — il n'existe nulle
+  part de notion « ce que verrait un processus local de l'adresse source
+  d'un pair » à réécrire. La validation CLI accepte donc la règle (comme un
+  vrai Linux), mais aucune donnée ne la consomme.
+- Chaîne utilisateur atteinte depuis plusieurs chaînes natives à la fois
+  (l'une valide pour la cible, l'autre non) : non tracée, cf. §1 ci-dessus.
+
+**Tests** : `linux-nat-redirect-output.test.ts` (14 cas — 9 validations
+CLI par chaîne incluant les cas de non-régression sur les usages déjà
+existants de DNAT/SNAT/MASQUERADE/REDIRECT dans tout `src/__tests__`
+[tous déjà placés dans une chaîne valide, confirmé par grep avant
+d'écrire ce correctif], 2 REDIRECT-en-PREROUTING, 3 nat-OUTPUT UDP).
+Discriminé par git-stash : les 8 cas dépendant de l'ordre échouent
+authentiquement avant correctif, les 6 cas de non-régression passent dans
+les deux cas.
 
 ### Phase 7 — Windows : relais applicatif réel pour `portproxy` (objectif 9)
 
