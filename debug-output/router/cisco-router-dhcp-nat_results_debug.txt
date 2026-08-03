@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-07-30T18:12:21.948Z
+Generated: 2026-08-03T11:43:13.618Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1806,7 +1806,6 @@ Total steps: 369
   %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
   %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
   %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
@@ -1827,7 +1826,7 @@ Total steps: 369
 [297/369] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE161285.FA5E353F (18:12:21.978 UTC Thu Jul 30 2026)
+  reference time is EE1AFD51.A7EF9DB2 (11:43:13.656 UTC Mon Aug 3 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1# show ntp associations
@@ -1836,7 +1835,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *18:12:21.000 UTC Thu Jul 30 2026
+  *11:43:13.000 UTC Mon Aug 3 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2323,7 +2322,6 @@ Total steps: 369
   %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
   %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
   %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up

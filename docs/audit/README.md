@@ -19,6 +19,7 @@ le 2026-07-22.
 | [08-genie-logiciel.md](08-genie-logiciel.md) | Génie logiciel | Métriques, anti-patterns, frontières architecturales, asynchronisme, stratégie de test, dette |
 | [09-interface-utilisateur.md](09-interface-utilisateur.md) | UI | React/Zustand, canvas, performance, UX, accessibilité, fidélité du terminal |
 | [10-rman.md](10-rman.md) | RMAN | Matrice de couverture des commandes vs Oracle 19c, scénarios backup/restore/recover |
+| [11-transcripts-debug-2026-08.md](11-transcripts-debug-2026-08.md) | Transcripts de debug | Régénération des 125 transcripts (2026-08-03) et dépouillement des manques, vérifiés sur équipement |
 
 ## Méthodologie
 

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-acl-aaa-security
-Generated: 2026-07-30T18:12:59.425Z
+Generated: 2026-08-03T11:43:00.221Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP ACL(basic/adv/named)/AAA/SSH-hardening/attack-defense
 Total steps: 274
@@ -993,8 +993,8 @@ Total steps: 274
   No NTP associations
 
 [205/274] r1 <R1> display clock
-  2026-07-30 18:12:59
-  Thursday
+  2026-08-03 11:43:00
+  Monday
   Time Zone(UTC) : UTC
 
 [206/274] r1 <R1> display lldp neighbor
@@ -1006,13 +1006,13 @@ Total steps: 274
 [208/274] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-30 18:12:59
+  CPU Usage Stat. Time : 2026-08-03 11:43:00
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [209/274] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-30 18:12:59
+  Memory utilization statistics at 2026-08-03 11:43:00
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1054,21 +1054,21 @@ Total steps: 274
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 15
-  2026-07-30 18:12:59 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-07-30 18:12:59 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-07-30 18:12:59 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-07-30 18:12:59 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-07-30 18:12:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
-  2026-07-30 18:12:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-07-30 18:12:59 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-07-30 18:12:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-07-30 18:12:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-07-30 18:12:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-07-30 18:12:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-07-30 18:12:59 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  2026-07-30 18:12:59 %01SYS/6/INFORMATIONAL: User account 'admin' created (priv 1)
-  2026-07-30 18:12:59 %01SYS/6/INFORMATIONAL: User account 'oper' created (priv 1)
-  2026-07-30 18:12:59 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
+  2026-08-03 11:43:00 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-08-03 11:43:00 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-08-03 11:43:00 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-08-03 11:43:00 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-08-03 11:43:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-08-03 11:43:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-08-03 11:43:00 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-03 11:43:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-03 11:43:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-03 11:43:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-03 11:43:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  2026-08-03 11:43:00 %01SYS/6/INFORMATIONAL: User account 'admin' created (priv 1)
+  2026-08-03 11:43:00 %01SYS/6/INFORMATIONAL: User account 'oper' created (priv 1)
+  2026-08-03 11:43:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
+  2026-08-03 11:43:00 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
 
 [214/274] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
