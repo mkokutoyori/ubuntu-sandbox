@@ -1572,6 +1572,18 @@ export abstract class Switch extends Equipment {
     return this.stpFastAgingTime ?? this.macAgingTime;
   }
 
+  /**
+   * Retire une entrée statique. Seules les statiques partent : `no mac
+   * address-table static` ne doit pas effacer ce que le switch a appris
+   * tout seul sur la même adresse.
+   */
+  removeStaticMAC(mac: string, vlan: number): boolean {
+    const key = `${vlan}:${mac.toLowerCase()}`;
+    const entry = this.macTable.get(key);
+    if (!entry || entry.type !== 'static') return false;
+    return this.macTable.delete(key);
+  }
+
   addStaticMAC(mac: string, vlan: number, port: string): boolean {
     const key = `${vlan}:${mac.toLowerCase()}`;
     this.macTable.set(key, {

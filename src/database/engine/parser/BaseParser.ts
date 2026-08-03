@@ -689,6 +689,16 @@ export abstract class BaseParser {
       defaultValue = this.parseExpression();
     }
 
+    // GENERATED [ALWAYS | BY DEFAULT [ON NULL]] AS IDENTITY [(options)]
+    //
+    // Le champ `identity` existait sur le nœud d'AST depuis toujours, et
+    // rien ne le remplissait : `CREATE TABLE t (id NUMBER GENERATED
+    // ALWAYS AS IDENTITY …)` échouait sur « Expected RPAREN ». Dans la
+    // suite de debug `oracle-end-to-end-dba`, ce seul refus aux étapes
+    // 12-14 expliquait les quarante `ORA-00942` qui suivaient (audit 11,
+    // §6) : les trois tables de travail n'existaient jamais.
+    const identity = this.parseIdentityClause();
+
     // Column constraints
     while (true) {
       const constraint = this.parseColumnConstraint();
@@ -696,7 +706,53 @@ export abstract class BaseParser {
       constraints.push(constraint);
     }
 
-    return { type: 'ColumnDefinition', position: pos, name, dataType, defaultValue, constraints };
+    return { type: 'ColumnDefinition', position: pos, name, dataType, defaultValue, identity, constraints };
+  }
+
+  /**
+   * `GENERATED [ALWAYS | BY DEFAULT [ON NULL]] AS IDENTITY [(options)]`.
+   *
+   * La distinction porte : `ALWAYS` **interdit** de fournir la valeur
+   * soi-même (ORA-32795), `BY DEFAULT` la laisse passer et ne génère que
+   * si la colonne est absente. Les options entre parenthèses
+   * (`START WITH`, `INCREMENT BY`, `CACHE`, `NOCACHE`, `CYCLE`, …) sont
+   * celles d'une séquence — elles sont lues ici et confiées à la
+   * séquence que l'exécuteur crée derrière.
+   */
+  protected parseIdentityClause(): { always: boolean; startWith?: number; incrementBy?: number } | undefined {
+    if (!this.matchKeyword('GENERATED')) return undefined;
+    let always = true;
+    if (this.matchKeyword('BY')) {
+      this.expectKeyword('DEFAULT');
+      always = false;
+      // `ON NULL` : génère aussi quand on fournit explicitement NULL.
+      if (this.matchKeyword('ON')) this.expectKeyword('NULL');
+    } else {
+      this.matchKeyword('ALWAYS');
+    }
+    this.expectKeyword('AS');
+    this.expectKeyword('IDENTITY');
+
+    const out: { always: boolean; startWith?: number; incrementBy?: number } = { always };
+    if (this.match(TokenType.LPAREN)) {
+      while (!this.check(TokenType.RPAREN) && !this.check(TokenType.EOF)) {
+        if (this.matchKeyword('START')) {
+          this.expectKeyword('WITH');
+          out.startWith = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+        } else if (this.matchKeyword('INCREMENT')) {
+          this.expectKeyword('BY');
+          out.incrementBy = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+        } else {
+          // Les autres options d'identité (CACHE n, NOCACHE, CYCLE,
+          // NOCYCLE, ORDER, MINVALUE/MAXVALUE) sont avalées : la
+          // séquence sous-jacente les porte déjà par défaut, et en
+          // inventer l'effet serait pire que de les ignorer.
+          this.advance();
+        }
+      }
+      this.expect(TokenType.RPAREN);
+    }
+    return out;
   }
 
   protected parseTypeSpec(): TypeSpec {

@@ -1941,6 +1941,29 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return null;
   }
 
+  /**
+   * `<mac> vlan <n> interface <if>` — rend le triplet, ou le message de
+   * refus d'IOS. Le VLAN doit exister et le port aussi : poser une
+   * entrée statique vers un port absent créerait un trou noir muet.
+   */
+  private parseStaticMacArgs(args: string[]):
+  { mac: string; vlan: number; port: string } | string {
+    const mac = args[0] ?? '';
+    if (!/^[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}$/i.test(mac)) {
+      return '% Invalid MAC address (expected H.H.H)';
+    }
+    const iVlan = args.indexOf('vlan');
+    const iIf = args.findIndex((a) => a === 'interface');
+    if (iVlan < 0 || !args[iVlan + 1]) return '% Incomplete command.';
+    const vlan = parseInt(args[iVlan + 1], 10);
+    if (Number.isNaN(vlan) || vlan < 1 || vlan > 4094) return '% Invalid VLAN id';
+    if (!this.d().getVLANs().has(vlan)) return `% VLAN ${vlan} does not exist`;
+    if (iIf < 0 || !args[iIf + 1]) return '% Incomplete command.';
+    const port = this.resolvePortName(args.slice(iIf + 1).join(' '));
+    if (!port) return `% Invalid interface ${args.slice(iIf + 1).join(' ')}`;
+    return { mac: mac.toLowerCase(), vlan, port };
+  }
+
   // ─── User Commands ────────────────────────────────────────────────
 
   private registerUserCommands(): void {
@@ -2381,6 +2404,29 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.d().setMACAgingTime(seconds);
       return '';
     });
+
+    // `mac address-table static <mac> vlan <n> interface <if>` — le sujet
+    // déclaré d'une suite de debug de 346 étapes, et refusé jusqu'ici.
+    // Le moteur, lui, était complet : `Switch.addStaticMAC` existe, le
+    // type `static` est dans le modèle, et l'apprentissage respecte déjà
+    // une entrée statique (elle n'est ni vieillie ni écrasée). Seule la
+    // commande manquait (audit 11, §4.2).
+    this.configTrie.registerGreedy('mac address-table static', 'Add a static MAC entry', (args) => {
+      const r = this.parseStaticMacArgs(args);
+      if (typeof r === 'string') return r;
+      this.d().addStaticMAC(r.mac, r.vlan, r.port);
+      return '';
+    });
+    this.configTrie.registerGreedy('no mac address-table static', 'Remove a static MAC entry', (args) => {
+      const r = this.parseStaticMacArgs(args);
+      if (typeof r === 'string') return r;
+      this.d().removeStaticMAC(r.mac, r.vlan);
+      return '';
+    });
+    // `notification change` demande un piège SNMP à chaque mouvement
+    // d'adresse. Le simulateur n'a pas de générateur de piège sur ce
+    // chemin ; accepter la commande sans rien envoyer serait une
+    // promesse non tenue, alors elle reste refusée.
 
     this.configTrie.register('no shutdown', 'Enable interface', () => '');
 

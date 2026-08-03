@@ -826,6 +826,21 @@ export function cmdWget(args: string[]): string {
     ].join('\n');
   }
 
+  // Une adresse littérale n'a rien à résoudre : le vrai `wget` passe
+  // directement à « Connecting to ». Annoncer un échec de résolution sur
+  // `wget http://192.168.10.1` envoyait l'opérateur inspecter son DNS
+  // alors que le nom n'était jamais en cause (audit 11, §3).
+  const litterale = /^\[?[0-9a-fA-F:.]+\]?(:\d+)?$/.test(host)
+    && (/^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(host) || host.includes(':'));
+  if (litterale) {
+    const nu = host.replace(/^\[|\]$/g, '').split(/]?:(?=\d+$)/)[0];
+    if (quiet) return '';
+    return [
+      `--${new Date().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
+      `Connecting to ${nu}:80... failed: Connection refused.`,
+    ].join('\n');
+  }
+
   return [
     `--${new Date().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
     `Resolving ${host}... failed: Temporary failure in name resolution.`,

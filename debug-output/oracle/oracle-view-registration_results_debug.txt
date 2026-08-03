@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-view-registration
-Generated: 2026-08-03T11:42:51.391Z
+Generated: 2026-08-03T12:22:56.315Z
 Topology:  ora-viewreg
 Total commands: 31
 ============================================================
@@ -143,7 +143,7 @@ SQL [16/31]> SELECT * FROM V$SQL_MONITOR WHERE rownum < 3;
   SQL_ID        SQL_EXEC_ID SQL_EXEC_START STATUS    USERNAME ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS PHYSICAL_READ_BYTES
   ------------- ----------- -------------- --------- -------- ------------ -------- ----------- ---------- -------------------
   1rcfn8ma3xqw0           1 03-AUG-26      EXECUTING SYS                 0        0           0          0                   0
-  13ipzqna3xqw0           2 03-AUG-26      DONE      SYS               645      516           2          0                   0
+  13ipzqna3xqw0           2 03-AUG-26      DONE      SYS               909      727           2          0                   0
   
   2 rows selected.
 

@@ -271,7 +271,12 @@ export interface ColumnDefinition extends ASTNode {
   name: string;
   dataType: TypeSpec;
   defaultValue?: Expression;
-  identity?: { always: boolean };
+  /**
+   * `GENERATED [ALWAYS|BY DEFAULT] AS IDENTITY`. `always` interdit de
+   * fournir la valeur soi-même ; les deux nombres viennent des options
+   * entre parenthèses et sont confiés à la séquence sous-jacente.
+   */
+  identity?: { always: boolean; startWith?: number; incrementBy?: number };
   constraints: ColumnConstraint[];
 }
 

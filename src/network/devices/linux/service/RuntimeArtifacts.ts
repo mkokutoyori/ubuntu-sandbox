@@ -49,14 +49,14 @@ export interface RuntimeArtifact {
  * `PIDFile=` lines in Debian's unit files — systemd only needs telling
  * where the pid is when it cannot follow the fork itself, while cron and
  * atd write theirs whether or not anybody asked. `at`'s own daemon-down
- * message already named `/var/run/atd.pid` long before this module
+ * message already named atd's pid file long before this module
  * existed; the path here is that one, so the message stops being a
  * plausible string and starts describing a file that is really there.
  */
 export const SERVICE_RUNTIME_ARTIFACTS: Readonly<Record<string, readonly RuntimeArtifact[]>> = {
   ssh: [{ path: '/run/sshd.pid', kind: 'pidfile' }],
   cron: [{ path: '/run/crond.pid', kind: 'pidfile' }],
-  atd: [{ path: '/var/run/atd.pid', kind: 'pidfile' }],
+  atd: [{ path: '/run/atd.pid', kind: 'pidfile' }],
   rsyslog: [{ path: '/run/rsyslogd.pid', kind: 'pidfile' }],
   fail2ban: [
     { path: '/run/fail2ban/fail2ban.pid', kind: 'pidfile' },
