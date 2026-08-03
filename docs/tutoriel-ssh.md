@@ -33,7 +33,7 @@ L'implémentation est fidèle à OpenSSH pour les comportements qui comptent au 
 - Commandes complètes : `ssh`, `scp`, `sftp`, `ssh-keygen`, `ssh-copy-id`
 - Sous-systèmes : protection anti-brute-force, événements observables, conformité avec les directives `sshd_config`
 
-Ce qui n'est pas modélisé : la cryptographie réelle (les clés sont déterministes pour la reproductibilité), le port forwarding (`-L`, `-R`, `-D`), l'agent SSH, X11 forwarding.
+Ce qui n'est pas modélisé : la cryptographie réelle (les clés sont déterministes pour la reproductibilité), X11 forwarding. Le port forwarding (`-L`, `-R`, `-D`) et l'agent SSH (`ssh-agent`/`ssh-add`, `-A`) ont un parser et un listener/cache réels ; `-L`/`-R` relaient effectivement des octets uniquement via `ssh user@host <commande>` (non-interactif) — en session interactive (`ssh user@host`) ou avec `-D`, le tunnel s'établit mais ne transporte pas encore de vraies données.
 
 ---
 

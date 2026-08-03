@@ -403,12 +403,15 @@ Les éléments suivants sont **explicitement exclus** de cette implémentation :
 |---|---|
 | Chiffrement réel (AES, ChaCha20) | Le simulateur est en mémoire locale, le chiffrement n'apporte pas de valeur pédagogique et alourdirait inutilement le code |
 | Vrai échange Diffie-Hellman | Même justification — la simulation du comportement visible suffit |
-| SSH port forwarding (-L/-R/-D) | Hors scope v1, à réévaluer |
+| SSH port forwarding `-D` (dynamic/SOCKS) | Hors scope — aucun relais réel, ni sur `executeCommand`/`LinuxSshClient.ts` ni sur la sous-shell interactive |
+| SSH port forwarding `-L`/`-R` en session interactive (`LinuxTerminalSession`/`SshLocalForwarder`/`SshRemoteForwarder`) | Hors scope — chemin distinct de celui utilisé par `executeCommand`, jamais câblé à un vrai relais |
 | SFTP transfert chunké avec vraie progression (bande passante simulée) | Complexité élevée pour faible valeur pédagogique dans un premier temps |
 | SCP v2 (protocol wire-level) | Peut être simulé au niveau comportement sans implémenter le protocole wire |
 | Protocole SSH Agent (ssh-agent, ssh-add) | Hors scope v1 |
 | X11 forwarding | Hors scope |
 | Authentification par certificat SSH (CA) | Hors scope v1 |
+
+`-L`/`-R` via `ssh` non-interactif (`executeCommand` / `LinuxSshClient.ts`) ne sont plus hors périmètre : `docs/PRD-Port-Forwarding.md` Phase 8 y câble un relais bidirectionnel réel (accept sur un `TcpStack`, dial-out sur l'autre extrémité du tunnel, pipe des octets dans les deux sens).
 
 ### 3.4 Dépendances
 

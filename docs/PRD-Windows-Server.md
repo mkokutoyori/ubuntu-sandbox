@@ -66,7 +66,9 @@ par le rôle NPS). Aucune ligne de code n'est écrite dans le cadre de ce docume
   identité serveur au lieu des chaînes en dur restantes.
 - **La pile socket simulée existe** (`core/SocketTable.ts`,
   `core/TcpConnection.ts`, `WellKnownPorts.ts`) : le portproxy Windows projette
-  déjà de vrais sockets d'écoute — SMB/445, LDAP/389, HTTP/80 suivront le même
+  déjà de vrais sockets d'écoute, et (`docs/PRD-Port-Forwarding.md` Phase 7)
+  relaie réellement les octets entre `listenaddress:port` et
+  `connectaddress:port` — SMB/445, LDAP/389, HTTP/80 suivront le même
   chemin.
 - **Le moteur DHCP existe** (`src/network/dhcp/`, protocole complet avec
   options, cf. commit `4255396c`) : le rôle DHCP Server est une **façade

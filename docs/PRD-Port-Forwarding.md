@@ -498,7 +498,7 @@ traité et un oubli.
     pour le second correctif indépendant qu'écrire le test a révélé
     nécessaire (absence totale de livraison TCP loopback).
 11. **[Documentation, Mineur] Réconcilier les quatre documents contradictoires
-    identifiés en §1** : `GAP.md` §4.10 (ALG FTP maintenant réel, note
+    identifiés en §1 — livré (§3 Phase 9).** `GAP.md` §4.10 (ALG FTP maintenant réel, note
     obsolète), `GAP.md` §7.3 (description du canal `nc` ne correspond pas au
     code actuel), `docs/PRD-netsh.md`/`docs/PRD-Windows-Server.md`
     (caractérisation « solide » de `portproxy` à corriger une fois
@@ -932,13 +932,39 @@ remisés ensemble, et échouent identiquement avec SEULEMENT `TcpStack.ts`
 remisé (isolant le correctif loopback du câblage du relais) ; le 3ᵉ cas
 passe dans tous les cas.
 
-### Phase 9 — Documentation (objectif 11)
+### Phase 9 — Documentation (objectif 11) — livrée
 
-- Mise à jour de `GAP.md` §4.10/§7.3/§9.5, `docs/PRD-netsh.md`,
-  `docs/PRD-Windows-Server.md`, `docs/BRD-SSH-SFTP.md`,
-  `docs/SSH-IMPLEMENTATION-ANALYSIS.md`, `docs/tutoriel-ssh.md`,
-  `docs/roadmap.md` — une fois les phases correspondantes livrées, pas
-  avant (éviter de documenter un état qui n'existe pas encore).
+- `docs/PRD-netsh.md`/`docs/PRD-Windows-Server.md` : caractérisation
+  « solide » de `portproxy` nuancée avec le relais applicatif réel livré
+  en Phase 7.
+- `docs/BRD-SSH-SFTP.md` §3.3 : la ligne d'exclusion unique
+  `-L/-R/-D — hors scope v1` éclatée en deux lignes exactes (`-D` seul et
+  la pile interactive restent hors scope ; ajout d'une note que `-L`/`-R`
+  via `executeCommand`/`LinuxSshClient.ts` ne le sont plus depuis la
+  Phase 8).
+- `docs/SSH-IMPLEMENTATION-ANALYSIS.md` : §1.11/§1.12/§1.16 complétés d'un
+  « écart connu » (le bridge exec `nc` de ce chemin — Chemin 1,
+  `LinuxTerminalSession` — n'a jamais pompé d'octets, `execute()` n'y est
+  même jamais appelé) ; §3.1 et §3.5 (qui affirmaient encore `-L/-R/-D`,
+  `ssh-add`/`ssh-agent` et `-t` « absents ») corrigés en style
+  barré-renvoi comme le fait déjà §3.3 pour rester cohérents avec
+  §1.11-§1.16.
+- `docs/tutoriel-ssh.md` ligne 36 : « port forwarding non modélisé » →
+  état réel (parser/listener réels, relais de données réel seulement via
+  `ssh user@host <commande>`).
+- `docs/roadmap.md` : bandeau de péremption ajouté en tête (document
+  généré 2026-03-25, largement obsolète tous sujets confondus) + note
+  ciblée en §14.1 (NAT/PAT déjà livré, voir `CLAUDE.md`/ce PRD plutôt que
+  le tableau).
+- `GAP.md` §4.10 (ALG FTP réel depuis `PRD-FTP-SFTP.md`, hors périmètre
+  Port-Forwarding — seuls SIP/NAT64 restent non implémentés ; la ligne
+  CLI `show ip nat statistics` elle-même n'a volontairement pas été
+  touchée, cette phase étant documentation seule), §7.3 (description du
+  bridge `nc` corrigée : plus grave que documenté, `execute()` jamais
+  appelé donc rien n'est jamais bridgé sur ce chemin), §9.5 (note ajoutée
+  sur `PortProxySocketProjection`, classe distincte de
+  `PortProxyTable`/`WindowsServicePortProjection`, qui porte désormais un
+  vrai relais depuis la Phase 7).
 
 ---
 

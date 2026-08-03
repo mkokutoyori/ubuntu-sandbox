@@ -78,7 +78,14 @@ unique `cmdNetsh(ctx, args)`, qui distribue vers ~25 fonctions internes
   `PortProxySocketProjection` créant de vrais listeners de la table de
   sockets — confirmé par une suite de tests dédiée et passante
   (`windows-port-forwarding.test.ts`), montrant que les règles apparaissent
-  réellement dans `netstat` et sont retirées à la suppression.
+  réellement dans `netstat` et sont retirées à la suppression. Depuis
+  `docs/PRD-Port-Forwarding.md` Phase 7, c'est aussi un vrai relais
+  applicatif : `PortProxySocketProjection` ouvre un véritable
+  `TcpStack.listen()` sur `listenaddress:listenport` dont `onAccept`
+  compose une vraie connexion vers `connectaddress:connectport` et relaie
+  les octets dans les deux sens (`windows-portproxy-relay.test.ts`) —
+  avant cette phase, seule la visibilité `netstat` était réelle, aucune
+  donnée ne circulait jamais.
 - **`advfirewall firewall add/show/delete rule`** : les règles vont dans
   `ctx.dynamicFirewallRules`, exactement la map lue par
   `WindowsPC.firewallFilter()`, invoquée sur le vrai chemin des paquets
@@ -151,8 +158,10 @@ construire de nouveaux moteurs de simulation :
   routeurs Cisco/Huawei). `netsh interface ip/ipv6 add/delete route`
   l'expose déjà bien ; les manques restants sont d'affichage
   (`interface tcp/udp`) plutôt qu'une capacité de forwarding manquante.
-- **Port-proxy** : également branché sur de vrais listeners de socket via
-  `PortProxySocketProjection` — solide.
+- **Port-proxy** : branché sur de vrais listeners de socket ET, depuis
+  Phase 7 de `docs/PRD-Port-Forwarding.md`, un vrai relais applicatif
+  (accepte au `listenaddress:port`, compose une vraie connexion vers
+  `connectaddress:port`, relaie les octets) — solide.
 - À l'inverse, **wlan/lan/http/namespace/bridge/ipsec dynamic** n'ont
   aucun moteur sous-jacent nulle part dans le dépôt (aucune simulation
   Wi-Fi/pont/HTTP.sys/NRPT/IKE n'existe) — combler l'écart signifierait
