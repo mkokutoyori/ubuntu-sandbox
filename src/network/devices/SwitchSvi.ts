@@ -57,6 +57,14 @@ export interface SviHost {
    */
   getDhcpServer?(): DHCPServer | undefined;
   recordArp?(dir: 'rx' | 'tx', op: 'request' | 'reply'): void;
+  /** NAT PREROUTING (DNAT), mirrors `Router.processIPv4`'s `translateInbound()` call. Absent on a switch with no `NATEngine`. */
+  natTranslateInbound?(pkt: IPv4Packet, inIface: string): IPv4Packet | null;
+  /** NAT POSTROUTING (SNAT/PAT), mirrors `Router.forwardPacket`'s `translateOutbound()` call. */
+  natTranslateOutbound?(
+    pkt: IPv4Packet, outIface: string, inIface: string,
+    opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
+  ): IPv4Packet | null;
+  natIsOutsideInterface?(iface: string): boolean;
 }
 
 export interface SwitchStaticRoute {
@@ -275,20 +283,24 @@ export class SwitchSvi {
 
       if (!forUs) return false;
 
-      const dstIsOwnSvi = [...this.svis.values()].some(s => s.adminUp && s.ip?.equals(ip.destinationIP));
+      const originalPkt = ip;
+      const natIn = this.host.natTranslateInbound?.(ip, `Vlanif${ingressVlan}`) ?? null;
+      const workingIp = natIn ?? ip;
+
+      const dstIsOwnSvi = [...this.svis.values()].some(s => s.adminUp && s.ip?.equals(workingIp.destinationIP));
       if (dstIsOwnSvi) {
-        if (ip.protocol === IP_PROTO_ICMP) {
-          const icmp = ip.payload as ICMPPacket;
+        if (workingIp.protocol === IP_PROTO_ICMP) {
+          const icmp = workingIp.payload as ICMPPacket;
           if (icmp?.icmpType === 'echo-request') {
-            this.sendEchoReply(ingressVlan, ip.destinationIP, ip, icmp);
+            this.sendEchoReply(ingressVlan, workingIp.destinationIP, workingIp, icmp);
           } else if (icmp?.icmpType === 'echo-reply') {
             this.pendingReply = {
               id: icmp.id, seq: icmp.sequence,
-              fromIp: ip.sourceIP.toString(), ttl: ip.ttl,
+              fromIp: workingIp.sourceIP.toString(), ttl: workingIp.ttl,
             };
           }
-        } else if (ip.protocol === IP_PROTO_UDP) {
-          const udp = ip.payload as UDPPacket | undefined;
+        } else if (workingIp.protocol === IP_PROTO_UDP) {
+          const udp = workingIp.payload as UDPPacket | undefined;
           const dhcp = udp?.type === 'udp' ? udp.payload : undefined;
           if (dhcp instanceof DHCPPacket && dhcp.op === 2) {
             this.relayDhcpReplyToClientVlan(dhcp);
@@ -297,7 +309,7 @@ export class SwitchSvi {
         return true;
       }
 
-      this.forwardIpPacket(ingressVlan, ip);
+      this.forwardIpPacket(ingressVlan, workingIp, originalPkt);
       return true;
     }
 
@@ -375,7 +387,7 @@ export class SwitchSvi {
     }
   }
 
-  private forwardIpPacket(ingressVlan: number, ip: IPv4Packet): void {
+  private forwardIpPacket(ingressVlan: number, ip: IPv4Packet, originalPkt: IPv4Packet = ip): void {
     if (ip.ttl <= 1) {
       const ingressSvi = this.svis.get(ingressVlan);
       if (ingressSvi?.ip) this.sendIcmpTimeExceeded(ingressVlan, ingressSvi.ip, ip);
@@ -393,8 +405,19 @@ export class SwitchSvi {
       if (ingressSvi?.ip) this.sendIcmpHostUnreachable(ingressVlan, ingressSvi.ip, ip, 1);
       return;
     }
-    const fwd: IPv4Packet = { ...ip, ttl: ip.ttl - 1, headerChecksum: 0 };
+    let fwd: IPv4Packet = { ...ip, ttl: ip.ttl - 1, headerChecksum: 0 };
     fwd.headerChecksum = computeIPv4Checksum(fwd);
+
+    if (this.host.natTranslateOutbound) {
+      const outIface = `Vlanif${route.egress.vlan}`;
+      const inIface = `Vlanif${ingressVlan}`;
+      const isHairpin = !(this.host.natIsOutsideInterface?.(outIface) ?? false)
+        && originalPkt.destinationIP.toString() !== fwd.destinationIP.toString();
+      const natOut = this.host.natTranslateOutbound(fwd, outIface, inIface,
+        isHairpin ? { isHairpin: true, aclMatchPkt: originalPkt } : undefined);
+      if (natOut) fwd = natOut;
+    }
+
     this.host.egressOnVlan(route.egress.vlan, {
       srcMAC: this.host.getBridgeMac(), dstMAC: nextHopMac,
       etherType: ETHERTYPE_IPV4, payload: fwd,

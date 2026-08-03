@@ -352,7 +352,15 @@ export abstract class Switch extends Equipment {
     isDhcpRelayInfoEnabled: () => this.dhcpServer.isRelayInformationOptionEnabled(),
     getDhcpServer: () => this.dhcpServer,
     recordArp: (dir, op) => this.arpStats.record(dir, op),
+    natTranslateInbound: (pkt, inIface) => this.getNATEngine()?.translateInbound(pkt, inIface) ?? null,
+    natTranslateOutbound: (pkt, outIface, inIface, opts) =>
+      this.getNATEngine()?.translateOutbound(pkt, outIface, inIface, opts) ?? null,
+    natIsOutsideInterface: (iface) => this.getNATEngine()?.isOutsideInterface(iface) ?? false,
   });
+
+  private getNATEngine(): import('./router/NATEngine').NATEngine | null {
+    return (this as unknown as { _getNATEngine?: () => import('./router/NATEngine').NATEngine })._getNATEngine?.() ?? null;
+  }
 
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: ISwitchShell;
