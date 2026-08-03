@@ -278,6 +278,10 @@ export abstract class LinuxMachine extends EndHost
     this.initDefaultSockets(profile.isServer);
     this.executor.setLocalDevice(this);
     this.executor.setSocketTable(this.socketTable);
+    // §F9.3 — le plafond de descripteurs s'applique aux sockets, et il est
+    // compté sur la même table que celle que `/proc/<pid>/fd` affiche.
+    this.socketTable.setDescriptorGuard((pid) =>
+      this.executor.processMgr.canOpenDescriptor(pid, this.executor.descriptorSourcesFor(pid)));
     this.executor.vfs.mkdirp('/proc/sys/net/ipv4', 0o755, 0, 0);
     this.executor.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', '32768\t60999\n', 0, 0, 0o022);
     this.executor.setSessionTable(this.sessionTable);

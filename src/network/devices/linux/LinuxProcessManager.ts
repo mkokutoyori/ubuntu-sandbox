@@ -20,6 +20,7 @@ import type { LinuxProcessServiceDomainEvent } from './events';
 import type { OSProcess } from '../os/OSProcess';
 import { LinuxProcess } from './process/LinuxProcess';
 import { UninterruptibleSleepTable } from './process/UninterruptibleSleep';
+import { descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
 
 /** Linux process states as reported by ps. */
 export type ProcessState =
@@ -356,6 +357,27 @@ export class LinuxProcessManager {
 
   setNofileLimit(uid: number, limit: number): void {
     this.nofileLimits.set(uid, limit);
+  }
+
+  /**
+   * Ce processus peut-il ouvrir un descripteur de plus (§F9.3) ?
+   *
+   * Le compte vient de `descriptorCount`, la MÊME fonction qui numérote
+   * `/proc/<pid>/fd` : compter autrement préparerait une machine où le
+   * plafond et la liste ne parlent pas du même processus.
+   *
+   * root n'est PAS exempt, contrairement à `RLIMIT_NPROC` : le noyau ne
+   * fait pas d'exception de capacité pour `RLIMIT_NOFILE`, un démon root
+   * qui atteint son plafond se prend `EMFILE` comme tout le monde.
+   */
+  canOpenDescriptor(pid: number, sources: DescriptorSources): boolean {
+    const p = this.processes.get(pid);
+    // Processus inconnu : sa rlimit est illisible, donc il n'y a pas de
+    // plafond à opposer. Refuser ici transformerait « le processus a
+    // disparu » en `EMFILE` — et le noyau qui reprend le port d'un
+    // processus mort n'aurait plus le droit de le rendre.
+    if (!p) return true;
+    return descriptorCount(sources) < this.nofileLimit(p.uid);
   }
 
   /** `ulimit -u N` — la limite souple, celle que `fork()` consulte. */

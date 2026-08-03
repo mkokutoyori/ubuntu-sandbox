@@ -112,6 +112,13 @@ export class SocketTable {
       this.evictTimeWait(holder);
     }
 
+    // §F9.3 — une socket EST un descripteur. Le refus vient du garde que
+    // la couche Linux injecte, parce que `SocketTable` ne connaît ni les
+    // rlimits ni les processus : elle ne fait que demander la permission.
+    if (pid !== undefined && this.descriptorGuard && !this.descriptorGuard(pid)) {
+      throw new Error('EMFILE: Too many open files');
+    }
+
     this.idCounter++;
     const entry: SocketEntry = {
       id: this.idCounter,
@@ -189,6 +196,18 @@ export class SocketTable {
     if (!entry) return false;
     entry.state = state;
     return true;
+  }
+
+  /**
+   * Le processus nommé peut-il consommer un descripteur de plus ? Injecté
+   * par la couche qui tient les rlimits ; absent, rien n'est plafonné —
+   * une `SocketTable` sans machine autour ne peut pas inventer de limite.
+   */
+  private descriptorGuard?: (pid: number) => boolean;
+
+  /** Brancher le garde de descripteurs (§F9.3). */
+  setDescriptorGuard(guard: (pid: number) => boolean): void {
+    this.descriptorGuard = guard;
   }
 
   private twReuseEnabled = false;
