@@ -149,6 +149,7 @@ import { runGetent, runGetentAsync } from './nss/GetentCommand';
 import type { GetentResult } from './nss/GetentCommand';
 import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
+import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -849,19 +850,23 @@ export class LinuxCommandExecutor {
     if (!p) return;
     const fdDir = `/proc/${pid}/fd`;
     this.vfs.mkdirp(fdDir, 0o500, p.uid, p.gid);
-    const stdTarget = p.tty && p.tty !== '?' ? `/dev/${p.tty}` : `socket:[${10000 + pid}]`;
-    for (const n of [0, 1, 2]) {
-      this.vfs.createSymlink(`${fdDir}/${n}`, stdTarget, p.uid, p.gid);
+    // La numérotation vient de `openDescriptors`, pas d'ici : c'est la même
+    // que celle que compte `RLIMIT_NOFILE`, donc les deux ne peuvent pas
+    // diverger (§F9.3).
+    for (const d of openDescriptors(this.descriptorSourcesFor(pid))) {
+      this.vfs.createSymlink(`${fdDir}/${d.fd}`, d.target, p.uid, p.gid);
     }
-    let nextFd = 3;
-    for (const f of p.openFiles ?? []) {
-      this.vfs.createSymlink(`${fdDir}/${f.fd}`, f.path, p.uid, p.gid);
-      nextFd = Math.max(nextFd, f.fd + 1);
-    }
-    for (const sock of this.socketTable?.listByPid(pid) ?? []) {
-      this.vfs.createSymlink(`${fdDir}/${nextFd}`, `socket:[${sock.id}]`, p.uid, p.gid);
-      nextFd++;
-    }
+  }
+
+  /** Les trois sources de descripteurs d'un processus, pour ce module. */
+  descriptorSourcesFor(pid: number): DescriptorSources {
+    const p = this.processMgr.get(pid);
+    return {
+      pid,
+      tty: p?.tty,
+      openFiles: p?.openFiles,
+      socketIds: (this.socketTable?.listByPid(pid) ?? []).map((s) => s.id),
+    };
   }
 
   private auditAttrs(pid: number): { loginuid: number; sessionid: number } {
@@ -4077,8 +4082,8 @@ export class LinuxCommandExecutor {
           for (const [k, [label, val]] of Object.entries(table)) {
             if (k === '-a') continue;
             // `-a` et `-u` doivent dire la même chose de la même limite.
-            const shown = k === '-u'
-              ? String(this.processMgr.nprocLimit(this.ctx().uid))
+            const shown = k === '-u' ? String(this.processMgr.nprocLimit(this.ctx().uid))
+              : k === '-n' ? String(this.processMgr.nofileLimit(this.ctx().uid))
               : val;
             lines.push(`${label} ${shown}`);
           }
@@ -4089,28 +4094,33 @@ export class LinuxCommandExecutor {
         // `ulimit` la lit au lieu d'afficher une constante à lui. Les
         // autres lignes du tableau restent décoratives, et le tableau est
         // l'endroit honnête pour le dire.
-        if (flag === '-u') {
-          const uid = this.ctx().uid;
-          const value = args[1];
-          if (value === undefined) {
-            return { output: String(this.processMgr.nprocLimit(uid)), exitCode: 0 };
+        // `-n` et `-u` sont les deux limites que le système fait vraiment
+        // respecter ; elles se règlent de la même façon, donc elles
+        // partagent le même code plutôt que deux copies qui dérivent.
+        if (flag === '-n' || flag === '-u') {
+          const isNofile = flag === '-n';
+          const uid0 = this.ctx().uid;
+          const value0 = args[1];
+          const read = () => (isNofile
+            ? this.processMgr.nofileLimit(uid0)
+            : this.processMgr.nprocLimit(uid0));
+          const hard = () => (isNofile
+            ? this.processMgr.nofileHardLimit(uid0)
+            : this.processMgr.nprocHardLimit(uid0));
+          const label = isNofile ? 'open files' : 'max user processes';
+          if (value0 === undefined) return { output: String(read()), exitCode: 0 };
+          const n0 = value0 === 'unlimited' ? Number.MAX_SAFE_INTEGER : Number(value0);
+          if (!Number.isFinite(n0) || n0 < 0) {
+            return { output: `bash: ulimit: ${value0}: invalid number`, exitCode: 1 };
           }
-          const n = value === 'unlimited' ? Number.MAX_SAFE_INTEGER : Number(value);
-          if (!Number.isFinite(n) || n < 0) {
-            return { output: `bash: ulimit: ${value}: invalid number`, exitCode: 1 };
-          }
-          // La vraie règle est soft/hard : un utilisateur non privilégié
-          // remonte sa limite SOUPLE jusqu'à la limite DURE, jamais
-          // au-delà — seul root relève la dure. C'est ce qui rend la panne
-          // réparable sans root tant qu'on n'a pas touché au plafond dur,
-          // et irréparable autrement.
-          if (uid !== 0 && n > this.processMgr.nprocHardLimit(uid)) {
+          if (uid0 !== 0 && n0 > hard()) {
             return {
-              output: 'bash: ulimit: max user processes: cannot modify limit: Operation not permitted',
+              output: `bash: ulimit: ${label}: cannot modify limit: Operation not permitted`,
               exitCode: 1,
             };
           }
-          this.processMgr.setNprocLimit(uid, n);
+          if (isNofile) this.processMgr.setNofileLimit(uid0, n0);
+          else this.processMgr.setNprocLimit(uid0, n0);
           return { output: '', exitCode: 0 };
         }
         const entry = table[flag];

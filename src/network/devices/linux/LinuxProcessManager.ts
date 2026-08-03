@@ -330,6 +330,34 @@ export class LinuxProcessManager {
     if (this.nprocLimit(uid) > limit) this.nprocLimits.set(uid, limit);
   }
 
+  /**
+   * `RLIMIT_NOFILE` — combien de descripteurs un processus peut tenir
+   * ouverts (§F9.3). 1024 est la valeur que `ulimit -n` affichait déjà,
+   * donc une machine intacte ne voit jamais la limite.
+   *
+   * Modélisée par UID comme `RLIMIT_NPROC`, et c'est une simplification
+   * assumée : la vraie limite est PAR PROCESSUS et s'hérite au fork, or ce
+   * simulateur n'a pas d'héritage de rlimits. Par UID, `ulimit -n` reste
+   * la commande qui la règle et le plafond reste opposable — ce qui change
+   * est qu'un second shell du même utilisateur voit la même valeur au lieu
+   * de sa propre copie.
+   */
+  static readonly DEFAULT_NOFILE = 1024;
+  private readonly nofileLimits = new Map<number, number>();
+  private readonly nofileHardLimits = new Map<number, number>();
+
+  nofileLimit(uid: number): number {
+    return this.nofileLimits.get(uid) ?? LinuxProcessManager.DEFAULT_NOFILE;
+  }
+
+  nofileHardLimit(uid: number): number {
+    return this.nofileHardLimits.get(uid) ?? LinuxProcessManager.DEFAULT_NOFILE;
+  }
+
+  setNofileLimit(uid: number, limit: number): void {
+    this.nofileLimits.set(uid, limit);
+  }
+
   /** `ulimit -u N` — la limite souple, celle que `fork()` consulte. */
   setNprocLimit(uid: number, limit: number): void {
     this.nprocLimits.set(uid, limit);
