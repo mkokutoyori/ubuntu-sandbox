@@ -1,0 +1,701 @@
+# PRD — Port Forwarding (toutes les couches du simulateur)
+
+**Version** : 1.0
+**Date** : 2026-08-03
+**Projet** : Ubuntu Sandbox — simulateur réseau navigateur
+**Auteur** : Claude (agent), à la demande de l'utilisateur
+**Références normatives** :
+- RFC 2663 (terminologie NAT — inside/outside local/global), RFC 5382 (exigences
+  NAT pour TCP — hairpin), RFC 5508 (traduction ICMP embarquée)
+- Comportement Cisco IOS réel (`ip nat inside source static tcp|udp`, ordre
+  d'évaluation NAT/ACL) et Huawei VRP réel (`nat server protocol tcp|udp`)
+- `iptables(8)`/`iptables-extensions(8)` (cibles `DNAT`/`SNAT`/`MASQUERADE`/
+  `REDIRECT`, table `nat`, chaînes `PREROUTING`/`POSTROUTING`), RFC 793/RFC 768
+  (checksums TCP/UDP couvrant le pseudo-header, donc sensibles à toute
+  réécriture d'adresse post-NAT)
+- Microsoft Docs — `netsh interface portproxy`
+- RFC 4254 §7 (SSH Connection Protocol — canaux `direct-tcpip`/
+  `forwarded-tcpip`, fondement protocolaire de `-L`/`-R`/`-D`)
+
+---
+
+## 0. Contexte et portée du document
+
+« Port forwarding » n'est pas une fonctionnalité unique dans ce simulateur —
+c'est une **capacité conceptuelle** (rediriger transparemment une connexion
+adressée à `<endpoint externe>` vers `<endpoint interne>`) qui existe **quatre
+fois**, sous quatre formes indépendantes, à quatre couches différentes du
+projet, chacune avec son propre moteur, sa propre CLI, ses propres tests et
+son propre niveau de maturité :
+
+| Couche | Mécanisme réel | Équipement concerné |
+|---|---|---|
+| **A. Routeur** | NAT statique orienté port (`ip nat inside source static tcp\|udp`, `nat server protocol tcp\|udp`) | `CiscoRouter`, `HuaweiRouter`, et — fait nouveau documenté ici — `HuaweiSwitch` (commutateur L3) |
+| **B. Hôte Linux** | `iptables -t nat -A PREROUTING -j DNAT --to-destination` | `LinuxPC`, `LinuxServer`, et par héritage `firewall-cisco`/`firewall-fortinet`/`firewall-paloalto` |
+| **C. Hôte Windows** | `netsh interface portproxy add v4tov4` | `WindowsPC`, `WindowsServer` |
+| **D. SSH** | `ssh -L`/`-R`/`-D` (tunnel applicatif, pas de translation réseau) | Tout client SSH (Linux/Windows/Cisco/Huawei) |
+
+Ce document remplit trois rôles à la fois :
+
+1. **Il consolide** l'analyse de l'existant pour les quatre couches en un seul
+   endroit, alors qu'elle était jusqu'ici éclatée entre quatre documents
+   distincts (`docs/PRD-NAT-Port-Forwarding.md`, `docs/PRD-Iptables-UFW.md`,
+   `docs/PRD-netsh.md`, `docs/BRD-SSH-SFTP.md`/`docs/SSH-IMPLEMENTATION-ANALYSIS.md`)
+   qui ne se citent pas mutuellement et emploient chacun le terme « port
+   forwarding » sans savoir qu'il désigne autre chose ailleurs dans le même
+   dépôt.
+2. **Il corrige** ces quatre documents là où la relecture intégrale du code
+   effectuée pour ce PRD (voir §1) a trouvé des divergences avec leurs
+   propres affirmations — notamment deux régressions silencieuses non
+   documentées ailleurs (§1.A item 1, §1.B item 1) qui font que la
+   fonctionnalité, telle que câblée aujourd'hui, **ne délivre pas réellement
+   le trafic** dans le cas le plus courant (redirection de port
+   gateway→serveur interne), alors que la CLI, les compteurs et les tables
+   d'affichage donnent l'illusion du contraire.
+3. **Il planifie** la remédiation des quatre couches dans un seul programme
+   séquencé par sévérité et par risque, plutôt que quatre chantiers isolés
+   qui se chevaucheraient sur les mêmes fichiers (`Router.ts`, `EndHost.ts`)
+   sans coordination.
+
+**Méthode** : chaque affirmation de ce document a été vérifiée par lecture
+directe du fichier et du numéro de ligne cité au moment de la rédaction
+(2026-08-03, après fusion de `origin/mandeng` jusqu'au commit `36b19e5b`) —
+pas seulement reprise des PRDs préexistants. Là où un PRD préexistant est
+encore exact, ce document le dit et ne duplique pas son détail ; là où il
+s'est révélé stale ou incomplet, ce document l'indique explicitement avec la
+divergence trouvée.
+
+**Hors périmètre, explicitement** (repris/étendu §2.9) : syntaxe native
+ASA/FortiOS/PAN-OS pour `firewall-cisco/fortinet/paloalto` (déjà tracké comme
+chantier séparé, non borné — voir `CLAUDE.md` sur `DeviceFactory.ts`) ; NAT64
+et ALG SIP (`GAP.md` §4.10, hors ALG FTP déjà réel) ; parité byte-exact
+IPv6/NAT66 au-delà de ce qui existe déjà (`ip6tables-nat66-prerouting.test.ts`,
+propriété de `docs/PRD-Iptables-UFW.md`) ; X11/agent forwarding SSH,
+`UDP ASSOCIATE`/`BIND` du SOCKS5 dynamique (déjà noté mineur dans `GAP.md`
+§7.3) ; routage IP natif inter-cartes façon RRAS/ICS côté Windows (une
+capacité distincte de `portproxy`, qui est un relais applicatif et n'en a pas
+besoin — voir §1.C).
+
+---
+
+## 1. Analyse de l'existant
+
+### 1.A Routeurs Cisco/Huawei (+ commutateur L3 Huawei) — NAT statique orienté port
+
+**Document préexistant** : `docs/PRD-NAT-Port-Forwarding.md` (v1.0,
+2026-07-08) documente déjà en détail ce sous-système, confirmé toujours
+d'actualité sur l'essentiel par cette relecture (`NATEngine.ts` est passé de
+899 à 1084 lignes depuis, sans changement structurel sur les points qu'il
+couvre). Ce document ne le republie pas — il en reprend les items encore
+ouverts dans son plan (§3) et ajoute **un défaut critique que ni ce PRD ni
+l'audit `docs/audit/02-protocoles-L3-routage.md` (2026-07-22) ne
+mentionnent**.
+
+**Ce qui est réel et solide** (confirmé) : `NATEngine.ts` implémente NAT
+statique 1:1, NAT statique réseau/offset, **NAT statique orienté port**
+(`NatStaticEntry.protocol/localPort/globalPort`), PAT/overload dynamique,
+pool dynamique, hairpin (RFC 5382 §5), réécriture ICMP embarquée (RFC 5508
+§3), pinhole ALG FTP, timeouts par protocole, machine à états TCP, compteurs
+hit/miss. Les CLI Cisco (`ip nat inside source static tcp|udp`,
+`CiscoNATCommands.ts:95-127`) et Huawei (`nat server protocol tcp|udp`,
+`HuaweiNATCommands.ts:82-104`) sont toutes deux réellement branchées sur ce
+moteur, y compris la variante `interface <if> <port>` côté Cisco.
+
+**Défaut critique nouvellement identifié — la voie retour d'une redirection
+de port n'est jamais traduite.** `NATEngine.translateOutbound()` exclut
+explicitement toute entrée statique porteuse d'un `protocol` :
+
+```ts
+// NATEngine.ts:523-524
+for (const entry of this.staticEntries) {
+  if (entry.protocol) continue;
+```
+
+Tracé complet du chemin d'un paquet retour (serveur interne → client
+externe) à travers `Router.processIPv4()`/`forwardPacket()` :
+`translateInbound()` ne matche rien (la destination est le client externe,
+pas une adresse globale NATée) → la route résout vers l'interface outside →
+`isHairpin` est correctement `false` → `translateOutbound()` est appelé →
+la boucle des entrées statiques **saute** l'entrée de port-forwarding
+concernée à cause du `continue` ci-dessus. Deux issues, toutes deux
+incorrectes :
+- **Si une règle PAT/overload coexiste sur la même interface outside**
+  (le cas dans tous les labs de test existants — `scenario-cisco-port-forwarding.test.ts:84`,
+  `scenario-cisco-nat-static-multi-port-forward.test.ts:71-91`), le paquet
+  retour tombe dans la boucle des règles dynamiques et se fait re-PATer vers
+  un **port éphémère aléatoire** au lieu du port public attendu par le
+  client — la réponse arrive d'un port source que le client ne reconnaît
+  pas.
+- **Si aucune règle PAT n'existe**, `translateOutbound()` renvoie `null` et
+  — `forwardPacket()` ne conditionnant pas la suite au succès du NAT — le
+  paquet part avec l'**adresse privée RFC 1918 non traduite** de l'hôte
+  interne, une fuite d'adressage sur le WAN.
+
+Dans les deux cas, **la connexion ne peut jamais se terminer côté client
+externe** : la redirection de port, telle que câblée aujourd'hui, ne fait
+que la moitié DNAT du travail. Ceci est corroboré indépendamment par le
+commentaire d'en-tête de `ftp-alg-nat.test.ts:1-12`, qui admet qu'un
+`TcpStack.connect()` réel routé à travers un `Router` NATé reste bloqué en
+`'syn-sent'`, sans aucun code FTP/ALG impliqué — un gap préexistant, pas
+introduit par ce constat, mais dont ce document identifie ici la cause
+précise pour le cas port-forwarding. Aucun test existant ne peut détecter ce
+défaut : les assertions de connectivité des labs (`nc -zv <ip-publique>
+<port>`) résolvent l'adresse publique directement vers le routeur lui-même
+via `findHostByAddress()`, sans jamais emprunter le vrai chemin paquet.
+
+**Items déjà documentés par `PRD-NAT-Port-Forwarding.md`, toujours ouverts**
+(confirmés par cette relecture, cf. `Router.ts:1515-1529` pour l'entrant et
+`Router.ts:1975-1997` pour le sortant) :
+1. Ordre d'évaluation NAT/ACL inversé par rapport à l'IOS réel dans les deux
+   sens (Majeure — confirmé toujours présent, y compris re-confirmé par
+   l'audit `02-protocoles-L3-routage.md` du 2026-07-22, postérieur au PRD).
+2. Couverture de test bout-en-bout insuffisante (Moyenne).
+3. Asymétrie de couverture Huawei en topologie réelle (Moyenne).
+4. `ip nat outside source static` décorative (Mineure).
+5. `clear ip nat translation`/`reset nat session` filtrés purgent tout au
+   lieu de filtrer sélectivement (Mineure — confirmé, `CiscoNATCommands.ts:539-589`,
+   `HuaweiNATCommands.ts:247-259`).
+6. `ip nat inside source route-map` décorative (Mineure).
+7. `nat dns-map`/`nat static enable` (Huawei) décoratives (Mineure).
+8. Aucune session dédiée par connexion redirigée (Mineure).
+
+**Nouvel équipement à couvrir — le commutateur L3 Huawei a un NAT
+entièrement décoratif.** `HuaweiSwitch.ts:29-30` instancie sa propre
+`NATEngine` (`private readonly natEngine = new NATEngine();
+_getNATEngine()`), et `HuaweiSwitchShell.ts` expose `nat server`/`nat
+static`/`display nat ...` dessus (`_getNATEngine()` référencé à la ligne
+3105-3106). Mais **rien dans `Switch.ts` n'appelle jamais
+`translateInbound()`/`translateOutbound()`** — confirmé par grep exhaustif :
+le seul usage de `_getNATEngine()` côté commutateur est dans les commandes
+`display`. Configurer `nat server`/`nat static` sur un commutateur L3 Huawei
+aujourd'hui s'affiche, se stocke, mais **ne traduit jamais un seul paquet** —
+un gap plus sévère que celui du routeur (qui fait au moins correctement la
+moitié DNAT). Ni `PRD-NAT-Port-Forwarding.md` ni l'audit L3 ne mentionnent ce
+cas puisqu'ils sont scopés au routeur ; c'est une découverte propre à ce
+document.
+
+Côté Cisco, aucun commutateur L3 n'a de `NATEngine` — cohérent, non
+revendiqué nulle part, pas un gap.
+
+### 1.B Hôtes Linux (`LinuxPC`/`LinuxServer`) et pare-feux stub — `iptables -j DNAT`
+
+**Document préexistant** : `docs/PRD-Iptables-UFW.md` (v1.0, 2026-07-07)
+couvre le moteur `iptables`/`ip6tables`/`ufw` dans son ensemble ; sa seule
+mention directe de la fidélité DNAT (§ Phase 2, cité intégralement) est plus
+étroite et moins sévère que ce que cette relecture a trouvé :
+
+> « Limite découverte pendant les tests, partagée avec IPv4 : un DNAT vers
+> une seconde adresse possédée par le même hôte ne produit pas une
+> connexion TCP cohérente de bout en bout, faute de un-NAT/conntrack sur le
+> chemin de retour... Non corrigé ici (hors périmètre de ce PRD,
+> nécessiterait un moteur de conntrack de retour pour les deux familles). »
+
+Cette limite (mêmes-hôte, pas de un-NAT sur la réponse) est réelle et reste
+d'actualité, mais elle **suppose implicitement que la connexion arrive
+jusque-là** — ce qui n'est pas le cas, pour une raison plus fondamentale que
+ce passage ne mentionne pas (voir bugs A/B ci-dessous).
+
+**Ce qui est réel et solide** (confirmé) : `LinuxIptablesManager.ts`
+(1424 lignes) modélise fidèlement les 4 tables/chaînes natives de netfilter
+(`filter`{`INPUT`,`FORWARD`,`OUTPUT`}, `nat`{`PREROUTING`,`INPUT`,`OUTPUT`,
+`POSTROUTING`}, `mangle`, `raw`), parse `-j DNAT --to-destination`, `-j SNAT
+--to-source`, `-j MASQUERADE`, `-j REDIRECT --to-port`. Le branchement dans
+le plan de données est réel : `EndHost.ts:1745-1759` (PREROUTING, avant le
+choix local/forward) et `EndHost.ts:1822-1899`/`forwardIPv4` (chaîne
+FORWARD puis POSTROUTING pour MASQUERADE/SNAT). `ip_forward` (`sysctl
+net.ipv4.ip_forward=1`) est un vrai gate testé de bout en bout pour l'ICMP
+(`linux-gateway-forwarding.test.ts` — ping/traceroute réels à travers un
+`LinuxServer` passerelle), et n'est pas limité à `Router.ts` : tout
+`LinuxPC`/`LinuxServer` en hérite via `EndHost.ts:341-342`.
+
+**Bug A (nouveau, non documenté ailleurs) — le port n'est jamais réécrit,
+seule l'IP l'est.** `--to-destination`/`--to-source` sont parsés et stockés
+sous forme `"ip:port"` intacte, mais uniquement la partie IP est jamais
+consommée :
+
+```ts
+// EndHost.ts:1751 (PREROUTING)
+const newDst = new IPAddress(preNat.address.split(':')[0]);   // le port est jeté
+```
+```ts
+// EndHost.ts:1864-1868 (POSTROUTING/forward, SNAT et DNAT)
+} else if (natResult.action === 'SNAT' && natResult.address) {
+  try { srcIP = new IPAddress(natResult.address.split(':')[0]); } catch {}
+} else if (natResult.action === 'DNAT' && natResult.address) {
+  try { dstIP = new IPAddress(natResult.address.split(':')[0]); } catch {}
+}
+```
+Aucun consommateur de `.split(':')[1]` n'existe nulle part dans
+`src/network` (grep exhaustif). Concrètement : `iptables -t nat -A
+PREROUTING -p tcp --dport 8080 -j DNAT --to-destination 192.168.1.10:80`
+réécrit bien la destination vers `192.168.1.10`, mais le paquet arrive
+toujours adressé au **port 8080**, pas 80 — le cas d'usage le plus commun
+d'un port-forward Linux (« exposer le port interne 80 sous le port externe
+8080 ») échoue silencieusement à remapper le port.
+
+**Bug B (nouveau, non documenté ailleurs, plus sévère) — le checksum L4
+n'est jamais recalculé après réécriture, cassant silencieusement toute
+connexion DNATée.** Seul `headerChecksum` (IPv4) est recalculé aux deux
+points de réécriture ci-dessus ; le `checksum` TCP/UDP de la charge utile
+n'est jamais touché. Or ce checksum couvre l'adresse IP via le
+pseudo-header (RFC 793/RFC 768) :
+
+```ts
+// tcp/types.ts:168-175
+export function computeTcpChecksum(seg: TcpSegment, srcIp: string, dstIp: string): number {
+  ...
+  pushPseudoHeader(words, srcIp, dstIp, IP_PROTO_TCP_NUMBER, tcpLen);
+```
+
+et la vérification côté récepteur se fait contre les adresses **réelles
+post-réécriture** du paquet reçu :
+
+```ts
+// TcpStack.ts:584-605
+private handleSegment(senderIp, dstIp, seg) {
+  if (!verifyTcpChecksum(seg, senderIp, dstIp)) {
+    this.dropped(senderIp, seg.sourcePort, 'bad-checksum');
+    return true;   // silencieusement rejeté, RFC 9293 §3.1
+  }
+```
+
+Chaque segment réel porte un checksum authentique calculé contre
+l'adresse **pré-NAT** au moment de sa création (`TcpStack.ts:1220,1271`). Un
+checksum réel ne validera pas par coïncidence contre une adresse différente
+de celle utilisée pour le calculer. **Conséquence : le tout premier SYN de
+toute connexion TCP DNATée — et tout datagramme UDP porteur d'un checksum
+réel non nul — est silencieusement rejeté comme `bad-checksum` avant même
+d'atteindre l'application.** Le même mécanisme s'applique côté UDP
+(`verifyUdpChecksum`, `EndHost.ts:2570`, `Router.ts:1797`). Autrement dit :
+**le port-forwarding via `iptables -j DNAT` sur un hôte Linux ne fonctionne
+aujourd'hui pour aucun trafic TCP/UDP réel**, un défaut plus fondamental que
+la limite same-host déjà documentée par `PRD-Iptables-UFW.md` (celle-ci
+suppose une connexion qui arrive à son terme ; ici, elle n'y arrive jamais).
+Aucun test existant ne le détecte : `linux-iptables.test.ts` (1261 lignes)
+teste `evaluateNat()` au niveau moteur avec des `PacketInfo` synthétiques ou
+au niveau texte CLI, jamais un vrai `IPv4Packet` porteur d'un payload
+TCP/UDP à travers `forwardIPv4`/`handleIPv4` sur des hôtes réellement câblés.
+
+**Défauts secondaires confirmés** :
+- `-j REDIRECT --to-port` est parsé/affiché/persisté (`iptables-save`) mais
+  n'a **aucun consommateur** dans le plan de données (grep confirmé : seuls
+  `'MASQUERADE'`/`'SNAT'`/`'DNAT'` sont testés dans `EndHost.ts`) — mort.
+- Les chaînes `INPUT`/`OUTPUT` de la table `nat` existent structurellement
+  (créables, listables) mais `evaluateNat()` n'est jamais appelé avec ces
+  deux hooks nulle part dans le code — pur décor CLI pour ces deux chaînes
+  précises (`PREROUTING`/`POSTROUTING` sont, elles, réellement consultées).
+
+**Équipement** : `firewall-cisco`/`firewall-fortinet`/`firewall-paloalto`
+sont toujours des `LinuxPC` littéraux (`DeviceFactory.ts:63-68`, item #46 du
+suivi CLAUDE.md, inchangé). Un « pare-feu » peut donc aujourd'hui être
+configuré comme boîtier DNAT via de simples commandes Linux, mais hérite des
+bugs A/B ci-dessus, et n'a aucune syntaxe native ASA/FortiOS/PAN-OS (`object
+network`, `config firewall vip`, règles de zone) — confirmé, aucune classe
+de ce type n'existe.
+
+### 1.C Windows (`WindowsPC`/`WindowsServer`) — `netsh interface portproxy`
+
+**Documents préexistants** : `docs/PRD-netsh.md` (2026-07-06) et
+`docs/PRD-Windows-Server.md` qualifient tous deux ce sous-système de
+« solide »/« OK », et `GAP.md` §9.5 le cite en exemple positif d'architecture
+réactive — **les trois caractérisations reposent uniquement sur la
+visibilité `netstat`/`ss`, sans distinguer cela d'un relais de trafic réel.
+Ce PRD corrige cette caractérisation.**
+
+**Ce qui est réel** : CRUD complet (`PortProxyRule.ts`, `PortProxyTable.ts`),
+branché aux deux CLI (`netsh interface portproxy` dans `WinNetsh.ts:495-587`,
+et via le même `cmdNetsh()` depuis le shim natif PowerShell), rendu texte
+fidèle au format réel, événements bus (`windows.portproxy.added/removed`)
+consommés par le journal d'événements Windows (IDs réels 5159/5160).
+`PortProxySocketProjection.ts` fait apparaître le port d'écoute dans
+`netstat -an`/`ss -tln` en liant une entrée dans `SocketTable`.
+
+**Ce qui n'existe pas du tout : aucun relais de données.**
+`PortProxySocketProjection.onAdded()` ne fait que `SocketTable.bind()` — une
+pure comptabilité, sans I/O attaché. Une recherche exhaustive de
+`connectAddress`/`connectPort` (les champs qu'il faudrait consulter pour
+rediriger une connexion) ne trouve de références que dans les cinq fichiers
+de définition de la règle elle-même — rien dans le chemin de traitement de
+paquets de `WindowsPC.ts`, dans `SocketTable.ts`, ou dans une quelconque
+logique d'acceptation de connexion TCP. `handlePortproxyAddSet` se contente
+d'ajouter la règle à la table et de retourner (comme le vrai `netsh` sans
+sortie). **Configurer un `portproxy` aujourd'hui rend le port visible dans
+`netstat`, mais aucune donnée n'est jamais réellement acheminée entre
+`listenaddress:listenport` et `connectaddress:connectport`.**
+
+**Pas de routage IP inter-cartes non plus** : `ipForwardEnabled`
+(`EndHost.ts:341-342`) n'est mis à `true` que par `LinuxMachine.ts` (le
+handler `sysctl net.ipv4.ip_forward`) — grep exhaustif : exactement ces
+trois occurrences dans tout le dépôt, aucune côté Windows. `WindowsPC`
+hérite de `EndHost` sans jamais redéfinir ce champ ni sa méthode
+`forwardIPv4`. Un `WindowsPC`/`WindowsServer` multi-cartes se comporte donc
+comme un hôte Linux à `ip_forward=0` en permanence. Ceci n'est pas un défaut
+en soi pour `portproxy` spécifiquement — le vrai `netsh interface portproxy`
+de Windows est un **relais applicatif** (façon `socat`) qui n'a justement
+pas besoin de routage IP pour fonctionner — mais cela signifie que la bonne
+architecture de correctif est un relais niveau socket (accepter une
+connexion, en ouvrir une seconde vers la cible réelle, faire circuler les
+octets), pas un branchement sur un hypothétique routage IP Windows.
+
+Le pare-feu Windows (`netsh advfirewall`/`New-NetFirewallRule`) est, lui,
+un moteur réel et branché sur le chemin `in`/`out` (`WindowsPC.firewallFilter()`,
+lignes 4907-4950) — mais son `dirMatch` ne connaît que `'Inbound'`/`'Outbound'` ;
+un hypothétique trafic `'forward'` (relayé) obtiendrait toujours `accept`,
+ce qui est cohérent avec l'absence totale de relais aujourd'hui mais devra
+être révisé si la Phase 7 (§3) introduit un vrai relais applicatif.
+
+**Test existant** : `windows-port-forwarding.test.ts` (120 lignes) couvre
+CRUD + visibilité `netstat` uniquement — aucune assertion sur un octet
+réellement relayé.
+
+### 1.D SSH — redirection de port (`-L`/`-R`/`-D`)
+
+**Documents préexistants, contradictoires entre eux** :
+- `docs/BRD-SSH-SFTP.md` (v1.1, 2026-05-05), §3.3 : « SSH port forwarding
+  (-L/-R/-D) | Hors scope v1, à réévaluer ».
+- `docs/SSH-IMPLEMENTATION-ANALYSIS.md` (2026-05-08, trois jours plus tard)
+  affirme **simultanément**, dans le même document, que la fonctionnalité
+  est livrée (§1.11/§1.12/§1.16, rayée comme résolue dans son plan de
+  remédiation §5 ligne 377) **et** qu'elle est totalement absente (§3.1
+  ligne 309 : « Aucun support de -L/-R/-D... » ; §3.5 ligne 335 :
+  `| ssh -L/-R/-D | absent |`).
+- `docs/tutoriel-ssh.md` (ligne 36, orienté utilisateur) affirme encore
+  aujourd'hui que « le port forwarding (-L, -R, -D) » n'est « pas modélisé ».
+- `GAP.md` §7.3 qualifie les forwarders de « pedagogical stub » qui « ouvrent
+  un canal d'exécution lançant `nc <host> <port>` côté distant » — rated
+  Mineure, « RAS fonctionnellement ».
+
+**Aucune de ces quatre caractérisations n'est exacte.** La réalité,
+confirmée par lecture directe du code : deux implémentations indépendantes
+et non interopérantes existent, ni l'une ni l'autre ne relaie réellement des
+octets applicatifs de bout en bout — mais toutes deux ont un effet réel
+partiel (listeners réels, poignée de main SOCKS5 réelle, politique serveur
+réelle selon le chemin).
+
+**Chemin 1 — terminal interactif** (`LinuxTerminalSession.ts` +
+`SshLocalForwarder`/`SshRemoteForwarder`/`SshDynamicForwarder`) : `-L`/`-R`/
+`-D`, `-o LocalForward=`/`RemoteForward=`/`DynamicForward=` sont parsés
+(`sshArgs.ts:113-290`) et ouvrent de vrais listeners TCP sur le `TcpStack`
+simulé. Le `-D` fait une **vraie** poignée de main SOCKS5 (salutation,
+parsing CONNECT IPv4/domaine/IPv6). Mais le pontage d'octets, sur les trois
+forwarders, passe par un canal `exec` **jamais invoqué** — le commentaire du
+code lui-même l'admet sans ambiguïté :
+
+```ts
+// SshLocalForwarder.ts:89-96 (identique dans SshRemoteForwarder.ts:82-86, SshDynamicForwarder.ts:131-135)
+// Known gap: `ISshExecChannel` only exposes the one-shot `execute()`
+// result protocol, not a continuous stream — this bridge was never
+// wired to actually pump bytes (matches `execute()` never being called
+// here either, so the remote `nc` is never even invoked yet).
+```
+
+Ceci contredit directement `GAP.md` §7.3, qui décrit ce chemin comme
+« ouvrant un canal lançant `nc` côté distant » comme si cela se produisait
+réellement — le commentaire du code dit l'inverse : `execute()` n'est jamais
+appelé du tout sur ce chemin.
+
+**Chemin 2 — `executeCommand`** (`LinuxSshClient.ts` +
+`SshPortForward.ts`/`SshForwardingTable.ts`, utilisé par
+`LinuxPC`/`LinuxServer` et réutilisé par les shells Cisco/Huawei pour `ssh`
+sortant) : politique serveur réelle et riche (`AllowTcpForwarding`
+y compris blocs `Match`, `GatewayPorts`, `PermitOpen`, `no-port-forwarding`
+par clé `authorized_keys`), visibilité réelle dans `SocketTable`
+(`ss`/`netstat`). Mais son propre commentaire de module est sans ambiguïté :
+
+```ts
+// SshPortForward.ts:11-14
+// The simulator does not carry real bytes through the tunnel; it
+// reproduces the *observable* surface a tutorial cares about...
+```
+
+L'apparence de fonctionnement de bout en bout dans certains tests vient d'un
+**raccourci spécifique** : `runSshClient`/`nc` (`LinuxSshClient.ts:762-771`,
+`Nc.ts:168-195`), lorsqu'on les pointe vers `127.0.0.1:<port redirigé>`,
+consultent eux-mêmes la table de forwarding et re-composent directement vers
+la vraie destination — **seules ces deux commandes bénéficient de ce
+raccourci**, aucune autre (`curl`, sockets brutes, un navigateur via `-D`)
+n'en profiterait.
+
+**Aucun type de canal `direct-tcpip`/`forwarded-tcpip` (RFC 4254 §7) n'existe
+nulle part** : `ChannelType` est une union fermée `'shell' | 'exec' |
+'sftp'` (`ISshChannel.ts:10`). Le forwarding n'est donc pas construit *à
+travers* l'abstraction de canal SSH — il est accolé à côté d'elle.
+
+**Aucun support `LocalForward`/`RemoteForward`/`DynamicForward` dans
+`~/.ssh/config`** (`SshConfig.ts`'s `SshHostEntry` : `host`, `hostName`,
+`user`, `port`, `identityFile`, `strictHostKeyChecking`,
+`hashKnownHosts` — rien d'autre), cohérent avec le scope annoncé par le BRD.
+
+**Ce clivage n'est pas un accident** : `docs/audit/03-transport-services.md`
+documente une « double pile SSH » plus large pour le cas interactif en
+général et recommande de l'unifier — un chantier déjà suivi séparément dans
+ce projet (voir la tâche de suivi correspondante). Le forwarding en a hérité
+la duplication, chaque pile avec son propre schéma de config serveur
+(`SshSshdConfig` vs `SshdServerConfig`) et sans connaissance l'une de
+l'autre.
+
+**Tests existants** : `ssh-lan-localforward.test.ts`,
+`ssh-lan-remoteforward.test.ts`, `ssh-lan-dynamicforward.test.ts` (parsers +
+cycle de vie des listeners + octets bruts SOCKS5 pour `-D`),
+`ssh-permit-open.test.ts`, `ssh-match-block-effective.test.ts`,
+`linux-lan-ssh-suite.test.ts` (§33), `cross-equipment-ssh-suite.test.ts`
+(§14), `cross-vendor-ssh-domain.test.ts` — riches sur le parsing/la
+politique/la visibilité socket, **aucun n'affirme qu'un payload applicatif
+réel traverse une connexion tunnelée**.
+
+---
+
+## 2. Objectifs
+
+Chaque objectif précise la ou les couches concernées et, pour les
+équipements, quels types sont affectés. Les items 2.10-2.13 délimitent
+explicitement le hors-périmètre pour éviter toute ambiguïté entre un gap non
+traité et un oubli.
+
+1. **[Routeur, Critique] Corriger la voie retour d'une redirection de port.**
+   `NATEngine.translateOutbound()` doit traduire la voie retour des entrées
+   statiques orientées port exactement comme elle traduit déjà les entrées
+   1:1/réseau — sans quoi la fonctionnalité ne délivre jamais réellement
+   une connexion (§1.A).
+2. **[Routeur, Majeur] Corriger l'ordre d'évaluation NAT/ACL** — reprend tel
+   quel l'objectif 1 de `PRD-NAT-Port-Forwarding.md`, toujours ouvert.
+3. **[Routeur, Moyen] Couverture bout-en-bout réelle Cisco et Huawei** —
+   reprend les objectifs 2/3 de `PRD-NAT-Port-Forwarding.md` ; l'objectif 1
+   ci-dessus impose de toute façon un vrai test de livraison pour être
+   validé, donc ce travail est en grande partie un sous-produit de
+   l'objectif 1 plutôt qu'un chantier séparé.
+4. **[Routeur, Mineur] Commandes de maintenance sélectives** (`clear`/`reset`
+   filtrés) — reprend l'objectif 4 de `PRD-NAT-Port-Forwarding.md`.
+5. **[Routeur, Mineur] `ip nat outside source static` réellement appliquée**
+   — reprend l'objectif 5 de `PRD-NAT-Port-Forwarding.md`.
+6. **[Commutateur L3 Huawei, Majeur — nouveau] Brancher le `NATEngine` du
+   commutateur sur son plan de données.** `HuaweiSwitch`/`Switch.ts` doivent
+   appeler `translateInbound()`/`translateOutbound()` exactement comme
+   `Router.ts` le fait déjà, en réutilisant le moteur existant sans
+   réinvention — aujourd'hui `nat server`/`nat static` sur un commutateur L3
+   Huawei sont purement décoratifs (§1.A).
+7. **[Hôte Linux, Critique — nouveau] Corriger le DNAT/SNAT Linux : réécrire
+   le port ET recalculer les checksums L3+L4.** Sans ce correctif, aucun
+   trafic TCP/UDP réel ne traverse une redirection `iptables -j DNAT`
+   (§1.B, bugs A+B). C'est le défaut de plus grand impact fonctionnel de
+   tout ce programme : il casse silencieusement la totalité du cas d'usage
+   « exposer un service interne via un hôte/pare-feu Linux ».
+8. **[Hôte Linux, Mineur] Documenter/décider du sort de `-j REDIRECT`** et
+   des chaînes `INPUT`/`OUTPUT` de la table `nat`, aujourd'hui du pur décor
+   CLI (§1.B) — cas d'usage rare en topologie pédagogique, décision de
+   conception à trancher en revue détaillée plutôt qu'à câbler par défaut.
+9. **[Hôte Windows, Moyen] Construire un vrai relais applicatif pour
+   `netsh interface portproxy`.** Corriger la caractérisation « solide » des
+   PRDs existants — aujourd'hui aucune donnée ne circule (§1.C). Le relais
+   doit être un vrai pont niveau socket (accepter au `listenaddress:port`,
+   composer une seconde connexion réelle vers `connectaddress:port`, faire
+   circuler les octets), pas un branchement sur un routage IP Windows
+   inexistant.
+10. **[SSH, Grand chantier] Donner un vrai canal de transport à UNE des deux
+    piles de forwarding.** Recommandation : le chemin `executeCommand`/
+    `LinuxSshClient.ts`, seul réellement exercé par tous les vendors
+    aujourd'hui. Remplacer le raccourci `ssh`/`nc`-spécifique par un vrai
+    canal `direct-tcpip`/`forwarded-tcpip` (RFC 4254 §7) qui relaie
+    effectivement les octets entre le socket local et
+    `destHost:destPort` réel, via `TcpStack`/`SocketTable` déjà réels.
+    **Dépendance explicite** : ce travail chevauche le chantier séparé
+    « unifier les deux piles SSH cross-vendor », déjà suivi ailleurs dans ce
+    projet — à séquencer ou coordonner, pas à dupliquer en silence.
+11. **[Documentation, Mineur] Réconcilier les quatre documents contradictoires
+    identifiés en §1** : `GAP.md` §4.10 (ALG FTP maintenant réel, note
+    obsolète), `GAP.md` §7.3 (description du canal `nc` ne correspond pas au
+    code actuel), `docs/PRD-netsh.md`/`docs/PRD-Windows-Server.md`
+    (caractérisation « solide » de `portproxy` à corriger une fois
+    l'objectif 9 traité, ou à nuancer immédiatement sinon),
+    `docs/BRD-SSH-SFTP.md`/`docs/SSH-IMPLEMENTATION-ANALYSIS.md`/
+    `docs/tutoriel-ssh.md` (statut du forwarding SSH), `docs/roadmap.md`
+    (généré 2026-03-25, entièrement stale sur NAT/PAT — à ne plus utiliser
+    comme source de gap sans vérification).
+12. **[Hors périmètre] Syntaxe native ASA/FortiOS/PAN-OS.** Non traité ici —
+    chantier séparé, non borné, déjà noté dans `CLAUDE.md`.
+13. **[Hors périmètre] NAT64, ALG SIP, parité IPv6/NAT66 byte-exact,
+    X11/agent forwarding SSH, `UDP ASSOCIATE`/`BIND` SOCKS5, routage IP
+    natif inter-cartes Windows.** Chacun déjà noté ou hors scope ailleurs
+    (§0).
+
+---
+
+## 3. Plan de remédiation détaillé
+
+L'ordre suit la sévérité du défaut (silencieux et non détecté par les tests
+existants en premier) puis le rayon d'impact (code partagé par tout le
+trafic routé/switché/reçu avant le code spécifique au NAT).
+
+### Phase 1 — Routeur : voie retour d'une redirection de port (objectif 1)
+
+- **Fichiers touchés** : `NATEngine.ts` (`translateOutbound()`, retirer
+  l'exclusion `if (entry.protocol) continue;` et lui faire consulter les
+  entrées orientées port symétriquement à `translateInbound()` — traduire
+  la source, pas la destination, en miroir de `rewriteDestIP`).
+- **Tests** : nouveau test bout-en-bout — topologie avec un hôte interne
+  exécutant un vrai service à l'écoute sur le port interne, redirection
+  Cisco (`ip nat inside source static tcp`) **avec une règle overload
+  coexistante** (le cas réel des labs existants), connexion initiée depuis
+  un hôte extérieur, assertion sur la réponse effectivement reçue par le
+  client — pas seulement un compteur de hits. Variante sans règle overload
+  coexistante (vérifier qu'il n'y a plus de fuite d'adresse privée).
+  Variante Huawei (`nat server`) miroir. Ceci ferme en grande partie
+  l'objectif 3 (couverture bout-en-bout) au passage.
+
+### Phase 2 — Routeur : ordre d'évaluation NAT/ACL (objectif 2)
+
+- Reprend telle quelle la conception détaillée de
+  `PRD-NAT-Port-Forwarding.md` §3 Phase 1 : réordonner `Router.processIPv4()`
+  pour que l'ACL entrante voie le paquet pré-DNAT et que l'ACL sortante voie
+  le paquet post-SNAT.
+- **Tests** : nouveau fichier `nat-acl-evaluation-order.test.ts` (déjà
+  spécifié par le PRD existant) + régression complète des suites NAT/ACL/
+  routage de base (§4).
+
+### Phase 3 — Routeur : couverture Huawei + maintenance sélective + `outside static` (objectifs 3-5)
+
+- Reprend les Phases 2b/3/4 de `PRD-NAT-Port-Forwarding.md` §3, non
+  dupliquées ici en détail — dépendance vers la Phase 1 uniquement au sens
+  where l'infrastructure de test e2e construite en Phase 1 est directement
+  réutilisable pour la Phase 2b Huawei.
+
+### Phase 4 — Commutateur L3 Huawei : brancher le NAT sur le plan de données (objectif 6)
+
+- **Fichiers touchés** : `HuaweiSwitch.ts` (ou `Switch.ts` si le point
+  d'entrée IPv4 y est partagé — à trancher en conception détaillée par
+  lecture du chemin de traitement de trame L3 du commutateur), appel à
+  `natEngine.translateInbound()`/`translateOutbound()` au même point que
+  `Router.processIPv4()` le fait.
+- **Tests** : nouveau fichier — topologie commutateur L3 Huawei avec `nat
+  server`/`nat static`, vérification qu'un paquet réel est traduit (miroir
+  du test créé en Phase 1, sur un commutateur plutôt qu'un routeur).
+
+### Phase 5 — Hôte Linux : réécriture de port + recalcul des checksums (objectif 7)
+
+- **Fichiers touchés** : `EndHost.ts` (les deux points de réécriture,
+  PREROUTING ligne ~1749-1759 et POSTROUTING/forward ligne ~1856-1868) :
+  parser complètement `ip:port` (pas seulement l'IP), et après toute
+  réécriture d'adresse et/ou de port, recalculer `headerChecksum` (déjà
+  fait) **et** le checksum TCP/UDP de la charge utile via
+  `computeTcpChecksum`/`computeUdpChecksum` déjà réels et réutilisables.
+  Évaluer en conception détaillée si un petit helper partagé (« réécrire
+  dest/src ip+port et recalculer L3+L4 ») est justifié entre les deux points
+  d'appel plutôt que de dupliquer la logique — sans sur-ingénierie au-delà
+  de ce que ces deux call sites exigent réellement.
+- **Tests** : nouveau fichier — vraie topologie (client externe, passerelle
+  Linux avec `iptables -t nat -A PREROUTING ... -j DNAT
+  --to-destination <ip>:<port-différent>`, serveur interne réellement à
+  l'écoute), TCP et UDP, assertion sur la réponse reçue par le client
+  externe. Cas supplémentaire : port externe différent du port interne
+  (le cas que Bug A casse spécifiquement).
+
+### Phase 6 — Hôte Linux : `-j REDIRECT` et chaînes `nat` INPUT/OUTPUT (objectif 8)
+
+- **Décision de conception à trancher avant le code** : câbler `REDIRECT`
+  (probable réutilisation du chemin DNAT existant vers l'adresse locale) ou
+  le documenter explicitement comme non câblé (mineur, cas d'usage de proxy
+  transparent rare en topologie pédagogique) — même choix de portée que
+  `PRD-NAT-Port-Forwarding.md` a fait pour `route-map`/`dns-map`. Pas de
+  travail de code proposé tant que cette décision n'est pas prise.
+
+### Phase 7 — Windows : relais applicatif réel pour `portproxy` (objectif 9)
+
+- **Fichiers touchés** : `PortProxySocketProjection.ts` (étendre pour ouvrir
+  un vrai listener acceptant des connexions, pas seulement un enregistrement
+  `SocketTable`) ou nouveau fichier dédié — relais bidirectionnel entre la
+  connexion acceptée à `listenaddress:listenport` et une connexion réelle
+  composée vers `connectaddress:connectport`, en réutilisant `TcpStack`.
+- **Tests** : nouveau fichier — connexion réelle au listener, assertion que
+  les données arrivent à un serveur réellement à l'écoute à l'adresse de
+  connexion, et réciproquement pour la réponse.
+
+### Phase 8 — SSH : canal de transport réel pour une pile de forwarding (objectif 10)
+
+- **Fichiers touchés** : nouveau type de canal (extension de `ChannelType`
+  ou canal dédié `direct-tcpip`), retrait du raccourci `ssh`/`nc`-spécifique
+  dans `LinuxSshClient.ts`/`Nc.ts` au profit d'un vrai relais bidirectionnel
+  branché sur `SshForwardingTable.ts`.
+- **Pré-requis explicite** : vérifier l'état du chantier séparé
+  d'unification des deux piles SSH avant de démarrer, pour éviter un travail
+  dupliqué ou en conflit — ce PRD ne le redéfinit pas.
+- **Tests** : nouveau fichier — payload réel traversant `-L` et `-R` de bout
+  en bout (pas seulement visibilité de listener).
+
+### Phase 9 — Documentation (objectif 11)
+
+- Mise à jour de `GAP.md` §4.10/§7.3/§9.5, `docs/PRD-netsh.md`,
+  `docs/PRD-Windows-Server.md`, `docs/BRD-SSH-SFTP.md`,
+  `docs/SSH-IMPLEMENTATION-ANALYSIS.md`, `docs/tutoriel-ssh.md`,
+  `docs/roadmap.md` — une fois les phases correspondantes livrées, pas
+  avant (éviter de documenter un état qui n'existe pas encore).
+
+---
+
+## 4. Exigences de non-régression
+
+Chaque phase est additive et testée ; le comportement observable des suites
+déjà vertes ne doit pas régresser.
+
+- **Routeur (Phases 1-4)** : `nat-pat.test.ts`, `nat-pat-other.test.ts`,
+  tous les `scenario-cisco-nat-*.test.ts`, `scenario-cisco-port-forwarding.test.ts`,
+  `ftp-alg-nat.test.ts`, `nat-icmp-pat.test.ts`,
+  `scenario-nat-pat-uniqueness.test.ts`, `scenario-double-nat-traceability.test.ts`,
+  suites ACL (`ssh-cisco-acl-*.test.ts`, `scenario-multilayer-acl-coherence.test.ts`).
+  La Phase 2 touche un chemin partagé par tout trafic routé (NATé ou non) —
+  exiger en plus la régression complète des suites `router-*`/
+  `inter-vlan-routing.test.ts`/`debug/router/*`.
+- **Commutateur L3 Huawei (Phase 4)** : suites de commutation Huawei
+  existantes (`huawei-stp.test.ts`, `scenario-vrp-stp-lacp.test.ts`, etc.) —
+  brancher le NAT sur le plan de données ne doit rien changer pour le
+  trafic non concerné par une règle NAT.
+- **Hôte Linux (Phases 5-6)** : `linux-iptables.test.ts`,
+  `ip6tables-nat66-prerouting.test.ts`, `iptables-dispatch-unification.test.ts`,
+  `linux-gateway-forwarding.test.ts`, `iptables-mark-notrack.test.ts`,
+  `iptables-reject-with.test.ts`, `linux-iptables-nftables-persistence.test.ts`.
+  La Phase 5 touche `EndHost.ts`'s chemin de réception de paquet partagé par
+  **tout** trafic IP sur **tout** hôte Linux/Windows (via héritage) — exiger
+  en plus la régression complète des suites ARP/DHCP/ICMP/TCP/UDP/IPsec de
+  base, pas seulement les suites NAT.
+- **Windows (Phase 7)** : `windows-port-forwarding.test.ts`,
+  `windows-ps-cmd-shared-state.test.ts`, `ps-network-command.test.ts`.
+- **SSH (Phase 8)** : `ssh-lan-localforward.test.ts`,
+  `ssh-lan-remoteforward.test.ts`, `ssh-lan-dynamicforward.test.ts`,
+  `ssh-permit-open.test.ts`, `ssh-match-block-effective.test.ts`,
+  `linux-lan-ssh-suite.test.ts`, `cross-equipment-ssh-suite.test.ts`,
+  `cross-vendor-ssh-domain.test.ts`.
+
+---
+
+## 5. Risques
+
+- **Risque principal (Phases 2 et 5)** : ces deux phases touchent chacune un
+  chemin de code emprunté par **tout** paquet routé/reçu, pas seulement le
+  trafic concerné par une règle de port-forwarding — une erreur pourrait
+  silencieusement casser le forwarding IP de base ou la réception de
+  paquets sur tout hôte Linux/Windows. Mitigation : régression complète des
+  suites de routage/réception de base avant/après chaque phase, en plus des
+  suites NAT/iptables listées en §4.
+- **Risque secondaire (Phase 8)** : dépend d'une décision architecturale
+  (quelle pile SSH recevoir le vrai canal) qui recoupe un chantier
+  d'unification SSH déjà suivi séparément — risque de travail dupliqué ou
+  en conflit si les deux avancent sans coordination. Recommandation :
+  vérifier explicitement l'état de ce chantier avant de démarrer la Phase 8.
+- **Risque tertiaire (Phase 7)** : introduit la première capacité de relais
+  de données réel pour les équipements Windows dans ce simulateur — une
+  fonctionnalité réellement nouvelle, pas seulement une correction de bug ;
+  sa suite de tests doit être bâtie entièrement de zéro (aucune couverture
+  de relais n'existe aujourd'hui).
+- **Risque de séquençage** : ce document est le plus grand chantier
+  transversal de ce dépôt à ce jour (quatre sous-systèmes, potentiellement
+  quatre équipes de fichiers distinctes). Recommandation forte : livrer et
+  committer chaque phase indépendamment (comme pratiqué pour les PRDs
+  précédents de ce dépôt), jamais en un seul commit géant — chaque phase a
+  son propre rayon d'impact et sa propre suite de non-régression, et un
+  échec de revue sur une phase ne doit pas bloquer les autres.
+- **Risque de péremption du document lui-même** : comme documenté pour les
+  PRDs précédents de ce dépôt (ex. `PRD-VTP.md` v1.0→v2.0), ce document
+  deviendra lui-même stale si des commits ferment ses items sans mise à
+  jour — revérifier l'état du code avant toute nouvelle itération plutôt
+  que de supposer sa validité continue, en particulier pour les quatre
+  documents préexistants qu'il corrige (§1), qui pourraient eux-mêmes être
+  amendés indépendamment entre-temps.
