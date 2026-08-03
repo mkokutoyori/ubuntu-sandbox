@@ -80,10 +80,10 @@ describe('un démon qui tourne a ses fichiers d\'exécution', () => {
   it('`at` nomme un fichier qui existe vraiment pendant qu\'atd tourne', async () => {
     const srv = box();
 
-    // `at` répond « Can't open /var/run/atd.pid … » quand le démon est
+    // `at` répond « Can't open /run/atd.pid … » quand le démon est
     // absent. Tant que ce fichier n'existait nulle part, le message était
     // une chaîne plausible ; il décrit maintenant un vrai fichier.
-    expect((await srv.executeCommand('cat /var/run/atd.pid')).trim())
+    expect((await srv.executeCommand('cat /run/atd.pid')).trim())
       .toBe(await pidOf(srv, '/usr/sbin/atd -f'));
   });
 
@@ -121,11 +121,11 @@ describe('un arrêt propre range derrière lui', () => {
     const srv = box();
     await srv.executeCommand('systemctl stop atd');
 
-    expect(await srv.executeCommand('ls /var/run/atd.pid'))
+    expect(await srv.executeCommand('ls /run/atd.pid'))
       .toContain('No such file or directory');
     // Et `at` dit exactement ça.
     expect(await srv.executeCommand('echo "ls" | at now + 1 hour'))
-      .toContain("Can't open /var/run/atd.pid to signal atd. No atd running?");
+      .toContain("Can't open /run/atd.pid to signal atd. No atd running?");
   });
 });
 
