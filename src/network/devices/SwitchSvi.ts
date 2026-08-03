@@ -65,6 +65,15 @@ export interface SviHost {
     opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
   ): IPv4Packet | null;
   natIsOutsideInterface?(iface: string): boolean;
+  /**
+   * Les adresses locales de la boîte qui ne sont PAS portées par un
+   * Vlanif — aujourd'hui les LoopBack. Sans ce crochet, une loopback ne
+   * serait qu'un affichage : un ping vers elle arriverait sur un SVI,
+   * ne correspondrait à aucune adresse locale, et serait routé au lieu
+   * d'être répondu. C'est ce qui distingue une interface réelle d'une
+   * décoration.
+   */
+  getNonSviLocalIps?(): readonly IPAddress[];
 }
 
 export interface SwitchStaticRoute {
@@ -81,6 +90,16 @@ export class SwitchSvi {
   private pendingReply: { id: number; seq: number; fromIp: string; ttl: number } | null = null;
 
   constructor(private readonly host: SviHost) {}
+
+  /**
+   * Vrai quand l'adresse est une des nôtres — SVI actif ou LoopBack.
+   * Une loopback est toujours joignable : c'est sa raison d'être, et
+   * c'est pourquoi elle ne passe pas par un test `adminUp`.
+   */
+  isOwnAddress(ip: IPAddress): boolean {
+    if ([...this.svis.values()].some((s) => s.adminUp && s.ip?.equals(ip))) return true;
+    return (this.host.getNonSviLocalIps?.() ?? []).some((l) => l.equals(ip));
+  }
 
   // ─── Configuration ────────────────────────────────────────────────
 
@@ -266,7 +285,7 @@ export class SwitchSvi {
       // that's genuinely one of our own SVIs (mirrors Router's own local-
       // delivery check, which is IP- not MAC-driven) — still "for us".
       if (!forUs && frame.dstMAC.isBroadcast()) {
-        forUs = [...this.svis.values()].some(s => s.adminUp && s.ip?.equals(ip.destinationIP));
+        forUs = this.isOwnAddress(ip.destinationIP);
       }
 
       // DHCP relay: a client's DISCOVER/REQUEST is broadcast (dstMAC is not
@@ -287,8 +306,7 @@ export class SwitchSvi {
       const natIn = this.host.natTranslateInbound?.(ip, `Vlanif${ingressVlan}`) ?? null;
       const workingIp = natIn ?? ip;
 
-      const dstIsOwnSvi = [...this.svis.values()].some(s => s.adminUp && s.ip?.equals(workingIp.destinationIP));
-      if (dstIsOwnSvi) {
+      if (this.isOwnAddress(workingIp.destinationIP)) {
         if (workingIp.protocol === IP_PROTO_ICMP) {
           const icmp = workingIp.payload as ICMPPacket;
           if (icmp?.icmpType === 'echo-request') {
