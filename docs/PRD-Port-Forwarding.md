@@ -472,11 +472,7 @@ traité et un oubli.
    — livré (§3 Phase 3).** Reprend l'objectif 5 de
    `PRD-NAT-Port-Forwarding.md`.
 6. **[Commutateur L3 Huawei, Majeur — nouveau] Brancher le `NATEngine` du
-   commutateur sur son plan de données.** `HuaweiSwitch`/`Switch.ts` doivent
-   appeler `translateInbound()`/`translateOutbound()` exactement comme
-   `Router.ts` le fait déjà, en réutilisant le moteur existant sans
-   réinvention — aujourd'hui `nat server`/`nat static` sur un commutateur L3
-   Huawei sont purement décoratifs (§1.A).
+   commutateur sur son plan de données — livré (§3 Phase 4).**
 7. **[Hôte Linux, Critique — nouveau] Corriger le DNAT/SNAT Linux : réécrire
    le port ET recalculer les checksums L3+L4.** Sans ce correctif, aucun
    trafic TCP/UDP réel ne traverse une redirection `iptables -j DNAT`
@@ -643,14 +639,54 @@ trafic routé/switché/reçu avant le code spécifique au NAT).
 
 ### Phase 4 — Commutateur L3 Huawei : brancher le NAT sur le plan de données (objectif 6)
 
-- **Fichiers touchés** : `HuaweiSwitch.ts` (ou `Switch.ts` si le point
-  d'entrée IPv4 y est partagé — à trancher en conception détaillée par
-  lecture du chemin de traitement de trame L3 du commutateur), appel à
-  `natEngine.translateInbound()`/`translateOutbound()` au même point que
-  `Router.processIPv4()` le fait.
-- **Tests** : nouveau fichier — topologie commutateur L3 Huawei avec `nat
-  server`/`nat static`, vérification qu'un paquet réel est traduit (miroir
-  du test créé en Phase 1, sur un commutateur plutôt qu'un routeur).
+- **Livré.** Le point d'entrée IPv4 du commutateur n'est pas dans
+  `Switch.ts` mais dans `SwitchSvi.ts` (`intercept()`/`forwardIpPacket()`,
+  l'équivalent de `Router.processIPv4()`/`forwardPacket()`) ; `Router` et
+  `Switch` n'ont aucune base L3 commune (tous deux étendent `Equipment`, qui
+  n'offre ni routage ni NAT), donc le branchement est dupliqué plutôt que
+  factorisé — cohérent avec le reste du fichier (RIB/FIB, ARP, ICMP sont
+  déjà des implémentations séparées entre les deux classes).
+  `SviHost` (l'interface que `SwitchSvi` consomme) gagne trois méthodes
+  optionnelles — `natTranslateInbound`/`natTranslateOutbound`/
+  `natIsOutsideInterface` — implémentées dans l'adaptateur `Switch.ts` par
+  délégation à `_getNATEngine()` (duck-typing déjà standard pour cet accès
+  dans tout le dépôt, absent sur `GenericSwitch`/`CiscoSwitch` donc no-op
+  pour eux). `intercept()` appelle `natTranslateInbound()` juste après le
+  test `forUs` et avant la décision livraison-locale/transit (même ordre
+  que `Router.processIPv4()`) ; `forwardIpPacket()` appelle
+  `natTranslateOutbound()` juste après le décrément TTL et le recalcul du
+  checksum, avant `egressOnVlan()` (même ordre que `forwardPacket()`),
+  avec la même détection de hairpin (RFC 5382 §5) que le routeur. Les deux
+  interfaces sont désignées par leur nom `Vlanif<n>` (pas le port physique
+  d'ingress) — c'est la configuration réaliste pour du NAT sur commutateur
+  L3 Huawei (`interface Vlanif10` / `interface Vlanif20`), et cela évite
+  toute ambiguïté entre plusieurs ports physiques pouvant porter le même
+  VLAN.
+  **Bug indépendant découvert en écrivant le test e2e** : `HuaweiSwitch.ts`
+  instancie son propre `NATEngine` depuis toujours, mais ne lui a *jamais*
+  fourni `setACLMatchFn()`/`setInterfaceIPFn()` (contrairement à
+  `Router.ts`, qui les câble dans son constructeur) — `nat outbound <acl>`
+  aurait donc échoué silencieusement même une fois le plan de données
+  branché : `getIfaceIPFn` valant `undefined`, `globalIP` restait
+  toujours `null` dans la branche `overload` de `translateOutbound()`, qui
+  `continue`ait sans jamais traduire. Corrigé dans le constructeur de
+  `HuaweiSwitch.ts` : `setInterfaceIPFn` résout `Vlanif<n>` via
+  `getSvi(n)?.ip`, `setACLMatchFn` délègue à `getVaclEngine().evaluateACLByName()`
+  (le même moteur ACL déjà utilisé par le VACL/traffic-filter du
+  commutateur, confirmé alimenté par `rule <n> permit ...` sous `acl <n>`
+  via `HuaweiSwitchShell.parseVrpAclRule()`).
+- **Tests** : nouveau fichier `huawei-l3-switch-nat.test.ts` (4 cas) —
+  topologie à deux VLANs/SVIs sur un seul commutateur (VLAN10 inside/VLAN20
+  outside), `nat server protocol tcp` (poignée de main TCP réelle +
+  aller-retour de données, miroir du test Phase 1) et `nat outbound`
+  (PAT dynamique, vérifie que le pair distant observe bien l'adresse
+  Vlanif20 traduite via `TcpSocket.remoteIp`, pas l'adresse privée
+  d'origine). Vérifié par git-stash sur les trois fichiers source
+  modifiés : les 3 cas dépendant de l'ordre échouent authentiquement
+  (poignée de main bloquée en `syn-sent`, adresse source non traduite),
+  le cas « pas de nat server configuré » reste vert dans les deux cas.
+  Régression complète : 646 tests sur 26 fichiers switch/SVI/inter-VLAN/
+  DHCP-relay/FHRP/NAT, tous verts.
 
 ### Phase 5 — Hôte Linux : réécriture de port + recalcul des checksums (objectif 7)
 
