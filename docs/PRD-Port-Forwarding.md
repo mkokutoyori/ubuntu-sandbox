@@ -459,8 +459,9 @@ traité et un oubli.
    délivre jamais réellement une connexion (§1.A). Le premier test bout-en-
    bout réel a aussi mis au jour un second défaut (checksum L4 jamais
    recalculé après réécriture d'adresse), corrigé dans la même phase.
-2. **[Routeur, Majeur] Corriger l'ordre d'évaluation NAT/ACL** — reprend tel
-   quel l'objectif 1 de `PRD-NAT-Port-Forwarding.md`, toujours ouvert.
+2. **[Routeur, Majeur] Corriger l'ordre d'évaluation NAT/ACL — livré (§3
+   Phase 2).** Reprend tel quel l'objectif 1 de
+   `PRD-NAT-Port-Forwarding.md`.
 3. **[Routeur, Moyen] Couverture bout-en-bout réelle Cisco et Huawei** —
    reprend les objectifs 2/3 de `PRD-NAT-Port-Forwarding.md` ; l'objectif 1
    ci-dessus impose de toute façon un vrai test de livraison pour être
@@ -562,13 +563,30 @@ trafic routé/switché/reçu avant le code spécifique au NAT).
 
 ### Phase 2 — Routeur : ordre d'évaluation NAT/ACL (objectif 2)
 
-- Reprend telle quelle la conception détaillée de
-  `PRD-NAT-Port-Forwarding.md` §3 Phase 1 : réordonner `Router.processIPv4()`
-  pour que l'ACL entrante voie le paquet pré-DNAT et que l'ACL sortante voie
-  le paquet post-SNAT.
-- **Tests** : nouveau fichier `nat-acl-evaluation-order.test.ts` (déjà
-  spécifié par le PRD existant) + régression complète des suites NAT/ACL/
-  routage de base (§4).
+- **Livré** (`Router.ts`, `nat-acl-evaluation-order.test.ts`). Reprend telle
+  quelle la conception détaillée de `PRD-NAT-Port-Forwarding.md` §3 Phase 1 :
+  dans `processIPv4()`, l'ACL entrante (`deniedByInboundACL`) est désormais
+  évaluée avant `translateInbound()` (DNAT) — elle voit donc l'adresse
+  publique telle que le client l'a réellement ciblée, pas déjà réécrite vers
+  l'adresse privée. Dans `forwardPacket()`, `translateOutbound()` (SNAT/PAT)
+  s'exécute désormais avant la vérification de l'ACL sortante — elle voit
+  donc l'adresse publique post-traduction telle qu'elle sort réellement sur
+  le fil, pas l'adresse privée pré-traduction. Auparavant les deux ACL
+  voyaient le mauvais côté de la traduction : une ACL écrite contre
+  l'adresse publique (le cas d'usage réel pour du port-forwarding) ne
+  matchait jamais rien en entrée ni en sortie.
+- **Tests** : nouveau fichier `nat-acl-evaluation-order.test.ts`, 6 cas —
+  permit/deny/no-ACL en entrée (contre l'adresse publique pré-DNAT) et en
+  sortie (contre l'adresse publique post-SNAT). Vérifié par git-stash : les
+  4 cas permit/deny échouent authentiquement sans le correctif (les 2 cas
+  « no ACL » ne dépendent pas de l'ordre et restent verts dans les deux
+  cas, ce qui est le comportement attendu). Un premier jet du test sortant
+  utilisait une regex `/0% packet loss/` qui matchait aussi bien "0%" que
+  "100%" packet loss (sous-chaîne commune) et ne discriminait donc rien —
+  corrigé en ancrant sur `/, 0% packet loss/`/`/, 100% packet loss/`
+  (le format exact de la ligne de statistiques ping). Régression complète
+  des suites NAT/ACL/routage de base (§4) : 797 tests sur 42 fichiers
+  NAT/ACL + 196 tests sur les suites routage/OSPF de base, tous verts.
 
 ### Phase 3 — Routeur : couverture Huawei + maintenance sélective + `outside static` (objectifs 3-5)
 
