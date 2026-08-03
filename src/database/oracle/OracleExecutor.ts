@@ -2819,8 +2819,22 @@ export class OracleExecutor extends BaseExecutor {
     provided: Set<number>,
   ): void {
     for (let i = 0; i < tableMeta.columns.length; i++) {
-      if (provided.has(i)) continue;
       const col = tableMeta.columns[i];
+      if (col.identity) {
+        // `GENERATED ALWAYS` refuse une valeur fournie ; `BY DEFAULT` la
+        // laisse gagner et ne tire de la séquence que si la colonne est
+        // absente — ou explicitement NULL, ce qui revient au même ici.
+        const fournie = provided.has(i) && row[i] !== null && row[i] !== undefined;
+        if (fournie) {
+          if (col.identity.always) {
+            throw new OracleError(32795, 'cannot insert into a generated always identity column');
+          }
+          continue;
+        }
+        row[i] = this.sequenceNextVal(tableMeta.schema, col.identity.sequence);
+        continue;
+      }
+      if (provided.has(i)) continue;
       if (col.defaultExpr) {
         row[i] = this.evaluateExpression(col.defaultExpr as Expression, [], []);
       } else if (col.defaultValue !== undefined) {
@@ -3169,12 +3183,33 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult('Table created.');
     }
 
-    const columns: StorageColMeta[] = stmt.columns.map((col, i) => ({
-      name: col.name.toUpperCase(),
-      dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
-      ordinalPosition: i,
-      defaultExpr: col.defaultValue,
-    }));
+    // Une colonne d'identité est servie par une séquence qu'Oracle crée
+    // à côté de la table, nommée `ISEQ$$_<objet>`. On fait pareil plutôt
+    // que d'ajouter un second compteur : `NEXTVAL`, le cache, le cycle
+    // et la vue `USER_SEQUENCES` marchent alors sans rien de nouveau.
+    const columns: StorageColMeta[] = stmt.columns.map((col, i) => {
+      const meta: StorageColMeta = {
+        name: col.name.toUpperCase(),
+        dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
+        ordinalPosition: i,
+        defaultExpr: col.defaultValue,
+      };
+      if (col.identity) {
+        const seq = `ISEQ$$_${tableName}_${col.name.toUpperCase()}`;
+        const inc = col.identity.incrementBy ?? 1;
+        this.storage.createSequence(schema, {
+          name: seq,
+          currentValue: (col.identity.startWith ?? 1) - inc,
+          incrementBy: inc,
+          minValue: 1,
+          maxValue: Number.MAX_SAFE_INTEGER,
+          cache: 20,
+          cycle: false,
+        });
+        meta.identity = { always: col.identity.always, sequence: seq };
+      }
+      return meta;
+    });
 
     const constraints: ConstraintMeta[] = [];
     const nextSysC = () => `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`;

@@ -1512,21 +1512,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    // NAT PREROUTING (DNAT): rewrite destination before routing decision.
-    // Keep the pre-DNAT packet too — a hairpin flow needs it both to detect
-    // the hairpin turn later and to evaluate the operator's NAT ACL against
-    // the address the client actually targeted (see `forwardPacket`).
+    // C.1a: Inbound ACL
     const originalPkt = ipPkt;
+    if (this.deniedByInboundACL(inPort, originalPkt)) return;
+
     const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
     if (natInbound) ipPkt = natInbound;
 
     // Phase C: Forwarding Decision
-
-    // C.1a: Inbound ACL. Cisco's inbound order of operations runs the input
-    // access list ahead of decryption and ahead of the local/forward split,
-    // so it filters what the router keeps for itself just as much as what it
-    // routes onward.
-    if (this.deniedByInboundACL(inPort, ipPkt)) return;
 
     // C.1: Is this packet for us? (any interface IP, broadcast, or
     // link-local multicast — 224.0.0.0/24 is consumed by the control
@@ -1971,6 +1964,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
+    const isHairpin = !this.natEngine.isOutsideInterface(route.iface)
+      && originalPkt.destinationIP.toString() !== fwdPkt.destinationIP.toString();
+    const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort,
+      isHairpin ? { isHairpin: true, aclMatchPkt: originalPkt } : undefined);
+    if (natOutbound) {
+      const outsideIP = this.ports.get(route.iface)?.getIPAddress()?.toString();
+      fwdPkt = outsideIP ? inspectAndRewriteFtpAlg(natOutbound, this.natEngine, outsideIP) : natOutbound;
+    }
+
     // Phase E.2b: Outbound ACL check
     const outboundACL = this.aclEngine.getInterfaceACL(route.iface, 'out');
     if (outboundACL !== null) {
@@ -1985,22 +1987,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         }
         return;
       }
-    }
-
-    // NAT POSTROUTING (SNAT/PAT): rewrite source before sending.
-    // Hairpin (RFC 5382 §5): the destination was DNAT'd above and the route
-    // for it points back out a non-outside interface — still needs SNAT so
-    // the reply routes back through this device, and the ACL must be
-    // evaluated against the client's original (pre-DNAT) target.
-    const isHairpin = !this.natEngine.isOutsideInterface(route.iface)
-      && originalPkt.destinationIP.toString() !== fwdPkt.destinationIP.toString();
-    const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort,
-      isHairpin ? { isHairpin: true, aclMatchPkt: originalPkt } : undefined);
-    if (natOutbound) {
-      // FTP ALG (§2.1.10): rewrite any PORT/PASV-embedded address surviving
-      // in the payload, and open a pinhole for the data channel it names.
-      const outsideIP = this.ports.get(route.iface)?.getIPAddress()?.toString();
-      fwdPkt = outsideIP ? inspectAndRewriteFtpAlg(natOutbound, this.natEngine, outsideIP) : natOutbound;
     }
 
     this.sampleNetflowForward(fwdPkt, nextHopIP);

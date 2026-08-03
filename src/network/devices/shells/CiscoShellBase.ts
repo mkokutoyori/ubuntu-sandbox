@@ -12,6 +12,7 @@
  *                     Subclasses use this for typed access to device-specific APIs.
  */
 
+import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { CommandTrie } from './CommandTrie';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
@@ -30,7 +31,7 @@ import {
 } from './cisco/CiscoArpCommands';
 import {
   showClock, showUsers, showInventory, showProcessesCpu, showProcessesMemory,
-  showMemoryStatistics, showFlash, showPrivilege,
+  showMemoryStatistics, showPrivilege,
   showCdp, showLldp, showSnmp, showSnmpCommunity, showSnmpHost,
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
   showNtpStatus, showNtpAssociations,
@@ -501,6 +502,109 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected getChassisProfile(): import('./cisco/CiscoCommonShow').CiscoChassisProfile {
     return 'switch-c3560';
+  }
+
+  /**
+   * Le système de fichiers de l'équipement, semé au premier accès depuis
+   * le profil châssis. Un seul par shell : `dir`, `delete` et
+   * `show flash:` doivent voir le même `flash:`, sinon supprimer un
+   * fichier ne se verrait nulle part.
+   */
+  private _fs: CiscoFileSystem | null = null;
+  protected fs(): CiscoFileSystem {
+    if (!this._fs) this._fs = new CiscoFileSystem(this.getChassisProfile());
+    return this._fs;
+  }
+
+  /**
+   * `dir`, `more`, `delete`, `verify`, `pwd` — et la séquence de
+   * démarrage (`boot system`, `config-register`, `show bootvar`).
+   *
+   * Enregistré sur la trie privilégiée uniquement : sur un vrai IOS,
+   * l'EXEC utilisateur n'a accès à aucune de ces commandes.
+   */
+  private registerFileSystemCommands(trie: CommandTrie): void {
+    trie.registerGreedy('dir', 'List files on a filesystem', (args) => {
+      const cible = args[0] ?? 'flash:';
+      if (/^nvram:/i.test(cible)) return this.renderNvramDir();
+      if (!/^(flash|bootflash|disk0):?/i.test(cible) && cible !== '') {
+        return `%Error opening ${cible} (No such file or directory)`;
+      }
+      return this.fs().renderDir(cible.replace(/\/$/, '') || 'flash:');
+    });
+
+    trie.registerGreedy('more', 'Display a file', (args) => {
+      const nom = args[0] ?? '';
+      if (!nom) return '% Incomplete command.';
+      if (/^nvram:startup-config$/i.test(nom)) {
+        return this.readStartupConfig() ?? '% startup-config is not present';
+      }
+      const f = this.fs().get(nom);
+      if (!f) return `%Error opening ${nom} (No such file or directory)`;
+      // Une image IOS n'a pas de contenu ici, et en inventer un serait
+      // une fausseté vérifiable : le vrai `more` sur du binaire crache
+      // des octets illisibles, pas une page blanche.
+      return f.content ?? `%Error opening ${nom} (Is a binary file)`;
+    });
+
+    trie.registerGreedy('verify', 'Verify a file', (args) => {
+      const nom = (args[0] ?? '').replace(/^\/md5\s*/, '');
+      if (!nom) return '% Incomplete command.';
+      const f = this.fs().get(nom);
+      if (!f) return `%Error opening ${nom} (No such file or directory)`;
+      return [
+        `Verifying file integrity of flash:${f.name}`,
+        '.................................................................. Done!',
+        `Embedded Hash   MD5 : ${pseudoMd5(f.name, f.size)}`,
+        `Computed Hash   MD5 : ${pseudoMd5(f.name, f.size)}`,
+        `CCO Hash        MD5 : ${pseudoMd5(`cco:${f.name}`, f.size)}`,
+        '',
+        `Digital signature successfully verified in file flash:${f.name}`,
+      ].join('\n');
+    });
+
+    trie.registerGreedy('delete', 'Delete a file', (args) => {
+      const nom = args.filter((a) => !a.startsWith('/')).pop() ?? '';
+      if (!nom) return '% Incomplete command.';
+      if (!this.fs().exists(nom)) {
+        return `%Error deleting ${nom} (No such file or directory)`;
+      }
+      this.fs().remove(nom);
+      return '';
+    });
+
+    trie.register('pwd', 'Display current working directory', () => 'flash:');
+
+    trie.register('show bootvar', 'Display boot variables', () => this.fs().renderBootvar());
+    trie.register('show boot', 'Display boot variables', () => this.fs().renderBootvar());
+  }
+
+  /** `dir nvram:` — deux entrées, comme sur le vrai. */
+  private renderNvramDir(): string {
+    const startup = this.readStartupConfig();
+    const taille = startup ? startup.length : 0;
+    return [
+      'Directory of nvram:/',
+      '',
+      `  190  -rw-        ${String(taille).padStart(6)}                    <no date>  startup-config`,
+      '  191  ----             5                    <no date>  private-config',
+      '',
+      '524288 bytes total (517000 bytes free)',
+    ].join('\n');
+  }
+
+  /**
+   * La configuration de démarrage, quel que soit l'équipement : le
+   * switch l'expose par `getStartupConfig`, le routeur par
+   * `getStartupConfigSnapshot`. Une seule lecture pour `more`, `dir` et
+   * la séquence de démarrage.
+   */
+  protected readStartupConfig(): string | null {
+    const dev = this.d() as unknown as {
+      getStartupConfig?: () => string | null;
+      getStartupConfigSnapshot?: () => string | null;
+    };
+    return dev.getStartupConfig?.() ?? dev.getStartupConfigSnapshot?.() ?? null;
   }
 
   // ─── Device accessor ────────────────────────────────────────────
@@ -1239,7 +1343,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
-    trie.registerGreedy('show flash:', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
+    trie.registerGreedy('show flash:', 'Display flash filesystem', () => this.fs().renderShowFlash());
+    this.registerFileSystemCommands(trie);
     trie.register('show platform', 'Display platform information', () => {
       const profile = this.getChassisProfile();
       return profile === 'router-isr2911'
@@ -1990,6 +2095,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `configure terminal` while already in config is an idempotent
     // no-op (re-issuing it must not error mid-sequence).
     this.configTrie.register('configure terminal', 'Already in global config', () => '');
+
+    // La séquence de démarrage. `config-register 0x2142` est la moitié
+    // de la récupération de mot de passe la plus enseignée du cours ;
+    // le registre est réellement stocké et son bit 0x40 réellement lu.
+    this.configTrie.registerGreedy('boot system', 'Specify system image to load', (args) => {
+      const image = (args[0] ?? '').replace(/^flash:\/?/i, '');
+      if (!image) return '% Incomplete command.';
+      this.fs().addBootSystem(image);
+      return '';
+    });
+    this.configTrie.registerGreedy('no boot system', 'Remove a system image from the boot list', (args) => {
+      const image = (args[0] ?? '').replace(/^flash:\/?/i, '');
+      this.fs().removeBootSystem(image || undefined);
+      return '';
+    });
+    this.configTrie.registerGreedy('config-register', 'Set configuration register', (args) => {
+      const val = args[0] ?? '';
+      if (!this.fs().setConfigRegister(val)) {
+        return '% Invalid config register value';
+      }
+      return '';
+    });
 
     this.configTrie.registerGreedy('hostname', 'Set system hostname', (args) => {
       if (args.length < 1) return '% Incomplete command.';
@@ -2880,4 +3007,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // ARP config commands (shared between router and switch)
     registerArpConfigCommands(this.configTrie, () => this.d());
   }
+}
+
+/**
+ * Une empreinte stable dérivée du nom et de la taille. Ce n'est pas un
+ * vrai MD5 de l'image — le simulateur n'en stocke aucune — mais une
+ * valeur **reproductible** : `verify` deux fois de suite rend la même
+ * chose, et deux fichiers différents en rendent deux différentes, ce
+ * qui est tout ce qu'un exercice de vérification demande.
+ */
+function pseudoMd5(name: string, size: number): string {
+  let h1 = 0x811c9dc5, h2 = size >>> 0;
+  for (let i = 0; i < name.length; i++) {
+    h1 = Math.imul(h1 ^ name.charCodeAt(i), 0x01000193) >>> 0;
+    h2 = Math.imul(h2 + name.charCodeAt(i), 0x85ebca6b) >>> 0;
+  }
+  const part = (n: number) => n.toString(16).padStart(8, '0');
+  return part(h1) + part(h2) + part((h1 ^ h2) >>> 0) + part((h1 + h2) >>> 0);
 }

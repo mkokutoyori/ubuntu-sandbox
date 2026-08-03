@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-sql-dml-ddl
-Generated: 2026-08-03T11:42:32.824Z
+Generated: 2026-08-03T12:22:52.301Z
 Topology:  LinuxServer ora-sql — Oracle ORCL OPEN
 Total commands: 461
 ============================================================
@@ -34,10 +34,8 @@ SQL [4/461]> CREATE TABLE customers (id NUMBER PRIMARY KEY, name VARCHAR2(100) N
   Table created.
 
 SQL [5/461]> CREATE TABLE products (id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, code VARCHAR2(20) UNIQUE NOT NULL, name VARCHAR2(200) NOT NULL, price NUMBER(10,2) CHECK (price >= 0), stock INTEGER DEFAULT 0, active CHAR(1) DEFAULT 'Y' CHECK (active IN ('Y','N')), created TIMESTAMP DEFAULT SYSTIMESTAMP);
-  CREATE TABLE products (id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, code VARCHAR2(20) UNIQUE NOT NULL, name VARCHAR2(200) NOT NULL, price NUMBER(10,2) CHECK (price >= 0), stock INTEGER DEFAULT 0, active CHAR(1) DEFAULT 'Y' CHECK (active IN ('Y','N')), created TIMESTAMP DEFAULT SYSTIMESTAMP)
-                                   *
-  ERROR at line 1:
-  ORA-00900: invalid SQL statement: Expected RPAREN
+  
+  Table created.
 
 SQL [6/461]> CREATE TABLE orders (id NUMBER PRIMARY KEY, customer_id NUMBER NOT NULL, order_date DATE DEFAULT SYSDATE, status VARCHAR2(20) DEFAULT 'PENDING', total NUMBER(12,2) DEFAULT 0, CONSTRAINT fk_orders_cust FOREIGN KEY (customer_id) REFERENCES customers(id));
   
@@ -196,10 +194,8 @@ SQL [36/461]> ALTER TABLE customers DROP UNUSED COLUMNS;
   ORA-00900: invalid SQL statement: Unexpected token: UNUSED
 
 SQL [37/461]> ALTER TABLE products MODIFY active DEFAULT 'A';
-  ALTER TABLE products MODIFY active DEFAULT 'A'
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table altered.
 
 SQL [38/461]> ALTER TABLE orders ADD CONSTRAINT ck_status CHECK (status IN ('PENDING','PAID','SHIPPED','CANCELLED'));
   
@@ -251,28 +247,20 @@ SQL [48/461]> RENAME clients TO customers;
   SP2-0734: unknown command beginning "RENAME clients TO cu..." - rest of line ignored.
 
 SQL [49/461]> ALTER TABLE products MOVE TABLESPACE users;
-  ALTER TABLE products MOVE TABLESPACE users
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table altered.
 
 SQL [50/461]> ALTER TABLE products SHRINK SPACE;
-  ALTER TABLE products SHRINK SPACE
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table altered.
 
 SQL [51/461]> ALTER TABLE products SHRINK SPACE COMPACT;
-  ALTER TABLE products SHRINK SPACE COMPACT
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table altered.
 
 SQL [52/461]> ALTER TABLE products SHRINK SPACE CASCADE;
-  ALTER TABLE products SHRINK SPACE CASCADE
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table altered.
 
 SQL [53/461]> ALTER TABLE customers ENABLE ROW MOVEMENT;
   
@@ -331,22 +319,16 @@ SQL [64/461]> ALTER TABLE sales MERGE PARTITIONS p2024, p2025 INTO PARTITION p20
   Table altered.
 
 SQL [65/461]> ALTER TABLE products COMPRESS FOR OLTP;
-  ALTER TABLE products COMPRESS FOR OLTP
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table altered.
 
 SQL [66/461]> ALTER TABLE products MOVE COMPRESS FOR QUERY HIGH;
-  ALTER TABLE products MOVE COMPRESS FOR QUERY HIGH
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table altered.
 
 SQL [67/461]> ALTER TABLE products NOCOMPRESS;
-  ALTER TABLE products NOCOMPRESS
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table altered.
 
 
 --- [68] § indexes ---
@@ -355,10 +337,8 @@ SQL [68/461]> CREATE INDEX idx_cust_name ON customers (name);
   Index created.
 
 SQL [69/461]> CREATE UNIQUE INDEX uk_prod_code ON products (code);
-  CREATE UNIQUE INDEX uk_prod_code ON products (code)
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Index created.
 
 SQL [70/461]> CREATE INDEX idx_orders_cust ON orders (customer_id);
   
@@ -371,10 +351,8 @@ SQL [71/461]> CREATE INDEX idx_orders_date ON orders (order_date) ONLINE;
   ORA-00900: invalid SQL statement: Unexpected token: ONLINE
 
 SQL [72/461]> CREATE BITMAP INDEX bx_prod_active ON products (active);
-  CREATE BITMAP INDEX bx_prod_active ON products (active)
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Index created.
 
 SQL [73/461]> CREATE INDEX idx_func_cust_upper ON customers (UPPER(name));
   
@@ -495,34 +473,24 @@ SQL [95/461]> INSERT INTO customers VALUES (6, 'Frank Brown', 'frank@x.com', SYS
   ORA-00947: not enough values
 
 SQL [96/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-001', 'Widget', 9.99, 100);
-  INSERT INTO products (code, name, price, stock) VALUES ('SKU-001', 'Widget', 9.99, 100)
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  1 row created.
 
 SQL [97/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-002', 'Gadget', 19.99, 50);
-  INSERT INTO products (code, name, price, stock) VALUES ('SKU-002', 'Gadget', 19.99, 50)
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  1 row created.
 
 SQL [98/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-003', 'Gizmo', 4.99, 200);
-  INSERT INTO products (code, name, price, stock) VALUES ('SKU-003', 'Gizmo', 4.99, 200)
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  1 row created.
 
 SQL [99/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-004', 'Thingamajig', 29.99, 30);
-  INSERT INTO products (code, name, price, stock) VALUES ('SKU-004', 'Thingamajig', 29.99, 30)
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  1 row created.
 
 SQL [100/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-005', 'Doohickey', 14.99, 75);
-  INSERT INTO products (code, name, price, stock) VALUES ('SKU-005', 'Doohickey', 14.99, 75)
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  1 row created.
 
 SQL [101/461]> INSERT INTO orders VALUES (101, 1, SYSDATE, 'PAID', 19.98);
   
@@ -597,10 +565,8 @@ SQL [116/461]> UPDATE customers SET phone_number = '555-0101' WHERE id = 1;
   1 row updated.
 
 SQL [117/461]> UPDATE products SET price = price * 1.05 WHERE active = 'Y';
-  UPDATE products SET price = price * 1.05 WHERE active = 'Y'
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  5 rows updated.
 
 SQL [118/461]> UPDATE orders SET status = 'SHIPPED' WHERE order_date < SYSDATE - 5;
   
@@ -641,10 +607,8 @@ SQL [125/461]> DELETE FROM customers WHERE id = 7;
   1 row deleted.
 
 SQL [126/461]> DELETE FROM products WHERE stock = 0;
-  DELETE FROM products WHERE stock = 0
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  0 rows deleted.
 
 SQL [127/461]> DELETE FROM orders WHERE status = 'CANCELLED';
   
@@ -1634,10 +1598,8 @@ SQL [244/461]> DROP INDEX idx_cust_name;
   Index dropped.
 
 SQL [245/461]> DROP INDEX uk_prod_code;
-  DROP INDEX uk_prod_code
-  *
-  ERROR at line 1:
-  ORA-01418: specified index does not exist
+  
+  Index dropped.
 
 SQL [246/461]> DROP INDEX idx_orders_cust;
   
@@ -1650,10 +1612,8 @@ SQL [247/461]> DROP INDEX idx_orders_date;
   ORA-01418: specified index does not exist
 
 SQL [248/461]> DROP INDEX bx_prod_active;
-  DROP INDEX bx_prod_active
-  *
-  ERROR at line 1:
-  ORA-01418: specified index does not exist
+  
+  Index dropped.
 
 SQL [249/461]> DROP INDEX idx_ol_prod;
   
@@ -1668,10 +1628,8 @@ SQL [251/461]> DROP TABLE orders;
   Table dropped.
 
 SQL [252/461]> DROP TABLE products PURGE;
-  DROP TABLE products PURGE
-  *
-  ERROR at line 1:
-  ORA-00942: table or view does not exist
+  
+  Table dropped.
 
 SQL [253/461]> DROP TABLE customers CASCADE CONSTRAINTS PURGE;
   
@@ -1769,7 +1727,7 @@ SQL [272/461]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- --------- ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  2199526675 ORCL 03-AUG-26 NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 03-AUG-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000431            1000001
+  1505458181 ORCL 03-AUG-26 NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 03-AUG-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000452            1000001
   
   1 row selected.
 
@@ -1918,7 +1876,7 @@ SQL [286/461]> SELECT * FROM v$pgastat WHERE rownum < 5;
   aggregate PGA target parameter 134217728 bytes
   aggregate PGA auto target      120795955 bytes
   global memory bound             13421772 bytes
-  total PGA inuse                 34144256 bytes
+  total PGA inuse                 34668544 bytes
   
   4 rows selected.
 
@@ -1967,7 +1925,7 @@ SQL [291/461]> SELECT * FROM v$buffer_pool_statistics WHERE rownum < 5;
   
   ID NAME    SET_MSIZE FREE_BUFFER_WAIT BUFFER_BUSY_WAIT PHYSICAL_READS PHYSICAL_WRITES DB_BLOCK_GETS CONSISTENT_GETS DB_BLOCK_CHANGE
   -- ------- --------- ---------------- ---------------- -------------- --------------- ------------- --------------- ---------------
-   3 DEFAULT     16384                0                0              0              52           889             889             311
+   3 DEFAULT     16384                0                0              0              52           917             917             318
   
   1 row selected.
 
@@ -1997,10 +1955,10 @@ SQL [294/461]> SELECT * FROM v$shared_pool_advice WHERE rownum < 5;
   
   SHARED_POOL_SIZE_FOR_ESTIMATE SHARED_POOL_SIZE_FACTOR ESTD_LC_SIZE ESTD_LC_MEMORY_OBJECTS ESTD_LC_TIME_SAVED ESTD_LC_TIME_SAVED_FACTOR
   ----------------------------- ----------------------- ------------ ---------------------- ------------------ -------------------------
-                      134217728                     0.5     33554432                  16384               2825                       0.5
-                      201326592                    0.75     50331648                  24576             4237.5                      0.75
-                      268435456                       1     67108864                  32768               5650                         1
-                      335544320                    1.25     83886080                  40960               5650                         1
+                      134217728                     0.5     33554432                  16384               2830                       0.5
+                      201326592                    0.75     50331648                  24576               4245                      0.75
+                      268435456                       1     67108864                  32768               5660                         1
+                      335544320                    1.25     83886080                  40960               5660                         1
   
   4 rows selected.
 
@@ -2008,7 +1966,7 @@ SQL [295/461]> SELECT * FROM v$librarycache WHERE rownum < 5;
   
   NAMESPACE       GETS GETHITS GETHITRATIO PINS PINHITS PINHITRATIO RELOADS INVALIDATIONS
   --------------- ---- ------- ----------- ---- ------- ----------- ------- -------------
-  SQL AREA         566       0           0  524     524           1       0             0
+  SQL AREA         567       0           0  545     545           1       0             0
   TABLE/PROCEDURE   25      25           1   25      25           1       0             0
   BODY              25      25           1   25      25           1       0             0
   TRIGGER           25      25           1   25      25           1       0             0
@@ -2055,31 +2013,23 @@ SQL [299/461]> SELECT * FROM v$open_cursor WHERE rownum < 5;
 
 SQL [300/461]> SELECT * FROM v$sqlarea WHERE rownum < 5;
   
-  SQL_TEXT                                                                         SQL_ID        VERSION_COUNT EXECUTIONS SORTS DISK_READS BUFFER_GETS ROWS_PROCESSED
-  -------------------------------------------------------------------------------- ------------- ------------- ---------- ----- ---------- ----------- --------------
-  INSERT INTO HR.LOCATIONS VALUES (1400, '2014 Jabberwocky Rd', '26192', 'Southlak 16hnhn1a3xqw0             1          1     0          0           1              1
-  e', 'Texas', 'US')                                                                                                                                                 
-  INSERT INTO HR.LOCATIONS VALUES (1500, '2011 Interiors Blvd', '99236', 'South Sa 14tlwhua3xqw0             1          1     0          0           1              1
-  n Francisco', 'California', 'US')                                                                                                                                  
-  INSERT INTO HR.LOCATIONS VALUES (1700, '2004 Charade Rd', '98199', 'Seattle', 'W 0bh8qrja3xqw0             1          1     0          0           1              1
-  ashington', 'US')                                                                                                                                                  
-  INSERT INTO HR.LOCATIONS VALUES (1800, '460 Bloor St. W.', 'ON M5S 1X8', 'Toront 1fjuquca3xqw0             1          1     0          0           1              1
-  o', 'Ontario', 'CA')                                                                                                                                               
+  SQL_TEXT                                            SQL_ID        VERSION_COUNT EXECUTIONS SORTS DISK_READS BUFFER_GETS ROWS_PROCESSED
+  --------------------------------------------------- ------------- ------------- ---------- ----- ---------- ----------- --------------
+  INSERT INTO HR.COUNTRIES VALUES ('CN', 'China', 3)  0wcn17ca3xqw0             1          1     0          0           1              1
+  INSERT INTO HR.COUNTRIES VALUES ('IN', 'India', 3)  1cmu11ea3xqw0             1          1     0          0           1              1
+  INSERT INTO HR.COUNTRIES VALUES ('BR', 'Brazil', 2) 1ppp7cta3xqw0             1          1     0          0           1              1
+  INSERT INTO HR.COUNTRIES VALUES ('MX', 'Mexico', 2) 0e0st2xa3xqw0             1          1     0          0           1              1
   
   4 rows selected.
 
 SQL [301/461]> SELECT * FROM v$sql WHERE rownum < 5;
   
-  SQL_ID        SQL_TEXT                                                                         EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
-  ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  16hnhn1a3xqw0 INSERT INTO HR.LOCATIONS VALUES (1400, '2014 Jabberwocky Rd', '26192', 'Southlak          1           51       41           1          0              1 SYS                 2026-08-03T11:42:32
-                e', 'Texas', 'US')                                                                                                                                                                             
-  14tlwhua3xqw0 INSERT INTO HR.LOCATIONS VALUES (1500, '2011 Interiors Blvd', '99236', 'South Sa          1          209      167           1          0              1 SYS                 2026-08-03T11:42:32
-                n Francisco', 'California', 'US')                                                                                                                                                              
-  0bh8qrja3xqw0 INSERT INTO HR.LOCATIONS VALUES (1700, '2004 Charade Rd', '98199', 'Seattle', 'W          1           85       68           1          0              1 SYS                 2026-08-03T11:42:32
-                ashington', 'US')                                                                                                                                                                              
-  1fjuquca3xqw0 INSERT INTO HR.LOCATIONS VALUES (1800, '460 Bloor St. W.', 'ON M5S 1X8', 'Toront          1           71       57           1          0              1 SYS                 2026-08-03T11:42:32
-                o', 'Ontario', 'CA')                                                                                                                                                                           
+  SQL_ID        SQL_TEXT                                            EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
+  ------------- --------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
+  0wcn17ca3xqw0 INSERT INTO HR.COUNTRIES VALUES ('CN', 'China', 3)           1          217      173           1          0              1 SYS                 2026-08-03T12:22:52
+  1cmu11ea3xqw0 INSERT INTO HR.COUNTRIES VALUES ('IN', 'India', 3)           1          137      110           1          0              1 SYS                 2026-08-03T12:22:52
+  1ppp7cta3xqw0 INSERT INTO HR.COUNTRIES VALUES ('BR', 'Brazil', 2)          1          167      134           1          0              1 SYS                 2026-08-03T12:22:52
+  0e0st2xa3xqw0 INSERT INTO HR.COUNTRIES VALUES ('MX', 'Mexico', 2)          1           73       58           1          0              1 SYS                 2026-08-03T12:22:52
   
   4 rows selected.
 
@@ -2087,10 +2037,10 @@ SQL [302/461]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  16hnhn1a3xqw0               0           1          1       1           51       41           1          0              1 SYS                 03-AUG-26       
-  14tlwhua3xqw0               0           1          1       1          209      167           1          0              1 SYS                 03-AUG-26       
-  0bh8qrja3xqw0               0           1          1       1           85       68           1          0              1 SYS                 03-AUG-26       
-  1fjuquca3xqw0               0           1          1       1           71       57           1          0              1 SYS                 03-AUG-26       
+  0wcn17ca3xqw0               0           1          1       1          217      173           1          0              1 SYS                 03-AUG-26       
+  1cmu11ea3xqw0               0           1          1       1          137      110           1          0              1 SYS                 03-AUG-26       
+  1ppp7cta3xqw0               0           1          1       1          167      134           1          0              1 SYS                 03-AUG-26       
+  0e0st2xa3xqw0               0           1          1       1           73       58           1          0              1 SYS                 03-AUG-26       
   
   4 rows selected.
 
@@ -2109,10 +2059,10 @@ SQL [304/461]> SELECT * FROM v$sql_workarea WHERE rownum < 5;
   
   SQL_ID        CHILD_NUMBER OPERATION_TYPE OPTIMAL_EXECUTIONS ONEPASS_EXECUTIONS MULTIPASSES_EXECUTIONS ESTIMATED_OPTIMAL_SIZE LAST_MEMORY_USED
   ------------- ------------ -------------- ------------------ ------------------ ---------------------- ---------------------- ----------------
-  16hnhn1a3xqw0            0 SORT                            1                  0                      0                  65536            65536
-  14tlwhua3xqw0            0 SORT                            1                  0                      0                  65536            65536
-  0bh8qrja3xqw0            0 SORT                            1                  0                      0                  65536            65536
-  1fjuquca3xqw0            0 SORT                            1                  0                      0                  65536            65536
+  0wcn17ca3xqw0            0 SORT                            1                  0                      0                  65536            65536
+  1cmu11ea3xqw0            0 SORT                            1                  0                      0                  65536            65536
+  1ppp7cta3xqw0            0 SORT                            1                  0                      0                  65536            65536
+  0e0st2xa3xqw0            0 SORT                            1                  0                      0                  65536            65536
   
   4 rows selected.
 
@@ -2131,9 +2081,9 @@ SQL [306/461]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME END_TIME  INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ---------- --------- ------------ -------- --------- -------------------- ----- -----------------------
-  03-AUG-26  03-AUG-26         1500 2             2000 CPU Usage Per Sec       35 CentiSeconds Per Second
+  03-AUG-26  03-AUG-26         1500 2             2000 CPU Usage Per Sec       37 CentiSeconds Per Second
   03-AUG-26  03-AUG-26         1500 2             2003 User Calls Per Sec      38 Calls Per Second       
-  03-AUG-26  03-AUG-26         1500 2             2007 Executions Per Sec      35 Executes Per Second    
+  03-AUG-26  03-AUG-26         1500 2             2007 Executions Per Sec      37 Executes Per Second    
   03-AUG-26  03-AUG-26         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
@@ -2142,9 +2092,9 @@ SQL [307/461]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME END_TIME  INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ---------- --------- ------------ -------- --------- -------------------- ----- -----------------------
-  03-AUG-26  03-AUG-26         6000 2             2000 CPU Usage Per Sec       35 CentiSeconds Per Second
+  03-AUG-26  03-AUG-26         6000 2             2000 CPU Usage Per Sec       37 CentiSeconds Per Second
   03-AUG-26  03-AUG-26         6000 2             2003 User Calls Per Sec      38 Calls Per Second       
-  03-AUG-26  03-AUG-26         6000 2             2007 Executions Per Sec      35 Executes Per Second    
+  03-AUG-26  03-AUG-26         6000 2             2007 Executions Per Sec      37 Executes Per Second    
   03-AUG-26  03-AUG-26         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
@@ -2153,9 +2103,9 @@ SQL [308/461]> SELECT * FROM v$system_event WHERE rownum < 5;
   
   EVENT                       TOTAL_WAITS TOTAL_TIMEOUTS TIME_WAITED AVERAGE_WAIT TIME_WAITED_MICRO AVERAGE_WAIT_MICRO WAIT_CLASS
   --------------------------- ----------- -------------- ----------- ------------ ----------------- ------------------ ----------
-  SQL*Net message from client         579              0           2            0             28950                 50 Idle      
-  SQL*Net message to client           537              0           0            0              5370                 10 Network   
-  db file sequential read             311              0           2            0             29545                 95 User I/O  
+  SQL*Net message from client         580              0           2            0             29000                 50 Idle      
+  SQL*Net message to client           558              0           0            0              5580                 10 Network   
+  db file sequential read             318              0           3            0             30210                 95 User I/O  
   log file sync                        13              0           1            0             15600               1200 Commit    
   
   4 rows selected.
@@ -2287,10 +2237,10 @@ SQL [326/461]> SELECT * FROM v$filestat WHERE rownum < 5;
   
   FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM AVGIOTIM
   ----- ------ ------- -------- --------- ------- -------- --------
-      1      0     106      203       106       0     1060      100
-      1      0     106      203       106       0     1060      100
-      1      0     106      203       106       0     1060      100
-      1      0     106      203       106       0     1060      100
+      1      0     111      208       111       0     1110      100
+      1      0     111      208       111       0     1110      100
+      1      0     111      208       111       0     1110      100
+      1      0     111      208       111       0     1110      100
   
   4 rows selected.
 
@@ -2298,7 +2248,7 @@ SQL [327/461]> SELECT * FROM v$tempstat WHERE rownum < 5;
   
   FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM
   ----- ------ ------- -------- --------- ------- --------
-      1    556     556     4448      4448    2780     2780
+      1    577     577     4616      4616    2885     2885
   
   1 row selected.
 
@@ -2442,10 +2392,10 @@ SQL [346/461]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-08-03T11:42:32.692Z         -949042444
-           2 SYS$USERS      SYS$USERS      2026-08-03T11:42:32.689Z         -949042447
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-08-03T11:42:32.689Z         -949042447
-           4 ORCLPDB1       ORCLPDB1       2026-08-03T11:42:32.689Z         -949042447
+           1 ORCL           ORCL           2026-08-03T12:22:52.112Z         -946623024
+           2 SYS$USERS      SYS$USERS      2026-08-03T12:22:52.109Z         -946623027
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-08-03T12:22:52.109Z         -946623027
+           4 ORCLPDB1       ORCLPDB1       2026-08-03T12:22:52.109Z         -946623027
   
   4 rows selected.
 
@@ -2453,10 +2403,10 @@ SQL [347/461]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-08-03T11:42:32.692Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-08-03T11:42:32.689Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-08-03T11:42:32.689Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-08-03T11:42:32.689Z
+           1 ORCL           ORCL           ORCL 2026-08-03T12:22:52.112Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-08-03T12:22:52.109Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-08-03T12:22:52.109Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-08-03T12:22:52.109Z
   
   4 rows selected.
 
@@ -2475,8 +2425,8 @@ SQL [349/461]> SELECT * FROM v$mystat WHERE rownum < 5;
   --- ---------- -----
   100          0     1
   100          1     1
-  100          2   620
-  100          3   584
+  100          2   621
+  100          3   592
   
   4 rows selected.
 
@@ -2495,7 +2445,7 @@ SQL [351/461]> SELECT * FROM v$sess_io WHERE rownum < 5;
   
   SID BLOCK_GETS CONSISTENT_GETS PHYSICAL_READS BLOCK_CHANGES CONSISTENT_CHANGES OPTIMIZED_PHYSICAL_READS
   --- ---------- --------------- -------------- ------------- ------------------ ------------------------
-  100       1094            1094              0           311                 13                        0
+  100       1122            1122              0           318                 13                        0
   
   1 row selected.
 
@@ -2503,10 +2453,10 @@ SQL [352/461]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME                VALUE
   --- ---------- ----------------------- ------
-  100 3649082374 DB time                 221628
-  100 3712030189 DB CPU                  177288
-  100 1561673735 background elapsed time  55407
-  100 4157170894 background cpu time      44322
+  100 3649082374 DB time                 241109
+  100 3712030189 DB CPU                  192893
+  100 1561673735 background elapsed time  60277
+  100 4157170894 background cpu time      48223
   
   4 rows selected.
 
@@ -2599,10 +2549,10 @@ SQL [362/461]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:32 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:32 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:32 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:32 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        03-AUG-26 03-AUG-26     2026-08-03:12:22:52 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        03-AUG-26 03-AUG-26     2026-08-03:12:22:52 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        03-AUG-26 03-AUG-26     2026-08-03:12:22:52 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        03-AUG-26 03-AUG-26     2026-08-03:12:22:52 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -2674,12 +2624,12 @@ SQL [368/461]> SELECT * FROM dba_cons_columns WHERE rownum < 5;
 
 SQL [369/461]> SELECT * FROM dba_sequences WHERE rownum < 5;
   
-  SEQUENCE_OWNER SEQUENCE_NAME   MIN_VALUE MAX_VALUE INCREMENT_BY CYCLE_FLAG ORDER_FLAG CACHE_SIZE LAST_NUMBER
-  -------------- --------------- --------- --------- ------------ ---------- ---------- ---------- -----------
-  HR             EMPLOYEES_SEQ           1 999999999            1 N          N                  20         206
-  HR             DEPARTMENTS_SEQ         1 999999999           10 N          N                  20         270
-  HR             LOCATIONS_SEQ           1 999999999          100 N          N                  20        3200
-  DEMO           SEQ_ORDER_ID            1 999999999            1 N          N                 100           0
+  SEQUENCE_OWNER SEQUENCE_NAME      MIN_VALUE        MAX_VALUE INCREMENT_BY CYCLE_FLAG ORDER_FLAG CACHE_SIZE LAST_NUMBER
+  -------------- ------------------ --------- ---------------- ------------ ---------- ---------- ---------- -----------
+  HR             EMPLOYEES_SEQ              1        999999999            1 N          N                  20         206
+  HR             DEPARTMENTS_SEQ            1        999999999           10 N          N                  20         270
+  HR             LOCATIONS_SEQ              1        999999999          100 N          N                  20        3200
+  DEMO           ISEQ$$_PRODUCTS_ID         1 9007199254740991            1 N          N                  20           5
   
   4 rows selected.
 
@@ -2912,10 +2862,10 @@ SQL [396/461]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                          
   ----------- --------- -------- ------------- --------------- -----------------------------------------------------------------
-            1 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:32: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:32: Database mounted                            
-            3 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:32: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:32: Database opened                             
+            1 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 12:22:52: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 12:22:52: Database mounted                            
+            3 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 12:22:52: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 12:22:52: Database opened                             
   
   4 rows selected.
 
@@ -2953,10 +2903,10 @@ SQL [400/461]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 2199526675               1       0 logons cumulative             1
-        1 2199526675               1       1 logons current                1
-        1 2199526675               1       2 opened cursors cumulative   671
-        1 2199526675               1       3 opened cursors current      508
+        1 1505458181               1       0 logons cumulative             1
+        1 1505458181               1       1 logons current                1
+        1 1505458181               1       2 opened cursors cumulative   672
+        1 1505458181               1       3 opened cursors current      520
   
   4 rows selected.
 
@@ -2964,10 +2914,10 @@ SQL [401/461]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 0gfnmsia3xqw0               0                1                 85             68                 1                0                    1
-        1 1x1yjuya3xqw0               0                1                 68             55                 1                0                    1
-        1 125jgeba3xqw0               0                1                 84             67                 1                0                    1
-        1 0wdsxw3a3xqw0               0                1                 63             51                 1                0                    1
+        1 19sbi4la3xqw0               0                1                103             83                 1                0                    1
+        1 0zhdpwda3xqw0               0                1                 77             62                 1                0                    1
+        1 1uwhnz9a3xqw0               0                1                 79             63                 1                0                    1
+        1 0nr03dxa3xqw0               0                1                 73             58                 1                0                    1
   
   4 rows selected.
 
@@ -3047,7 +2997,7 @@ SQL [412/461]> SELECT count(*) AS sequences FROM dba_sequences;
   
   SEQUENCES
   ---------
-          4
+          5
   
   1 row selected.
 
@@ -3362,7 +3312,7 @@ SQL [458/461]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-08-03T11:42:33.133Z
+  2026-08-03T12:22:52.607Z
   
   1 row selected.
 
