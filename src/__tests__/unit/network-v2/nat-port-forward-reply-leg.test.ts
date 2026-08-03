@@ -52,7 +52,7 @@ interface Lab {
   outside: LinuxServer;
 }
 
-async function buildCiscoLab(withOverload: boolean): Promise<Lab> {
+async function buildCiscoLab(withOverload: boolean, protocol: 'tcp' | 'udp' = 'tcp'): Promise<Lab> {
   const lanSw = new GenericSwitch('switch-generic', 'lan-sw', 8, 0, 0);
   const wanSw = new GenericSwitch('switch-generic', 'wan-sw', 8, 0, 0);
   const router = new CiscoRouter('R1', 0, 0);
@@ -88,7 +88,7 @@ async function buildCiscoLab(withOverload: boolean): Promise<Lab> {
     );
   }
   cmds.push(
-    `ip nat inside source static tcp ${SRV_IP} ${INTERNAL_PORT} ${GW_OUTSIDE} ${PUBLIC_PORT}`,
+    `ip nat inside source static ${protocol} ${SRV_IP} ${INTERNAL_PORT} ${GW_OUTSIDE} ${PUBLIC_PORT}`,
     'end',
   );
   for (const cmd of cmds) await router.executeCommand(cmd);
@@ -96,7 +96,7 @@ async function buildCiscoLab(withOverload: boolean): Promise<Lab> {
   return { srv, outside };
 }
 
-async function buildHuaweiLab(withOverload: boolean): Promise<Lab> {
+async function buildHuaweiLab(withOverload: boolean, protocol: 'tcp' | 'udp' = 'tcp'): Promise<Lab> {
   const lanSw = new GenericSwitch('switch-generic', 'lan-sw', 8, 0, 0);
   const wanSw = new GenericSwitch('switch-generic', 'wan-sw', 8, 0, 0);
   const router = new HuaweiRouter('HW1', 0, 0);
@@ -134,7 +134,7 @@ async function buildHuaweiLab(withOverload: boolean): Promise<Lab> {
   );
   if (withOverload) cmds.push('nat outbound 2000');
   cmds.push(
-    `nat server protocol tcp global ${GW_OUTSIDE} ${PUBLIC_PORT} inside ${SRV_IP} ${INTERNAL_PORT}`,
+    `nat server protocol ${protocol} global ${GW_OUTSIDE} ${PUBLIC_PORT} inside ${SRV_IP} ${INTERNAL_PORT}`,
     'quit',
   );
   for (const cmd of cmds) await router.executeCommand(cmd);
@@ -207,5 +207,63 @@ describe('PRD-Port-Forwarding.md Phase 1 — port-forward reply leg (Huawei)', (
 
     expect(clientSocket).not.toBeNull();
     expect(clientSocket!.state).toBe('established');
+  });
+});
+
+describe('PRD-Port-Forwarding.md Phase 3 — port-forward reply leg (UDP, Cisco and Huawei)', () => {
+  it('a UDP datagram round-trips through a redirected port (Cisco)', async () => {
+    const { srv, outside } = await buildCiscoLab(true, 'udp');
+    const receivedAtSrv: string[] = [];
+    srv.udpBind(INTERNAL_PORT, (d) => {
+      receivedAtSrv.push(d.udp.payload as string);
+      srv.sendUdpDatagram(d.sourceIP as IPAddress, d.udp.sourcePort, INTERNAL_PORT, 'pong', 4);
+    });
+    const receivedAtOutside: string[] = [];
+    outside.udpBind(40000, (d) => receivedAtOutside.push(d.udp.payload as string));
+
+    const sent = outside.sendUdpDatagram(new IPAddress(GW_OUTSIDE), PUBLIC_PORT, 40000, 'ping', 4);
+
+    expect(sent).toBe(true);
+    expect(receivedAtSrv).toEqual(['ping']);
+    expect(receivedAtOutside).toEqual(['pong']);
+  });
+
+  it('a UDP datagram round-trips through a redirected port with no coexisting PAT rule (Cisco)', async () => {
+    const { srv, outside } = await buildCiscoLab(false, 'udp');
+    const receivedAtSrv: string[] = [];
+    srv.udpBind(INTERNAL_PORT, (d) => receivedAtSrv.push(d.udp.payload as string));
+
+    const sent = outside.sendUdpDatagram(new IPAddress(GW_OUTSIDE), PUBLIC_PORT, 40000, 'ping', 4);
+
+    expect(sent).toBe(true);
+    expect(receivedAtSrv).toEqual(['ping']);
+  });
+
+  it('a UDP datagram round-trips through a redirected port (Huawei)', async () => {
+    const { srv, outside } = await buildHuaweiLab(true, 'udp');
+    const receivedAtSrv: string[] = [];
+    srv.udpBind(INTERNAL_PORT, (d) => {
+      receivedAtSrv.push(d.udp.payload as string);
+      srv.sendUdpDatagram(d.sourceIP as IPAddress, d.udp.sourcePort, INTERNAL_PORT, 'pong', 4);
+    });
+    const receivedAtOutside: string[] = [];
+    outside.udpBind(40000, (d) => receivedAtOutside.push(d.udp.payload as string));
+
+    const sent = outside.sendUdpDatagram(new IPAddress(GW_OUTSIDE), PUBLIC_PORT, 40000, 'ping', 4);
+
+    expect(sent).toBe(true);
+    expect(receivedAtSrv).toEqual(['ping']);
+    expect(receivedAtOutside).toEqual(['pong']);
+  });
+
+  it('a UDP datagram round-trips through a redirected port with no coexisting nat outbound rule (Huawei)', async () => {
+    const { srv, outside } = await buildHuaweiLab(false, 'udp');
+    const receivedAtSrv: string[] = [];
+    srv.udpBind(INTERNAL_PORT, (d) => receivedAtSrv.push(d.udp.payload as string));
+
+    const sent = outside.sendUdpDatagram(new IPAddress(GW_OUTSIDE), PUBLIC_PORT, 40000, 'ping', 4);
+
+    expect(sent).toBe(true);
+    expect(receivedAtSrv).toEqual(['ping']);
   });
 });

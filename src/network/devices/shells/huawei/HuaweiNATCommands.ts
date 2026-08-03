@@ -253,8 +253,9 @@ export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: (
     return '';
   });
   trie.registerGreedy('reset nat session inside', 'Clear NAT sessions matching inside IP', (args) => {
-    if (!args[0] || !isValidIPv4(stripQ(args[0]))) return 'Error: Invalid inside IP address.';
-    getRouter()._getNATEngine().clearTranslations();
+    const ip = args[0] ? stripQ(args[0]) : undefined;
+    if (!ip || !isValidIPv4(ip)) return 'Error: Invalid inside IP address.';
+    getRouter()._getNATEngine().clearTranslationsFiltered({ insideIP: ip });
     return '';
   });
   trie.register('display nat server', 'Display NAT server entries', () => 'NAT Server Information:\n' + displayNATServer(getRouter()));

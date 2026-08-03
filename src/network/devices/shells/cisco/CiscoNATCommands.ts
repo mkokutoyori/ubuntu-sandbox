@@ -536,16 +536,34 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
     if (!vrfs?.has?.(name)) return `% VRF ${name} does not exist.`;
     return null;
   };
+  const vrfIfaces = (args: string[]): Set<string> | undefined => {
+    const name = parseVrf(args);
+    if (!name) return undefined;
+    const router = getRouter() as any;
+    return (router._vrfs as Map<string, { interfaces: Set<string> }> | undefined)?.get(name)?.interfaces;
+  };
   trie.registerGreedy('clear ip nat translation inside', 'Clear inside NAT translation entries', (args) => {
     const err = validateVrfArg(args);
     if (err) return err;
-    getRouter()._getNATEngine().clearTranslations();
+    const engine = getRouter()._getNATEngine();
+    const ip = args[0];
+    if (ip && isValidIPv4(ip)) {
+      engine.clearTranslationsFiltered({ insideIP: ip, ifaces: vrfIfaces(args) });
+    } else {
+      engine.clearTranslations();
+    }
     return '';
   });
   trie.registerGreedy('clear ip nat translation outside', 'Clear outside NAT translation entries', (args) => {
     const err = validateVrfArg(args);
     if (err) return err;
-    getRouter()._getNATEngine().clearTranslations();
+    const engine = getRouter()._getNATEngine();
+    const ip = args[0];
+    if (ip && isValidIPv4(ip)) {
+      engine.clearTranslationsFiltered({ outsideIP: ip, ifaces: vrfIfaces(args) });
+    } else {
+      engine.clearTranslations();
+    }
     return '';
   });
   const protoClearHandler = (proto: 'tcp' | 'udp') => (args: string[]) => {
@@ -575,16 +593,16 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
     const vrf = args[0];
     if (!vrf) return '% Incomplete command.';
     const router = getRouter() as any;
-    const vrfs = router._vrfs as Map<string, unknown> | undefined;
+    const vrfs = router._vrfs as Map<string, { interfaces: Set<string> }> | undefined;
     if (!vrfs?.has?.(vrf)) return `% VRF ${vrf} does not exist.`;
-    getRouter()._getNATEngine().clearTranslations();
+    getRouter()._getNATEngine().clearTranslationsFiltered({ ifaces: vrfs.get(vrf)!.interfaces });
     return '';
   });
   trie.registerGreedy('clear ip nat translation pool', 'Clear NAT translations for pool', (args) => {
     const name = args[0];
     if (!name) return '% Incomplete command.';
     if (!getRouter()._getNATEngine().getPool(name)) return `% Pool ${name} does not exist.`;
-    getRouter()._getNATEngine().clearTranslations();
+    getRouter()._getNATEngine().clearTranslationsFiltered({ poolName: name });
     return '';
   });
   trie.register('clear ip nat statistics', 'Clear NAT statistics counters', () => {

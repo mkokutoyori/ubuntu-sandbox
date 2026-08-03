@@ -386,9 +386,29 @@ export class NATEngine {
     const isInside  = this.insideIfaces.has(inIface);
     if (!isOutside && !isInside) return null;
 
-    const dstIP = pkt.destinationIP.toString();
-    const dstPort = getPacketDstPort(pkt);
-    const proto = pkt.protocol;
+    // 0. ip nat outside source static — resolved before FIB lookup.
+    let ipPkt = pkt;
+    if (this.outsideStaticEntries.length > 0) {
+      if (isOutside) {
+        const srcIP0 = ipPkt.sourceIP.toString();
+        const entry = this.outsideStaticEntries.find(e => e.outsideGlobal === srcIP0);
+        if (entry) {
+          ipPkt = rewriteSrcIP(ipPkt, entry.outsideLocal);
+          this.hitCount++;
+        }
+      } else {
+        const dstIP0 = ipPkt.destinationIP.toString();
+        const entry = this.outsideStaticEntries.find(e => e.outsideLocal === dstIP0);
+        if (entry) {
+          ipPkt = rewriteDestIP(ipPkt, entry.outsideGlobal);
+          this.hitCount++;
+        }
+      }
+    }
+
+    const dstIP = ipPkt.destinationIP.toString();
+    const dstPort = getPacketDstPort(ipPkt);
+    const proto = ipPkt.protocol;
 
     // NAT translates unicast flows only (RFC 2663/5382 both assume a unicast
     // 5-tuple). Broadcast (255.255.255.255) and multicast (224.0.0.0/4,
@@ -400,17 +420,17 @@ export class NATEngine {
     // chatter as a NAT health problem it isn't. `Router.processIPv4` only
     // special-cases broadcast/multicast *after* calling `translateInbound`,
     // so this check has to live here too rather than solely at the caller.
-    if (isBroadcastOrMulticastDest(dstIP)) return null;
+    if (isBroadcastOrMulticastDest(dstIP)) return ipPkt !== pkt ? ipPkt : null;
 
     // ICMP error messages carry the offending packet as payload (RFC 5508 §3).
     // Translate the embedded original packet so the inside host can correlate it.
     if (proto === IP_PROTO_ICMP) {
-      const icmp = pkt.payload as ICMPPacket;
+      const icmp = ipPkt.payload as ICMPPacket;
       if (icmp && icmp.type === 'icmp' && icmp.originalPacket) {
         const translated = this.translateIcmpEmbedded(icmp.originalPacket, 'inbound');
         if (translated) {
           const newPkt: IPv4Packet = {
-            ...pkt,
+            ...ipPkt,
             payload: { ...icmp, originalPacket: translated },
             headerChecksum: 0,
           };
@@ -427,9 +447,9 @@ export class NATEngine {
       const revSession = this.reverseSessions.get(reverseKey);
       if (revSession) {
         revSession.timestamp = Date.now();
-        if (proto === IP_PROTO_TCP) updateTcpState(revSession, pkt, 'in');
+        if (proto === IP_PROTO_TCP) updateTcpState(revSession, ipPkt, 'in');
         this.hitCount++;
-        return rewriteDestIP(pkt, revSession.localIP, revSession.localPort);
+        return rewriteDestIP(ipPkt, revSession.localIP, revSession.localPort);
       }
     }
 
@@ -441,14 +461,14 @@ export class NATEngine {
       if (!entry.protocol) {
         this.hitCount++;
         entry.hitCount = (entry.hitCount ?? 0) + 1;
-        return rewriteDestIP(pkt, entry.localIP);
+        return rewriteDestIP(ipPkt, entry.localIP);
       }
 
       const entryProto = entry.protocol === 'tcp' ? IP_PROTO_TCP : IP_PROTO_UDP;
       if (proto === entryProto && dstPort === entry.globalPort) {
         this.hitCount++;
         entry.hitCount = (entry.hitCount ?? 0) + 1;
-        return rewriteDestIP(pkt, entry.localIP, entry.localPort);
+        return rewriteDestIP(ipPkt, entry.localIP, entry.localPort);
       }
     }
 
@@ -458,9 +478,9 @@ export class NATEngine {
     // once it's actually routed out. Only genuinely inbound (from outside)
     // traffic that found no reverse session and no static entry is a real
     // "Miss" (an unsolicited/unmapped packet we can't translate).
-    if (!isOutside) return null;
-    this.missCount++;
-    return null;
+    if (!isOutside) return ipPkt !== pkt ? ipPkt : null;
+    if (ipPkt === pkt) this.missCount++;
+    return ipPkt !== pkt ? ipPkt : null;
   }
 
   /**
@@ -797,6 +817,33 @@ export class NATEngine {
   clearDynamicTranslations(): void {
     this.sessions.clear();
     this.reverseSessions.clear();
+  }
+
+  // `ifaces` matches against `NatSession.inIface` — sessions carry no `vrf`
+  // field, so a VRF's membership is recovered from its bound interfaces.
+  clearTranslationsFiltered(filter: {
+    insideIP?: string;
+    outsideIP?: string;
+    poolName?: string;
+    ifaces?: ReadonlySet<string>;
+  }): number {
+    const pool = filter.poolName ? this.pools.get(filter.poolName) : undefined;
+    const poolStart = pool ? tryIpToUint32(pool.startIP) : null;
+    const poolEnd = pool ? tryIpToUint32(pool.endIP) : null;
+    let cleared = 0;
+    for (const [key, session] of this.sessions) {
+      if (filter.insideIP !== undefined && session.localIP !== filter.insideIP) continue;
+      if (filter.outsideIP !== undefined && session.outsideIP !== filter.outsideIP) continue;
+      if (filter.ifaces !== undefined && (!session.inIface || !filter.ifaces.has(session.inIface))) continue;
+      if (pool) {
+        const g = tryIpToUint32(session.globalIP);
+        if (g === null || poolStart === null || poolEnd === null || g < poolStart || g > poolEnd) continue;
+      }
+      this.sessions.delete(key);
+      this.reverseSessions.delete(makeKey(session.protocol, session.globalIP, session.globalPort));
+      cleared++;
+    }
+    return cleared;
   }
 
   /**
