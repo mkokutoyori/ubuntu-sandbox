@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-07-30T18:12:54.801Z
+Generated: 2026-08-03T11:43:05.861Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -2270,7 +2270,6 @@ Total steps: 343
   %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
   %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
   %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
@@ -2326,7 +2325,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1612A6.D9DB22D0 (18:12:54.851 UTC Thu Jul 30 2026)
+  reference time is EE1AFD49.E83126E9 (11:43:05.907 UTC Mon Aug 3 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -2335,7 +2334,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *18:12:54.000 UTC Thu Jul 30 2026
+  *11:43:05.000 UTC Mon Aug 3 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3243,7 +3242,6 @@ Total steps: 343
   %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
   %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
   %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up

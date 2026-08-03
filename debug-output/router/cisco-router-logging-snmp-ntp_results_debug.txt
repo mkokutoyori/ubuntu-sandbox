@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-07-30T18:11:57.320Z
+Generated: 2026-08-03T11:43:13.287Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -182,20 +182,19 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  07-30 18:11:57.253: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  07-30 18:11:57.254: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
-  07-30 18:11:57.254: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  07-30 18:11:57.257: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  07-30 18:11:57.316: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  07-30 18:11:57.316: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  07-30 18:11:57.318: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  07-30 18:11:57.318: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  07-30 18:11:57.319: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  07-30 18:11:57.324: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  07-30 18:11:57.326: %IFMGR-6-INFORMATIONAL: Interface Loopback0, IPv4 address 1.1.1.1/255.255.255.255 assigned
+  08-03 11:43:13.190: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  08-03 11:43:13.190: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  08-03 11:43:13.191: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  08-03 11:43:13.191: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  08-03 11:43:13.191: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  08-03 11:43:13.196: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  08-03 11:43:13.283: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  08-03 11:43:13.283: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  08-03 11:43:13.285: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  08-03 11:43:13.285: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  08-03 11:43:13.286: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  08-03 11:43:13.291: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  08-03 11:43:13.293: %IFMGR-6-INFORMATIONAL: Interface Loopback0, IPv4 address 1.1.1.1/255.255.255.255 assigned
 
 [53/322] r1 R1# show logging history
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -216,20 +215,19 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  07-30 18:11:57.253: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  07-30 18:11:57.254: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  07-30 18:11:57.254: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
-  07-30 18:11:57.254: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  07-30 18:11:57.257: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  07-30 18:11:57.316: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  07-30 18:11:57.316: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  07-30 18:11:57.318: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  07-30 18:11:57.318: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  07-30 18:11:57.319: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  07-30 18:11:57.324: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  07-30 18:11:57.326: %IFMGR-6-INFORMATIONAL: Interface Loopback0, IPv4 address 1.1.1.1/255.255.255.255 assigned
+  08-03 11:43:13.190: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
+  08-03 11:43:13.190: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
+  08-03 11:43:13.191: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
+  08-03 11:43:13.191: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
+  08-03 11:43:13.191: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  08-03 11:43:13.196: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  08-03 11:43:13.283: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  08-03 11:43:13.283: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  08-03 11:43:13.285: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  08-03 11:43:13.285: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  08-03 11:43:13.286: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  08-03 11:43:13.291: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  08-03 11:43:13.293: %IFMGR-6-INFORMATIONAL: Interface Loopback0, IPv4 address 1.1.1.1/255.255.255.255 assigned
 
 [54/322] r1 R1# show archive
   No archives configured / no revisions captured.
@@ -521,7 +519,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE16126D.5645A1CA (18:11:57.337 UTC Thu Jul 30 2026)
+  reference time is EE1AFD51.4DD2F1A9 (11:43:13.304 UTC Mon Aug 3 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -543,14 +541,14 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  19:11:57.000 CET Thu Jul 30 2026
+  12:43:13.000 CET Mon Aug 3 2026
 
 [128/322] r1 R1# show clock detail
-  19:11:57.000 CET Thu Jul 30 2026
+  12:43:13.000 CET Mon Aug 3 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  18:11:57 UTC Thu Jul 30 2026
+  11:43:13 UTC Mon Aug 3 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1357,12 +1355,12 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  07-30 18:11:57.338: %NETFLOW-6-INFORMATIONAL: Collector 10.0.0.50 added
-  07-30 18:11:57.342: %CDP-6-INFORMATIONAL: CDP enabled
-  07-30 18:11:57.342: %CDP-6-INFORMATIONAL: CDP enabled
-  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
-  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
-  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:43:13.306: %NETFLOW-6-INFORMATIONAL: Collector 10.0.0.50 added
+  08-03 11:43:13.309: %CDP-6-INFORMATIONAL: CDP enabled
+  08-03 11:43:13.310: %CDP-6-INFORMATIONAL: CDP enabled
+  08-03 11:43:13.311: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:43:13.311: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:43:13.311: %LLDP-6-INFORMATIONAL: LLDP enabled
 
 [249/322] r1 R1# show snmp
   Chassis: R1-CHASSIS
@@ -1389,7 +1387,7 @@ Total steps: 322
 [250/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE16126D.5BA5E353 (18:11:57.358 UTC Thu Jul 30 2026)
+  reference time is EE1AFD51.52F1A9FB (11:43:13.324 UTC Mon Aug 3 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1# show ntp associations
@@ -1402,7 +1400,7 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1# show clock
-  19:11:57.000 CET Thu Jul 30 2026
+  12:43:13.000 CET Mon Aug 3 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1886,12 +1884,12 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  07-30 18:11:57.338: %NETFLOW-6-INFORMATIONAL: Collector 10.0.0.50 added
-  07-30 18:11:57.342: %CDP-6-INFORMATIONAL: CDP enabled
-  07-30 18:11:57.342: %CDP-6-INFORMATIONAL: CDP enabled
-  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
-  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
-  07-30 18:11:57.344: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:43:13.306: %NETFLOW-6-INFORMATIONAL: Collector 10.0.0.50 added
+  08-03 11:43:13.309: %CDP-6-INFORMATIONAL: CDP enabled
+  08-03 11:43:13.310: %CDP-6-INFORMATIONAL: CDP enabled
+  08-03 11:43:13.311: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:43:13.311: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:43:13.311: %LLDP-6-INFORMATIONAL: LLDP enabled
 
 [266/322] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"

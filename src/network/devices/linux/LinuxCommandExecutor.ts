@@ -23,8 +23,8 @@ export interface SudoAuthorization {
 import type { UserEntry } from './iam/LinuxUserAccount';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
-import { parseCrontab } from './cron/CrontabParser';
-import { cronAllowed } from './cron/CronPermissions';
+import { parseCrontab, validateCrontabContent } from './cron/CrontabParser';
+import { cronAllowed, cronDenialMessage } from './cron/CronPermissions';
 import { CronEngine } from './cron/CronEngine';
 import { SystemCron } from './cron/SystemCron';
 import { deliverLocalMessage } from '@/network/smtp/localDelivery';
@@ -97,6 +97,7 @@ import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
 import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
+import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
@@ -187,7 +188,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Lookup
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
-  'crontab', 'run-parts', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
+  'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
@@ -2208,7 +2209,8 @@ export class LinuxCommandExecutor {
     return this.clock.now();
   }
 
-  private simulatedDate(): Date {
+  /** L'heure de la machine simulée, pas celle du navigateur. */
+  simulatedDate(): Date {
     return new Date(this.wallEpoch + this.clock.now());
   }
 
@@ -2283,13 +2285,53 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private fireDueAtJobs(): void {
+  /**
+   * Le tour d'`atd` — la seule vidange du spool, appelée à la fois par
+   * `advanceTime()` et par le tour de minute autonome de la machine.
+   *
+   * La tâche part sous **son propriétaire**, pas sous l'utilisateur qui
+   * se trouve devant le clavier : `at` retient qui l'a posée précisément
+   * pour ça. Et sa sortie part au courrier, comme celle de cron — c'est
+   * la seule façon de la lire, puisque personne n'est là pour la voir.
+   *
+   * Le démon arrêté ne perd rien : les tâches restent au spool et
+   * partiront à sa reprise, ce que fait le vrai `atd`.
+   */
+  fireDueAtJobs(at: Date = this.simulatedDate()): void {
     if (this.serviceMgr.status('atd')?.state !== 'active') return;
-    const now = this.simulatedDate().getTime();
-    for (const job of this.atQueue.list()) {
-      if (job.runAt.getTime() > now) break;
-      this.atQueue.remove(job.id);
-      try { this.execute(job.command); } catch { void 0; }
+    const host = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    for (const job of this.atQueue.dueJobs(at)) {
+      const prev = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid };
+      const entry = this.userMgr.getUser(job.user);
+      let output = '';
+      try {
+        if (entry) {
+          this.userMgr.currentUser = entry.username;
+          this.userMgr.currentUid = entry.uid;
+          this.userMgr.currentGid = entry.gid;
+        }
+        output = this.execute(job.command) ?? '';
+      } catch { void 0; } finally {
+        this.userMgr.currentUser = prev.user;
+        this.userMgr.currentUid = prev.uid;
+        this.userMgr.currentGid = prev.gid;
+      }
+      this.logMgr.logDaemon('atd', `pam_unix(atd:session): session opened for user ${job.user}`);
+      if (output.trim() !== '') {
+        const message = [
+          `From: root (Atd) <root@${host}>`,
+          `To: ${job.user}@${host}`,
+          `Subject: Output from your job        ${job.id}`,
+          'Content-Type: text/plain; charset=UTF-8',
+          '',
+          output.endsWith('\n') ? output : output + '\n',
+        ].join('\n');
+        deliverLocalMessage(
+          this.vfs, job.user,
+          { envelopeFrom: `root@${host}`, receivedAt: at.getTime(), rawMessage: message },
+          { uid: entry?.uid ?? 0, gid: entry?.gid ?? 0 },
+        );
+      }
     }
   }
 
@@ -4174,13 +4216,20 @@ export class LinuxCommandExecutor {
       case 'passwd': return this.handlePasswd(args);
       case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
       case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
-      case 'at': {
+      // `batch` est le même binaire qu'`at` — seule la file change (`b`),
+      // et l'heure n'est pas demandée. Les deux partagent donc le cas.
+      case 'at':
+      case 'batch': {
+        const refus = this.atDenied('at');
+        if (refus) return refus;
         const atdActive = this.serviceMgr.status('atd')?.state === 'active';
-        const out = cmdAt(this.atQueue, args, stdin ?? '', this.userMgr.currentUser, atdActive, this.simulatedDate());
-        return { output: out, exitCode: atdActive ? 0 : 1 };
+        return cmdAt(
+          this.atQueue, args, stdin ?? '', this.userMgr.currentUser,
+          atdActive, this.simulatedDate(), cmd === 'batch' ? 'b' : 'a',
+        );
       }
-      case 'atq': return { output: cmdAtq(this.atQueue), exitCode: 0 };
-      case 'atrm': return { output: cmdAtrm(this.atQueue, args), exitCode: 0 };
+      case 'atq': return this.atDenied('atq') ?? cmdAtq(this.atQueue);
+      case 'atrm': return this.atDenied('atrm') ?? cmdAtrm(this.atQueue, args);
       case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
       case 'auditctl': return this.handleAuditctl(args);
@@ -5180,6 +5229,15 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
+  /**
+   * Le refus d'`at`, ou rien. Les trois noms — `at`, `atq`, `atrm` —
+   * consultent les mêmes fichiers et nomment chacun leur propre appel.
+   */
+  private atDenied(commande: string): { output: string; exitCode: number } | null {
+    if (atAllowed(this.userMgr.currentUser, this.vfs)) return null;
+    return { output: atDenialMessage(commande), exitCode: 1 };
+  }
+
   handleCrontab(args: string[], stdin?: string): { output: string; exitCode: number } {
     let targetUser = this.userMgr.currentUser;
     let explicitUser = false;
@@ -5200,7 +5258,7 @@ export class LinuxCommandExecutor {
       return { output: `crontab: user '${targetUser}' unknown`, exitCode: 1 };
     }
     if (!cronAllowed(targetUser, this.vfs)) {
-      return { output: `You (${this.userMgr.currentUser}) are not allowed to use this program (crontab)\nSee crontab(1) for more information.`, exitCode: 1 };
+      return { output: cronDenialMessage(this.userMgr.currentUser), exitCode: 1 };
     }
 
     if (op === 'list') {
@@ -5213,7 +5271,14 @@ export class LinuxCommandExecutor {
       return { output: '', exitCode: 0 };
     }
     if (op === 'edit') {
-      return { output: '', exitCode: 0 };
+      // Hors terminal — un tube, un script — il n'y a pas d'éditeur à
+      // ouvrir, et le vrai crontab ne se tait pas pour autant : il dit
+      // que l'éditeur a échoué, en le nommant. Mesuré avec une entrée
+      // standard qui n'est pas un terminal. La vraie édition, elle, se
+      // fait dans `LinuxTerminalSession.tryCrontabEdit`.
+      const editor = this._cmdEnv?.['VISUAL'] || this._cmdEnv?.['EDITOR']
+        || this.env.get('VISUAL') || this.env.get('EDITOR') || '/usr/bin/sensible-editor';
+      return { output: `crontab: "${editor}" exited with status 1`, exitCode: 1 };
     }
     if (op === 'install') {
       let content: string | null;
@@ -5225,13 +5290,8 @@ export class LinuxCommandExecutor {
       }
       // Une ligne fautive fait tout refuser : le vrai crontab n'installe
       // pas la moitié d'un fichier, et laisse en place celui d'avant.
-      const errors = parseCrontab(content, { withUser: false }).errors;
-      if (errors.length > 0) {
-        const source = fileArg === '-' ? '-' : fileArg!;
-        const lines = errors.map((e) => `"${source}":${e.line}: ${e.reason}`);
-        lines.push('errors in crontab file, can\'t install.');
-        return { output: lines.join('\n'), exitCode: 1 };
-      }
+      const refus = validateCrontabContent(content, fileArg === '-' ? '-' : fileArg!);
+      if (refus.length > 0) return { output: refus.join('\n'), exitCode: 1 };
       this.installCrontab(content, targetUser);
       return { output: '', exitCode: 0 };
     }

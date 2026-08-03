@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-07-discovery-management
-Generated: 2026-07-30T18:34:31.733Z
+Generated: 2026-08-03T11:42:21.042Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CDP/LLDP, management SVI, users/AAA, SSH, logging, NTP/SNTP, SNMP
 Total steps: 366
@@ -56,7 +56,7 @@ Total steps: 366
   Total entries displayed: 0
 
 [7/366] sw1 SW1# show clock
-  *18:34:31.000 UTC Thu Jul 30 2026
+  *11:42:21.000 UTC Mon Aug 3 2026
 
 [8/366] sw1 SW1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
@@ -993,38 +993,38 @@ Total steps: 366
   
   Log Buffer (16384 bytes):
   
-  07-30 18:34:31.697: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  07-30 18:34:31.697: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  07-30 18:34:31.701: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  07-30 18:34:31.701: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
-  07-30 18:34:31.702: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  07-30 18:34:31.702: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  07-30 18:34:31.703: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  07-30 18:34:31.703: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
-  07-30 18:34:31.703: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  07-30 18:34:31.704: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  07-30 18:34:31.705: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  07-30 18:34:31.705: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
-  07-30 18:34:31.708: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  07-30 18:34:31.708: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  07-30 18:34:31.710: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  07-30 18:34:31.710: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  07-30 18:34:31.710: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  07-30 18:34:31.718: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
-  07-30 18:34:31.736: %CDP-6-INFORMATIONAL: CDP enabled
-  07-30 18:34:31.736: %CDP-6-INFORMATIONAL: CDP enabled
-  07-30 18:34:31.739: %LLDP-6-INFORMATIONAL: LLDP enabled
-  07-30 18:34:31.740: %LLDP-6-INFORMATIONAL: LLDP enabled
-  07-30 18:34:31.740: %LLDP-6-INFORMATIONAL: LLDP enabled
-  07-30 18:34:31.743: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
-  07-30 18:34:31.743: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
-  07-30 18:34:31.748: %SYS-6-INFORMATIONAL: User account 'user1' created (priv 1)
-  07-30 18:34:31.748: %SYS-6-INFORMATIONAL: User account 'user2' created (priv 1)
-  07-30 18:34:31.748: %SYS-6-INFORMATIONAL: User account 'user3' created (priv 1)
-  07-30 18:34:31.748: %SYS-6-INFORMATIONAL: User account 'user4' created (priv 15)
-  07-30 18:34:31.748: %SYS-6-INFORMATIONAL: User account 'user5' created (priv 15)
-  07-30 18:34:31.748: %SYS-6-INFORMATIONAL: User account 'user6' created (priv 15)
-  07-30 18:34:31.748: %SYS-6-INFORMATIONAL: User account 'admin' created (priv 15)
+  08-03 11:42:21.009: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  08-03 11:42:21.009: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  08-03 11:42:21.013: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
+  08-03 11:42:21.013: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
+  08-03 11:42:21.014: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  08-03 11:42:21.014: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  08-03 11:42:21.015: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
+  08-03 11:42:21.015: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
+  08-03 11:42:21.015: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  08-03 11:42:21.016: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  08-03 11:42:21.017: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
+  08-03 11:42:21.017: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
+  08-03 11:42:21.019: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  08-03 11:42:21.019: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  08-03 11:42:21.021: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  08-03 11:42:21.021: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
+  08-03 11:42:21.021: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
+  08-03 11:42:21.027: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
+  08-03 11:42:21.045: %CDP-6-INFORMATIONAL: CDP enabled
+  08-03 11:42:21.045: %CDP-6-INFORMATIONAL: CDP enabled
+  08-03 11:42:21.048: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:42:21.048: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:42:21.048: %LLDP-6-INFORMATIONAL: LLDP enabled
+  08-03 11:42:21.051: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
+  08-03 11:42:21.051: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
+  08-03 11:42:21.057: %SYS-6-INFORMATIONAL: User account 'user1' created (priv 1)
+  08-03 11:42:21.057: %SYS-6-INFORMATIONAL: User account 'user2' created (priv 1)
+  08-03 11:42:21.057: %SYS-6-INFORMATIONAL: User account 'user3' created (priv 1)
+  08-03 11:42:21.057: %SYS-6-INFORMATIONAL: User account 'user4' created (priv 15)
+  08-03 11:42:21.057: %SYS-6-INFORMATIONAL: User account 'user5' created (priv 15)
+  08-03 11:42:21.057: %SYS-6-INFORMATIONAL: User account 'user6' created (priv 15)
+  08-03 11:42:21.058: %SYS-6-INFORMATIONAL: User account 'admin' created (priv 15)
 
 [184/366] sw1 SW1(config)# end
 <empty>
@@ -1069,7 +1069,7 @@ Total steps: 366
   Clock is unsynchronized, stratum 16, no reference clock
 
 [196/366] sw1 SW1(config)# do show clock
-  *18:34:31.000 UTC Thu Jul 30 2026
+  *11:42:21.000 UTC Mon Aug 3 2026
 
 [197/366] sw1 SW1(config)# end
 <empty>
@@ -1157,21 +1157,21 @@ Total steps: 366
 --- [214] § management reachability from hosts ---
 [214/366] l1 l1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=1.724 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.746 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=1.853 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.876 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.746/1.235/1.724/0.489 ms
+  rtt min/avg/max/mdev = 0.876/1.365/1.853/0.489 ms
 
 [215/366] srv1 srv1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.350 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.937 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.307 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=1.083 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.350/0.643/0.937/0.293 ms
+  rtt min/avg/max/mdev = 0.307/0.695/1.083/0.388 ms
 
 [216/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -4556,12 +4556,12 @@ Total steps: 366
 
 [283/366] l2 l2$ ping -c 2 192.168.1.253
   PING 192.168.1.253 (192.168.1.253) 56(84) bytes of data.
-  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.517 ms
-  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.743 ms
+  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.399 ms
+  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.958 ms
   
   --- 192.168.1.253 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.517/0.630/0.743/0.113 ms
+  rtt min/avg/max/mdev = 0.399/0.679/0.958/0.279 ms
 
 
 --- [284] § host service inspection (SRV1/SRV2) ---

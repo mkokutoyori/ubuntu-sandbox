@@ -54,6 +54,7 @@ import {
 import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
+import { validateCrontabContent } from '@/network/devices/linux/cron/CrontabParser';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
@@ -1526,6 +1527,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // A pending visudo "What now?" recovery prompt consumes the very next
     // line typed (e/x/Q) before anything else is interpreted as a command.
     if (this.tryVisudoPromptResponse(typed)) return;
+    if (this.tryCrontabPromptResponse(typed)) return;
 
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
@@ -1910,11 +1912,45 @@ export class LinuxTerminalSession extends TerminalSession {
       return true;
     }
 
+    if (!dev.hasCrontab(user)) this.addLine(`no crontab for ${user} - using an empty one`);
     const template = dev.crontabEditTemplate(user);
-    const tmpPath = `/tmp/crontab.${Math.floor(Math.random() * 1e6)}`;
+    const tmpPath = `/tmp/crontab.${Math.floor(Math.random() * 1e6)}/crontab`;
     dev.writeFileFromEditorInSession(tmpPath, template, this.shell);
     this._pendingCrontabEdit = { user, tmpPath };
-    this.openEditor('nano', [tmpPath]);
+    this.openEditor(this.preferredEditor(), [tmpPath]);
+    return true;
+  }
+
+  /** L'éditeur que `sensible-editor` choisirait : `$VISUAL`, puis `$EDITOR`. */
+  private preferredEditor(): 'nano' | 'vi' | 'vim' {
+    const v = (this.shell?.env.get('VISUAL') || this.shell?.env.get('EDITOR') || 'nano').toLowerCase();
+    return v.includes('nano') ? 'nano' : v.includes('vim') ? 'vim' : v.includes('vi') ? 'vi' : 'nano';
+  }
+
+  /**
+   * Le refus de `crontab -e`, et sa question. Le vrai ne jette pas une
+   * édition fautive : il la garde et demande s'il faut la reprendre.
+   */
+  private _pendingCrontabPrompt: { user: string; tmpPath: string } | null = null;
+
+  private tryCrontabPromptResponse(commandLine: string): boolean {
+    const pending = this._pendingCrontabPrompt;
+    if (!pending) return false;
+    const answer = commandLine.trim().toLowerCase();
+    if (answer === 'y') {
+      this._pendingCrontabPrompt = null;
+      this._pendingCrontabEdit = pending;
+      this.openEditor(this.preferredEditor(), [pending.tmpPath]);
+      return true;
+    }
+    if (answer === 'n') {
+      this._pendingCrontabPrompt = null;
+      this.addLine(`crontab: edits left in ${pending.tmpPath}`);
+      this.notify();
+      return true;
+    }
+    this.addLine('Do you want to retry the same edit? (y/n) ');
+    this.notify();
     return true;
   }
 
@@ -1923,13 +1959,25 @@ export class LinuxTerminalSession extends TerminalSession {
     this._pendingCrontabEdit = null;
     this.inputMode = { type: 'normal' };
     const dev = this.device;
-    if (saved && dev instanceof LinuxMachine && this.shell) {
-      const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
-      dev.installCrontabContent(content, pending!.user);
-      this.addLine('crontab: installing new crontab');
-    } else {
-      this.addLine('no changes made to crontab');
+    if (!saved || !(dev instanceof LinuxMachine) || !this.shell) {
+      this.addLine('No modification made');
+      this.notify();
+      return;
     }
+    const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
+    // Le vrai annonce l'installation avant de valider, puis se dédit si
+    // le fichier ne passe pas. L'ordre est celui du relevé, pas une
+    // approximation : les deux lignes sortent dans cet ordre-là.
+    this.addLine('crontab: installing new crontab');
+    const refus = validateCrontabContent(content, pending!.tmpPath);
+    if (refus.length > 0) {
+      for (const l of refus) this.addLine(l);
+      this._pendingCrontabPrompt = pending;
+      this.addLine('Do you want to retry the same edit? (y/n) ');
+      this.notify();
+      return;
+    }
+    dev.installCrontabContent(content, pending!.user);
     this.notify();
   }
 

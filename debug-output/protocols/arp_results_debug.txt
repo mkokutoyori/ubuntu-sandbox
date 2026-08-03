@@ -37,7 +37,6 @@ Total steps: 339
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
@@ -80,7 +79,6 @@ Total steps: 339
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
@@ -153,12 +151,11 @@ Total steps: 339
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 18
+  Current messages : 17
   2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
   2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
   2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
   2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
@@ -661,11 +658,11 @@ Total steps: 339
 
 [90/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.984 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.489 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.984/0.984/0.984/0.000 ms
+  rtt min/avg/max/mdev = 0.489/0.489/0.489/0.000 ms
 
 [91/339] lhq lhq$ arp -n 10.1.1.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -685,11 +682,11 @@ Total steps: 339
 
 [96/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=2.809 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.459 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.809/2.809/2.809/0.000 ms
+  rtt min/avg/max/mdev = 0.459/0.459/0.459/0.000 ms
 
 [97/339] lbr lbr$ arp -n 10.2.2.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -709,11 +706,11 @@ Total steps: 339
 
 [102/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.753 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.453 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.753/0.753/0.753/0.000 ms
+  rtt min/avg/max/mdev = 0.453/0.453/0.453/0.000 ms
 
 [103/339] ldc ldc$ arp -n 10.3.3.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -733,11 +730,11 @@ Total steps: 339
 
 [108/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.613 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.321 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.613/0.613/0.613/0.000 ms
+  rtt min/avg/max/mdev = 0.321/0.321/0.321/0.000 ms
 
 [109/339] srvdc srvdc$ arp -n 10.3.3.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -760,7 +757,7 @@ Total steps: 339
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [114/339] whq whq$ arp -a
   
@@ -797,11 +794,11 @@ Total steps: 339
 
 [120/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.616 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.423 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.616/0.616/0.616/0.000 ms
+  rtt min/avg/max/mdev = 0.423/0.423/0.423/0.000 ms
 
 [121/339] lhq lhq$ ip neigh show 10.1.1.1 dev eth0
   10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
@@ -815,11 +812,11 @@ Total steps: 339
 
 [124/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.546 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.385 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.546/0.546/0.546/0.000 ms
+  rtt min/avg/max/mdev = 0.385/0.385/0.385/0.000 ms
 
 [125/339] lbr lbr$ ip neigh show 10.2.2.1 dev eth0
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -833,11 +830,11 @@ Total steps: 339
 
 [128/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.427 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.266 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.427/0.427/0.427/0.000 ms
+  rtt min/avg/max/mdev = 0.266/0.266/0.266/0.000 ms
 
 [129/339] ldc ldc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -851,11 +848,11 @@ Total steps: 339
 
 [132/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.373 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.284 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.373/0.373/0.373/0.000 ms
+  rtt min/avg/max/mdev = 0.284/0.284/0.284/0.000 ms
 
 [133/339] srvdc srvdc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1431,12 +1428,12 @@ Total steps: 339
 
 [264/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.528 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.543 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.343 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.582 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.528/0.536/0.543/0.008 ms
+  rtt min/avg/max/mdev = 0.343/0.462/0.582/0.120 ms
 
 [265/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=0
 <empty>
@@ -1449,12 +1446,12 @@ Total steps: 339
 
 [268/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.313 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.566 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.331 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.477 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.313/0.439/0.566/0.126 ms
+  rtt min/avg/max/mdev = 0.331/0.404/0.477/0.073 ms
 
 
 --- [269] § L2 — corrélation MAC/ARP sur switchs ---
@@ -1599,27 +1596,27 @@ Total steps: 339
 --- [298] § ARP — re-résolution complète après flush ---
 [298/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.301 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.280 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.301/0.301/0.301/0.000 ms
+  rtt min/avg/max/mdev = 0.280/0.280/0.280/0.000 ms
 
 [299/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.220 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.277 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.220/0.220/0.220/0.000 ms
+  rtt min/avg/max/mdev = 0.277/0.277/0.277/0.000 ms
 
 [300/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.229 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.275 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.229/0.229/0.229/0.000 ms
+  rtt min/avg/max/mdev = 0.275/0.275/0.275/0.000 ms
 
 [301/339] lhq lhq$ ip -s neigh
   10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
@@ -1628,19 +1625,19 @@ Total steps: 339
 
 [302/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.392 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.423 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.392/0.392/0.392/0.000 ms
+  rtt min/avg/max/mdev = 0.423/0.423/0.423/0.000 ms
 
 [303/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.161 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.180 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.161/0.161/0.161/0.000 ms
+  rtt min/avg/max/mdev = 0.180/0.180/0.180/0.000 ms
 
 [304/339] lbr lbr$ ip -s neigh
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -1648,19 +1645,19 @@ Total steps: 339
 
 [305/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.233 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.340 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.233/0.233/0.233/0.000 ms
+  rtt min/avg/max/mdev = 0.340/0.340/0.340/0.000 ms
 
 [306/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.184 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.183 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.184/0.184/0.184/0.000 ms
+  rtt min/avg/max/mdev = 0.183/0.183/0.183/0.000 ms
 
 [307/339] ldc ldc$ ip -s neigh
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1668,19 +1665,19 @@ Total steps: 339
 
 [308/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.257 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.431 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.257/0.257/0.257/0.000 ms
+  rtt min/avg/max/mdev = 0.431/0.431/0.431/0.000 ms
 
 [309/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.389 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.466 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.389/0.389/0.389/0.000 ms
+  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
 
 [310/339] srvdc srvdc$ ip -s neigh
   10.3.3.11 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
@@ -1870,7 +1867,6 @@ Total steps: 339
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
   06-06 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   06-06 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   06-06 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
@@ -1894,12 +1890,11 @@ Total steps: 339
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 18
+  Current messages : 17
   2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
   2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
   2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
   2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
   2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up

@@ -82,3 +82,24 @@ export function parseCrontab(content: string, opts: { withUser: boolean }): Pars
 
   return { env, entries, errors };
 }
+
+/**
+ * Le refus, tel que le vrai `crontab` l'imprime : une ligne par faute,
+ * puis le verdict. Un tableau vide veut dire « installable ».
+ *
+ * Cette fonction existe parce que `crontab -` et `crontab -e` doivent
+ * refuser la même chose. Ils ont divergé : le tube validait, l'éditeur
+ * installait sans regarder, si bien qu'ouvrir l'éditeur suffisait à
+ * contourner le contrôle.
+ *
+ * `source` est ce que le vrai met entre guillemets — le nom du fichier
+ * donné, `-` pour le tube, et le chemin du fichier temporaire pour
+ * l'éditeur.
+ */
+export function validateCrontabContent(content: string, source: string): string[] {
+  const errors = parseCrontab(content, { withUser: false }).errors;
+  if (errors.length === 0) return [];
+  const lines = errors.map((e) => `"${source}":${e.line}: ${e.reason}`);
+  lines.push("errors in crontab file, can't install.");
+  return lines;
+}

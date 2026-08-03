@@ -58,6 +58,7 @@ import {
 } from './linux/system/Pidstat';
 import { CronEngine } from './linux/cron/CronEngine';
 import { SystemCron } from './linux/cron/SystemCron';
+import { formatCtime } from './linux/time/ctime';
 import type { HardwareProfile } from './host/hardware';
 import { LinuxShellSession, TtyAllocator } from './linux/shell/LinuxShellSession';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -1011,6 +1012,11 @@ export abstract class LinuxMachine extends EndHost
     else if (!active && engine.isRunning) engine.stop();
     engine.tick(at);
     this.executor.serviceMgr.timerTick(at);
+    // `atd` a son propre tour, mais il tombe à la même minute que cron.
+    // Il ne vivait jusqu'ici que dans `advanceTime()`, si bien qu'une
+    // tâche `at` ne partait que si quelqu'un avançait l'horloge à la
+    // main — jamais sur le tour autonome de la machine.
+    this.executor.fireDueAtJobs(at);
   }
 
   private runCronJob(command: string, ctx: { user: string; env: Record<string, string> }): { output: string; exitCode: number } {
@@ -1039,7 +1045,7 @@ export abstract class LinuxMachine extends EndHost
   private deliverCronMail(recipient: string, body: string): void {
     const entry = this.executor.userMgr.getUser(recipient);
     const host = (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim();
-    const envelope = `From cron@${host}  ${new Date().toString()}\n`;
+    const envelope = `From cron@${host}  ${formatCtime(new Date())}\n`;
     this.executor.vfs.writeFile(`/var/mail/${recipient}`, envelope + body + '\n', entry?.uid ?? 0, entry?.gid ?? 0, 0o022, true);
   }
 
@@ -3567,6 +3573,12 @@ export abstract class LinuxMachine extends EndHost
     }
 
     return () => { for (const u of unsubs) u(); };
+  }
+
+  /** Vrai quand l'utilisateur a déjà un crontab — `crontab -e` le dit. */
+  hasCrontab(user: string): boolean {
+    const existing = this.executor.cron.list(user);
+    return existing !== null && existing !== undefined && existing.trim().length > 0;
   }
 
   crontabEditTemplate(user: string): string {

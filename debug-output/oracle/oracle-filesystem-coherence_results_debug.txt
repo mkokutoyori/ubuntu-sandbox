@@ -1,12 +1,12 @@
 ============================================================
 Oracle debug transcript — oracle-filesystem-coherence
-Generated: 2026-07-30T18:10:39.698Z
+Generated: 2026-08-03T11:42:47.361Z
 Topology:  LinuxServer ora-fs — Oracle ORCL OPEN
 Total commands: 373
 ============================================================
 
   
-  SQL*Plus: Release 19.0.0.0.0 - Production on Thu Jul 30 2026
+  SQL*Plus: Release 19.0.0.0.0 - Production on Mon Aug 03 2026
   Version 19.3.0.0.0
   
   Copyright (c) 1982, 2019, Oracle.  All rights reserved.
@@ -127,10 +127,10 @@ SQL [17/373]> SELECT * FROM v$datafile ORDER BY file#;
   
   FILE# NAME                                       TS# TS#_NAME     BYTES BLOCK_SIZE STATUS ENABLED   CREATION_TIME CHECKPOINT_CHANGE# CHECKPOINT_TIME AUTOEXTENSIBLE RECOVER
   ----- ------------------------------------------ --- -------- --------- ---------- ------ --------- ------------- ------------------ --------------- -------------- -------
-      1 /u01/app/oracle/oradata/ORCL/system01.dbf    0 SYSTEM   838860800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 30-JUL-26       YES            NO     
-      2 /u01/app/oracle/oradata/ORCL/sysaux01.dbf    1 SYSAUX   576716800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 30-JUL-26       YES            NO     
-      3 /u01/app/oracle/oradata/ORCL/undotbs01.dbf   2 UNDOTBS1 209715200       8192 ONLINE AVAILABLE 01-JAN-26                1000001 30-JUL-26       YES            NO     
-      4 /u01/app/oracle/oradata/ORCL/users01.dbf     3 USERS    104857600       8192 ONLINE AVAILABLE 01-JAN-26                1000001 30-JUL-26       YES            NO     
+      1 /u01/app/oracle/oradata/ORCL/system01.dbf    0 SYSTEM   838860800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 03-AUG-26       YES            NO     
+      2 /u01/app/oracle/oradata/ORCL/sysaux01.dbf    1 SYSAUX   576716800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 03-AUG-26       YES            NO     
+      3 /u01/app/oracle/oradata/ORCL/undotbs01.dbf   2 UNDOTBS1 209715200       8192 ONLINE AVAILABLE 01-JAN-26                1000001 03-AUG-26       YES            NO     
+      4 /u01/app/oracle/oradata/ORCL/users01.dbf     3 USERS    104857600       8192 ONLINE AVAILABLE 01-JAN-26                1000001 03-AUG-26       YES            NO     
   
   4 rows selected.
 
@@ -179,11 +179,11 @@ SQL [22/373]> SELECT * FROM v$datafile_header;
   
   FILE# TABLESPACE_NAME NAME                                       STATUS ERROR FUZZY RECOVER       BYTES BLOCK_SIZE CHECKPOINT_CHANGE# CHECKPOINT_COUNT CHECKPOINT_TIME CREATION_TIME CREATION_CHANGE#
   ----- --------------- ------------------------------------------ ------ ----- ----- --------- --------- ---------- ------------------ ---------------- --------------- ------------- ----------------
-      1 SYSTEM          /u01/app/oracle/oradata/ORCL/system01.dbf  ONLINE       NO    AVAILABLE 838860800       8192            1000001                1 30-JUL-26       01-JAN-26                  100
-      2 SYSAUX          /u01/app/oracle/oradata/ORCL/sysaux01.dbf  ONLINE       NO    AVAILABLE 576716800       8192            1000001                1 30-JUL-26       01-JAN-26                  100
-      3 UNDOTBS1        /u01/app/oracle/oradata/ORCL/undotbs01.dbf ONLINE       NO    AVAILABLE 209715200       8192            1000001                1 30-JUL-26       01-JAN-26                  100
-      4 USERS           /u01/app/oracle/oradata/ORCL/users01.dbf   ONLINE       NO    AVAILABLE 104857600       8192            1000001                1 30-JUL-26       01-JAN-26                  100
-      5 TEMP            /u01/app/oracle/oradata/ORCL/temp01.dbf    ONLINE       NO    AVAILABLE 104857600       8192            1000001                1 30-JUL-26       01-JAN-26                  100
+      1 SYSTEM          /u01/app/oracle/oradata/ORCL/system01.dbf  ONLINE       NO    AVAILABLE 838860800       8192            1000001                1 03-AUG-26       01-JAN-26                  100
+      2 SYSAUX          /u01/app/oracle/oradata/ORCL/sysaux01.dbf  ONLINE       NO    AVAILABLE 576716800       8192            1000001                1 03-AUG-26       01-JAN-26                  100
+      3 UNDOTBS1        /u01/app/oracle/oradata/ORCL/undotbs01.dbf ONLINE       NO    AVAILABLE 209715200       8192            1000001                1 03-AUG-26       01-JAN-26                  100
+      4 USERS           /u01/app/oracle/oradata/ORCL/users01.dbf   ONLINE       NO    AVAILABLE 104857600       8192            1000001                1 03-AUG-26       01-JAN-26                  100
+      5 TEMP            /u01/app/oracle/oradata/ORCL/temp01.dbf    ONLINE       NO    AVAILABLE 104857600       8192            1000001                1 03-AUG-26       01-JAN-26                  100
   
   5 rows selected.
 
@@ -191,11 +191,11 @@ SQL [23/373]> SELECT file#, name, status, error, creation_time, checkpoint_chang
   
   FILE# NAME                                       STATUS ERROR CREATION_TIME CHECKPOINT_CHANGE# CHECKPOINT_TIME
   ----- ------------------------------------------ ------ ----- ------------- ------------------ ---------------
-      1 /u01/app/oracle/oradata/ORCL/system01.dbf  ONLINE       01-JAN-26                1000001 30-JUL-26      
-      2 /u01/app/oracle/oradata/ORCL/sysaux01.dbf  ONLINE       01-JAN-26                1000001 30-JUL-26      
-      3 /u01/app/oracle/oradata/ORCL/undotbs01.dbf ONLINE       01-JAN-26                1000001 30-JUL-26      
-      4 /u01/app/oracle/oradata/ORCL/users01.dbf   ONLINE       01-JAN-26                1000001 30-JUL-26      
-      5 /u01/app/oracle/oradata/ORCL/temp01.dbf    ONLINE       01-JAN-26                1000001 30-JUL-26      
+      1 /u01/app/oracle/oradata/ORCL/system01.dbf  ONLINE       01-JAN-26                1000001 03-AUG-26      
+      2 /u01/app/oracle/oradata/ORCL/sysaux01.dbf  ONLINE       01-JAN-26                1000001 03-AUG-26      
+      3 /u01/app/oracle/oradata/ORCL/undotbs01.dbf ONLINE       01-JAN-26                1000001 03-AUG-26      
+      4 /u01/app/oracle/oradata/ORCL/users01.dbf   ONLINE       01-JAN-26                1000001 03-AUG-26      
+      5 /u01/app/oracle/oradata/ORCL/temp01.dbf    ONLINE       01-JAN-26                1000001 03-AUG-26      
   
   5 rows selected.
 
@@ -531,21 +531,21 @@ SQL [54/373]> SELECT * FROM dba_extents WHERE owner = 'HR' AND segment_name = 'E
 --- [55] § ORADATA layout ---
 SQL [55/373]> HOST ls -la /u01/app/oracle/oradata/ORCL/
   total 96
-  drwxr-xr-x 2 oracle oinstall  0 Jul 30 18:10 .
-  drwxr-xr-x 3 oracle oinstall  0 Jul 30 18:10 ..
-  -rw-r--r-- 1 oracle oinstall 23 Jul 30 18:10 control01.ctl
-  -rw-r--r-- 1 oracle oinstall 23 Jul 30 18:10 control02.ctl
-  -rw-r--r-- 1 oracle oinstall 33 Jul 30 18:10 redo01.log
-  -rw-r--r-- 1 oracle oinstall 33 Jul 30 18:10 redo02.log
-  -rw-r--r-- 1 oracle oinstall 33 Jul 30 18:10 redo03.log
-  -rw-r--r-- 1 oracle oinstall 44 Jul 30 18:10 sysaux01.dbf
-  -rw-r--r-- 1 oracle oinstall 44 Jul 30 18:10 system01.dbf
-  -rw-r--r-- 1 oracle oinstall 42 Jul 30 18:10 temp01.dbf
-  -rw-r--r-- 1 oracle oinstall 42 Jul 30 18:10 undotbs01.dbf
-  -rw-r--r-- 1 oracle oinstall 43 Jul 30 18:10 users01.dbf
+  drwxr-xr-x 2 oracle oinstall  0 Aug  3 11:42 .
+  drwxr-xr-x 3 oracle oinstall  0 Aug  3 11:42 ..
+  -rw-r--r-- 1 oracle oinstall 23 Aug  3 11:42 control01.ctl
+  -rw-r--r-- 1 oracle oinstall 23 Aug  3 11:42 control02.ctl
+  -rw-r--r-- 1 oracle oinstall 33 Aug  3 11:42 redo01.log
+  -rw-r--r-- 1 oracle oinstall 33 Aug  3 11:42 redo02.log
+  -rw-r--r-- 1 oracle oinstall 33 Aug  3 11:42 redo03.log
+  -rw-r--r-- 1 oracle oinstall 44 Aug  3 11:42 sysaux01.dbf
+  -rw-r--r-- 1 oracle oinstall 44 Aug  3 11:42 system01.dbf
+  -rw-r--r-- 1 oracle oinstall 42 Aug  3 11:42 temp01.dbf
+  -rw-r--r-- 1 oracle oinstall 42 Aug  3 11:42 undotbs01.dbf
+  -rw-r--r-- 1 oracle oinstall 43 Aug  3 11:42 users01.dbf
 
 SQL [56/373]> HOST ls -la /u01/app/oracle/oradata/ORCL/system01.dbf
-  -rw-r--r-- 1 oracle oinstall 44 Jul 30 18:10 /u01/app/oracle/oradata/ORCL/system01.dbf
+  -rw-r--r-- 1 oracle oinstall 44 Aug  3 11:42 /u01/app/oracle/oradata/ORCL/system01.dbf
 
 SQL [57/373]> HOST du -sh /u01/app/oracle/oradata/ORCL/
   360B	/u01/app/oracle/oradata/ORCL/
@@ -1169,7 +1169,7 @@ SQL [160/373]> SELECT 'controlfiles=' || (SELECT COUNT(*) FROM v$controlfile) FR
 --- [161] § host filesystem snapshot ---
 SQL [161/373]> HOST df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G  135K   50G   1% /
+  /dev/sda1        50G  138K   50G   1% /
   tmpfs           5.0M    4K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
@@ -1187,7 +1187,7 @@ SQL [164/373]> HOST df -h /u01/app/oracle/flash_recovery_area/
 
 SQL [165/373]> HOST df -i /u01/
   Filesystem      Inodes  IUsed   IFree IUse% Mounted on
-  /dev/sda1       655360   1262  654098    1% /
+  /dev/sda1       655360   1372  653988    1% /
   tmpfs           127960      1  127959    1% /dev/shm
   /dev/sda2       131072   2145  128927    2% /boot
 
@@ -1212,31 +1212,31 @@ SQL [167/373]> HOST find /u01 -mtime -1 -type f 2>/dev/null | head -20
   /u01/app/oracle/product/19c/dbhome_1/bin/adrci
   /u01/app/oracle/product/19c/dbhome_1/bin/srvctl
   /u01/app/oracle/product/19c/dbhome_1/bin/emctl
+  /u01/app/oracle/product/19c/dbhome_1/bin/dbstart
   /u01/app/oracle/product/19c/dbhome_1/lib/libclntsh.so
   /u01/app/oracle/product/19c/dbhome_1/lib/libsqlplus.so
-  /u01/app/oracle/product/19c/dbhome_1/lib/libnnz19.so
 
 SQL [168/373]> HOST stat /u01/app/oracle/oradata/ORCL/system01.dbf 2>/dev/null
     File: /u01/app/oracle/oradata/ORCL/system01.dbf
     Size: 44	Blocks: 8	IO Block: 4096	regular file
-  Device: 0h/0d	Inode: 472	Links: 1
+  Device: 0h/0d	Inode: 561	Links: 1
   Access: (644/-rw-r--r--)  Uid: ( 54321/ oracle)   Gid: ( 54321/ oinstall)
-  Access: 2026-07-30T18:10:39.551Z
-  Modify: 2026-07-30T18:10:38.987Z
-  Change: 2026-07-30T18:10:38.987Z
+  Access: 2026-08-03T11:42:47.142Z
+  Modify: 2026-08-03T11:42:46.496Z
+  Change: 2026-08-03T11:42:46.496Z
 
 SQL [169/373]> HOST ls -lh /u01/app/oracle/oradata/ORCL/
   total 80
-  -rw-r--r-- 1 oracle oinstall 23 Jul 30 18:10 control01.ctl
-  -rw-r--r-- 1 oracle oinstall 23 Jul 30 18:10 control02.ctl
-  -rw-r--r-- 1 oracle oinstall 33 Jul 30 18:10 redo01.log
-  -rw-r--r-- 1 oracle oinstall 33 Jul 30 18:10 redo02.log
-  -rw-r--r-- 1 oracle oinstall 33 Jul 30 18:10 redo03.log
-  -rw-r--r-- 1 oracle oinstall 44 Jul 30 18:10 sysaux01.dbf
-  -rw-r--r-- 1 oracle oinstall 44 Jul 30 18:10 system01.dbf
-  -rw-r--r-- 1 oracle oinstall 42 Jul 30 18:10 temp01.dbf
-  -rw-r--r-- 1 oracle oinstall 42 Jul 30 18:10 undotbs01.dbf
-  -rw-r--r-- 1 oracle oinstall 43 Jul 30 18:10 users01.dbf
+  -rw-r--r-- 1 oracle oinstall 23 Aug  3 11:42 control01.ctl
+  -rw-r--r-- 1 oracle oinstall 23 Aug  3 11:42 control02.ctl
+  -rw-r--r-- 1 oracle oinstall 33 Aug  3 11:42 redo01.log
+  -rw-r--r-- 1 oracle oinstall 33 Aug  3 11:42 redo02.log
+  -rw-r--r-- 1 oracle oinstall 33 Aug  3 11:42 redo03.log
+  -rw-r--r-- 1 oracle oinstall 44 Aug  3 11:42 sysaux01.dbf
+  -rw-r--r-- 1 oracle oinstall 44 Aug  3 11:42 system01.dbf
+  -rw-r--r-- 1 oracle oinstall 42 Aug  3 11:42 temp01.dbf
+  -rw-r--r-- 1 oracle oinstall 42 Aug  3 11:42 undotbs01.dbf
+  -rw-r--r-- 1 oracle oinstall 43 Aug  3 11:42 users01.dbf
 
 SQL [170/373]> HOST ls -lh /u01/app/oracle/flash_recovery_area/ORCL/
   ls: cannot access '/u01/app/oracle/flash_recovery_area/ORCL/': No such file or directory
@@ -1247,66 +1247,66 @@ SQL [171/373]> SELECT * FROM v$parameter ORDER BY name FETCH FIRST 50 ROWS ONLY;
   
   NUM NAME                       TYPE VALUE                                                                            DISPLAY_VALUE                                                                    ISDEFAULT ISSES_MODIFIABLE ISSYS_MODIFIABLE ISINSTANCE_MODIFIABLE ISMODIFIED ISADJUSTED ISDEPRECATED ISBASIC DESCRIPTION                                             
   --- -------------------------- ---- -------------------------------------------------------------------------------- -------------------------------------------------------------------------------- --------- ---------------- ---------------- --------------------- ---------- ---------- ------------ ------- --------------------------------------------------------
-   25 archive_log_mode              2 DISABLED                                                                         DISABLED                                                                         TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Archive log mode                                        
-   29 audit_file_dest               2 /u01/app/oracle/admin/ORCL/adump                                                 /u01/app/oracle/admin/ORCL/adump                                                 TRUE      FALSE            DEFERRED         FALSE                 FALSE      FALSE      FALSE        FALSE   Directory for audit trail files                         
-   30 audit_trail                   2 DB                                                                               DB                                                                               TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Enable system auditing                                  
-   32 compatible                    2 19.0.0                                                                           19.0.0                                                                           TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Database will be completely compatible with this release
-   28 control_files                 2 /u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control /u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Control file name list                                  
+   26 archive_log_mode              2 DISABLED                                                                         DISABLED                                                                         TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Archive log mode                                        
+   30 audit_file_dest               2 /u01/app/oracle/admin/ORCL/adump                                                 /u01/app/oracle/admin/ORCL/adump                                                 TRUE      FALSE            DEFERRED         FALSE                 FALSE      FALSE      FALSE        FALSE   Directory for audit trail files                         
+   31 audit_trail                   2 DB                                                                               DB                                                                               TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Enable system auditing                                  
+    6 cluster_database              1 FALSE                                                                            FALSE                                                                            TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   33 compatible                    2 19.0.0                                                                           19.0.0                                                                           TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Database will be completely compatible with this release
+   29 control_files                 2 /u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control /u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Control file name list                                  
                                       02.ctl                                                                           02.ctl                                                                                                                                                                                                                                                
-   42 cursor_sharing                2 EXACT                                                                            EXACT                                                                            TRUE      TRUE             IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Cursor sharing mode                                     
-    6 db_block_size                 3 8192                                                                             8192                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Size of database block in bytes                         
-    7 db_cache_size                 6 128M                                                                             128M                                                                             TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Size of DEFAULT buffer pool for standard blocks         
+   43 cursor_sharing                2 EXACT                                                                            EXACT                                                                            TRUE      TRUE             IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Cursor sharing mode                                     
+    7 db_block_size                 3 8192                                                                             8192                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Size of database block in bytes                         
+    8 db_cache_size                 6 128M                                                                             128M                                                                             TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Size of DEFAULT buffer pool for standard blocks         
     2 db_domain                     2 localdomain                                                                      localdomain                                                                      TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Directory path prefix for global database name          
-   48 db_files                      3 200                                                                              200                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Max allowable number of database files                  
+   49 db_files                      3 200                                                                              200                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Max allowable number of database files                  
     1 db_name                       2 ORCL                                                                             ORCL                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Database name specified in CREATE DATABASE              
-   26 db_recovery_file_dest         2 /u01/app/oracle/flash_recovery_area                                              /u01/app/oracle/flash_recovery_area                                              FALSE     FALSE            IMMEDIATE        FALSE                 MODIFIED   FALSE      FALSE        FALSE   Default database recovery file destination              
-   27 db_recovery_file_dest_size    6 4G                                                                               4G                                                                               FALSE     FALSE            IMMEDIATE        FALSE                 MODIFIED   FALSE      FALSE        FALSE   Database recovery file dest size                        
+   27 db_recovery_file_dest         2 /u01/app/oracle/flash_recovery_area                                              /u01/app/oracle/flash_recovery_area                                              FALSE     FALSE            IMMEDIATE        FALSE                 MODIFIED   FALSE      FALSE        FALSE   Default database recovery file destination              
+   28 db_recovery_file_dest_size    6 4G                                                                               4G                                                                               FALSE     FALSE            IMMEDIATE        FALSE                 MODIFIED   FALSE      FALSE        FALSE   Database recovery file dest size                        
+  
+  NUM NAME                       TYPE VALUE                                                                            DISPLAY_VALUE                                                                    ISDEFAULT ISSES_MODIFIABLE ISSYS_MODIFIABLE ISINSTANCE_MODIFIABLE ISMODIFIED ISADJUSTED ISDEPRECATED ISBASIC DESCRIPTION                                             
+  --- -------------------------- ---- -------------------------------------------------------------------------------- -------------------------------------------------------------------------------- --------- ---------------- ---------------- --------------------- ---------- ---------- ------------ ------- --------------------------------------------------------
     3 db_unique_name                2 ORCL                                                                             ORCL                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Unique database name                                    
-  
-  NUM NAME                       TYPE VALUE                                                                            DISPLAY_VALUE                                                                    ISDEFAULT ISSES_MODIFIABLE ISSYS_MODIFIABLE ISINSTANCE_MODIFIABLE ISMODIFIED ISADJUSTED ISDEPRECATED ISBASIC DESCRIPTION                                             
-  --- -------------------------- ---- -------------------------------------------------------------------------------- -------------------------------------------------------------------------------- --------- ---------------- ---------------- --------------------- ---------- ---------- ------------ ------- --------------------------------------------------------
-   50 deferred_segment_creation     1 TRUE                                                                             TRUE                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   31 diagnostic_dest               2 /u01/app/oracle                                                                  /u01/app/oracle                                                                  TRUE      FALSE            DEFERRED         FALSE                 FALSE      FALSE      FALSE        FALSE   Diagnostic base directory                               
-   47 dispatchers                   2 (PROTOCOL=TCP) (SERVICE=ORCLXDB)                                                 (PROTOCOL=TCP) (SERVICE=ORCLXDB)                                                 TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Specifications of dispatchers                           
-   51 filesystemio_options          2 setall                                                                           setall                                                                           TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   51 deferred_segment_creation     1 TRUE                                                                             TRUE                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   32 diagnostic_dest               2 /u01/app/oracle                                                                  /u01/app/oracle                                                                  TRUE      FALSE            DEFERRED         FALSE                 FALSE      FALSE      FALSE        FALSE   Diagnostic base directory                               
+   48 dispatchers                   2 (PROTOCOL=TCP) (SERVICE=ORCLXDB)                                                 (PROTOCOL=TCP) (SERVICE=ORCLXDB)                                                 TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Specifications of dispatchers                           
+   52 filesystemio_options          2 setall                                                                           setall                                                                           TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
     4 instance_name                 2 ORCL                                                                             ORCL                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Instance name for Oracle instance                       
-   12 java_pool_size                6 64M                                                                              64M                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Size of Java pool in bytes                              
-   13 large_pool_size               6 32M                                                                              32M                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Size of large pool in bytes                             
-   46 local_listener                2 (ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521))                              (ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521))                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Local listener address                                  
-   23 log_archive_dest_1            2 LOCATION=/u01/app/oracle/archivelog                                              LOCATION=/u01/app/oracle/archivelog                                              TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Primary archive log destination                         
-   24 log_archive_format            2 arch_%t_%s_%r.arc                                                                arch_%t_%s_%r.arc                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Archive log file name format                            
-   16 memory_max_target             3 0                                                                                0                                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Maximum memory size for auto memory management          
-   15 memory_target                 3 0                                                                                0                                                                                TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Target memory size (SGA+PGA)                            
-   37 nls_characterset              2 AL32UTF8                                                                         AL32UTF8                                                                         TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Database character set                                  
-   36 nls_date_format               2 DD-MON-RR                                                                        DD-MON-RR                                                                        TRUE      TRUE             FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   NLS default date format                                 
+   13 java_pool_size                6 64M                                                                              64M                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Size of Java pool in bytes                              
+   14 large_pool_size               6 32M                                                                              32M                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Size of large pool in bytes                             
+   47 local_listener                2 (ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521))                              (ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521))                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Local listener address                                  
+   24 log_archive_dest_1            2 LOCATION=/u01/app/oracle/archivelog                                              LOCATION=/u01/app/oracle/archivelog                                              TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Primary archive log destination                         
+   25 log_archive_format            2 arch_%t_%s_%r.arc                                                                arch_%t_%s_%r.arc                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Archive log file name format                            
+   17 memory_max_target             3 0                                                                                0                                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Maximum memory size for auto memory management          
+   16 memory_target                 3 0                                                                                0                                                                                TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Target memory size (SGA+PGA)                            
+   38 nls_characterset              2 AL32UTF8                                                                         AL32UTF8                                                                         TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Database character set                                  
   
   NUM NAME                       TYPE VALUE                                                                            DISPLAY_VALUE                                                                    ISDEFAULT ISSES_MODIFIABLE ISSYS_MODIFIABLE ISINSTANCE_MODIFIABLE ISMODIFIED ISADJUSTED ISDEPRECATED ISBASIC DESCRIPTION                                             
   --- -------------------------- ---- -------------------------------------------------------------------------------- -------------------------------------------------------------------------------- --------- ---------------- ---------------- --------------------- ---------- ---------- ------------ ------- --------------------------------------------------------
-   34 nls_language                  2 AMERICAN                                                                         AMERICAN                                                                         TRUE      TRUE             FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   NLS language name                                       
-   38 nls_nchar_characterset        2 AL16UTF16                                                                        AL16UTF16                                                                        TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   35 nls_territory                 2 AMERICA                                                                          AMERICA                                                                          TRUE      TRUE             FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   NLS territory name                                      
-   19 open_cursors                  3 300                                                                              300                                                                              TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Max number of open cursors per session                  
-   41 optimizer_index_caching       3 0                                                                                0                                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   40 optimizer_index_cost_adj      3 100                                                                              100                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   39 optimizer_mode                2 ALL_ROWS                                                                         ALL_ROWS                                                                         TRUE      TRUE             IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Optimizer mode                                          
-   57 oracle_base                   2 /u01/app/oracle                                                                  /u01/app/oracle                                                                  TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   55 oracle_home                   2 /u01/app/oracle/product/19c/dbhome_1                                             /u01/app/oracle/product/19c/dbhome_1                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   56 oracle_sid                    2 ORCL                                                                             ORCL                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   45 os_authent_prefix             2 ops$                                                                             ops$                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   53 parallel_max_servers          3 40                                                                               40                                                                               TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Max number of parallel execution servers                
-   54 parallel_min_servers          3 0                                                                                0                                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Min number of parallel execution servers                
-   11 pga_aggregate_target          6 128M                                                                             128M                                                                             TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        TRUE    Target size for aggregate PGA memory                    
+   37 nls_date_format               2 DD-MON-RR                                                                        DD-MON-RR                                                                        TRUE      TRUE             FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   NLS default date format                                 
+   35 nls_language                  2 AMERICAN                                                                         AMERICAN                                                                         TRUE      TRUE             FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   NLS language name                                       
+   39 nls_nchar_characterset        2 AL16UTF16                                                                        AL16UTF16                                                                        TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   36 nls_territory                 2 AMERICA                                                                          AMERICA                                                                          TRUE      TRUE             FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   NLS territory name                                      
+   20 open_cursors                  3 300                                                                              300                                                                              TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Max number of open cursors per session                  
+   42 optimizer_index_caching       3 0                                                                                0                                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   41 optimizer_index_cost_adj      3 100                                                                              100                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   40 optimizer_mode                2 ALL_ROWS                                                                         ALL_ROWS                                                                         TRUE      TRUE             IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        FALSE   Optimizer mode                                          
+   58 oracle_base                   2 /u01/app/oracle                                                                  /u01/app/oracle                                                                  TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   56 oracle_home                   2 /u01/app/oracle/product/19c/dbhome_1                                             /u01/app/oracle/product/19c/dbhome_1                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   57 oracle_sid                    2 ORCL                                                                             ORCL                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   46 os_authent_prefix             2 ops$                                                                             ops$                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   54 parallel_max_servers          3 40                                                                               40                                                                               TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Max number of parallel execution servers                
+   55 parallel_min_servers          3 0                                                                                0                                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Min number of parallel execution servers                
   
   NUM NAME                       TYPE VALUE                                                                            DISPLAY_VALUE                                                                    ISDEFAULT ISSES_MODIFIABLE ISSYS_MODIFIABLE ISINSTANCE_MODIFIABLE ISMODIFIED ISADJUSTED ISDEPRECATED ISBASIC DESCRIPTION                                             
   --- -------------------------- ---- -------------------------------------------------------------------------------- -------------------------------------------------------------------------------- --------- ---------------- ---------------- --------------------- ---------- ---------- ------------ ------- --------------------------------------------------------
-   17 processes                     3 300                                                                              300                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Max number of user processes                            
-   49 recyclebin                    2 ON                                                                               ON                                                                               TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Enable or disable the recyclebin                        
-   33 remote_login_passwordfile     2 EXCLUSIVE                                                                        EXCLUSIVE                                                                        TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Password file usage parameter                           
-   52 resource_limit                1 TRUE                                                                             TRUE                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Master switch for resource limit enforcement            
-   43 result_cache_max_size         3 0                                                                                0                                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
-   44 sec_case_sensitive_logon      1 TRUE                                                                             TRUE                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Case sensitive logon enabled                            
+   12 pga_aggregate_target          6 128M                                                                             128M                                                                             TRUE      FALSE            IMMEDIATE        FALSE                 FALSE      FALSE      FALSE        TRUE    Target size for aggregate PGA memory                    
+   18 processes                     3 300                                                                              300                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Max number of user processes                            
+   50 recyclebin                    2 ON                                                                               ON                                                                               TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Enable or disable the recyclebin                        
+   34 remote_login_passwordfile     2 EXCLUSIVE                                                                        EXCLUSIVE                                                                        TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Password file usage parameter                           
+   53 resource_limit                1 TRUE                                                                             TRUE                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Master switch for resource limit enforcement            
+   44 result_cache_max_size         3 0                                                                                0                                                                                TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE                                                           
+   45 sec_case_sensitive_logon      1 TRUE                                                                             TRUE                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        FALSE   Case sensitive logon enabled                            
     5 service_names                 2 ORCL                                                                             ORCL                                                                             TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Service names this instance supports                    
-   18 sessions                      3 472                                                                              472                                                                              TRUE      FALSE            FALSE            FALSE                 FALSE      FALSE      FALSE        TRUE    Max number of sessions                                  
   
   50 rows selected.
 
@@ -1326,6 +1326,7 @@ SQL [173/373]> SELECT * FROM v$spparameter ORDER BY name FETCH FIRST 50 ROWS ONL
   *   archive_log_mode              2 DISABLED                                                                         DISABLED                                                                         TRUE       
   *   audit_file_dest               2 /u01/app/oracle/admin/ORCL/adump                                                 /u01/app/oracle/admin/ORCL/adump                                                 TRUE       
   *   audit_trail                   2 DB                                                                               DB                                                                               TRUE       
+  *   cluster_database              1 FALSE                                                                            FALSE                                                                            TRUE       
   *   compatible                    2 19.0.0                                                                           19.0.0                                                                           TRUE       
   *   control_files                 2 /u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control /u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control TRUE       
                                       02.ctl                                                                           02.ctl                                                                                      
@@ -1337,10 +1338,10 @@ SQL [173/373]> SELECT * FROM v$spparameter ORDER BY name FETCH FIRST 50 ROWS ONL
   *   db_name                       2 ORCL                                                                             ORCL                                                                             TRUE       
   *   db_recovery_file_dest         2 /u01/app/oracle/flash_recovery_area                                              /u01/app/oracle/flash_recovery_area                                              TRUE       
   *   db_recovery_file_dest_size    6 4G                                                                               4G                                                                               TRUE       
-  *   db_unique_name                2 ORCL                                                                             ORCL                                                                             TRUE       
   
   SID NAME                       TYPE VALUE                                                                            DISPLAY_VALUE                                                                    ISSPECIFIED
   --- -------------------------- ---- -------------------------------------------------------------------------------- -------------------------------------------------------------------------------- -----------
+  *   db_unique_name                2 ORCL                                                                             ORCL                                                                             TRUE       
   *   deferred_segment_creation     1 TRUE                                                                             TRUE                                                                             TRUE       
   *   diagnostic_dest               2 /u01/app/oracle                                                                  /u01/app/oracle                                                                  TRUE       
   *   dispatchers                   2 (PROTOCOL=TCP) (SERVICE=ORCLXDB)                                                 (PROTOCOL=TCP) (SERVICE=ORCLXDB)                                                 TRUE       
@@ -1354,10 +1355,10 @@ SQL [173/373]> SELECT * FROM v$spparameter ORDER BY name FETCH FIRST 50 ROWS ONL
   *   memory_max_target             3 0                                                                                0                                                                                TRUE       
   *   memory_target                 3 0                                                                                0                                                                                TRUE       
   *   nls_characterset              2 AL32UTF8                                                                         AL32UTF8                                                                         TRUE       
-  *   nls_date_format               2 DD-MON-RR                                                                        DD-MON-RR                                                                        TRUE       
   
   SID NAME                       TYPE VALUE                                                                            DISPLAY_VALUE                                                                    ISSPECIFIED
   --- -------------------------- ---- -------------------------------------------------------------------------------- -------------------------------------------------------------------------------- -----------
+  *   nls_date_format               2 DD-MON-RR                                                                        DD-MON-RR                                                                        TRUE       
   *   nls_language                  2 AMERICAN                                                                         AMERICAN                                                                         TRUE       
   *   nls_nchar_characterset        2 AL16UTF16                                                                        AL16UTF16                                                                        TRUE       
   *   nls_territory                 2 AMERICA                                                                          AMERICA                                                                          TRUE       
@@ -1371,10 +1372,10 @@ SQL [173/373]> SELECT * FROM v$spparameter ORDER BY name FETCH FIRST 50 ROWS ONL
   *   os_authent_prefix             2 ops$                                                                             ops$                                                                             TRUE       
   *   parallel_max_servers          3 40                                                                               40                                                                               TRUE       
   *   parallel_min_servers          3 0                                                                                0                                                                                TRUE       
-  *   pga_aggregate_target          6 128M                                                                             128M                                                                             TRUE       
   
   SID NAME                       TYPE VALUE                                                                            DISPLAY_VALUE                                                                    ISSPECIFIED
   --- -------------------------- ---- -------------------------------------------------------------------------------- -------------------------------------------------------------------------------- -----------
+  *   pga_aggregate_target          6 128M                                                                             128M                                                                             TRUE       
   *   processes                     3 300                                                                              300                                                                              TRUE       
   *   recyclebin                    2 ON                                                                               ON                                                                               TRUE       
   *   remote_login_passwordfile     2 EXCLUSIVE                                                                        EXCLUSIVE                                                                        TRUE       
@@ -1382,7 +1383,6 @@ SQL [173/373]> SELECT * FROM v$spparameter ORDER BY name FETCH FIRST 50 ROWS ONL
   *   result_cache_max_size         3 0                                                                                0                                                                                TRUE       
   *   sec_case_sensitive_logon      1 TRUE                                                                             TRUE                                                                             TRUE       
   *   service_names                 2 ORCL                                                                             ORCL                                                                             TRUE       
-  *   sessions                      3 472                                                                              472                                                                              TRUE       
   
   50 rows selected.
 
@@ -1439,7 +1439,7 @@ SQL [181/373]> SELECT name, dbid, open_mode, log_mode FROM v$database;
   
   NAME       DBID OPEN_MODE  LOG_MODE    
   ---- ---------- ---------- ------------
-  ORCL 3819942262 READ WRITE NOARCHIVELOG
+  ORCL 1524570183 READ WRITE NOARCHIVELOG
   
   1 row selected.
 
@@ -1457,7 +1457,7 @@ SQL [183/373]> SELECT * FROM v$instance WHERE rownum < 5;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-                1 ORCL          localhost 19.0.0.0.0 30-JUL-26    OPEN   NO             1 STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
+                1 ORCL          localhost 19.0.0.0.0 03-AUG-26    OPEN   NO             1 STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -1465,7 +1465,7 @@ SQL [184/373]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- --------- ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  3819942262 ORCL 30-JUL-26 NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 30-JUL-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000356            1000001
+  1524570183 ORCL 03-AUG-26 NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 03-AUG-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000356            1000001
   
   1 row selected.
 
@@ -1501,10 +1501,10 @@ SQL [188/373]> SELECT * FROM v$session WHERE rownum < 5;
   
   SADDR            SID SERIAL# AUDSID PADDR            USER# USERNAME COMMAND    OWNERID TADDR LOCKWAIT STATUS SERVER    SCHEMA# SCHEMANAME OSUSER PROCESS MACHINE   PORT TERMINAL PROGRAM                 TYPE       SQL_ADDRESS SQL_HASH_VALUE SQL_ID SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID PREV_SQL_ID MODULE ACTION CLIENT_INFO CLIENT_IDENTIFIER FIXED_TABLE_SEQUENCE ROW_WAIT_OBJ# ROW_WAIT_FILE# ROW_WAIT_BLOCK# ROW_WAIT_ROW# LOGON_TIME LAST_CALL_ET PDML_ENABLED FAILOVER_TYPE FAILOVER_METHOD FAILED_OVER RESOURCE_CONSUMER_GROUP PDML_STATUS PDDL_STATUS PQ_STATUS EVENT# EVENT      WAIT_CLASS# WAIT_CLASS WAIT_TIME SECONDS_IN_WAIT STATE   BLOCKING_SESSION_STATUS BLOCKING_SESSION SQL_TRACE SERVICE_NAME CON_ID
   ---------------- --- ------- ------ ---------------- ----- -------- ------- ---------- ----- -------- ------ --------- ------- ---------- ------ ------- --------- ---- -------- ----------------------- ---------- ----------- -------------- ------ ---------------- -------------- ----------- ----------- ------ ------ ----------- ----------------- -------------------- ------------- -------------- --------------- ------------- ---------- ------------ ------------ ------------- --------------- ----------- ----------------------- ----------- ----------- --------- ------ ---------- ----------- ---------- --------- --------------- ------- ----------------------- ---------------- --------- ------------ ------
-  0000000000000001   1       1      0 000000007F00FA00     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 1       localhost    0 pts/0    oracle@localhost (PMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 30-JUL-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000002   2       1      0 000000007F00FA40     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost    0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 30-JUL-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000003   3       1      0 000000007F00FA80     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost    0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 30-JUL-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000004   4       1      0 000000007F00FAC0     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost    0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 30-JUL-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000001   1       1      0 000000007F00FA00     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 1       localhost    0 pts/0    oracle@localhost (PMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 03-AUG-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000002   2       1      0 000000007F00FA40     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost    0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 03-AUG-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000003   3       1      0 000000007F00FA80     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost    0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 03-AUG-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000004   4       1      0 000000007F00FAC0     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost    0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 03-AUG-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
   
   4 rows selected.
 
@@ -1792,18 +1792,18 @@ SQL [213/373]> SELECT * FROM v$sql WHERE rownum < 5;
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
-         REGION_          1         1861     1489           1          0              0 SYS                 2026-07-30T18:10:39
+         REGION_          1         2041     1633           1          0              0 SYS                 2026-08-03T11:42:47
                 NAME VARCHAR2(25)
        )                                                                                                                                                                       
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
-         COUNTR          1          222      178           1          0              0 SYS                 2026-07-30T18:10:39
+         COUNTR          1          199      159           1          0              0 SYS                 2026-08-03T11:42:47
                 Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                                         
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
-         STR          1          239      192           1          0              0 SYS                 2026-07-30T18:10:39
+         STR          1          173      138           1          0              0 SYS                 2026-08-03T11:42:47
                 EET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
          CITY VARCHAR2(                                                                                                               
@@ -1814,7 +1814,7 @@ SQL [213/373]> SELECT * FROM v$sql WHERE rownum < 5;
                  )                                                                                                                                                                                             
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-                  1          297      238           1          0              0 SYS                 2026-07-30T18:10:39
+                  1          317      254           1          0              0 SYS                 2026-08-03T11:42:47
                  DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCA                                                                                                               
@@ -1827,10 +1827,10 @@ SQL [214/373]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  0jfss4xa3xqw0               0           1          1       1         1861     1489           1          0              0 SYS                 30-JUL-26       
-  1p340y2a3xqw0               0           1          1       1          222      178           1          0              0 SYS                 30-JUL-26       
-  0438608a3xqw0               0           1          1       1          239      192           1          0              0 SYS                 30-JUL-26       
-  0jmvs97a3xqw0               0           1          1       1          297      238           1          0              0 SYS                 30-JUL-26       
+  0jfss4xa3xqw0               0           1          1       1         2041     1633           1          0              0 SYS                 03-AUG-26       
+  1p340y2a3xqw0               0           1          1       1          199      159           1          0              0 SYS                 03-AUG-26       
+  0438608a3xqw0               0           1          1       1          173      138           1          0              0 SYS                 03-AUG-26       
+  0jmvs97a3xqw0               0           1          1       1          317      254           1          0              0 SYS                 03-AUG-26       
   
   4 rows selected.
 
@@ -1871,10 +1871,10 @@ SQL [218/373]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME END_TIME  INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ---------- --------- ------------ -------- --------- -------------------- ----- -----------------------
-  30-JUL-26  30-JUL-26         1500 2             2000 CPU Usage Per Sec       32 CentiSeconds Per Second
-  30-JUL-26  30-JUL-26         1500 2             2003 User Calls Per Sec      33 Calls Per Second       
-  30-JUL-26  30-JUL-26         1500 2             2007 Executions Per Sec      32 Executes Per Second    
-  30-JUL-26  30-JUL-26         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
+  03-AUG-26  03-AUG-26         1500 2             2000 CPU Usage Per Sec       32 CentiSeconds Per Second
+  03-AUG-26  03-AUG-26         1500 2             2003 User Calls Per Sec      33 Calls Per Second       
+  03-AUG-26  03-AUG-26         1500 2             2007 Executions Per Sec      32 Executes Per Second    
+  03-AUG-26  03-AUG-26         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
 
@@ -1882,10 +1882,10 @@ SQL [219/373]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME END_TIME  INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ---------- --------- ------------ -------- --------- -------------------- ----- -----------------------
-  30-JUL-26  30-JUL-26         6000 2             2000 CPU Usage Per Sec       32 CentiSeconds Per Second
-  30-JUL-26  30-JUL-26         6000 2             2003 User Calls Per Sec      33 Calls Per Second       
-  30-JUL-26  30-JUL-26         6000 2             2007 Executions Per Sec      32 Executes Per Second    
-  30-JUL-26  30-JUL-26         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
+  03-AUG-26  03-AUG-26         6000 2             2000 CPU Usage Per Sec       32 CentiSeconds Per Second
+  03-AUG-26  03-AUG-26         6000 2             2003 User Calls Per Sec      33 Calls Per Second       
+  03-AUG-26  03-AUG-26         6000 2             2007 Executions Per Sec      32 Executes Per Second    
+  03-AUG-26  03-AUG-26         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
 
@@ -1984,10 +1984,10 @@ SQL [233/373]> SELECT * FROM v$datafile WHERE rownum < 5;
   
   FILE# NAME                                       TS# TS#_NAME     BYTES BLOCK_SIZE STATUS ENABLED   CREATION_TIME CHECKPOINT_CHANGE# CHECKPOINT_TIME AUTOEXTENSIBLE RECOVER
   ----- ------------------------------------------ --- -------- --------- ---------- ------ --------- ------------- ------------------ --------------- -------------- -------
-      1 /u01/app/oracle/oradata/ORCL/system01.dbf    0 SYSTEM   838860800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 30-JUL-26       YES            NO     
-      2 /u01/app/oracle/oradata/ORCL/sysaux01.dbf    1 SYSAUX   576716800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 30-JUL-26       YES            NO     
-      3 /u01/app/oracle/oradata/ORCL/undotbs01.dbf   2 UNDOTBS1 209715200       8192 ONLINE AVAILABLE 01-JAN-26                1000001 30-JUL-26       YES            NO     
-      4 /u01/app/oracle/oradata/ORCL/users01.dbf     3 USERS    104857600       8192 ONLINE AVAILABLE 01-JAN-26                1000001 30-JUL-26       YES            NO     
+      1 /u01/app/oracle/oradata/ORCL/system01.dbf    0 SYSTEM   838860800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 03-AUG-26       YES            NO     
+      2 /u01/app/oracle/oradata/ORCL/sysaux01.dbf    1 SYSAUX   576716800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 03-AUG-26       YES            NO     
+      3 /u01/app/oracle/oradata/ORCL/undotbs01.dbf   2 UNDOTBS1 209715200       8192 ONLINE AVAILABLE 01-JAN-26                1000001 03-AUG-26       YES            NO     
+      4 /u01/app/oracle/oradata/ORCL/users01.dbf     3 USERS    104857600       8192 ONLINE AVAILABLE 01-JAN-26                1000001 03-AUG-26       YES            NO     
   
   4 rows selected.
 
@@ -2182,10 +2182,10 @@ SQL [258/373]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-07-30T18:10:39.557Z        -1271355579
-           2 SYS$USERS      SYS$USERS      2026-07-30T18:10:39.554Z        -1271355582
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-07-30T18:10:39.554Z        -1271355582
-           4 ORCLPDB1       ORCLPDB1       2026-07-30T18:10:39.554Z        -1271355582
+           1 ORCL           ORCL           2026-08-03T11:42:47.155Z         -949027981
+           2 SYS$USERS      SYS$USERS      2026-08-03T11:42:47.151Z         -949027985
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-08-03T11:42:47.151Z         -949027985
+           4 ORCLPDB1       ORCLPDB1       2026-08-03T11:42:47.151Z         -949027985
   
   4 rows selected.
 
@@ -2193,10 +2193,10 @@ SQL [259/373]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-07-30T18:10:39.557Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-07-30T18:10:39.554Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-07-30T18:10:39.554Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-07-30T18:10:39.554Z
+           1 ORCL           ORCL           ORCL 2026-08-03T11:42:47.155Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-08-03T11:42:47.151Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-08-03T11:42:47.151Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-08-03T11:42:47.151Z
   
   4 rows selected.
 
@@ -2241,12 +2241,12 @@ SQL [263/373]> SELECT * FROM v$sess_io WHERE rownum < 5;
 
 SQL [264/373]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
-  SID    STAT_ID STAT_NAME               VALUE
-  --- ---------- ----------------------- -----
-  100 3649082374 DB time                 93238
-  100 3712030189 DB CPU                  74604
-  100 1561673735 background elapsed time 23309
-  100 4157170894 background cpu time     18651
+  SID    STAT_ID STAT_NAME                VALUE
+  --- ---------- ----------------------- ------
+  100 3649082374 DB time                 152590
+  100 3712030189 DB CPU                  122064
+  100 1561673735 background elapsed time  38147
+  100 4157170894 background cpu time      30516
   
   4 rows selected.
 
@@ -2273,10 +2273,10 @@ SQL [268/373]> SELECT * FROM dba_users WHERE rownum < 5;
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED   PROFILE AUTHENTICATION_TYPE EXTERNAL_NAME COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD PASSWORD_VERSIONS EDITIONS_ENABLED LAST_LOGIN LCOUNT
   -------- ------- -------------- --------- ----------- ------------------ -------------------- --------- ------- ------------------- ------------- ------ ----------------- --------- ----------------- -------- --------- ----------------- ---------------- ---------- ------
-  SYS            0 OPEN                                 SYSTEM             TEMP                 30-JUL-26 DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                30-JUL-26       0
-  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 30-JUL-26 DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
-  DBSNMP         2 OPEN                                 SYSAUX             TEMP                 30-JUL-26 DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
-  HR             3 OPEN                                 USERS              TEMP                 30-JUL-26 DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
+  SYS            0 OPEN                                 SYSTEM             TEMP                 03-AUG-26 DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                03-AUG-26       0
+  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 03-AUG-26 DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
+  DBSNMP         2 OPEN                                 SYSAUX             TEMP                 03-AUG-26 DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
+  HR             3 OPEN                                 USERS              TEMP                 03-AUG-26 DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
   
   4 rows selected.
 
@@ -2339,10 +2339,10 @@ SQL [274/373]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        30-JUL-26 30-JUL-26     2026-07-30:18:10:39 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        30-JUL-26 30-JUL-26     2026-07-30:18:10:39 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        30-JUL-26 30-JUL-26     2026-07-30:18:10:39 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        30-JUL-26 30-JUL-26     2026-07-30:18:10:39 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:47 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:47 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:47 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:47 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -2569,19 +2569,19 @@ SQL [304/373]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TIMESTAMP ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- -------- --------- --------- ------------ --------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  oracle      SYS      localhost 30-JUL-26 LOGON                           0                   5 SYSDBA                                                                                     LOGON         
-  oracle      SYS      localhost 30-JUL-26 CREATE TABLE REGIONS            0 HR                5           CREATE TABLE HR.REGIONS (
+  oracle      SYS      localhost 03-AUG-26 LOGON                           0                   5 SYSDBA                                                                                     LOGON         
+  oracle      SYS      localhost 03-AUG-26 CREATE TABLE REGIONS            0 HR                5           CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ CREATE TABLE  
                                                                                                            NAME VARCHAR2(25)
        )                                                                       
-  oracle      SYS      localhost 30-JUL-26 CREATE TABLE COUNTRIES          0 HR                5           CREATE TABLE HR.COUNTRIES (
+  oracle      SYS      localhost 03-AUG-26 CREATE TABLE COUNTRIES          0 HR                5           CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR CREATE TABLE  
                                                                                                            Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                         
-  oracle      SYS      localhost 30-JUL-26 CREATE TABLE LOCATIONS          0 HR                5           CREATE TABLE HR.LOCATIONS (
+  oracle      SYS      localhost 03-AUG-26 CREATE TABLE LOCATIONS          0 HR                5           CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR CREATE TABLE  
                                                                                                            EET_ADDRESS VARCHAR2(40),
@@ -2599,10 +2599,10 @@ SQL [305/373]> SELECT * FROM dba_audit_session WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
   ----------- -------- ------------ -------- --------- ----------- --------- ----------- ----------
-  oracle      SYS      localhost    pts/0    30-JUL-26 LOGON               5 30-JUL-26            0
-  oracle      SYS      localhost    pts/0    30-JUL-26 LOGON               6 30-JUL-26            0
-  oracle      SYS      localhost    pts/0    30-JUL-26 LOGON               7 30-JUL-26            0
-  root        SYS      linux-server pts/0    30-JUL-26 LOGON               8                      0
+  oracle      SYS      localhost    pts/0    03-AUG-26 LOGON               5 03-AUG-26            0
+  oracle      SYS      localhost    pts/0    03-AUG-26 LOGON               6 03-AUG-26            0
+  oracle      SYS      localhost    pts/0    03-AUG-26 LOGON               7 03-AUG-26            0
+  root        SYS      linux-server pts/0    03-AUG-26 LOGON               8                      0
   
   4 rows selected.
 
@@ -2610,19 +2610,19 @@ SQL [306/373]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
   
   EVENT_TIMESTAMP AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED UNIFIED_AUDIT_POLICIES ENTRY_ID
   --------------- ---------- --------- ---------- --------- -------- ------- ------------ ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- ---------------------- --------
-  30-JUL-26       Standard           5 SYS        localhost pts/0    oracle  LOGON                  0                                                                                                            LOGON          SYSDBA                                              1
-  30-JUL-26       Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.REGIONS (
+  03-AUG-26       Standard           5 SYS        localhost pts/0    oracle  LOGON                  0                                                                                                            LOGON          SYSDBA                                              1
+  03-AUG-26       Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ HR            REGIONS     CREATE TABLE                                                       2
                                                                                                       NAME VARCHAR2(25)
        )                                                                                                                                                       
-  30-JUL-26       Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.COUNTRIES (
+  03-AUG-26       Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR HR            COUNTRIES   CREATE TABLE                                                       3
                                                                                                       Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                         
-  30-JUL-26       Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.LOCATIONS (
+  03-AUG-26       Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR HR            LOCATIONS   CREATE TABLE                                                       4
                                                                                                       EET_ADDRESS VARCHAR2(40),
@@ -2640,10 +2640,10 @@ SQL [307/373]> SELECT * FROM dba_outstanding_alerts WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME MESSAGE                                                 
   ----------- ----------------- -------- ----------- ------------- --------------------------------------------------------
-           53 DDL_ON_SYS_OBJECT HIGH     Security    30-JUL-26     DDL (CREATE TABLE) targeted SYS-owned object REGIONS    
-           54 DDL_ON_SYS_OBJECT HIGH     Security    30-JUL-26     DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES  
-           55 DDL_ON_SYS_OBJECT HIGH     Security    30-JUL-26     DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS  
-           56 DDL_ON_SYS_OBJECT HIGH     Security    30-JUL-26     DDL (CREATE TABLE) targeted SYS-owned object DEPARTMENTS
+           53 DDL_ON_SYS_OBJECT HIGH     Security    03-AUG-26     DDL (CREATE TABLE) targeted SYS-owned object REGIONS    
+           54 DDL_ON_SYS_OBJECT HIGH     Security    03-AUG-26     DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES  
+           55 DDL_ON_SYS_OBJECT HIGH     Security    03-AUG-26     DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS  
+           56 DDL_ON_SYS_OBJECT HIGH     Security    03-AUG-26     DDL (CREATE TABLE) targeted SYS-owned object DEPARTMENTS
   
   4 rows selected.
 
@@ -2651,10 +2651,10 @@ SQL [308/373]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                          
   ----------- --------- -------- ------------- --------------- -----------------------------------------------------------------
-            1 Info      NORMAL   30-JUL-26     30-JUL-26       2026-07-30 18:10:39: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   30-JUL-26     30-JUL-26       2026-07-30 18:10:39: Database mounted                            
-            3 Info      NORMAL   30-JUL-26     30-JUL-26       2026-07-30 18:10:39: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   30-JUL-26     30-JUL-26       2026-07-30 18:10:39: Database opened                             
+            1 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:47: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:47: Database mounted                            
+            3 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:47: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:47: Database opened                             
   
   4 rows selected.
 
@@ -2684,7 +2684,7 @@ SQL [311/373]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME END_INTERVAL_TIME STATUS    STARTUP_TIME FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------- ----------------- --------- ------------ ----------- ------------- ------
-        1    1               1          1 30-JUL-26           30-JUL-26         COMPLETED YES          TYPICAL                 1 AUTO  
+        1    1               1          1 03-AUG-26           03-AUG-26         COMPLETED YES          TYPICAL                 1 AUTO  
   
   1 row selected.
 
@@ -2692,10 +2692,10 @@ SQL [312/373]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 3819942262               1       0 logons cumulative             1
-        1 3819942262               1       1 logons current                1
-        1 3819942262               1       2 opened cursors cumulative   591
-        1 3819942262               1       3 opened cursors current      533
+        1 1524570183               1       0 logons cumulative             1
+        1 1524570183               1       1 logons current                1
+        1 1524570183               1       2 opened cursors cumulative   591
+        1 1524570183               1       3 opened cursors current      533
   
   4 rows selected.
 
@@ -2703,10 +2703,10 @@ SQL [313/373]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 035dtwba3xqw0               0                1                 44             36                 1                0                    1
-        1 0krxuzra3xqw0               0                1                 42             34                 1                0                    1
-        1 0pjan8ka3xqw0               0                1                102             81                 1                0                    1
-        1 0bpd8mza3xqw0               0                1                145            116                 1                0                    1
+        1 035dtwba3xqw0               0                1                 46             37                 1                0                    1
+        1 0krxuzra3xqw0               0                1                 46             37                 1                0                    1
+        1 0pjan8ka3xqw0               0                1                173            138                 1                0                    1
+        1 0bpd8mza3xqw0               0                1               1513           1210                 1                0                    1
   
   4 rows selected.
 
@@ -2762,7 +2762,7 @@ SQL [321/373]> SELECT count(*) AS views FROM dba_views;
   
   VIEWS
   -----
-    449
+    450
   
   1 row selected.
 
@@ -3093,7 +3093,7 @@ SQL [369/373]> SELECT sysdate FROM dual;
   
   SYSDATE  
   ---------
-  30-JUL-26
+  03-AUG-26
   
   1 row selected.
 
@@ -3101,7 +3101,7 @@ SQL [370/373]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-07-30T18:10:39.855Z
+  2026-08-03T11:42:47.598Z
   
   1 row selected.
 
