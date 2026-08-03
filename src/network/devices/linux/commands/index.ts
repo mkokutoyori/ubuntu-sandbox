@@ -106,6 +106,11 @@ import { timedatectlCommand } from './system/Timedatectl';
 import { nprocCommand } from './system/Nproc';
 import { anacronCommand } from './system/Anacron';
 import { systemdAnalyzeCommand } from './system/SystemdAnalyze';
+import { fuserCommand } from './system/Fuser';
+import { aptCacheCommand } from './system/AptCache';
+import { newgrpCommand } from './iam/Newgrp';
+import { tracepathCommand } from './net/Tracepath';
+import { mtrCommand } from './net/MtrReport';
 
 export {
   sysctlCommand,
@@ -204,6 +209,11 @@ export {
   nprocCommand,
   anacronCommand,
   systemdAnalyzeCommand,
+  fuserCommand,
+  aptCacheCommand,
+  newgrpCommand,
+  tracepathCommand,
+  mtrCommand,
   TEXT_STREAM_COMMANDS,
   bcCommand,
 };
@@ -308,6 +318,11 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nprocCommand,
   anacronCommand,
   systemdAnalyzeCommand,
+  fuserCommand,
+  aptCacheCommand,
+  newgrpCommand,
+  tracepathCommand,
+  mtrCommand,
   ...TEXT_STREAM_COMMANDS,
   bcCommand,
 ];

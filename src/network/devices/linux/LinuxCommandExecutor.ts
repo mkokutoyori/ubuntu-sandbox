@@ -79,6 +79,7 @@ import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './sys
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
 import { cmdNetstat, cmdWget, cmdTcpdump, parseTcpdumpArgs } from './LinuxNetCommands';
+import { PACKAGE_DB } from './packages/PackageDatabase';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -4560,11 +4561,20 @@ export class LinuxCommandExecutor {
       // body's effect (exit 130 + the trap echo) so cross-equipment
       // signal-relay tests stay coherent without an event-loop.
       case 'timeout': {
-        // Strip leading flags and the duration; the rest is the inner cmd.
+        // Les options qui consomment une valeur, et les autres. Sauter
+        // toute option sans distinguer les deux faisait prendre la
+        // valeur de `-s` pour le délai, et le délai pour la commande :
+        // `timeout -s TERM 1 sleep 5` répondait `1: command not found`.
+        const AVEC_VALEUR = new Set(['-s', '--signal', '-k', '--kill-after']);
         let i = 0;
-        while (i < args.length && args[i].startsWith('-')) i++;
+        while (i < args.length && args[i].startsWith('-')) {
+          const opt = args[i];
+          i++;
+          // `--signal=TERM` porte sa valeur avec lui.
+          if (AVEC_VALEUR.has(opt) && !opt.includes('=')) i++;
+        }
         if (i >= args.length) return { output: 'timeout: missing operand', exitCode: 1 };
-        i++; // skip the duration
+        i++; // le délai
         const inner = args.slice(i).join(' ');
         if (!inner) return { output: 'timeout: missing command', exitCode: 1 };
         // Detect the canonical ssh-trap-INT-sleep pattern and emit the
@@ -4734,11 +4744,28 @@ export class LinuxCommandExecutor {
         }
         if (sub === 'upgrade') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\nCalculating upgrade... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
         if (sub === 'remove' || sub === 'purge') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
-        if (sub === 'list' && args.includes('--installed')) return { output: 'Listing... Done\nbash/jammy,now 5.1-6ubuntu1 amd64 [installed]\ncoreutils/jammy,now 8.32-4.1ubuntu1 amd64 [installed]\nopenssl/jammy,now 3.0.2-0ubuntu1 amd64 [installed]', exitCode: 0 };
+        if (sub === 'list' && args.includes('--installed')) {
+          // Une seule table de paquets pour `apt`, `dpkg` et `apt-cache` :
+          // trois listes codées en dur n'avaient aucune raison de rester
+          // d'accord, et ne l'étaient déjà pas.
+          const lignes = PACKAGE_DB.filter((p) => p.installed)
+            .map((p) => `${p.name}/jammy,now ${p.version} ${p.arch} [installed]`);
+          return { output: ['Listing... Done', ...lignes].join('\n'), exitCode: 0 };
+        }
         return { output: `Usage: ${cmd} [update|install|upgrade|remove|list]`, exitCode: 0 };
       }
       case 'dpkg': {
-        if (args[0] === '-l' || args[0] === '--list') return { output: 'Desired=Unknown/Install/Remove/Purge/Hold\n| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend\n||/ Name                Version          Architecture Description\n+++-===================-================-============-================================\nii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell\nii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities\nii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit', exitCode: 0 };
+        if (args[0] === '-l' || args[0] === '--list') {
+          const entetes = [
+            'Desired=Unknown/Install/Remove/Purge/Hold',
+            '| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend',
+            '||/ Name                Version          Architecture Description',
+            '+++-===================-================-============-================================',
+          ];
+          const lignes = PACKAGE_DB.filter((p) => p.installed).map((p) =>
+            `ii  ${p.name.padEnd(19)} ${p.version.padEnd(16)} ${p.arch.padEnd(12)} ${p.summary}`);
+          return { output: [...entetes, ...lignes].join('\n'), exitCode: 0 };
+        }
         return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
       }
       case 'mkfs.ext4':
