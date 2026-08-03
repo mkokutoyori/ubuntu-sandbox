@@ -1561,11 +1561,20 @@ Voir F5.10 — le processus survit, la relance échoue.
 - **Attendu réel.** **Piège classique** : l'espace disque n'est pas libéré et
   les nouvelles lignes vont dans un inode fantôme, jusqu'au
   `systemctl restart rsyslog` ou `logrotate`.
-- **État actuel.** ❌ Non modélisé ; le fichier serait simplement recréé.
-- **Cible.** Modéliser le comportement réel : après suppression, les
-  écritures partent dans le vide, `ls` ne montre rien, et seul un
-  redémarrage du service rétablit le fichier. Faible coût, très forte valeur
-  pédagogique.
+- **État actuel.** ✅ Implémenté (9 cas dans `fault-files-logs.test.ts`).
+  Un démon écrit à travers un DESCRIPTEUR, pas à travers un chemin : il
+  ouvre `/var/log/syslog` au démarrage et garde ce descripteur toute sa
+  vie, donc `rm` ne retire que le NOM. L'inode reste vivant parce que
+  rsyslog le référence encore, chaque ligne suivante tombe dans un fichier
+  que plus aucun chemin n'atteint, et l'espace n'est pas rendu. Le
+  simulateur faisait auparavant l'inverse — il recréait le chemin à la
+  ligne suivante, ce qui n'arriverait que si le démon rouvrait par le nom
+  à chaque écriture.
+- **Cible.** Atteinte. Depuis §F9.3, ce descripteur appartient au PROCESSUS
+  rsyslog et non plus au gestionnaire de journaux, donc `/proc/<pid>/fd`,
+  `lsof` et le plafond `RLIMIT_NOFILE` le voient tous — c'est ce qui rend
+  `lsof | grep deleted` réel plutôt que rendu par une ligne écrite à la
+  main.
 - **Observabilité.** `ls -l /var/log/auth.log` (absent), écritures perdues,
   `lsof | grep deleted`.
 - **Réparation.** `systemctl restart rsyslog`.
@@ -2940,7 +2949,7 @@ Explicitement exclu, avec la raison. Ces points ne sont pas des oublis.
 | F7.7 | Exécutable supprimé | ❌ | critical | 6 |
 | F7.9 | `resolv.conf` supprimé | ⚠️ | degraded | 5 |
 | F7.10 | `/etc/hosts` supprimé | ⚠️ | degraded | 5 |
-| F7.11 | Log supprimé en cours d'écriture | ❌ | degraded | 5 |
+| F7.11 | Log supprimé en cours d'écriture | ✅ | degraded | 5 |
 | F7.12 | Datafile Oracle supprimé | ❌ | critical | 10 |
 | F7.13 | `/etc/fstab` supprimé | ⚠️ | notice/critical | 7 |
 | F7.14 | Unité systemd supprimée | ❌ | critical | 5 |
