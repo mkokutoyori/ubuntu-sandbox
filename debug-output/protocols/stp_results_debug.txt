@@ -1374,11 +1374,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.511 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.606 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.511/0.511/0.511/0.000 ms
+  rtt min/avg/max/mdev = 0.606/0.606/0.606/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1429,21 +1429,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.585 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.687 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.485 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.661 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.585/0.636/0.687/0.051 ms
+  rtt min/avg/max/mdev = 0.485/0.573/0.661/0.088 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.989 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.176 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.186 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.198 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.989/1.082/1.176/0.093 ms
+  rtt min/avg/max/mdev = 1.186/1.192/1.198/0.006 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1475,12 +1475,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.501 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.634 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.458 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.770 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.501/0.568/0.634/0.066 ms
+  rtt min/avg/max/mdev = 0.458/0.614/0.770/0.156 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1583,13 +1583,13 @@ Total steps: 300
 [218/300] wbr wbr$ ping -n 2 10.2.2.11
   
   Pinging 10.2.2.11 with 32 bytes of data:
-  Reply from 10.2.2.11: bytes=32 time=1ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
   Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 10.2.2.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [219/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1993,27 +1993,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.341 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.331 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.341/0.341/0.341/0.000 ms
+  rtt min/avg/max/mdev = 0.331/0.331/0.331/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.255 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.260 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.255/0.255/0.255/0.000 ms
+  rtt min/avg/max/mdev = 0.260/0.260/0.260/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.297 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.318 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.297/0.297/0.297/0.000 ms
+  rtt min/avg/max/mdev = 0.318/0.318/0.318/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -2429,8 +2429,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.657 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.708 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.657/0.657/0.657/0.000 ms
+  rtt min/avg/max/mdev = 0.708/0.708/0.708/0.000 ms

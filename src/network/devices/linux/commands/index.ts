@@ -104,6 +104,8 @@ import { unameCommand } from './system/Uname';
 import { hostnamectlCommand } from './system/Hostnamectl';
 import { timedatectlCommand } from './system/Timedatectl';
 import { nprocCommand } from './system/Nproc';
+import { anacronCommand } from './system/Anacron';
+import { systemdAnalyzeCommand } from './system/SystemdAnalyze';
 
 export {
   sysctlCommand,
@@ -200,6 +202,8 @@ export {
   hostnamectlCommand,
   timedatectlCommand,
   nprocCommand,
+  anacronCommand,
+  systemdAnalyzeCommand,
   TEXT_STREAM_COMMANDS,
   bcCommand,
 };
@@ -302,6 +306,8 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   hostnamectlCommand,
   timedatectlCommand,
   nprocCommand,
+  anacronCommand,
+  systemdAnalyzeCommand,
   ...TEXT_STREAM_COMMANDS,
   bcCommand,
 ];

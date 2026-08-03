@@ -238,3 +238,51 @@ export function nextElapseOf(expression: string | undefined, after: Date): Date 
   const spec = parseCalendar(expression);
   return spec === null ? null : nextCalendarElapse(spec, after);
 }
+
+/**
+ * La forme normalisée que `systemd-analyze calendar` imprime — c'est-à-dire
+ * l'expression complète `[jour ]Y-M-D H:M:S` que le vrai déduit de ce qu'on
+ * lui a donné. Rend `null` si l'expression ne s'analyse pas.
+ *
+ * La normalisation reprend exactement les deux libertés que `parseCalendar`
+ * accepte, et rien de plus : un raccourci (`daily`) se développe, et une
+ * partie absente se complète (`03:00` devient `*-*-* 03:00:00`). Les champs
+ * eux-mêmes sont rendus **tels qu'écrits** : reproduire la canonisation que
+ * systemd fait des intervalles et des pas demanderait de deviner sa forme
+ * de sortie, et une forme inventée serait pire qu'une forme conservée.
+ * Mesuré : `Mon *-*-* 06:00:00` et `2020-01-01 00:00:00` ressortent
+ * inchangés, `daily` devient `*-*-* 00:00:00`, `03:00` devient
+ * `*-*-* 03:00:00`.
+ */
+export function normalizeCalendar(expression: string): string | null {
+  if (parseCalendar(expression) === null) return null;
+  const trimmed = expression.trim();
+  const expanded = SHORTHANDS[trimmed.toLowerCase()] ?? trimmed;
+
+  let rest = expanded;
+  let jour = '';
+  const firstSpace = rest.indexOf(' ');
+  if (firstSpace > 0) {
+    const head = rest.slice(0, firstSpace);
+    if (!head.includes(':') && /[a-z]/i.test(head)) {
+      jour = head + ' ';
+      rest = rest.slice(firstSpace + 1).trim();
+    }
+  }
+
+  const parts = rest.split(/\s+/).filter((p) => p !== '');
+  let date = '*-*-*';
+  let heure = '00:00:00';
+  if (parts.length === 2) {
+    date = parts[0];
+    heure = parts[1];
+  } else if (parts[0].includes(':')) {
+    heure = parts[0];
+  } else {
+    date = parts[0];
+  }
+  // Une heure écrite sans seconde tombe sur la seconde zéro : la forme
+  // normalisée la fait apparaître.
+  if (heure.split(':').length === 2) heure += ':00';
+  return `${jour}${date} ${heure}`;
+}

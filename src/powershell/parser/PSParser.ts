@@ -493,10 +493,14 @@ export class PSParser {
     if (!PS_AMBIGUOUS_OPERATOR_PARAMS.has(name)
         && (this.canStartExpression()
             || this.check(PSTokenType.MULTIPLY)
-            || this.check(PSTokenType.MODULO))
+            || this.check(PSTokenType.MODULO)
+            || this.check(PSTokenType.DIVIDE))
         && !this.isTerminator() && !this.check(PSTokenType.PIPE)) {
-      // A `*`/`%`-led value is a wildcard/bareword (`-Filter *.jpg`,
-      // `-Path %TEMP%`), not an operator.
+      // A `*`/`%`/`/`-led value is a wildcard/bareword (`-Filter *.jpg`,
+      // `-Path %TEMP%`, `-Argument /silent`), not an operator. `/` était
+      // absent de cette liste : la valeur n'était pas consommée du tout,
+      // et le paramètre devenait un commutateur — `-Argument /silent`
+      // rendait `Argument: True`, la valeur perdue sans un mot.
       value = this.parseCommandArgument();
     }
 
@@ -619,6 +623,37 @@ export class PSParser {
       }
       return makeLiteral(value, value, 'string', pos);
     }
+    // Un nombre suivi **sans espace** de `%` ou `/` est un mot nu, pas un
+    // calcul : `50%`, `8/tcp`. Seuls ces deux signes sont recollés ici —
+    // ni le point ni `*`, qui appartiennent aux décimaux (`2.5`) et aux
+    // intervalles (`1..10`) et n'ont rien à faire dans un mot.
+    if (tok.type === PSTokenType.NUMBER) {
+      const suite = this.peekAt(1);
+      const colle = suite !== undefined
+        && suite.position.offset === tok.position.offset + tok.value.length
+        && (suite.type === PSTokenType.MODULO || suite.type === PSTokenType.DIVIDE);
+      if (colle) {
+        const pos = this.pos_();
+        const startTok = this.advance();
+        let value = startTok.value;
+        let prevEnd = startTok.position.offset + startTok.value.length;
+        for (;;) {
+          const nxt = this.peek();
+          if (nxt.position.offset !== prevEnd) break;
+          if (nxt.type === PSTokenType.MODULO) value += '%';
+          else if (nxt.type === PSTokenType.DIVIDE) value += '/';
+          else if (nxt.type === PSTokenType.WORD) value += nxt.value;
+          else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
+          else break;
+          this.advance();
+          prevEnd = nxt.position.offset + (
+            nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
+              ? nxt.value.length : 1
+          );
+        }
+        return makeLiteral(value, value, 'string', pos);
+      }
+    }
     if (tok.type === PSTokenType.WORD) {
       const next = this.peekAt(1);
       const nt   = next?.type;
@@ -649,6 +684,15 @@ export class PSParser {
           if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
           if (nxt.type === PSTokenType.MULTIPLY) value += '*';
           else if (nxt.type === PSTokenType.DOT) value += '.';
+          // `/` et `%` collés à un mot en font partie : un nom de canal
+          // (`Microsoft-Windows-TaskScheduler/Operational`), un chemin
+          // (`etc/passwd`), un pourcentage (`50%`). Les branches
+          // ci-dessus recollaient déjà un argument qui *commence* par
+          // `/` ou `%` ; celui qui en contient un plus loin ressortait
+          // coupé en deux, et l'appelant ne recevait que la moitié
+          // gauche — silencieusement.
+          else if (nxt.type === PSTokenType.DIVIDE) value += '/';
+          else if (nxt.type === PSTokenType.MODULO) value += '%';
           else if (nxt.type === PSTokenType.WORD) value += nxt.value;
           else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
           else break;

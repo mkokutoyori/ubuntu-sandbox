@@ -74,7 +74,9 @@ export interface MailboxMessage {
 }
 
 export function parseMailbox(raw: string): MailboxMessage[] {
-  const lines = raw.split(CRLF);
+  // Même raison que `splitHeadersAndBody` : le fichier mbox du disque est
+  // en LF, le fil SMTP en CRLF, et le lecteur doit lire les deux.
+  const lines = raw.split(/\r\n|\n/);
   const messages: MailboxMessage[] = [];
   let current: string[] | null = null;
   let fromLine = '';
@@ -82,7 +84,7 @@ export function parseMailbox(raw: string): MailboxMessage[] {
   const flush = (): void => {
     if (current === null) return;
     while (current.length > 0 && current[current.length - 1] === '') current.pop();
-    const { headers, body } = splitHeadersAndBody(current.join(CRLF));
+    const { headers, body } = splitHeadersAndBody(current.join('\n'));
     const m = /^From (\S*)\s*(.*)$/.exec(fromLine);
     messages.push({ index: messages.length + 1, from: m ? m[1] : '', date: m ? m[2] : '', headers, body });
   };

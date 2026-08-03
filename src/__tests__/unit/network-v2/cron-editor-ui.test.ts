@@ -48,7 +48,11 @@ describe('crontab -e — editor UI flow', () => {
     await type('crontab -e');
     session.editorExit(false);
     await flush();
-    expect(session.lines.some((l) => l.text.includes('no changes made to crontab'))).toBe(true);
+    // Ce cas affirmait « no changes made to crontab », un libellé qui
+    // n'existe nulle part : le vrai `crontab -e` dit « No modification
+    // made ». Relevé sur le binaire de Vixie cron, avec un éditeur qui
+    // ne touche pas au fichier temporaire.
+    expect(session.lines.some((l) => l.text.includes('No modification made'))).toBe(true);
     expect(await pc.executeCommand('crontab -l')).toContain('/bin/keep');
   });
 
