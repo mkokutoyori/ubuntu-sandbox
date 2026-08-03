@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-08-03T11:43:03.070Z
+Generated: 2026-08-03T17:42:05.644Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -93,9 +93,7 @@ Total steps: 311
           Please ensure reference bandwidth is consistent across all routers.
 
 [28/311] r1 R1(config-router)# log-adjacency-changes detail
-  % Invalid input detected at '^' marker.
-  log-adjacency-changes detail
-                        ^
+<empty>
 
 [29/311] r1 R1(config-router)# maximum-paths 4
 <empty>
@@ -180,6 +178,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
   
       Area 1
           Number of interfaces in this area is 2
@@ -208,6 +207,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
   
       Area 1
           Number of interfaces in this area is 2
@@ -292,6 +292,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
   
       Area 1
           Number of interfaces in this area is 2
@@ -503,6 +504,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
      172.17.0.0 255.255.0.0
@@ -624,6 +626,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
      172.17.0.0 255.255.0.0
@@ -1234,6 +1237,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
      172.17.0.0 255.255.0.0
@@ -1424,7 +1428,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1AFD47.326E978D (11:43:03.197 UTC Mon Aug 3 2026)
+  reference time is EE1B516D.D0E56041 (17:42:05.816 UTC Mon Aug 3 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1433,7 +1437,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *11:43:03.000 UTC Mon Aug 3 2026
+  *17:42:05.000 UTC Mon Aug 3 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1476,7 +1480,7 @@ Total steps: 311
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [247/311] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -2209,6 +2213,7 @@ Total steps: 311
 
 [308/311] r1 R1(config)# no ?
     sntp         Configure SNTP
+    boot         
     hostname     Reset hostname
     alias        Remove a command alias
     cdp          CDP global configuration

@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-08-03T11:42:26.560Z
+Generated: 2026-08-03T17:41:18.129Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -14,6 +14,11 @@ Total steps: 366
     where       List open outgoing connections
     disconnect  Close an outgoing connection
     resume      Resume an outgoing connection
+    dir         List files on a filesystem
+    more        Display a file
+    verify      Verify a file
+    delete      Delete a file
+    pwd         Display current working directory
     clear       Reset functions
     terminal    Set terminal parameters
     ssh         Open an SSH connection to a remote host
@@ -29,6 +34,8 @@ Total steps: 366
     interfaces     Display interface information
     memory         Display memory statistics
     flash:         Display flash filesystem
+    bootvar        Display boot variables
+    boot           Display boot variables
     platform       Display platform information
     license        Display licenses
     diag           Display chassis diagnostics
@@ -47,7 +54,6 @@ Total steps: 366
     ssh            Display SSH sessions
     hosts          Display host cache
     vrf            Display VRFs
-    boot           Display boot variables
     redundancy     Display redundancy state
     file           Display file systems
     calendar       Display hardware calendar
@@ -76,6 +82,7 @@ Total steps: 366
     access-lists   Display ACLs
     port-security  Display port security
     sntp           Show SNTP
+    storm-control  Display storm-control settings
     etherchannel   Display EtherChannel
     queuing        
     vlan           Display VLAN information
@@ -139,7 +146,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *11:42:26.000 UTC Mon Aug 3 2026
+  *17:41:18.000 UTC Mon Aug 3 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -224,6 +231,11 @@ Total steps: 366
     where       List open outgoing connections
     disconnect  Close an outgoing connection
     resume      Resume an outgoing connection
+    dir         List files on a filesystem
+    more        Display a file
+    verify      Verify a file
+    delete      Delete a file
+    pwd         Display current working directory
     terminal    Set terminal parameters
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
@@ -242,6 +254,8 @@ Total steps: 366
     interfaces      Display interface information
     memory          Display memory statistics
     flash:          Display flash filesystem
+    bootvar         Display boot variables
+    boot            Display boot variables
     platform        Display platform information
     license         Display licenses
     diag            Display chassis diagnostics
@@ -260,7 +274,6 @@ Total steps: 366
     ssh             Display SSH sessions
     hosts           Display host cache
     vrf             Display VRFs
-    boot            Display boot variables
     redundancy      Display redundancy state
     file            Display file systems
     calendar        Display hardware calendar
@@ -273,6 +286,7 @@ Total steps: 366
     aaa             Display AAA state
     aliases         Display command aliases
     arp             Display ARP table
+    storm-control   Display storm-control settings
     etherchannel    Display EtherChannel
     queuing         
     vlan            Display VLAN information
@@ -464,7 +478,7 @@ Total steps: 366
       1  -rwx     24903680   Mar 01 2024 00:00:00  c3560-ipservicesk9-mz.122-55.SE12.bin
       2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
   
-  65536000 bytes total (40185856 bytes free)
+  65536000 bytes total (40629224 bytes free)
 
 [31/366] sw1 SW1# show vlan
   VLAN Name                             Status    Ports
@@ -1278,7 +1292,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *11:42:26.000 UTC Mon Aug 3 2026
+  *17:41:18.000 UTC Mon Aug 3 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1438,9 +1452,12 @@ Total steps: 366
   %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
 
 [60/366] sw1 SW1# show boot
-  BOOT variable does not exist
+  BOOT variable = 
   CONFIG_FILE variable does not exist
+  BOOTLDR variable does not exist
   Configuration register is 0x2102
+  
+  Standby not ready to show bootvar
 
 [61/366] sw1 SW1# show users
       Line       User       Host(s)              Idle       Location
@@ -1505,44 +1522,46 @@ Total steps: 366
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [74/366] sw1 SW1(config)# ?
-    sntp           Configure SNTP
-    no             Negate a command or set its defaults
-    configure      Enter configuration mode
-    hostname       Set system hostname
-    alias          Create a command alias
-    cdp            CDP global configuration
-    lldp           LLDP global configuration
-    ip             Global IP configuration subcommands
-    vrf            VRF configuration
-    priority-list  Legacy PQ list
-    queue-list     Legacy CQ list
-    privilege      Configure command privilege levels
-    banner         Set a banner
-    logging        Logging configuration
-    ntp            NTP configuration
-    snmp-server    SNMP configuration
-    clock          Clock configuration (unhandled)
-    aaa            AAA configuration
-    enable         Modify enable password parameters
-    username       Configure a local user
-    crypto         Crypto configuration (unhandled keywords)
-    service        Service configuration
-    login          Login configuration
-    line           Enter line configuration
-    arp            Add static ARP entry
-    vlan           VLAN configuration
-    interface      Select an interface to configure
-    mac            MAC address table configuration
-    dot1x          IEEE 802.1X port-based authentication
-    lacp           Link Aggregation Control Protocol
-    port-channel   
-    spanning-tree  Spanning Tree configuration
-    access-list    Numbered ACL entry
-    track          Tracked object registry
-    errdisable     Error-disable recovery configuration
-    vtp            VTP configuration
-    udld           UDLD global configuration
-    monitor        
+    sntp             Configure SNTP
+    no               Negate a command or set its defaults
+    configure        Enter configuration mode
+    boot             
+    config-register  Set configuration register
+    hostname         Set system hostname
+    alias            Create a command alias
+    cdp              CDP global configuration
+    lldp             LLDP global configuration
+    ip               Global IP configuration subcommands
+    vrf              VRF configuration
+    priority-list    Legacy PQ list
+    queue-list       Legacy CQ list
+    privilege        Configure command privilege levels
+    banner           Set a banner
+    logging          Logging configuration
+    ntp              NTP configuration
+    snmp-server      SNMP configuration
+    clock            Clock configuration (unhandled)
+    aaa              AAA configuration
+    enable           Modify enable password parameters
+    username         Configure a local user
+    crypto           Crypto configuration (unhandled keywords)
+    service          Service configuration
+    login            Login configuration
+    line             Enter line configuration
+    arp              Add static ARP entry
+    vlan             VLAN configuration
+    interface        Select an interface to configure
+    mac              MAC address table configuration
+    dot1x            IEEE 802.1X port-based authentication
+    lacp             Link Aggregation Control Protocol
+    port-channel     
+    spanning-tree    Spanning Tree configuration
+    access-list      Numbered ACL entry
+    track            Tracked object registry
+    errdisable       Error-disable recovery configuration
+    vtp              VTP configuration
+    udld             UDLD global configuration
+    monitor          
 
 [75/366] sw1 SW1(config)# hostname SW1-EDGE
 <empty>
@@ -3363,7 +3382,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   11:42:26 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   17:41:18 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3456,7 +3475,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/3/2026, 11:42:26 AM
+  System Boot Time:          8/3/2026, 5:41:18 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3512,7 +3531,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   11:42:26 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   17:41:18 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3544,7 +3563,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   11:42:26 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   17:41:18 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3637,7 +3656,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/3/2026, 11:42:26 AM
+  System Boot Time:          8/3/2026, 5:41:18 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3693,27 +3712,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   11:42:26 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   17:41:18 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.139 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.092 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.070 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.770 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.092/2.116/3.139/1.024 ms
+  rtt min/avg/max/mdev = 1.770/2.420/3.070/0.650 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.891 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.624 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.047 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.583 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.891/1.257/1.624/0.367 ms
+  rtt min/avg/max/mdev = 1.047/1.315/1.583/0.268 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0

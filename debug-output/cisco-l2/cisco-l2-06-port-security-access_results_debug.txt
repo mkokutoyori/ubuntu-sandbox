@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
-Generated: 2026-08-03T11:42:22.744Z
+Generated: 2026-08-03T17:41:15.185Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
 Total steps: 421
@@ -61,14 +61,10 @@ Total steps: 421
   Dot1x Protocol Version      2
 
 [10/421] sw1 SW1# show storm-control
-  % Invalid input detected at '^' marker.
-  show storm-control
-       ^
+  Interface  Filter State   Upper        Lower        Current
 
 [11/421] sw1 SW1# show storm-control broadcast
-  % Invalid input detected at '^' marker.
-  show storm-control broadcast
-       ^
+  Interface  Filter State   Upper        Lower        Current
 
 
 --- [12] § port-security config loop (Fa0/1..0/20) ---
@@ -736,12 +732,12 @@ Total steps: 421
 
 [211/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.079 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.547 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.213 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.228 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.547/2.313/3.079/0.766 ms
+  rtt min/avg/max/mdev = 1.228/2.221/3.213/0.993 ms
 
 [212/421] sw1 SW1# show port-security interface FastEthernet0/1
   Port Security              : Enabled
@@ -1434,14 +1430,58 @@ Total steps: 421
 <empty>
 
 [383/421] sw1 SW1# show storm-control
-  % Invalid input detected at '^' marker.
-  show storm-control
-       ^
+  Interface  Filter State   Upper        Lower        Current
+  Fa0/1      Forwarding     20.00%       20.00%       0.00%
+  Fa0/1      Forwarding     30.00%       30.00%       0.00%
+  Fa0/1      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/2      Forwarding     20.00%       20.00%       0.00%
+  Fa0/2      Forwarding     30.00%       30.00%       0.00%
+  Fa0/2      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/3      Forwarding     20.00%       20.00%       0.00%
+  Fa0/3      Forwarding     30.00%       30.00%       0.00%
+  Fa0/3      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/4      Forwarding     20.00%       20.00%       0.00%
+  Fa0/4      Forwarding     30.00%       30.00%       0.00%
+  Fa0/4      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/5      Forwarding     20.00%       20.00%       0.00%
+  Fa0/5      Forwarding     30.00%       30.00%       0.00%
+  Fa0/5      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/6      Forwarding     20.00%       20.00%       0.00%
+  Fa0/6      Forwarding     30.00%       30.00%       0.00%
+  Fa0/6      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/7      Forwarding     20.00%       20.00%       0.00%
+  Fa0/7      Forwarding     30.00%       30.00%       0.00%
+  Fa0/7      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/8      Forwarding     20.00%       20.00%       0.00%
+  Fa0/8      Forwarding     30.00%       30.00%       0.00%
+  Fa0/8      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/9      Forwarding     20.00%       20.00%       0.00%
+  Fa0/9      Forwarding     30.00%       30.00%       0.00%
+  Fa0/9      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/10     Forwarding     20.00%       20.00%       0.00%
+  Fa0/10     Forwarding     30.00%       30.00%       0.00%
+  Fa0/10     Forwarding     100.00%      1000.00%     0.00%
+  Fa0/11     Forwarding     20.00%       20.00%       0.00%
+  Fa0/11     Forwarding     30.00%       30.00%       0.00%
+  Fa0/11     Forwarding     100.00%      1000.00%     0.00%
+  Fa0/12     Forwarding     20.00%       20.00%       0.00%
+  Fa0/12     Forwarding     30.00%       30.00%       0.00%
+  Fa0/12     Forwarding     100.00%      1000.00%     0.00%
 
 [384/421] sw1 SW1# show storm-control broadcast
-  % Invalid input detected at '^' marker.
-  show storm-control broadcast
-       ^
+  Interface  Filter State   Upper        Lower        Current
+  Fa0/1      Forwarding     20.00%       20.00%       0.00%
+  Fa0/2      Forwarding     20.00%       20.00%       0.00%
+  Fa0/3      Forwarding     20.00%       20.00%       0.00%
+  Fa0/4      Forwarding     20.00%       20.00%       0.00%
+  Fa0/5      Forwarding     20.00%       20.00%       0.00%
+  Fa0/6      Forwarding     20.00%       20.00%       0.00%
+  Fa0/7      Forwarding     20.00%       20.00%       0.00%
+  Fa0/8      Forwarding     20.00%       20.00%       0.00%
+  Fa0/9      Forwarding     20.00%       20.00%       0.00%
+  Fa0/10     Forwarding     20.00%       20.00%       0.00%
+  Fa0/11     Forwarding     20.00%       20.00%       0.00%
+  Fa0/12     Forwarding     20.00%       20.00%       0.00%
 
 
 --- [385] § per-interface port-security inspection loop ---

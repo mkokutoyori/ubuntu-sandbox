@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-08-03T11:41:41.835Z
+Generated: 2026-08-03T17:40:30.889Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -767,13 +767,14 @@ $ [119/302]> traceroute hote_inexistant_xyz
   traceroute: unknown host hote_inexistant_xyz (failed to resolve)
 
 $ [120/302]> tracepath 127.0.0.1
-  tracepath: command not found
+   1?: [LOCALHOST]                        pmtu 1500
+       Resume: pmtu 1500 hops 0 back 0
 
 $ [121/302]> mtr -r -c 1 127.0.0.1
-  mtr: command not found
+  mtr: no hops discovered
 
 $ [122/302]> mtr --report 192.168.10.1
-  mtr: command not found
+  mtr: no hops discovered
 
 
 --- [123] § DNS — dig / nslookup / host ---
@@ -1035,24 +1036,19 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-08-03 11:41:44--  http://192.168.10.1
-  Resolving 192.168.10.1... failed: Temporary failure in name resolution.
-  wget: unable to resolve host address '192.168.10.1'
+  --2026-08-03 17:40:33--  http://192.168.10.1
+  Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-08-03 11:41:44--  http://192.168.10.1
-  Resolving 192.168.10.1... failed: Temporary failure in name resolution.
-  wget: unable to resolve host address '192.168.10.1'
+<empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-08-03 11:41:44--  http://192.168.10.1
-  Resolving 192.168.10.1... failed: Temporary failure in name resolution.
-  wget: unable to resolve host address '192.168.10.1'
+  --2026-08-03 17:40:33--  http://192.168.10.1
+  Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-08-03 11:41:44--  http://192.168.10.99
-  Resolving 192.168.10.99... failed: Temporary failure in name resolution.
-  wget: unable to resolve host address '192.168.10.99'
+  --2026-08-03 17:40:33--  http://192.168.10.99
+  Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
   curl: try 'curl --help' for more information
@@ -1273,11 +1269,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Aug  3 11:41 /tmp/id_rsa
-  -rw-r--r-- 1 root root 42 Aug  3 11:41 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Aug  3 17:40 /tmp/id_rsa
+  -rw-r--r-- 1 root root 42 Aug  3 17:40 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAp6ika9ily5r root@linux-server
+  ssh-rsa AAAAdud3a1vo1zr root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1286,7 +1282,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAA07eza5a3bsgh root@localhost
+  ssh-ed25519 AAAA4xnk2166klx root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
