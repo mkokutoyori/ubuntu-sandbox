@@ -31,8 +31,29 @@ export interface FeatureOpResult {
 
 const ROLE_SERVICE_START_TYPE: ServiceStartType = 'Automatic';
 
+export type FeatureLifecycleListener = (feature: string, event: 'install' | 'uninstall') => void;
+
 export class RoleManager {
   private readonly installed = new Set<string>();
+  private readonly lifecycleListeners: FeatureLifecycleListener[] = [];
+
+  /**
+   * Called after a feature's install/uninstall has taken effect, so the
+   * device can bring the matching role's real listener up (or down) at
+   * that instant. Without it, every role was materialised lazily on the
+   * first cmdlet that happened to reach for it — which reads fine from
+   * the server's own console and not at all from anywhere else: an
+   * `Install-WindowsFeature Web-Server` followed by a `curl` from another
+   * machine answered `Connection refused`, because nothing on this box
+   * had yet asked for the role.
+   */
+  onFeatureLifecycle(listener: FeatureLifecycleListener): void {
+    this.lifecycleListeners.push(listener);
+  }
+
+  private announce(feature: string, event: 'install' | 'uninstall'): void {
+    for (const listener of this.lifecycleListeners) listener(feature, event);
+  }
 
   constructor(
     private readonly services: WindowsServiceManager,
@@ -124,6 +145,7 @@ export class RoleManager {
         changed.push(mgmt);
       }
     }
+    for (const c of changed) this.announce(c.name, 'install');
     return { ok: true, message: 'Success', changed: changed.map(c => this.toView(c)) };
   }
 
@@ -144,6 +166,7 @@ export class RoleManager {
     }
     this.installed.delete(f.name.toLowerCase());
     for (const svcName of f.services) this.retireService(svcName, isAdmin);
+    this.announce(f.name, 'uninstall');
     return { ok: true, message: 'Success', changed: [this.toView(f)] };
   }
 }

@@ -761,44 +761,6 @@ export function cmdArping(args: string[], ctx?: { mac?: (ip: string) => string |
   return { output: lines.join('\n'), exitCode: 1 };
 }
 
-// ─── curl ───────────────────────────────────────────────────────────
-
-export function cmdCurl(args: string[]): string {
-  const verbose = args.includes('-v') || args.includes('--verbose');
-  const head = args.includes('-I') || args.includes('--head');
-  const silent = args.includes('-s') || args.includes('--silent');
-  const url = args.filter(a => !a.startsWith('-')).pop();
-
-  if (!url) return 'curl: try \'curl --help\' for more information';
-
-  // Simulated responses for common URLs
-  if (url.includes('localhost') || url.includes('127.0.0.1')) {
-    if (head) {
-      return [
-        'HTTP/1.1 200 OK',
-        'Date: ' + new Date().toUTCString(),
-        'Server: Oracle-Application-Server-11g',
-        'Content-Length: 0',
-        'Content-Type: text/html; charset=UTF-8',
-        '',
-      ].join('\n');
-    }
-    return '<html><body><h1>It works!</h1></body></html>';
-  }
-
-  // External URLs: simulated connection error (no real network)
-  if (verbose) {
-    return [
-      `*   Trying ${url}...`,
-      '* connect to host failed',
-      `* Failed to connect to ${url} port 80: Connection refused`,
-      `curl: (7) Failed to connect to ${url} port 80 after 0 ms: Connection refused`,
-    ].join('\n');
-  }
-
-  return `curl: (6) Could not resolve host: ${url.replace(/https?:\/\//, '').split('/')[0]}`;
-}
-
 // ─── wget ───────────────────────────────────────────────────────────
 
 export function cmdWget(args: string[]): string {

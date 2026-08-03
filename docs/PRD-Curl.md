@@ -13,7 +13,15 @@ guichet de quatre options sur les quelque quarante qu'un cours réseau
 utilise**, et que deux de ces quatre sont acceptées puis ignorées — ce qui
 est pire que de les refuser.
 
+> **État : implémenté.** P0 à P3 sont livrés ; P4 reste hors périmètre,
+> comme annoncé au §4. Le §7 en fin de document dit exactement ce qui a été
+> fait, ce qui a dû être corrigé ailleurs pour que P2 ne mente pas, et ce
+> qui reste ouvert.
+
 ## 2. État des lieux, vérifié
+
+*(Cette section décrit l'état AVANT implémentation ; elle est conservée
+telle quelle, parce que c'est elle qui justifie les phases.)*
 
 `src/network/devices/linux/commands/net/Curl.ts` — 95 lignes.
 
@@ -142,3 +150,104 @@ Chaque phase : tests unitaires sur le comportement observable **plus** un
 test doit couvrir le transit réel (compteurs de trames sur un câble
 intermédiaire) au moins une fois, pour que P3 ne puisse pas régresser en
 silence.
+
+
+## 7. Ce qui a été livré
+
+### 7.1 Une seule implémentation, deux plateformes
+
+`curl` n'est pas une commande Linux : Windows en livre une depuis la 1803
+(`C:\Windows\System32\curl.exe`), et une machine Windows de ce simulateur
+n'en avait aucune. Le moteur vit donc dans **`src/network/http/curl/`**, à
+côté du `HttpClient.ts` que les deux plateformes partagent déjà :
+
+| Fichier | Rôle |
+|---|---|
+| `CurlArgs.ts` | analyse de la ligne de commande, y compris les grappes courtes (`-fsS`) |
+| `CurlTransfer.ts` | la requête réelle : HTTP/1.1, TLS, redirections, trace `-v` |
+| `CurlWriteOut.ts` | `-w` |
+| `CurlEngine.ts` | le comportement de la commande — sortie, stderr, code de sortie |
+| `CurlHost.ts` | le port étroit que chaque plateforme remplit |
+
+Chaque système n'apporte que son branchement : `Curl.ts` (LinuxCommand)
+côté Linux, `WindowsPC.cmdCurl` côté cmd.exe et PowerShell. Résolution de
+noms, pile TCP, ancres de confiance, écriture de fichier — rien d'autre.
+`curl-one-engine-two-platforms.test.ts` épingle la propriété qui compte :
+la même situation donne le même verdict des deux côtés.
+
+### 7.2 Options implémentées
+
+`-I` `-i` `-k` `-s` `-S` `-v` `-f` `-L` `-o` `-O` `-w` `-X` `-d` `-H` `-u`
+`-A` `--resolve` `--max-redirs`, plus les formes longues correspondantes,
+les grappes courtes et `--opt=valeur`.
+
+Codes de sortie réels : 0, 1 (protocole), 2 (usage), 3 (URL), 6, 7, 22
+(`-f`), 23 (écriture), 35, 47 (redirections), 52, 60.
+
+### 7.3 Trois familles d'options, et pourquoi
+
+Le §3 P1 dit qu'une option non implémentée est refusée, jamais avalée.
+Appliqué littéralement, cela produisait un second mensonge : répondre
+`curl: option -x: is unknown` pour `-x`, que curl connaît parfaitement.
+Il y a donc trois cas, et non deux :
+
+1. **implémentée** → elle agit ;
+2. **connue de curl, non implémentée ici** → `curl: option -x: is not
+   implemented in this simulator` ;
+3. **inexistante** → `curl: option -Z: is unknown`, le message de curl.
+
+Le 2 n'est pas un message de curl, et c'est assumé : aucun message de curl
+ne dit cette chose-là, parce qu'aucun vrai curl n'est dans cette situation.
+Le refus reste un refus, et il enseigne ce qui est vrai.
+
+### 7.4 Ce que P2 a exigé du RESTE de la plateforme
+
+Le §4 demandait de cadrer P2 avant de l'écrire. Le cadrage a montré que
+`Http1ServerSession` transporte déjà méthode, corps et en-têtes réels —
+mais que **le seul serveur HTTP livré avec le produit ignorait la
+méthode** : `WindowsIisRole.buildResponse()` servait le fichier pour un
+`DELETE` comme pour un `GET`. `-X` aurait donc été une option acceptée sans
+effet observable, exactement ce que P0 interdit. Corrigé : `405 Method Not
+Allowed` avec `Allow: GET, HEAD, OPTIONS, TRACE`, et `OPTIONS` répondu.
+
+Trois incohérences trouvées en chemin, corrigées dans la même passe :
+
+- **`Install-WindowsFeature Web-Server` ne faisait rien écouter.** Chaque
+  rôle Windows était matérialisé paresseusement, à la première applet de
+  commande qui le réclamait — ce qui se lit bien depuis la console du
+  serveur et pas du tout depuis ailleurs : installer le rôle puis faire un
+  `curl` depuis une autre machine donnait `Connection refused`. Le commentaire
+  de `getDnsServerRole()` disait déjà que `RoleManager` n'avait « pas de
+  point d'accroche par fonctionnalité » ; il en a un
+  (`RoleManager.onFeatureLifecycle`), et les quatre rôles en profitent.
+- **Windows n'avait aucun magasin de racines de confiance** pour ses
+  clients sortants (limitation documentée dans `sendMailMessage`). Il a le
+  même que Linux, et donc la même vérification de certificat.
+- **cmd.exe lisait un `|` entre guillemets comme un tube.** `curl -w
+  "%{http_code}|%{size_download}"` passait pour un pipeline. `splitCmdChain`
+  savait déjà tenir compte des guillemets pour `||` ; la détection de tube
+  le fait maintenant aussi.
+
+### 7.5 Limites assumées
+
+- **P4 (proxy, cookies, `--retry`, formulaires) n'est pas fait**, comme le
+  §4 l'annonçait : « à traiter seulement si un TP les demande ». Ces
+  options sont refusées par le cas 2 du §7.3, pas ignorées.
+- **`%{time_total}` est mesuré pour de vrai** et vaut donc à peu près zéro,
+  puisque les réponses sont immédiates. Les autres variables de temps
+  (`time_connect`, `time_namelookup`, …) ne sont **pas** fournies : les
+  faire toutes égales à `time_total` serait une ventilation inventée. Une
+  variable non fournie est signalée (`curl: unknown --write-out
+  variable: …`), jamais devinée.
+- **`-I` envoie une vraie requête HEAD**, et le serveur y répond avec le
+  corps que le `GET` aurait servi ; c'est le client qui le supprime, comme
+  le fait `Http1ClientSession` (`suppressBody`). La sortie observable est
+  identique à celle du vrai curl, `Content-Length` compris.
+- **PowerShell traite `curl` comme `curl.exe`** (comportement de
+  PowerShell 7), et non comme l'alias de `Invoke-WebRequest` de Windows
+  PowerShell 5.1.
+- **`nginx`/`apache2` existent comme unités systemd mais n'écoutent rien.**
+  Ce n'est pas une lacune de `curl` — le transport est réel et le refus est
+  correct — mais c'est la raison pour laquelle les TP HTTP côté Linux
+  doivent aujourd'hui monter leur serveur autrement. À traiter dans un
+  chantier « serveur HTTP Linux », sur le modèle de `WindowsIisRole`.

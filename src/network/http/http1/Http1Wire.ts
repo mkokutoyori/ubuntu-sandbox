@@ -208,7 +208,14 @@ export function parseRequest(raw: string): Http1ParseResult {
   const versionMatch = /^HTTP\/(1\.1|1\.0)$/.exec(version);
   if (!versionMatch) return { ok: false, status: 400, reason: `Unsupported version: ${version}` };
 
-  const bodyResult = resolveBody(head.headers, head.rest, method === 'GET' || method === 'HEAD');
+  // RFC 9112 §6 — a REQUEST's framing comes from Transfer-Encoding /
+  // Content-Length, never from the method. Suppressing by verb is the rule
+  // for a RESPONSE to HEAD (§6.3, and `parseResponse`'s `suppressBody`
+  // below), and applying it here silently dropped the body of a
+  // `curl -X GET -d …`, which real curl does send. A GET carrying no
+  // Content-Length still parses to no body, and a body with no length is
+  // still the 400 it always was — `resolveBody` decides both.
+  const bodyResult = resolveBody(head.headers, head.rest, false);
   if ('ok' in bodyResult) return bodyResult;
 
   return {

@@ -1,95 +1,65 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { cmdCurl } from '../../LinuxNetCommands';
-import { fetchHttp } from './HttpFetch';
-import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
-import { CertificateVerifier, certificateMatchesHostname } from '@/network/pki/CertificateVerifier';
-import { createRequest } from '@/network/http/semantics/types';
 import { makeArgCompleter } from '../completionHelpers';
+import type { CurlHost } from '@/network/http/curl/CurlHost';
+import { runCurl, CURL_FLAGS, CURL_USAGE } from '@/network/http/curl/CurlEngine';
 
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
+function linuxCurlHost(ctx: LinuxCommandContext): CurlHost {
+  return {
+    async resolveHostname(name: string): Promise<string | null> {
+      const ip = await ctx.net.resolveHostname(name);
+      return ip ? ip.toString() : null;
+    },
+    tcpStack: () => ctx.net.getTcpStack(),
+    trustAnchors: () => ctx.tlsTrustAnchors,
+    writeFile(target: string, content: string): boolean {
+      const vfs = ctx.executor.vfs;
+      return vfs.writeFile(
+        vfs.normalizePath(target, ctx.executor.getCwd()),
+        content,
+        ctx.executor.userMgr.currentUid,
+        ctx.executor.userMgr.currentGid,
+        0o022,
+      );
+    },
+  };
 }
 
 export const curlCommand: LinuxCommand = {
   name: 'curl',
   needsNetworkContext: true,
-  complete: makeArgCompleter({
-    flags: ['-I', '-k', '-s', '-v', '--head', '--insecure', '--silent'],
-  }),
-  usage: 'curl [-k] [-s] [-v] [-I] URL',
+  complete: makeArgCompleter({ flags: [...CURL_FLAGS] }),
+  manSection: 1,
+  usage: CURL_USAGE,
   help: 'Transfer data from or to a server.',
+  options: [
+    { flag: '-I', description: 'Fetch the headers only (sends a real HEAD request).', aliases: ['--head'] },
+    { flag: '-i', description: 'Include the response headers in the output.', aliases: ['--include'] },
+    { flag: '-k', description: 'Skip TLS certificate verification.', aliases: ['--insecure'] },
+    { flag: '-s', description: 'Silent mode: no error messages.', aliases: ['--silent'] },
+    { flag: '-S', description: 'Show errors even in silent mode.', aliases: ['--show-error'] },
+    { flag: '-v', description: 'Write the protocol dialogue to stderr.', aliases: ['--verbose'] },
+    { flag: '-f', description: 'Exit with 22 when the server answers 400 or above.', aliases: ['--fail'] },
+    { flag: '-L', description: 'Follow redirects.', aliases: ['--location'] },
+    { flag: '-o', description: 'Write the body to this file.', takesArg: true, argName: 'file', aliases: ['--output'] },
+    { flag: '-O', description: 'Write the body to a file named after the remote path.', aliases: ['--remote-name'] },
+    { flag: '-w', description: 'Print this format after the transfer (%{http_code}, ...).', takesArg: true, argName: 'format', aliases: ['--write-out'] },
+    { flag: '-X', description: 'Request method to use.', takesArg: true, argName: 'method', aliases: ['--request'] },
+    { flag: '-d', description: 'Send this data as the request body (implies POST).', takesArg: true, argName: 'data', aliases: ['--data'] },
+    { flag: '-H', description: 'Add or replace a request header.', takesArg: true, argName: 'header', aliases: ['--header'] },
+    { flag: '-u', description: 'HTTP Basic credentials.', takesArg: true, argName: 'user:password', aliases: ['--user'] },
+    { flag: '-A', description: 'User-Agent to send.', takesArg: true, argName: 'agent', aliases: ['--user-agent'] },
+    { flag: '--resolve', description: 'Resolve host:port to this address instead of using DNS.', takesArg: true, argName: 'host:port:addr' },
+    { flag: '--max-redirs', description: 'Maximum number of redirects to follow.', takesArg: true, argName: 'num' },
+  ],
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    const head = args.includes('-I') || args.includes('--head');
-    let url: string | null = null;
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-k' || a === '--insecure') continue;
-      if (a === '-s' || a === '--silent' || a === '-v' || a === '-I' || a === '--head') continue;
-      if (!a.startsWith('-')) url = a;
-    }
-    if (!url) return cmdCurl(args);
+    const result = await runCurl(linuxCurlHost(ctx), args);
+    return [result.output, result.stderr].filter((s) => s.length > 0).join('\n');
+  },
 
-    const m = /^(https?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/i.exec(url);
-    if (!m) return cmdCurl(args);
-    const scheme = m[1].toLowerCase();
-    const host = m[2];
-    const port = m[3] ? parseInt(m[3], 10) : scheme === 'https' ? 443 : 80;
-    const path = m[4] || '/';
-
-    if (scheme === 'https') {
-      const ip = await ctx.net.resolveHostname(host);
-      if (!ip) return `curl: (6) Could not resolve host: ${host}`;
-
-      try {
-        const verifier = new CertificateVerifier({ trustAnchors: ctx.tlsTrustAnchors });
-        const session = new HttpsClientSession(ctx.net.getTcpStack(), ip.toString(), port, { verifier });
-        const request = createRequest('GET', path);
-        request.headers.set('Host', host);
-        const result = session.send(request);
-
-        if (!result.ok || !result.response) {
-          session.close();
-          return `curl: (60) SSL certificate problem: unable to get local issuer certificate`;
-        }
-        if (session.peerCertificate && !certificateMatchesHostname(session.peerCertificate, host)) {
-          session.close();
-          return `curl: (60) SSL: no alternative certificate subject name matches target host name '${host}'`;
-        }
-        session.close();
-        const { response } = result;
-        if (head) {
-          return [
-            `HTTP/${response.httpVersion} ${response.statusCode} ${response.reasonPhrase ?? ''}`,
-            ...response.headers.entries().map(([k, v]) => `${k}: ${v}`),
-            '',
-          ].join('\n');
-        }
-        return response.body ? bytesToBinaryString(response.body) : '';
-      } catch {
-        return `curl: (35) OpenSSL SSL_connect: SSL routines::wrong version number in connection to ${host}:${port}`;
-      }
-    }
-
-    // PRD-Windows-Server.md §5 P11 / PRD-HTTP.md §5 P12: a real HTTP dial
-    // (IIS/W3SVC, or any other real HTTP-hosting device), not a stub.
-    const fetched = await fetchHttp(ctx, url);
-    if (fetched.ok === false) {
-      if (fetched.reason === 'unresolved-host') return `curl: (6) Could not resolve host: ${fetched.host}`;
-      if (fetched.reason === 'refused') return `curl: (7) Failed to connect to ${fetched.host} port ${fetched.port}: Connection refused`;
-      return 'curl: (3) URL using bad/illegal format or missing URL';
-    }
-    const { response } = fetched;
-    if (head) {
-      return [
-        `HTTP/1.1 ${response.statusCode} ${response.statusText}`,
-        ...Object.entries(response.headers).map(([k, v]) => `${k}: ${v}`),
-        '',
-      ].join('\n');
-    }
-    return response.body;
+  async runWithStatus(ctx: LinuxCommandContext, args: string[]) {
+    const result = await runCurl(linuxCurlHost(ctx), args);
+    return { output: result.output, exitCode: result.exitCode, stderr: result.stderr };
   },
 };

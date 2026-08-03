@@ -107,7 +107,16 @@ describe('Curl.ts HTTPS — real TLS 1.3 attempt (PRD-HTTP.md §5 P12), no CA tr
     );
     srv.start();
 
-    const out = await linuxClient.executeCommand('curl -k https://192.168.114.10/');
+    // Sans `-k` : ce cas veut précisément constater le REFUS faute d'ancre
+    // de confiance. Il passait `-k` quand l'option était parsée puis jetée
+    // (docs/PRD-Curl.md §2.2) ; maintenant qu'elle agit, `-k` demande
+    // justement de ne pas vérifier, et le transfert aboutirait — les deux
+    // moitiés de la ligne se contredisaient.
+    const out = await linuxClient.executeCommand('curl https://192.168.114.10/');
     expect(out.toLowerCase()).toMatch(/ssl certificate problem/);
+
+    // Et l'autre moitié, désormais vraie elle aussi : `-k` passe outre.
+    const insecure = await linuxClient.executeCommand('curl -k https://192.168.114.10/');
+    expect(insecure.toLowerCase()).not.toMatch(/ssl certificate problem/);
   });
 });
