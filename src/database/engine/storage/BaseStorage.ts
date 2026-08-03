@@ -39,6 +39,14 @@ export interface ColumnMeta {
   /** Parsed DEFAULT expression (AST), evaluated per-row for omitted columns
    *  on INSERT. Typed loosely to avoid a parser→storage dependency. */
   defaultExpr?: object;
+  /**
+   * Colonne d'identité (`GENERATED … AS IDENTITY`). Une identité n'est
+   * pas un compteur de plus : Oracle la sert depuis une **séquence**
+   * qu'il crée à côté de la table, et c'est celle-là que `sequence`
+   * nomme ici. `always` dit si fournir la valeur soi-même est une
+   * erreur (ORA-32795) ou simplement une valeur qui l'emporte.
+   */
+  identity?: { always: boolean; sequence: string };
 }
 
 export interface ConstraintMeta {

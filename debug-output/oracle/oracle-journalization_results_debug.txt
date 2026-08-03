@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-journalization
-Generated: 2026-08-03T11:42:35.924Z
+Generated: 2026-08-03T12:22:47.045Z
 Topology:  LinuxServer ora-journal — Oracle ORCL OPEN
 Total commands: 429
 ============================================================
@@ -90,18 +90,18 @@ SQL [11/429]> SELECT originating_timestamp, message_text FROM x$dbgalertext ORDE
   
   ORIGINATING_TIMESTAMP MESSAGE_TEXT                                                     
   --------------------- -----------------------------------------------------------------
-  01-JAN-26             2026-08-03 11:42:35: Logon: user=SYS sid=8 as SYSDBA             
-  01-JAN-26             2026-08-03 11:42:35: Logoff: user=SYS sid=7 as SYSDBA            
-  01-JAN-26             2026-08-03 11:42:35: Logon: user=SYS sid=7 as SYSDBA             
-  01-JAN-26             2026-08-03 11:42:35: Logoff: user=SYS sid=6 as SYSDBA            
-  01-JAN-26             2026-08-03 11:42:35: Logon: user=SYS sid=6 as SYSDBA             
-  01-JAN-26             2026-08-03 11:42:35: Logoff: user=SYS sid=5 as SYSDBA            
-  01-JAN-26             2026-08-03 11:42:35: Logon: user=SYS sid=5 as SYSDBA             
-  01-JAN-26             2026-08-03 11:42:35: Listener LISTENER started successfully      
-  01-JAN-26             2026-08-03 11:42:35: Database opened                             
-  01-JAN-26             2026-08-03 11:42:35: Completed checkpoint up to RBA, SCN: 1000001
-  01-JAN-26             2026-08-03 11:42:35: Database mounted                            
-  01-JAN-26             2026-08-03 11:42:35: Starting ORACLE instance (normal)           
+  01-JAN-26             2026-08-03 12:22:47: Logon: user=SYS sid=8 as SYSDBA             
+  01-JAN-26             2026-08-03 12:22:47: Logoff: user=SYS sid=7 as SYSDBA            
+  01-JAN-26             2026-08-03 12:22:46: Logon: user=SYS sid=7 as SYSDBA             
+  01-JAN-26             2026-08-03 12:22:46: Logoff: user=SYS sid=6 as SYSDBA            
+  01-JAN-26             2026-08-03 12:22:46: Logon: user=SYS sid=6 as SYSDBA             
+  01-JAN-26             2026-08-03 12:22:46: Logoff: user=SYS sid=5 as SYSDBA            
+  01-JAN-26             2026-08-03 12:22:46: Logon: user=SYS sid=5 as SYSDBA             
+  01-JAN-26             2026-08-03 12:22:46: Listener LISTENER started successfully      
+  01-JAN-26             2026-08-03 12:22:46: Database opened                             
+  01-JAN-26             2026-08-03 12:22:46: Completed checkpoint up to RBA, SCN: 1000001
+  01-JAN-26             2026-08-03 12:22:46: Database mounted                            
+  01-JAN-26             2026-08-03 12:22:46: Starting ORACLE instance (normal)           
   
   12 rows selected.
 
@@ -121,7 +121,7 @@ SQL [14/429]> SELECT message_text FROM x$dbgalertext WHERE message_text LIKE '%c
   
   MESSAGE_TEXT                                                     
   -----------------------------------------------------------------
-  2026-08-03 11:42:35: Completed checkpoint up to RBA, SCN: 1000001
+  2026-08-03 12:22:46: Completed checkpoint up to RBA, SCN: 1000001
   
   1 row selected.
 
@@ -143,18 +143,18 @@ SQL [18/429]> SELECT * FROM v$diag_alert_ext ORDER BY originating_timestamp DESC
   
   ORIGINATING_TIMESTAMP NORMALIZED_TIMESTAMP ORGANIZATION_ID COMPONENT_ID HOST_ID   HOST_ADDRESS MESSAGE_TYPE MESSAGE_LEVEL MESSAGE_ID MESSAGE_GROUP CLIENT_ID MODULE_ID PROCESS_ID THREAD_ID USER_ID INSTANCE_ID DETAILED_LOCATION PROBLEM_KEY UPSTREAM_COMP_ID DOWNSTREAM_COMP_ID EXECUTION_CONTEXT_ID EXECUTION_CONTEXT_SEQUENCE MESSAGE_TEXT                                                      MESSAGE_ARGUMENTS
   --------------------- -------------------- --------------- ------------ --------- ------------ ------------ ------------- ---------- ------------- --------- --------- ---------- --------- ------- ----------- ----------------- ----------- ---------------- ------------------ -------------------- -------------------------- ----------------------------------------------------------------- -----------------
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Logon: user=SYS sid=8 as SYSDBA                               
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Logoff: user=SYS sid=7 as SYSDBA                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Logon: user=SYS sid=7 as SYSDBA                               
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Logoff: user=SYS sid=6 as SYSDBA                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Logon: user=SYS sid=6 as SYSDBA                               
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Logoff: user=SYS sid=5 as SYSDBA                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Logon: user=SYS sid=5 as SYSDBA                               
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Listener LISTENER started successfully                        
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Database opened                                               
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Completed checkpoint up to RBA, SCN: 1000001                  
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Database mounted                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 11:42:35: Starting ORACLE instance (normal)                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:47: Logon: user=SYS sid=8 as SYSDBA                               
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:47: Logoff: user=SYS sid=7 as SYSDBA                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Logon: user=SYS sid=7 as SYSDBA                               
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Logoff: user=SYS sid=6 as SYSDBA                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Logon: user=SYS sid=6 as SYSDBA                               
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Logoff: user=SYS sid=5 as SYSDBA                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Logon: user=SYS sid=5 as SYSDBA                               
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Listener LISTENER started successfully                        
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Database opened                                               
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Completed checkpoint up to RBA, SCN: 1000001                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Database mounted                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-08-03 12:22:46: Starting ORACLE instance (normal)                             
   
   12 rows selected.
 
@@ -751,51 +751,51 @@ SQL [109/429]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
   
   OS_USERNAME USERNAME USERHOST     TIMESTAMP ACTION_NAME    OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- -------- ------------ --------- -------------- ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (ALL) COLUMNS                          ALTER DATABASE
-  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (FOREIGN KEY) COLUMNS                  ALTER DATABASE
   root        SYS      linux-server 03-AUG-26 ALTER TABLE    EMPLOYEES                          0 HR                8           ALTER TABLE hr.employees DROP SUPPLEMENTAL LOG GROUP emp_sg                      ALTER TABLE   
-  root        SYS      linux-server 03-AUG-26 ALTER TABLE    EMPLOYEES                          0 HR                8           ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS         ALTER TABLE   
   root        SYS      linux-server 03-AUG-26 ALTER TABLE    EMPLOYEES                          0 HR                8           ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG GROUP emp_sg (employee_id, last_na ALTER TABLE   
                                                                                                                                 me) ALWAYS                                                                                     
+  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (ALL) COLUMNS                          ALTER DATABASE
+  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (FOREIGN KEY) COLUMNS                  ALTER DATABASE
+  root        SYS      linux-server 03-AUG-26 ALTER TABLE    EMPLOYEES                          0 HR                8           ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS         ALTER TABLE   
+  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD SUPPLEMENTAL LOG DATA                                         ALTER DATABASE
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS                   ALTER DATABASE
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (UNIQUE) COLUMNS                        ALTER DATABASE
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (FOREIGN KEY) COLUMNS                   ALTER DATABASE
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS                           ALTER DATABASE
-  root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SET log_archive_dest_1='LOCATION=/u01/archivelog/' SCOPE=BOTH       ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SET log_archive_format='arch_%t_%s_%r.arc' SCOPE=SPFILE             ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SET log_archive_max_processes=4 SCOPE=BOTH                          ALTER SYSTEM  
-  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD SUPPLEMENTAL LOG DATA                                         ALTER DATABASE
+  root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SET log_archive_dest_1='LOCATION=/u01/archivelog/' SCOPE=BOTH       ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE OPEN                                                              ALTER DATABASE
   
   OS_USERNAME USERNAME USERHOST     TIMESTAMP ACTION_NAME    OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- -------- ------------ --------- -------------- ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ARCHIVELOG                                                        ALTER DATABASE
-  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE RENAME FILE '/u01/oradata/ORCL/redo01a.log' TO '/u03/oradata/ORCL ALTER DATABASE
-                                                                                                                                /redo01a.log'                                                                                  
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE CLEAR LOGFILE GROUP 4                                             ALTER DATABASE
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE CLEAR UNARCHIVED LOGFILE GROUP 4                                  ALTER DATABASE
-  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo02b.log' TO GROUP 2     ALTER DATABASE
-  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo03b.log' TO GROUP 3     ALTER DATABASE
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE DROP LOGFILE MEMBER '/u02/oradata/ORCL/redo01b.log'               ALTER DATABASE
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE DROP LOGFILE GROUP 5                                              ALTER DATABASE
-  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD LOGFILE GROUP 4 ('/u01/oradata/ORCL/redo04a.log','/u02/oradat ALTER DATABASE
-                                                                                                                                a/ORCL/redo04b.log') SIZE 200M REUSE                                                           
+  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE RENAME FILE '/u01/oradata/ORCL/redo01a.log' TO '/u03/oradata/ORCL ALTER DATABASE
+                                                                                                                                /redo01a.log'                                                                                  
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD LOGFILE GROUP 5 '/u01/oradata/ORCL/redo05.log' SIZE 200M REUS ALTER DATABASE
                                                                                                                                 E                                                                                              
   root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo01b.log' TO GROUP 1     ALTER DATABASE
+  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo02b.log' TO GROUP 2     ALTER DATABASE
+  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo03b.log' TO GROUP 3     ALTER DATABASE
+  root        SYS      linux-server 03-AUG-26 ALTER DATABASE                                    0 SYS               8           ALTER DATABASE ADD LOGFILE GROUP 4 ('/u01/oradata/ORCL/redo04a.log','/u02/oradat ALTER DATABASE
+                                                                                                                                a/ORCL/redo04b.log') SIZE 200M REUSE                                                           
+  root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM ARCHIVE LOG CURRENT                                                 ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM ARCHIVE LOG ALL                                                     ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM ARCHIVE LOG NEXT                                                    ALTER SYSTEM  
-  root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM ARCHIVE LOG STOP                                                    ALTER SYSTEM  
   
   OS_USERNAME USERNAME USERHOST     TIMESTAMP ACTION_NAME    OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- -------- ------------ --------- -------------- ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
+  root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM ARCHIVE LOG STOP                                                    ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM ARCHIVE LOG START                                                   ALTER SYSTEM  
-  root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SWITCH LOGFILE                                                      ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SWITCH LOGFILE                                                      ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM CHECKPOINT                                                          ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM CHECKPOINT GLOBAL                                                   ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM CHECKPOINT LOCAL                                                    ALTER SYSTEM  
-  root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM ARCHIVE LOG CURRENT                                                 ALTER SYSTEM  
+  root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SWITCH LOGFILE                                                      ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SWITCH LOGFILE                                                      ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 ALTER SYSTEM                                      0 SYS               8           ALTER SYSTEM SWITCH LOGFILE                                                      ALTER SYSTEM  
   root        SYS      linux-server 03-AUG-26 LOGON                                             0                   8 SYSDBA                                                                                     LOGON         
@@ -1097,6 +1097,71 @@ SQL [109/429]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
                                                                                                                                     LCY_CR_TUR NUMBER(22,3),
        LCY_DR_TUR NUMBER(22,3)
      )                                 
+  oracle      SYS      localhost    03-AUG-26 CREATE TABLE   ACTB_HISTORY                       0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
+       AC_NO VARCHAR2(20) NOT NULL,
+       AC_ CREATE TABLE  
+                                                                                                                                BRANCH VARCHAR2(3),
+       AC_CCY VARCHAR2(3),
+       TRN_DT DATE,
+       VALUE_DT DAT               
+                                                                                                                                E,
+       TRN_REF_NO VARCHAR2(16),
+       EVENT VARCHAR2(4),
+       DRCR_IND CHAR(1),
+                 
+                                                                                                                                     FCY_AMOUNT NUMBER(22,3),
+       LCY_AMOUNT NUMBER(22,3),
+       EXCH_RATE NUMBE               
+                                                                                                                                R(14,8),
+       TRN_CODE VARCHAR2(3),
+       MODULE VARCHAR2(2),
+       PRODUCT VARCHA               
+                                                                                                                                R2(4),
+       RELATED_ACCOUNT VARCHAR2(20),
+       RELATED_CUSTOMER VARCHAR2(20),
+                   
+                                                                                                                                   RELATED_REFERENCE VARCHAR2(16),
+       USER_ID VARCHAR2(12),
+       BATCH_NO VARC               
+                                                                                                                                HAR2(6),
+       INSTRUMENT_CODE VARCHAR2(20),
+       EXTERNAL_REF_NO VARCHAR2(20),
+                  
+                                                                                                                                    STMT_DT DATE,
+       AC_ENTRY_SR_NO NUMBER(10),
+       FINANCIAL_CYCLE VARCHAR2(               
+                                                                                                                                4),
+       PERIOD_CODE VARCHAR2(6),
+       AML_EXCEPTION VARCHAR2(1),
+       AMOUNT_TA               
+                                                                                                                                G VARCHAR2(20),
+       AUTH_ID VARCHAR2(12),
+       BANK_CODE VARCHAR2(20),
+       CAT               
+                                                                                                                                EGORY CHAR(1),
+       CURR_NO NUMBER,
+       CUST_GL CHAR(1),
+       DONT_SHOWIN_STMT                
+                                                                                                                                CHAR(1),
+       ENTRY_SEQ_NO NUMBER,
+       EVENT_SR_NO NUMBER,
+       FLG_POSITION_ST               
+                                                                                                                                ATUS CHAR(1),
+       GLMIS_UPDATE_FLAG CHAR(1),
+       GLMIS_VAL_UPD_FLAG CHAR(1),
+                  
+                                                                                                                                    IB CHAR(1),
+       IC_BAL_INCLUSION CHAR(1),
+       MIS_FLAG CHAR(1),
+       MIS_H               
+                                                                                                                                EAD VARCHAR2(20),
+       ORIG_PNL_GL VARCHAR2(20),
+       PRINT_STAT CHAR(1),
+       P               
+                                                                                                                                RODUCT_ACCRUAL VARCHAR2(20),
+       TXN_INIT_DATE DATE,
+       TYPE CHAR(1)
+     )                   
   oracle      SYS      localhost    03-AUG-26 CREATE TABLE   SMTB_USER                          0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.SMTB_USER (
        USER_ID VARCHAR2(12) NOT NULL,
        USER CREATE TABLE  
@@ -1188,71 +1253,6 @@ SQL [109/429]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
        USER_FAX VARCHAR2(20),
        USER_ID_BRN VARCHAR2(20),
        USER_MAN               
-  oracle      SYS      localhost    03-AUG-26 CREATE TABLE   ACTB_HISTORY                       0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
-       AC_NO VARCHAR2(20) NOT NULL,
-       AC_ CREATE TABLE  
-                                                                                                                                BRANCH VARCHAR2(3),
-       AC_CCY VARCHAR2(3),
-       TRN_DT DATE,
-       VALUE_DT DAT               
-                                                                                                                                E,
-       TRN_REF_NO VARCHAR2(16),
-       EVENT VARCHAR2(4),
-       DRCR_IND CHAR(1),
-                 
-                                                                                                                                     FCY_AMOUNT NUMBER(22,3),
-       LCY_AMOUNT NUMBER(22,3),
-       EXCH_RATE NUMBE               
-                                                                                                                                R(14,8),
-       TRN_CODE VARCHAR2(3),
-       MODULE VARCHAR2(2),
-       PRODUCT VARCHA               
-                                                                                                                                R2(4),
-       RELATED_ACCOUNT VARCHAR2(20),
-       RELATED_CUSTOMER VARCHAR2(20),
-                   
-                                                                                                                                   RELATED_REFERENCE VARCHAR2(16),
-       USER_ID VARCHAR2(12),
-       BATCH_NO VARC               
-                                                                                                                                HAR2(6),
-       INSTRUMENT_CODE VARCHAR2(20),
-       EXTERNAL_REF_NO VARCHAR2(20),
-                  
-                                                                                                                                    STMT_DT DATE,
-       AC_ENTRY_SR_NO NUMBER(10),
-       FINANCIAL_CYCLE VARCHAR2(               
-                                                                                                                                4),
-       PERIOD_CODE VARCHAR2(6),
-       AML_EXCEPTION VARCHAR2(1),
-       AMOUNT_TA               
-                                                                                                                                G VARCHAR2(20),
-       AUTH_ID VARCHAR2(12),
-       BANK_CODE VARCHAR2(20),
-       CAT               
-                                                                                                                                EGORY CHAR(1),
-       CURR_NO NUMBER,
-       CUST_GL CHAR(1),
-       DONT_SHOWIN_STMT                
-                                                                                                                                CHAR(1),
-       ENTRY_SEQ_NO NUMBER,
-       EVENT_SR_NO NUMBER,
-       FLG_POSITION_ST               
-                                                                                                                                ATUS CHAR(1),
-       GLMIS_UPDATE_FLAG CHAR(1),
-       GLMIS_VAL_UPD_FLAG CHAR(1),
-                  
-                                                                                                                                    IB CHAR(1),
-       IC_BAL_INCLUSION CHAR(1),
-       MIS_FLAG CHAR(1),
-       MIS_H               
-                                                                                                                                EAD VARCHAR2(20),
-       ORIG_PNL_GL VARCHAR2(20),
-       PRINT_STAT CHAR(1),
-       P               
-                                                                                                                                RODUCT_ACCRUAL VARCHAR2(20),
-       TXN_INIT_DATE DATE,
-       TYPE CHAR(1)
-     )                   
   oracle      SYS      localhost    03-AUG-26 CREATE TABLE   STTM_KYC_RETAIL                    0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.STTM_KYC_RETAIL (
        KYC_REF_NO VARCHAR2(16) NOT NULL,
    CREATE TABLE  
@@ -1416,9 +1416,9 @@ SQL [112/429]> SELECT * FROM dba_audit_object ORDER BY timestamp DESC FETCH FIRS
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP ACTION_NAME     OBJ_NAME                  OWNER     SESSIONID RETURNCODE SQL_TEXT                                                                        
   ----------- -------- ------------ -------- --------- --------------- ------------------------- --------- --------- ---------- --------------------------------------------------------------------------------
   root        SYS      linux-server pts/0    03-AUG-26 ALTER TABLE     EMPLOYEES                 HR                8          0 ALTER TABLE hr.employees DROP SUPPLEMENTAL LOG GROUP emp_sg                     
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER TABLE     EMPLOYEES                 HR                8          0 ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS        
   root        SYS      linux-server pts/0    03-AUG-26 ALTER TABLE     EMPLOYEES                 HR                8          0 ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG GROUP emp_sg (employee_id, last_na
                                                                                                                                 me) ALWAYS                                                                      
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER TABLE     EMPLOYEES                 HR                8          0 ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS        
   oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    FBTB_TILL_TXN_DETAIL_HIST FCUBSLIVE         7          0 CREATE TABLE FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (
        BRANCHCODE VARCHAR2(3) N
                                                                                                                                 OT NULL,
@@ -1713,6 +1713,71 @@ SQL [112/429]> SELECT * FROM dba_audit_object ORDER BY timestamp DESC FETCH FIRS
                                                                                                                                     LCY_CR_TUR NUMBER(22,3),
        LCY_DR_TUR NUMBER(22,3)
      )                  
+  oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    ACTB_HISTORY              FCUBSLIVE         7          0 CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
+       AC_NO VARCHAR2(20) NOT NULL,
+       AC_
+                                                                                                                                BRANCH VARCHAR2(3),
+       AC_CCY VARCHAR2(3),
+       TRN_DT DATE,
+       VALUE_DT DAT
+                                                                                                                                E,
+       TRN_REF_NO VARCHAR2(16),
+       EVENT VARCHAR2(4),
+       DRCR_IND CHAR(1),
+  
+                                                                                                                                     FCY_AMOUNT NUMBER(22,3),
+       LCY_AMOUNT NUMBER(22,3),
+       EXCH_RATE NUMBE
+                                                                                                                                R(14,8),
+       TRN_CODE VARCHAR2(3),
+       MODULE VARCHAR2(2),
+       PRODUCT VARCHA
+                                                                                                                                R2(4),
+       RELATED_ACCOUNT VARCHAR2(20),
+       RELATED_CUSTOMER VARCHAR2(20),
+    
+                                                                                                                                   RELATED_REFERENCE VARCHAR2(16),
+       USER_ID VARCHAR2(12),
+       BATCH_NO VARC
+                                                                                                                                HAR2(6),
+       INSTRUMENT_CODE VARCHAR2(20),
+       EXTERNAL_REF_NO VARCHAR2(20),
+   
+                                                                                                                                    STMT_DT DATE,
+       AC_ENTRY_SR_NO NUMBER(10),
+       FINANCIAL_CYCLE VARCHAR2(
+                                                                                                                                4),
+       PERIOD_CODE VARCHAR2(6),
+       AML_EXCEPTION VARCHAR2(1),
+       AMOUNT_TA
+                                                                                                                                G VARCHAR2(20),
+       AUTH_ID VARCHAR2(12),
+       BANK_CODE VARCHAR2(20),
+       CAT
+                                                                                                                                EGORY CHAR(1),
+       CURR_NO NUMBER,
+       CUST_GL CHAR(1),
+       DONT_SHOWIN_STMT 
+                                                                                                                                CHAR(1),
+       ENTRY_SEQ_NO NUMBER,
+       EVENT_SR_NO NUMBER,
+       FLG_POSITION_ST
+                                                                                                                                ATUS CHAR(1),
+       GLMIS_UPDATE_FLAG CHAR(1),
+       GLMIS_VAL_UPD_FLAG CHAR(1),
+   
+                                                                                                                                    IB CHAR(1),
+       IC_BAL_INCLUSION CHAR(1),
+       MIS_FLAG CHAR(1),
+       MIS_H
+                                                                                                                                EAD VARCHAR2(20),
+       ORIG_PNL_GL VARCHAR2(20),
+       PRINT_STAT CHAR(1),
+       P
+                                                                                                                                RODUCT_ACCRUAL VARCHAR2(20),
+       TXN_INIT_DATE DATE,
+       TYPE CHAR(1)
+     )    
   oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    SMTB_USER                 FCUBSLIVE         7          0 CREATE TABLE FCUBSLIVE.SMTB_USER (
        USER_ID VARCHAR2(12) NOT NULL,
        USER
@@ -1804,71 +1869,6 @@ SQL [112/429]> SELECT * FROM dba_audit_object ORDER BY timestamp DESC FETCH FIRS
        USER_FAX VARCHAR2(20),
        USER_ID_BRN VARCHAR2(20),
        USER_MAN
-  oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    ACTB_HISTORY              FCUBSLIVE         7          0 CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
-       AC_NO VARCHAR2(20) NOT NULL,
-       AC_
-                                                                                                                                BRANCH VARCHAR2(3),
-       AC_CCY VARCHAR2(3),
-       TRN_DT DATE,
-       VALUE_DT DAT
-                                                                                                                                E,
-       TRN_REF_NO VARCHAR2(16),
-       EVENT VARCHAR2(4),
-       DRCR_IND CHAR(1),
-  
-                                                                                                                                     FCY_AMOUNT NUMBER(22,3),
-       LCY_AMOUNT NUMBER(22,3),
-       EXCH_RATE NUMBE
-                                                                                                                                R(14,8),
-       TRN_CODE VARCHAR2(3),
-       MODULE VARCHAR2(2),
-       PRODUCT VARCHA
-                                                                                                                                R2(4),
-       RELATED_ACCOUNT VARCHAR2(20),
-       RELATED_CUSTOMER VARCHAR2(20),
-    
-                                                                                                                                   RELATED_REFERENCE VARCHAR2(16),
-       USER_ID VARCHAR2(12),
-       BATCH_NO VARC
-                                                                                                                                HAR2(6),
-       INSTRUMENT_CODE VARCHAR2(20),
-       EXTERNAL_REF_NO VARCHAR2(20),
-   
-                                                                                                                                    STMT_DT DATE,
-       AC_ENTRY_SR_NO NUMBER(10),
-       FINANCIAL_CYCLE VARCHAR2(
-                                                                                                                                4),
-       PERIOD_CODE VARCHAR2(6),
-       AML_EXCEPTION VARCHAR2(1),
-       AMOUNT_TA
-                                                                                                                                G VARCHAR2(20),
-       AUTH_ID VARCHAR2(12),
-       BANK_CODE VARCHAR2(20),
-       CAT
-                                                                                                                                EGORY CHAR(1),
-       CURR_NO NUMBER,
-       CUST_GL CHAR(1),
-       DONT_SHOWIN_STMT 
-                                                                                                                                CHAR(1),
-       ENTRY_SEQ_NO NUMBER,
-       EVENT_SR_NO NUMBER,
-       FLG_POSITION_ST
-                                                                                                                                ATUS CHAR(1),
-       GLMIS_UPDATE_FLAG CHAR(1),
-       GLMIS_VAL_UPD_FLAG CHAR(1),
-   
-                                                                                                                                    IB CHAR(1),
-       IC_BAL_INCLUSION CHAR(1),
-       MIS_FLAG CHAR(1),
-       MIS_H
-                                                                                                                                EAD VARCHAR2(20),
-       ORIG_PNL_GL VARCHAR2(20),
-       PRINT_STAT CHAR(1),
-       P
-                                                                                                                                RODUCT_ACCRUAL VARCHAR2(20),
-       TXN_INIT_DATE DATE,
-       TYPE CHAR(1)
-     )    
   oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    STTM_KYC_RETAIL           FCUBSLIVE         7          0 CREATE TABLE FCUBSLIVE.STTM_KYC_RETAIL (
        KYC_REF_NO VARCHAR2(16) NOT NULL,
   
@@ -2210,9 +2210,9 @@ SQL [112/429]> SELECT * FROM dba_audit_object ORDER BY timestamp DESC FETCH FIRS
                                                                                                                                 HAR2(14),
          LOC VARCHAR2(13)
        )                                        
-  oracle      SYS      localhost    pts/0    03-AUG-26 CREATE SEQUENCE DEPARTMENTS_SEQ           HR                5          0 CREATE SEQUENCE HR.DEPARTMENTS_SEQ START WITH 280 INCREMENT BY 10               
   oracle      SYS      localhost    pts/0    03-AUG-26 CREATE SEQUENCE LOCATIONS_SEQ             HR                5          0 CREATE SEQUENCE HR.LOCATIONS_SEQ START WITH 3300 INCREMENT BY 100               
   oracle      SYS      localhost    pts/0    03-AUG-26 CREATE SEQUENCE EMPLOYEES_SEQ             HR                5          0 CREATE SEQUENCE HR.EMPLOYEES_SEQ START WITH 207 INCREMENT BY 1                  
+  oracle      SYS      localhost    pts/0    03-AUG-26 CREATE SEQUENCE DEPARTMENTS_SEQ           HR                5          0 CREATE SEQUENCE HR.DEPARTMENTS_SEQ START WITH 280 INCREMENT BY 10               
   oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    JOB_HISTORY               HR                5          0 CREATE TABLE HR.JOB_HISTORY (
          EMPLOYEE_ID NUMBER(6) NOT NULL,
          STAR
@@ -2222,14 +2222,6 @@ SQL [112/429]> SELECT * FROM dba_audit_object ORDER BY timestamp DESC FETCH FIRS
                                                                                                                                 NOT NULL,
          DEPARTMENT_ID NUMBER(4)
        )                                 
-  oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    JOBS                      HR                5          0 CREATE TABLE HR.JOBS (
-         JOB_ID VARCHAR2(10) PRIMARY KEY,
-         JOB_TITLE 
-                                                                                                                                VARCHAR2(35) NOT NULL,
-         MIN_SALARY NUMBER(6),
-         MAX_SALARY NUMBER(6)
-  
-                                                                                                                                     )                                                                          
   oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    EMPLOYEES                 HR                5          0 CREATE TABLE HR.EMPLOYEES (
          EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
          FIR
@@ -2248,14 +2240,14 @@ SQL [112/429]> SELECT * FROM dba_audit_object ORDER BY timestamp DESC FETCH FIRS
          DEPARTMENT_ID NUMBER(
                                                                                                                                 4)
        )                                                                       
-  oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    DEPARTMENTS               HR                5          0 CREATE TABLE HR.DEPARTMENTS (
-         DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-        
-                                                                                                                                 DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
-         MANAGER_ID NUMBER(6),
-         LOCA
-                                                                                                                                TION_ID NUMBER(4)
-       )                                                        
+  oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    JOBS                      HR                5          0 CREATE TABLE HR.JOBS (
+         JOB_ID VARCHAR2(10) PRIMARY KEY,
+         JOB_TITLE 
+                                                                                                                                VARCHAR2(35) NOT NULL,
+         MIN_SALARY NUMBER(6),
+         MAX_SALARY NUMBER(6)
+  
+                                                                                                                                     )                                                                          
   oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    LOCATIONS                 HR                5          0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR
@@ -2267,6 +2259,14 @@ SQL [112/429]> SELECT * FROM dba_audit_object ORDER BY timestamp DESC FETCH FIRS
          COUNTRY_ID CHAR(2)
       
                                                                                                                                  )                                                                              
+  oracle      SYS      localhost    pts/0    03-AUG-26 CREATE TABLE    DEPARTMENTS               HR                5          0 CREATE TABLE HR.DEPARTMENTS (
+         DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
+        
+                                                                                                                                 DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
+         MANAGER_ID NUMBER(6),
+         LOCA
+                                                                                                                                TION_ID NUMBER(4)
+       )                                                        
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP ACTION_NAME     OBJ_NAME                  OWNER     SESSIONID RETURNCODE SQL_TEXT                                                                        
   ----------- -------- ------------ -------- --------- --------------- ------------------------- --------- --------- ---------- --------------------------------------------------------------------------------
@@ -2290,37 +2290,37 @@ SQL [113/429]> SELECT * FROM dba_audit_statement ORDER BY timestamp DESC FETCH F
   ----------- -------- ------------ -------- --------- -------------- -------- -------------------------------------------------------------------------------- ---------- ---------
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (ALL) COLUMNS                                   0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (FOREIGN KEY) COLUMNS                           0         8
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD SUPPLEMENTAL LOG DATA                                                  0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS                            0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (UNIQUE) COLUMNS                                 0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (FOREIGN KEY) COLUMNS                            0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS                                    0         8
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM SET log_archive_dest_1='LOCATION=/u01/archivelog/' SCOPE=BOTH                0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM SET log_archive_format='arch_%t_%s_%r.arc' SCOPE=SPFILE                      0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM SET log_archive_max_processes=4 SCOPE=BOTH                                   0         8
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD SUPPLEMENTAL LOG DATA                                                  0         8
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM SET log_archive_dest_1='LOCATION=/u01/archivelog/' SCOPE=BOTH                0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE OPEN                                                                       0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ARCHIVELOG                                                                 0         8
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE RENAME FILE '/u01/oradata/ORCL/redo01a.log' TO '/u03/oradata/ORCL          0         8
-                                                                               /redo01a.log'                                                                                        
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE CLEAR LOGFILE GROUP 4                                                      0         8
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE CLEAR UNARCHIVED LOGFILE GROUP 4                                           0         8
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP ACTION_NAME    OBJ_NAME SQL_TEXT                                                                         RETURNCODE SESSIONID
   ----------- -------- ------------ -------- --------- -------------- -------- -------------------------------------------------------------------------------- ---------- ---------
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE CLEAR UNARCHIVED LOGFILE GROUP 4                                           0         8
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo02b.log' TO GROUP 2              0         8
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo03b.log' TO GROUP 3              0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE DROP LOGFILE MEMBER '/u02/oradata/ORCL/redo01b.log'                        0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE DROP LOGFILE GROUP 5                                                       0         8
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD LOGFILE GROUP 4 ('/u01/oradata/ORCL/redo04a.log','/u02/oradat          0         8
-                                                                               a/ORCL/redo04b.log') SIZE 200M REUSE                                                                 
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE RENAME FILE '/u01/oradata/ORCL/redo01a.log' TO '/u03/oradata/ORCL          0         8
+                                                                               /redo01a.log'                                                                                        
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD LOGFILE GROUP 5 '/u01/oradata/ORCL/redo05.log' SIZE 200M REUS          0         8
                                                                                E                                                                                                    
   root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo01b.log' TO GROUP 1              0         8
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo02b.log' TO GROUP 2              0         8
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo03b.log' TO GROUP 3              0         8
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER DATABASE          ALTER DATABASE ADD LOGFILE GROUP 4 ('/u01/oradata/ORCL/redo04a.log','/u02/oradat          0         8
+                                                                               a/ORCL/redo04b.log') SIZE 200M REUSE                                                                 
+  root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM ARCHIVE LOG CURRENT                                                          0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM ARCHIVE LOG ALL                                                              0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM ARCHIVE LOG NEXT                                                             0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM ARCHIVE LOG STOP                                                             0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM ARCHIVE LOG START                                                            0         8
-  root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM SWITCH LOGFILE                                                               0         8
   root        SYS      linux-server pts/0    03-AUG-26 ALTER SYSTEM            ALTER SYSTEM SWITCH LOGFILE                                                               0         8
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP ACTION_NAME    OBJ_NAME SQL_TEXT                                                                         RETURNCODE SESSIONID
@@ -2334,53 +2334,53 @@ SQL [114/429]> SELECT * FROM unified_audit_trail ORDER BY event_timestamp DESC F
   
   EVENT_TIMESTAMP AUDIT_TYPE SESSIONID DBUSERNAME USERHOST     TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME               STATEMENT_TYPE SYSTEM_PRIVILEGE_USED UNIFIED_AUDIT_POLICIES ENTRY_ID
   --------------- ---------- --------- ---------- ------------ -------- ------- -------------- ----------- -------------------------------------------------------------------------------- ------------- ------------------------- -------------- --------------------- ---------------------- --------
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (ALL) COLUMNS                          SYS                                     ALTER DATABASE                                                    69
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (FOREIGN KEY) COLUMNS                  SYS                                     ALTER DATABASE                                                    70
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER TABLE              0 ALTER TABLE hr.employees DROP SUPPLEMENTAL LOG GROUP emp_sg                      HR            EMPLOYEES                 ALTER TABLE                                                       71
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER TABLE              0 ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS         HR            EMPLOYEES                 ALTER TABLE                                                       67
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER TABLE              0 ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG GROUP emp_sg (employee_id, last_na HR            EMPLOYEES                 ALTER TABLE                                                       68
                                                                                                            me) ALWAYS                                                                                                                                                                                   
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (ALL) COLUMNS                          SYS                                     ALTER DATABASE                                                    69
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE DROP SUPPLEMENTAL LOG DATA (FOREIGN KEY) COLUMNS                  SYS                                     ALTER DATABASE                                                    70
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER TABLE              0 ALTER TABLE hr.employees ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS         HR            EMPLOYEES                 ALTER TABLE                                                       67
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD SUPPLEMENTAL LOG DATA                                         SYS                                     ALTER DATABASE                                                    62
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS                   SYS                                     ALTER DATABASE                                                    63
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (UNIQUE) COLUMNS                        SYS                                     ALTER DATABASE                                                    64
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (FOREIGN KEY) COLUMNS                   SYS                                     ALTER DATABASE                                                    65
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS                           SYS                                     ALTER DATABASE                                                    66
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SET log_archive_dest_1='LOCATION=/u01/archivelog/' SCOPE=BOTH       SYS                                     ALTER SYSTEM                                                      59
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SET log_archive_format='arch_%t_%s_%r.arc' SCOPE=SPFILE             SYS                                     ALTER SYSTEM                                                      60
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SET log_archive_max_processes=4 SCOPE=BOTH                          SYS                                     ALTER SYSTEM                                                      61
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD SUPPLEMENTAL LOG DATA                                         SYS                                     ALTER DATABASE                                                    62
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SET log_archive_dest_1='LOCATION=/u01/archivelog/' SCOPE=BOTH       SYS                                     ALTER SYSTEM                                                      59
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE OPEN                                                              SYS                                     ALTER DATABASE                                                    58
   
   EVENT_TIMESTAMP AUDIT_TYPE SESSIONID DBUSERNAME USERHOST     TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME               STATEMENT_TYPE SYSTEM_PRIVILEGE_USED UNIFIED_AUDIT_POLICIES ENTRY_ID
   --------------- ---------- --------- ---------- ------------ -------- ------- -------------- ----------- -------------------------------------------------------------------------------- ------------- ------------------------- -------------- --------------------- ---------------------- --------
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ARCHIVELOG                                                        SYS                                     ALTER DATABASE                                                    57
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE RENAME FILE '/u01/oradata/ORCL/redo01a.log' TO '/u03/oradata/ORCL SYS                                     ALTER DATABASE                                                    54
-                                                                                                           /redo01a.log'                                                                                                                                                                                
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE CLEAR LOGFILE GROUP 4                                             SYS                                     ALTER DATABASE                                                    55
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE CLEAR UNARCHIVED LOGFILE GROUP 4                                  SYS                                     ALTER DATABASE                                                    56
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo02b.log' TO GROUP 2     SYS                                     ALTER DATABASE                                                    50
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo03b.log' TO GROUP 3     SYS                                     ALTER DATABASE                                                    51
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE DROP LOGFILE MEMBER '/u02/oradata/ORCL/redo01b.log'               SYS                                     ALTER DATABASE                                                    52
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE DROP LOGFILE GROUP 5                                              SYS                                     ALTER DATABASE                                                    53
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD LOGFILE GROUP 4 ('/u01/oradata/ORCL/redo04a.log','/u02/oradat SYS                                     ALTER DATABASE                                                    47
-                                                                                                           a/ORCL/redo04b.log') SIZE 200M REUSE                                                                                                                                                         
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE RENAME FILE '/u01/oradata/ORCL/redo01a.log' TO '/u03/oradata/ORCL SYS                                     ALTER DATABASE                                                    54
+                                                                                                           /redo01a.log'                                                                                                                                                                                
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD LOGFILE GROUP 5 '/u01/oradata/ORCL/redo05.log' SIZE 200M REUS SYS                                     ALTER DATABASE                                                    48
                                                                                                            E                                                                                                                                                                                            
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo01b.log' TO GROUP 1     SYS                                     ALTER DATABASE                                                    49
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo02b.log' TO GROUP 2     SYS                                     ALTER DATABASE                                                    50
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD LOGFILE MEMBER '/u02/oradata/ORCL/redo03b.log' TO GROUP 3     SYS                                     ALTER DATABASE                                                    51
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER DATABASE           0 ALTER DATABASE ADD LOGFILE GROUP 4 ('/u01/oradata/ORCL/redo04a.log','/u02/oradat SYS                                     ALTER DATABASE                                                    47
+                                                                                                           a/ORCL/redo04b.log') SIZE 200M REUSE                                                                                                                                                         
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM ARCHIVE LOG CURRENT                                                 SYS                                     ALTER SYSTEM                                                      42
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM ARCHIVE LOG ALL                                                     SYS                                     ALTER SYSTEM                                                      43
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM ARCHIVE LOG NEXT                                                    SYS                                     ALTER SYSTEM                                                      44
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM ARCHIVE LOG STOP                                                    SYS                                     ALTER SYSTEM                                                      45
   
   EVENT_TIMESTAMP AUDIT_TYPE SESSIONID DBUSERNAME USERHOST     TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME               STATEMENT_TYPE SYSTEM_PRIVILEGE_USED UNIFIED_AUDIT_POLICIES ENTRY_ID
   --------------- ---------- --------- ---------- ------------ -------- ------- -------------- ----------- -------------------------------------------------------------------------------- ------------- ------------------------- -------------- --------------------- ---------------------- --------
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM ARCHIVE LOG STOP                                                    SYS                                     ALTER SYSTEM                                                      45
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM ARCHIVE LOG START                                                   SYS                                     ALTER SYSTEM                                                      46
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SWITCH LOGFILE                                                      SYS                                     ALTER SYSTEM                                                      37
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SWITCH LOGFILE                                                      SYS                                     ALTER SYSTEM                                                      38
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM CHECKPOINT                                                          SYS                                     ALTER SYSTEM                                                      39
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM CHECKPOINT GLOBAL                                                   SYS                                     ALTER SYSTEM                                                      40
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM CHECKPOINT LOCAL                                                    SYS                                     ALTER SYSTEM                                                      41
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM ARCHIVE LOG CURRENT                                                 SYS                                     ALTER SYSTEM                                                      42
-  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SWITCH LOGFILE                                                      SYS                                     ALTER SYSTEM                                                      35
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SWITCH LOGFILE                                                      SYS                                     ALTER SYSTEM                                                      36
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SWITCH LOGFILE                                                      SYS                                     ALTER SYSTEM                                                      37
+  03-AUG-26       Standard           8 SYS        linux-server pts/0    root    ALTER SYSTEM             0 ALTER SYSTEM SWITCH LOGFILE                                                      SYS                                     ALTER SYSTEM                                                      35
   03-AUG-26       Standard           8 SYS        linux-server pts/0    root    LOGON                    0                                                                                                                          LOGON          SYSDBA                                             34
   03-AUG-26       Standard           7 SYS        localhost    pts/0    oracle  LOGOFF                   0                                                                                                                          LOGOFF                                                            33
   03-AUG-26       Standard           7 SYS        localhost    pts/0    oracle  CREATE TABLE             0 CREATE TABLE FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (
@@ -2680,6 +2680,71 @@ SQL [114/429]> SELECT * FROM unified_audit_trail ORDER BY event_timestamp DESC F
                                                                                                                LCY_CR_TUR NUMBER(22,3),
        LCY_DR_TUR NUMBER(22,3)
      )                                                                                                                               
+  03-AUG-26       Standard           7 SYS        localhost    pts/0    oracle  CREATE TABLE             0 CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
+       AC_NO VARCHAR2(20) NOT NULL,
+       AC_ FCUBSLIVE     ACTB_HISTORY              CREATE TABLE                                                      26
+                                                                                                           BRANCH VARCHAR2(3),
+       AC_CCY VARCHAR2(3),
+       TRN_DT DATE,
+       VALUE_DT DAT                                                                                                             
+                                                                                                           E,
+       TRN_REF_NO VARCHAR2(16),
+       EVENT VARCHAR2(4),
+       DRCR_IND CHAR(1),
+                                                                                                               
+                                                                                                                FCY_AMOUNT NUMBER(22,3),
+       LCY_AMOUNT NUMBER(22,3),
+       EXCH_RATE NUMBE                                                                                                             
+                                                                                                           R(14,8),
+       TRN_CODE VARCHAR2(3),
+       MODULE VARCHAR2(2),
+       PRODUCT VARCHA                                                                                                             
+                                                                                                           R2(4),
+       RELATED_ACCOUNT VARCHAR2(20),
+       RELATED_CUSTOMER VARCHAR2(20),
+                                                                                                                 
+                                                                                                              RELATED_REFERENCE VARCHAR2(16),
+       USER_ID VARCHAR2(12),
+       BATCH_NO VARC                                                                                                             
+                                                                                                           HAR2(6),
+       INSTRUMENT_CODE VARCHAR2(20),
+       EXTERNAL_REF_NO VARCHAR2(20),
+                                                                                                                
+                                                                                                               STMT_DT DATE,
+       AC_ENTRY_SR_NO NUMBER(10),
+       FINANCIAL_CYCLE VARCHAR2(                                                                                                             
+                                                                                                           4),
+       PERIOD_CODE VARCHAR2(6),
+       AML_EXCEPTION VARCHAR2(1),
+       AMOUNT_TA                                                                                                             
+                                                                                                           G VARCHAR2(20),
+       AUTH_ID VARCHAR2(12),
+       BANK_CODE VARCHAR2(20),
+       CAT                                                                                                             
+                                                                                                           EGORY CHAR(1),
+       CURR_NO NUMBER,
+       CUST_GL CHAR(1),
+       DONT_SHOWIN_STMT                                                                                                              
+                                                                                                           CHAR(1),
+       ENTRY_SEQ_NO NUMBER,
+       EVENT_SR_NO NUMBER,
+       FLG_POSITION_ST                                                                                                             
+                                                                                                           ATUS CHAR(1),
+       GLMIS_UPDATE_FLAG CHAR(1),
+       GLMIS_VAL_UPD_FLAG CHAR(1),
+                                                                                                                
+                                                                                                               IB CHAR(1),
+       IC_BAL_INCLUSION CHAR(1),
+       MIS_FLAG CHAR(1),
+       MIS_H                                                                                                             
+                                                                                                           EAD VARCHAR2(20),
+       ORIG_PNL_GL VARCHAR2(20),
+       PRINT_STAT CHAR(1),
+       P                                                                                                             
+                                                                                                           RODUCT_ACCRUAL VARCHAR2(20),
+       TXN_INIT_DATE DATE,
+       TYPE CHAR(1)
+     )                                                                                                                 
   03-AUG-26       Standard           7 SYS        localhost    pts/0    oracle  CREATE TABLE             0 CREATE TABLE FCUBSLIVE.SMTB_USER (
        USER_ID VARCHAR2(12) NOT NULL,
        USER FCUBSLIVE     SMTB_USER                 CREATE TABLE                                                      25
@@ -2771,71 +2836,6 @@ SQL [114/429]> SELECT * FROM unified_audit_trail ORDER BY event_timestamp DESC F
        USER_FAX VARCHAR2(20),
        USER_ID_BRN VARCHAR2(20),
        USER_MAN                                                                                                             
-  03-AUG-26       Standard           7 SYS        localhost    pts/0    oracle  CREATE TABLE             0 CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
-       AC_NO VARCHAR2(20) NOT NULL,
-       AC_ FCUBSLIVE     ACTB_HISTORY              CREATE TABLE                                                      26
-                                                                                                           BRANCH VARCHAR2(3),
-       AC_CCY VARCHAR2(3),
-       TRN_DT DATE,
-       VALUE_DT DAT                                                                                                             
-                                                                                                           E,
-       TRN_REF_NO VARCHAR2(16),
-       EVENT VARCHAR2(4),
-       DRCR_IND CHAR(1),
-                                                                                                               
-                                                                                                                FCY_AMOUNT NUMBER(22,3),
-       LCY_AMOUNT NUMBER(22,3),
-       EXCH_RATE NUMBE                                                                                                             
-                                                                                                           R(14,8),
-       TRN_CODE VARCHAR2(3),
-       MODULE VARCHAR2(2),
-       PRODUCT VARCHA                                                                                                             
-                                                                                                           R2(4),
-       RELATED_ACCOUNT VARCHAR2(20),
-       RELATED_CUSTOMER VARCHAR2(20),
-                                                                                                                 
-                                                                                                              RELATED_REFERENCE VARCHAR2(16),
-       USER_ID VARCHAR2(12),
-       BATCH_NO VARC                                                                                                             
-                                                                                                           HAR2(6),
-       INSTRUMENT_CODE VARCHAR2(20),
-       EXTERNAL_REF_NO VARCHAR2(20),
-                                                                                                                
-                                                                                                               STMT_DT DATE,
-       AC_ENTRY_SR_NO NUMBER(10),
-       FINANCIAL_CYCLE VARCHAR2(                                                                                                             
-                                                                                                           4),
-       PERIOD_CODE VARCHAR2(6),
-       AML_EXCEPTION VARCHAR2(1),
-       AMOUNT_TA                                                                                                             
-                                                                                                           G VARCHAR2(20),
-       AUTH_ID VARCHAR2(12),
-       BANK_CODE VARCHAR2(20),
-       CAT                                                                                                             
-                                                                                                           EGORY CHAR(1),
-       CURR_NO NUMBER,
-       CUST_GL CHAR(1),
-       DONT_SHOWIN_STMT                                                                                                              
-                                                                                                           CHAR(1),
-       ENTRY_SEQ_NO NUMBER,
-       EVENT_SR_NO NUMBER,
-       FLG_POSITION_ST                                                                                                             
-                                                                                                           ATUS CHAR(1),
-       GLMIS_UPDATE_FLAG CHAR(1),
-       GLMIS_VAL_UPD_FLAG CHAR(1),
-                                                                                                                
-                                                                                                               IB CHAR(1),
-       IC_BAL_INCLUSION CHAR(1),
-       MIS_FLAG CHAR(1),
-       MIS_H                                                                                                             
-                                                                                                           EAD VARCHAR2(20),
-       ORIG_PNL_GL VARCHAR2(20),
-       PRINT_STAT CHAR(1),
-       P                                                                                                             
-                                                                                                           RODUCT_ACCRUAL VARCHAR2(20),
-       TXN_INIT_DATE DATE,
-       TYPE CHAR(1)
-     )                                                                                                                 
   03-AUG-26       Standard           7 SYS        localhost    pts/0    oracle  CREATE TABLE             0 CREATE TABLE FCUBSLIVE.STTM_KYC_RETAIL (
        KYC_REF_NO VARCHAR2(16) NOT NULL,
    FCUBSLIVE     STTM_KYC_RETAIL           CREATE TABLE                                                      24
@@ -3397,7 +3397,7 @@ SQL [185/429]> SELECT * FROM v$database;
   
         DBID NAME CREATED   LOG_MODE   OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- --------- ---------- ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  3197359474 ORCL 03-AUG-26 ARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000325 03-AUG-26        IMPLICIT                  YES                      NO                       NO                       NO                        NO            NO               1000331            1000325
+  3596204041 ORCL 03-AUG-26 ARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000325 03-AUG-26        IMPLICIT                  YES                      NO                       NO                       NO                        NO            NO               1000331            1000325
   
   1 row selected.
 
@@ -3405,7 +3405,7 @@ SQL [186/429]> SELECT name, dbid, open_mode, log_mode, flashback_on, force_loggi
   
   NAME       DBID OPEN_MODE  LOG_MODE   FLASHBACK_ON FORCE_LOGGING
   ---- ---------- ---------- ---------- ------------ -------------
-  ORCL 3197359474 READ WRITE ARCHIVELOG NO           NO           
+  ORCL 3596204041 READ WRITE ARCHIVELOG NO           NO           
   
   1 row selected.
 
@@ -3499,7 +3499,7 @@ SQL [201/429]> SELECT * FROM dba_hist_wr_control;
   
         DBID SNAP_INTERVAL  RETENTION      TOPNSQL
   ---------- -------------- -------------- -------
-  3197359474 +00 01:00:00.0 +08 00:00:00.0 DEFAULT
+  3596204041 +00 01:00:00.0 +08 00:00:00.0 DEFAULT
   
   1 row selected.
 
@@ -3507,7 +3507,7 @@ SQL [202/429]> SELECT * FROM dba_hist_baseline;
   
         DBID BASELINE_ID BASELINE_NAME        BASELINE_TYPE START_SNAP_ID START_SNAP_TIME END_SNAP_ID END_SNAP_TIME
   ---------- ----------- -------------------- ------------- ------------- --------------- ----------- -------------
-  3197359474           0 SYSTEM_MOVING_WINDOW MOVING_WINDOW                                                        
+  3596204041           0 SYSTEM_MOVING_WINDOW MOVING_WINDOW                                                        
   
   1 row selected.
 
@@ -3515,7 +3515,7 @@ SQL [203/429]> SELECT * FROM dba_hist_sysstat WHERE stat_name = 'redo size' ORDE
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME VALUE
   ------- ---------- --------------- ------- --------- -----
-        1 3197359474               1      11 redo size     0
+        1 3596204041               1      11 redo size     0
   
   1 row selected.
 
@@ -3523,7 +3523,7 @@ SQL [204/429]> SELECT * FROM dba_hist_database_instance;
   
         DBID INSTANCE_NUMBER STARTUP_TIME PARALLEL VERSION    DB_NAME INSTANCE_NAME HOST_NAME PLATFORM_NAME   
   ---------- --------------- ------------ -------- ---------- ------- ------------- --------- ----------------
-  3197359474               1 03-AUG-26           0 19.3.0.0.0 ORCL    ORCL          localhost Linux x86 64-bit
+  3596204041               1 03-AUG-26           0 19.3.0.0.0 ORCL    ORCL          localhost Linux x86 64-bit
   
   1 row selected.
 
@@ -3880,7 +3880,7 @@ SQL [240/429]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID NAME CREATED   LOG_MODE   OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- --------- ---------- ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  3197359474 ORCL 03-AUG-26 ARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000325 03-AUG-26        IMPLICIT                  YES                      NO                       NO                       NO                        NO            NO               1000335            1000325
+  3596204041 ORCL 03-AUG-26 ARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000325 03-AUG-26        IMPLICIT                  YES                      NO                       NO                       NO                        NO            NO               1000335            1000325
   
   1 row selected.
 
@@ -4175,10 +4175,10 @@ SQL [269/429]> SELECT * FROM v$sql WHERE rownum < 5;
   
   SQL_ID        SQL_TEXT                                                                         EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  107s6ova3xqw0 STARTUP MOUNT                                                                             1         1993     1594           1          0              0 SYS                 2026-08-03T11:42:35
-  1aruonka3xqw0 ALTER DATABASE ARCHIVELOG                                                                 1          157      125           1          0              0 SYS                 2026-08-03T11:42:35
-  0a6jhusa3xqw0 ALTER DATABASE OPEN                                                                       1         2163     1731           1          0              0 SYS                 2026-08-03T11:42:35
-  1njeihza3xqw0 SELECT name FROM v$archived_log ORDER BY sequence# DESC FETCH FIRST 30 ROWS ONLY          1          223      179           1          0              0 SYS                 2026-08-03T11:42:35
+  107s6ova3xqw0 STARTUP MOUNT                                                                             1         2338     1870           1          0              0 SYS                 2026-08-03T12:22:47
+  1aruonka3xqw0 ALTER DATABASE ARCHIVELOG                                                                 1          291      233           1          0              0 SYS                 2026-08-03T12:22:47
+  0a6jhusa3xqw0 ALTER DATABASE OPEN                                                                       1         2484     1988           1          0              0 SYS                 2026-08-03T12:22:47
+  1njeihza3xqw0 SELECT name FROM v$archived_log ORDER BY sequence# DESC FETCH FIRST 30 ROWS ONLY          1          244      195           1          0              0 SYS                 2026-08-03T12:22:47
   
   4 rows selected.
 
@@ -4186,10 +4186,10 @@ SQL [270/429]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  107s6ova3xqw0               0           1          1       1         1993     1594           1          0              0 SYS                 03-AUG-26       
-  1aruonka3xqw0               0           1          1       1          157      125           1          0              0 SYS                 03-AUG-26       
-  0a6jhusa3xqw0               0           1          1       1         2163     1731           1          0              0 SYS                 03-AUG-26       
-  1njeihza3xqw0               0           1          1       1          223      179           1          0              0 SYS                 03-AUG-26       
+  107s6ova3xqw0               0           1          1       1         2338     1870           1          0              0 SYS                 03-AUG-26       
+  1aruonka3xqw0               0           1          1       1          291      233           1          0              0 SYS                 03-AUG-26       
+  0a6jhusa3xqw0               0           1          1       1         2484     1988           1          0              0 SYS                 03-AUG-26       
+  1njeihza3xqw0               0           1          1       1          244      195           1          0              0 SYS                 03-AUG-26       
   
   4 rows selected.
 
@@ -4528,10 +4528,10 @@ SQL [314/429]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-08-03T11:42:35.961Z         -949039175
-           2 SYS$USERS      SYS$USERS      2026-08-03T11:42:35.961Z         -949039175
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-08-03T11:42:35.961Z         -949039175
-           4 ORCLPDB1       ORCLPDB1       2026-08-03T11:42:35.961Z         -949039175
+           1 ORCL           ORCL           2026-08-03T12:22:47.090Z         -946628046
+           2 SYS$USERS      SYS$USERS      2026-08-03T12:22:47.090Z         -946628046
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-08-03T12:22:47.090Z         -946628046
+           4 ORCLPDB1       ORCLPDB1       2026-08-03T12:22:47.090Z         -946628046
   
   4 rows selected.
 
@@ -4539,10 +4539,10 @@ SQL [315/429]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-08-03T11:42:35.961Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-08-03T11:42:35.961Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-08-03T11:42:35.961Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-08-03T11:42:35.961Z
+           1 ORCL           ORCL           ORCL 2026-08-03T12:22:47.090Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-08-03T12:22:47.090Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-08-03T12:22:47.090Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-08-03T12:22:47.090Z
   
   4 rows selected.
 
@@ -4674,10 +4674,10 @@ SQL [330/429]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:35 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:35 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:35 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        03-AUG-26 03-AUG-26     2026-08-03:11:42:35 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        03-AUG-26 03-AUG-26     2026-08-03:12:22:46 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        03-AUG-26 03-AUG-26     2026-08-03:12:22:46 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        03-AUG-26 03-AUG-26     2026-08-03:12:22:46 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        03-AUG-26 03-AUG-26     2026-08-03:12:22:46 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -4986,10 +4986,10 @@ SQL [364/429]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                          
   ----------- --------- -------- ------------- --------------- -----------------------------------------------------------------
-            1 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:35: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:35: Database mounted                            
-            3 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:35: Archive log mode enabled                    
-            4 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 11:42:35: Completed checkpoint up to RBA, SCN: 1000325
+            1 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 12:22:47: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 12:22:47: Database mounted                            
+            3 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 12:22:47: Archive log mode enabled                    
+            4 Info      NORMAL   03-AUG-26     03-AUG-26       2026-08-03 12:22:47: Completed checkpoint up to RBA, SCN: 1000325
   
   4 rows selected.
 
@@ -5027,10 +5027,10 @@ SQL [368/429]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 3197359474               1       0 logons cumulative             0
-        1 3197359474               1       1 logons current                0
-        1 3197359474               1       2 opened cursors cumulative   284
-        1 3197359474               1       3 opened cursors current      281
+        1 3596204041               1       0 logons cumulative             0
+        1 3596204041               1       1 logons current                0
+        1 3596204041               1       2 opened cursors cumulative   284
+        1 3596204041               1       3 opened cursors current      281
   
   4 rows selected.
 
@@ -5038,10 +5038,10 @@ SQL [369/429]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 107s6ova3xqw0               0                1               1993           1594                 1                0                    0
-        1 1aruonka3xqw0               0                1                157            125                 1                0                    0
-        1 0a6jhusa3xqw0               0                1               2163           1731                 1                0                    0
-        1 1njeihza3xqw0               0                1                223            179                 1                0                    0
+        1 107s6ova3xqw0               0                1               2338           1870                 1                0                    0
+        1 1aruonka3xqw0               0                1                291            233                 1                0                    0
+        1 0a6jhusa3xqw0               0                1               2484           1988                 1                0                    0
+        1 1njeihza3xqw0               0                1                244            195                 1                0                    0
   
   4 rows selected.
 
@@ -5437,7 +5437,7 @@ SQL [426/429]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-08-03T11:42:36.091Z
+  2026-08-03T12:22:47.255Z
   
   1 row selected.
 
