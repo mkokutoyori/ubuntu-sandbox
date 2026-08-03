@@ -452,11 +452,13 @@ Chaque objectif précise la ou les couches concernées et, pour les
 explicitement le hors-périmètre pour éviter toute ambiguïté entre un gap non
 traité et un oubli.
 
-1. **[Routeur, Critique] Corriger la voie retour d'une redirection de port.**
-   `NATEngine.translateOutbound()` doit traduire la voie retour des entrées
-   statiques orientées port exactement comme elle traduit déjà les entrées
-   1:1/réseau — sans quoi la fonctionnalité ne délivre jamais réellement
-   une connexion (§1.A).
+1. **[Routeur, Critique] Corriger la voie retour d'une redirection de port —
+   livré (§3 Phase 1).** `NATEngine.translateOutbound()` doit traduire la
+   voie retour des entrées statiques orientées port exactement comme elle
+   traduit déjà les entrées 1:1/réseau — sans quoi la fonctionnalité ne
+   délivre jamais réellement une connexion (§1.A). Le premier test bout-en-
+   bout réel a aussi mis au jour un second défaut (checksum L4 jamais
+   recalculé après réécriture d'adresse), corrigé dans la même phase.
 2. **[Routeur, Majeur] Corriger l'ordre d'évaluation NAT/ACL** — reprend tel
    quel l'objectif 1 de `PRD-NAT-Port-Forwarding.md`, toujours ouvert.
 3. **[Routeur, Moyen] Couverture bout-en-bout réelle Cisco et Huawei** —
@@ -541,6 +543,22 @@ trafic routé/switché/reçu avant le code spécifique au NAT).
   coexistante (vérifier qu'il n'y a plus de fuite d'adresse privée).
   Variante Huawei (`nat server`) miroir. Ceci ferme en grande partie
   l'objectif 3 (couverture bout-en-bout) au passage.
+- **Livré** (`NATEngine.ts`, `nat-port-forward-reply-leg.test.ts`). Le
+  premier vrai test bout-en-bout de ce PRD (`TcpStack.connect()`/`.listen()`
+  à travers un `CiscoRouter`/`HuaweiRouter` réel, plutôt que le raccourci
+  `nc`/`findHostByAddress`) a immédiatement révélé un **second défaut**,
+  non documenté nulle part avant ce PRD : `rewriteSrcIP()`/`rewriteDestIP()`
+  ne recalculaient que `headerChecksum` (IPv4) après avoir changé une
+  adresse — jamais le checksum TCP/UDP de la charge utile, qui couvre
+  pourtant les adresses IP via le pseudo-header. Un routeur NATé rejetait
+  donc silencieusement en `bad-checksum` jusqu'au tout premier SYN d'une
+  connexion redirigée, indépendamment du défaut de voie retour ci-dessus —
+  les deux corrections étaient nécessaires pour qu'un test de livraison
+  réelle passe. Nouvelle fonction partagée `recomputeL4Checksum()`, appelée
+  par `rewriteSrcIP()`/`rewriteDestIP()` chaque fois qu'une adresse ou un
+  port est réécrit. Vérifié par git-stash (les 5 tests échouent
+  authentiquement sans les deux correctifs) et par régression complète des
+  suites NAT/ACL/routage de base (767 tests, §4).
 
 ### Phase 2 — Routeur : ordre d'évaluation NAT/ACL (objectif 2)
 
