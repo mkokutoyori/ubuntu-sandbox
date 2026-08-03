@@ -462,15 +462,15 @@ traité et un oubli.
 2. **[Routeur, Majeur] Corriger l'ordre d'évaluation NAT/ACL — livré (§3
    Phase 2).** Reprend tel quel l'objectif 1 de
    `PRD-NAT-Port-Forwarding.md`.
-3. **[Routeur, Moyen] Couverture bout-en-bout réelle Cisco et Huawei** —
-   reprend les objectifs 2/3 de `PRD-NAT-Port-Forwarding.md` ; l'objectif 1
-   ci-dessus impose de toute façon un vrai test de livraison pour être
-   validé, donc ce travail est en grande partie un sous-produit de
-   l'objectif 1 plutôt qu'un chantier séparé.
-4. **[Routeur, Mineur] Commandes de maintenance sélectives** (`clear`/`reset`
-   filtrés) — reprend l'objectif 4 de `PRD-NAT-Port-Forwarding.md`.
-5. **[Routeur, Mineur] `ip nat outside source static` réellement appliquée**
-   — reprend l'objectif 5 de `PRD-NAT-Port-Forwarding.md`.
+3. **[Routeur, Moyen] Couverture bout-en-bout réelle Cisco et Huawei — livré
+   (§3 Phase 3).** Reprend les objectifs 2/3 de `PRD-NAT-Port-Forwarding.md` ;
+   TCP+Cisco/Huawei déjà couverts par la Phase 1, UDP ajouté en Phase 3.
+4. **[Routeur, Mineur] Commandes de maintenance sélectives — livré (§3
+   Phase 3).** (`clear`/`reset` filtrés) — reprend l'objectif 4 de
+   `PRD-NAT-Port-Forwarding.md`.
+5. **[Routeur, Mineur] `ip nat outside source static` réellement appliquée
+   — livré (§3 Phase 3).** Reprend l'objectif 5 de
+   `PRD-NAT-Port-Forwarding.md`.
 6. **[Commutateur L3 Huawei, Majeur — nouveau] Brancher le `NATEngine` du
    commutateur sur son plan de données.** `HuaweiSwitch`/`Switch.ts` doivent
    appeler `translateInbound()`/`translateOutbound()` exactement comme
@@ -590,10 +590,56 @@ trafic routé/switché/reçu avant le code spécifique au NAT).
 
 ### Phase 3 — Routeur : couverture Huawei + maintenance sélective + `outside static` (objectifs 3-5)
 
-- Reprend les Phases 2b/3/4 de `PRD-NAT-Port-Forwarding.md` §3, non
-  dupliquées ici en détail — dépendance vers la Phase 1 uniquement au sens
-  where l'infrastructure de test e2e construite en Phase 1 est directement
-  réutilisable pour la Phase 2b Huawei.
+- **Livré.** Reprend les Phases 2b/3/4 de `PRD-NAT-Port-Forwarding.md` §3.
+- **Couverture UDP + Huawei (objectif 3)** : `nat-port-forward-reply-leg.test.ts`
+  (Phase 1) couvrait déjà Cisco et Huawei en TCP avec un vrai `TcpStack` bout
+  en bout — seul le volet UDP manquait. `buildCiscoLab`/`buildHuaweiLab` ont
+  gagné un paramètre `protocol` (`'tcp' | 'udp'`, défaut `'tcp'`, aucune
+  régression sur les 5 tests existants) et un nouveau describe UDP (4 tests)
+  fait transiter un vrai datagramme aller-retour (`udpBind`/`sendUdpDatagram`)
+  à travers `ip nat inside source static udp`/`nat server protocol udp`, avec
+  et sans PAT/`nat outbound` coexistant.
+- **Maintenance sélective (objectif 4)** : `clear ip nat translation
+  inside|outside|vrf|pool <critère>` (Cisco) et `reset nat session inside
+  <ip>` (Huawei) validaient déjà leur argument puis appelaient
+  inconditionnellement `clearTranslations()` (purge totale) — confirmé par
+  lecture de `CiscoNATCommands.ts`/`HuaweiNATCommands.ts` et par les tests
+  existants (`nat-pat-other.test.ts` 205-208/231-234/338-341), qui
+  n'asserted que `output.trim() === ''`, jamais la survie des sessions non
+  ciblées. Nouvelle méthode `NATEngine.clearTranslationsFiltered(filter)`
+  (`insideIP`/`outsideIP`/`poolName`/`ifaces`) filtre réellement les
+  sessions dynamiques avant suppression ; `ifaces` (utilisé pour `vrf
+  <name>`) matche `NatSession.inIface` faute de champ `vrf` propre à la
+  session. Nouveau fichier `nat-selective-clear.test.ts` (6 tests, 2
+  vendors) : deux hôtes derrière le même routeur créent chacun une session
+  dynamique distincte (overload, pool, ou destination différente selon le
+  test), la purge filtrée ne retire que la session ciblée. Vérifié par
+  git-stash : les 4 cas filtrés échouent authentiquement sans le correctif,
+  les 2 cas `*`/`all` (non filtrés, pas de régression) restent verts dans
+  les deux cas.
+- **`ip nat outside source static` (objectif 5, Cisco uniquement)** :
+  `NatOutsideStatic`/`addOutsideStatic()`/`getOutsideStaticEntries()`
+  existaient déjà (stockage + rendu `show running-config`) mais
+  `translateInbound()`/`translateOutbound()` ne les consultaient jamais.
+  `translateInbound()` résout maintenant la traduction *avant* le lookup
+  FIB — l'alias local (`outsideLocal`) n'est par construction jamais une
+  adresse routable, donc la traduction doit précéder la décision de
+  routage plutôt que la suivre : un paquet entrant sur l'interface outside
+  dont la source correspond à `outsideGlobal` (l'hôte réel) est réécrit
+  vers `outsideLocal` ; un paquet entrant sur l'interface inside dont la
+  destination correspond à `outsideLocal` est réécrit vers `outsideGlobal`.
+  Les deux traductions se composent avec les chemins existants (session
+  PAT inverse, entrées statiques classiques) au lieu de leur faire
+  concurrence par un retour anticipé, pour rester correct si les deux
+  s'appliquent au même paquet. Nouveau fichier `nat-outside-static.test.ts`
+  (3 tests) : un hôte interne adressant l'alias atteint réellement l'hôte
+  externe (vérifié via `udpBind`/`sendUdpDatagram`, pas seulement un ping),
+  un datagramme émis par l'hôte externe se présente au réseau interne sous
+  son alias, et sans la commande l'alias reste injoignable (non-régression,
+  confirmé par git-stash — les 2 premiers cas échouent authentiquement).
+- Régression complète des suites NAT/ACL/routage de base (§4) : 810 tests
+  sur 44 fichiers NAT/ACL (incluant les 3 nouveaux fichiers de cette phase)
+  + 93 tests routage/UDP/fragmentation de base, tous verts.
 
 ### Phase 4 — Commutateur L3 Huawei : brancher le NAT sur le plan de données (objectif 6)
 
