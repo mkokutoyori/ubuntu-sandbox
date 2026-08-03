@@ -658,12 +658,31 @@ export class LinuxLogManager {
    */
   private readonly openLogFiles = new Map<string, { lostLines: number; lostBytes: number }>();
 
+  /**
+   * Le processus qui tient ces fichiers ouverts (§F9.3).
+   *
+   * Le descripteur d'un fichier journal appartient au PROCESSUS rsyslog,
+   * pas à ce gestionnaire : c'est ce qui fait que `/proc/<pid>/fd`, `lsof`
+   * et le plafond `RLIMIT_NOFILE` parlent du même. La comptabilité des
+   * octets perdus, elle, reste ici — c'est une propriété du démon, pas du
+   * noyau, et elle n'a rien à faire dans une table de descripteurs.
+   */
+  private descriptorSink?: {
+    open(path: string): void;
+    closeAll(): void;
+  };
+
+  attachDescriptorSink(sink: { open(path: string): void; closeAll(): void }): void {
+    this.descriptorSink = sink;
+  }
+
   private appendToLogFile(path: string, line: string): void {
     const existing = this.vfs.readFile(path);
     if (existing !== null) {
       this.vfs.writeFile(path, existing + line + '\n', 0, 0, 0o022);
       if (!this.openLogFiles.has(path)) {
         this.openLogFiles.set(path, { lostLines: 0, lostBytes: 0 });
+        this.descriptorSink?.open(path);
       }
       return;
     }
@@ -682,6 +701,7 @@ export class LinuxLogManager {
     // really does create the file (syslog group = adm, gid 4).
     this.vfs.createFileAt(path, line + '\n', 0o640, 0, 4);
     this.openLogFiles.set(path, { lostLines: 0, lostBytes: 0 });
+    this.descriptorSink?.open(path);
   }
 
   /**
@@ -707,6 +727,10 @@ export class LinuxLogManager {
    * restart the daemon rather than to `touch` the file.
    */
   reopenLogFiles(): void {
+    // Un rsyslog qui redémarre est un processus NEUF : les descripteurs du
+    // précédent partent avec lui. Les laisser ferait apparaître dans `lsof`
+    // un descripteur appartenant à un pid mort.
+    this.descriptorSink?.closeAll();
     this.openLogFiles.clear();
   }
 
