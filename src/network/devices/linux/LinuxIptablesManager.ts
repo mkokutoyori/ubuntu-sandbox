@@ -300,6 +300,64 @@ export class LinuxIptablesManager {
 
   // ─── Connection tracking ──────────────────────────────────────
 
+  // ─── Lecture de la table, pour `conntrack -L` / `-S` ────────────
+  //
+  // La table existait et faisait déjà marcher `iptables -m state`, mais
+  // rien ne la nommait : encore un moteur sans porte. Ce qui suit ne
+  // fabrique aucun état, il expose celui qui décide déjà du sort des
+  // paquets.
+
+  /** Compteurs réels de `conntrack -S`, incrémentés aux vrais points. */
+  readonly conntrackStats = { insert: 0, found: 0, invalid: 0, drop: 0 };
+
+  /**
+   * Les flux vivants, une entrée par CONNEXION (pas par direction).
+   *
+   * La table indexe les deux sens séparément — c'est ce dont
+   * `isEstablished` a besoin. `conntrack -L`, lui, montre un flux avec
+   * ses deux tuples, donc on les réunit ici : le sens ORIGINAL est celui
+   * dont le tuple inverse existe aussi, et l'absence de retour est
+   * exactement ce que le vrai binaire marque `[UNREPLIED]`.
+   */
+  listConntrack(): Array<{
+    protocol: string; srcIP: string; srcPort: number;
+    dstIP: string; dstPort: number; ageMs: number; replied: boolean;
+  }> {
+    const now = Date.now();
+    const vus = new Set<string>();
+    const flux: Array<{
+      protocol: string; srcIP: string; srcPort: number;
+      dstIP: string; dstPort: number; ageMs: number; replied: boolean;
+    }> = [];
+    for (const [cle, ts] of this.conntrack) {
+      if (now - ts > this.CONNTRACK_TIMEOUT) continue;
+      const p = cle.split(':');
+      if (p.length < 5) continue;
+      const [protocol, srcIP, srcPort, dstIP, dstPort] = p;
+      const inverse = `${protocol}:${dstIP}:${dstPort}:${srcIP}:${srcPort}`;
+      if (vus.has(cle) || vus.has(inverse)) continue;
+      vus.add(cle);
+      flux.push({
+        protocol,
+        srcIP, srcPort: parseInt(srcPort, 10) || 0,
+        dstIP, dstPort: parseInt(dstPort, 10) || 0,
+        ageMs: now - ts,
+        replied: this.conntrack.has(inverse),
+      });
+    }
+    return flux;
+  }
+
+  /** Le délai d'expiration, ce que `conntrack -L` décompte par flux. */
+  conntrackTimeoutSec(): number { return this.CONNTRACK_TIMEOUT / 1000; }
+
+  /** `conntrack -F` — vide la table, et rend le nombre d'entrées jetées. */
+  flushConntrack(): number {
+    const n = this.conntrack.size;
+    this.conntrack.clear();
+    return n;
+  }
+
   /** Track a connection for state/conntrack matching (ESTABLISHED,RELATED) */
   private trackConnection(pkt: PacketInfo): void {
     // Track the reply direction: so the reply (dst→src) is ESTABLISHED
@@ -307,6 +365,7 @@ export class LinuxIptablesManager {
     this.conntrack.set(replyKey, Date.now());
     // Also track original direction
     const origKey = `${pkt.protocol}:${pkt.srcIP}:${pkt.srcPort}:${pkt.dstIP}:${pkt.dstPort}`;
+    if (!this.conntrack.has(origKey)) this.conntrackStats.insert++;
     this.conntrack.set(origKey, Date.now());
     // Periodically clean old entries (keep it simple — clean on every 50th insert)
     if (this.conntrack.size > 200) this.cleanConntrack();
@@ -321,6 +380,7 @@ export class LinuxIptablesManager {
       this.conntrack.delete(key);
       return false;
     }
+    this.conntrackStats.found++;
     return true;
   }
 

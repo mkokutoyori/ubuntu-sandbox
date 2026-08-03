@@ -1826,8 +1826,25 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef) return '';
       return this.displayVersion(this.swRef);
     });
-    trie.register('display port-security', 'Display port-security status', () =>
-      this.displayPortSecurity());
+    // La forme globale marchait, la forme PAR-INTERFACE était refusée
+    // (audit 12, §3.3). Elle filtre la même vue plutôt que d'en rendre
+    // une seconde : deux tableaux qui peuvent se contredire seraient
+    // pires qu'un seul.
+    trie.registerGreedy('display port-security', 'Display port-security status', (args) => {
+      const complet = this.displayPortSecurity();
+      if (args.length === 0) return complet;
+      if (args[0].toLowerCase() !== 'interface') {
+        return `Error: Wrong parameter found at '^' position.`;
+      }
+      if (!args[1]) return `Error: Incomplete command found at '^' position.`;
+      const nom = this.resolveInterfaceName(args.slice(1).join(' '));
+      if (!nom) return `Error: Wrong parameter found at '^' position.`;
+      const lignes = complet.split('\n');
+      const entete = lignes[0];
+      const ligne = lignes.slice(1).find((l) => l.trim().endsWith(nom));
+      if (!ligne) return `Port-security is not enabled on ${nom}.`;
+      return [entete, ligne].join('\n');
+    });
 
     // display vlan [summary | <id>]
     trie.registerGreedy('display vlan', 'Display VLAN information', (args) => {

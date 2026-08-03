@@ -141,7 +141,7 @@ prise au lot 8 et elle tient : le moteur EIGRP est explicitement sans
 minuteries, donc les accepter stockerait une valeur que rien ne lirait.
 Leur présence dans cette liste est attendue, pas une régression.
 
-## 4. Un candidat à trancher, pas encore tranché
+## 4. Le candidat à trancher — TRANCHÉ : ce n'est pas un manque
 
 `show interfaces Loopback0` / `show ip interface Loopback0` /
 `show ipv6 interface Loopback0` apparaissent refusés dans
@@ -149,27 +149,62 @@ Leur présence dans cette liste est attendue, pas une régression.
 la Loopback0 a été créée, les deux premières fonctionnent** et rendent
 le bloc attendu (`Loopback0 is up … Internet address is 1.1.1.1/32`).
 
-L'écart vient donc du contexte de la suite, pas de la commande. Deux
-lectures restent possibles — la Loopback n'existait pas à cet instant du
-scénario (auquel cas le refus est correct et c'est la suite qui est mal
-écrite), ou une différence de mode. **Je n'ai pas tranché**, et il serait
-malhonnête de l'inscrire comme un manque sans l'avoir fait. C'est le
-premier point à instruire.
+L'écart vient donc du contexte de la suite, pas de la commande.
+**Vérifié dans la source de la suite** (`cisco-router-interfaces.debug.test.ts`) :
+`grep 'interface Loopback0'` ne rend RIEN. La suite ne crée jamais la
+Loopback ; elle se contente de citer son nom dans une boucle de `show`
+sur une liste d'interfaces. Le refus est donc correct, exactement comme
+pour `FastEthernet0/25`, et c'est la suite qui interroge une interface
+qu'elle n'a pas configurée.
 
-## 5. Ordre de traitement suggéré
+**Ce n'est pas un manque, et l'avoir vérifié a évité d'écrire une
+fonctionnalité pour rien.**
 
-1. **`conntrack -L` / `-S`.** Le moteur existe et n'a pas de porte,
-   c'est le seul manque Linux restant, il touche quatre suites, et il
-   rend visible ce qui fait déjà marcher les règles `iptables -m state`.
-2. **Trancher le cas Loopback (§4)** avant d'écrire quoi que ce soit :
-   soit c'est un manque, soit la suite boucle hors gamme comme pour
-   `FastEthernet0/25`. Une heure de vérification évite une
-   fonctionnalité écrite pour rien.
-3. **`clock set`.** Bornée, et elle débloque tout ce qui se date.
-4. **`ip address negotiated`** et **`display port-security interface`**.
-   Deux formes courtes par-dessus des moteurs qui existent.
-5. `crypto isakmp key … hostname`, `ipv6 ospf hello-interval` /
-   `dead-interval`. Les moins bloquantes.
+## 5. Ordre de traitement — état
+
+1. ✅ **`conntrack -L` / `-S` / `-C` / `-F`.** Le moteur existait sans
+   porte. Ce qui compte et qui est vérifié par test : **la table se
+   remplit de trafic réel** — un ping entre deux hôtes câblés crée un
+   flux que `-L` montre, que `-C` compte et que `-F` vide. Une commande
+   qui aurait toujours rendu « 0 flow entries » serait passée à côté.
+   Un défaut trouvé en mesurant : le moteur range le protocole par
+   NUMÉRO (`PacketInfo.protocol` est un `number`), si bien que la
+   première version affichait « 1 » là où le vrai binaire écrit « icmp »
+   et que `-p icmp` ne filtrait rien.
+2. ✅ **Cas Loopback tranché** (§4) — ce n'est pas un manque, la suite
+   n'a jamais créé l'interface. Rien à écrire.
+3. ✅ **`clock set`.** Le moteur existait aussi
+   (`Router._setSystemClock`, déjà lu par `show clock`) : on pouvait
+   lire l'heure, jamais la corriger. Les deux ordres d'IOS sont acceptés
+   (`<jour> <Mois> <année>` et `<Mois> <jour> <année>`).
+
+   **Un second défaut, trouvé en écrivant la commande et non prévu par
+   l'audit** : une forme en mode CONFIGURATION existait déjà, et ne
+   marchait pas. Son analyseur exigeait cinq mots (`args.length < 5`) là
+   où la forme normale d'IOS en compte quatre — mesuré avant toute
+   correction, `clock set 10:30:00 3 June 2026` en `config` rendait la
+   main sans rien changer, et seul un cinquième mot parasite posait
+   vraiment l'heure. Une commande acceptée qui ne fait rien est pire
+   qu'un refus : le refus, au moins, se voit.
+
+   Les deux modes partagent maintenant un SEUL analyseur
+   (`parseClockSetArgs` + `applyClockSet`) — deux lectures d'une même
+   commande finiraient par se contredire sur la même date. Et
+   l'enregistrement de la forme privilégiée est posé une seule fois,
+   hors de `registerCommonShowCommands`, qui est appelée une fois par
+   arbre : `command-trie-hygiene.test.ts` a signalé le doublon, à juste
+   titre — c'est exactement le garde-fou qu'il existe pour attraper.
+4. ✅ **`ip address negotiated`** et **`display port-security
+   interface <if>`.** La première était refusée avant même d'être
+   reconnue, le test de longueur passant avant le mot-clé ; la seconde
+   filtre la MÊME vue que la forme globale plutôt que d'en recalculer
+   une seconde, parce que deux tableaux qui peuvent se contredire sont
+   pires qu'un seul.
+5. **`crypto isakmp key … hostname`, `ipv6 ospf hello-interval` /
+   `dead-interval`.** Non traitées : une occurrence chacune, dans des
+   sections dont le sujet est ailleurs, et §6 les classe justement parmi
+   ce qui n'a pas été revérifié individuellement. Les traiter sans les
+   avoir mesurées serait refaire l'erreur que §2 documente.
 
 Ne pas traiter : les refus délibérés de §3.4 et de la fin de §3.3, qui
 sont la bonne réponse tant que le moteur derrière n'existe pas.

@@ -111,6 +111,7 @@ import { aptCacheCommand } from './system/AptCache';
 import { newgrpCommand } from './iam/Newgrp';
 import { tracepathCommand } from './net/Tracepath';
 import { mtrCommand } from './net/MtrReport';
+import { conntrackCommand } from './net/Conntrack';
 import { treeCommand } from './coreutils/Tree';
 import { calCommand } from './coreutils/Cal';
 import { yesCommand } from './coreutils/Yes';
@@ -225,6 +226,7 @@ export {
   newgrpCommand,
   tracepathCommand,
   mtrCommand,
+  conntrackCommand,
   treeCommand,
   calCommand,
   yesCommand,
@@ -349,6 +351,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   newgrpCommand,
   tracepathCommand,
   mtrCommand,
+  conntrackCommand,
   treeCommand,
   calCommand,
   yesCommand,

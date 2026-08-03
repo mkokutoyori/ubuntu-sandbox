@@ -405,8 +405,23 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   });
 
   trie.registerGreedy('ip address', 'Set interface IP address', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
     if (!ctx.getSelectedInterface()) return '% No interface selected';
+    // `ip address dhcp` / `ip address negotiated` — l'adresse est
+    // apprise, pas saisie : c'est le cas normal d'un lien opérateur, et
+    // `negotiated` répondait « Incomplete command » faute d'être
+    // reconnu avant le test de longueur. `dhcp` passe par le client DHCP
+    // réel de l'interface ; `negotiated` est la forme PPP/IPCP, que ce
+    // simulateur n'a pas — elle est donc mémorisée pour la
+    // running-config et l'interface reste sans adresse, ce qui est
+    // exactement ce que montre un vrai routeur tant que la négociation
+    // n'a pas abouti.
+    const mot = (args[0] ?? '').toLowerCase();
+    if (mot === 'negotiated') {
+      if (args.length > 1) return "% Invalid input detected at '^' marker.";
+      ctx.r().setInterfaceAddressMode?.(ctx.getSelectedInterface()!, 'negotiated');
+      return '';
+    }
+    if (args.length < 2) return '% Incomplete command.';
     if (!isValidIPv4(args[0]) || !isValidSubnetMask(args[1])) {
       return "% Invalid input detected at '^' marker.";
     }

@@ -876,7 +876,15 @@ export class NATEngine {
       const timeout = overrideMs !== undefined
         ? overrideMs
         : this.sessionTimeout(session);
-      if (now - session.timestamp > timeout) {
+      // `>=` et non `>` : une entrée qui a ATTEINT son délai a expiré.
+      // Avec `>`, un délai de 0 ne purge rien tant qu'une milliseconde
+      // entière ne s'est pas écoulée — ce qui rendait
+      // `purgeStale(0)` (« vide tout », le seul usage de l'override)
+      // dépendant de l'horloge murale, donc intermittent : mesuré
+      // 3 échecs sur 5 exécutions du même fichier sur le même arbre.
+      // Sur le chemin normal, la différence est d'une milliseconde sur
+      // un délai qui se compte en minutes.
+      if (now - session.timestamp >= timeout) {
         const revKey = makeKey(session.protocol, session.globalIP, session.globalPort);
         this.sessions.delete(key);
         this.reverseSessions.delete(revKey);

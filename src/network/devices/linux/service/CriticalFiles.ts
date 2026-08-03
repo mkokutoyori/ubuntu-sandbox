@@ -141,7 +141,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   // commande, sinon la machine se contredit sur l'emplacement.
   lsmod: '/usr/sbin/lsmod', modinfo: '/usr/sbin/modinfo',
   swapon: '/usr/sbin/swapon', swapoff: '/usr/sbin/swapoff',
-  lid: '/usr/sbin/lid',
+  lid: '/usr/sbin/lid', conntrack: '/usr/sbin/conntrack',
 };
 
 export function resolveExePath(name: string): string {

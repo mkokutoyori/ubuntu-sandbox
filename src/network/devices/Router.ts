@@ -2882,6 +2882,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (idx >= 0) this._unhandledConfigLines.splice(idx, 1);
   }
 
+  /**
+   * `ip address negotiated` (PPP/IPCP) — le mode d'obtention d'adresse
+   * déclaré sur une interface. Mémorisé pour la running-config ; il n'y
+   * a pas de pile PPP derrière, donc l'interface reste sans adresse,
+   * ce qu'un vrai routeur montre aussi tant que la négociation n'a pas
+   * abouti.
+   */
+  private readonly _ifAddressMode = new Map<string, 'negotiated'>();
+  setInterfaceAddressMode(iface: string, mode: 'negotiated'): void {
+    this._ifAddressMode.set(iface, mode);
+  }
+  getInterfaceAddressMode(iface: string): 'negotiated' | undefined {
+    return this._ifAddressMode.get(iface);
+  }
+
   _setSystemClock(epochMs: number): void {
     this._systemClockOverrideMs = epochMs;
     this._systemClockSetAtMs = Date.now();
