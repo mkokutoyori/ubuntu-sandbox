@@ -136,6 +136,12 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   auditctl: '/sbin/auditctl', ausearch: '/sbin/ausearch', aureport: '/sbin/aureport',
   reboot: '/sbin/reboot', shutdown: '/sbin/shutdown', logger: '/usr/bin/logger',
   journalctl: '/bin/journalctl', dmesg: '/bin/dmesg', logrotate: '/usr/sbin/logrotate',
+  // Les outils d'administration vivent dans `sbin` : `which lsmod`
+  // doit répondre le même chemin que le `binaryPath` déclaré sur la
+  // commande, sinon la machine se contredit sur l'emplacement.
+  lsmod: '/usr/sbin/lsmod', modinfo: '/usr/sbin/modinfo',
+  swapon: '/usr/sbin/swapon', swapoff: '/usr/sbin/swapoff',
+  lid: '/usr/sbin/lid',
 };
 
 export function resolveExePath(name: string): string {

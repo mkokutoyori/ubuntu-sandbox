@@ -691,14 +691,6 @@ export function showVrf(router?: unknown): string {
   return lines.join('\n');
 }
 
-export function showBoot(): string {
-  return [
-    'BOOT variable does not exist',
-    'CONFIG_FILE variable does not exist',
-    'Configuration register is 0x2102',
-  ].join('\n');
-}
-
 /** `show redundancy` — single control plane (no redundant peer modelled). */
 export function showRedundancy(): string {
   return [

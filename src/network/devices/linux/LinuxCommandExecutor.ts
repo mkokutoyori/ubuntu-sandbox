@@ -64,6 +64,7 @@ import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
 import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
 import { HostClock } from '../host/lifecycle/HostClock';
+import { KernelModuleTable } from './kernel/KernelModuleTable';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
@@ -174,7 +175,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
   'tac', 'nl', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
-  'column', 'split', 'base64', 'cksum', 'xxd', 'bc',
+  'column', 'split', 'base64', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
   'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
@@ -185,7 +186,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
   'faillock', 'ausearch', 'aureport', 'auditctl', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
-  'login', 'logout',
+  'login', 'logout', 'logname', 'users', 'lid', 'members', 'newgrp',
   // Lookup
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
@@ -195,6 +196,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
+  'getconf', 'lsb_release', 'swapon', 'swapoff', 'lsmod', 'modinfo', 'pmap', 'sensors',
   'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
   'mkfs', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs', 'lvdisplay', 'vgdisplay', 'pvdisplay',
   // Networking
@@ -366,6 +368,8 @@ export class LinuxCommandExecutor {
   private readonly tcpdumpWriteTargets = new Map<string, () => void>();
   /** Shared SSH session table — backs `who` / `w` / `last`. */
   private sessionTable: SshSessionTable | null = null;
+
+  private _kernelModules: KernelModuleTable | null = null;
   /** Reactive socket-table coherence for service-owned listening ports. */
   private servicePortProjection: ServicePortProjection | null = null;
   /** Records port bind / release activity into the system log, reactively. */
@@ -642,6 +646,9 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/hostname', () => `${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}\n`);
+    // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
+    // ordre : les deux vues ne peuvent donc pas diverger.
+    this.vfs.registerGeneratedFile('/proc/modules', () => this.kernelModules.toProcModules());
   }
 
   private registerSysfsFiles(): void {
@@ -6826,6 +6833,35 @@ export class LinuxCommandExecutor {
 
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
+
+  /**
+   * Le nom sous lequel la session s'est ouverte, celui que `logname` rend.
+   * Il survit à `su` et `sudo` — c'est tout l'intérêt de la commande —
+   * d'où le fond de la pile plutôt que `currentUser`, exactement la
+   * dérivation que `loginUid` utilise déjà pour l'audit.
+   */
+  loginName(): string {
+    return this.suStack.length > 0 ? this.suStack[0].user : this.userMgr.currentUser;
+  }
+
+  /** Le registre des sessions ouvertes, celui que `who`/`w`/`users` lisent. */
+  getSessionTable(): SshSessionTable | null { return this.sessionTable; }
+
+  /**
+   * Les modules chargés dans le noyau — `lsmod`, `modinfo`, `/proc/modules`.
+   * Construite tard, et non comme champ, parce qu'elle est **dérivée du
+   * matériel** : le pilote listé doit être celui de la carte réseau de
+   * cette machine, et la version celle de son noyau.
+   */
+  get kernelModules(): KernelModuleTable {
+    if (!this._kernelModules) {
+      this._kernelModules = new KernelModuleTable(
+        this.hardware.adapters[0]?.driver ?? 'e1000',
+        this.identity.kernel.release,
+      );
+    }
+    return this._kernelModules;
+  }
 
   /** Set current working directory (used when temporarily impersonating another user, e.g. cron/su) */
   setCwd(path: string): void { this.cwd = path; }
