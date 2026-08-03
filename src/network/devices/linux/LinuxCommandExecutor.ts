@@ -129,6 +129,7 @@ import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
+import type { TcpStack } from '../../tcp/TcpStack';
 import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
@@ -1884,7 +1885,8 @@ export class LinuxCommandExecutor {
     this.socketTable = table;
     // SSH port-forwards bind their listeners on the very same table, so
     // `-L`/`-R`/`-D` tunnels surface through `ss` / `netstat`.
-    this.forwarding = new SshForwardingTable(table);
+    const ownStack = (this.localDevice as { getTcpStack?: () => TcpStack } | null)?.getTcpStack?.();
+    this.forwarding = new SshForwardingTable(table, ownStack);
     // Now that the socket table exists, expose /proc/net/{tcp,udp} as
     // generated files that always reflect the live table. `/etc/services`
     // is seeded once at construction from the canonical SystemFiles list.

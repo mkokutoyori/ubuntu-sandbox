@@ -490,15 +490,13 @@ traité et un oubli.
    (`TcpStack.flushPendingSends` ignorait `closeAfterFlush` sans donnée en
    attente), également corrigé.
 10. **[SSH, Grand chantier] Donner un vrai canal de transport à UNE des deux
-    piles de forwarding.** Recommandation : le chemin `executeCommand`/
-    `LinuxSshClient.ts`, seul réellement exercé par tous les vendors
-    aujourd'hui. Remplacer le raccourci `ssh`/`nc`-spécifique par un vrai
-    canal `direct-tcpip`/`forwarded-tcpip` (RFC 4254 §7) qui relaie
-    effectivement les octets entre le socket local et
-    `destHost:destPort` réel, via `TcpStack`/`SocketTable` déjà réels.
-    **Dépendance explicite** : ce travail chevauche le chantier séparé
-    « unifier les deux piles SSH cross-vendor », déjà suivi ailleurs dans ce
-    projet — à séquencer ou coordonner, pas à dupliquer en silence.
+    piles de forwarding — livré (§3 Phase 8).** Chemin retenu :
+    `executeCommand`/`LinuxSshClient.ts`, seul réellement exercé par tous
+    les vendors aujourd'hui — `-L`/`-R` relaient désormais réellement les
+    octets vers `destHost:destPort` réel, via `TcpStack` déjà réel. `-D`
+    reste non câblé (pas d'analyse SOCKS5 dans cette pile). Cf. §3 Phase 8
+    pour le second correctif indépendant qu'écrire le test a révélé
+    nécessaire (absence totale de livraison TCP loopback).
 11. **[Documentation, Mineur] Réconcilier les quatre documents contradictoires
     identifiés en §1** : `GAP.md` §4.10 (ALG FTP maintenant réel, note
     obsolète), `GAP.md` §7.3 (description du canal `nc` ne correspond pas au
@@ -876,17 +874,63 @@ propagation de fermeture), 2 passent dans les deux cas (refus sans service
 réel, `netstat`) ; le cas `closeAfterFlush` échoue authentiquement seul
 avec seulement `TcpStack.ts` remisé (reste `established` pour toujours).
 
-### Phase 8 — SSH : canal de transport réel pour une pile de forwarding (objectif 10)
+### Phase 8 — SSH : canal de transport réel pour une pile de forwarding (objectif 10) — livrée
 
-- **Fichiers touchés** : nouveau type de canal (extension de `ChannelType`
-  ou canal dédié `direct-tcpip`), retrait du raccourci `ssh`/`nc`-spécifique
-  dans `LinuxSshClient.ts`/`Nc.ts` au profit d'un vrai relais bidirectionnel
-  branché sur `SshForwardingTable.ts`.
-- **Pré-requis explicite** : vérifier l'état du chantier séparé
-  d'unification des deux piles SSH avant de démarrer, pour éviter un travail
-  dupliqué ou en conflit — ce PRD ne le redéfinit pas.
-- **Tests** : nouveau fichier — payload réel traversant `-L` et `-R` de bout
-  en bout (pas seulement visibilité de listener).
+**Pré-requis vérifié avant de démarrer** : le chantier séparé « unifier SSH
+cross-vendor sur le vrai pipeline TCP/SshServerHandler » (suivi ailleurs
+dans ce projet) est resté à l'état *pending*, aucun commit ne l'a touché —
+démarrer cette phase ne duplique ni ne recoupe un travail en cours.
+
+**Choix de la pile** : le chemin `executeCommand`/`LinuxSshClient.ts` (§1.D,
+« Chemin 2 »), seul réellement exercé par tous les vendors aujourd'hui —
+pas `LinuxTerminalSession.ts`/`SshLocalForwarder`/`SshRemoteForwarder`/
+`SshDynamicForwarder` (« Chemin 1 »), le chemin interactif, entrelacé avec
+le chantier d'unification ci-dessus et donc délibérément non touché ici.
+
+**Fichiers touchés, comme prévu** : `SshForwardingTable.ts` gagne un
+`TcpStack` optionnel côté écoute (passé par `LinuxCommandExecutor.ts` via
+la référence `localDevice` déjà câblée) et un paramètre `dialStack` sur
+`open()` — la voie sortante du TUNNEL, PAS la machine qui possède
+l'écouteur : `-L`/`-D` dialent depuis le SERVEUR SSH, `-R` dialent depuis
+le CLIENT SSH, exactement la sémantique réelle d'OpenSSH. `LinuxSshClient.ts`
+câble les deux sens dans `setupPortForwards()` : `machine.getTcpStack()`
+(le serveur, déjà typé) pour `-L`/`-D`, un cast étroit de
+`opts.sourceDevice` (le client) pour `-R`. `-D` reste non câblé — cette
+pile n'a aucune analyse SOCKS5 pour déterminer une destination (le
+« Chemin 1 » en a une, mais aucun relais non plus ; combler les deux à la
+fois aurait démesurément élargi le périmètre) — décision explicite, pas un
+oubli. Contrairement aux Phases 5-6, ceci ne réécrit aucune adresse :
+deux connexions TCP réelles et indépendantes de part et d'autre du relais,
+donc pas d'asymétrie de voie retour façon NAT — les deux legs atteignent
+réellement `established`.
+
+**Second bogue indépendant surfacé en écrivant le test, plus large que les
+précédents** : `TcpStack` n'avait AUCUNE voie de livraison loopback —
+`resolveEgress()` échouait purement et simplement pour `127.0.0.1`/`::1`
+(confirmé empiriquement avant correctif, pour n'importe quel consommateur
+de `TcpStack`, pas seulement SSH). Or `-L`/`-R` se lient à `127.0.0.1` par
+défaut (comme le vrai OpenSSH) — sans correctif, le relais ci-dessus
+n'aurait eu aucun écouteur atteignable pour le cas courant, sans adresse
+de liaison explicite. Corrigé dans `resolveEgress`/`resolveEgress6`/
+`shipSegment` (`TcpStack.ts`) : une destination loopback est désormais
+livrée directement en interne, sans jamais construire de trame Ethernet —
+calquant exactement le raccourci déjà établi et accepté de
+`EndHost.sendUdpDatagram` pour UDP. Le correctif est strictement additif
+(un nouveau cas de retour anticipé) : le chemin non-loopback existant n'est
+pas touché, et `resolveEgress`/`resolveEgress6` échouaient déjà purement et
+simplement pour ces adresses avant le correctif, donc rien ne pouvait déjà
+dépendre de leur ancien comportement. Confirmé par une suite `tcp-*.test.ts`
+complète (10 fichiers, 64 tests) verte avant et après.
+
+**Tests** : `ssh-forwarding-real-relay.test.ts` (3 cas — relais réel `-L`
+avec vérification explicite que la connexion sortante provient bien du
+SERVEUR, relais réel `-R` avec vérification qu'elle provient bien du
+CLIENT, non-régression quand la cible réelle n'a pas de service à
+l'écoute). Discriminé par git-stash à deux niveaux : les 2 cas
+dépendant de l'ordre échouent authentiquement avec les quatre fichiers
+remisés ensemble, et échouent identiquement avec SEULEMENT `TcpStack.ts`
+remisé (isolant le correctif loopback du câblage du relais) ; le 3ᵉ cas
+passe dans tous les cas.
 
 ### Phase 9 — Documentation (objectif 11)
 

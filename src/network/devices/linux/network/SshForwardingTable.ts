@@ -10,9 +10,13 @@
  * The table is the single owner of the forwarding sockets: it binds them
  * on {@link open} and releases them on {@link close} / {@link clear},
  * so the socket view never drifts from the set of live forwards.
+ *
+ * For `-L`/`-R`, `open()`'s `dialStack` also wires a real relay (not `-D`,
+ * which has no fixed destination) — see `relay()`.
  */
 
 import type { SocketTable } from '../../../core/SocketTable';
+import type { TcpStack, TcpSocket } from '../../../tcp/TcpStack';
 import type { SshPortForward } from './SshPortForward';
 
 export class SshForwardingTable {
@@ -27,7 +31,10 @@ export class SshForwardingTable {
    */
   private readonly origins = new Map<number, string>();
 
-  constructor(private readonly sockets: SocketTable) {}
+  constructor(
+    private readonly sockets: SocketTable,
+    private readonly ownTcpStack?: TcpStack,
+  ) {}
 
   /**
    * Open a forward on this machine: record it and bind its listening
@@ -38,7 +45,7 @@ export class SshForwardingTable {
    * socket (mirrors `bind(): EADDRINUSE`); a port already held by an
    * identical forward is treated as success (idempotent re-open).
    */
-  open(fwd: SshPortForward, pid: number, processName: string): boolean {
+  open(fwd: SshPortForward, pid: number, processName: string, dialStack?: TcpStack): boolean {
     if (this.sockets.isPortBound(fwd.listenPort, 'tcp')) {
       const ownedByForward = this.active.some(
         (f) => f.listenPort === fwd.listenPort,
@@ -55,7 +62,30 @@ export class SshForwardingTable {
       return false;
     }
     this.active.push(fwd);
+    if (this.ownTcpStack && dialStack && fwd.destHost && fwd.destPort !== null) {
+      try {
+        this.ownTcpStack.listen(
+          fwd.listenPort,
+          { onAccept: (accepted) => this.relay(dialStack, fwd, accepted) },
+          fwd.bindAddress,
+        );
+      } catch { /* already listening */ }
+    }
     return true;
+  }
+
+  /** Bridge one accepted connection to a fresh one dialed from the tunnel's other end. */
+  private relay(dialStack: TcpStack, fwd: SshPortForward, accepted: TcpSocket): void {
+    const upstream = dialStack.connect(fwd.destHost!, fwd.destPort!, {
+      onData: (data) => accepted.send(data),
+      onClose: () => accepted.close(),
+    });
+    if (!upstream) {
+      accepted.close();
+      return;
+    }
+    accepted.onData((data) => upstream.send(data));
+    accepted.onClose(() => upstream.close());
   }
 
   /** Tear a forward down by its listen port — drops the listening socket. */
@@ -67,6 +97,7 @@ export class SshForwardingTable {
     // Only release the socket once the last forward on that port is gone.
     if (!this.active.some((f) => f.listenPort === listenPort)) {
       this.sockets.unbind('tcp', fwd.bindAddress, fwd.listenPort);
+      this.ownTcpStack?.closeListener(fwd.listenPort, fwd.bindAddress);
       this.origins.delete(listenPort);
     }
     return true;
@@ -86,6 +117,7 @@ export class SshForwardingTable {
   clear(): void {
     for (const fwd of this.active) {
       this.sockets.unbind('tcp', fwd.bindAddress, fwd.listenPort);
+      this.ownTcpStack?.closeListener(fwd.listenPort, fwd.bindAddress);
     }
     this.active.length = 0;
     this.origins.clear();

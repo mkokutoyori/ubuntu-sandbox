@@ -21,6 +21,7 @@ import { IPAddress } from '../../../core/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
 import type { SshForwardingTable } from './SshForwardingTable';
+import type { TcpStack } from '../../../tcp/TcpStack';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import type { LinuxMachine } from '../../LinuxMachine';
 import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
@@ -648,13 +649,14 @@ function setupPortForwards(
       // honour it.
       const honourBind = gatewayPolicy === 'yes' || gatewayPolicy === 'clientspecified';
       const effective = honourBind ? fwd : rebindToLoopback(fwd);
-      remoteForwarding?.open(effective, SSHD_PID, 'sshd');
+      const clientStack = (opts.sourceDevice as { getTcpStack?: () => TcpStack } | null)?.getTcpStack?.();
+      remoteForwarding?.open(effective, SSHD_PID, 'sshd', clientStack);
     } else {
       // -L / -D : the listener lives on the client host, owned by ssh.
       // The outbound side is re-originated FROM the SSH server: tag the
       // forward with that server's IP so a local probe (`nc`) hitting the
       // tunnel listener is evaluated as if it came from the sshd process.
-      opts.localForwarding?.open(fwd, SSH_CLIENT_FORWARD_PID, 'ssh');
+      opts.localForwarding?.open(fwd, SSH_CLIENT_FORWARD_PID, 'ssh', machine.getTcpStack());
       const sshServerIp = machine.getPorts()
         .map(p => p.getIPAddress()?.toString())
         .find(Boolean);
