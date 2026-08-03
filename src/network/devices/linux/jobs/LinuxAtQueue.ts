@@ -1,22 +1,27 @@
 /**
- * LinuxAtQueue — the `at` deferred-job spool and its query commands.
+ * LinuxAtQueue — le spool des tâches différées d'`at`, et les commandes
+ * qui le lisent.
  *
- * `at` schedules a one-shot command for later execution; `atd` is the daemon
- * that runs due jobs. This models the spool (`/var/spool/cron/atjobs`): each
- * job carries the full record a real `atq` line shows — id, run time, queue
- * letter and owner — even though the simulator does not fire jobs on a timer.
+ * `at` met une commande de côté pour plus tard ; `atd` est le démon qui
+ * exécute celles dont l'heure est venue. Ce module modélise le spool
+ * (`/var/spool/cron/atjobs`) : chaque tâche porte ce qu'une ligne d'`atq`
+ * montre — identifiant, heure, lettre de file, propriétaire.
  *
- * `at` refuses to queue anything while `atd` is stopped, exactly as on a
- * real host (it cannot signal the daemon's pidfile).
+ * Les tâches partent pour de bon : `dueJobs()` est ce que le tour d'une
+ * minute de la machine interroge. Jusqu'ici le spool n'était qu'un
+ * registre — une tâche `at` y entrait et n'en sortait jamais, ce qui
+ * revenait à écrire un planificateur qui ne planifie rien.
  */
 
-/** One spooled `at` job. */
+import { formatCtime } from '../time/ctime';
+
+/** Une tâche en attente. */
 export interface AtJob {
   readonly id: number;
   readonly runAt: Date;
   readonly command: string;
   readonly user: string;
-  /** Queue letter — `a` for `at`, `b` for `batch` (lower = higher priority). */
+  /** Lettre de file — `a` pour `at`, `b` pour `batch` (plus bas = plus prioritaire). */
   readonly queue: string;
 }
 
@@ -24,14 +29,14 @@ export class LinuxAtQueue {
   private readonly jobs = new Map<number, AtJob>();
   private nextId = 1;
 
-  /** Spool a new job, returning the assigned record. */
+  /** Met une tâche au spool et rend la fiche qui lui a été attribuée. */
   enqueue(command: string, user: string, runAt: Date, queue = 'a'): AtJob {
     const job: AtJob = { id: this.nextId++, runAt, command, user, queue };
     this.jobs.set(job.id, job);
     return job;
   }
 
-  /** Every spooled job, ordered by run time. */
+  /** Toutes les tâches en attente, dans l'ordre des heures. */
   list(): AtJob[] {
     return [...this.jobs.values()].sort((a, b) => a.runAt.getTime() - b.runAt.getTime());
   }
@@ -40,47 +45,97 @@ export class LinuxAtQueue {
     return this.jobs.get(id);
   }
 
-  /** Remove a job by id. Returns true when it existed. */
+  /** Retire une tâche par identifiant. Vrai si elle existait. */
   remove(id: number): boolean {
     return this.jobs.delete(id);
   }
+
+  /**
+   * Les tâches dont l'heure est passée, retirées du spool au passage —
+   * `at` est à usage unique, une tâche exécutée ne revient pas.
+   */
+  dueJobs(now: Date): AtJob[] {
+    const due = this.list().filter((j) => j.runAt.getTime() <= now.getTime());
+    for (const j of due) this.jobs.delete(j.id);
+    return due;
+  }
 }
 
-/** Daemon-down diagnostic — the exact line real `at` prints. */
-const ATD_DOWN = "Can't open /var/run/atd.pid to signal atd. No atd running?";
+/**
+ * Le diagnostic quand `atd` ne tourne pas. Relevé sur le vrai : le
+ * chemin est `/run/atd.pid` sur un Ubuntu courant, et — c'est le point
+ * qui comptait — **la tâche est tout de même mise au spool**. `at` ne
+ * sait pas prévenir le démon, il le dit, et s'arrête là ; il ne refuse
+ * pas. Le simulateur refusait, ce qui faisait disparaître la tâche.
+ */
+const ATD_DOWN = "Can't open /run/atd.pid to signal atd. No atd running?";
+
+/** Ce que le vrai `at` imprime avant tout le reste. */
+const AT_SHELL_WARNING = 'warning: commands will be executed using /bin/sh';
 
 /**
- * Parse an `at` time specification. Supports `now`, `now + N unit` and a bare
- * `HH:MM`. Falls back to "now" for anything unrecognised — `at` is lenient.
+ * Analyse une spécification d'heure d'`at`. Reconnaît `now`,
+ * `now + N unité`, `HH:MM`, `midnight`, `noon` et `teatime` (16h, la
+ * plaisanterie que le vrai `at` implémente réellement).
+ *
+ * Ce qu'il ne reconnaît pas n'est pas ramené silencieusement à
+ * maintenant : le vrai répond `Garbled time` et ne met rien au spool.
  */
-export function parseAtTime(spec: string, base: Date = new Date()): Date {
+export function parseAtTime(spec: string, base: Date = new Date()): Date | null {
   const text = spec.trim().toLowerCase();
-  const rel = text.match(/now\s*\+\s*(\d+)\s*(minute|minutes|hour|hours|day|days)/);
+  if (text === '' || text === 'now') return new Date(base);
+
+  const rel = text.match(/^now\s*\+\s*(\d+)\s*(minute|minutes|hour|hours|day|days|week|weeks)$/);
   if (rel) {
     const n = Number(rel[1]);
     const unitMs =
       rel[2].startsWith('minute') ? 60_000 :
-      rel[2].startsWith('hour') ? 3_600_000 : 86_400_000;
+      rel[2].startsWith('hour') ? 3_600_000 :
+      rel[2].startsWith('week') ? 7 * 86_400_000 : 86_400_000;
     return new Date(base.getTime() + n * unitMs);
   }
+
+  const nomme: Record<string, [number, number]> = {
+    midnight: [0, 0], noon: [12, 0], teatime: [16, 0],
+  };
+  const named = nomme[text];
+  if (named) return prochainePassage(base, named[0], named[1]);
+
   const hhmm = text.match(/^(\d{1,2}):(\d{2})$/);
-  if (hhmm) {
-    const d = new Date(base);
-    d.setHours(Number(hhmm[1]), Number(hhmm[2]), 0, 0);
-    if (d.getTime() <= base.getTime()) d.setDate(d.getDate() + 1);
-    return d;
+  if (hhmm) return prochainePassage(base, Number(hhmm[1]), Number(hhmm[2]));
+
+  const ampm = text.match(/^(\d{1,2})\s*(am|pm)$/);
+  if (ampm) {
+    let h = Number(ampm[1]) % 12;
+    if (ampm[2] === 'pm') h += 12;
+    return prochainePassage(base, h, 0);
   }
-  return new Date(base);
+
+  return null;
 }
 
-/** Format a job run time the way `atq` does (`Wed May 22 10:05:00 2026`). */
-function fmtAtqDate(d: Date): string {
-  return d.toDateString().replace(/(\w{3}) (\w{3}) (\d+) (\d{4})/, '$1 $2 $3') +
-    ` ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00 ${d.getFullYear()}`;
+/** L'heure dite, aujourd'hui si elle est à venir, demain sinon. */
+function prochainePassage(base: Date, heure: number, minute: number): Date {
+  const d = new Date(base);
+  d.setHours(heure, minute, 0, 0);
+  if (d.getTime() <= base.getTime()) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+/** Une ligne d'`atq` : identifiant, heure `ctime`, file, propriétaire. */
+function ligneAtq(j: AtJob): string {
+  return `${j.id}\t${formatCtime(j.runAt)} ${j.queue} ${j.user}`;
+}
+
+export interface AtResult {
+  readonly output: string;
+  readonly exitCode: number;
 }
 
 /**
- * `at` — schedule the command read from stdin. Refuses when `atd` is down.
+ * `at` — met au spool la commande lue sur l'entrée standard.
+ * `at -l` est un alias d'`atq`, et `at -d` un alias d'`atrm` : le vrai
+ * binaire est le même, seul le nom d'appel change.
  */
 export function cmdAt(
   queue: LinuxAtQueue,
@@ -89,32 +144,47 @@ export function cmdAt(
   user: string,
   atdRunning: boolean,
   now: Date = new Date(),
-): string {
-  if (!atdRunning) return ATD_DOWN;
+  file: 'a' | 'b' = 'a',
+): AtResult {
+  if (args.includes('-l')) return cmdAtq(queue);
+  if (args.includes('-d') || args.includes('-r')) {
+    return cmdAtrm(queue, args.filter((a) => !a.startsWith('-')));
+  }
+  if (args.includes('-c')) {
+    const id = Number(args[args.indexOf('-c') + 1]);
+    const job = queue.get(id);
+    if (!job) return { output: `Cannot find jobid ${id}`, exitCode: 1 };
+    return { output: job.command, exitCode: 0 };
+  }
 
   const command = stdin.trim();
-  if (!command) return 'at: no command to schedule';
 
-  const timeSpec = args.filter((a) => !a.startsWith('-')).join(' ') || 'now';
+  // `batch` ne prend pas d'heure : sa file part dès que la charge le
+  // permet, ce qui ici veut dire au prochain tour.
+  const timeSpec = file === 'b' ? 'now' : args.filter((a) => !a.startsWith('-')).join(' ');
   const runAt = parseAtTime(timeSpec, now);
-  const job = queue.enqueue(command, user, runAt);
-  return `job ${job.id} at ${fmtAtqDate(runAt)}`;
+  if (runAt === null) return { output: 'Garbled time', exitCode: 1 };
+
+  if (!command) return { output: 'at: no command to schedule', exitCode: 1 };
+
+  const job = queue.enqueue(command, user, runAt, file);
+  const lines = [AT_SHELL_WARNING, `job ${job.id} at ${formatCtime(runAt)}`];
+  if (!atdRunning) lines.push(ATD_DOWN);
+  return { output: lines.join('\n'), exitCode: 0 };
 }
 
-/** `atq` — list the spooled jobs (`id  date  queue  user`). */
-export function cmdAtq(queue: LinuxAtQueue): string {
-  return queue.list()
-    .map((j) => `${j.id}\t${fmtAtqDate(j.runAt)} ${j.queue} ${j.user}`)
-    .join('\n');
+/** `atq` — liste les tâches en attente. */
+export function cmdAtq(queue: LinuxAtQueue): AtResult {
+  return { output: queue.list().map(ligneAtq).join('\n'), exitCode: 0 };
 }
 
-/** `atrm` — remove one or more spooled jobs by id. */
-export function cmdAtrm(queue: LinuxAtQueue, args: string[]): string {
+/** `atrm` — retire une ou plusieurs tâches par identifiant. */
+export function cmdAtrm(queue: LinuxAtQueue, args: string[]): AtResult {
   const errors: string[] = [];
   for (const arg of args) {
     const id = parseInt(arg, 10);
     if (Number.isNaN(id)) continue;
     if (!queue.remove(id)) errors.push(`Cannot find jobid ${id}`);
   }
-  return errors.join('\n');
+  return { output: errors.join('\n'), exitCode: errors.length > 0 ? 1 : 0 };
 }

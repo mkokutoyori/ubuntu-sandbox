@@ -1293,6 +1293,8 @@ export interface ScheduledTaskInfo {
   author?: string;
   runAsUser?: string;
   scheduleType?: string;
+  /** Occurrences passées pendant que le planificateur était arrêté. */
+  missedRuns?: number;
   startTime?: string;
   startDate?: Date;
   days?: string;

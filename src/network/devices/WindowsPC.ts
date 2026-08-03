@@ -3388,8 +3388,39 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     );
   }
 
+  /**
+   * Une occurrence dont l'heure passe pendant que le planificateur est
+   * arrêté est **manquée** : personne n'était là pour la lancer. C'est
+   * exactement ce que compte le `NumberOfMissedRuns` de
+   * `Get-ScheduledTaskInfo`, qui rendait zéro faute de quoi que ce soit
+   * qui les compte.
+   *
+   * Les occurrences sont comptées puis l'échéance est réarmée en avant,
+   * plutôt que laissées dans le passé : sans cela la reprise du service
+   * les rejouerait toutes d'un coup, ce qu'un vrai Windows ne fait pas
+   * — la case « exécuter dès que possible après un démarrage manqué »
+   * est décochée par défaut, et une occurrence ratée est perdue, pas
+   * différée.
+   *
+   * Une tâche **désactivée** ne compte rien : elle n'a pas d'horaire en
+   * vigueur, il n'y a donc rien à manquer.
+   */
+  private sweepMissedScheduledRuns(now: Date): void {
+    for (const task of this.scheduledTasks.values()) {
+      if (task.state === 'Disabled' || !task.runAt || !task.intervalMs) continue;
+      let guard = 0;
+      while (task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
+        task.missedRuns = (task.missedRuns ?? 0) + 1;
+        task.runAt = new Date(task.runAt.getTime() + task.intervalMs);
+      }
+    }
+  }
+
   private fireDueScheduledTasks(): void {
-    if (this.svcMgr.getService('Schedule')?.state !== 'Running') return;
+    if (this.svcMgr.getService('Schedule')?.state !== 'Running') {
+      this.sweepMissedScheduledRuns(this.simulatedDate());
+      return;
+    }
     const now = this.simulatedDate();
     for (const task of this.scheduledTasks.values()) {
       // Désactiver une tâche coupe ses déclencheurs — c'est le sens de

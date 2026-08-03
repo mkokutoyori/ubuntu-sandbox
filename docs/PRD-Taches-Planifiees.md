@@ -139,6 +139,19 @@ fonctionner — ce qui est le comportement correct, mais ne prouve rien : je
 n'ai pas fait le cas négatif (un utilisateur absent de la liste). À mesurer
 avant d'écrire quoi que ce soit à ce sujet.
 
+> **Mesuré depuis, phase 4.** Le vrai `crontab` a pu être installé sur la
+> machine de mesure. Cas négatif fait, dans les deux sens : un `cron.deny`
+> nommant l'utilisateur le refuse, un `cron.allow` qui ne le nomme pas
+> aussi, et `cron.allow` l'emporte quand les deux existent. **Root passe
+> outre les deux** — vérifié avec un `cron.allow` sans `root` et un
+> `cron.deny` avec `root`. `CronPermissions.ts` était donc juste ; seul le
+> libellé du refus différait (le vrai n'a pas de point final).
+
+*Note de relecture (phase 4).* L7, L8 et L9 sont livrés. L7 s'est révélé
+plus grave que « ne fait rien » : dans le terminal, `crontab -e`
+fonctionnait — et installait **sans valider**, ce qui contournait
+entièrement le refus obtenu en phase 1.
+
 ---
 
 ## 3. Windows — état mesuré
@@ -415,11 +428,158 @@ d'horaire se déduit du déclencheur reçu.
   zéro : rien ne compte les tours où la machine était éteinte, et
   inventer un chiffre serait pire que d'en donner un honnête.
 
-### Phase 4 — Le reste
+### Phase 4 — Le reste — **livrée**
 
-`crontab -e` (L7), le sujet du courriel cron (L8), `batch`, `anacron`,
-`systemd-analyze calendar`, `at -l`, `at.allow`/`at.deny` (L9), et la
-vérification de `cron.allow`/`cron.deny` (L10).
+| # | Objectif | Critère de recette | État |
+|---|---|---|---|
+| P4.1 | `crontab -e` (L7) | ouvre l'éditeur, valide au retour, refuse sans installer | ✅ |
+| P4.2 | Le sujet du courriel cron (L8) | `mail` affiche le `Subject:` que cron a composé | ✅ |
+| P4.3 | `cron.allow`/`cron.deny` (L10) | le cas négatif mesuré, puis appliqué | ✅ |
+| P4.4 | `at -l`, `at.allow`, `at.deny` (L9) | alias d'`atq` ; les deux fichiers de permission | ✅ |
+| P4.5 | `batch` (L9) | file `b`, départ au prochain tour | ✅ |
+| P4.6 | `anacron` et `/etc/anacrontab` (L9) | périodes, horodatages, rattrapage | ✅ |
+| P4.7 | `systemd-analyze calendar` (L9) | la porte manquante sur l'analyseur de la phase 2 | ✅ |
+| P4.8 | L'analyseur PowerShell (réserve de la phase 3) | un mot nu garde `/` et `%` | ✅ |
+| P4.9 | `NumberOfMissedRuns` (réserve de la phase 3) | compté pour de vrai | ✅ |
+
+#### La vérité terrain a changé de nature
+
+Les phases précédentes ont dû se passer du vrai `crontab`, absent de la
+machine de mesure — le PRD le disait en toutes lettres. Cette fois les
+paquets ont pu être installés (`apt-get install at anacron cron`), et
+**tout ce qui est affirmé ici a été confronté au binaire réel**, y
+compris le cas négatif de `cron.allow`/`cron.deny` que le PRD signalait
+comme jamais mesuré (L10). Les relevés sont recopiés en tête de
+`probe-planif-03-phase4.test.ts`.
+
+Deux constats du relevé contredisent ce qu'on suppose spontanément, et
+c'est précisément pour cela qu'ils valaient d'être mesurés :
+
+- **root passe outre** `cron.allow`, `cron.deny` et `at.allow`. Un
+  `cron.allow` qui ne contient pas `root`, et un `cron.deny` qui
+  contient `root`, laissent l'un comme l'autre root travailler. Le
+  raccourci `if (user === 'root') return true` de `CronPermissions.ts`,
+  qui pouvait passer pour une facilité, est donc exact.
+- **`at` met la tâche au spool même quand `atd` est arrêté.** Il ne sait
+  pas prévenir le démon, le dit (`Can't open /run/atd.pid…`), et
+  s'arrête là. Le simulateur, lui, *refusait* — la tâche disparaissait
+  sans que rien ne l'annonce.
+
+#### Comment chacun a été réglé
+
+- **P4.1** — `crontab -e` existait déjà dans le terminal, et c'est ce
+  qui rendait le défaut sérieux : il installait **sans valider**. Toute
+  la peine prise en phase 1 pour que `crontab -` refuse une ligne
+  fautive se contournait donc en ouvrant l'éditeur. `crontab -` et
+  `crontab -e` partagent maintenant une seule fonction de refus
+  (`validateCrontabContent`), parce que deux copies avaient déjà
+  divergé une fois. Le refus reprend le dialogue du vrai — l'erreur
+  ligne à ligne, puis `Do you want to retry the same edit? (y/n)`, et
+  `crontab: edits left in <fichier>` sur un `n` — sur le modèle de la
+  reprise de `visudo`, déjà là. Ajouté au passage : l'éditeur suit
+  `$VISUAL`/`$EDITOR` au lieu d'ouvrir `nano` d'office, et
+  `no crontab for <user> - using an empty one` annonce un crontab
+  absent. Hors terminal (un tube, un script) il n'y a pas d'éditeur à
+  ouvrir, et le vrai ne se tait pas pour autant : il dit que l'éditeur
+  a échoué, en le nommant — c'est ce que rend désormais ce chemin, au
+  lieu d'une sortie vide qui laissait croire que la commande avait
+  marché.
+- **P4.2** — le sujet était bien composé, et perdu à la lecture :
+  **deux conventions de fin de ligne dans un même tuyau**. SMTP écrit en
+  CRLF, c'est la convention du fil ; une boîte mbox posée sur le disque
+  d'une machine Unix est en LF, et c'est ce que cron y dépose. Le
+  lecteur ne découpait que sur CRLF, si bien que le message entier ne
+  faisait qu'une seule ligne — aucune ligne vide, donc aucun en-tête,
+  donc `(no subject)`. `splitHeadersAndBody` et `parseMailbox` acceptent
+  les deux et rendent le corps dans la convention reçue. Corrigé avec :
+  la ligne `From ` de l'enveloppe portait un `Date.toString()` de
+  JavaScript au lieu du `ctime(3)` d'Unix.
+- **P4.3** — `cronAllowed` était déjà juste ; ce qui manquait était la
+  mesure et une virgule. Le refus du vrai s'écrit sans point final
+  (`See crontab(1) for more information`), et le simulateur en mettait
+  un. Le message vit maintenant dans `cronDenialMessage`, à côté de la
+  règle qu'il énonce.
+- **P4.4/P4.5** — `at -l` était pris pour une mise au spool sans
+  commande (`at: no command to schedule`) au lieu de l'alias d'`atq`
+  qu'il est ; `batch` n'existait pas ; les permissions `at` non plus. La
+  date était au format `Mon Aug 03` là où `ctime` cadre le quantième à
+  l'espace (`Mon Aug  3`) — un seul formateur, partagé avec l'enveloppe
+  mbox, remplace les deux versions divergentes. Une heure illisible
+  répond `Garbled time` et ne met rien au spool, au lieu d'être ramenée
+  silencieusement à maintenant. `/etc/at.deny` est livré d'usine avec
+  ses comptes de service, comme le fait le paquet `at` — contrairement
+  à cron, dont aucun fichier de permission n'existe sur un Ubuntu neuf ;
+  la différence est réelle et se voit à l'`ls`.
+- **Et la porte qui manquait** : une tâche `at` n'était exécutée que si
+  quelqu'un appelait `advanceTime()`. Le tour de minute autonome de la
+  machine — celui qui fait tourner cron depuis la phase 1 — ne
+  l'interrogeait pas. La tâche part maintenant pour de bon, **sous son
+  propriétaire** et non sous l'utilisateur devant le clavier, et sa
+  sortie part au courrier puisque personne n'est là pour la lire. Une
+  seule vidange du spool sert les deux appelants : en ajouter une
+  seconde aurait fait partir chaque tâche deux fois.
+- **P4.6** — `anacron` est ce que cron ne sait pas faire : rattraper ce
+  qui est tombé pendant que la machine était éteinte. Il raisonne en
+  jours écoulés, retient le dernier passage dans
+  `/var/spool/anacron/<identifiant>`, et `/etc/anacrontab` est recopié
+  du fichier d'usine d'Ubuntu — c'est lui que les trois lignes
+  `test -x /usr/sbin/anacron` du `/etc/crontab` déjà présent laissent la
+  main.
+- **P4.7** — l'analyseur calendaire existait depuis la phase 2 et avait
+  été vérifié expression par expression contre le vrai. Ce qui manquait
+  n'était pas le calcul mais la porte : aucune commande ne le donnait à
+  l'opérateur. Le format de sortie est repris au caractère
+  d'indentation près, avec ses trois pièges — « Original form »
+  n'apparaît que si l'entrée diffère de la forme normalisée, une date
+  fixe passée donne `never` sans ligne « From now » derrière, et une
+  base postérieure dit `ago` et non `left`.
+- **P4.8** — la réserve de la phase 3 **visait la mauvaise cause**.
+  Mesure faite, `:` n'a jamais fait partie des caractères d'arrêt du
+  lexeur : `C:\x.exe` passait déjà, et ce que la phase 3 avait pris pour
+  un défaut d'analyse venait du raccourci cmd, corrigé au même moment.
+  Ce qui casse réellement, c'est `/` et `%`, et le défaut est au
+  parseur, pas au lexeur : les branches qui recollent un argument
+  *commençant* par `/` ou `%` existaient, mais un mot qui en contient un
+  plus loin ressortait coupé en deux, et l'appelant ne recevait que la
+  moitié gauche. Pire encore, `/` n'ouvrait pas une valeur de paramètre :
+  `-Argument /silent` rendait `Argument: True`, la valeur perdue sans un
+  mot.
+- **P4.9** — une occurrence dont l'heure passe pendant que le
+  planificateur est arrêté est **manquée**, et c'est exactement ce que
+  compte ce champ. Les occurrences sont comptées puis l'échéance
+  réarmée en avant, plutôt que laissées dans le passé : sans cela la
+  reprise du service les rejouerait toutes d'un coup, ce qu'un vrai
+  Windows ne fait pas — la case « exécuter dès que possible après un
+  démarrage manqué » est décochée par défaut, et une occurrence ratée
+  est perdue, pas différée. Une tâche désactivée ne compte rien : elle
+  n'a pas d'horaire en vigueur, il n'y a donc rien à manquer.
+
+#### Un test corrigé, avec sa raison
+
+`cron-editor-ui.test.ts` (CU-03) affirmait que sortir de l'éditeur sans
+enregistrer imprime « no changes made to crontab » — un libellé qui
+n'existe nulle part. Le vrai dit « No modification made ». La prémisse
+était fausse, elle est corrigée en place avec le relevé.
+
+#### Ce qui n'a pas été fait, et pourquoi
+
+- **Le délai d'anacron** (deuxième colonne de `/etc/anacrontab`) est lu
+  et rendu, mais ne diffère rien : le tour de la machine est à la
+  minute, et un décalage de quelques minutes au démarrage n'aurait
+  aucune conséquence observable.
+- **`anacron` ne poste pas la sortie de ses tâches**, là où le vrai
+  écrit `Job 'X' terminated (mailing output)` puis la met au courrier.
+  La mention entre parenthèses serait une promesse non tenue ; la ligne
+  s'arrête donc à `terminated`.
+- **La forme normalisée de `systemd-analyze calendar` conserve les
+  champs tels qu'écrits.** Reproduire la canonisation que systemd fait
+  des intervalles et des pas demanderait de deviner sa forme de sortie,
+  et une forme inventée serait pire qu'une forme conservée. Ce qui est
+  normalisé — développer un raccourci, compléter une partie absente —
+  l'est parce que le relevé le montre.
+- **`at -c`** rend la commande seule, là où le vrai imprime le script
+  complet avec son `cd` et son environnement recopiés à la mise au
+  spool. Cet environnement n'est pas capturé.
 
 ---
 
@@ -469,6 +629,13 @@ vérification de `cron.allow`/`cron.deny` (L10).
   `/create` sans `/tr`, l'écrasement, `/fo LIST`, `/fo CSV`, `/fo LIST /v`,
   `weekly`/`monthly`/`onstart` datés, les quatre identifiants du journal
   Operational, les cinq cmdlets, et la composition par variables.
+
+Écrites, pour la phase 4 :
+
+- `probe-planif-03-phase4.test.ts` — les dix scénarios de la phase, du
+  dialogue de `crontab -e` jusqu'au comptage des exécutions manquées.
+  Son en-tête recopie les relevés faits sur les vrais binaires, cas
+  négatifs compris.
 
 Une correction de sonde, notée ici parce qu'elle ressemble à un échec et
 n'en est pas : `probe-cron-01` pilotait l'horloge à la main pendant que le

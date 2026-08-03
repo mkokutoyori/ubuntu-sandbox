@@ -6,6 +6,7 @@
 import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
 import { VfsPath, type PathActor } from './VfsPath';
+import { AT_DENY_USINE } from './jobs/AtPermissions';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
@@ -211,6 +212,27 @@ export class VirtualFileSystem {
       '47 6\t* * 7\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )\n' +
       '52 6\t1 * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.monthly )\n',
       0o644, 0, 0);
+    // `/etc/anacrontab`, recopié du fichier d'usine d'Ubuntu et non
+    // inventé : c'est lui que les trois lignes `test -x /usr/sbin/anacron`
+    // du crontab ci-dessus laissent la main quand anacron est installé.
+    this.createFileAt('/etc/anacrontab',
+      '# /etc/anacrontab: configuration file for anacron\n' +
+      '\n' +
+      '# See anacron(8) and anacrontab(5) for details.\n' +
+      '\n' +
+      'SHELL=/bin/sh\n' +
+      'HOME=/root\n' +
+      'LOGNAME=root\n' +
+      '\n' +
+      '# These replace cron\'s entries\n' +
+      '1\t5\tcron.daily\trun-parts --report /etc/cron.daily\n' +
+      '7\t10\tcron.weekly\trun-parts --report /etc/cron.weekly\n' +
+      '@monthly\t15\tcron.monthly\trun-parts --report /etc/cron.monthly\n',
+      0o644, 0, 0);
+    // Le paquet `at` livre un `/etc/at.deny` nommant les comptes de
+    // service — contrairement à cron, dont aucun fichier de permission
+    // n'existe d'usine. La différence est réelle et se voit à l'`ls`.
+    this.createFileAt('/etc/at.deny', AT_DENY_USINE, 0o640, 0, 1);
     this.chmod('/var/spool/cron/crontabs', 0o1730);
     this.createFileAt('/etc/hosts',
       '127.0.0.1\tlocalhost\n' +

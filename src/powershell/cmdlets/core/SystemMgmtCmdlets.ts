@@ -233,7 +233,7 @@ export class GetScheduledTaskInfoCmdlet implements ICmdlet {
       LastRunTime: (t.lastRunTime ?? null) as unknown as PSValue,
       LastTaskResult: t.lastRunTime ? 0 : 267011,
       NextRunTime: (t.runAt ?? null) as unknown as PSValue,
-      NumberOfMissedRuns: 0,
+      NumberOfMissedRuns: t.missedRuns ?? 0,
     } as Record<string, PSValue>;
   }
 }
