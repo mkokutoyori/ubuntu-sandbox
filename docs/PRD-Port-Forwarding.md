@@ -474,11 +474,9 @@ traité et un oubli.
 6. **[Commutateur L3 Huawei, Majeur — nouveau] Brancher le `NATEngine` du
    commutateur sur son plan de données — livré (§3 Phase 4).**
 7. **[Hôte Linux, Critique — nouveau] Corriger le DNAT/SNAT Linux : réécrire
-   le port ET recalculer les checksums L3+L4.** Sans ce correctif, aucun
-   trafic TCP/UDP réel ne traverse une redirection `iptables -j DNAT`
-   (§1.B, bugs A+B). C'est le défaut de plus grand impact fonctionnel de
-   tout ce programme : il casse silencieusement la totalité du cas d'usage
-   « exposer un service interne via un hôte/pare-feu Linux ».
+   le port ET recalculer les checksums L3+L4 — livré (§3 Phase 5).**
+   Cf. §3 Phase 5 pour la limite restante (pas d'un-NAT/conntrack sur la
+   voie retour, séparée et hors périmètre).
 8. **[Hôte Linux, Mineur] Documenter/décider du sort de `-j REDIRECT`** et
    des chaînes `INPUT`/`OUTPUT` de la table `nat`, aujourd'hui du pur décor
    CLI (§1.B) — cas d'usage rare en topologie pédagogique, décision de
@@ -690,22 +688,57 @@ trafic routé/switché/reçu avant le code spécifique au NAT).
 
 ### Phase 5 — Hôte Linux : réécriture de port + recalcul des checksums (objectif 7)
 
-- **Fichiers touchés** : `EndHost.ts` (les deux points de réécriture,
-  PREROUTING ligne ~1749-1759 et POSTROUTING/forward ligne ~1856-1868) :
-  parser complètement `ip:port` (pas seulement l'IP), et après toute
-  réécriture d'adresse et/ou de port, recalculer `headerChecksum` (déjà
-  fait) **et** le checksum TCP/UDP de la charge utile via
-  `computeTcpChecksum`/`computeUdpChecksum` déjà réels et réutilisables.
-  Évaluer en conception détaillée si un petit helper partagé (« réécrire
-  dest/src ip+port et recalculer L3+L4 ») est justifié entre les deux points
-  d'appel plutôt que de dupliquer la logique — sans sur-ingénierie au-delà
-  de ce que ces deux call sites exigent réellement.
-- **Tests** : nouveau fichier — vraie topologie (client externe, passerelle
-  Linux avec `iptables -t nat -A PREROUTING ... -j DNAT
-  --to-destination <ip>:<port-différent>`, serveur interne réellement à
-  l'écoute), TCP et UDP, assertion sur la réponse reçue par le client
-  externe. Cas supplémentaire : port externe différent du port interne
-  (le cas que Bug A casse spécifiquement).
+- **Livré** (`EndHost.ts`, `linux-dnat-port-forward.test.ts`). Bug A (port
+  jamais réécrit) et Bug B (checksum L4 jamais recalculé) corrigés
+  ensemble : nouveaux helpers module-scope `parseNatAddress()` (parse
+  `ip:port`/`ip` tel qu'accepté par `--to-destination`/`--to-source`) et
+  `rewriteNatAddress()` (réécrit IP+port puis recalcule `headerChecksum`
+  **et** le checksum TCP/UDP via `computeTcpChecksum`/`computeUdpChecksum`,
+  déjà réels), un petit helper partagé entre les deux points d'appel
+  (PREROUTING et POSTROUTING/forward) plutôt qu'une duplication — conforme
+  à la conception envisagée, sans aller chercher à l'unifier avec les
+  helpers homonymes de `router/NATEngine.ts` (portée plus large, non
+  demandée).
+- **Ce qui marche réellement, vérifié empiriquement, pas supposé** : un
+  `SYN`/datagramme UDP réel traverse désormais une redirection `iptables
+  -j DNAT` et est correctement démultiplexé par le serveur interne sur le
+  bon port (`localPort`), avec la bonne adresse source observée
+  (`remoteIp`) — avant ce correctif, le tout premier segment réel était
+  rejeté en silence comme `bad-checksum`. Pour UDP (sans état de connexion
+  à faire correspondre), l'aller-retour complet fonctionne : le serveur
+  interne peut répondre directement à l'adresse réelle du client externe
+  et celui-ci la reçoit.
+- **Ce qui ne marche délibérément pas, et pourquoi ce n'est pas un
+  oubli** : pour TCP, la poignée de main complète ne se termine PAS
+  (`clientSocket.state` reste `syn-sent`) — vérifié empiriquement, pas
+  supposé. Le SYN-ACK du serveur interne part avec sa propre adresse
+  réelle (`192.168.10.10:80`), pas l'adresse publique que le client a
+  composée (`203.0.113.1:8080`) : ce moteur n'a aucun un-NAT/conntrack sur
+  la voie retour — la limite déjà documentée par `PRD-Iptables-UFW.md`
+  (« hors périmètre de ce PRD, nécessiterait un moteur de conntrack de
+  retour ») et confirmée ici s'appliquer plus largement que son unique cas
+  testé (« une seconde adresse possédée par le même hôte ») : `TcpStack`
+  démultiplexe par correspondance exacte de
+  `(localIp,localPort,remoteIp,remotePort)`, donc un segment venant d'une
+  adresse différente de celle composée n'est jamais reconnu, quel que soit
+  l'hôte visé. Conséquence RFC-correcte observée : le client, ne
+  reconnaissant pas ce segment, envoie un RST (RFC 9293 §3.10.7.1), qui
+  referme la socket `syn-received` du serveur — d'où les tests qui
+  capturent l'état du serveur *au moment de l'acceptation* plutôt
+  qu'après le retour de `connect()`. Implémenter un vrai un-NAT/conntrack
+  pour ce moteur serait un chantier séparé, plus large que « port +
+  checksum », et n'est pas tenté ici.
+- **Tests** : nouveau fichier `linux-dnat-port-forward.test.ts` (4 cas) —
+  vraie topologie (client externe, passerelle `LinuxServer` avec
+  `sysctl net.ipv4.ip_forward=1` + `iptables -t nat -A PREROUTING ... -j
+  DNAT --to-destination <ip>:<port-différent>`, serveur interne
+  réellement à l'écoute), TCP (SYN livré et démultiplexé, cf. limite
+  ci-dessus) et UDP (aller-retour complet). Cas supplémentaire : port
+  externe différent du port interne (le cas que Bug A cassait
+  spécifiquement). Vérifié par git-stash : les 4 cas échouent
+  authentiquement sans le correctif. Régression complète : 222 tests sur
+  14 fichiers iptables/ip6tables/UDP/fragmentation + 65 tests TCP de base,
+  tous verts.
 
 ### Phase 6 — Hôte Linux : `-j REDIRECT` et chaînes `nat` INPUT/OUTPUT (objectif 8)
 
