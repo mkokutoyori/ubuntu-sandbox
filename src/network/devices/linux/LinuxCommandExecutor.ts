@@ -871,6 +871,12 @@ export class LinuxCommandExecutor {
     };
   }
 
+  /** Le processus rsyslog vivant, celui qui tient les journaux ouverts. */
+  private rsyslogProcess(): (import('../os/OSProcess').OSProcess) | undefined {
+    const info = this.processMgr.list().find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
+    return info as unknown as import('../os/OSProcess').OSProcess | undefined;
+  }
+
   private auditAttrs(pid: number): { loginuid: number; sessionid: number } {
     const NONE = 4294967295;
     if (!this.sessionTable) return { loginuid: NONE, sessionid: NONE };
@@ -969,6 +975,19 @@ export class LinuxCommandExecutor {
     this.fsAuditProjection?.dispose();
     this.fsAuditProjection = new FileSystemAuditProjection(bus, this.auditRules, deviceId);
     this.serviceMgr.registerConfigCheck('auditd', () => this.checkAuditdConfig());
+    // §F9.3 — les fichiers que rsyslog tient ouverts sont des descripteurs
+    // DU PROCESSUS rsyslog. Le puits les y pose, donc `/proc/<pid>/fd`,
+    // `lsof` et `RLIMIT_NOFILE` lisent une seule table.
+    this.logMgr.attachDescriptorSink({
+      open: (path: string) => {
+        const p = this.rsyslogProcess();
+        if (p && !(p.openFiles ?? []).some((f) => f.path === path)) p.addOpenFile(path, 'a');
+      },
+      closeAll: () => {
+        const p = this.rsyslogProcess();
+        for (const f of [...(p?.openFiles ?? [])]) p?.closeOpenFile(f.fd);
+      },
+    });
     this.auditDaemon?.dispose();
     this.auditDaemon = new LinuxAuditDaemon(bus, deviceId, {
       auditLog: this.auditLog,
@@ -7093,8 +7112,15 @@ export class LinuxCommandExecutor {
         if (filterUser !== null && (rsyslog?.user ?? 'root') !== filterUser) continue;
         const pid = String(rsyslog?.pid ?? 0).padStart(5);
         const user = (rsyslog?.user ?? 'root').padEnd(6);
+        // Le numéro vient de la table du processus, plus d'un `7w` inventé
+        // ici : `lsof` et `/proc/<pid>/fd` doivent nommer le même
+        // descripteur (§F9.3). Absent — un journal tenu par aucun processus
+        // vivant — on retombe sur l'ancien affichage plutôt que d'inventer.
+        const heldFd = (rsyslog === undefined ? undefined
+          : openDescriptors(this.descriptorSourcesFor(rsyslog.pid))
+            .find((d) => d.target === held.path)?.fd) ?? 7;
         lines.push(
-          `rsyslogd   ${pid}  ${user} 7w     REG    8,1 ${String(held.lostBytes).padStart(8)} `
+          `rsyslogd   ${pid}  ${user} ${heldFd}w     REG    8,1 ${String(held.lostBytes).padStart(8)} `
           + `${String(nodeSeq++).padStart(4)} ${held.path} (deleted)`,
         );
       }

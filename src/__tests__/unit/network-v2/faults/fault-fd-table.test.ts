@@ -124,3 +124,31 @@ describe('`ulimit -n` est une valeur réglable, comme `-u`', () => {
     expect((await pc.executeCommand('ulimit -u')).trim()).toBe('7');
   });
 });
+
+describe('§F9.3 — les journaux que rsyslog tient ouverts SONT ses descripteurs', () => {
+  it('`/proc/<pid>/fd` de rsyslog montre le fichier journal', async () => {
+    const pc = box();
+    await pc.executeCommand('logger -t essai "une ligne"');
+    const ps = await pc.executeCommand('ps aux');
+    const pid = ps.split('\n').find((l) => l.includes('rsyslogd'))!
+      .trim().split(/\s+/)[1];
+
+    // Le descripteur appartient au PROCESSUS, plus au gestionnaire de logs :
+    // c'est ce qui fait que /proc, lsof et le plafond parlent du même.
+    const fds = await pc.executeCommand(`ls -l /proc/${pid}/fd`);
+    expect(fds).toContain('/var/log/syslog');
+  });
+
+  it('`lsof` numérote ce descripteur comme la table, pas en dur', async () => {
+    const pc = box();
+    await pc.executeCommand('logger -t essai "avant"');
+    await pc.executeCommand('sudo rm /var/log/syslog');
+    await pc.executeCommand('logger -t essai "dans-le-vide"');
+
+    const out = await pc.executeCommand('lsof');
+    const line = out.split('\n').find((l) => l.includes('(deleted)'));
+    expect(line, 'le descripteur supprimé devrait apparaître').toBeTruthy();
+    // Le numéro sortait d'un `7w` écrit en dur au point de rendu.
+    expect(line).toMatch(/rsyslogd\s+\d+\s+\S+\s+3w/);
+  });
+});
