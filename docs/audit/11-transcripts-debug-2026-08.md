@@ -251,8 +251,53 @@ Classé par rapport entre ce que ça débloque et ce que ça coûte.
 6. ✅ **Les utilitaires Linux absents** (§3). Quatorze commandes, sans
    dépendance entre elles — un lot qui se découpe librement.
 7. ✅ **LoopBack Huawei** et les `display` manquants.
-8. **EIGRP mode nommé, `show storm-control`, BGP peer-group.** Le plus
-   coûteux, et le moins bloquant.
+8. ⚠️ **EIGRP mode nommé, `show storm-control`, BGP peer-group.** Le plus
+   coûteux, et le moins bloquant. Fait, sauf les minuteries du mode
+   nommé — voir ci-dessous.
+
+### Le lot 8 : le groupe de pairs était pire que décrit
+
+L'audit notait que `neighbor IBGP peer-group` était accepté puis
+`neighbor IBGP remote-as` refusé. Mesuré sur un `CiscoRouter` neuf, il y
+avait une **seconde conséquence invisible dans les transcripts** : le nom
+du groupe était enregistré comme un voisin dans le moteur BGP, si bien
+que `show ip bgp summary` affichait
+
+    IBGP            4 0          0        0       0    0    0 never    Idle
+
+un pair qui n'existe pas, avec un AS 0 qui n'existe pas non plus.
+
+Un groupe de pairs est un MODÈLE : pas de session, pas d'établissement,
+rien à faire dans cette table. `BgpPeerGroup` est donc tenu à part des
+voisins pour qu'on ne puisse pas les confondre, et `applyBgpPeerGroup`
+recopie les réglages sur les membres après CHAQUE modification du
+gabarit — sur un vrai IOS l'ordre ne compte pas, régler `remote-as` sur
+le groupe après que les membres l'ont rejoint doit les atteindre quand
+même. Un réglage posé explicitement sur le voisin n'est jamais écrasé :
+le gabarit fournit un défaut, il ne confisque pas.
+
+Livré avec : `no bgp default ipv4-unicast`, `metric maximum-hops`,
+`show ip eigrp traffic` (compteurs **réels**, ajoutés aux points
+d'émission et de réception du moteur), `show ip eigrp accounting`,
+`clear ip eigrp neighbors` (qui jette vraiment les adjacences),
+`show eigrp protocols`, `show eigrp address-family ipv4 neighbors`,
+`log-adjacency-changes detail`, et `show storm-control` — dont la
+configuration était acceptée et rangée depuis toujours sans qu'aucune vue
+ne la lise.
+
+**Deux corrections à l'audit lui-même**, toutes deux dues à une cascade
+de mode dans le relevé initial : `show archive` et `archive` fonctionnent
+(ils étaient mesurés depuis l'invite exec après un `exit` de trop), et
+`log-adjacency-changes` marchait déjà — seul le suffixe `detail`
+manquait.
+
+**Restent délibérément refusés** : les sous-commandes de minuterie du
+mode nommé (`hello-interval`, `hold-time`, `authentication mode`). Le
+moteur EIGRP est explicitement sans minuteries — « une passe de
+convergence EST l'intervalle de hello » — donc les accepter donnerait une
+valeur que rien ne lirait. Query/Reply/SIA restent à zéro dans
+`show ip eigrp traffic` pour la même raison, et c'est un fait plutôt
+qu'un trou : ce moteur n'a pas d'état Active et n'en émet jamais.
 
 ### Le lot 7 : le routeur savait déjà, le switch refusait
 

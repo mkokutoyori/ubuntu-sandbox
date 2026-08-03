@@ -184,6 +184,42 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
   /** Inject the frame transport (device integration responsibility). */
   setWire(wire: EigrpWire): void { this.wire = wire; }
 
+  /**
+   * Compteurs de paquets, alimentés aux points d'émission et de
+   * réception réels. `show ip eigrp traffic` les lit ; ils ne sont donc
+   * pas une décoration mais une mesure.
+   *
+   * Query/Reply/SIA restent structurellement à zéro et c'est un FAIT,
+   * pas un trou : ce moteur n'a pas d'état Active et n'émet donc jamais
+   * de requête diffusée (voir l'en-tête du moteur et `CLAUDE.md`). Les
+   * afficher à zéro dit la vérité ; les omettre laisserait croire que le
+   * compteur existe ailleurs.
+   */
+  readonly traffic = {
+    helloSent: 0, helloRcvd: 0,
+    updateSent: 0, updateRcvd: 0,
+    querySent: 0, queryRcvd: 0,
+    replySent: 0, replyRcvd: 0,
+    ackSent: 0, ackRcvd: 0,
+  };
+
+  /**
+   * `clear ip eigrp neighbors` : jette les adjacences pour qu'elles se
+   * reforment. La table de topologie apprise est vidée avec elles —
+   * garder des routes d'un voisin qu'on vient de rejeter serait
+   * incohérent.
+   */
+  clearNeighbors(): void {
+    this.wireNeighbors.clear();
+    super.converge();
+  }
+
+  resetTraffic(): void {
+    for (const k of Object.keys(this.traffic) as Array<keyof typeof this.traffic>) {
+      this.traffic[k] = 0;
+    }
+  }
+
   setRedistribution(source: 'static' | 'connected' | 'rip' | 'ospf' | 'bgp'): void {
     this.config.redistributeSources.add(source);
   }
@@ -265,6 +301,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       this.round += 1;
       for (const c of this.activeInterfaces()) {
         this.wire.send(c.iface, EIGRP_MULTICAST_IP, this.helloPacket());
+        this.traffic.helloSent++;
       }
       super.converge();
     } finally {
@@ -309,8 +346,13 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     // IOS ignores EIGRP packets on passive / non-activated interfaces.
     const local = this.activeInterfaces().find((c) => c.iface === iface);
     if (!local) return;
-    if (packet.opcode === 'hello') this.onHello(iface, srcIp, packet, multicast);
-    else this.onUpdate(iface, srcIp, packet);
+    if (packet.opcode === 'hello') {
+      this.traffic.helloRcvd++;
+      this.onHello(iface, srcIp, packet, multicast);
+    } else {
+      this.traffic.updateRcvd++;
+      this.onUpdate(iface, srcIp, packet);
+    }
   }
 
   private onHello(iface: string, srcIp: string, hello: EigrpHelloPacket,
@@ -337,7 +379,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       if (stale) this.dropNeighbor(stale);
       // A real router keeps multicasting its own Hellos regardless —
       // answer so the peer can diagnose the mismatch on ITS side too.
-      if (multicast) this.wire!.send(iface, srcIp, this.helloPacket());
+      if (multicast) { this.wire!.send(iface, srcIp, this.helloPacket()); this.traffic.helloSent++; }
       return;
     }
 
@@ -364,7 +406,9 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       // Guarded — a no-op when we are the one pumping this round.
       this.converge();
       this.wire!.send(iface, srcIp, this.helloPacket());
+      this.traffic.helloSent++;
       this.wire!.send(iface, srcIp, this.buildUpdate(iface));
+      this.traffic.updateSent++;
     }
   }
 

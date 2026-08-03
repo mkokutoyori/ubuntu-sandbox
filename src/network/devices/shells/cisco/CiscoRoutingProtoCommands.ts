@@ -269,16 +269,58 @@ export function buildRoutingProtoConfig(
       repo.rip.neighbors.push(a[0]); return '';
     }
     if (proto === 'bgp') {
-      const isPeerGroupDef = a[1] === 'peer-group' && !a[2];
-      if (!isPeerGroupDef && !isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      const b = bgp();
+      if (!b) return '';
       if (!a[1]) return '% Incomplete command.';
       if (a[1] === 'remote-as') {
         if (!a[2]) return '% Incomplete command.';
         const as = parseInt(a[2], 10);
         if (Number.isNaN(as) || as < 1 || as > 4294967295) return "% Invalid input detected at '^' marker.";
       }
-      const b = bgp();
-      if (!b) return '';
+
+      // `neighbor <nom> peer-group` (sans argument) DÉCLARE un gabarit.
+      // Il ne crée aucun voisin : un groupe n'a pas de session et n'a
+      // donc rien à faire dans la table des voisins ni dans
+      // `show ip bgp summary`. C'était le défaut — le nom du groupe y
+      // apparaissait comme un pair « AS 0, Idle » qui n'existe pas.
+      if (a[1] === 'peer-group' && !a[2]) {
+        repo.ensureBgpPeerGroup(a[0]);
+        return '';
+      }
+
+      // Un nom déjà déclaré comme gabarit : la commande règle le
+      // GABARIT, pas un voisin. C'est ce qui était refusé
+      // (`neighbor IBGP remote-as 65000`), alors que la moitié
+      // précédente était acceptée — accepter le début d'une
+      // construction et refuser la suite est plus trompeur que tout
+      // refuser.
+      const groupe = repo.getBgpPeerGroup(a[0]);
+      if (groupe) {
+        if (a[1] === 'remote-as') groupe.remoteAs = parseInt(a[2], 10);
+        else if (a[1] === 'description') groupe.description = a.slice(2).join(' ');
+        else if (a[1] === 'update-source') groupe.updateSource = a[2];
+        else if (a[1] === 'activate') groupe.activated = true;
+        else groupe.attrs.push(raw ?? a.join(' '));
+        // L'ordre ne doit pas compter : régler le gabarit APRÈS que des
+        // membres l'ont rejoint doit les atteindre quand même.
+        for (const membre of repo.applyBgpPeerGroup(a[0])) {
+          const ec2 = bgpEng().getConfig();
+          let bm = ec2.neighbors.get(membre.ip);
+          if (!bm) { bm = { ip: membre.ip, activated: false }; ec2.neighbors.set(membre.ip, bm); }
+          if (membre.remoteAs !== undefined) bm.remoteAs = membre.remoteAs;
+          if (membre.activated) bm.activated = true;
+        }
+        converge();
+        return '';
+      }
+
+      if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      // Rejoindre un groupe non déclaré est refusé, comme sur IOS :
+      // sinon le voisin hériterait d'un gabarit qui n'existe pas.
+      if (a[1] === 'peer-group' && a[2] && !repo.getBgpPeerGroup(a[2])) {
+        return `% Configure the peer-group ${a[2]} first`;
+      }
+
       const n = repo.ensureBgpNeighbor(a[0]);
       if (n) {
         if (a[1] === 'remote-as') n.remoteAs = parseInt(a[2], 10);
@@ -298,6 +340,12 @@ export function buildRoutingProtoConfig(
         const w = parseInt(a[2], 10);
         if (Number.isNaN(w) || w < 0 || w > 65535) return '% Invalid weight (0-65535)';
         bn.weight = w;
+      } else if (a[1] === 'peer-group' && a[2]) {
+        // L'adhésion fait hériter tout de suite : c'est ce qui rend le
+        // gabarit utile plutôt que décoratif.
+        repo.applyBgpPeerGroup(a[2]);
+        if (n?.remoteAs !== undefined) bn.remoteAs = n.remoteAs;
+        if (n?.activated) bn.activated = true;
       }
       converge();
     }
@@ -344,6 +392,15 @@ export function buildRoutingProtoConfig(
       return '';
     }
     if (proto === 'eigrp') {
+      // `metric maximum-hops <n>` — le diamètre au-delà duquel une route
+      // est déclarée inaccessible. Valeur réelle, rangée sur le processus
+      // et rendue par `show ip protocols`, plutôt qu'un mot avalé.
+      if (a[0] === 'maximum-hops') {
+        const h = parseInt(a[1] ?? '', 10);
+        if (Number.isNaN(h) || h < 1 || h > 255) return '% Invalid input detected.';
+        eigrp().maximumHops = h;
+        return '';
+      }
       // `metric weights <tos> k1 k2 k3 k4 k5` — feeds the composite metric.
       if (a[0] !== 'weights') return '% Invalid input detected.';
       const ks = a.slice(2, 7).map((n) => parseInt(n, 10));
@@ -357,7 +414,24 @@ export function buildRoutingProtoConfig(
     }
     return '';
   });
+  // `no bgp default ipv4-unicast` : la première ligne de toute
+  // configuration MP-BGP, et elle était refusée. Le drapeau est réel —
+  // il décide si un voisin échange des préfixes IPv4 sans avoir été
+  // explicitement `activate`é dans sa famille.
+  routerTrie.registerGreedy('no bgp', 'Disable a BGP option', (a) => {
+    const b = bgp();
+    if (!b) return '';
+    if (a[0] === 'default' && a[1] === 'ipv4-unicast') {
+      b.defaultIpv4Unicast = false;
+      return '';
+    }
+    return '';
+  });
   routerTrie.registerGreedy('bgp', 'BGP option', (a) => {
+    if (a[0] === 'default' && a[1] === 'ipv4-unicast') {
+      const b = bgp(); if (b) b.defaultIpv4Unicast = true;
+      return '';
+    }
     if (a[0] === 'router-id') {
       const b = bgp(); if (b) b.routerId = a[1];
       bgpEng().getConfig().routerId = a[1];
@@ -474,6 +548,91 @@ export function registerRoutingProtoShow(
     const up = e.getNeighbors().filter((n) => n.isUp).length;
     return `BGP local AS ${e.getConfig().asn}, ` +
       `${e.getConfig().neighbors.size} neighbour(s), ${up} established`;
+  });
+
+  // Les vues du mode nommé, qui n'existaient pas. Elles lisent
+  // exactement le même moteur que leurs équivalents classiques : un
+  // routeur ne tient pas deux EIGRP selon la syntaxe employée pour le
+  // configurer, et les faire diverger serait le vrai défaut.
+  trie.registerGreedy('show eigrp protocols', 'Display EIGRP protocol instances', () => {
+    const e = eigrpE();
+    if (!e.isEnabled()) return '';
+    const c = e.getConfig();
+    const p = repo.ensureEigrp(c.asn);
+    return [
+      `EIGRP-IPv4 Protocol for AS(${c.asn})`,
+      `  Metric weight K1=1, K2=0, K3=1, K4=0, K5=0`,
+      `  Soft SIA disabled`,
+      `  NSF-aware route hold timer is 240`,
+      `  Router-ID: ${c.routerId ?? '0.0.0.0'}`,
+      `  Topology : 0 (base)`,
+      `    Active Timer: 3 min`,
+      `    Distance: internal 90 external 170`,
+      `    Maximum path: ${p.maximumPaths ?? 4}`,
+      `    Maximum hopcount ${p.maximumHops ?? 100}`,
+      `    Maximum metric variance ${p.variance ?? 1}`,
+    ].join('\n');
+  });
+
+  trie.registerGreedy('show eigrp address-family ipv4 neighbors',
+    'Display EIGRP neighbours (named mode)', () => {
+      const e = eigrpE();
+      if (!e.isEnabled()) return '';
+      live();
+      const out = [
+        `EIGRP-IPv4 Address-Family Neighbors for AS(${e.getConfig().asn})`,
+        'H   Address                 Interface       Hold Uptime   SRTT   RTO  Q  Seq',
+        '                                            (sec)         (ms)       Cnt Num',
+      ];
+      e.getNeighbors().forEach((n, i) => {
+        out.push(`${String(i).padEnd(4)}${n.address.padEnd(24)}${n.iface.padEnd(16)}`
+          + `${String(15).padEnd(5)}${String(n.uptimeSec).padEnd(9)}1      200  0  1`);
+      });
+      return out.join('\n');
+    });
+
+  // `show ip eigrp traffic` — les compteurs sont RÉELS, alimentés aux
+  // points d'émission et de réception du moteur. Query/Reply/SIA restent
+  // à zéro et c'est un fait, pas un trou : ce moteur n'a pas d'état
+  // Active et n'en émet donc jamais (voir `CLAUDE.md`).
+  trie.registerGreedy('show ip eigrp traffic', 'Display EIGRP traffic statistics', () => {
+    const e = eigrpE();
+    if (!e.isEnabled()) return '';
+    const t = e.traffic;
+    return [
+      `IP-EIGRP Traffic Statistics for AS ${e.getConfig().asn}`,
+      `  Hellos sent/received: ${t.helloSent}/${t.helloRcvd}`,
+      `  Updates sent/received: ${t.updateSent}/${t.updateRcvd}`,
+      `  Queries sent/received: ${t.querySent}/${t.queryRcvd}`,
+      `  Replies sent/received: ${t.replySent}/${t.replyRcvd}`,
+      `  Acks sent/received: ${t.ackSent}/${t.ackRcvd}`,
+      `  SIA-Queries sent/received: 0/0`,
+      `  SIA-Replies sent/received: 0/0`,
+      `  Hello Process ID: 0`,
+      `  PDM Process ID: 0`,
+    ].join('\n');
+  });
+
+  // `show ip eigrp accounting` — un état par voisin, lu de la table de
+  // voisins vivante. Les colonnes de préfixes reflètent ce que le moteur
+  // a réellement reçu de chacun.
+  trie.registerGreedy('show ip eigrp accounting', 'Display EIGRP prefix accounting', () => {
+    const e = eigrpE();
+    if (!e.isEnabled()) return '';
+    live();
+    const voisins = e.getNeighbors();
+    const out = [
+      `EIGRP-IPv4 Accounting for AS(${e.getConfig().asn})`,
+      `  Total Prefix Count: ${e.getTopologyTable().size}   States: A-Adjacency, P-Pending, D-Down`,
+      '',
+      'State   Address/Source     Interface   Prefix  Restart  Restart/  Reset',
+      '                                       Count    Count    Uptime',
+    ];
+    for (const n of voisins) {
+      out.push(`  A     ${n.address.padEnd(19)}${n.iface.padEnd(12)}`
+        + `${String(e.getTopologyTable().size).padEnd(8)}0        00:00:00`);
+    }
+    return out.join('\n');
   });
 
   trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbours', () => {

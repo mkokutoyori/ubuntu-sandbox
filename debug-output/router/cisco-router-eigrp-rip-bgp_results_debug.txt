@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-08-03T11:43:03.017Z
+Generated: 2026-08-03T17:42:09.124Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -306,7 +306,7 @@ Total steps: 355
 <empty>
 
 [80/355] r1 R1(config-router)# metric maximum-hops 50
-  % Invalid input detected.
+<empty>
 
 [81/355] r1 R1(config-router)# variance 4
 <empty>
@@ -395,14 +395,23 @@ Total steps: 355
   EIGRP-IPv4 Interfaces for AS(100)
 
 [107/355] r1 R1# show ip eigrp traffic
-  % Invalid input detected at '^' marker.
-  show ip eigrp traffic
-                ^
+  IP-EIGRP Traffic Statistics for AS 100
+    Hellos sent/received: 14/0
+    Updates sent/received: 0/0
+    Queries sent/received: 0/0
+    Replies sent/received: 0/0
+    Acks sent/received: 0/0
+    SIA-Queries sent/received: 0/0
+    SIA-Replies sent/received: 0/0
+    Hello Process ID: 0
+    PDM Process ID: 0
 
 [108/355] r1 R1# show ip eigrp accounting
-  % Invalid input detected at '^' marker.
-  show ip eigrp accounting
-                ^
+  EIGRP-IPv4 Accounting for AS(100)
+    Total Prefix Count: 0   States: A-Adjacency, P-Pending, D-Down
+  
+  State   Address/Source     Interface   Prefix  Restart  Restart/  Reset
+                                         Count    Count    Uptime
 
 [109/355] r1 R1# show ip route eigrp
   % Network not in table
@@ -458,9 +467,7 @@ Total steps: 355
     redistribute ospf 1 metric 10000 100 255 1 1500
 
 [111/355] r1 R1# clear ip eigrp neighbors
-  % Invalid input detected at '^' marker.
-  clear ip eigrp neighbors
-           ^
+<empty>
 
 [112/355] r1 R1# debug eigrp packets
   EIGRP debugging is on
@@ -536,14 +543,22 @@ Total steps: 355
 <empty>
 
 [133/355] r1 R1# show eigrp protocols
-  % Invalid input detected at '^' marker.
-  show eigrp protocols
-       ^
+  EIGRP-IPv4 Protocol for AS(0)
+    Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
+    Soft SIA disabled
+    NSF-aware route hold timer is 240
+    Router-ID: 1.1.1.1
+    Topology : 0 (base)
+      Active Timer: 3 min
+      Distance: internal 90 external 170
+      Maximum path: 4
+      Maximum hopcount 100
+      Maximum metric variance 2
 
 [134/355] r1 R1# show eigrp address-family ipv4 neighbors
-  % Invalid input detected at '^' marker.
-  show eigrp address-family ipv4 neighbors
-       ^
+  EIGRP-IPv4 Address-Family Neighbors for AS(0)
+  H   Address                 Interface       Hold Uptime   SRTT   RTO  Q  Seq
+                                              (sec)         (ms)       Cnt Num
 
 
 --- [135] § BGP ---
@@ -560,9 +575,7 @@ Total steps: 355
 <empty>
 
 [139/355] r1 R1(config-router)# no bgp default ipv4-unicast
-  % Invalid input detected at '^' marker.
-  no bgp default ipv4-unicast
-     ^
+<empty>
 
 [140/355] r1 R1(config-router)# bgp always-compare-med
 <empty>
@@ -688,10 +701,10 @@ Total steps: 355
 <empty>
 
 [181/355] r1 R1(config-router)# neighbor IBGP remote-as 65000
-  % Invalid input detected at '^' marker.
+<empty>
 
 [182/355] r1 R1(config-router)# neighbor IBGP update-source Loopback0
-  % Invalid input detected at '^' marker.
+<empty>
 
 [183/355] r1 R1(config-router)# neighbor 10.0.0.10 peer-group IBGP
 <empty>
@@ -831,8 +844,7 @@ Total steps: 355
   10.0.0.4        4 65004      0        0       0    0    0 never    Idle
   10.0.0.5        4 65005      0        0       0    0    0 never    Idle
   10.0.0.6        4 65006      0        0       0    0    0 never    Idle
-  IBGP            4 0          0        0       0    0    0 never    Idle
-  10.0.0.10       4 0          0        0       0    0    0 never    Idle
+  10.0.0.10       4 65000      0        0       0    0    0 never    Idle
   10.0.0.1        4 0          0        0       0    0    0 never    Idle
 
 [226/355] r1 R1# show ip bgp neighbors
@@ -851,10 +863,7 @@ Total steps: 355
   BGP neighbor is 10.0.0.6, remote AS 65006
     Description: PEER-5
     BGP state = Idle
-  BGP neighbor is IBGP, remote AS unset
-    Description: (none)
-    BGP state = Idle
-  BGP neighbor is 10.0.0.10, remote AS unset
+  BGP neighbor is 10.0.0.10, remote AS 65000
     Description: (none)
     BGP state = Idle
   BGP neighbor is 10.0.0.1, remote AS unset
@@ -877,10 +886,7 @@ Total steps: 355
   BGP neighbor is 10.0.0.6, remote AS 65006
     Description: PEER-5
     BGP state = Idle
-  BGP neighbor is IBGP, remote AS unset
-    Description: (none)
-    BGP state = Idle
-  BGP neighbor is 10.0.0.10, remote AS unset
+  BGP neighbor is 10.0.0.10, remote AS 65000
     Description: (none)
     BGP state = Idle
   BGP neighbor is 10.0.0.1, remote AS unset
@@ -903,10 +909,7 @@ Total steps: 355
   BGP neighbor is 10.0.0.6, remote AS 65006
     Description: PEER-5
     BGP state = Idle
-  BGP neighbor is IBGP, remote AS unset
-    Description: (none)
-    BGP state = Idle
-  BGP neighbor is 10.0.0.10, remote AS unset
+  BGP neighbor is 10.0.0.10, remote AS 65000
     Description: (none)
     BGP state = Idle
   BGP neighbor is 10.0.0.1, remote AS unset
@@ -929,10 +932,7 @@ Total steps: 355
   BGP neighbor is 10.0.0.6, remote AS 65006
     Description: PEER-5
     BGP state = Idle
-  BGP neighbor is IBGP, remote AS unset
-    Description: (none)
-    BGP state = Idle
-  BGP neighbor is 10.0.0.10, remote AS unset
+  BGP neighbor is 10.0.0.10, remote AS 65000
     Description: (none)
     BGP state = Idle
   BGP neighbor is 10.0.0.1, remote AS unset
@@ -970,7 +970,7 @@ Total steps: 355
   *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [235/355] r1 R1# show bgp ipv6 unicast
-  BGP local AS 65000, 8 neighbour(s), 0 established
+  BGP local AS 65000, 7 neighbour(s), 0 established
 
 [236/355] r1 R1# show ip route bgp
   % Network not in table
@@ -1031,18 +1031,17 @@ Total steps: 355
     redistribute ospf 1 metric 10000 100 255 1 1500
   Routing Protocol is "bgp 65000"
     IGP synchronization is disabled
-    Neighbor(s): 8
+    Neighbor(s): 7
       10.0.0.2 remote-as 65002
       10.0.0.3 remote-as 65003
       10.0.0.4 remote-as 65004
       10.0.0.5 remote-as 65005
       10.0.0.6 remote-as 65006
-      IBGP remote-as unset
-      10.0.0.10 remote-as unset
+      10.0.0.10 remote-as 65000
       10.0.0.1 remote-as unset
 
 [238/355] r1 R1# show bgp all summary
-  BGP local AS 65000, 8 neighbour(s), 0 established
+  BGP local AS 65000, 7 neighbour(s), 0 established
 
 [239/355] r1 R1# show ip bgp vpnv4 all
   BGP table version is 1, local router ID is 1.1.1.1
@@ -1180,7 +1179,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       91 packets output, 9054 bytes, 0 underruns
+       94 packets output, 9360 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1300,14 +1299,13 @@ Total steps: 355
     redistribute ospf 1 metric 10000 100 255 1 1500
   Routing Protocol is "bgp 65000"
     IGP synchronization is disabled
-    Neighbor(s): 8
+    Neighbor(s): 7
       10.0.0.2 remote-as 65002
       10.0.0.3 remote-as 65003
       10.0.0.4 remote-as 65004
       10.0.0.5 remote-as 65005
       10.0.0.6 remote-as 65006
-      IBGP remote-as unset
-      10.0.0.10 remote-as unset
+      10.0.0.10 remote-as 65000
       10.0.0.1 remote-as unset
 
 [255/355] r1 R1# show ip arp
@@ -1353,8 +1351,7 @@ Total steps: 355
   10.0.0.4        4 65004      0        0       0    0    0 never    Idle
   10.0.0.5        4 65005      0        0       0    0    0 never    Idle
   10.0.0.6        4 65006      0        0       0    0    0 never    Idle
-  IBGP            4 0          0        0       0    0    0 never    Idle
-  10.0.0.10       4 0          0        0       0    0    0 never    Idle
+  10.0.0.10       4 65000      0        0       0    0    0 never    Idle
   10.0.0.1        4 0          0        0       0    0    0 never    Idle
 
 [265/355] r1 R1# show ip rip database
@@ -1483,7 +1480,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1AFD47.23D70A3D (11:43:03.140 UTC Mon Aug 3 2026)
+  reference time is EE1B5171.46A7EF9D (17:42:09.276 UTC Mon Aug 3 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1492,7 +1489,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *11:43:03.000 UTC Mon Aug 3 2026
+  *17:42:09.000 UTC Mon Aug 3 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1535,7 +1532,7 @@ Total steps: 355
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [291/355] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1611,7 +1608,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       96 packets output, 9564 bytes, 0 underruns
+       99 packets output, 9870 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1633,7 +1630,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       96 packets output, 9564 bytes, 0 underruns
+       99 packets output, 9870 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1768,7 +1765,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       96 packets output, 9564 bytes, 0 underruns
+       99 packets output, 9870 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2171,14 +2168,13 @@ Total steps: 355
     redistribute ospf 1 metric 10000 100 255 1 1500
   Routing Protocol is "bgp 65000"
     IGP synchronization is disabled
-    Neighbor(s): 8
+    Neighbor(s): 7
       10.0.0.2 remote-as 65002
       10.0.0.3 remote-as 65003
       10.0.0.4 remote-as 65004
       10.0.0.5 remote-as 65005
       10.0.0.6 remote-as 65006
-      IBGP remote-as unset
-      10.0.0.10 remote-as unset
+      10.0.0.10 remote-as 65000
       10.0.0.1 remote-as unset
 
 [343/355] r1 R1(config-router)# exit
@@ -2261,6 +2257,7 @@ Total steps: 355
 
 [352/355] r1 R1(config)# no ?
     sntp         Configure SNTP
+    boot         
     hostname     Reset hostname
     alias        Remove a command alias
     cdp          CDP global configuration

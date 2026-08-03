@@ -2023,6 +2023,45 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private registerPrivilegedCommands(): void {
     this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
 
+    // `show storm-control` — la configuration était acceptée et
+    // rangée (elle revient dans `show running-config interface`), mais
+    // aucune vue ne la lisait. Les seuils affichés sont donc les vrais.
+    //
+    // Ce qui est honnête de dire : la colonne « Current » reste à 0.00%
+    // parce qu'il n'existe pas de compteur de débit par port et par type
+    // de trafic dans le plan de données. Inventer un pourcentage courant
+    // serait la seule façon de mentir ici ; le seuil, lui, est exact.
+    this.privilegedTrie.registerGreedy('show storm-control', 'Display storm-control settings', (args) => {
+      const filtre = (args[0] ?? '').toLowerCase();
+      const types = ['broadcast', 'multicast', 'unicast'];
+      const voulu = types.includes(filtre) ? [filtre] : types;
+      const lignes = ['Interface  Filter State   Upper        Lower        Current'];
+      let trouve = false;
+      for (const nom of this.d().getPortNames()) {
+        const conf = (this.ifExtra.get(nom) ?? []).filter((l) => l.startsWith('storm-control'));
+        for (const type of voulu) {
+          const seuil = conf.find((l) => l.startsWith(`storm-control ${type} level`));
+          if (!seuil) continue;
+          trouve = true;
+          // `storm-control <type> level <haut> [<bas>]` — le seuil haut
+          // est le 4ᵉ mot, le bas est optionnel et vaut le haut sinon,
+          // exactement comme sur IOS. Les pourcentages sortent à deux
+          // décimales, la forme du vrai binaire.
+          const parts = seuil.split(/\s+/);
+          const pct = (v: string | undefined, defaut: string) => {
+            const n = parseFloat(v ?? '');
+            return `${(Number.isNaN(n) ? parseFloat(defaut) : n).toFixed(2)}%`;
+          };
+          const haut = pct(parts[3], '100');
+          const bas = pct(parts[4], parts[3] ?? '100');
+          lignes.push(`${this.abbreviateInterface(nom).padEnd(11)}${'Forwarding'.padEnd(15)}`
+            + `${haut.padEnd(13)}${bas.padEnd(13)}0.00%`);
+        }
+      }
+      if (!trouve) return lignes[0];
+      return lignes.join('\n');
+    });
+
     this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
       const a = args.map(x => x.toLowerCase());
       if (a[0] === 'count') return this.showMACAddressTableCount(this.d());

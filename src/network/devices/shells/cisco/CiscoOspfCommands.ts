@@ -403,9 +403,16 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
-  trie.register('log-adjacency-changes', 'Log OSPF adjacency changes', () => {
+  // `detail` était refusé faute d'être greedy — le suffixe le plus
+  // courant en cours (il fait journaliser CHAQUE transition d'état de
+  // l'adjacence, pas seulement l'entrée et la sortie de Full).
+  trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
+    if (args.length > 0 && args[0] !== 'detail') {
+      return "% Invalid input detected at '^' marker.";
+    }
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.logAdjacencyChanges = true;
+    extra.logAdjacencyChangesDetail = args[0] === 'detail';
     // Enable in the OSPF engine if already running
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (ospf) ospf.logAdjacencyChanges = true;
