@@ -250,9 +250,46 @@ Classé par rapport entre ce que ça débloque et ce que ça coûte.
    d'une ligne chacune, du même genre que celles de la phase 4.
 6. ✅ **Les utilitaires Linux absents** (§3). Quatorze commandes, sans
    dépendance entre elles — un lot qui se découpe librement.
-7. **LoopBack Huawei** et les `display` manquants.
+7. ✅ **LoopBack Huawei** et les `display` manquants.
 8. **EIGRP mode nommé, `show storm-control`, BGP peer-group.** Le plus
    coûteux, et le moins bloquant.
+
+### Le lot 7 : le routeur savait déjà, le switch refusait
+
+Mesuré sur un `HuaweiSwitch` ET un `HuaweiRouter` neufs avant d'écrire
+une ligne, ce qui a changé le diagnostic : **le routeur faisait déjà tout
+correctement** — `ip address` sur LoopBack0, `display ip interface
+LoopBack0`, la ligne dans `display ip interface brief`. Le manque était
+côté switch seulement, dont le handler `ip address` était câblé en dur
+sur Vlanif.
+
+La LoopBack est une vraie interface, pas un affichage : `Switch` porte
+désormais un magasin de loopbacks, et `SwitchSvi.isOwnAddress()` unifie
+« SVI ou LoopBack » en UN endroit, celui que le plan L3 consulte pour
+décider « pour nous ». Sans ce dernier point, un ping vers la loopback
+serait routé au lieu d'être répondu et l'interface ne serait qu'une ligne
+de texte.
+
+Trois défauts préexistants sont tombés en mesurant, pas en relisant :
+
+- `SwitchSecurityService.configureDhcpSnooping` testait `snooping enable`
+  AVANT `snooping enable vlan <n>` : la branche `vlan` était
+  **inatteignable**, le drapeau global était posé et le VLAN jamais
+  enregistré. Invisible jusqu'ici parce que rien ne lisait cet état.
+- `dhcp snooping trusted interface <if>` en vue SYSTÈME était refusé,
+  si bien que `SwitchSecurityService.dhcpSnoopingTrust` n'était
+  atteignable par **aucun** chemin. Les deux orthographes écrivent
+  maintenant dans le magasin qui APPLIQUE, pas seulement dans celui qui
+  décrit — accepter la commande sans l'appliquer aurait été pire que la
+  refuser.
+- `display port` et `display dhcp snooping` répondaient « Incomplete
+  command » alors que l'état existait des deux côtés.
+
+**Restent refusés, et c'est la bonne réponse** : `display ospfv3`,
+`ipv6 enable`, `ipv6 address` et `dhcpv6 server` sur un switch.
+`HuaweiSwitchShell` ne contient aucune occurrence d'IPv6 et `Switch` n'a
+pas de pile v6 — les accepter demanderait de la construire, ce qui est un
+chantier distinct et non une extension bornée de ce lot.
 
 ### Un défaut de la priorité 3, trouvé après coup
 

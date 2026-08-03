@@ -39,13 +39,18 @@ export class SwitchSecurityService {
 
   configureDhcpSnooping(args: string[]): void {
     const head = (args[0] ?? '').toLowerCase();
-    if (head === 'snooping' && args[1]?.toLowerCase() === 'enable') {
+    // L'ordre compte : `snooping enable vlan 10` est aussi un
+    // `snooping enable`, donc la forme LA PLUS LONGUE doit être testée
+    // en premier. L'inverse rendait la branche `vlan` inatteignable —
+    // le drapeau global était posé et le VLAN jamais enregistré.
+    if (head === 'snooping' && args[1]?.toLowerCase() === 'enable' && args[2]?.toLowerCase() === 'vlan') {
       this.dhcpSnoopingGlobalEnabled = true;
-    } else if (head === 'snooping' && args[1]?.toLowerCase() === 'enable' && args[2]?.toLowerCase() === 'vlan') {
       for (let i = 3; i < args.length; i++) {
         const n = parseInt(args[i], 10);
         if (!isNaN(n)) this.dhcpSnoopingPerVlan.add(n);
       }
+    } else if (head === 'snooping' && args[1]?.toLowerCase() === 'enable') {
+      this.dhcpSnoopingGlobalEnabled = true;
     } else if (head === 'snooping' && args[1]?.toLowerCase() === 'trust' && args[2]?.toLowerCase() === 'interface' && args[3]) {
       this.dhcpSnoopingTrust.set(args[3], { ifName: args[3], trusted: true });
     } else if (head === 'server' && args[1]?.toLowerCase() === 'source-interface' && args[2]) {

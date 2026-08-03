@@ -834,6 +834,36 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef._getDHCPSnoopingConfig().verifyMac = true;
       return '';
     });
+    // `dhcp snooping trusted interface <if>` en vue système : VRP
+    // l'accepte à côté du `dhcp snooping trusted` de la vue interface, et
+    // il était refusé (« Unrecognized command »). Conséquence mesurée :
+    // `SwitchSecurityService.dhcpSnoopingTrust` n'était atteignable par
+    // AUCUN chemin — un magasin que rien ne pouvait remplir.
+    //
+    // Les deux orthographes écrivent maintenant dans le magasin qui
+    // APPLIQUE (`_getDHCPSnoopingConfig().trustedPorts`, consulté par le
+    // plan de données), et pas seulement dans celui qui décrit : une
+    // interface déclarée de confiance depuis la vue système doit vraiment
+    // laisser passer les réponses DHCP, sinon la commande serait acceptée
+    // sans rien faire.
+    for (const verbe of ['dhcp snooping trusted interface', 'dhcp snooping trust interface']) {
+      this.systemTrie.registerGreedy(verbe, 'Mark an interface as DHCP snooping trusted', (args) => {
+        if (!this.swRef || args.length === 0) return 'Error: Incomplete command.';
+        const nom = this.resolveInterfaceName(args.join(' '));
+        if (!nom) return `Error: Wrong parameter found at '^' position.`;
+        this.swRef._getDHCPSnoopingConfig().trustedPorts.add(nom);
+        this.swRef.getSecurityService().configureDhcpSnooping(['snooping', 'trust', 'interface', nom]);
+        return '';
+      });
+      this.systemTrie.registerGreedy(`undo ${verbe}`, 'Clear the trusted mark', (args) => {
+        if (!this.swRef || args.length === 0) return 'Error: Incomplete command.';
+        const nom = this.resolveInterfaceName(args.join(' '));
+        if (!nom) return `Error: Wrong parameter found at '^' position.`;
+        this.swRef._getDHCPSnoopingConfig().trustedPorts.delete(nom);
+        return '';
+      });
+    }
+
     this.systemTrie.registerGreedy('dhcp', 'DHCP snooping configuration', (args) => {
       this.swRef.getSecurityService().configureDhcpSnooping(args);
       return '';
@@ -884,6 +914,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const loopMatch = args.join(' ').match(/^loopback\s*(\d+)$/i);
       if (loopMatch) {
         this.selectedInterface = `LoopBack${loopMatch[1]}`;
+        // Matérialise l'interface : sans ça, entrer dans la vue ne
+        // créait rien et l'interface restait invisible partout.
+        this.swRef.ensureLoopback(this.selectedInterface);
         this.mode = 'interface';
         return '';
       }
@@ -1002,10 +1035,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
-    this.interfaceTrie.registerGreedy('ip address', 'Configure IP address on SVI', (args) => {
+    // VRP autorise une adresse sur une LoopBack comme sur un Vlanif —
+    // c'est même le procédé normal pour fixer un identifiant de routeur,
+    // une adresse qui ne tombe pas avec un port. Le refus précédent
+    // (« only valid on Vlanif ») faisait échouer en cascade tout ce qui
+    // suivait dans la section (audit 11, §5).
+    this.interfaceTrie.registerGreedy('ip address', 'Configure an IP address', (args) => {
       if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
       const vlanIfMatch = this.selectedInterface.match(/^Vlanif(\d+)$/);
-      if (!vlanIfMatch) return `Error: 'ip address' is only valid on Vlanif interfaces.`;
+      const loopMatch = this.selectedInterface.match(/^LoopBack(\d+)$/);
+      if (!vlanIfMatch && !loopMatch) {
+        return `Error: 'ip address' is only valid on Vlanif and LoopBack interfaces.`;
+      }
       if (args.length < 2) return 'Error: Incomplete command.';
       let ip: IPAddress, mask: SubnetMask;
       try { ip = new IPAddress(args[0]); } catch { return `Error: Invalid IP address ${args[0]}.`; }
@@ -1013,15 +1054,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
         if (/^\d+$/.test(args[1])) mask = SubnetMask.fromCIDR(parseInt(args[1], 10));
         else mask = new SubnetMask(args[1]);
       } catch { return `Error: Invalid mask ${args[1]}.`; }
-      const vlan = parseInt(vlanIfMatch[1], 10);
+      if (loopMatch) {
+        this.swRef.ensureLoopback(this.selectedInterface);
+        this.swRef.configureLoopbackIp(this.selectedInterface, ip, mask);
+        return '';
+      }
+      const vlan = parseInt(vlanIfMatch![1], 10);
       this.swRef.ensureSvi(vlan);
       this.swRef.configureSviIp(vlan, ip, mask);
       this.swRef.setSviAdminUp(vlan, true);
       return '';
     });
 
-    this.interfaceTrie.register('undo ip address', 'Remove IP from SVI', () => {
+    this.interfaceTrie.register('undo ip address', 'Remove an IP address', () => {
       if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
+      if (/^LoopBack\d+$/.test(this.selectedInterface)) {
+        this.swRef.clearLoopbackIp(this.selectedInterface);
+        return '';
+      }
       const vlanIfMatch = this.selectedInterface.match(/^Vlanif(\d+)$/);
       if (!vlanIfMatch) return '';
       this.swRef.clearSviIp(parseInt(vlanIfMatch[1], 10));
@@ -1804,6 +1854,62 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return full;
     });
 
+    // `display port` seul répondait « Incomplete command » alors que
+    // VRP l'accepte : c'est la vue d'ensemble des ports, dont
+    // `display port vlan` n'est qu'une colonne (audit 11, §5).
+    trie.register('display port', 'Display port summary', () => {
+      if (!this.swRef) return '';
+      const rows = ['Interface                   Status     Link Type  PVID  Speed  Duplex'];
+      for (const nom of this.swRef.getPortNames()) {
+        const port = this.swRef.getPort(nom);
+        const cfg = this.swRef.getSwitchportConfig(nom);
+        const up = !!(port?.getIsUp() && port?.isConnected());
+        rows.push(`${nom.padEnd(28)}${(up ? 'up' : 'down').padEnd(11)}`
+          + `${(cfg?.mode ?? 'access').padEnd(11)}${String(cfg?.accessVlan ?? 1).padEnd(6)}`
+          + `${(up ? '1000' : 'auto').padEnd(7)}${up ? 'full' : 'auto'}`);
+      }
+      return rows.join('\n');
+    });
+
+    // `display dhcp snooping` seul : l'état global et par VLAN existait
+    // déjà dans `SwitchSecurityService`, rien ne le lisait sous cette
+    // forme — encore un moteur sans porte.
+    trie.register('display dhcp snooping', 'Display DHCP snooping status', () => {
+      if (!this.swRef) return '';
+      const sec = this.swRef.getSecurityService();
+      const global = sec.isDhcpSnoopingEnabled();
+      const vlans = sec.getDhcpSnoopingVlans();
+      // Deux magasins de confiance existent et sont tous deux
+      // atteignables : `dhcp snooping trusted` en vue interface écrit
+      // dans celui qui APPLIQUE (`_getDHCPSnoopingConfig().trustedPorts`,
+      // consulté par le plan de données), la forme système `dhcp snooping
+      // trust interface <if>` dans celui de `SwitchSecurityService`.
+      // La vue les réunit : une interface de confiance par l'une ou
+      // l'autre voie est de confiance, et n'en lire qu'un ferait mentir
+      // l'affichage sur la moitié des configurations.
+      const trust = [...new Set([
+        ...sec.getDhcpSnoopingTrust().filter((t) => t.trusted).map((t) => t.ifName),
+        ...this.swRef._getDHCPSnoopingConfig().trustedPorts,
+      ])].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+      const lignes = [
+        `DHCP snooping global running information :`,
+        ` DHCP snooping                          : ${global ? 'Enable' : 'Disable'}`,
+        ` Static user max number                 : 1024`,
+        ` Current static user number             : 0`,
+        ` Dhcp user max number                   : 4096`,
+        ` Current dhcp user number               : 0`,
+      ];
+      if (vlans.length > 0) {
+        lignes.push('', `DHCP snooping running information for VLAN ${[...vlans].sort((a, b) => a - b).join(' ')} :`,
+          ` DHCP snooping                          : Enable`);
+      }
+      if (trust.length > 0) {
+        lignes.push('', `DHCP snooping trusted interface(s) :`);
+        for (const t of trust) lignes.push(` ${t}`);
+      }
+      return lignes.join('\n');
+    });
+
     // display port vlan [active | <interface>]
     trie.registerGreedy('display port vlan', 'Display port VLAN assignment', (args) => {
       if (!this.swRef) return '';
@@ -1838,6 +1944,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.registerGreedy('display interface', 'Display interface details', (args) => {
       if (!this.swRef) return '';
       if (args.length === 0) return this.displayInterfaceBrief(this.swRef);
+      // Une LoopBack se montre depuis les deux portes, `display
+      // interface` comme `display ip interface`. Traitée ici plutôt que
+      // par une seconde inscription sur un chemin voisin : deux
+      // inscriptions dont l'une écrase l'autre est exactement le défaut
+      // que la sonde `command-trie-hygiene` traque.
+      const l3 = this.resolveL3InterfaceName(args.join(' '));
+      if (l3 && l3.startsWith('LoopBack')) return this.renderL3Interface(l3);
       return this.displayInterface(this.swRef, args.join(' '));
     });
 
@@ -1931,9 +2044,26 @@ export class HuaweiSwitchShell implements ISwitchShell {
         const proto = lineUp ? 'up' : 'down';
         lines.push(`${name.padEnd(28)}${addr.padEnd(21)}${phys.padEnd(11)}${proto}`);
       }
+      for (const lb of this.swRef.getLoopbacks()) {
+        const addr = lb.ip && lb.mask ? `${lb.ip}/${lb.mask.toCIDR()}` : 'unassigned';
+        // Une loopback est up des deux côtés dès qu'elle existe — elle
+        // ne dépend d'aucun câble, c'est tout son intérêt.
+        lines.push(`${lb.name.padEnd(28)}${addr.padEnd(21)}${'up'.padEnd(11)}up(s)`);
+      }
       lines.push(`MEth0/0/1                   unassigned           down       down`);
       return lines.join('\n');
     });
+
+    // `display ip interface <nom>` — la forme longue manquait
+    // entièrement (seul `brief` existait), alors que le routeur VRP la
+    // rendait déjà. Même bloc, mêmes libellés que sur le routeur.
+    trie.registerGreedy('display ip interface', 'Display IP interface detail', (args) => {
+      if (!this.swRef) return '';
+      const nom = this.resolveL3InterfaceName(args.join(' '));
+      if (!nom) return `Error: Wrong parameter found at '^' position.`;
+      return this.renderL3Interface(nom);
+    });
+
 
     // display vrrp [brief] — one block per VRRP group configured on
     // an SVI (Vlanif). Matches the VRP `display vrrp` shape a learner
@@ -3188,6 +3318,62 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   // ─── Interface Name Resolution ──────────────────────────────────
+
+  /**
+   * Résout un nom d'interface qui porte une adresse — Vlanif ou
+   * LoopBack. Distinct de `resolveInterfaceName`, qui ne connaît que les
+   * ports physiques.
+   */
+  private resolveL3InterfaceName(raw: string): string | null {
+    if (!this.swRef) return null;
+    const t = raw.trim().replace(/\s+/g, '');
+    const vlanif = t.match(/^vlanif(\d+)$/i);
+    if (vlanif) {
+      const n = parseInt(vlanif[1], 10);
+      return this.swRef.hasSvi(n) ? `Vlanif${n}` : null;
+    }
+    const loop = t.match(/^loopback(\d+)$/i);
+    if (loop) {
+      const nom = `LoopBack${parseInt(loop[1], 10)}`;
+      return this.swRef.hasLoopback(nom) ? nom : null;
+    }
+    return null;
+  }
+
+  /**
+   * Le bloc de `display ip interface <nom>`, mêmes libellés que sur le
+   * routeur VRP. Une LoopBack est UP des deux côtés dès qu'elle existe ;
+   * un Vlanif suit son état réel.
+   */
+  private renderL3Interface(nom: string): string {
+    if (!this.swRef) return '';
+    const loop = this.swRef.getLoopback(nom);
+    let etat: string;
+    let addr: string;
+    if (loop) {
+      etat = 'UP';
+      addr = loop.ip && loop.mask ? `${loop.ip}/${loop.mask.toCIDR()}` : null as unknown as string;
+    } else {
+      const vlan = parseInt(nom.replace(/\D/g, ''), 10);
+      const svi = this.swRef.getSvi(vlan);
+      const up = svi ? this.swRef.isSviLineUp(svi) : false;
+      etat = svi?.adminUp ? (up ? 'UP' : 'DOWN') : 'Administratively DOWN';
+      addr = svi?.ip && svi.mask ? `${svi.ip}/${svi.mask.toCIDR()}` : null as unknown as string;
+    }
+    const lignes = [
+      `${nom} current state : ${etat}`,
+      `Line protocol current state : ${etat === 'UP' ? 'UP' : 'DOWN'}`,
+      addr ? `Internet Address is ${addr}` : 'Internet protocol processing : disabled',
+      `The Maximum Transmit Unit : 1500 bytes`,
+      `Input bandwidth utilization  : 0%`,
+      `Output bandwidth utilization : 0%`,
+      `    Last 300 seconds input rate 0 bits/sec, 0 packets/sec`,
+      `    Last 300 seconds output rate 0 bits/sec, 0 packets/sec`,
+      `    Input:  0 packets, 0 bytes`,
+      `    Output: 0 packets, 0 bytes`,
+    ];
+    return lignes.join('\n');
+  }
 
   private resolveInterfaceName(rawInput: string): string | null {
     if (!this.swRef) return null;
