@@ -484,12 +484,11 @@ traité et un oubli.
    non câblé. Cf. §3 Phase 6 pour ce qui reste honnêtement non câblé (TCP
    en chaîne OUTPUT, SNAT en chaîne INPUT).
 9. **[Hôte Windows, Moyen] Construire un vrai relais applicatif pour
-   `netsh interface portproxy`.** Corriger la caractérisation « solide » des
-   PRDs existants — aujourd'hui aucune donnée ne circule (§1.C). Le relais
-   doit être un vrai pont niveau socket (accepter au `listenaddress:port`,
-   composer une seconde connexion réelle vers `connectaddress:port`, faire
-   circuler les octets), pas un branchement sur un routage IP Windows
-   inexistant.
+   `netsh interface portproxy` — livré (§3 Phase 7).** Corrige la
+   caractérisation « solide » des PRDs existants (§1.C, à réconcilier en
+   Phase 9). Cf. §3 Phase 7 pour le second bogue indépendant surfacé
+   (`TcpStack.flushPendingSends` ignorait `closeAfterFlush` sans donnée en
+   attente), également corrigé.
 10. **[SSH, Grand chantier] Donner un vrai canal de transport à UNE des deux
     piles de forwarding.** Recommandation : le chemin `executeCommand`/
     `LinuxSshClient.ts`, seul réellement exercé par tous les vendors
@@ -829,16 +828,53 @@ Discriminé par git-stash : les 8 cas dépendant de l'ordre échouent
 authentiquement avant correctif, les 6 cas de non-régression passent dans
 les deux cas.
 
-### Phase 7 — Windows : relais applicatif réel pour `portproxy` (objectif 9)
+### Phase 7 — Windows : relais applicatif réel pour `portproxy` (objectif 9) — livrée
 
-- **Fichiers touchés** : `PortProxySocketProjection.ts` (étendre pour ouvrir
-  un vrai listener acceptant des connexions, pas seulement un enregistrement
-  `SocketTable`) ou nouveau fichier dédié — relais bidirectionnel entre la
-  connexion acceptée à `listenaddress:listenport` et une connexion réelle
-  composée vers `connectaddress:connectport`, en réutilisant `TcpStack`.
-- **Tests** : nouveau fichier — connexion réelle au listener, assertion que
-  les données arrivent à un serveur réellement à l'écoute à l'adresse de
-  connexion, et réciproquement pour la réponse.
+**Fichier touché, comme prévu** : `PortProxySocketProjection.ts` — `onAdded()`
+appelle désormais, en plus du `SocketTable.bind()` préexistant (visibilité
+`netstat`, inchangée), un vrai `TcpStack.listen()` sur `listenaddress:listenport`
+dont le `onAccept` compose une vraie `TcpStack.connect()` vers
+`connectaddress:connectport` puis relaie les octets dans les deux sens
+(`relay()`) — un pont applicatif (façon `socat`), exactement ce que
+`iphlpsvc` fait réellement, sans aucun routage IP impliqué. `onRemoved()`
+appelle symétriquement `TcpStack.closeListener()`. `WindowsPC.ts` passe
+désormais `this.getTcpStack()` au constructeur de la projection (seul point
+d'appel, partagé avec `WindowsServer` qui hérite de `WindowsPC`).
+
+Contrairement aux réécritures NAT des Phases 5-6, ceci ne modifie AUCUNE
+adresse : ce sont deux connexions TCP ordinaires et indépendantes de part et
+d'autre du relais, donc — contrairement à un redirect NAT — pas d'asymétrie
+de voie retour : les deux legs atteignent réellement `established` et
+transportent des données dans les deux sens.
+
+**Second bogue indépendant surfacé en écrivant le test** (même schéma que
+plusieurs phases précédentes de ce document) : `TcpStack.flushPendingSends()`
+retournait immédiatement si `pendingSendQueue.length === 0`, AVANT même de
+lire `closeAfterFlush` — un `.close()` appelé pendant `onAccept()`/juste
+après `connect()` (donc encore `syn-received`/`syn-sent`) sans qu'aucune
+donnée n'ait jamais été mise en attente restait silencieusement sans effet
+pour toujours : la socket ne se fermait jamais. C'est exactement le chemin
+d'erreur du relais (fermer immédiatement le côté accepté si la connexion
+vers la vraie cible est refusée, avant tout envoi) — sans le correctif, une
+règle `portproxy` pointant vers un port sans service réel aurait laissé la
+connexion du client bloquée indéfiniment en `established` plutôt que
+refusée. Corrigé en sortant la vérification de `closeAfterFlush` de la
+garde `pendingSendQueue.length === 0` (`TcpStack.ts`). Aucun test existant
+ne référence `closeAfterFlush` ni ne ferme une socket pendant `onAccept`
+sans envoi préalable (confirmé par grep) — correctif sans risque de
+régression connu.
+
+**Tests** : `windows-portproxy-relay.test.ts` (5 cas — relais réel
+client→serveur, réponse serveur→client, fermeture propagée, refus propre
+quand la cible n'a pas de service réel à l'écoute, non-régression
+`netstat`) et un cas ajouté à `tcp-handshake-close-lifecycle.test.ts`
+(`closeAfterFlush` avec file vide) pour isoler le second bogue
+indépendamment du relais. Discriminé par git-stash séparément pour les deux
+correctifs : 3 des 5 cas du relais échouent authentiquement sans le relais
+réel (état `closed` au lieu de `established`, aucune donnée reçue, pas de
+propagation de fermeture), 2 passent dans les deux cas (refus sans service
+réel, `netstat`) ; le cas `closeAfterFlush` échoue authentiquement seul
+avec seulement `TcpStack.ts` remisé (reste `established` pour toujours).
 
 ### Phase 8 — SSH : canal de transport réel pour une pile de forwarding (objectif 10)
 

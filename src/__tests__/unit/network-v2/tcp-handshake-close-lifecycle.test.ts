@@ -215,3 +215,34 @@ describe('Scénario 1 — Cycle de vie complet d\'une connexion TCP', () => {
     expect(states[states.length - 1]).toBe('closed');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// `.close()` called while still handshaking, with nothing ever sent
+// (PRD-Port-Forwarding.md Phase 7 surfaced this while building a real
+// bidirectional relay: closing the accepted side the instant a relay's
+// far-end connect is refused, before any data is ever queued).
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('closeAfterFlush is honored even with an empty pendingSendQueue', () => {
+  it('a .close() during onAccept (syn-received, nothing queued) still closes once the handshake completes', () => {
+    const lan = buildPair();
+    (lan.srv as unknown as { getTcpStack(): {
+      listen(p: number, h: { onAccept: (s: MinimalSocket) => void }): void;
+    } }).getTcpStack().listen(9090, {
+      onAccept: (s) => { s.close(); },
+    });
+
+    const clientSocket = tcpStack(lan.pc).connect('10.0.0.10', 9090)!;
+
+    // The server-side socket closed itself before ever reaching
+    // 'established' from the client's point of view in real time, but
+    // this simulator's synchronous delivery still completes the 3-way
+    // handshake first (the SYN-ACK was already in flight when onAccept
+    // ran) — the server then immediately sends its FIN, which this
+    // simulator's passive side acknowledges and closes out fully rather
+    // than parking in close-wait for an application `.close()` that will
+    // never come. Before the fix, this never happened at all: the
+    // server-side socket stayed open forever and no FIN was ever sent.
+    expect(clientSocket!.state).toBe('closed');
+  });
+});

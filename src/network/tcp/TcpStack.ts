@@ -790,19 +790,28 @@ export class TcpStack {
   }
 
   private flushPendingSends(socket: TcpSocket): void {
-    if (socket.pendingSendQueue.length === 0) return;
-    const queued = socket.pendingSendQueue.slice();
-    socket.pendingSendQueue.length = 0;
-    // Delegate to _sendData (now that the socket is actually established)
-    // rather than duplicating its sequence-advance/chunking logic here:
-    // this used to always advance sendNext by exactly 1 regardless of the
-    // queued payload's real length, permanently desyncing the sequence
-    // space for any socket that had data queued before the handshake
-    // completed (e.g. a server writing a greeting banner from `onAccept`,
-    // which fires while still in 'syn-received') — every segment after
-    // the first queued one would then carry a sequence number the peer's
-    // `acceptInOrder` rejects as out-of-order, silently dropping it.
-    for (const data of queued) this._sendData(socket, data);
+    // `closeAfterFlush` must be honored even with nothing queued — a
+    // `.close()` during `onAccept`/`onOpen` (still 'syn-received'/'syn-sent',
+    // no data ever written) used to return here before reaching the check
+    // below, silently losing the close forever: the socket just stayed
+    // open. That is exactly what a bidirectional relay's error path does
+    // (closing the accepted side the instant the far side's connect is
+    // refused, with nothing queued yet) — PRD-Port-Forwarding.md Phase 7's
+    // portproxy relay surfaced this while testing a refused connect side.
+    if (socket.pendingSendQueue.length > 0) {
+      const queued = socket.pendingSendQueue.slice();
+      socket.pendingSendQueue.length = 0;
+      // Delegate to _sendData (now that the socket is actually established)
+      // rather than duplicating its sequence-advance/chunking logic here:
+      // this used to always advance sendNext by exactly 1 regardless of the
+      // queued payload's real length, permanently desyncing the sequence
+      // space for any socket that had data queued before the handshake
+      // completed (e.g. a server writing a greeting banner from `onAccept`,
+      // which fires while still in 'syn-received') — every segment after
+      // the first queued one would then carry a sequence number the peer's
+      // `acceptInOrder` rejects as out-of-order, silently dropping it.
+      for (const data of queued) this._sendData(socket, data);
+    }
     if (socket.closeAfterFlush) {
       socket.closeAfterFlush = false;
       this._initiateClose(socket);
