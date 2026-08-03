@@ -14,6 +14,8 @@
 
 import { IPAddress, IPv4Packet, computeIPv4Checksum, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
 import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
+import { computeTcpChecksum, computeUdpChecksum } from '../../tcp/types';
+import type { TcpSegment, UdpChecksumInput } from '../../tcp/types';
 import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/ip';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import { Logger } from '../../core/Logger';
@@ -521,7 +523,15 @@ export class NATEngine {
     }
 
     for (const entry of this.staticEntries) {
-      if (entry.protocol) continue;
+      if (entry.protocol) {
+        const entryProto = entry.protocol === 'tcp' ? IP_PROTO_TCP : IP_PROTO_UDP;
+        if (proto === entryProto && entry.localIP === srcIP && entry.localPort === srcPort) {
+          this.hitCount++;
+          entry.hitCount = (entry.hitCount ?? 0) + 1;
+          return rewriteSrcIP(pkt, entry.globalIP, entry.globalPort);
+        }
+        continue;
+      }
       if (entry.isNetwork) {
         const translated = translateNetworkOffset(srcIP, entry);
         if (translated) {
@@ -969,6 +979,20 @@ function translateNetworkOffset(srcIP: string, entry: NatStaticEntry): string | 
   return uint32ToIp(((globalNum & mask) + offset) >>> 0);
 }
 
+function recomputeL4Checksum(result: IPv4Packet): void {
+  const payload = result.payload as (UDPPacket | TCPPacket | undefined);
+  if (!payload) return;
+  const srcIp = result.sourceIP.toString();
+  const dstIp = result.destinationIP.toString();
+  if (payload.type === 'tcp') {
+    const seg = payload as unknown as TcpSegment;
+    result.payload = { ...payload, checksum: computeTcpChecksum(seg, srcIp, dstIp) };
+  } else if (payload.type === 'udp') {
+    const udp = payload as unknown as UdpChecksumInput;
+    result.payload = { ...payload, checksum: computeUdpChecksum(udp, srcIp, dstIp) };
+  }
+}
+
 function rewriteSrcIP(pkt: IPv4Packet, newSrc: string, newSrcPort?: number): IPv4Packet {
   const result: IPv4Packet = { ...pkt, sourceIP: new IPAddress(newSrc), headerChecksum: 0 };
 
@@ -986,6 +1010,7 @@ function rewriteSrcIP(pkt: IPv4Packet, newSrc: string, newSrcPort?: number): IPv
     }
   }
 
+  recomputeL4Checksum(result);
   result.headerChecksum = computeIPv4Checksum(result);
   return result;
 }
@@ -1007,6 +1032,7 @@ function rewriteDestIP(pkt: IPv4Packet, newDst: string, newDstPort?: number): IP
     }
   }
 
+  recomputeL4Checksum(result);
   result.headerChecksum = computeIPv4Checksum(result);
   return result;
 }
