@@ -140,9 +140,23 @@ export class ServicePortProjection {
     if (!server) return;
     for (const spec of binding.sockets) {
       const address = spec.address ?? ALL_INTERFACES;
-      // Skip a port already bound (e.g. seeded at boot) — bind() throws
-      // EADDRINUSE, which would otherwise abort the whole reconcile.
-      if (this.socketTable.isPortBound(spec.port, spec.protocol)) continue;
+      // Un port déjà lié : soit il appartient à quelqu'un d'autre et il
+      // n'y a rien à faire — `bind()` lèverait EADDRINUSE et ferait échouer
+      // toute la réconciliation —, soit c'est CE service qui l'a ouvert
+      // lui-même avant la projection (systemd-resolved lie son stub
+      // directement). Dans ce second cas le port est bien à lui : il entre
+      // au registre et mérite sa ligne de journal, sinon `ss` le montre
+      // sans que rien ne l'ait jamais annoncé.
+      if (this.socketTable.isPortBound(spec.port, spec.protocol)) {
+        const existing = this.socketTable.findByLocalPort(spec.port, spec.protocol);
+        if (existing?.processName !== binding.processName) continue;
+        if (!server.open(spec)) continue;
+        const own = this.bound.get(binding.name) ?? [];
+        own.push(spec);
+        this.bound.set(binding.name, own);
+        this.publishPortEvent('linux.port.bound', binding, spec, address);
+        continue;
+      }
       if (!server.open(spec)) continue;
       try {
         this.socketTable.bind(spec.protocol, address, spec.port, binding.mainPid, binding.processName);

@@ -890,6 +890,9 @@ export abstract class LinuxMachine extends EndHost
    * une vraie réponse encodée. Remplace le `bind()` décoratif qui faisait
    * croire à `ss` qu'un service écoutait (écart #1 du PRD).
    */
+  /** Le stub du resolver écoute-t-il pour de bon ? */
+  private resolvedStubBound = false;
+
   private bindResolvedStub(): void {
     try {
       // L'unité systemd-resolved pose une entrée sans gestionnaire dans la
@@ -911,7 +914,17 @@ export abstract class LinuxMachine extends EndHost
         if (immediate) { send(immediate); return; }
         void this.answerResolvedQuery(query).then(send);
       }, 'systemd-resolved');
+      this.resolvedStubBound = true;
     } catch { /* déjà lié */ }
+    // systemd-resolved est le contre-exemple de docs/PRD-Nginx.md §P0 : son
+    // écoute est RÉELLE (`udpBindAddress` ci-dessus), elle est seulement
+    // posée hors de la projection. Il déclare donc son serveur — APRÈS
+    // l'avoir ouverte — sinon `ss` cacherait un port joignable, l'erreur
+    // symétrique de celle que §P0 corrige et tout aussi trompeuse.
+    this.executor.registerServiceSocketServer('systemd-resolved', {
+      open: () => this.resolvedStubBound,
+      close: () => { /* le stub appartient au resolver, pas à la projection */ },
+    });
   }
 
   /**

@@ -378,7 +378,11 @@ export class LinuxCommandExecutor {
    */
   registerServiceSocketServer(unit: string, server: ServiceSocketServer): void {
     this.pendingSocketServers.set(unit, server);
-    this.servicePortProjection?.registerServer(unit, server);
+    if (!this.servicePortProjection) return;
+    this.servicePortProjection.registerServer(unit, server);
+    // La projection s'est peut-être déjà réconciliée sans connaître ce
+    // serveur : un service actif à cet instant n'aurait ouvert aucun port.
+    this.servicePortProjection.reconcile();
   }
 
   private readonly pendingSocketServers = new Map<string, ServiceSocketServer>();
