@@ -167,3 +167,40 @@ describe('§P2 — les entrées décoratives, une par une', () => {
     expect(joignableInvisible(srv)).toEqual([]);
   });
 });
+
+describe('§P2b — sshd sur les deux familles, sans doublon', () => {
+  it('les lignes v4 et v6 du 22 viennent de l\'écoute, bannière comprise', () => {
+    const srv = new LinuxServer('linux-server', 'SSHD');
+    srv.powerOn();
+
+    const lignes = srv.getSocketTable().getListening()
+      .filter((e) => e.protocol === 'tcp' && e.localPort === 22);
+    expect(lignes).toHaveLength(2);
+    for (const l of lignes) {
+      expect(l.processName).toBe('sshd');
+      expect(l.pid).toBe(985);
+      // La bannière est ce que lisent `nc`/`nmap` : elle voyage avec
+      // l'écoute depuis §P2b, au lieu d'être réinscrite à côté.
+      expect(l.banner).toContain('SSH-2.0');
+    }
+    expect(lignes.map((l) => l.localAddress).sort()).toEqual(['0.0.0.0', '::']);
+  });
+
+  it('le 22 est réellement servi sur les DEUX adresses, pas seulement affiché', () => {
+    const srv = new LinuxServer('linux-server', 'SSHD');
+    srv.powerOn();
+
+    // Le point de §P2b : `:::22` figurait dans `ss` sans écoute propre.
+    const servies = srv.getTcpStack().listListeners()
+      .filter((l) => l.localPort === 22)
+      .map((l) => l.localIp)
+      .sort();
+    expect(servies).toEqual(['0.0.0.0', '::']);
+  });
+
+  it('aucun port joignable n\'est invisible une fois sshd démarré', () => {
+    const srv = new LinuxServer('linux-server', 'SSHD') as unknown as Host;
+    srv.powerOn();
+    expect(joignableInvisible(srv)).toEqual([]);
+  });
+});

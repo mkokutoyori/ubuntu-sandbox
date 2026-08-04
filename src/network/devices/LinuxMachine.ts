@@ -1259,24 +1259,47 @@ export abstract class LinuxMachine extends EndHost
     return ports.length ? ports : [22];
   }
 
+  /**
+   * sshd, sur les deux familles d'adresses
+   * (docs/PRD-Sockets-Une-Seule-Verite.md §P2b).
+   *
+   * Deux `socketTable.bind()` manuels posaient ces lignes à côté, avec le
+   * pid et la bannière ; l'identité voyage maintenant avec l'écoute. Le
+   * point délicat est l'écoute `::` : l'entrée `:::22` figurait dans `ss`
+   * sans écoute propre, `findListener` rabattant une connexion v6 sur le
+   * générique v4. Retirer le doublon sans ouvrir cette écoute aurait donc
+   * créé en IPv6 l'erreur même que ce chantier corrige.
+   */
+  private static readonly SSHD_PID = 985;
+  private static readonly SSHD_BANNER = 'SSH-2.0-Sandbox-Server\r\n';
+  private static readonly SSHD_ADDRESSES = ['0.0.0.0', '::'] as const;
+
   private attachSshTcpListeners(): void {
     const stack = this.getTcpStack();
     const desired = new Set(this.sshdPortsFromConfig());
     for (const port of this._sshdActivePorts) {
       if (!desired.has(port)) {
-        stack.closeListener(port, '0.0.0.0');
+        for (const addr of LinuxMachine.SSHD_ADDRESSES) stack.closeListener(port, addr);
         this._sshdActivePorts.delete(port);
       }
     }
-    const sshdPid = this.socketTable.getAll().find((s) => s.processName === 'sshd')?.pid ?? null;
     for (const port of desired) {
       if (this._sshdActivePorts.has(port)) continue;
-      stack.listen(port, {
-        onAccept: (socket) => {
-          if (sshdPid !== null) stack.setSocketOwner(socket, sshdPid);
-          this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
-        },
-      });
+      for (const addr of LinuxMachine.SSHD_ADDRESSES) {
+        try {
+          stack.listen(port, {
+            identity: {
+              pid: LinuxMachine.SSHD_PID,
+              processName: 'sshd',
+              banner: LinuxMachine.SSHD_BANNER,
+            },
+            onAccept: (socket) => {
+              stack.setSocketOwner(socket, LinuxMachine.SSHD_PID);
+              this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+            },
+          }, addr);
+        } catch { /* déjà ouverte sur cette adresse */ }
+      }
       this._sshdActivePorts.add(port);
     }
   }
@@ -1284,7 +1307,7 @@ export abstract class LinuxMachine extends EndHost
   private detachSshTcpListeners(): void {
     const stack = this.getTcpStack();
     for (const port of this._sshdActivePorts) {
-      stack.closeListener(port, '0.0.0.0');
+      for (const addr of LinuxMachine.SSHD_ADDRESSES) stack.closeListener(port, addr);
     }
     this._sshdActivePorts.clear();
   }
@@ -1845,9 +1868,9 @@ export abstract class LinuxMachine extends EndHost
    * used by ps/netstat output so the two are coherent.
    */
   private initDefaultSockets(isServer: boolean): void {
-    const sshdBanner = 'SSH-2.0-Sandbox-Server\r\n';
-    this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd', sshdBanner);
-    this.socketTable.bind('tcp', '::', 22, 985, 'sshd', sshdBanner);
+    // Les deux `bind()` de sshd sont partis : `attachSshTcpListeners()`
+    // ouvre les écoutes v4 ET v6 en portant pid, nom et bannière, donc
+    // les lignes de `ss` viennent de l'écoute elle-même (§P2b).
     // L'entrée 127.0.0.53:53 est posée par bindResolvedStub(), avec un
     // vrai gestionnaire derrière — plus un bind() décoratif.
 
