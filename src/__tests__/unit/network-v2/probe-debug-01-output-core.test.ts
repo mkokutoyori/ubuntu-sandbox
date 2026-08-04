@@ -74,11 +74,11 @@ async function lab(): Promise<Lab> {
 describe('Scénario 1 — debug ip icmp', () => {
   it('trace la requête et la réponse avec leurs adresses', async () => {
     const { run, poste, lignes } = await lab();
-    expect(await run('debug ip icmp')).toBe('IP ICMP debugging is on');
+    expect(await run('debug ip icmp')).toBe('ICMP packet debugging is on');
 
     await poste.executeCommand('ping -c 1 10.0.0.1');
 
-    const req = lignes.find((l) => /echo request/.test(l));
+    const req = lignes.find((l) => /echo received/.test(l));
     const rep = lignes.find((l) => /echo reply/.test(l));
     expect(req, 'la requête doit être tracée').toBeDefined();
     expect(req).toContain('src 10.0.0.2');

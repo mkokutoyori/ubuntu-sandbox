@@ -190,6 +190,21 @@ export class RouterDebugService implements TerminalDebugSource {
     this.tamponSyslog?.(line);
   }
 
+  emitIcmpError(type: string, code: number, offendingDst: string, routerIp: string, replyTo: string): void {
+    if (type === 'destination-unreachable') {
+      const quoi = code === 1 ? 'host unreachable'
+        : code === 0 ? 'net unreachable'
+        : code === 13 ? 'administratively prohibited'
+        : code === 4 ? 'frag. needed and DF set'
+        : 'unreachable';
+      this.emit('ip.icmp', `ICMP: dst (${offendingDst}) ${quoi}, src ${routerIp}`);
+      return;
+    }
+    if (type === 'time-exceeded') {
+      this.emit('ip.icmp', `ICMP: time exceeded (time to live) sent to ${replyTo}`);
+    }
+  }
+
   emitLine(category: DebugCategory, line: string): void {
     this.emit(category, line);
   }
@@ -316,8 +331,13 @@ export class RouterDebugService implements TerminalDebugSource {
       if (!ip) return;
       this.emit('ip.packet', `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`);
       if (ip.proto === 1) {
-        const kind = ip.icmpType === 'echo-reply' ? 'echo reply' : ip.icmpType === 'echo-request' ? 'echo request' : (ip.icmpType ?? 'message');
-        this.emit('ip.icmp', `ICMP: ${kind} ${dir}, src ${ip.src}, dst ${ip.dst}`);
+        if (ip.icmpType === 'echo-request') {
+          this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`);
+        } else if (ip.icmpType === 'echo-reply') {
+          this.emit('ip.icmp', `ICMP: echo reply sent, src ${ip.src}, dst ${ip.dst}`);
+        } else {
+          this.emit('ip.icmp', `ICMP: ${ip.icmpType ?? 'message'} ${dir}, src ${ip.src}, dst ${ip.dst}`);
+        }
       }
     };
     this.broadcast.track(bus.subscribe('port.link.up', (e) => {
@@ -365,7 +385,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.eigrp': return 'EIGRP';
       case 'ip.bgp': return 'BGP';
       case 'ip.routing': return 'IP routing';
-      case 'ip.icmp': return 'IP ICMP';
+      case 'ip.icmp': return 'ICMP packet';
       case 'ip.packet': return 'IP packet';
       case 'ip.tcp': return 'IP TCP';
       case 'ip.udp': return 'IP UDP';
