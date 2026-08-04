@@ -1249,7 +1249,15 @@ export class LinuxCommandExecutor {
     }
     if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
     probeArgs.push(`${remoteUser}@${hostPart}`, 'hostname');
-    const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs, undefined, offeredPassword) });
+    // La sonde tourne TOUJOURS, avec ou sans mot de passe : c'est elle qui
+    // porte la politique de comptes — mot de passe expiré, compte
+    // verrouillé, utilisateur refusé par `AllowUsers`. La sauter quand rien
+    // n'est offert ferait de `scp` le seul chemin d'entrée que la politique
+    // ne garde pas. Sans justificatif on la lance exactement comme le
+    // chemin synchrone le fait, c'est-à-dire sans en fournir.
+    const probe = runSshClient({
+      ...this.buildSshClientOpts(probeArgs, undefined, offeredPassword || undefined),
+    });
     if (probe.exitCode !== 0) {
       return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
     }

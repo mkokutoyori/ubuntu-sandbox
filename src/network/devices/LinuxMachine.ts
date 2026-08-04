@@ -2206,6 +2206,7 @@ export abstract class LinuxMachine extends EndHost
     if (this.commands.hasNetworkCommandIn(input)) return true;
     if (input.includes('/var/lib/dhcp/')) return true;
     if (LinuxMachine.SSHPASS_TRANSFER_RE.test(input)) return true;
+    if (LinuxMachine.TRANSFER_RE.test(input)) return true;
     const words = input.split(/[\s;|&"'`()]+/);
     if (words.some(w => w === 'ps' || w === 'man' || w === 'sshd')) return true;
     // `bash script.sh` / `./script.sh` / `run-parts DIR` at the top of the
@@ -2226,6 +2227,19 @@ export abstract class LinuxMachine extends EndHost
    * majority of existing usage) is untouched and stays on the sync path.
    */
   private static readonly SSHPASS_TRANSFER_RE = /^sshpass\s+-p\s+\S+\s+(scp|sftp)\b/;
+
+  /**
+   * `scp`/`sftp` en tête de ligne, sans `sshpass`. Un transfert sans mot de
+   * passe est le cas ordinaire — et sur une vraie machine, s'il aboutit
+   * c'est parce qu'une CLÉ l'authentifie. Ces lignes partaient jusqu'ici
+   * sur le chemin synchrone, qui ne peut pas `await` l'ouverture d'une
+   * vraie session : le transfert copiait donc d'un VFS à l'autre sans
+   * qu'aucun octet ne traverse un câble (Phase 4 de la refonte SSH).
+   * Elles passent maintenant par le dispatcher async, qui tente la vraie
+   * session par clé publique avant de retomber, si elle échoue, sur le
+   * comportement inchangé.
+   */
+  private static readonly TRANSFER_RE = /^\s*(?:sudo\s+)?(scp|sftp)\s+\S/;
 
   /**
    * Matches a top-of-line `bash`/`sh` file invocation (no `-c`), a direct
@@ -2629,6 +2643,21 @@ export abstract class LinuxMachine extends EndHost
         const wrappedCmd = match[1] as 'scp' | 'sftp';
         const wrappedArgs = tokenized.tokens.slice(4);
         const result = await this.executor.runSshTransportAsync(wrappedCmd, wrappedArgs, password);
+        this.executor.lastExitCode = result.exitCode;
+        return result.output;
+      }
+      case 'scp':
+      case 'sftp': {
+        // Sans mot de passe offert : `runSshTransportAsync` tente la vraie
+        // session par clé, puis retombe sur la résolution directe si elle
+        // n'aboutit pas — c'est ce repli qui garde intacts les scénarios
+        // qui n'ont jamais posé de clé.
+        const tokenized = LinuxMachine.tokenizeArgsDetailed(noSudo);
+        if (tokenized.unterminatedQuote) {
+          return 'bash: syntax error: unexpected end of file (unterminated quote)';
+        }
+        const result = await this.executor.runSshTransportAsync(
+          firstCmd as 'scp' | 'sftp', tokenized.tokens.slice(1), '');
         this.executor.lastExitCode = result.exitCode;
         return result.output;
       }
