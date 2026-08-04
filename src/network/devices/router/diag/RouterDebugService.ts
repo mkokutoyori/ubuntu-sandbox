@@ -63,6 +63,14 @@ export interface DebugFlag {
   detail?: boolean;
 }
 
+export interface DebugPacketFacts {
+  src: string;
+  dst: string;
+  proto: number;
+  srcPort?: number;
+  dstPort?: number;
+}
+
 export class RouterDebugService implements TerminalDebugSource {
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
   private readonly broadcast = new DebugBroadcast();
@@ -165,14 +173,14 @@ export class RouterDebugService implements TerminalDebugSource {
   /** Report the current window's drops now, rather than on the next line. */
   flushDrops(): void { this.broadcast.flushDrops(); }
 
-  private aclMatchFn?: (aclName: string, line: string) => boolean;
+  private aclMatchFn?: (aclName: string, line: string, faits?: DebugPacketFacts) => boolean;
   private readonly categoryRenderers = new Map<DebugCategory, () => string>();
 
   setCategoryRenderer(category: DebugCategory, render: () => string): void {
     this.categoryRenderers.set(category, render);
   }
 
-  setAclFilterEvaluator(fn: (aclName: string, line: string) => boolean): void {
+  setAclFilterEvaluator(fn: (aclName: string, line: string, faits?: DebugPacketFacts) => boolean): void {
     this.aclMatchFn = fn;
   }
 
@@ -180,19 +188,27 @@ export class RouterDebugService implements TerminalDebugSource {
 
   setSyslogSink(fn: (line: string) => void): void { this.tamponSyslog = fn; }
 
-  private emit(category: DebugCategory, line: string): void {
+  private emit(category: DebugCategory, line: string, faits?: DebugPacketFacts): void {
     const flag = this.flags.get(category);
     if (!flag) return;
     this.rateLimitResolver?.();
     if (!this.passesConditions(line)) return;
-    if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line)) return;
+    if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line, faits)) return;
     this.broadcast.fan(line);
     this.tamponSyslog?.(line);
   }
 
+  private static faitsDe(ip: { src: string; dst: string; proto: number; transport?: unknown }): DebugPacketFacts {
+    const t = ip.transport as { sourcePort?: number; destinationPort?: number } | undefined;
+    return {
+      src: ip.src, dst: ip.dst, proto: ip.proto,
+      srcPort: t?.sourcePort, dstPort: t?.destinationPort,
+    };
+  }
+
   private readonly tcpVues = new Map<string, string>();
 
-  private tracerTcp(ip: { src: string; dst: string; transport?: unknown }, dir: string): void {
+  private tracerTcp(ip: { src: string; dst: string; transport?: unknown }, dir: string, faits?: DebugPacketFacts): void {
     const t = ip.transport as { sourcePort?: number; destinationPort?: number;
       sequenceNumber?: number; acknowledgementNumber?: number;
       flags?: { syn?: boolean; ack?: boolean; fin?: boolean; rst?: boolean } } | undefined;
@@ -207,18 +223,18 @@ export class RouterDebugService implements TerminalDebugSource {
     if (!nom) return;
     const verbe = dir === 'rcvd' ? 'received' : 'sending';
     if (nom === 'RST') {
-      this.emit('ip.tcp', 'TCP: received RST');
+      this.emit('ip.tcp', 'TCP: received RST', faits);
       return;
     }
     this.emit('ip.tcp',
-      `TCP: ${verbe} ${nom}, seq ${t.sequenceNumber ?? 0}, ack ${t.acknowledgementNumber ?? 0}`);
+      `TCP: ${verbe} ${nom}, seq ${t.sequenceNumber ?? 0}, ack ${t.acknowledgementNumber ?? 0}`, faits);
 
     const cle = [ip.src, t.sourcePort, ip.dst, t.destinationPort].join(':');
     const inverse = [ip.dst, t.destinationPort, ip.src, t.sourcePort].join(':');
     if (nom === 'SYN-ACK') this.tcpVues.set(inverse, 'syn-ack');
     else if (nom === 'ACK' && this.tcpVues.get(cle) === 'syn-ack') {
       this.tcpVues.delete(cle);
-      this.emit('ip.tcp', `TCP: Connection to ${ip.dst}:${t.destinationPort} ESTABLISHED`);
+      this.emit('ip.tcp', `TCP: Connection to ${ip.dst}:${t.destinationPort} ESTABLISHED`, faits);
     }
   }
 
@@ -392,25 +408,27 @@ export class RouterDebugService implements TerminalDebugSource {
       }
       const ip = decodeIp(frame);
       if (!ip) return;
-      this.emit('ip.packet', `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`);
+      const faits = RouterDebugService.faitsDe(ip);
+      this.emit('ip.packet',
+        `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`, faits);
       const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
-      if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail);
-      if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir);
+      if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail, faits);
+      if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir, faits);
       if (ip.proto === 17 && dir === 'rcvd') {
         const u = ip.transport as { sourcePort?: number; destinationPort?: number; length?: number } | undefined;
         if (u) {
           this.emit('ip.udp',
             `UDP: src=${ip.src}(${u.sourcePort ?? 0}), dst=${ip.dst}(${u.destinationPort ?? 0}), `
-            + `length=${u.length ?? 0}`);
+            + `length=${u.length ?? 0}`, faits);
         }
       }
       if (ip.proto === 1) {
         if (ip.icmpType === 'echo-request') {
-          this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`);
+          this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`, faits);
         } else if (ip.icmpType === 'echo-reply') {
-          this.emit('ip.icmp', `ICMP: echo reply sent, src ${ip.src}, dst ${ip.dst}`);
+          this.emit('ip.icmp', `ICMP: echo reply sent, src ${ip.src}, dst ${ip.dst}`, faits);
         } else {
-          this.emit('ip.icmp', `ICMP: ${ip.icmpType ?? 'message'} ${dir}, src ${ip.src}, dst ${ip.dst}`);
+          this.emit('ip.icmp', `ICMP: ${ip.icmpType ?? 'message'} ${dir}, src ${ip.src}, dst ${ip.dst}`, faits);
         }
       }
     };
