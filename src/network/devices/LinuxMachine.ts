@@ -26,6 +26,11 @@ import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type Host
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
+import { LinuxNginxService } from './linux/http/LinuxNginxService';
+import {
+  NGINX_CONF, NGINX_CONF_PATH, NGINX_DEFAULT_SITE, NGINX_WELCOME_PAGE,
+  NGINX_SITES_AVAILABLE, NGINX_SITES_ENABLED, NGINX_DEFAULT_ROOT, NGINX_DEFAULT_INDEX,
+} from './linux/http/NginxFiles';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpStream } from '../tcp/types';
@@ -410,6 +415,7 @@ export abstract class LinuxMachine extends EndHost
     //    Also seed /etc/motd and /etc/issue.net so SSH greeters and the
     //    pre-auth Banner have realistic content.
     this.initSshFiles();
+    this.initNginx();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
     this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
@@ -1066,6 +1072,85 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** Persist SSH server configuration + host key + MOTD on the VFS. */
+  /**
+   * nginx (docs/PRD-Nginx.md §P1/§P2) — les fichiers que Debian livre, le
+   * service qui les lit, et le contrôle de configuration que
+   * `systemctl start/restart/reload` consulte.
+   *
+   * C'est aussi ce qui supprime la contradiction du §P0 : le service ne
+   * s'inscrit dans la `SocketTable` — donc dans `ss` — que parce qu'il
+   * fournit ici un vrai serveur qui ouvre une vraie écoute.
+   */
+  private initNginx(): void {
+    const vfs = this.executor.vfs;
+    for (const dir of ['/etc/nginx', NGINX_SITES_AVAILABLE, NGINX_SITES_ENABLED,
+                       '/etc/nginx/conf.d', '/etc/nginx/modules-enabled',
+                       NGINX_DEFAULT_ROOT, '/var/log/nginx']) {
+      if (!vfs.exists(dir)) vfs.mkdirp(dir, 0o755, 0, 0);
+    }
+    if (!vfs.exists(NGINX_CONF_PATH)) vfs.writeFile(NGINX_CONF_PATH, NGINX_CONF, 0, 0, 0o022, true);
+    const site = `${NGINX_SITES_AVAILABLE}/default`;
+    if (!vfs.exists(site)) vfs.writeFile(site, NGINX_DEFAULT_SITE, 0, 0, 0o022, true);
+    if (!vfs.exists(`${NGINX_SITES_ENABLED}/default`)) {
+      vfs.createSymlink(`${NGINX_SITES_ENABLED}/default`, '../sites-available/default', 0, 0);
+    }
+    const welcome = `${NGINX_DEFAULT_ROOT}/${NGINX_DEFAULT_INDEX}`;
+    if (!vfs.exists(welcome)) vfs.writeFile(welcome, NGINX_WELCOME_PAGE, 0, 0, 0o022, true);
+
+    this.nginxService = new LinuxNginxService({
+      fs: {
+        read: (path) => vfs.readFile(path),
+        list: (dir) => vfs.listDirectory(dir)?.map((e) => e.name) ?? null,
+        exists: (path) => vfs.exists(path),
+        isDirectory: (path) => vfs.listDirectory(path) !== null,
+        readableBy: (path, uid, gid) => {
+          const inode = vfs.resolveInode(path);
+          return inode ? vfs.checkAccess(inode, 'r', uid, gid) : false;
+        },
+      },
+      tcpStack: () => this.getTcpStack(),
+      appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
+      now: () => new Date(),
+    });
+
+    this.executor.registerServiceSocketServer('nginx', this.nginxService);
+    this.executor.nginxService = this.nginxService;
+
+    this.publishNginxPorts();
+
+    this.executor.serviceMgr.registerConfigCheck('nginx', () => {
+      const error = this.nginxService?.loadConfig() ?? null;
+      return error ? { ok: false, error, verbatim: true } : { ok: true };
+    });
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'nginx') return;
+      if (event === 'stop') { this.nginxService?.stopAll(); return; }
+      if (event === 'reload') this.nginxService?.reload();
+      // La configuration décide des ports, donc `ss` doit suivre la
+      // configuration et non la table statique de `SERVICE_LISTENERS` :
+      // sans cela, un `listen 8888` laisserait `:80` affiché pour une
+      // écoute qui n'existe plus.
+      this.publishNginxPorts();
+      this.executor.resyncServicePorts('nginx');
+    });
+  }
+
+  /** Le serveur nginx de cette machine — `null` avant l'amorçage. */
+  nginxService: LinuxNginxService | null = null;
+
+  /** Déclare à systemd les ports que la configuration de nginx demande. */
+  private publishNginxPorts(): void {
+    const service = this.nginxService;
+    if (!service) return;
+    if (service.loadConfig() !== null) return;
+    const ports = service.configuredPorts();
+    if (ports.length === 0) return;
+    this.executor.serviceMgr.registerServiceListener('nginx', {
+      processName: 'nginx',
+      sockets: ports.map((port) => ({ port, protocol: 'tcp' as const })),
+    });
+  }
+
   private initSshFiles(): void {
     this.getSshServerContext();
     const vfs = this.executor.vfs;

@@ -96,6 +96,8 @@ import {
 } from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
+import type { ServiceSocketServer } from './ports/ServiceSocketServer';
+import type { NginxControl } from './http/LinuxNginxService';
 import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
 import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
@@ -368,6 +370,26 @@ export class LinuxCommandExecutor {
   private sessionTable: SshSessionTable | null = null;
   /** Reactive socket-table coherence for service-owned listening ports. */
   private servicePortProjection: ServicePortProjection | null = null;
+
+  /**
+   * Déclare le serveur réel d'une unité auprès de la projection de ports.
+   * Sans lui, l'unité peut être `active` et avoir un PID sans ouvrir aucun
+   * port — et surtout sans en afficher aucun (docs/PRD-Nginx.md §P0).
+   */
+  registerServiceSocketServer(unit: string, server: ServiceSocketServer): void {
+    this.pendingSocketServers.set(unit, server);
+    this.servicePortProjection?.registerServer(unit, server);
+  }
+
+  private readonly pendingSocketServers = new Map<string, ServiceSocketServer>();
+
+  /** Réaligne `ss` sur ce qu'une unité écoute vraiment (après un reload). */
+  resyncServicePorts(unit: string): void {
+    this.servicePortProjection?.resync(unit);
+  }
+
+  /** Le nginx de cette machine, pour la commande `nginx` (docs/PRD-Nginx.md §P2). */
+  nginxService: NginxControl | null = null;
   /** Records port bind / release activity into the system log, reactively. */
   private portActivityLog: PortActivityLogProjection | null = null;
   private cwd = '/root';
@@ -1017,6 +1039,15 @@ export class LinuxCommandExecutor {
       this.servicePortProjection = new ServicePortProjection(
         bus, deviceId, this.socketTable, this.serviceMgr,
       );
+      // Un bus peut être rattaché après l'amorçage : les serveurs déjà
+      // déclarés doivent survivre au remplacement de la projection.
+      for (const [unit, server] of this.pendingSocketServers) {
+        this.servicePortProjection.registerServer(unit, server);
+      }
+      // Le constructeur s'est déjà réconcilié, mais sans connaître les
+      // serveurs : un service déjà actif à cet instant n'aurait ouvert
+      // aucun port. On repasse une fois les serveurs déclarés.
+      if (this.pendingSocketServers.size > 0) this.servicePortProjection.reconcile();
     }
     // Keep the /etc identity files coherent when the identity model changes.
     this.identityFilesUnsub?.();

@@ -15,6 +15,23 @@
  * `ssh` is intentionally excluded: its listener is config-driven (the
  * `Port` directive in `sshd_config`) and is owned by the SSH module in
  * `LinuxMachine`. Binding it here too would double-bind a custom port.
+ *
+ * ── Ce que ce module n'affiche plus (docs/PRD-Nginx.md §P0) ────────────
+ *
+ * Il inscrivait les sockets déclarées par `SERVICE_LISTENERS` sans jamais
+ * ouvrir d'écoute réelle sur `TcpStack` — la seule table qui décide
+ * d'accepter une connexion. `systemctl start nginx` faisait donc
+ * apparaître `0.0.0.0:80` dans `ss` pendant que `curl http://localhost/`
+ * répondait `Connection refused` : deux vues de la même machine qui se
+ * contredisent, ce qui enseigne une règle fausse (« `ss` montre le port,
+ * donc le service écoute ») au lieu de ne rien enseigner.
+ *
+ * Désormais un service n'est inscrit que s'il a fourni un
+ * {@link ServiceSocketServer} et que celui-ci a réellement ouvert son
+ * écoute. Conséquence assumée : `mysql`, `postgresql` et `apache2`
+ * quittent `ss` tant que personne ne leur écrit de serveur. C'est une
+ * régression apparente et une correction réelle — ces ports n'ont jamais
+ * accepté la moindre connexion.
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
@@ -22,6 +39,7 @@ import type { SocketTable } from '../../../core/SocketTable';
 import type { ServicePortBinding } from '../LinuxServiceManager';
 import type { ServiceLifecyclePayload } from '../events';
 import type { PortSpec } from '../../../core/ports/PortNumber';
+import type { ServiceSocketServer } from './ServiceSocketServer';
 
 /** The slice of `LinuxServiceManager` this projection depends on. */
 export interface ServicePortSource {
@@ -37,6 +55,17 @@ const ALL_INTERFACES = '0.0.0.0';
 
 export class ServicePortProjection {
   private readonly subscriptions: Unsubscribe[] = [];
+  private readonly servers = new Map<string, ServiceSocketServer>();
+  /**
+   * Ce que cette projection a réellement inscrit, par unité.
+   *
+   * Indispensable dès qu'un service décide lui-même de ses ports : nginx
+   * dont la configuration passe de 80 à 8888 doit voir `ss` bouger avec
+   * lui. Fermer d'après la liste déclarée au démarrage laisserait `:80`
+   * affiché pour une écoute qui n'existe plus — le défaut même que §P0
+   * corrige, réintroduit un cran plus bas.
+   */
+  private readonly bound = new Map<string, PortSpec[]>();
 
   constructor(
     private readonly bus: IEventBus,
@@ -53,6 +82,27 @@ export class ServicePortProjection {
     );
     // Bind whatever is already running — the projection may attach after boot.
     this.reconcile();
+  }
+
+  /**
+   * Déclare le serveur réel d'une unité. Sans lui, l'unité peut démarrer,
+   * avoir un PID et être `active` — mais elle n'ouvre aucun port et n'en
+   * affiche aucun.
+   */
+  registerServer(unit: string, server: ServiceSocketServer): void {
+    this.servers.set(unit.replace(/\.service$/, ''), server);
+  }
+
+  /**
+   * Réaligne les ports d'une unité sur ce qu'elle écoute maintenant —
+   * après un `reload` qui a changé la configuration, par exemple.
+   */
+  resync(unit: string): void {
+    if (EXCLUDED_UNITS.has(unit)) return;
+    const binding = this.source.getPortBinding(unit);
+    if (!binding) return;
+    this.releaseBound(unit, binding);
+    this.openSockets(binding);
   }
 
   /** Detach every subscription — call before discarding the projection. */
@@ -86,28 +136,44 @@ export class ServicePortProjection {
   // ─── SocketTable mutation ──────────────────────────────────────────────
 
   private openSockets(binding: ServicePortBinding): void {
+    const server = this.servers.get(binding.name);
+    if (!server) return;
     for (const spec of binding.sockets) {
       const address = spec.address ?? ALL_INTERFACES;
       // Skip a port already bound (e.g. seeded at boot) — bind() throws
       // EADDRINUSE, which would otherwise abort the whole reconcile.
       if (this.socketTable.isPortBound(spec.port, spec.protocol)) continue;
+      if (!server.open(spec)) continue;
       try {
         this.socketTable.bind(spec.protocol, address, spec.port, binding.mainPid, binding.processName);
       } catch {
+        server.close(spec);
         continue;
       }
+      const held = this.bound.get(binding.name) ?? [];
+      held.push(spec);
+      this.bound.set(binding.name, held);
       this.publishPortEvent('linux.port.bound', binding, spec, address);
     }
   }
 
   private closeSockets(binding: ServicePortBinding): void {
-    for (const spec of binding.sockets) {
+    this.releaseBound(binding.name, binding);
+  }
+
+  /** Libère ce qui a été inscrit pour cette unité, quoi qu'elle déclare aujourd'hui. */
+  private releaseBound(unit: string, binding: ServicePortBinding): void {
+    const server = this.servers.get(unit);
+    if (!server) return;
+    for (const spec of this.bound.get(unit) ?? []) {
       const address = spec.address ?? ALL_INTERFACES;
+      server.close(spec);
       const removed = this.socketTable.unbind(spec.protocol, address, spec.port);
       if (removed > 0) {
         this.publishPortEvent('linux.port.released', binding, spec, address);
       }
     }
+    this.bound.delete(unit);
   }
 
   private publishPortEvent(

@@ -112,10 +112,20 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
   // ── Pré-conditions : le backend est bien joignable depuis jump
   // (même sous-réseau, aucune ACL) mais l'ACL bloque le chemin
   // direct depuis publicPC.
-  it('le backend écoute bien sur 3306', async () => {
-    const { backend } = await buildLan();
-    const ss = await backend.executeCommand('ss -tln');
-    expect(ss).toMatch(/:3306/);
+  // Ce cas affirmait que le backend « écoute sur 3306 » en lisant `ss`.
+  // Il lisait en fait une entrée décorative : `SERVICE_LISTENERS` déclare
+  // 3306 pour mysql, mais aucun serveur MySQL n'existe dans ce simulateur,
+  // donc rien n'a jamais accepté de connexion sur ce port. Depuis
+  // docs/PRD-Nginx.md §P0, un port n'est affiché que s'il est joignable —
+  // la pré-condition dit donc maintenant ce qui est vrai, et le scénario
+  // d'ACL qui suit n'en dépendait pas.
+  it('le backend accepte bien une connexion sur 3306', async () => {
+    const { backend, jump } = await buildLan();
+    expect((await backend.executeCommand('systemctl is-active mysql')).trim()).toBe('active');
+    // La joignabilité se mesure en se connectant, pas en lisant `ss` : ce
+    // fichier liait déjà la pile TCP à la main (voir `buildLan`) parce que
+    // `systemctl start mysql` n'ouvre aucune boucle d'acceptation.
+    expect(await jump.executeCommand('nc -zv 10.0.30.20 3306')).toMatch(/succeeded/);
   });
 
   it('show access-lists 100 montre la règle bloquante', async () => {

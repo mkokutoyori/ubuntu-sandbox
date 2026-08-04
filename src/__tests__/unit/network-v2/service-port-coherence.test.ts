@@ -23,10 +23,20 @@ import { PortActivityLogProjection } from '@/network/devices/linux/ports/PortAct
 import type { ServicePortSource } from '@/network/devices/linux/ports/ServicePortProjection';
 import type { ServicePortBinding } from '@/network/devices/linux/LinuxServiceManager';
 import { WindowsServiceManager } from '@/network/devices/windows/WindowsServiceManager';
+
 import { WindowsServicePortProjection } from '@/network/devices/windows/WindowsServicePortProjection';
 import type { DomainEvent } from '@/events/types';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Un service qui écoute vraiment. Depuis docs/PRD-Nginx.md §P0 la
+ * projection n'inscrit un port que si l'unité en fournit un — sans quoi
+ * `ss` afficherait une écoute que personne n'assure.
+ */
+function listeningServer() {
+  return { open: () => true, close: () => { /* rien à fermer ici */ } };
+}
 
 /** Collect the payloads of every event published on a given topic. */
 function capture<T extends DomainEvent['topic']>(bus: EventBus, topic: T) {
@@ -63,7 +73,8 @@ describe('ServicePortProjection', () => {
     const source = fakeSource({
       nginx: { name: 'nginx', mainPid: 1234, processName: 'nginx', sockets: [{ port: 80, protocol: 'tcp' }] },
     });
-    new ServicePortProjection(bus, 'dev-1', table, source);
+    const projection = new ServicePortProjection(bus, 'dev-1', table, source);
+    projection.registerServer('nginx', listeningServer());
 
     emitLifecycle(bus, 'linux.service.started', 'nginx');
     expect(table.isPortBound(80, 'tcp')).toBe(true);
@@ -76,7 +87,8 @@ describe('ServicePortProjection', () => {
     const source = fakeSource({
       nginx: { name: 'nginx', mainPid: 1234, processName: 'nginx', sockets: [{ port: 80, protocol: 'tcp' }] },
     });
-    new ServicePortProjection(bus, 'dev-1', table, source);
+    const projection = new ServicePortProjection(bus, 'dev-1', table, source);
+    projection.registerServer('nginx', listeningServer());
 
     emitLifecycle(bus, 'linux.service.started', 'nginx');
     emitLifecycle(bus, 'linux.service.stopped', 'nginx');
@@ -89,7 +101,12 @@ describe('ServicePortProjection', () => {
     const source = fakeSource({
       mysql: { name: 'mysql', mainPid: 900, processName: 'mysqld', sockets: [{ port: 3306, protocol: 'tcp' }] },
     });
-    new ServicePortProjection(bus, 'dev-1', table, source);
+    const projection = new ServicePortProjection(bus, 'dev-1', table, source);
+    // Le serveur se déclare après la construction : la réconciliation
+    // doit pouvoir être rejouée, sinon un service déjà actif n'ouvrirait
+    // jamais son port.
+    projection.registerServer('mysql', listeningServer());
+    projection.reconcile();
 
     expect(table.isPortBound(3306, 'tcp')).toBe(true);
   });
@@ -102,7 +119,8 @@ describe('ServicePortProjection', () => {
     const source = fakeSource({
       nginx: { name: 'nginx', mainPid: 1234, processName: 'nginx', sockets: [{ port: 80, protocol: 'tcp' }] },
     });
-    new ServicePortProjection(bus, 'dev-1', table, source);
+    const projection = new ServicePortProjection(bus, 'dev-1', table, source);
+    projection.registerServer('nginx', listeningServer());
 
     emitLifecycle(bus, 'linux.service.started', 'nginx');
     emitLifecycle(bus, 'linux.service.stopped', 'nginx');
@@ -117,7 +135,8 @@ describe('ServicePortProjection', () => {
     const source = fakeSource({
       ssh: { name: 'ssh', mainPid: 985, processName: 'sshd', sockets: [{ port: 22, protocol: 'tcp' }] },
     });
-    new ServicePortProjection(bus, 'dev-1', table, source);
+    const projection = new ServicePortProjection(bus, 'dev-1', table, source);
+    projection.registerServer('nginx', listeningServer());
 
     emitLifecycle(bus, 'linux.service.started', 'ssh');
     expect(table.isPortBound(22, 'tcp')).toBe(false);
@@ -163,9 +182,14 @@ describe('PortActivityLogProjection', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Linux end-to-end port coherence', () => {
+  // Ces deux cas utilisaient `apache2`, qui déclare :80 dans
+  // `SERVICE_LISTENERS` sans que rien n'écoute jamais dessus. Depuis
+  // docs/PRD-Nginx.md §P0, un service n'affiche un port que s'il a
+  // vraiment ouvert l'écoute : la démonstration passe donc par `nginx`,
+  // qui en a une, et apache2 devient le contre-exemple juste en dessous.
   it('makes a service port appear in netstat once started', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    await srv.executeCommand('systemctl start apache2');
+    await srv.executeCommand('systemctl start nginx');
 
     const netstat = await srv.executeCommand('netstat -tln');
     expect(netstat).toContain(':80');
@@ -173,11 +197,22 @@ describe('Linux end-to-end port coherence', () => {
 
   it('removes the port from netstat once the service is stopped', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    await srv.executeCommand('systemctl start apache2');
-    await srv.executeCommand('systemctl stop apache2');
+    await srv.executeCommand('systemctl start nginx');
+    await srv.executeCommand('systemctl stop nginx');
 
     const netstat = await srv.executeCommand('netstat -tln');
     expect(netstat).not.toContain(':80');
+  });
+
+  it('a service with no server behind it shows no port at all', async () => {
+    const srv = new LinuxServer('linux-server', 'SRV1');
+    await srv.executeCommand('systemctl start apache2');
+
+    // `active`, un vrai PID, et aucun port — parce qu'aucune connexion
+    // n'aboutirait. Un port affiché doit être joignable ; un port
+    // injoignable ne doit pas être affiché.
+    expect((await srv.executeCommand('systemctl is-active apache2')).trim()).toBe('active');
+    expect(await srv.executeCommand('netstat -tln')).not.toContain(':80');
   });
 
   it('seeds /etc/services from the IANA registry', async () => {

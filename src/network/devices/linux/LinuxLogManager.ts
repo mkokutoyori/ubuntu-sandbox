@@ -676,6 +676,20 @@ export class LinuxLogManager {
     this.descriptorSink = sink;
   }
 
+  /**
+   * Écrit une ligne brute dans un journal applicatif — celui d'un démon
+   * qui tient son propre format, pas celui de syslog. nginx en est le cas
+   * type : `access.log` est au format `combined`, sans préfixe de
+   * facilité ni horodatage syslog.
+   *
+   * Passe par le même chemin que les journaux système pour hériter du
+   * traitement du fichier supprimé sous un descripteur ouvert (§F7) et de
+   * la comptabilité de descripteurs.
+   */
+  appendLine(path: string, line: string): void {
+    this.appendToLogFile(path, line);
+  }
+
   private appendToLogFile(path: string, line: string): void {
     const existing = this.vfs.readFile(path);
     if (existing !== null) {
