@@ -190,6 +190,36 @@ export class RouterDebugService implements TerminalDebugSource {
     this.tamponSyslog?.(line);
   }
 
+  private static ligneTransport(proto: number, t: unknown): string | null {
+    if (proto === 6) {
+      const s = t as { sourcePort?: number; destinationPort?: number; sequenceNumber?: number;
+        acknowledgementNumber?: number; windowSize?: number;
+        flags?: { syn?: boolean; ack?: boolean; fin?: boolean; rst?: boolean; psh?: boolean; urg?: boolean } };
+      const f = s?.flags ?? {};
+      const noms = [
+        f.syn ? 'SYN' : '', f.ack ? 'ACK' : '', f.fin ? 'FIN' : '',
+        f.rst ? 'RST' : '', f.psh ? 'PSH' : '', f.urg ? 'URG' : '',
+      ].filter(Boolean).join(' ');
+      return `TCP src=${s?.sourcePort ?? 0}, dst=${s?.destinationPort ?? 0}, `
+        + `seq=${s?.sequenceNumber ?? 0}, ack=${s?.acknowledgementNumber ?? 0}, `
+        + `win=${s?.windowSize ?? 0}${noms ? ' ' + noms : ''}`;
+    }
+    if (proto === 17) {
+      const u = t as { sourcePort?: number; destinationPort?: number };
+      return `UDP src=${u?.sourcePort ?? 0}, dst=${u?.destinationPort ?? 0}`;
+    }
+    if (proto === 1) {
+      const i = t as { icmpType?: string; code?: number };
+      const num = i?.icmpType === 'echo-reply' ? 0
+        : i?.icmpType === 'echo-request' ? 8
+        : i?.icmpType === 'destination-unreachable' ? 3
+        : i?.icmpType === 'redirect' ? 5
+        : i?.icmpType === 'time-exceeded' ? 11 : 255;
+      return `ICMP type=${num}, code=${i?.code ?? 0}`;
+    }
+    return null;
+  }
+
   emitIcmpError(type: string, code: number, offendingDst: string, routerIp: string, replyTo: string): void {
     if (type === 'destination-unreachable') {
       const quoi = code === 1 ? 'host unreachable'
@@ -284,7 +314,7 @@ export class RouterDebugService implements TerminalDebugSource {
         `DHCP: ${p.iface ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
     }));
 
-    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; len: number; icmpType?: string } | null => {
+    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; len: number; icmpType?: string; transport?: unknown } | null => {
       const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; totalLength?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string; data?: { length?: number } } } };
       if (f?.etherType !== 0x0800 || f.payload?.type !== 'ipv4') return null;
       const ip = f.payload;
@@ -294,6 +324,7 @@ export class RouterDebugService implements TerminalDebugSource {
         proto: ip.protocol ?? 0,
         len: ip.totalLength ?? 0,
         icmpType: ip.payload?.type === 'icmp' ? ip.payload.icmpType : undefined,
+        transport: ip.payload,
       };
     };
     const decodeArp = (frame: unknown): { op: 'request' | 'reply'; senderIp: string; senderMac: string; targetIp: string; targetMac: string } | null => {
@@ -330,6 +361,8 @@ export class RouterDebugService implements TerminalDebugSource {
       const ip = decodeIp(frame);
       if (!ip) return;
       this.emit('ip.packet', `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`);
+      const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
+      if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail);
       if (ip.proto === 1) {
         if (ip.icmpType === 'echo-request') {
           this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`);
