@@ -37,6 +37,38 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
   ].join('\n');
 }
 
+/**
+ * La queue d'une ligne `ip route` : cible, distance, `permanent`.
+ *
+ * Elle ne rendait que le prochain saut, ce qui perdait trois choses que
+ * l'opérateur avait écrites — et une configuration relue à l'import
+ * d'une topologie n'est pas un affichage, c'est ce qui REFAIT la route.
+ * La forme par interface revenait en `ip route … 0.0.0.0` (une autre
+ * route), une flottante en distance 200 revenait en distance 1 (elle
+ * cessait d'être flottante, donc de servir de secours) et `permanent`
+ * disparaissait.
+ *
+ * `ifaceConfigured` est ce qui distingue l'interface NOMMÉE de celle
+ * déduite du prochain saut : sans lui, `ip route … 10.1.1.2` se
+ * réécrirait en `ip route … GigabitEthernet0/0 10.1.1.2`.
+ */
+function staticRouteTail(r: {
+  nextHop: { toString(): string } | null; iface: string;
+  ifaceConfigured?: boolean; preference?: number; permanent?: boolean;
+}): string {
+  const nh = r.nextHop ? r.nextHop.toString() : '';
+  const parts: string[] = [];
+  if (r.ifaceConfigured && r.iface) {
+    parts.push(r.iface);
+    if (nh && nh !== '0.0.0.0') parts.push(nh);
+  } else {
+    parts.push(nh);
+  }
+  if (r.preference !== undefined) parts.push(String(r.preference));
+  if (r.permanent) parts.push('permanent');
+  return parts.join(' ');
+}
+
 function formatUptime(ms: number): string {
   if (ms < 60_000) return '0 minutes';
   const totalMin = Math.floor(ms / 60_000);
@@ -417,8 +449,8 @@ export function showRunningConfig(router: Router): string {
   }
 
   for (const r of table) {
-    if (r.type === 'static' && r.nextHop) lines.push(`ip route ${r.network} ${r.mask} ${r.nextHop}`);
-    if (r.type === 'default' && r.nextHop) lines.push(`ip route 0.0.0.0 0.0.0.0 ${r.nextHop}`);
+    if (r.type === 'static' && r.nextHop) lines.push(`ip route ${r.network} ${r.mask} ${staticRouteTail(r)}`);
+    if (r.type === 'default' && r.nextHop) lines.push(`ip route 0.0.0.0 0.0.0.0 ${staticRouteTail(r)}`);
   }
 
   // RIP config

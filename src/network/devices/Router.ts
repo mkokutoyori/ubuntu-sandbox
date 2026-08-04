@@ -142,6 +142,19 @@ export interface RouteEntry extends IIPv4Route {
   track?: string;
   vpnInstance?: string;
   permanent?: boolean;
+  /**
+   * L'opérateur a-t-il NOMMÉ l'interface de sortie, ou a-t-elle été
+   * déduite du prochain saut ?
+   *
+   * `iface` seul ne permet pas de répondre : `addStaticRoute` le
+   * remplit dans les deux cas, par `findInterfaceForIP` pour la forme
+   * `ip route <net> <mask> <prochain-saut>`. Sans cette distinction, le
+   * rendu de configuration ne peut que deviner — et il devinait mal,
+   * réécrivant `ip route … GigabitEthernet0/0` en
+   * `ip route … 0.0.0.0`, une route différente, rechargée telle quelle
+   * à l'import d'une topologie.
+   */
+  ifaceConfigured?: boolean;
 }
 
 // ─── Performance Counters (SNMP-ready) ──────────────────────────────
@@ -662,6 +675,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.routeTrackResolver(trackId);
   }
 
+  /**
+   * Une route est-elle installable dans la table ?
+   *
+   * C'est LA question que posent le plan de données (`lookupRoute`) et
+   * chaque vue de table des deux constructeurs. Elle vivait en trois
+   * morceaux recopiés (`isRouteInterfaceUsable(r.iface) &&
+   * isRouteTrackUp(r.track)`), et les vues VRP n'en appelaient aucun —
+   * si bien qu'une route statique survivait à un `shutdown` sur Huawei
+   * alors qu'elle disparaissait sur Cisco, pour la même topologie.
+   *
+   * `permanent` (IOS `ip route ... permanent`, VRP `ip route-static ...
+   * permanent`) est exactement l'exception que ce mot-clé existe pour
+   * créer : la route RESTE quand son interface de sortie tombe. Elle
+   * était mémorisée sur `RouteEntry` et lue par personne.
+   *
+   * Ce que `permanent` ne fait PAS, et c'est volontaire : il ne rend pas
+   * le trafic acheminable. La route reste dans la table, les paquets
+   * partent vers une interface éteinte et se perdent — c'est le trou
+   * noir que ce mot-clé provoque sur un vrai routeur, et la raison pour
+   * laquelle on s'en méfie. Il ne court-circuite pas non plus `track` :
+   * un objet suivi qui tombe est une condition explicite posée par
+   * l'opérateur, pas une panne d'interface.
+   */
+  isRouteUsable(route: { iface: string; track?: string; permanent?: boolean }): boolean {
+    if (!this.isRouteTrackUp(route.track)) return false;
+    if (route.permanent) return true;
+    return this.isRouteInterfaceUsable(route.iface);
+  }
+
   private _setupPortMonitoring(): void {
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
@@ -1078,6 +1120,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       track: opts?.track,
       vpnInstance: opts?.vpnInstance,
       permanent: opts?.permanent,
+      ifaceConfigured: opts?.iface !== undefined ? true : undefined,
     });
 
     Logger.info(this.id, 'router:route-add',
@@ -1153,12 +1196,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (!this.isRouteInterfaceUsable(route.iface)) {
         // Interface went down — clear any IPSec SAs using this interface
         // (mirrors IOS: "line protocol down" triggers SA teardown)
+        // Le démontage porte sur l'INTERFACE, pas sur la route : il a
+        // donc lieu même pour une route `permanent`, qui elle survit.
         if (this.ipsecEngine) {
           this.ipsecEngine.clearSAsForInterface(route.iface);
         }
-        continue;
       }
-      if (!this.isRouteTrackUp(route.track)) continue;
+      if (!this.isRouteUsable(route)) continue;
 
       const netInt = route.network.toUint32();
       const maskInt = route.mask.toUint32();

@@ -952,6 +952,17 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     trackId = rest[trackIdx + 1];
     rest = rest.slice(0, trackIdx).concat(rest.slice(trackIdx + 2));
   }
+  // `permanent` — la route reste dans la table quand son interface de
+  // sortie tombe. Le mot-clé était accepté et jeté (il ne ressemble ni à
+  // une distance ni à `track`, donc rien ne le lisait) : la route
+  // disparaissait au `shutdown` comme une statique ordinaire, soit
+  // exactement ce que ce mot-clé sert à empêcher.
+  let permanent = false;
+  const permIdx = rest.indexOf('permanent');
+  if (permIdx >= 0) {
+    permanent = true;
+    rest = rest.slice(0, permIdx).concat(rest.slice(permIdx + 1));
+  }
   // Optional administrative distance (RFC: 1-255).
   let ad: number | undefined;
   const adTok = rest.find((t) => /^\d+$/.test(t));
@@ -968,9 +979,10 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     vrfs.set(vrfName, list);
     return '';
   }
-  const opts: { preference?: number; iface?: string; track?: string } = {};
+  const opts: { preference?: number; iface?: string; track?: string; permanent?: boolean } = {};
   if (ad !== undefined) opts.preference = ad;
   if (trackId !== undefined) opts.track = trackId;
+  if (permanent) opts.permanent = true;
   if (outIface) {
     opts.iface = outIface;
     const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
@@ -982,7 +994,8 @@ export function cmdIpRoute(router: Router, args: string[]): string {
       return router.setDefaultRoute(nextHop, 0, ad !== undefined ? { preference: ad } : undefined)
         ? '' : '% Next-hop is not reachable';
     }
-    return router.addStaticRoute(network, mask, nextHop, 0, (ad !== undefined || trackId !== undefined) ? opts : undefined)
+    return router.addStaticRoute(network, mask, nextHop, 0,
+      (ad !== undefined || trackId !== undefined || permanent) ? opts : undefined)
       ? '' : '% Next-hop is not reachable';
   }
   return '% Incomplete command.';
