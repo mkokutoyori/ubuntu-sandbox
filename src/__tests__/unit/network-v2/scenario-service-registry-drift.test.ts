@@ -38,10 +38,17 @@ async function retagService(client: LinuxPC, name: string, port: number): Promis
   vfs.writeFile('/etc/services', `${stripped}\n${name}\t\t${port}/tcp\n`, 0, 0, 0o022);
 }
 
+/**
+ * L'écoute et sa ligne dans `ss` sont une seule opération depuis
+ * docs/PRD-Sockets-Une-Seule-Verite.md §P1 — ce helper posait les deux à
+ * la main, et le second `bind()` se heurterait maintenant à l'entrée que
+ * le `listen()` vient de créer.
+ */
 function bindActual(server: LinuxServer, port: number): void {
-  server.getTcpStack().listen(port, { onAccept: () => undefined });
-  const st = (server as unknown as { executor: { socketTable: { bind: (p: 'tcp', a: string, port: number, pid?: number, name?: string) => unknown } } }).executor.socketTable;
-  st.bind('tcp', '0.0.0.0', port, 4242, 'myservice');
+  server.getTcpStack().listen(port, {
+    onAccept: () => undefined,
+    identity: { pid: 4242, processName: 'myservice' },
+  });
 }
 
 async function baseFirewall(server: LinuxServer): Promise<void> {

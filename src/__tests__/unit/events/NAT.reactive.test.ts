@@ -104,6 +104,23 @@ describe('NATEngine — session creation emits nat.session.created', () => {
     expect(sessions[0].localIp).toBe('10.0.0.5');
   });
 
+  /**
+   * Deux conventions coexistent dans la nature pour ces deux compteurs, et
+   * ce test encodait celle que ce moteur n'applique pas.
+   *
+   * IOS compte une « Miss » par recherche infructueuse ayant FORCÉ la
+   * création d'une entrée. Ce moteur compte au contraire une « Hit » par
+   * paquet effectivement traduit, création comprise (RFC 2663 §4, cf. le
+   * commentaire de `NATEngine.translateOutbound` au point de création), et
+   * réserve « Miss » au paquet qui ressort sans aucune traduction.
+   *
+   * La convention du moteur est celle de tout le reste de la suite
+   * (`scenario-cisco-nat-audit-report` exige `Misses: 0` après du trafic
+   * traduit, `nat-pat-other` exige `Hits` non nul) : ce fichier était le
+   * seul à dire l'inverse. On l'aligne, et on vérifie les DEUX compteurs
+   * plutôt qu'un seul — sinon rien ne distingue « la convention a changé »
+   * de « le compteur est mort ».
+   */
   it('updates the stats signal on each translation', () => {
     const { engine } = buildEngine();
     const pkt1 = makeUdpOutboundPkt('10.0.0.5', 12345, '8.8.8.8', 53);
@@ -113,7 +130,24 @@ describe('NATEngine — session creation emits nat.session.created', () => {
 
     const stats = engine.observables.stats.get();
     expect(stats.sessionCount).toBe(2);
-    expect(stats.misses).toBe(2);
+    expect(stats.hits).toBe(2);
+    expect(stats.misses).toBe(0);
+  });
+
+  it('un paquet qui ressort sans traduction compte une Miss', () => {
+    const { engine } = buildEngine();
+    // `buildEngine` fait matcher l'ACL pour tout le monde ; on la resserre
+    // ici, sinon aucun paquet ne peut ressortir sans traduction et le cas
+    // ne serait pas testable.
+    engine.setACLMatchFn((_aclId, srcIP) => srcIP !== '192.168.99.9');
+    const horsPortee = makeUdpOutboundPkt('192.168.99.9', 5555, '8.8.8.8', 53);
+
+    expect(engine.translateOutbound(horsPortee, 'Gi0/1', 'Gi0/0')).toBeNull();
+    // On lit le COMPTEUR et non le signal : le signal est une projection
+    // rafraîchie par `NATSignalRefreshActor` sur événement de domaine, et
+    // une Miss n'en émet aucun — il n'y a pas de session à annoncer. Le
+    // signal ne bouge donc pas ici, et c'est cohérent avec ce qu'il est.
+    expect(engine.getCounters().misses).toBe(1);
   });
 });
 
