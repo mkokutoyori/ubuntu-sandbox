@@ -1597,7 +1597,15 @@ export class TcpStack {
     targetIp: string,
   ): { name: string; port?: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
     if (ipFamilyOf(targetIp) === 'ipv6') return this.resolveEgress6(targetIp);
-    if (new IPAddress(targetIp).isLoopback()) return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
+    // Ce qui arrive ici est censé être une adresse : la résolution de nom
+    // est le travail de l'appelant. Mais un nom non résolu y parvenait,
+    // et `new IPAddress('localhost')` levait — une exception traversant
+    // `connect()` jusqu'à une promesse non rattrapée, donc une trace dans
+    // la console de l'utilisateur au lieu d'un refus propre. Une adresse
+    // qu'on ne sait pas lire est simplement une destination sans route.
+    const parsedTarget = IPAddress.tryParse(targetIp);
+    if (!parsedTarget) return null;
+    if (parsedTarget.isLoopback()) return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
 
     if (this.host.resolveRoute) {
       const route = this.host.resolveRoute(targetIp);
