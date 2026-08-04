@@ -396,6 +396,14 @@ export class RouterDebugService implements TerminalDebugSource {
       const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
       if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail);
       if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir);
+      if (ip.proto === 17 && dir === 'rcvd') {
+        const u = ip.transport as { sourcePort?: number; destinationPort?: number; length?: number } | undefined;
+        if (u) {
+          this.emit('ip.udp',
+            `UDP: src=${ip.src}(${u.sourcePort ?? 0}), dst=${ip.dst}(${u.destinationPort ?? 0}), `
+            + `length=${u.length ?? 0}`);
+        }
+      }
       if (ip.proto === 1) {
         if (ip.icmpType === 'echo-request') {
           this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`);
