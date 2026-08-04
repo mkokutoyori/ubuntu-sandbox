@@ -263,7 +263,6 @@ describe('Exigence 8 — un masque discordant interdit l\'adjacence OSPF', () =>
       await run(r, 'network 10.0.0.0 0.0.0.255 area 0');
       await run(r, 'end');
     }
-    await run(r1, 'debug ip ospf hello');
     const out = await run(r1, 'show ip ospf neighbor');
     expect(out).not.toMatch(/FULL/);
   });
@@ -285,13 +284,19 @@ describe('Exigence 8 — un masque discordant interdit l\'adjacence OSPF', () =>
     const journal = r1.getLoggingConfig()!;
     const vues: string[] = [];
     journal.subscribeConsole((l) => vues.push(l));
-    for (const [r, rid] of [[r1, '1.1.1.1'], [r2, '2.2.2.2']] as [CiscoRouter, string][]) {
-      await run(r, 'configure terminal');
-      await run(r, 'router ospf 1');
-      await run(r, `router-id ${rid}`);
-      await run(r, 'network 10.0.0.0 0.0.0.255 area 0');
-      await run(r, 'end');
-    }
+    // `debug ip ospf` exige un processus OSPF : on monte celui de r1, on arme
+    // le debug, PUIS r2 rejoint — sinon la discordance est déjà passée.
+    await run(r1, 'configure terminal');
+    await run(r1, 'router ospf 1');
+    await run(r1, 'router-id 1.1.1.1');
+    await run(r1, 'network 10.0.0.0 0.0.0.255 area 0');
+    await run(r1, 'end');
+    await run(r1, 'debug ip ospf hello');
+    await run(r2, 'configure terminal');
+    await run(r2, 'router ospf 1');
+    await run(r2, 'router-id 2.2.2.2');
+    await run(r2, 'network 10.0.0.0 0.0.0.255 area 0');
+    await run(r2, 'end');
     const tout = vues.join('\n');
     expect(tout).toMatch(/Mismatched hello parameters from 10\.0\.0\.2/);
     expect(tout).toMatch(/Dead R 40 C 40, Hello R 10 C 10, Mask R 255\.255\.255\.128 C 255\.255\.255\.0/);

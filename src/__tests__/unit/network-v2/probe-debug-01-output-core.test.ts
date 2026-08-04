@@ -223,6 +223,7 @@ describe('Scénario 10 — horodatage à la milliseconde', () => {
     for (const c of [
       'configure terminal',
       'service timestamps debug datetime msec',
+      'service timestamps log datetime msec',
       'logging buffered 64000 debugging',
       'end',
     ]) await run(c);
@@ -237,7 +238,7 @@ describe('Scénario 10 — horodatage à la milliseconde', () => {
     expect(
       horodatee,
       'datetime msec = date, heure, et millièmes',
-    ).toMatch(/\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}: %/);
+    ).toMatch(/\*?[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}: %/);
   }, LONG);
 
   it('sans l\'option, aucun préfixe d\'horodatage', async () => {

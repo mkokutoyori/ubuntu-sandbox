@@ -249,13 +249,13 @@ describe('Scénario 5 — changement d\'horodatage à chaud', () => {
     const [g0] = (await routeur()).r.getPortNames();
     for (const c of ['configure terminal', `interface ${g0}`, 'no shutdown', 'end']) await run(c);
 
-    for (const c of ['configure terminal', 'service timestamps debug datetime msec', 'end']) {
+    for (const c of ['configure terminal', 'service timestamps debug datetime msec', 'service timestamps log datetime msec', 'end']) {
       await run(c);
     }
     for (const c of ['configure terminal', `interface ${g0}`, 'shutdown', 'end']) await run(c);
 
     const journal = (await run('show logging')).split('\n');
-    const horodatee = journal.filter((l) => /\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}: %/.test(l));
+    const horodatee = journal.filter((l) => /\*?[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}: %/.test(l));
     expect(
       horodatee.length,
       'le message postérieur au changement porte le nouveau format, sans relancer le debug',
