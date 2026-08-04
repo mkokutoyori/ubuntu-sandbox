@@ -214,6 +214,35 @@ qu'il faut nommer plutôt que de le trancher au passage.
 - **Acceptation :** toute entrée `LISTEN` restante sans écoute réelle est
   justifiée par un commentaire au point de liaison.
 
+#### P2a — fait
+
+- **DNS 53/tcp et DoT 853** : les deux `socketTable.bind()` manuels sont
+  partis. Leur propre commentaire disait qu'ils n'existaient que parce
+  que `listen()` n'inscrivait rien ; il inscrit, avec le nom du démon.
+  Première des cinq rencontres du §3 à disparaître pour de bon.
+- **Windows 22, 445, 3389** : trois doublons d'un `listen()` situé
+  quelques lignes plus bas dans le même fichier. Leur pid et leur nom de
+  processus voyagent maintenant avec l'écoute.
+- **Windows 139** : le cas décoratif pur. `ss` l'annonçait depuis
+  toujours et rien ne répondait. Il sert désormais le même SMB que le
+  445 et s'éteint avec le même `LanmanServer` — un port joignable qui
+  parle le bon protocole vaut mieux qu'un port affiché qui ne parle
+  rien. Ce que ce raccourci ne fait pas, écrit au point de liaison : le
+  préambule NetBIOS (RFC 1002 §4.3), faute de couche NBSS ici et de
+  client qui l'attendrait.
+
+#### P2b — reste à faire
+
+- **sshd 22 (v4 et v6) et les ports de `sshd_config`.** Doublons, mais
+  pas anodins : ils portent la bannière SSH, et l'entrée `:::22` n'a pas
+  d'écoute propre — `findListener` rabat une connexion v6 sur le
+  générique v4. Les retirer sans donner au `listen()` une écoute `::`
+  ferait apparaître l'erreur symétrique en v6. À traiter seul, pour que
+  la régression reste attribuable sur une surface aussi testée.
+- **Le listener TNS d'Oracle (1521).** Inchangé, et pour la raison déjà
+  écrite au point de liaison : lui donner une vraie boucle d'acceptation
+  suppose un serveur TNS. Nommé plutôt que tranché au passage.
+
 ### P3 — Le garde-fou
 
 Un test qui échoue si une nouvelle divergence apparaît. Sans lui, P1 et P2
