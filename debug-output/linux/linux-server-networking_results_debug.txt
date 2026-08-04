@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-08-04T08:20:43.320Z
+Generated: 2026-08-04T10:54:43.800Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -870,8 +870,8 @@ $ [146/302]> ss -l
   LISTEN     0       0        [::]:ssh               [::]:*            
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*         
   LISTEN     0       0        [::]:1521              [::]:*            
-  LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
   UNCONN     0       0        127.0.0.53:domain      0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
   UNCONN     0       0        0.0.0.0:5355           0.0.0.0:*         
   UNCONN     0       0        0.0.0.0:1812           0.0.0.0:*         
   UNCONN     0       0        0.0.0.0:1813           0.0.0.0:*         
@@ -907,8 +907,8 @@ $ [150/302]> ss -a
   LISTEN     0       0        [::]:ssh               [::]:*            
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*         
   LISTEN     0       0        [::]:1521              [::]:*            
-  LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
   UNCONN     0       0        127.0.0.53:domain      0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
   UNCONN     0       0        0.0.0.0:5355           0.0.0.0:*         
   UNCONN     0       0        0.0.0.0:1812           0.0.0.0:*         
   UNCONN     0       0        0.0.0.0:1813           0.0.0.0:*         
@@ -966,8 +966,8 @@ $ [157/302]> netstat -an | head
   tcp6            0      0 :::22                   :::*                    LISTEN
   tcp             0      0 0.0.0.0:1521            0.0.0.0:*               LISTEN
   tcp6            0      0 :::1521                 :::*                    LISTEN
-  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
   udp             0      0 127.0.0.53:53           0.0.0.0:*
+  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
   udp             0      0 0.0.0.0:5355            0.0.0.0:*
   udp             0      0 0.0.0.0:1812            0.0.0.0:*
 
@@ -1018,9 +1018,10 @@ $ [164/302]> curl -I http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [165/302]> curl -s http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
+<empty>
 
 $ [166/302]> curl -v http://192.168.10.1
+  *   Trying 192.168.10.1:80...
   curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [167/302]> curl -o /tmp/page.html http://192.168.10.1
@@ -1030,24 +1031,25 @@ $ [168/302]> curl -L http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [169/302]> curl --max-time 2 http://192.168.10.99
-  curl: (7) Failed to connect to 192.168.10.99 port 80: Connection refused
+  curl: option --max-time: is not implemented in this simulator
+  curl: try 'curl --help' for more information
 
 $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-08-04 08:20:46--  http://192.168.10.1
+  --2026-08-04 10:54:46--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-08-04 08:20:46--  http://192.168.10.1
+  --2026-08-04 10:54:46--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-08-04 08:20:46--  http://192.168.10.99
+  --2026-08-04 10:54:46--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1269,11 +1271,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Aug  4 08:20 /tmp/id_rsa
-  -rw-r--r-- 1 root root 41 Aug  4 08:20 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Aug  4 10:54 /tmp/id_rsa
+  -rw-r--r-- 1 root root 41 Aug  4 10:54 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAA9rj5saopp9 root@linux-server
+  ssh-rsa AAAAtt1kg35gj9 root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1282,7 +1284,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAwfdrg2dxbej root@localhost
+  ssh-ed25519 AAAA9jrvn0j135o root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]

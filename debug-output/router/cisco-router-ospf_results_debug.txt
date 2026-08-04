@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-08-04T08:22:05.047Z
+Generated: 2026-08-04T11:14:25.271Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1413,10 +1413,6 @@ Total steps: 311
   %IFMGR-6-INFORMATIONAL: Interface Loopback2, IPv4 address 10.10.2.1/255.255.255.0 assigned
   %IFMGR-6-INFORMATIONAL: Interface Loopback3, IPv4 address 10.10.3.1/255.255.255.0 assigned
   %IFMGR-6-INFORMATIONAL: Interface Loopback4, IPv4 address 10.10.4.1/255.255.255.0 assigned
-  %PORT-4-WARNINGS: Loopback1: no cable connected, frame dropped
-  %PORT-4-WARNINGS: Loopback2: no cable connected, frame dropped
-  %PORT-4-WARNINGS: Loopback3: no cable connected, frame dropped
-  %PORT-4-WARNINGS: Loopback4: no cable connected, frame dropped
   %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv6 address fe80::ff:fe00:2%GigabitEthernet0/1 assigned
   %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv6 address 2001:db8:1::1 assigned
 
@@ -1428,7 +1424,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C1FAD.249BA5E3 (08:22:05.143 UTC Tue Aug 4 2026)
+  reference time is EE1C4811.5E76C8B4 (11:14:25.369 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1437,7 +1433,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *08:22:05.000 UTC Tue Aug 4 2026
+  *11:14:25.000 UTC Tue Aug 4 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1894,10 +1890,6 @@ Total steps: 311
   %IFMGR-6-INFORMATIONAL: Interface Loopback2, IPv4 address 10.10.2.1/255.255.255.0 assigned
   %IFMGR-6-INFORMATIONAL: Interface Loopback3, IPv4 address 10.10.3.1/255.255.255.0 assigned
   %IFMGR-6-INFORMATIONAL: Interface Loopback4, IPv4 address 10.10.4.1/255.255.255.0 assigned
-  %PORT-4-WARNINGS: Loopback1: no cable connected, frame dropped
-  %PORT-4-WARNINGS: Loopback2: no cable connected, frame dropped
-  %PORT-4-WARNINGS: Loopback3: no cable connected, frame dropped
-  %PORT-4-WARNINGS: Loopback4: no cable connected, frame dropped
   %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv6 address fe80::ff:fe00:2%GigabitEthernet0/1 assigned
   %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv6 address 2001:db8:1::1 assigned
 
@@ -2223,9 +2215,9 @@ Total steps: 311
     banner       Remove a banner
     privilege    Remove privilege command rule
     logging      Disable logging
+    service      Disable a service
     ntp          Remove NTP config
     enable       Modify enable password parameters
-    service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
     interface    Remove a virtual interface

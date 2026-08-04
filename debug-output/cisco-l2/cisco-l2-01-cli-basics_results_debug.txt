@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-08-04T08:21:28.949Z
+Generated: 2026-08-04T11:02:51.423Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -146,7 +146,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *08:21:28.000 UTC Tue Aug 4 2026
+  *11:02:51.000 UTC Tue Aug 4 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -220,11 +220,12 @@ Total steps: 366
     configure   Enter configuration mode
     disable     Return to user EXEC mode
     write       Save running-config to startup-config
+    show        Show running system information
+    archive     
     erase       Erase persistent storage
     copy        Copy a file
     debug       Enable debugging
     clear       Reset functions
-    show        Show running system information
     reload      Reload the device
     no          Negate a command or set its defaults
     sntp        Configure SNTP
@@ -245,6 +246,7 @@ Total steps: 366
     vtp         VLAN Trunking Protocol
 
 [19/366] sw1 SW1# show ?
+    archive         Display archive status
     ip              Internet Protocol
     sntp            Show SNTP
     clock           Display the system clock
@@ -1230,7 +1232,7 @@ Total steps: 366
   Entry address(es):
   Platform: Cisco Catalyst 2960,  Capabilities: Switch
   Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
-  Holdtime : 180 sec
+  Holdtime : 0 sec
   
   Version :
   Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11
@@ -1293,7 +1295,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *08:21:28.000 UTC Tue Aug 4 2026
+  *11:02:51.000 UTC Tue Aug 4 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1539,6 +1541,7 @@ Total steps: 366
     privilege        Configure command privilege levels
     banner           Set a banner
     logging          Logging configuration
+    service          Service configuration
     ntp              NTP configuration
     snmp-server      SNMP configuration
     clock            Clock configuration (unhandled)
@@ -1546,7 +1549,6 @@ Total steps: 366
     enable           Modify enable password parameters
     username         Configure a local user
     crypto           Crypto configuration (unhandled keywords)
-    service          Service configuration
     login            Login configuration
     line             Enter line configuration
     arp              Add static ARP entry
@@ -1557,6 +1559,7 @@ Total steps: 366
     lacp             Link Aggregation Control Protocol
     port-channel     
     spanning-tree    Spanning Tree configuration
+    archive          Enter archive configuration
     access-list      Numbered ACL entry
     track            Tracked object registry
     errdisable       Error-disable recovery configuration
@@ -1955,19 +1958,16 @@ Total steps: 366
 
 --- [115] § invalid input handling ---
 [115/366] sw1 SW1# shww version
-  % Invalid input detected at '^' marker.
-  shww version
   ^
+  % Invalid input detected at '^' marker.
 
 [116/366] sw1 SW1# show versionnn
-  % Invalid input detected at '^' marker.
-  show versionnn
        ^
+  % Invalid input detected at '^' marker.
 
 [117/366] sw1 SW1# frobnicate
-  % Invalid input detected at '^' marker.
-  frobnicate
   ^
+  % Invalid input detected at '^' marker.
 
 [118/366] sw1 SW1# show
   % Incomplete command.
@@ -1976,9 +1976,8 @@ Total steps: 366
   % Incomplete command.
 
 [120/366] sw1 SW1# interface
-  % Invalid input detected at '^' marker.
-  interface
   ^
+  % Invalid input detected at '^' marker.
 
 
 --- [121] § per-interface inspection loop ---
@@ -2702,9 +2701,8 @@ Total steps: 366
   Trunking Native Mode VLAN: 1 (default)
 
 [168/366] sw1 SW1# show interfaces GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces GigabitEthernet0/0
                   ^
+  % Invalid input detected at '^' marker.
 
 [169/366] sw1 SW1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -3383,7 +3381,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   08:21:29 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   11:02:51 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3476,7 +3474,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/4/2026, 8:21:28 AM
+  System Boot Time:          8/4/2026, 11:02:51 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3532,7 +3530,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   08:21:29 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   11:02:51 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3564,7 +3562,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   08:21:29 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   11:02:51 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3657,7 +3655,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/4/2026, 8:21:28 AM
+  System Boot Time:          8/4/2026, 11:02:51 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3713,27 +3711,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   08:21:29 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   11:02:51 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.410 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.289 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.393 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.160 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.289/1.850/2.410/0.560 ms
+  rtt min/avg/max/mdev = 1.160/1.777/2.393/0.617 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.932 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.272 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.196 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.055 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.932/1.102/1.272/0.170 ms
+  rtt min/avg/max/mdev = 1.055/1.125/1.196/0.070 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -3760,9 +3758,8 @@ Total steps: 366
 
 --- [294] § extended cross-switch interface inspection appendix ---
 [295/366] sw1 SW1# show interfaces FastEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/0
                   ^
+  % Invalid input detected at '^' marker.
 
 [296/366] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -4254,9 +4251,8 @@ Total steps: 366
        0 input drops, 0 output drops
 
 [319/366] sw2 SW2# show interfaces FastEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/0
                   ^
+  % Invalid input detected at '^' marker.
 
 [320/366] sw2 SW2# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -4742,9 +4738,8 @@ Total steps: 366
        0 input drops, 0 output drops
 
 [343/366] core CORE# show interfaces FastEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/0
                   ^
+  % Invalid input detected at '^' marker.
 
 [344/366] core CORE# show interfaces FastEthernet0/1
   FastEthernet0/1 is down, line protocol is down (notconnect)

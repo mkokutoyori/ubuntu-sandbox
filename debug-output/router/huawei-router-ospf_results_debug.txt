@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-08-04T08:22:10.444Z
+Generated: 2026-08-04T11:16:49.729Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -164,7 +164,7 @@ Total steps: 247
 <empty>
 
 [52/247] r1 <R1> display ospf brief
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 10.10.4.1
   
    Area    Type   Intf    Adj   LSA
    0       normal 0       0     0
@@ -247,7 +247,7 @@ Total steps: 247
 <empty>
 
 [76/247] r1 <R1> display ospf brief
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 10.10.4.1
   
    Area    Type   Intf    Adj   LSA
    0       normal 6       0     1
@@ -256,7 +256,7 @@ Total steps: 247
    3       normal 0       0     0
 
 [77/247] r1 <R1> display ospf abr-asbr
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 10.10.4.1
   
    (No border routers known)
 
@@ -480,13 +480,13 @@ Total steps: 247
 
 --- [119] § OSPF display / reset / debug ---
 [119/247] r1 <R1> display ospf peer
-  OSPF Process with Router ID 192.168.1.1
+  OSPF Process with Router ID 10.10.4.1
                    Neighbor Brief Information
   
    Area ID    Interface       Neighbor ID     State
 
 [120/247] r1 <R1> display ospf peer brief
-  OSPF Process with Router ID 192.168.1.1
+  OSPF Process with Router ID 10.10.4.1
                    Neighbor Brief Information
   
    Area ID    Interface       Neighbor ID     State
@@ -537,67 +537,67 @@ Total steps: 247
   
 
 [122/247] r1 <R1> display ospf lsdb
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 10.10.4.1
                     Link State Database
   
                        Area: 0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x8000001c
+   Router    10.10.4.1       10.10.4.1       0     96    0x8000001c
   
                        Area: 1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000001d
+   Router    10.10.4.1       10.10.4.1       0     24    0x8000001d
   
                        Area: 2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000001e
+   Router    10.10.4.1       10.10.4.1       0     24    0x8000001e
   
                        Area: 3
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000001f
+   Router    10.10.4.1       10.10.4.1       0     24    0x8000001f
   
 
 [123/247] r1 <R1> display ospf lsdb router
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 10.10.4.1
                     Link State Database
   
                        Type: Router
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x80000020
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000021
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000022
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000023
+   Router    10.10.4.1       10.10.4.1       0     96    0x80000020
+   Router    10.10.4.1       10.10.4.1       0     24    0x80000021
+   Router    10.10.4.1       10.10.4.1       0     24    0x80000022
+   Router    10.10.4.1       10.10.4.1       0     24    0x80000023
 
 [124/247] r1 <R1> display ospf lsdb network
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 10.10.4.1
                     Link State Database
   
                        Type: Network
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [125/247] r1 <R1> display ospf lsdb summary
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 10.10.4.1
                     Link State Database
   
                        Type: Sum-Net
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [126/247] r1 <R1> display ospf lsdb ase
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 10.10.4.1
                     Link State Database
   
                        Type: External
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [127/247] r1 <R1> display ospf lsdb nssa
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 10.10.4.1
                     Link State Database
   
                        Type: 7
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [128/247] r1 <R1> display ospf routing
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 10.10.4.1
            Routing Tables
   
    Routing for Network
@@ -607,7 +607,7 @@ Total steps: 247
    Intra Area: 0  Inter Area: 0  ASE: 0  NSSA: 0
 
 [129/247] r1 <R1> display ospf abr-asbr
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 10.10.4.1
   
    (No border routers known)
 
@@ -717,7 +717,7 @@ Total steps: 247
   #
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 10.10.4.1
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -832,7 +832,7 @@ Total steps: 247
   No ARP entries found.
 
 [153/247] r1 <R1> display ospf peer
-  OSPF Process with Router ID 192.168.1.1
+  OSPF Process with Router ID 10.10.4.1
                    Neighbor Brief Information
   
    Area ID    Interface       Neighbor ID     State
@@ -883,7 +883,7 @@ Total steps: 247
   
 
 [155/247] r1 <R1> display ospf routing
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 10.10.4.1
            Routing Tables
   
    Routing for Network
@@ -893,28 +893,28 @@ Total steps: 247
    Intra Area: 0  Inter Area: 0  ASE: 0  NSSA: 0
 
 [156/247] r1 <R1> display ospf lsdb
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 10.10.4.1
                     Link State Database
   
                        Area: 0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x8000004c
+   Router    10.10.4.1       10.10.4.1       0     96    0x8000004c
   
                        Area: 1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000004d
+   Router    10.10.4.1       10.10.4.1       0     24    0x8000004d
   
                        Area: 2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000004e
+   Router    10.10.4.1       10.10.4.1       0     24    0x8000004e
   
                        Area: 3
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000004f
+   Router    10.10.4.1       10.10.4.1       0     24    0x8000004f
   
 
 [157/247] r1 <R1> display ospf brief
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 10.10.4.1
   
    Area    Type   Intf    Adj   LSA
    0       normal 6       0     1
@@ -997,7 +997,7 @@ Total steps: 247
   No NTP associations
 
 [178/247] r1 <R1> display clock
-  2026-08-04 08:22:10
+  2026-08-04 11:16:49
   Tuesday
   Time Zone(UTC) : UTC
 
@@ -1010,13 +1010,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-04 08:22:10
+  CPU Usage Stat. Time : 2026-08-04 11:16:49
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-04 08:22:10
+  Memory utilization statistics at 2026-08-04 11:16:49
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1057,28 +1057,24 @@ Total steps: 247
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 21
-  2026-08-04 08:22:10 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-08-04 08:22:10 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-08-04 08:22:10 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-08-04 08:22:10 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-08-04 08:22:10 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-08-04 08:22:10 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-08-04 08:22:10 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-04 08:22:10 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-04 08:22:10 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-04 08:22:10 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-04 08:22:10 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  2026-08-04 08:22:10 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  2026-08-04 08:22:10 %01IFMGR/6/INFORMATIONAL: Interface LoopBack1, IPv4 address 10.10.1.1/255.255.255.0 assigned
-  2026-08-04 08:22:10 %01IFMGR/6/INFORMATIONAL: Interface LoopBack2, IPv4 address 10.10.2.1/255.255.255.0 assigned
-  2026-08-04 08:22:10 %01IFMGR/6/INFORMATIONAL: Interface LoopBack3, IPv4 address 10.10.3.1/255.255.255.0 assigned
-  2026-08-04 08:22:10 %01IFMGR/6/INFORMATIONAL: Interface LoopBack4, IPv4 address 10.10.4.1/255.255.255.0 assigned
-  2026-08-04 08:22:10 %01PORT/4/WARNINGS: LoopBack1: no cable connected, frame dropped
-  2026-08-04 08:22:10 %01PORT/4/WARNINGS: LoopBack2: no cable connected, frame dropped
-  2026-08-04 08:22:10 %01PORT/4/WARNINGS: LoopBack3: no cable connected, frame dropped
-  2026-08-04 08:22:10 %01PORT/4/WARNINGS: LoopBack4: no cable connected, frame dropped
-  2026-08-04 08:22:10 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv6 address 2001:db8:1::1 assigned
+  Current messages : 17
+  2026-08-04 11:16:49 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-08-04 11:16:49 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-08-04 11:16:49 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-08-04 11:16:49 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-08-04 11:16:49 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-08-04 11:16:49 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-08-04 11:16:49 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-04 11:16:49 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-04 11:16:49 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-04 11:16:49 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-04 11:16:49 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  2026-08-04 11:16:49 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  2026-08-04 11:16:49 %01IFMGR/6/INFORMATIONAL: Interface LoopBack1, IPv4 address 10.10.1.1/255.255.255.0 assigned
+  2026-08-04 11:16:49 %01IFMGR/6/INFORMATIONAL: Interface LoopBack2, IPv4 address 10.10.2.1/255.255.255.0 assigned
+  2026-08-04 11:16:49 %01IFMGR/6/INFORMATIONAL: Interface LoopBack3, IPv4 address 10.10.3.1/255.255.255.0 assigned
+  2026-08-04 11:16:49 %01IFMGR/6/INFORMATIONAL: Interface LoopBack4, IPv4 address 10.10.4.1/255.255.255.0 assigned
+  2026-08-04 11:16:49 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv6 address 2001:db8:1::1 assigned
 
 [187/247] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1188,7 +1184,7 @@ Total steps: 247
   #
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 10.10.4.1
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -1276,7 +1272,7 @@ Total steps: 247
   #
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 10.10.4.1
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -1308,7 +1304,7 @@ Total steps: 247
   interface LoopBack4
    ip address 10.10.4.1 255.255.255.0
   ospf 1
-   router-id 192.168.1.1
+   router-id 10.10.4.1
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -1420,7 +1416,7 @@ Total steps: 247
 [236/247] r1 [Huawei-ospf-1] display this
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 10.10.4.1
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
