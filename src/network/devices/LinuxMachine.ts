@@ -27,6 +27,7 @@ import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equi
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { LinuxNginxService } from './linux/http/LinuxNginxService';
+import { checkNginxCriticalFiles } from './linux/service/CriticalFiles';
 import {
   NGINX_CONF, NGINX_CONF_PATH, NGINX_DEFAULT_SITE, NGINX_WELCOME_PAGE,
   NGINX_SITES_AVAILABLE, NGINX_SITES_ENABLED, NGINX_DEFAULT_ROOT, NGINX_DEFAULT_INDEX,
@@ -1130,6 +1131,7 @@ export abstract class LinuxMachine extends EndHost
         },
       },
       tcpStack: () => this.getTcpStack(),
+      portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
       now: () => new Date(),
     });
@@ -1140,8 +1142,24 @@ export abstract class LinuxMachine extends EndHost
     this.publishNginxPorts();
 
     this.executor.serviceMgr.registerConfigCheck('nginx', () => {
-      const error = this.nginxService?.loadConfig() ?? null;
-      return error ? { ok: false, error, verbatim: true } : { ok: true };
+      const service = this.nginxService;
+      if (!service) return { ok: true };
+      // L'ordre est celui de nginx : le fichier d'abord (c'est lui qui
+      // nomme les ports), le port ensuite. Un `nginx.conf` absent est un
+      // `open()` qui échoue, un `nginx.conf` vide une configuration sans
+      // section `events` — deux pannes, deux messages.
+      const missing = checkNginxCriticalFiles({
+        exists: (p) => this.executor.vfs.exists(p),
+        readFile: (p) => this.executor.vfs.readFile(p),
+      });
+      const error = missing.ok ? service.loadConfig() : (missing.error ?? null);
+      const conflict = error ? null : service.portConflict();
+      const failure = error ?? conflict;
+      if (failure) {
+        service.reportStartupFailure(failure);
+        return { ok: false, error: failure, verbatim: true };
+      }
+      return { ok: true };
     });
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'nginx') return;

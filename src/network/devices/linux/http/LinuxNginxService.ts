@@ -5,7 +5,7 @@ import { contentTypeForPath } from '@/network/http/HttpTypes';
 import type { PortSpec } from '../../../core/ports/PortNumber';
 import type { ServiceSocketServer } from '../ports/ServiceSocketServer';
 import {
-  parseNginxConfig, extractServers,
+  parseNginxConfig, extractServers, validateNginxConfig,
   type NginxFileSource, type NginxServerBlock, type NginxLocation,
 } from './NginxConfig';
 import {
@@ -22,6 +22,8 @@ export interface NginxHostFs extends NginxFileSource {
 export interface NginxHost {
   readonly fs: NginxHostFs;
   tcpStack(): TcpStack;
+  /** Un autre processus tient-il déjà ce port ? */
+  portTaken(port: number): boolean;
   appendLog(path: string, line: string): void;
   now(): Date;
 }
@@ -85,8 +87,30 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   loadConfig(): string | null {
     const parsed = parseNginxConfig(this.host.fs);
     if (parsed.ok === false) return parsed.error.message;
+    const invalid = validateNginxConfig(parsed.tree);
+    if (invalid) return invalid.message;
     this.servers = extractServers(parsed.tree);
     return null;
+  }
+
+  /**
+   * Ce que nginx constate au démarrage et que la seule lecture du fichier
+   * ne peut pas dire : le port qu'il veut est-il libre ? Un vrai nginx
+   * échoue ici, avec l'errno, et n'ouvre rien du tout.
+   */
+  portConflict(): string | null {
+    for (const port of this.configuredPorts()) {
+      if (this.sessions.has(port)) continue;
+      if (this.host.portTaken(port)) {
+        return `nginx: [emerg] bind() to 0.0.0.0:${port} failed (98: Address already in use)`;
+      }
+    }
+    return null;
+  }
+
+  /** Le refus de démarrage part aussi dans le journal d'erreurs, comme le vrai. */
+  reportStartupFailure(message: string): void {
+    this.host.appendLog(NGINX_ERROR_LOG, `${formatErrorTime(this.host.now())} [emerg] 0#0: ${message.replace(/^nginx: \[emerg\] /, '')}`);
   }
 
   /** Les ports que la configuration déclare — ce que le service doit ouvrir. */

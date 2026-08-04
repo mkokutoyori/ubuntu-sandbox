@@ -403,3 +403,68 @@ document ouvre :
 - **P5 est bloqué** par une dépendance nommée (`openssl`), pas par sa
   difficulté propre.
 - **P6** est un chantier à part entière.
+
+
+## 8. Ce qui a été livré (P0 → P4)
+
+### 8.1 Le décor supprimé, et jusqu'où
+
+`ServiceSocketServer` est le port étroit : un service n'est inscrit dans
+la `SocketTable` — donc dans `ss` — que s'il en fournit un et que celui-ci
+a réellement ouvert son écoute. `apache2`, `mysql` et `postgresql`
+quittent `ss` : régression apparente, correction réelle.
+
+**La règle porte sur la table STATIQUE `SERVICE_LISTENERS`**, où vit le
+décor. Une unité posée à l'exécution déclare son écoute, et cette
+déclaration vaut serveur — c'est ce qui laisse le listener TNS d'Oracle
+en place.
+
+### 8.2 Trois dettes nommées plutôt que tues
+
+- **Le listener TNS d'Oracle reste décoratif.** Rien n'appelle jamais
+  `TcpStack.listen(1521)`. Il n'est pas assaini parce qu'un sous-système
+  entier en dépend (la bannière, `lsnrctl`, la détection Oracle de
+  `nmap`) ; la dette est écrite au point de liaison.
+- **Un listener posé directement sur `TcpStack` n'apparaît pas dans
+  `ss`.** L'erreur symétrique de celle que P0 corrige. `systemd-resolved`
+  y échappe en déclarant son serveur ; les autres non.
+- **apache2 n'est pas traité**, comme annoncé au §5.
+
+### 8.3 Ce que le chantier a révélé ailleurs
+
+**Trois fichiers de test différents liaient la pile TCP à la main** pour
+compenser un port décoratif, dont un avec le commentaire « *systemctl
+projects mysqld into /proc/net/tcp but does not open a real TCP
+accept-loop* ». D'autres avaient rencontré la contradiction et l'avaient
+contournée sans la nommer.
+
+Et **un test l'encodait** : `scenario-config-drift` écrivait
+`listen 8080` puis exigeait que `ss` ne montre pas `:8080`. Il ne passait
+que parce que la configuration était ignorée.
+
+### 8.4 P3 — plusieurs sites, et les pannes
+
+`sites-enabled/` est réellement lu : `ln -s` et `rm` suffisent. Routage
+par `server_name` avec repli sur `default_server`. Port déjà pris →
+`nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in
+use)`, le service échoue et la trace part dans `error.log`.
+
+**Un `nginx.conf` ABSENT et un `nginx.conf` VIDE sont deux pannes
+distinctes** : l'absence est un `open()` qui échoue (`CriticalFiles`), le
+vide une configuration syntaxiquement correcte à laquelle il manque la
+section `events`. Deux messages, deux diagnostics — et `nginx -t` juge le
+fichier exactement comme le démon, faute de quoi une commande dirait
+« syntax is ok » d'une configuration que `systemctl start` refuse.
+
+### 8.5 P4 — journaux
+
+`access.log` au format `combined` réel (une ligne par requête servie,
+méthode, cible, statut, taille, User-Agent), `error.log` pour les 4xx/5xx
+avec le chemin cherché et l'errno, et pour les refus de démarrage.
+`access_log off;` fait vraiment taire le journal.
+
+### 8.6 Non fait
+
+P5 (HTTPS) reste bloqué sur la question ouverte du §4 : aucun chemin
+`openssl req` → PEM n'existe sous Linux. P6 (`proxy_pass`) est refusé par
+`nginx -t` avec le message qui le dit, pas avalé.
