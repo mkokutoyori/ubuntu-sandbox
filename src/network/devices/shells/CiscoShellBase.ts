@@ -387,6 +387,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (path === 'reload' && m.args.length === 0) {
       return this.reloadInteractionPlan();
     }
+    if (path === 'clear ip ospf' && m.args[0]?.toLowerCase() === 'process') {
+      return {
+        steps: [
+          {
+            kind: 'confirmation',
+            prompt: 'Reset ALL OSPF processes? [no]:',
+            defaultAnswer: 'no',
+            storeAs: 'ospf_reset_confirmed',
+          },
+          { kind: 'run', run: async (rt) => { await rt.exec('clear ip ospf process'); } },
+        ],
+      };
+    }
     if (path === 'copy' && m.args.length === 2) {
       const norm = (a: string): string => {
         const t = a.toLowerCase();
@@ -967,6 +980,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const lower = cmdPart.toLowerCase();
     const firstWord = cmdPart.split(/\s+/)[0];
     if (/[A-Z]/.test(firstWord) && (firstWord.toLowerCase() === 'debug' || firstWord.toLowerCase() === 'undebug')) {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
+    if (this.mode === 'user' && /^(un)?deb(u(g)?)?\b/i.test(cmdPart)) {
       return CISCO_ERRORS.INVALID_INPUT;
     }
     if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
@@ -1630,8 +1646,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return CISCO_ERRORS.INVALID_INPUT;
     }
     this.attachLoggingToDevice(this.d());
-    if (cible === 'debug') this.logging.timestampsDebug = !negate;
-    else this.logging.timestamps = !negate;
+    const parUptime = !negate && reste[0] === 'uptime';
+    const dev = this.d() as unknown as { getUptimeMs?: () => number };
+    if (dev.getUptimeMs) this.logging.setUptimeProvider(() => dev.getUptimeMs!());
+    if (cible === 'debug') {
+      this.logging.timestampsDebug = !negate;
+      this.logging.timestampsDebugUptime = parUptime;
+    } else {
+      this.logging.timestamps = !negate;
+      this.logging.timestampsUptime = parUptime;
+    }
     if (!negate && reste.includes('msec')) this.logging.timestampsMsec = true;
     return '';
   }
@@ -1897,7 +1921,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       getDebugService?: () => {
         enable(c: string, scope?: string): string;
         disable(c: string): string;
-        addCondition(kind: 'interface' | 'vrf', value: string): string;
+        addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
         removeCondition(kind: 'interface' | 'vrf', value: string): string;
         clearConditions(): void;
       };
@@ -1929,7 +1953,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!svc) return '';
       const kind = (args[0] ?? '').toLowerCase();
       const value = args.slice(1).join(' ').trim();
-      if (kind !== 'interface' && kind !== 'vrf') return CISCO_ERRORS.INVALID_INPUT;
+      if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;
       const resolved = kind === 'interface'
         ? (this.resolveInterfaceNameForDebug(value) ?? value)
@@ -1942,7 +1966,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const kind = (args[0] ?? '').toLowerCase();
       if (kind === 'all') { svc.clearConditions(); return 'All conditions have been removed'; }
       const value = args.slice(1).join(' ').trim();
-      if (kind !== 'interface' && kind !== 'vrf') return CISCO_ERRORS.INVALID_INPUT;
+      if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;
       const resolved = kind === 'interface'
         ? (this.resolveInterfaceNameForDebug(value) ?? value)

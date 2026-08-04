@@ -134,6 +134,34 @@ export class RouterOSPFIntegration {
   // Public Methods — Enable/Disable/Getters
   // ════════════════════════════════════════════════════════════════
 
+  routerIdManuel = false;
+
+  routerIdAutomatique(): string | null {
+    let loopback: { ip: string; n: number } | null = null;
+    let physique: { ip: string; n: number } | null = null;
+    for (const [nom, port] of this.ctx.getPorts()) {
+      const ip = port.getIPAddress();
+      if (!ip) continue;
+      const estLoopback = /^Loopback/i.test(nom);
+      if (!estLoopback && !(port.getIsUp() && !port.isAdminDown())) continue;
+      const n = ip.toUint32();
+      const cible = estLoopback ? loopback : physique;
+      if (!cible || n > cible.n) {
+        if (estLoopback) loopback = { ip: ip.toString(), n };
+        else physique = { ip: ip.toString(), n };
+      }
+    }
+    return (loopback ?? physique)?.ip ?? null;
+  }
+
+  reelireRouterId(): string | null {
+    if (!this.ospfEngine) return null;
+    if (this.routerIdManuel) return this.ospfEngine.getRouterId();
+    const auto = this.routerIdAutomatique();
+    if (auto) this.ospfEngine.setRouterId(auto);
+    return auto;
+  }
+
   /** Enable OSPF and create the engine with the given process ID */
   enableOSPF(processId: number = 1): void {
     if (this.ospfEngine) return;
@@ -142,22 +170,8 @@ export class RouterOSPFIntegration {
     const bus = this.ctx.getBus?.();
     if (bus) this.ospfEngine.setEventBus(bus);
 
-    // Auto-detect Router ID: highest interface IP
-    let highestIP = '0.0.0.0';
-    let highestNum = 0;
-    for (const [, port] of this.ctx.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip) {
-        const num = ip.toUint32();
-        if (num > highestNum) {
-          highestNum = num;
-          highestIP = ip.toString();
-        }
-      }
-    }
-    if (highestIP !== '0.0.0.0') {
-      this.ospfEngine.setRouterId(highestIP);
-    }
+    const auto = this.routerIdAutomatique();
+    if (auto) this.ospfEngine.setRouterId(auto);
 
     // Set up send callback for OSPF packets
     this.ospfEngine.setSendCallback((iface, packet, destIP) => {
@@ -174,7 +188,7 @@ export class RouterOSPFIntegration {
     this.ospfEngine.routingTableSync?.onRoutes((routes) => this.installRoutes(routes));
 
     Logger.info(this.ctx.id, 'ospf:enabled',
-      `${this.ctx.name}: OSPFv2 process ${processId} enabled, Router ID ${highestIP}`);
+      `${this.ctx.name}: OSPFv2 process ${processId} enabled, Router ID ${this.ospfEngine.getRouterId()}`);
   }
 
   /** Disable OSPF and remove all OSPF routes */

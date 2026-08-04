@@ -49,7 +49,7 @@ test.describe('Exigence 3 — horodatage IOS visible dans le terminal', () => {
 });
 
 test.describe('Exigence 5/6 — symboles ICMP du ping', () => {
-  test('N quand aucune route, ! quand la cible repond', async ({ page }) => {
+  test('. quand aucune route, ! quand la cible repond', async ({ page }) => {
     const r1 = await addDevice(page, 'router-cisco', 300, 250);
     const r2 = await addDevice(page, 'router-cisco', 600, 250);
     await page.evaluate(([a, b]) => {
@@ -73,7 +73,7 @@ test.describe('Exigence 5/6 — symboles ICMP du ping', () => {
 
     await openTerminal(page, r1);
     await typeCmd(page, 'ping 203.0.113.9', 1500);
-    await waitForText(page, /NNNNN/);
+    await waitForText(page, /\.{5}/);
     await waitForText(page, /Success rate is 0 percent/);
 
     await typeCmd(page, 'ping 10.0.0.2', 2500);

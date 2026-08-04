@@ -852,6 +852,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (args[1] !== undefined) {
       if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
       vlan = parseInt(args[1], 10);
+    } else if (type === 'dot1q' || type === 'isl') {
+      return '% Incomplete command.';
     }
     (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
       type, vlan, native: args.includes('native'),

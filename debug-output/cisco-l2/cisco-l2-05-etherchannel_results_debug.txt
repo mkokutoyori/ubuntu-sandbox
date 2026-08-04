@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-08-04T08:21:48.410Z
+Generated: 2026-08-04T11:04:18.749Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -607,9 +607,8 @@ Total steps: 340
 <empty>
 
 [177/340] sw1 SW1(config)# no interface Port-channel1
-  % Invalid input detected at '^' marker.
-  no interface Port-channel1
      ^
+  % Invalid input detected at '^' marker.
 
 [178/340] sw1 SW1(config)# end
 <empty>
@@ -1434,12 +1433,12 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.248 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.964 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.176 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.923 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.964/1.606/2.248/0.642 ms
+  rtt min/avg/max/mdev = 0.923/1.550/2.176/0.627 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...
@@ -1549,9 +1548,8 @@ Total steps: 340
 
 --- [268] § extended cross-switch interface inspection appendix ---
 [269/340] sw1 SW1# show interfaces FastEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/0
                   ^
+  % Invalid input detected at '^' marker.
 
 [270/340] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -2037,9 +2035,8 @@ Total steps: 340
        0 input drops, 0 output drops
 
 [293/340] sw2 SW2# show interfaces FastEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/0
                   ^
+  % Invalid input detected at '^' marker.
 
 [294/340] sw2 SW2# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -2525,9 +2522,8 @@ Total steps: 340
        0 input drops, 0 output drops
 
 [317/340] core CORE# show interfaces FastEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/0
                   ^
+  % Invalid input detected at '^' marker.
 
 [318/340] core CORE# show interfaces FastEthernet0/1
   FastEthernet0/1 is down, line protocol is down (notconnect)

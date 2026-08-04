@@ -67,9 +67,19 @@ export class RouterDebugService implements TerminalDebugSource {
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
   private readonly broadcast = new DebugBroadcast();
 
+  private static readonly VOLUMINEUX: ReadonlySet<string> = new Set([
+    'ip.packet', 'ip.tcp', 'ip.udp', 'all',
+  ]);
+
+  private static avertissement(category: DebugCategory): string {
+    return RouterDebugService.VOLUMINEUX.has(String(category))
+      ? 'MUST NOT be used on production networks; High CPU utilization may occur.\n'
+      : '';
+  }
+
   enable(category: DebugCategory, scope?: string, detail = false): string {
     this.flags.set(category, { category, enabledAtMs: Date.now(), scope, detail });
-    return `${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
+    return `${RouterDebugService.avertissement(category)}${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
   }
 
   disable(category: DebugCategory): string {
@@ -112,16 +122,16 @@ export class RouterDebugService implements TerminalDebugSource {
    * is dropped — a condition the operator asked for must not be widened
    * by our own inability to classify a line.
    */
-  private readonly conditions: Array<{ kind: 'interface' | 'vrf'; value: string }> = [];
+  private readonly conditions: Array<{ kind: 'interface' | 'vrf' | 'ip'; value: string }> = [];
 
-  addCondition(kind: 'interface' | 'vrf', value: string): string {
+  addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string {
     if (!this.conditions.some((c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase())) {
       this.conditions.push({ kind, value });
     }
     return `Condition ${this.conditions.length} set`;
   }
 
-  removeCondition(kind: 'interface' | 'vrf', value: string): string {
+  removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string {
     const i = this.conditions.findIndex(
       (c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase());
     if (i < 0) return `% Condition not found`;
@@ -131,7 +141,7 @@ export class RouterDebugService implements TerminalDebugSource {
 
   clearConditions(): void { this.conditions.length = 0; }
 
-  listConditions(): ReadonlyArray<{ kind: 'interface' | 'vrf'; value: string }> {
+  listConditions(): ReadonlyArray<{ kind: 'interface' | 'vrf' | 'ip'; value: string }> {
     return this.conditions;
   }
 
@@ -166,6 +176,10 @@ export class RouterDebugService implements TerminalDebugSource {
     this.aclMatchFn = fn;
   }
 
+  private tamponSyslog?: (line: string) => void;
+
+  setSyslogSink(fn: (line: string) => void): void { this.tamponSyslog = fn; }
+
   private emit(category: DebugCategory, line: string): void {
     const flag = this.flags.get(category);
     if (!flag) return;
@@ -173,6 +187,7 @@ export class RouterDebugService implements TerminalDebugSource {
     if (!this.passesConditions(line)) return;
     if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line)) return;
     this.broadcast.fan(line);
+    this.tamponSyslog?.(line);
   }
 
   emitLine(category: DebugCategory, line: string): void {
@@ -411,15 +426,47 @@ export class RouterDebugService implements TerminalDebugSource {
     return category !== null && this.isEnabled(category);
   }
 
+  private static groupe(category: DebugCategory): string {
+    const c = String(category);
+    if (c.startsWith('ip.ospf')) return 'OSPF';
+    if (c.startsWith('crypto.pki')) return 'Crypto PKI';
+    if (c.startsWith('crypto')) return 'Crypto';
+    if (c === 'ip.arp') return 'ARP';
+    if (c === 'ip.routing') return 'IP routing';
+    if (c === 'ip.packet') return 'IP packet';
+    if (c === 'ip.icmp') return 'ICMP';
+    if (c === 'ip.nat') return 'IP NAT';
+    if (c.startsWith('ip.')) return RouterDebugService.label(category);
+    return RouterDebugService.label(category);
+  }
+
+  formatConditions(): string {
+    if (this.conditions.length === 0) return 'Condition 1 is not set';
+    return this.conditions
+      .map((c, i) => `Condition ${i + 1}: ${c.kind} ${c.value} (0 flags triggered)`)
+      .join('\n');
+  }
+
   format(): string {
     if (this.flags.size === 0) return 'No debug flags are enabled';
-    return this.list()
-      .map(f => {
-        const custom = this.categoryRenderers.get(f.category);
-        if (custom) return custom();
-        if (f.category === 'interface' && f.scope) return `Interface ${f.scope} debugging is on`;
-        return `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
-      })
-      .join('\n');
+    const parGroupe = new Map<string, string[]>();
+    for (const f of this.list()) {
+      const custom = this.categoryRenderers.get(f.category);
+      const ligne = custom
+        ? custom()
+        : f.category === 'interface' && f.scope
+          ? `Interface ${f.scope} debugging is on`
+          : `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
+      const g = RouterDebugService.groupe(f.category);
+      const dejaLa = parGroupe.get(g);
+      if (dejaLa) dejaLa.push(...ligne.split('\n'));
+      else parGroupe.set(g, ligne.split('\n'));
+    }
+    const out: string[] = [];
+    for (const [g, lignes] of parGroupe) {
+      out.push(`${g}:`);
+      for (const l of lignes) out.push(`  ${l}`);
+    }
+    return out.join('\n');
   }
 }

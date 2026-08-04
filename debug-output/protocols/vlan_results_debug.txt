@@ -370,9 +370,8 @@ Total steps: 401
   ------- --------- ----------------- ------------------------------------------
 
 [100/401] swdc SW-DC> vlan 10
+               ^
   % Invalid input detected at '^' marker.
-  vlan 10
-  ^
 
 [101/401] swdc SW-DC> show vlan brief
   VLAN Name                             Status    Ports
@@ -851,12 +850,12 @@ Total steps: 401
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.283 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=1.128 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.348 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.764 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.283/0.705/1.128/0.422 ms
+  rtt min/avg/max/mdev = 0.348/0.556/0.764/0.208 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -971,8 +970,8 @@ Total steps: 401
   GigabitEthernet0/1         172.16.12.1     YES manual up                    up
   GigabitEthernet0/2         172.16.13.1     YES manual up                    up
   GigabitEthernet0/3         unassigned      YES manual down                  down
-  GigabitEthernet0/0.10      10.1.1.1        YES manual down                  down
-  GigabitEthernet0/0.20      10.1.20.1       YES manual down                  down
+  GigabitEthernet0/0.10      10.1.1.1        YES manual up                    up
+  GigabitEthernet0/0.20      10.1.20.1       YES manual up                    up
 
 [225/401] rhq R-HQ# show vlans
   No Virtual LAN sub-interfaces are configured
@@ -1016,31 +1015,31 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.358 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.653 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.379 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.641 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.358/0.505/0.653/0.147 ms
+  rtt min/avg/max/mdev = 0.379/0.510/0.641/0.131 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.322 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.597 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.403 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.652 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.322/0.460/0.597/0.137 ms
+  rtt min/avg/max/mdev = 0.403/0.527/0.652/0.125 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.696 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.990 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=1.001 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.642 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.908 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=1.211 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.990/1.229/1.696/0.330 ms
+  rtt min/avg/max/mdev = 0.908/1.254/1.642/0.301 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
@@ -1067,12 +1066,12 @@ Total steps: 401
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.634 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.266 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.719 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.644 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.634/0.950/1.266/0.316 ms
+  rtt min/avg/max/mdev = 0.719/1.182/1.644/0.463 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
@@ -1095,7 +1094,7 @@ Total steps: 401
   No Virtual LAN sub-interfaces are configured
 
 [239/401] lhq lhq$ ip neigh show
-  10.1.1.1 dev eth0 lladdr 02:00:00:00:00:ab REACHABLE
+  10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
 
 
 --- [240] § VLAN — voice VLAN & QoS d'accès ---
@@ -1364,10 +1363,10 @@ Total steps: 401
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
+  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
+  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
-  20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
   Total Mac Addresses for this criterion: 5
 
@@ -1377,8 +1376,8 @@ Total steps: 401
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
   
   Total Mac Addresses for this criterion: 2
 
@@ -1388,8 +1387,8 @@ Total steps: 401
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
-  20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
   Total Mac Addresses for this criterion: 2
 
@@ -1400,10 +1399,10 @@ Total steps: 401
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
+  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
+  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
-  20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
   Total Mac Addresses for this criterion: 5
 
@@ -1788,10 +1787,10 @@ Total steps: 401
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
+  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
+  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
-  20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
   Total Mac Addresses for this criterion: 5
 
@@ -1870,10 +1869,10 @@ Total steps: 401
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/1
   1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/1
+  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
+  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
   Total Mac Addresses for this criterion: 7
 
@@ -1952,10 +1951,10 @@ Total steps: 401
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/1
   1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/1
+  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
+  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
   Total Mac Addresses for this criterion: 7
 
@@ -2091,23 +2090,23 @@ Total steps: 401
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.345 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.214 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.345/0.345/0.345/0.000 ms
+  rtt min/avg/max/mdev = 0.214/0.214/0.214/0.000 ms
 
 [341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.598 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.516 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.598/0.598/0.598/0.000 ms
+  rtt min/avg/max/mdev = 0.516/0.516/0.516/0.000 ms
 
 [342/401] whq whq$ ping -n 1 10.1.1.10
   
@@ -2117,17 +2116,17 @@ Total steps: 401
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [343/401] lhq lhq$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
-  10.1.1.1                 ether   02:00:00:00:00:ab   C     *               eth0
+  10.1.1.1                 ether   02:00:00:00:00:01   C     *               eth0
 
 [344/401] whq whq$ arp -a
   
   Interface: 10.1.20.11 --- 0x1
     Internet Address      Physical Address      Type
-    10.1.20.1             02-00-00-00-00-ac     dynamic
+    10.1.20.1             02-00-00-00-00-01     dynamic
 
 [345/401] rhq R-HQ# show ip arp
   Protocol  Address          Age (min)   Hardware Addr   Type   Interface
@@ -2379,9 +2378,8 @@ Total steps: 401
 <empty>
 
 [375/401] swdc SW-DC> vlan 99999
+       ^
   % Invalid input detected at '^' marker.
-  vlan 99999
-  ^
 
 
 --- [376] § VLAN — état final & connectivité ---
@@ -2509,27 +2507,27 @@ Total steps: 401
   GigabitEthernet0/1         172.16.12.1     YES manual up                    up
   GigabitEthernet0/2         172.16.13.1     YES manual up                    up
   GigabitEthernet0/3         unassigned      YES manual down                  down
-  GigabitEthernet0/0.10      10.1.1.1        YES manual down                  down
-  GigabitEthernet0/0.20      10.1.20.1       YES manual down                  down
+  GigabitEthernet0/0.10      10.1.1.1        YES manual up                    up
+  GigabitEthernet0/0.20      10.1.20.1       YES manual up                    up
 
 [383/401] rhq R-HQ# show vlans
   No Virtual LAN sub-interfaces are configured
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.595 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.142 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.595/0.595/0.595/0.000 ms
+  rtt min/avg/max/mdev = 1.142/1.142/1.142/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.735 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.105 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.735/0.735/0.735/0.000 ms
+  rtt min/avg/max/mdev = 1.105/1.105/1.105/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2658,11 +2656,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.516 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.733 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.516/0.516/0.516/0.000 ms
+  rtt min/avg/max/mdev = 0.733/0.733/0.733/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   
@@ -2672,7 +2670,7 @@ Total steps: 401
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [399/401] swhq SW-HQ# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
