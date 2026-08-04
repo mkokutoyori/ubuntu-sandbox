@@ -80,6 +80,7 @@ import {
 import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac } from '../core/ip';
 import { Logger } from '../core/Logger';
+import { CarPolicer } from './router/qos/CarPolicer';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
@@ -1620,7 +1621,37 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     // C.2: Not for us → forward via FIB
+    // `rate-limit input` police AVANT le routage : sur un vrai IOS, CAR
+    // s'applique à l'entrée de l'interface, donc un paquet en excès est
+    // jeté sans jamais consommer de décision de routage.
+    if (!this.policeCar(inPort, 'input', ipPkt)) return;
     this.forwardPacket(inPort, ipPkt, originalPkt);
+  }
+
+  // ─── CAR (`rate-limit`) ────────────────────────────────────────
+  private readonly carPolicers = new Map<string, CarPolicer>();
+
+  /** Le policier d'une interface, créé au premier `rate-limit`. */
+  getCarPolicer(ifName: string, creer = false): CarPolicer | undefined {
+    let p = this.carPolicers.get(ifName);
+    if (!p && creer) { p = new CarPolicer(); this.carPolicers.set(ifName, p); }
+    return p;
+  }
+
+  /**
+   * Applique CAR et rend `false` quand le paquet doit être jeté.
+   *
+   * La taille prise en compte est `totalLength`, c'est-à-dire l'en-tête
+   * IP compris — c'est ce que CAR compte sur un vrai routeur, la police
+   * portant sur le débit du lien et non sur la charge utile.
+   */
+  private policeCar(ifName: string, direction: 'input' | 'output', pkt: IPv4Packet): boolean {
+    const p = this.carPolicers.get(ifName);
+    if (!p || p.isEmpty()) return true;
+    if (p.police(direction, pkt.totalLength)) return true;
+    Logger.info(this.id, 'router:car-drop',
+      `${this.name}: rate-limit ${direction} dropped ${pkt.sourceIP} → ${pkt.destinationIP} on ${ifName}`);
+    return false;
   }
 
   /**
@@ -2021,6 +2052,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const outsideIP = this.ports.get(route.iface)?.getIPAddress()?.toString();
       fwdPkt = outsideIP ? inspectAndRewriteFtpAlg(natOutbound, this.natEngine, outsideIP) : natOutbound;
     }
+
+    // `rate-limit output` police à la SORTIE, donc sur l'interface
+    // choisie par le routage et non sur celle d'arrivée, et avant l'ACL
+    // sortante : un paquet jeté par CAR n'a pas à être filtré ensuite.
+    if (!this.policeCar(route.iface, 'output', fwdPkt)) return;
 
     // Phase E.2b: Outbound ACL check
     const outboundACL = this.aclEngine.getInterfaceACL(route.iface, 'out');

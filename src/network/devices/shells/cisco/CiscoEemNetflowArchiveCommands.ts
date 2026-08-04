@@ -1,6 +1,7 @@
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
+import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './CiscoArchiveCommands';
 
 export interface CiscoEemNetflowArchiveContext extends CiscoShellContext {
   setApplet?(name: string | null): void;
@@ -257,46 +258,16 @@ export function buildFlowMonitorSubmode(trie: CommandTrie, ctx: CiscoEemNetflowA
   });
 }
 
+// Les deux sous-modes `archive` vivent dans `CiscoArchiveCommands.ts`,
+// partagés avec le switch : une seule implémentation, donc pas de
+// divergence possible entre les deux plateformes.
 export function buildArchiveSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
-  const ar = () => ctx.r().getArchiveService();
-  trie.registerGreedy('path', 'Archive path', (args) => {
-    if (args[0]) ar().setPath(args[0]);
-    return '';
-  });
-  trie.registerGreedy('time-period', 'Archive interval', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar().setTimePeriod(n);
-    return '';
-  });
-  trie.registerGreedy('maximum', 'Max revisions', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar().setMaximum(n);
-    return '';
-  });
-  trie.register('write-memory', 'Trigger archive on write', () => { ar().setWriteMemory(true); return ''; });
-  trie.register('no write-memory', 'Disable archive-on-write', () => { ar().setWriteMemory(false); return ''; });
-  trie.register('log config', 'Enter archive log config submode', () => {
-    ar().enableLogging();
-    ctx.setMode('config-archive-log' as CiscoShellMode);
-    return '';
-  });
+  buildArchiveSubmodeOn(trie, () => ctx.r().getArchiveService(),
+    () => ctx.setMode('config-archive-log' as CiscoShellMode));
 }
 
 export function buildArchiveLogSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
-  const ar = () => ctx.r().getArchiveService();
-  trie.registerGreedy('logging size', 'Archive log buffer size', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) (ar() as unknown as { setLogBufferSize?: (n: number) => void }).setLogBufferSize?.(n);
-    return '';
-  });
-  trie.register('logging enable', 'Enable archive logging', () => { ar().enableLogging(); return ''; });
-  trie.register('logging disable', 'Disable archive logging', () => { ar().disableLogging(); return ''; });
-  trie.register('hidekeys', 'Hide passwords in archive log', () => { ar().setHidekeys(true); return ''; });
-  trie.register('no hidekeys', 'Show passwords in archive log', () => { ar().setHidekeys(false); return ''; });
-  trie.registerGreedy('notify syslog contenttype', 'Notify syslog format', (args) => {
-    ar().setNotifySyslog(args[0] === 'xml' ? 'xml' : 'plaintext');
-    return '';
-  });
+  buildArchiveLogSubmodeOn(trie, () => ctx.r().getArchiveService());
 }
 
 export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
@@ -423,8 +394,11 @@ export function buildEemNetflowArchiveShowCommands(trie: CommandTrie, getRouter:
     if (legacy.source) lines.push(`  Source ${legacy.source}`);
     return lines.join('\n');
   });
-  trie.register('show archive', 'Display archive status', () => getRouter().getArchiveService().formatShowArchive());
-  trie.register('show archive config differences', 'Display archive config diff', () => getRouter().getArchiveService().formatShowArchiveDiff());
+  // `show archive` / `show archive config differences` / `archive config`
+  // sont enregistrées une seule fois par `CiscoShellBase`, pour le
+  // routeur ET le switch (`registerArchiveExecCommands`) — les
+  // enregistrer ici aussi ferait taire l'une des deux définitions, ce que
+  // `command-trie-hygiene.test.ts` interdit à juste titre.
 }
 
 function stripQuotes(s: string): string {

@@ -42,6 +42,7 @@ import type { IEventBus } from '@/events/EventBus';
 import type { TimerHandle } from '@/events/Scheduler';
 import { Logger } from '../core/Logger';
 import { SwitchDebugService } from './switch/SwitchDebugService';
+import { ArchiveService } from './router/archive/ArchiveService';
 
 export class CiscoSwitch extends Switch {
   private readonly agents = new AgentRegistry();
@@ -56,6 +57,15 @@ export class CiscoSwitch extends Switch {
   private readonly pimSnoopingAgent: PimSnoopingAgent;
   private readonly syslogAgent: SyslogAgent;
   private readonly dot1xAgent: Dot1xAgent;
+
+  /**
+   * Un Catalyst archive sa configuration comme un routeur le fait ; la
+   * famille `archive` était refusée en bloc ici alors qu'elle existait
+   * déjà côté routeur (audit 13 §4.2). Même service, pas une seconde
+   * implémentation.
+   */
+  private readonly archiveService = new ArchiveService();
+  getArchiveService(): ArchiveService { return this.archiveService; }
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);

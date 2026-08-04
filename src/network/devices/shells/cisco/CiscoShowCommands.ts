@@ -413,6 +413,11 @@ export function showRunningConfig(router: Router): string {
     const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
     if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
     lines.push(...igmpInterfaceRunningConfigLines(router, name));
+    // `rate-limit` (CAR historique) était STOCKÉ sur le port et rendu
+    // nulle part : la commande était acceptée, absente de la
+    // running-config, et sans vue pour la contredire. Le stockage
+    // existait, il lui manquait ses deux portes.
+    for (const r of (router.getCarPolicer(name)?.list() ?? [])) lines.push(` ${r.raw}`);
     const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
     const pending = ospfExtra?.pendingIfConfig.get(name);
     if (pending) {
@@ -817,6 +822,42 @@ export function showInterfaceStats(router: Router, ifName: string): string {
     `      Distributed cache          0           0           0           0`,
     `                  Total ${String(c.framesIn).padStart(10)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
   ].join('\n');
+}
+
+/**
+ * `show interfaces <if> rate-limit` — les politiques CAR posées sur
+ * l'interface.
+ *
+ * Choix assumé, et il suit la maison plutôt qu'une préférence : la QoS
+ * de ce simulateur est fidèle au niveau CONFIGURATION et ne police
+ * aucun paquet. Mesuré avant de trancher — la MQC moderne
+ * (`class-map`/`policy-map`/`police`) est stockée, rendue en
+ * running-config ET affichée par `show policy-map`, sans qu'aucun octet
+ * ne soit jamais jeté. Refuser `rate-limit`, qui est le CAR historique
+ * de la même famille, aurait rendu la plateforme incohérente avec
+ * elle-même : `police` accepté, `rate-limit` refusé, pour la même
+ * absence de moteur.
+ *
+ * Les compteurs sont donc à zéro et c'est la vérité de cet équipement,
+ * pas un remplissage : rien ne mesure, donc rien n'est compté.
+ */
+export function showInterfaceRateLimit(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid interface ${ifName}`;
+  const regles = router.getCarPolicer(ifName)?.list() ?? [];
+  if (regles.length === 0) return `${ifName}`;
+  const lines = [`${ifName}`];
+  const maintenant = Date.now();
+  for (const r of regles) {
+    lines.push(`  ${r.direction === 'input' ? 'Input' : 'Output'}`);
+    lines.push(`    matches: all traffic`);
+    lines.push(`      params:  ${r.bitsPerSecond} bps, ${r.normalBurstBytes} limit, ${r.maxBurstBytes} extended limit`);
+    lines.push(`      conformed ${r.conformedPackets} packets, ${r.conformedBytes} bytes; action: ${r.conformAction}`);
+    lines.push(`      exceeded ${r.exceededPackets} packets, ${r.exceededBytes} bytes; action: ${r.exceedAction}`);
+    const depuis = r.lastPacketMs === null ? 'never' : `${maintenant - r.lastPacketMs}ms ago`;
+    lines.push(`      last packet: ${depuis}, current burst: ${Math.round(r.tokens)} bytes`);
+  }
+  return lines.join('\n');
 }
 
 export function showInterfaceSwitchport(router: Router, ifName: string): string {

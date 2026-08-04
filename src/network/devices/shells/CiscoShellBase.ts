@@ -46,6 +46,7 @@ import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepos
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
+import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/CiscoArchiveCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
 import {
   getManagementService, getSnmpService, getSnmpAgent, getNtpAgent,
@@ -287,6 +288,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Optional: called on 'write memory' / 'copy running-config startup-config' */
   protected abstract onSave(): string;
+
+  /**
+   * `archive` + `write-memory` : une sauvegarde archive la
+   * configuration. Le mot-clé était mémorisé et lu par personne, donc
+   * l'archivage automatique — la raison d'être de la fonction — ne se
+   * produisait jamais. Appelé par le `onSave()` des deux shells.
+   */
+  protected archiveAfterSave(): void {
+    archiveOnWriteMemory(
+      () => this.archiveService(),
+      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+    );
+  }
+
+  /**
+   * Le service d'archivage de l'équipement, avec SON `flash:` branché.
+   *
+   * Le branchement se fait ici et pas dans le constructeur de
+   * l'appareil, parce que le système de fichiers appartient au shell
+   * (`this.fs()`, semé au premier accès) : c'est le même objet que
+   * `dir flash:` et `more flash:` lisent, donc une archive écrite est
+   * une archive que ces commandes voient. Deux systèmes de fichiers
+   * distincts feraient de `show archive` un catalogue de fichiers
+   * introuvables.
+   */
+  protected archiveService(): import('../router/archive/ArchiveService').ArchiveService | undefined {
+    const s = (this.d() as unknown as {
+      getArchiveService?: () => import('../router/archive/ArchiveService').ArchiveService;
+    }).getArchiveService?.();
+    if (s && !s.hasStorage()) s.attachStorage(this.fs());
+    return s;
+  }
 
   /**
    * Called on 'erase startup-config' / 'write erase' / 'erase nvram:'.
@@ -1409,10 +1442,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       for (const e of table.values()) lines.push(`${String(e.vlan ?? 1).padEnd(8)}${e.mac.padEnd(18)}${(e.type ?? 'DYNAMIC').padEnd(12)}${e.ifName}`);
       return lines.join('\n');
     });
+    // `_getRunningConfigText` n'est défini sur AUCUN appareil : il n'est
+    // que lu, ici et à deux autres endroits. Mesuré avant correction,
+    // `show running-config all` rendait donc « Building configuration... »
+    // et rien d'autre, pendant que `show running-config` rendait ses 17
+    // lignes sur la même machine. La méthode réellement portée par
+    // `Router` comme par `Switch` est `getRunningConfig()`.
     trie.registerGreedy('show running-config all', 'Show running-config with defaults', () => {
-      const dev = this.d() as unknown as { _getRunningConfigText?: () => string };
-      const cfg = dev._getRunningConfigText?.() ?? '';
-      return cfg.length > 0 ? `Building configuration...\n${cfg}\nend` : 'Building configuration...';
+      const dev = this.d() as unknown as { getRunningConfig?: () => string };
+      const cfg = dev.getRunningConfig?.() ?? '';
+      return cfg.length > 0 ? `Building configuration...\n${cfg}` : 'Building configuration...';
     });
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.currentPrivilegeLevel));
@@ -1644,6 +1683,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       `Destination filename [startup-config]?\n${this.onSave()}`;
 
     this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
+
+    // `archive config` / `show archive` — enregistrées ici, donc pour le
+    // routeur ET le switch, parce qu'un Catalyst connaît cette famille
+    // tout autant qu'un routeur et qu'elle était refusée en bloc sur le
+    // switch. Un équipement sans service d'archivage rend le message de
+    // table vide plutôt que de planter.
+    registerArchiveExecCommands(
+      this.privilegedTrie,
+      () => this.archiveService(),
+      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+    );
 
     const eraseNvram = () => {
       this.onErase();
