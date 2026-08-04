@@ -170,7 +170,7 @@ export class CdpAgent extends ReactiveAgentBase {
     if (!payload || payload.type !== 'cdp') return;
 
     const key = neighborKey(portName, payload.deviceId);
-    const now = Date.now();
+    const now = this.getScheduler().now();
     const expiresAtMs = now + payload.holdtimeSec * 1000;
     const existing = this.neighbors.get(key);
     const entry: CdpNeighborEntry = {
@@ -316,6 +316,7 @@ export class CdpAgent extends ReactiveAgentBase {
   protected isEnabled(): boolean { return this.config.enabled; }
 
   protected armTimers(): void {
+    this.advertiseAll('periodic');
     this.scheduleInterval('advertise',
       () => this.advertiseAll('periodic'), this.config.timerSec * 1000);
     this.scheduleInterval('expiry', () => this.expireDue(), 1000);
@@ -330,7 +331,7 @@ export class CdpAgent extends ReactiveAgentBase {
   }
 
   private expireDue(): void {
-    const now = Date.now();
+    const now = this.getScheduler().now();
     for (const [key, n] of this.neighbors) {
       if (n.expiresAtMs <= now) {
         this.neighbors.delete(key);
