@@ -14,7 +14,6 @@ import type { IRouterShell } from './shells/IRouterShell';
 import { CiscoIOSShell } from './shells/CiscoIOSShell';
 import {
   showVersion,
-  showInterfacesStatus,
   showRunningConfig,
   showIpIntBrief,
 } from './shells/cisco/CiscoShowCommands';
@@ -491,10 +490,6 @@ export class CiscoRouter extends Router {
     }
     if (/^show\s+users?\s*$/i.test(cmd)) {
       return { output: `${this.getSshSessionRegistry().formatShowUsers()}\n`, exitCode: 0 };
-    }
-    // `show interfaces status` — link state per port.
-    if (/^show\s+int(?:erfaces)?\s+status\s*$/i.test(cmd)) {
-      return { output: `${showInterfacesStatus(this)}\n`, exitCode: 0 };
     }
     // `show ip interface brief`.
     if (/^show\s+ip\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {

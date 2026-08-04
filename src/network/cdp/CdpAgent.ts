@@ -140,6 +140,11 @@ export class CdpAgent extends ReactiveAgentBase {
     return Array.from(this.neighbors.values());
   }
 
+  holdtimeRemainingSec(n: CdpNeighbor): number {
+    const reste = (n.expiresAtMs - this.getScheduler().now()) / 1000;
+    return Math.max(0, Math.min(n.holdtimeSec, Math.ceil(reste)));
+  }
+
   getNeighborsOnPort(portName: string): CdpNeighbor[] {
     return Array.from(this.neighbors.values()).filter(n => n.localPort === portName);
   }
