@@ -184,7 +184,12 @@ describe('D6 — service timestamps debug uptime', () => {
     await run(r, 'debug ip ospf events');
 
     journal.append('debugging', 'ospf', 'OSPF: test');
-    expect(vues.at(-1)).toMatch(/^\*\d{2}:\d{2}:\d{2}: /);
+    // Prémisse corrigée : pas d'astérisque ici. Le `*` d'IOS signale une
+    // HORLOGE non autoritaire, et un compteur depuis le démarrage n'a pas
+    // de question d'autorité — le routeur le tient lui-même. La forme
+    // `uptime` s'écrit donc `00:00:39: `, sans marqueur.
+    expect(vues.at(-1)).toMatch(/^\d{2}:\d{2}:\d{2}: /);
+    expect(vues.at(-1)).not.toMatch(/^\*/);
   });
 
   it('datetime reste le format à date', async () => {

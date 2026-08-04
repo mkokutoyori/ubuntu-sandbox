@@ -38,6 +38,7 @@
 import { Equipment } from '../equipment/Equipment';
 import type { TaggedEthernetFrame } from './Switch';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
+import { deviceClockSource } from './inspection/config/LoggingConfig';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
@@ -3099,7 +3100,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     journal?.setDebugGate(
       (tag) => this.getDebugService().isEnabledForSyslogTag(tag));
     if (journal) {
-      journal.setUptimeProvider(() => this.getUptimeMs());
+      journal.attachClockSource(deviceClockSource(this));
       this.getDebugService().setSyslogSink((line) => journal.appendDebugLine(line));
     }
   }
