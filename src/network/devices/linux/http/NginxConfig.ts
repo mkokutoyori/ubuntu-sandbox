@@ -248,6 +248,22 @@ export function parseNginxConfig(source: NginxFileSource, path = NGINX_CONF_PATH
   return parseBlock({ tokens: tokenize(text, path), pos: 0 }, source, 0, new Set([path]));
 }
 
+/**
+ * Ce que nginx exige au-delà de la syntaxe. Une configuration vide est
+ * syntaxiquement correcte et pourtant refusée : sans section `events`, le
+ * démon n'a pas de modèle de connexions et sort. C'est ce qui distingue un
+ * `nginx.conf` VIDE d'un `nginx.conf` ABSENT (docs/PRD-Nginx.md §P3).
+ */
+export function validateNginxConfig(
+  tree: readonly NginxDirective[],
+  path = NGINX_CONF_PATH,
+): NginxConfigError | null {
+  if (!tree.some((d) => d.name === 'events')) {
+    return { message: `nginx: [emerg] no "events" section in configuration in ${path}` };
+  }
+  return null;
+}
+
 // ─── Modèle exploité par le serveur ────────────────────────────────────
 
 export interface NginxLocation {

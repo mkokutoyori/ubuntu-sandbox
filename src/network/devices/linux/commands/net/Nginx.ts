@@ -1,7 +1,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
-import { parseNginxConfig, type NginxFileSource } from '../../http/NginxConfig';
+import { parseNginxConfig, validateNginxConfig, type NginxFileSource } from '../../http/NginxConfig';
 import { NGINX_CONF_PATH, NGINX_VERSION, NGINX_BINARY } from '../../http/NginxFiles';
 
 function fileSource(ctx: LinuxCommandContext): NginxFileSource {
@@ -14,9 +14,13 @@ function fileSource(ctx: LinuxCommandContext): NginxFileSource {
 
 function testConfig(ctx: LinuxCommandContext): { output: string; exitCode: number } {
   const parsed = parseNginxConfig(fileSource(ctx));
-  if (parsed.ok === false) {
+  // `nginx -t` et le démon doivent juger le même fichier de la même façon :
+  // une commande qui dit « syntax is ok » sur une configuration que
+  // `systemctl start` refuse serait pire que pas de commande du tout.
+  const failure = parsed.ok === false ? parsed.error : validateNginxConfig(parsed.tree);
+  if (failure) {
     return {
-      output: `${parsed.error.message}\nnginx: configuration file ${NGINX_CONF_PATH} test failed`,
+      output: `${failure.message}\nnginx: configuration file ${NGINX_CONF_PATH} test failed`,
       exitCode: 1,
     };
   }
