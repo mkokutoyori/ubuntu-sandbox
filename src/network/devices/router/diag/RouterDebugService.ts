@@ -122,16 +122,16 @@ export class RouterDebugService implements TerminalDebugSource {
    * is dropped — a condition the operator asked for must not be widened
    * by our own inability to classify a line.
    */
-  private readonly conditions: Array<{ kind: 'interface' | 'vrf'; value: string }> = [];
+  private readonly conditions: Array<{ kind: 'interface' | 'vrf' | 'ip'; value: string }> = [];
 
-  addCondition(kind: 'interface' | 'vrf', value: string): string {
+  addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string {
     if (!this.conditions.some((c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase())) {
       this.conditions.push({ kind, value });
     }
     return `Condition ${this.conditions.length} set`;
   }
 
-  removeCondition(kind: 'interface' | 'vrf', value: string): string {
+  removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string {
     const i = this.conditions.findIndex(
       (c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase());
     if (i < 0) return `% Condition not found`;
@@ -141,7 +141,7 @@ export class RouterDebugService implements TerminalDebugSource {
 
   clearConditions(): void { this.conditions.length = 0; }
 
-  listConditions(): ReadonlyArray<{ kind: 'interface' | 'vrf'; value: string }> {
+  listConditions(): ReadonlyArray<{ kind: 'interface' | 'vrf' | 'ip'; value: string }> {
     return this.conditions;
   }
 
@@ -176,6 +176,10 @@ export class RouterDebugService implements TerminalDebugSource {
     this.aclMatchFn = fn;
   }
 
+  private tamponSyslog?: (line: string) => void;
+
+  setSyslogSink(fn: (line: string) => void): void { this.tamponSyslog = fn; }
+
   private emit(category: DebugCategory, line: string): void {
     const flag = this.flags.get(category);
     if (!flag) return;
@@ -183,6 +187,7 @@ export class RouterDebugService implements TerminalDebugSource {
     if (!this.passesConditions(line)) return;
     if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line)) return;
     this.broadcast.fan(line);
+    this.tamponSyslog?.(line);
   }
 
   emitLine(category: DebugCategory, line: string): void {
@@ -433,6 +438,13 @@ export class RouterDebugService implements TerminalDebugSource {
     if (c === 'ip.nat') return 'IP NAT';
     if (c.startsWith('ip.')) return RouterDebugService.label(category);
     return RouterDebugService.label(category);
+  }
+
+  formatConditions(): string {
+    if (this.conditions.length === 0) return 'Condition 1 is not set';
+    return this.conditions
+      .map((c, i) => `Condition ${i + 1}: ${c.kind} ${c.value} (0 flags triggered)`)
+      .join('\n');
   }
 
   format(): string {

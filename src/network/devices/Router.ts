@@ -3083,8 +3083,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   private attachLoggingBus(bus: import('@/events/EventBus').IEventBus): void {
     this.shell.attachLoggingToBus?.(bus, this.id);
-    this.shell.getLoggingConfig?.()?.setDebugGate(
+    const journal = this.shell.getLoggingConfig?.();
+    journal?.setDebugGate(
       (tag) => this.getDebugService().isEnabledForSyslogTag(tag));
+    if (journal) {
+      journal.setUptimeProvider(() => this.getUptimeMs());
+      this.getDebugService().setSyslogSink((line) => journal.appendDebugLine(line));
+    }
   }
 
   getDebugService(): RouterDebugService {

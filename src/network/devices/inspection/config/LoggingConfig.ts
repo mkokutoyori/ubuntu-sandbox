@@ -53,6 +53,9 @@ export class LoggingConfig {
   sequenceNumbers = false;
   timestamps = false;
   timestampsDebug = false;
+  timestampsDebugUptime = false;
+  timestampsUptime = false;
+  private uptimeMs?: () => number;
   timestampsMsec = false;
   horlogeSynchronisee = false;
   readonly hosts: string[] = [];
@@ -99,7 +102,7 @@ export class LoggingConfig {
   }
 
   private formatEntry(severity: Severity, tag: string, text: string, ts: number, mnemonic?: string): string {
-    const prefix = this.horodatageActif(severity) ? `${this.formatTimestamp(ts)}: ` : '';
+    const prefix = this.horodatageActif(severity) ? `${this.formatTimestamp(ts, severity)}: ` : '';
     if (severity === 'debugging' && !mnemonic) return `${prefix}${text}`;
     const sevNum = this.SEVERITY_ORDER[severity];
     const mnem = (mnemonic ?? severity).toUpperCase();
@@ -110,7 +113,17 @@ export class LoggingConfig {
     return severity === 'debugging' ? this.timestampsDebug : this.timestamps;
   }
 
-  private formatTimestamp(ts: number): string {
+  setUptimeProvider(fn: () => number): void { this.uptimeMs = fn; }
+
+  private formatUptime(): string {
+    const total = Math.floor((this.uptimeMs?.() ?? 0) / 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `*${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
+  }
+
+  private formatTimestamp(ts: number, severity?: Severity): string {
+    const parUptime = severity === 'debugging' ? this.timestampsDebugUptime : this.timestampsUptime;
+    if (parUptime) return this.formatUptime();
     const d = new Date(ts);
     const mois = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
@@ -152,6 +165,14 @@ export class LoggingConfig {
    * which have no `log`-topic equivalent) keep the default `true` so
    * `device.syslog.entry` remains their only forwarding path.
    */
+  appendDebugLine(text: string): void {
+    if (!this.enabled) return;
+    const ts = Date.now();
+    this.messages.push({ ts, severity: 'debugging', tag: 'debug', text });
+    const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
+    while (this.messages.length > cap) this.messages.shift();
+  }
+
   append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
     if (!this.enabled) return;
     if (severity === 'debugging' && !this.debugAllowed(tag)) return;

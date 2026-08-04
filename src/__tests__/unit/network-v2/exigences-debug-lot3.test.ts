@@ -135,3 +135,96 @@ describe('D10 — avertissement sur les debugs volumineux', () => {
     expect(await run(r, 'debug ip ospf events')).not.toContain('MUST NOT');
   });
 });
+
+describe('D3 — debug condition filtre réellement', () => {
+  it('debug condition ip est accepté et listé', async () => {
+    const r = await priv();
+    expect(await run(r, 'debug condition ip 192.168.10.50')).toContain('Condition 1 set');
+    const out = await run(r, 'show debug condition');
+    expect(out).toContain('ip');
+    expect(out).toContain('192.168.10.50');
+  });
+
+  it('sans condition, show debug condition le dit', async () => {
+    const r = await priv();
+    expect(await run(r, 'show debug condition')).toContain('Condition 1 is not set');
+  });
+
+  it('une condition écarte les lignes qui ne la mentionnent pas', async () => {
+    const r = await priv();
+    const vues: string[] = [];
+    r.getDebugService().subscribe((l: string) => vues.push(l));
+    await run(r, 'debug ip packet');
+    await run(r, 'debug condition ip 10.9.9.9');
+
+    r.getDebugService().emitLine('ip.packet', 'IP: s=10.9.9.9 (Gi0/0), d=1.1.1.1, len 100, forward');
+    r.getDebugService().emitLine('ip.packet', 'IP: s=172.16.0.1 (Gi0/0), d=1.1.1.1, len 100, forward');
+
+    expect(vues.some(l => l.includes('10.9.9.9'))).toBe(true);
+    expect(vues.some(l => l.includes('172.16.0.1'))).toBe(false);
+  });
+
+  it('no debug condition all lève le filtre', async () => {
+    const r = await priv();
+    await run(r, 'debug condition ip 10.9.9.9');
+    expect(await run(r, 'no debug condition all')).toContain('All conditions have been removed');
+    expect(await run(r, 'show debug condition')).toContain('Condition 1 is not set');
+  });
+});
+
+describe('D6 — service timestamps debug uptime', () => {
+  it('bascule l\'horodatage sur le compteur de fonctionnement', async () => {
+    const r = await priv();
+    const journal = r.getLoggingConfig()!;
+    const vues: string[] = [];
+    journal.subscribeConsole((l) => vues.push(l));
+    await run(r, 'configure terminal');
+    await run(r, 'service timestamps debug uptime');
+    await run(r, 'end');
+    await run(r, 'debug ip ospf events');
+
+    journal.append('debugging', 'ospf', 'OSPF: test');
+    expect(vues.at(-1)).toMatch(/^\*\d{2}:\d{2}:\d{2}: /);
+  });
+
+  it('datetime reste le format à date', async () => {
+    const r = await priv();
+    const journal = r.getLoggingConfig()!;
+    const vues: string[] = [];
+    journal.subscribeConsole((l) => vues.push(l));
+    await run(r, 'configure terminal');
+    await run(r, 'service timestamps debug datetime msec');
+    await run(r, 'end');
+    await run(r, 'debug ip ospf events');
+
+    journal.append('debugging', 'ospf', 'OSPF: test');
+    expect(vues.at(-1)).toMatch(/^\*[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}: /);
+  });
+});
+
+describe('D7 — les debugs sont recopiés dans le tampon', () => {
+  it('show logging retrouve une ligne de debug émise plus tôt', async () => {
+    const r = await priv();
+    await run(r, 'debug ip packet');
+    r.getDebugService().emitLine('ip.packet',
+      'IP: s=192.168.1.1 (Gi0/0), d=10.0.0.2 (Gi0/1), g=10.0.0.2, len 100, forward');
+
+    const journal = await run(r, 'show logging');
+    expect(journal).toContain('IP: s=192.168.1.1');
+    expect(journal).toContain('len 100, forward');
+  });
+});
+
+describe('D8 — en-tête IP détaillé', () => {
+  it('le format porte source, destination, passerelle et longueur', async () => {
+    const r = await priv();
+    const vues: string[] = [];
+    r.getDebugService().subscribe((l: string) => vues.push(l));
+    await run(r, 'debug ip packet');
+    r.getDebugService().emitLine('ip.packet',
+      'IP: s=192.168.10.1 (GigabitEthernet0/0.10), d=10.0.0.2 (GigabitEthernet0/2), g=10.0.0.2, len 100, forward');
+
+    expect(vues.at(-1)).toMatch(
+      /^IP: s=\d+\.\d+\.\d+\.\d+ \([^)]+\), d=\d+\.\d+\.\d+\.\d+ \([^)]+\), g=\d+\.\d+\.\d+\.\d+, len \d+, forward$/);
+  });
+});
