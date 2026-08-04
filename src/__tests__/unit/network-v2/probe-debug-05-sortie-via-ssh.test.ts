@@ -175,8 +175,13 @@ describe('Scénario 2 — `terminal monitor` ouvre la ligne', () => {
     await poste.executeCommand('ping -c 1 10.0.4.2');
     await laisserPasser();
 
+    // La réécriture de `RouterDebugService` (« Debug lot 3 ») a changé le
+    // libellé en `echo received` et a mis `probe-debug-01` à jour dans le
+    // même lot ; ce fichier-ci, `-03` et `-04` étaient restés sur l'ancien.
+    // C'est le produit qui fait foi — trois fichiers en retard sur un seul
+    // qui suit, cela reste un retard, pas une divergence de conception.
     const texte = recu.join('');
-    expect(texte).toContain('ICMP: echo request rcvd');
+    expect(texte).toContain('ICMP: echo received');
     expect(texte).toContain('ICMP: echo reply sent');
     expect(texte, 'la trace porte les adresses du paquet réel').toContain('10.0.4.1');
   }, LONG);
@@ -214,7 +219,7 @@ describe('Scénario 3 — ce qui est poussé n\'est pas redonné ensuite', () =>
     recu.length = 0;
     await poste.executeCommand('ping -c 1 10.0.4.2');
     await laisserPasser();
-    expect(recu.join('')).toContain('ICMP: echo request rcvd');
+    expect(recu.join('')).toContain('ICMP: echo received');
 
     const surEntree = await canal.runLine('');
     expect(
@@ -429,7 +434,7 @@ describe('Scénario 9 — le terminal interactif, pas seulement le canal brut', 
     expect(
       nouvelles,
       'c\'est exactement le symptôme rapporté : rien ne s\'affichait côté client',
-    ).toContain('ICMP: echo request rcvd');
+    ).toContain('ICMP: echo received');
     expect(nouvelles).toContain('ICMP: echo reply sent');
   }, LONG);
 
