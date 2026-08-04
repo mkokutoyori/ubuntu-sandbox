@@ -53,6 +53,10 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsMessageHandler, opti
   });
 
   host.getTcpStack().listen(options.port ?? DOT_PORT, {
+    // DNS-over-TLS (RFC 7858) écoute vraiment ; c'est ce nom qui le dit
+    // à `ss`, à la place du `socketTable.bind()` manuel que
+    // `bindDnsServerPort()` posait à côté.
+    identity: { processName: 'dnsmasq' },
     onAccept: (socket: TcpSocket) => {
       const server = new TlsServerSession({
         serverCert: issued.cert, serverPrivateKey: issued.privateKey, alpnProtocols: [alpn],

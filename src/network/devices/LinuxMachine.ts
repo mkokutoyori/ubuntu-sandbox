@@ -693,14 +693,11 @@ export abstract class LinuxMachine extends EndHost
     try {
       bindDnsTlsServer(this, (query) => this.answerDnsQuery(query));
     } catch { /* port already bound (e.g. service restarted) */ }
-    // `TcpStack.listen()` n'inscrit rien dans la table des sockets : sans
-    // ces deux lignes, `ss`/`netstat` ne montreraient ni le 53/tcp ni le
-    // 853, alors que les deux répondent réellement.
-    for (const port of [DNS_PORT, DOT_PORT]) {
-      try {
-        this.socketTable.bind('tcp', '0.0.0.0', port, undefined, 'dnsmasq');
-      } catch { /* déjà annoncé */ }
-    }
+    // Il y avait ici deux `socketTable.bind()` manuels, dont le
+    // commentaire disait qu'ils n'existaient que parce que
+    // `TcpStack.listen()` n'inscrivait rien. Il inscrit désormais, avec le
+    // nom du démon — le premier des cinq contournements du §3 à
+    // disparaître (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
   }
 
   // ─── systemd-resolved ────────────────────────────────────────────────

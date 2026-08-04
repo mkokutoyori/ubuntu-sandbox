@@ -136,3 +136,34 @@ describe('§P0/§P1 — le croisement des deux tables, machine par machine', () 
     expect(await srv.executeCommand('ss -ltn')).toContain(':80');
   });
 });
+
+describe('§P2 — les entrées décoratives, une par une', () => {
+  it('le 139 de Windows répond vraiment, au lieu d\'être seulement affiché', () => {
+    const pc = new WindowsPC('windows-pc', 'WPC');
+    pc.powerOn();
+
+    const servis = pc.getTcpStack().listListeners().map((l) => l.localPort);
+    expect(servis).toContain(139);
+    expect(servis).toContain(445);
+  });
+
+  it('le 139 et le 445 sont le même service, et s\'éteignent ensemble', () => {
+    const pc = new WindowsPC('windows-pc', 'WPC');
+    pc.powerOn();
+
+    const lignes = pc.getSocketTable().getListening()
+      .filter((e) => e.localPort === 139 || e.localPort === 445);
+    expect(lignes).toHaveLength(2);
+    for (const l of lignes) expect(l.processName).toBe('System');
+  });
+
+  it('le 53/tcp et le 853 de dnsmasq n\'ont plus de bind manuel à côté', async () => {
+    const srv = new LinuxServer('linux-server', 'DNS') as unknown as Host;
+    srv.powerOn();
+    await srv.executeCommand('systemctl start dnsmasq');
+
+    // Les deux ports viennent maintenant de leur écoute, pas d'une
+    // seconde inscription : aucune divergence dans un sens ni l'autre.
+    expect(joignableInvisible(srv)).toEqual([]);
+  });
+});
