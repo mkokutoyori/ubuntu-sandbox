@@ -103,6 +103,32 @@ export function checkSshdCriticalFiles(probe: FileProbe): ConfigCheckResult {
   return missing ? { ok: false, error: missing } : { ok: true };
 }
 
+// ─── nginx ───────────────────────────────────────────────────────
+
+/**
+ * nginx refuse de démarrer sans son fichier principal, et le dit avec
+ * l'errno (docs/PRD-Nginx.md §P3).
+ *
+ * Un fichier ABSENT et un fichier VIDE sont deux pannes distinctes, et
+ * c'est la distinction qui compte : l'absence est un `open()` qui échoue,
+ * le vide est une configuration syntaxiquement valide à laquelle il manque
+ * la section `events` — deux messages différents, deux diagnostics
+ * différents. Ce tableau ne couvre que le premier ; le second est du
+ * ressort de l'analyseur, qui seul peut lire le contenu.
+ */
+export const NGINX_CRITICAL_FILES: readonly CriticalRequirement[] = [
+  {
+    path: '/etc/nginx/nginx.conf',
+    onMissing: 'nginx: [emerg] open() "/etc/nginx/nginx.conf" failed (2: No such file or directory)',
+  },
+];
+
+/** Le fichier principal de nginx est-il là ? */
+export function checkNginxCriticalFiles(probe: FileProbe): ConfigCheckResult {
+  const missing = firstMissingRequirement(probe, NGINX_CRITICAL_FILES);
+  return missing ? { ok: false, error: missing } : { ok: true };
+}
+
 // ─── Command binaries ────────────────────────────────────────────
 
 /**
