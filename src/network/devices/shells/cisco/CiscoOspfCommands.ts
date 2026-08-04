@@ -1146,6 +1146,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   });
   trie.registerGreedy('debug ip ospf', 'Enable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return '% OSPF is not enabled.';
     if (ospf) ospf.logAdjacencyChanges = true;
     const flag = args.join(' ').toLowerCase() || 'adj';
     const debugSvc = getRouter().getDebugService();
@@ -1159,6 +1160,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   });
   trie.registerGreedy('no debug ip ospf', 'Disable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return '% OSPF is not enabled.';
     if (ospf) ospf.logAdjacencyChanges = false;
     const debugSvc = getRouter().getDebugService();
     const flag = args.join(' ').toLowerCase() || 'adj';

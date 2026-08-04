@@ -258,6 +258,9 @@ export class LoggingConfig {
       }),
       bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload;
+        const versFull = String(p.newState).toLowerCase() === 'full';
+        const quitteFull = String(p.oldState).toLowerCase() === 'full';
+        if (!versFull && !quitteFull) return;
         this.append('notifications', 'ospf',
           `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`,
           true, 'ADJCHG');

@@ -3608,7 +3608,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const rows = [];
       for (let seq = 1; seq <= count; seq++) {
         if (hooks?.shouldStop?.()) break;
-        const row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'network-unreachable' };
+        const row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
         rows.push(row);
         hooks?.onResult?.(row);
       }
@@ -3929,13 +3929,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           ? 'ttl-exceeded'
           : /code 4\b/.test(winner.r.reason)
             ? 'frag-needed'
-            : /code 13\b/.test(winner.r.reason)
-              ? 'admin-prohibited'
-              : /code 0\b/.test(winner.r.reason)
-                ? 'network-unreachable'
-                : /Destination unreachable/i.test(winner.r.reason)
-                  ? 'unreachable'
-                  : 'timeout';
+            : /Destination unreachable/i.test(winner.r.reason)
+              ? 'unreachable'
+              : 'timeout';
         throw err;
       }
       const rtt = performance.now() - sentAt;
