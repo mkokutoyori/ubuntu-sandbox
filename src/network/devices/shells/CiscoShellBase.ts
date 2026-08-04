@@ -982,6 +982,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (/[A-Z]/.test(firstWord) && (firstWord.toLowerCase() === 'debug' || firstWord.toLowerCase() === 'undebug')) {
       return CISCO_ERRORS.INVALID_INPUT;
     }
+    if (this.mode === 'user' && /^(un)?deb(u(g)?)?\b/i.test(cmdPart)) {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
     if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
     if (lower === 'end' || cmdPart === '\x03' || cmdPart === '\x1a') return this.cmdEnd();
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';

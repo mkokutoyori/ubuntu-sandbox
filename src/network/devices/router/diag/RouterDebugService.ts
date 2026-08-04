@@ -67,9 +67,19 @@ export class RouterDebugService implements TerminalDebugSource {
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
   private readonly broadcast = new DebugBroadcast();
 
+  private static readonly VOLUMINEUX: ReadonlySet<string> = new Set([
+    'ip.packet', 'ip.tcp', 'ip.udp', 'all',
+  ]);
+
+  private static avertissement(category: DebugCategory): string {
+    return RouterDebugService.VOLUMINEUX.has(String(category))
+      ? 'MUST NOT be used on production networks; High CPU utilization may occur.\n'
+      : '';
+  }
+
   enable(category: DebugCategory, scope?: string, detail = false): string {
     this.flags.set(category, { category, enabledAtMs: Date.now(), scope, detail });
-    return `${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
+    return `${RouterDebugService.avertissement(category)}${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
   }
 
   disable(category: DebugCategory): string {
@@ -411,15 +421,40 @@ export class RouterDebugService implements TerminalDebugSource {
     return category !== null && this.isEnabled(category);
   }
 
+  private static groupe(category: DebugCategory): string {
+    const c = String(category);
+    if (c.startsWith('ip.ospf')) return 'OSPF';
+    if (c.startsWith('crypto.pki')) return 'Crypto PKI';
+    if (c.startsWith('crypto')) return 'Crypto';
+    if (c === 'ip.arp') return 'ARP';
+    if (c === 'ip.routing') return 'IP routing';
+    if (c === 'ip.packet') return 'IP packet';
+    if (c === 'ip.icmp') return 'ICMP';
+    if (c === 'ip.nat') return 'IP NAT';
+    if (c.startsWith('ip.')) return RouterDebugService.label(category);
+    return RouterDebugService.label(category);
+  }
+
   format(): string {
     if (this.flags.size === 0) return 'No debug flags are enabled';
-    return this.list()
-      .map(f => {
-        const custom = this.categoryRenderers.get(f.category);
-        if (custom) return custom();
-        if (f.category === 'interface' && f.scope) return `Interface ${f.scope} debugging is on`;
-        return `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
-      })
-      .join('\n');
+    const parGroupe = new Map<string, string[]>();
+    for (const f of this.list()) {
+      const custom = this.categoryRenderers.get(f.category);
+      const ligne = custom
+        ? custom()
+        : f.category === 'interface' && f.scope
+          ? `Interface ${f.scope} debugging is on`
+          : `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
+      const g = RouterDebugService.groupe(f.category);
+      const dejaLa = parGroupe.get(g);
+      if (dejaLa) dejaLa.push(...ligne.split('\n'));
+      else parGroupe.set(g, ligne.split('\n'));
+    }
+    const out: string[] = [];
+    for (const [g, lignes] of parGroupe) {
+      out.push(`${g}:`);
+      for (const l of lignes) out.push(`  ${l}`);
+    }
+    return out.join('\n');
   }
 }
