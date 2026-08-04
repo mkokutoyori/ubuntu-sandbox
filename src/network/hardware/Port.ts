@@ -810,7 +810,7 @@ export class Port {
   sendFrame(frame: EthernetFrame): boolean {
     if (!this.isUp || this.adminDown) {
       this.counters.dropsOut++;
-      Logger.warn(this.equipmentId, 'port:send-blocked', `${this.name}: port is down, frame dropped`);
+      Logger.debug(this.equipmentId, 'port:send-blocked', `${this.name}: port is down, frame dropped`);
       this.getBus().publish({
         topic: 'port.frame.tx-blocked',
         payload: { ...this.portRef(), reason: 'link-down' },
@@ -820,7 +820,7 @@ export class Port {
 
     if (!this.cable) {
       this.counters.dropsOut++;
-      Logger.warn(this.equipmentId, 'port:send-blocked', `${this.name}: no cable connected, frame dropped`);
+      Logger.debug(this.equipmentId, 'port:send-blocked', `${this.name}: no cable connected, frame dropped`);
       this.getBus().publish({
         topic: 'port.frame.tx-blocked',
         payload: { ...this.portRef(), reason: 'no-cable' },

@@ -732,7 +732,7 @@ export function showSwitchVersion(dev: {
   const hw = CISCO_HARDWARE_PROFILES['switch-c3560'];
   const names = dev.getPortNames();
   const fa = names.filter((n) => n.startsWith('Fast')).length;
-  const gi = names.filter((n) => n.startsWith('Gig')).length;
+  const gi = names.filter((n) => n.startsWith('Gig') && !n.includes('.')).length;
   const baseMac = names.length ? (dev.getPort(names[0])?.getMAC().toCiscoString() ?? '0000.0000.0000') : '0000.0000.0000';
   const upMin = Math.floor(dev.getUptimeMs() / 60000);
   const up = upMin < 1 ? '0 minutes'

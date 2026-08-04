@@ -11,7 +11,7 @@
 import { IPAddress, SubnetMask, IPv6Address } from '../../../core/types';
 import { isValidIPv4, isValidSubnetMask } from '../../../core/ip';
 import type { Router } from '../../Router';
-import { CommandTrie } from '../CommandTrie';
+import { CommandTrie, formatInvalidInput } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 
@@ -132,7 +132,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
           }
         }
       }
-      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
+      if (!ifName) return formatInvalidInput(10);
     }
     ctx.setSelectedInterface(ifName);
     ctx.setMode(/\.\d+$/.test(ifName) ? 'config-subif' : 'config-if');
@@ -152,10 +152,10 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     const name = typed
       ? `${typeMap[typed[1].toLowerCase()]}${typed[2]}`
       : ctx.resolveInterfaceName(raw);
-    if (!name) return `% Invalid input detected at '^' marker.\nno interface ${raw}\n             ^`;
+    if (!name) return formatInvalidInput(13);
     if (!ctx.r()._removeVirtualInterface(name)) {
       // Real IOS on a physical port: the hardware is not going anywhere.
-      return `% Invalid input detected at '^' marker.\nno interface ${raw}\n             ^`;
+      return formatInvalidInput(13);
     }
     if (ctx.getSelectedInterface?.() === name) ctx.setSelectedInterface(null);
     return '';
@@ -397,12 +397,22 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
           }
         }
       }
-      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
+      if (!ifName) return formatInvalidInput(10);
     }
     ctx.setSelectedInterface(ifName);
     ctx.setMode('config-if');
     return '';
   });
+
+  function refusSousInterfaceSansEncapsulation(c: CiscoShellContext): string | null {
+    const nom = c.getSelectedInterface();
+    if (!nom || !/\.\d+$/.test(nom)) return null;
+    const port = c.r().getPort(nom);
+    const encap = (port as unknown as { encapsulation?: { type?: string } } | undefined)?.encapsulation;
+    if (encap?.type) return null;
+    return '% Configuring IP routing on a LAN subinterface is only allowed if that '
+      + 'subinterface is already configured as part of an 802.1Q, or ISL vlan.';
+  }
 
   trie.registerGreedy('ip address', 'Set interface IP address', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
@@ -425,6 +435,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!isValidIPv4(args[0]) || !isValidSubnetMask(args[1])) {
       return "% Invalid input detected at '^' marker.";
     }
+    const refus = refusSousInterfaceSansEncapsulation(ctx);
+    if (refus) return refus;
     const secondary = args[2]?.toLowerCase() === 'secondary';
     if (args[2] !== undefined && !secondary) {
       return "% Invalid input detected at '^' marker.";

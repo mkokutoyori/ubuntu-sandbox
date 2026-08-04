@@ -12,10 +12,11 @@ import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
+import { formatInvalidInputAt } from '../CommandTrie';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
-  const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig'));
+  const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig') && !n.includes('.'));
   const hw = CISCO_HARDWARE_PROFILES[profile];
   const uptimeMs = router._getUptimeMs?.() ?? 0;
   return [
@@ -124,7 +125,8 @@ export function showIpIntBrief(router: Router): string {
   for (const [name, port] of ports) {
     const ip = port.getIPAddress()?.toString() || 'unassigned';
     const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(name);
-    const adminUp = port.getIsUp();
+    const carrier = carrierPort(router, name, port);
+    const adminUp = port.getIsUp() && carrier.getIsUp();
     let status: string;
     let proto: string;
     if (!adminUp) {
@@ -133,7 +135,7 @@ export function showIpIntBrief(router: Router): string {
     } else if (isVirtual) {
       status = 'up';
       proto = 'up';
-    } else if (port.isConnected()) {
+    } else if (carrier.isConnected()) {
       status = 'up';
       proto = 'up';
     } else {
@@ -143,6 +145,16 @@ export function showIpIntBrief(router: Router): string {
     lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES manual ${status.padEnd(22)}${proto}`);
   }
   return lines.join('\n');
+}
+
+function carrierPort(
+  router: Router,
+  name: string,
+  port: import('../../../hardware/Port').Port,
+): import('../../../hardware/Port').Port {
+  const dot = name.indexOf('.');
+  if (dot <= 0) return port;
+  return router._getPortsInternal().get(name.slice(0, dot)) ?? port;
 }
 
 /** IOS prints the ARP timeout as hh:mm:ss (default 04:00:00). */
@@ -169,7 +181,7 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
   if (!port) {
     const line = `show interface ${ifName}`;
     const marker = ' '.repeat(line.indexOf(ifName)) + '^';
-    return `% Invalid input detected at '^' marker.\n${line}\n${marker}`;
+    return formatInvalidInputAt(marker);
   }
 
   const isUp = port.getIsUp();

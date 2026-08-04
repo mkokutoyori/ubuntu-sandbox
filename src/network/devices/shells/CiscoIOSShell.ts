@@ -20,7 +20,7 @@
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
-import { CommandTrie } from './CommandTrie';
+import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
 import { IPAddress, SubnetMask } from '../../core/types';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import type { PromptMap } from './PromptBuilder';
@@ -124,6 +124,8 @@ import {
   buildNATConfigCommands, buildNATInterfaceCommands,
   registerNATPrivilegedCommands, registerNATShowCommands,
 } from './cisco/CiscoNATCommands';
+
+const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   // ─── Router-specific state ───────────────────────────────────────
@@ -290,6 +292,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getOSType(): string { return 'cisco-ios'; }
 
   execute(router: Router, rawInput: string): string | Promise<string> {
+    setInvalidInputPromptWidth(this.buildDevicePrompt(router).length);
     router.setRouteTrackResolver((trackId) =>
       this.track.state(router, this.ipsla, parseInt(trackId, 10)) === 'Up');
     this.attachDebugSource((router as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void } }).getDebugService?.());
@@ -845,6 +848,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackSlaShow(trie, this, this.track, this.ipsla);
     registerPolicyShow(trie, this.policy);
+    trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
     // `show logging` — projects the real LoggingConfig (router).
     trie.registerGreedy('show logging', 'Display syslog state', (args) =>
@@ -873,7 +877,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     trie.register('show bfd summary', 'Display BFD summary', () => ' No BFD sessions configured.');
     trie.register('show table-map', 'Display table-maps', () => ' No table-maps configured.');
-    trie.registerGreedy('show mls qos', 'Display MLS QoS', () => ' MLS QoS is disabled.');
     trie.register('show ip nbar protocol-discovery', 'Display NBAR discovery', () => ' NBAR protocol discovery is not enabled.');
     trie.registerGreedy('show queueing interface', 'Display interface queueing', () => ' Interface uses FIFO queueing.');
     trie.registerGreedy('show traffic-shape', 'Display traffic shaping', (args) => {
@@ -955,7 +958,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         // `ifPart` (the invalid argument) always starts right after the
         // fixed "show interface " prefix, regardless of the view modifier.
         const marker = ' '.repeat('show interface '.length) + '^';
-        return `% Invalid input detected at '^' marker.\n${line}\n${marker}`;
+        return formatInvalidInputAt(marker);
       }
       if (last === 'accounting') return Show.showInterfaceAccounting(getRouter(), ifName);
       if (last === 'stats') return Show.showInterfaceStats(getRouter(), ifName);

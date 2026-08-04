@@ -1162,7 +1162,10 @@ export class OSPFEngine implements IProtocolEngine {
 
     // Validate hello parameters
     if (iface.networkType === 'broadcast') {
-      if (hello.networkMask !== iface.mask) return;
+      if (hello.networkMask !== iface.mask) {
+        this.publierDiscordanceHello(ifaceName, iface, hello, srcIP);
+        return;
+      }
     }
     if (hello.helloInterval !== iface.helloInterval || hello.deadInterval !== iface.deadInterval) {
       const mismatched = hello.helloInterval !== iface.helloInterval ? 'hello' : 'dead';
@@ -1280,13 +1283,11 @@ export class OSPFEngine implements IProtocolEngine {
   // ─── Neighbor State Machine (RFC 2328 §10.1) ──────────────────
 
   neighborEvent(iface: OSPFInterface, neighbor: OSPFNeighbor, event: OSPFNeighborEvent): void {
-    const oldState = neighbor.state;
-
     switch (event) {
       // RFC 2328 §10.3: Start event — used for NBMA networks (Attempt state)
       case 'Start':
         if (neighbor.state === 'Down') {
-          neighbor.state = 'Attempt';
+          this.setNeighborState(iface, neighbor, 'Attempt', event);
           // On NBMA, send a Hello directly to the configured neighbor
           this.sendHelloTo(iface, neighbor.ipAddress);
         }
@@ -1295,17 +1296,17 @@ export class OSPFEngine implements IProtocolEngine {
       case 'HelloReceived':
         this.resetDeadTimer(iface, neighbor);
         if (neighbor.state === 'Down' || neighbor.state === 'Attempt') {
-          neighbor.state = 'Init';
+          this.setNeighborState(iface, neighbor, 'Init', event);
         }
         break;
 
       case 'TwoWayReceived':
         if (neighbor.state === 'Init') {
           if (this.shouldFormAdjacency(iface, neighbor)) {
-            neighbor.state = 'ExStart';
+            this.setNeighborState(iface, neighbor, 'ExStart', event);
             this.startDDExchange(iface, neighbor);
           } else {
-            neighbor.state = 'TwoWay';
+            this.setNeighborState(iface, neighbor, 'TwoWay', event);
           }
         }
         break;
@@ -1314,7 +1315,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (neighbor.state === 'ExStart') {
           // Cancel DD retransmission timer — negotiation complete
           this.cancelDDRetransmitTimer(neighbor);
-          neighbor.state = 'Exchange';
+          this.setNeighborState(iface, neighbor, 'Exchange', event);
           this.sendDDWithSummary(iface, neighbor);
         }
         break;
@@ -1322,10 +1323,10 @@ export class OSPFEngine implements IProtocolEngine {
       case 'ExchangeDone':
         if (neighbor.state === 'Exchange') {
           if (neighbor.lsRequestList.length > 0) {
-            neighbor.state = 'Loading';
+            this.setNeighborState(iface, neighbor, 'Loading', event);
             this.sendLSRequest(iface, neighbor);
           } else {
-            neighbor.state = 'Full';
+            this.setNeighborState(iface, neighbor, 'Full', event);
             this.onAdjacencyFull(iface, neighbor);
           }
         }
@@ -1335,7 +1336,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (neighbor.state === 'Loading') {
           // Cancel LSR retransmission timer — loading complete
           this.cancelLSRRetransmitTimer(neighbor);
-          neighbor.state = 'Full';
+          this.setNeighborState(iface, neighbor, 'Full', event);
           this.onAdjacencyFull(iface, neighbor);
         }
         break;
@@ -1343,14 +1344,14 @@ export class OSPFEngine implements IProtocolEngine {
       case 'AdjOK':
         if (neighbor.state === 'TwoWay') {
           if (this.shouldFormAdjacency(iface, neighbor)) {
-            neighbor.state = 'ExStart';
+            this.setNeighborState(iface, neighbor, 'ExStart', event);
             this.startDDExchange(iface, neighbor);
           }
         } else if (neighbor.state === 'Full' || neighbor.state === 'Exchange' || neighbor.state === 'Loading') {
           if (!this.shouldFormAdjacency(iface, neighbor)) {
             this.cancelDDRetransmitTimer(neighbor);
             this.cancelLSRRetransmitTimer(neighbor);
-            neighbor.state = 'TwoWay';
+            this.setNeighborState(iface, neighbor, 'TwoWay', event);
             neighbor.lsRequestList = [];
             neighbor.lsRetransmissionList = [];
             neighbor.dbSummaryList = [];
@@ -1363,7 +1364,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (['Exchange', 'Loading', 'Full'].includes(neighbor.state)) {
           this.cancelDDRetransmitTimer(neighbor);
           this.cancelLSRRetransmitTimer(neighbor);
-          neighbor.state = 'ExStart';
+          this.setNeighborState(iface, neighbor, 'ExStart', event);
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
           neighbor.dbSummaryList = [];
@@ -1377,7 +1378,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (neighbor.state !== 'Down' && neighbor.state !== 'Init') {
           this.cancelDDRetransmitTimer(neighbor);
           this.cancelLSRRetransmitTimer(neighbor);
-          neighbor.state = 'Init';
+          this.setNeighborState(iface, neighbor, 'Init', event);
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
           neighbor.dbSummaryList = [];
@@ -1389,7 +1390,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.clearDeadTimer(neighbor);
         this.cancelDDRetransmitTimer(neighbor);
         this.cancelLSRRetransmitTimer(neighbor);
-        neighbor.state = 'Down';
+        this.setNeighborState(iface, neighbor, 'Down', event);
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
         neighbor.dbSummaryList = [];
@@ -1399,7 +1400,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.clearDeadTimer(neighbor);
         this.cancelDDRetransmitTimer(neighbor);
         this.cancelLSRRetransmitTimer(neighbor);
-        neighbor.state = 'Down';
+        this.setNeighborState(iface, neighbor, 'Down', event);
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
         neighbor.dbSummaryList = [];
@@ -1414,32 +1415,58 @@ export class OSPFEngine implements IProtocolEngine {
         break;
     }
 
-    if (oldState !== neighbor.state) {
-      const msg = `OSPF: Neighbor ${neighbor.routerId} (${iface.name}): ${oldState} -> ${neighbor.state} (${event})`;
-      this.eventLog.push(msg);
-      this.neighborChangeCount++;
-      if (this.logAdjacencyChanges || this.config.logAdjacencyChanges) {
-        // Log adjacency change event
-        this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${oldState} to ${neighbor.state}, ${event}`);
-      }
+  }
 
-      // Reactive flow: emit the FSM transition. The bundled actors take
-      // it from here:
-      //   - SignalRefreshActor refreshes neighbors / interfaces / runtime.
-      //   - RouterLsaActor re-originates the Router-LSA on Full ↔ X.
-      //   - SpfActor schedules an SPF run on Full ↔ X.
-      this.getBus().publish({
-        topic: 'ospf.neighbor.state-changed',
-        payload: {
-          ...this.routerRef(),
-          iface: iface.name,
-          neighborId: neighbor.routerId,
-          oldState,
-          newState: neighbor.state,
-          event,
-        },
-      });
+
+  private publierDiscordanceHello(
+    ifaceName: string,
+    iface: OSPFInterface,
+    hello: { helloInterval: number; deadInterval: number; networkMask: string },
+    srcIP: string,
+  ): void {
+    this.getBus().publish({
+      topic: 'ospf.hello.mismatch',
+      payload: {
+        ...this.routerRef(),
+        iface: ifaceName,
+        from: srcIP,
+        deadReceived: hello.deadInterval,
+        deadConfigured: iface.deadInterval,
+        helloReceived: hello.helloInterval,
+        helloConfigured: iface.helloInterval,
+        maskReceived: hello.networkMask,
+        maskConfigured: iface.mask,
+      },
+    } as never);
+  }
+
+  private setNeighborState(
+    iface: OSPFInterface,
+    neighbor: OSPFNeighbor,
+    next: OSPFNeighbor['state'],
+    event: string,
+  ): void {
+    const from = neighbor.state;
+    if (from === next) return;
+    neighbor.state = next;
+
+    this.eventLog.push(`OSPF: Neighbor ${neighbor.routerId} (${iface.name}): ${from} -> ${next} (${event})`);
+    this.neighborChangeCount++;
+    if (this.logAdjacencyChanges || this.config.logAdjacencyChanges) {
+      this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${from} to ${next}, ${event}`);
     }
+
+    this.getBus().publish({
+      topic: 'ospf.neighbor.state-changed',
+      payload: {
+        ...this.routerRef(),
+        iface: iface.name,
+        neighborId: neighbor.routerId,
+        oldState: from,
+        newState: next,
+        event,
+      },
+    });
   }
 
   /**

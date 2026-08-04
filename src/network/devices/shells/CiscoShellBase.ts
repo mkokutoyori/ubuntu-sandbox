@@ -1282,9 +1282,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     try {
       const completions = trie.getCompletions(input);
       if (completions.length === 0) {
-        const trimmed = input.trim();
-        const isPrefixQuery = trimmed.length > 0 && !input.endsWith(' ');
-        return isPrefixQuery ? '' : CISCO_ERRORS.UNRECOGNIZED_HELP;
+        return CISCO_ERRORS.UNRECOGNIZED_HELP;
       }
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -1566,10 +1564,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
       if (sub === 'history') { this.terminalHistoryEnabled = false; return ''; }
-      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; this.terminalMonitorExplicit = true; return ''; }
+      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; this.terminalMonitorExplicit = true; this.logging.setTerminalMonitor(false); return ''; }
       return CISCO_ERRORS.INVALID_INPUT;
     }
-    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; this.terminalMonitorExplicit = true; return ''; }
+    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; this.terminalMonitorExplicit = true; this.logging.setTerminalMonitor(true); return ''; }
     if (head === 'exec') return '';
     if (head === 'history') {
       if ((rest[0] ?? '').toLowerCase() === 'size') {
@@ -1583,6 +1581,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     }
     return CISCO_ERRORS.INVALID_INPUT;
+  }
+
+  private applyServiceTimestamps(args: string[], negate: boolean): string {
+    const cible = (args[0] ?? '').toLowerCase();
+    if (cible !== 'debug' && cible !== 'log') return CISCO_ERRORS.INVALID_INPUT;
+    const reste = args.slice(1).map(s => s.toLowerCase());
+    if (!negate && reste.length > 0 && reste[0] !== 'datetime' && reste[0] !== 'uptime') {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
+    this.attachLoggingToDevice(this.d());
+    if (cible === 'debug') this.logging.timestampsDebug = !negate;
+    else this.logging.timestamps = !negate;
+    if (!negate && reste.includes('msec')) this.logging.timestampsMsec = true;
+    return '';
   }
 
   /** Public read accessor — used by CLITerminalSession to size the pager. */
@@ -2573,6 +2585,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.syncSyslogAgent();
       return '';
     });
+    this.configTrie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
+      this.applyServiceTimestamps(args, false));
+    this.configTrie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>
+      this.applyServiceTimestamps(args, true));
     this.configTrie.registerGreedy('ntp', 'NTP configuration', (args) => {
       const a = args.map(s => s.toLowerCase());
       if (!a[0]) return CISCO_ERRORS.INCOMPLETE;

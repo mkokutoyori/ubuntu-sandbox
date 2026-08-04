@@ -15,7 +15,7 @@
  */
 
 import { CiscoShellBase } from './CiscoShellBase';
-import { CommandTrie } from './CommandTrie';
+import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -2157,7 +2157,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args.length === 0) return this.showInterfacesCounters(null);
       const name = this.resolveInterfaceName(args.join(' '));
       if (!name || !this.d().getPort(name)) {
-        return `% Invalid input detected at '^' marker.\nshow interfaces counters ${args.join(' ')}\n                ^`;
+        return formatInvalidInput(16);
       }
       return this.showInterfacesCounters(name);
     });
@@ -2178,7 +2178,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (target) {
           const name = this.resolveInterfaceName(target);
           if (!name || !this.d().getPort(name)) {
-            return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+            return formatInvalidInput(16);
           }
           return this.showInterfacesCounters(name);
         }
@@ -2188,7 +2188,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (last === 'trunk' && args.length > 1) {
         const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
         if (!name || !this.d().getPort(name)) {
-          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+          return formatInvalidInput(16);
         }
         return this.showTrunkTable([name]);
       }
@@ -2196,7 +2196,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (args.length === 1) return this.showInterfacesStatus(this.d());
         const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
         if (!name || !this.d().getPort(name)) {
-          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+          return formatInvalidInput(16);
         }
         return this.showInterfacesStatus(this.d(), name);
       }
@@ -2207,20 +2207,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args.length > 1 && args[args.length - 1].toLowerCase() === 'etherchannel') {
         const target = this.resolveInterfaceName(args.slice(0, -1).join(' '));
         if (!target || !this.d().getPort(target)) {
-          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+          return formatInvalidInput(16);
         }
         return this.showInterfaceEtherchannel(target);
       }
       const name = this.resolveInterfaceName(args.join(' '));
       if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
-      return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+      return formatInvalidInput(16);
     });
 
     this.privilegedTrie.registerGreedy('show queuing interface', 'Display the 802.1p trust state of an interface', (args) => {
       const target = args.join(' ');
       const name = this.resolveInterfaceName(target) ?? target;
       if (!name || !this.d().getPort(name)) {
-        return `% Invalid input detected at '^' marker.\nshow queuing interface ${args.join(' ')}\n                       ^`;
+        return formatInvalidInput(23);
       }
       return this.showQueuingInterface(name);
     });

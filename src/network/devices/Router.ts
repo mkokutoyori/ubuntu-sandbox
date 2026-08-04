@@ -826,6 +826,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (this.ports.has(name)) return true; // already exists
     const port = new Port(name, 'ethernet');
     port.setUp(true); // virtual interfaces are always up
+    const dot = name.indexOf('.');
+    if (dot > 0) {
+      const parent = this.ports.get(name.slice(0, dot));
+      if (parent) port.setMAC(parent.getMAC());
+    }
     this.addPort(port);
     // Register OSPF monitor
     port.onLinkChange((state) => {
@@ -3559,10 +3564,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    // Route lookup
     const route = this.lookupRoute(targetIP);
     if (!route) {
-      return []; // empty = unreachable
+      const rows = [];
+      for (let seq = 1; seq <= count; seq++) {
+        if (hooks?.shouldStop?.()) break;
+        const row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'network-unreachable' };
+        rows.push(row);
+        hooks?.onResult?.(row);
+      }
+      return rows;
     }
 
     const outPort = this.ports.get(route.iface);
@@ -3581,14 +3592,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // Determine next-hop IP
     const nextHopIP = route.nextHop || targetIP;
 
-    // ARP resolution for next-hop
     const existingArp = this.arpTable.get(nextHopIP.toString());
     let nextHopMAC: MACAddress | null = existingArp ? existingArp.mac : null;
+    const arpAApprendre = !nextHopMAC;
 
     if (!nextHopMAC) {
-      // Send ARP request and wait
       nextHopMAC = await this._resolveARPForPing(route.iface, outPort, nextHopIP, timeoutMs);
-      if (!nextHopMAC) return []; // ARP failed
+      if (!nextHopMAC) return [];
     }
 
     // Send pings
@@ -3596,6 +3606,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     for (let seq = 1; seq <= count; seq++) {
       if (hooks?.shouldStop?.()) break;
       let row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string };
+      if (seq === 1 && arpAApprendre) {
+        row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
+        results.push(row);
+        hooks?.onResult?.(row);
+        continue;
+      }
       try {
         row = await this._sendPing(
           route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs,
@@ -3874,9 +3890,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           ? 'ttl-exceeded'
           : /code 4\b/.test(winner.r.reason)
             ? 'frag-needed'
-            : /Destination unreachable/i.test(winner.r.reason)
-              ? 'unreachable'
-              : 'timeout';
+            : /code 13\b/.test(winner.r.reason)
+              ? 'admin-prohibited'
+              : /code 0\b/.test(winner.r.reason)
+                ? 'network-unreachable'
+                : /Destination unreachable/i.test(winner.r.reason)
+                  ? 'unreachable'
+                  : 'timeout';
         throw err;
       }
       const rtt = performance.now() - sentAt;

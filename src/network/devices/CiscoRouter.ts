@@ -538,7 +538,7 @@ export class CiscoRouter extends Router {
 
   getBootSequence(): string {
     const ports = this._getPortsInternal();
-    const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig'));
+    const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig') && !n.includes('.'));
     const faPorts = [...ports.keys()].filter(n => n.startsWith('Fast'));
     return [
       '',
