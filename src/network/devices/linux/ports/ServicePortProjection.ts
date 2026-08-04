@@ -157,12 +157,20 @@ export class ServicePortProjection {
         this.publishPortEvent('linux.port.bound', binding, spec, address);
         continue;
       }
-      if (!server.open(spec)) continue;
-      try {
-        this.socketTable.bind(spec.protocol, address, spec.port, binding.mainPid, binding.processName);
-      } catch {
-        server.close(spec);
-        continue;
+      const identity = { pid: binding.mainPid, processName: binding.processName };
+      if (!server.open(spec, identity)) continue;
+      // Depuis §P1, une écoute TCP s'inscrit d'elle-même — avec l'identité
+      // qu'on vient de lui donner. Relier ici lèverait `EADDRINUSE`, et le
+      // rattrapage refermerait le serveur qu'on vient d'ouvrir. On ne lie
+      // donc que ce que personne n'a annoncé : l'UDP, et les services dont
+      // le serveur n'ouvre pas de socket TCP.
+      if (!this.socketTable.isPortBound(spec.port, spec.protocol)) {
+        try {
+          this.socketTable.bind(spec.protocol, address, spec.port, binding.mainPid, binding.processName);
+        } catch {
+          server.close(spec);
+          continue;
+        }
       }
       const held = this.bound.get(binding.name) ?? [];
       held.push(spec);

@@ -915,6 +915,15 @@ export abstract class LinuxMachine extends EndHost
         if (immediate) { send(immediate); return; }
         void this.answerResolvedQuery(query).then(send);
       }, 'systemd-resolved');
+      // Le stub répond aussi en TCP sur une vraie machine — c'est par là
+      // que passe une réponse trop grande pour un datagramme (RFC 7766).
+      // L'entrée `tcp 127.0.0.53:53` figurait déjà dans `ss` ; jusqu'ici
+      // rien n'écoutait derrière
+      // (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
+      bindDnsTcpServer(this, (query) => {
+        const immediate = this.answerResolvedQuerySync(query);
+        return immediate ?? this.answerResolvedQuery(query);
+      }, DNS_PORT, { address: STUB_ADDRESS, processName: 'systemd-resolved' });
       this.resolvedStubBound = true;
     } catch { /* déjà lié */ }
     // systemd-resolved est le contre-exemple de docs/PRD-Nginx.md §P0 : son

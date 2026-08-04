@@ -1,4 +1,5 @@
 import type { PortSpec } from '../../../core/ports/PortNumber';
+import type { ListenerIdentity } from '../../../tcp/ListenerSocketSink';
 
 /**
  * Le serveur réel derrière un port de service (docs/PRD-Nginx.md §P0).
@@ -19,7 +20,15 @@ import type { PortSpec } from '../../../core/ports/PortNumber';
  * dnsmasq) ne passent pas par ici : ils écoutent déjà vraiment.
  */
 export interface ServiceSocketServer {
-  /** Ouvre l'écoute réelle. `false` = rien n'écoute, donc rien à afficher. */
-  open(spec: PortSpec): boolean;
+  /**
+   * Ouvre l'écoute réelle. `false` = rien n'écoute, donc rien à afficher.
+   *
+   * L'identité est passée ICI plutôt qu'inscrite à côté par la projection
+   * (docs/PRD-Sockets-Une-Seule-Verite.md §P1) : depuis que
+   * `TcpStack.listen()` annonce lui-même son écoute, une projection qui
+   * lierait le même port une seconde fois se heurterait à son propre
+   * `EADDRINUSE`.
+   */
+  open(spec: PortSpec, identity?: ListenerIdentity): boolean;
   close(spec: PortSpec): void;
 }

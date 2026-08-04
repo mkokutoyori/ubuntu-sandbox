@@ -175,6 +175,32 @@ sous la protection du test de croisement.
   `PRD-Nginx` §P0 avait laissée ouverte —, et aucune suite existante ne
   régresse.
 
+#### Ce que P1 a effectivement changé
+
+Le sink a d'abord fait **échouer nginx**, et c'est le risque que cette
+phase avait annoncé : `ServicePortProjection` ouvrait le serveur puis
+liait le port une seconde fois, se heurtait à son propre `EADDRINUSE`, et
+son rattrapage refermait le serveur qu'elle venait d'ouvrir. Réparé
+comme P1 le prévoyait — l'identité passe par `ServiceSocketServer.open()`
+jusqu'au `listen()`, et la projection ne lie plus que ce que personne n'a
+annoncé. Le doublon a disparu au lieu d'être toléré.
+
+Deux écoutes réelles sont sorties de l'ombre, et l'inventaire de P0 ne
+les avait pas vues parce qu'elles ne se manifestent qu'une fois le
+croisement écrit :
+
+- **RADIUS-over-TCP (RFC 6613)**, port 1812 : une écoute authentique,
+  invisible dans `ss`, à côté de ses propres sockets UDP qui, eux, s'y
+  affichaient. Elle porte désormais le nom de son démon.
+- **Le stub de systemd-resolved en TCP**, `127.0.0.53:53` : l'inverse —
+  la ligne existait, rien n'écoutait derrière. Traité en P2 plutôt que
+  masqué, puisqu'un vrai résolveur répond bien en TCP quand la réponse
+  ne tient pas dans un datagramme (RFC 7766).
+
+Enfin, `scenario-listen-vs-filtered.test.ts` — la troisième des cinq
+rencontres documentées au §3 — posait à la main les deux moitiés que P1
+réunit. Son contournement a été retiré, pas contourné à son tour.
+
 ### P2 — Les entrées décoratives, une par une
 
 Ce que P0 aura classé en (c). Pour chacune : soit lui donner une écoute
