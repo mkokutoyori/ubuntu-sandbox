@@ -42,13 +42,19 @@ export class LoggingConfig {
   rateLimit: number | null = null;
   consoleSeverity: Severity = 'debugging';
   monitorEnabled = true;
+  private terminalMonitor = false;
+  isTerminalMonitorOn(): boolean { return this.terminalMonitor; }
+  setTerminalMonitor(on: boolean): void { this.terminalMonitor = on; }
+  onSessionEnd(): void { this.terminalMonitor = false; }
   monitorSeverity: Severity = 'debugging';
   trapSeverity: Severity = 'informational';
   facility = 'local7';
   sourceInterface: string | null = null;
   sequenceNumbers = false;
   timestamps = false;
+  timestampsDebug = false;
   timestampsMsec = false;
+  horlogeSynchronisee = false;
   readonly hosts: string[] = [];
   private readonly messages: Array<{ ts: number; severity: Severity; tag: string; text: string; mnemonic?: string }> = [];
 
@@ -93,19 +99,27 @@ export class LoggingConfig {
   }
 
   private formatEntry(severity: Severity, tag: string, text: string, ts: number, mnemonic?: string): string {
+    const prefix = this.horodatageActif(severity) ? `${this.formatTimestamp(ts)}: ` : '';
+    if (severity === 'debugging' && !mnemonic) return `${prefix}${text}`;
     const sevNum = this.SEVERITY_ORDER[severity];
-    const prefix = this.timestamps
-      ? `${this.formatTimestamp(ts)}: `
-      : '';
     const mnem = (mnemonic ?? severity).toUpperCase();
     return `${prefix}%${tag.toUpperCase()}-${sevNum}-${mnem}: ${text}`;
   }
 
+  private horodatageActif(severity: Severity): boolean {
+    return severity === 'debugging' ? this.timestampsDebug : this.timestamps;
+  }
+
   private formatTimestamp(ts: number): string {
     const d = new Date(ts);
-    const base = d.toISOString().slice(5, 19).replace('T', ' ');
+    const mois = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const base = `${this.horlogeSynchronisee ? ' ' : '*'}${mois} `
+      + `${String(d.getUTCDate()).padStart(2, ' ')} `
+      + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
     if (!this.timestampsMsec) return base;
-    return `${base}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+    return `${base}.${String(d.getUTCMilliseconds()).padStart(3, '0')}`;
   }
 
   subscribeMonitor(listener: SyslogLineListener): () => void {
@@ -142,7 +156,8 @@ export class LoggingConfig {
     if (!this.enabled) return;
     if (severity === 'debugging' && !this.debugAllowed(tag)) return;
     const ts = Date.now();
-    if (this.monitorEnabled && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
+    if (this.monitorEnabled && this.terminalMonitor
+      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
       this.fanMonitor(this.formatEntry(severity, tag, text, ts, mnemonic));
     }
     if (this.consoleEnabled && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.consoleSeverity]) {
@@ -229,10 +244,23 @@ export class LoggingConfig {
         this.append('notifications', 'lineproto',
           `Line protocol on Interface ${p.portName}, changed state to down`, true, 'UPDOWN');
       }),
+      bus.subscribeWhere('ospf.hello.mismatch' as never, isOurs, (e) => {
+        const p = e.payload as unknown as {
+          from: string; deadReceived: number; deadConfigured: number;
+          helloReceived: number; helloConfigured: number;
+          maskReceived: string; maskConfigured: string;
+        };
+        this.append('debugging', 'ospf', `OSPF: Mismatched hello parameters from ${p.from}`);
+        this.append('debugging', 'ospf',
+          `OSPF: Dead R ${p.deadReceived} C ${p.deadConfigured}, `
+          + `Hello R ${p.helloReceived} C ${p.helloConfigured}, `
+          + `Mask R ${p.maskReceived} C ${p.maskConfigured}`);
+      }),
       bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload;
         this.append('notifications', 'ospf',
-          `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`);
+          `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`,
+          true, 'ADJCHG');
       }),
       bus.subscribeWhere('hsrp.active.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; group?: number; activeIp?: string; activePriority?: number };

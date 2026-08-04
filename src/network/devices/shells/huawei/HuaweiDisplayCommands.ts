@@ -180,8 +180,48 @@ function renderHuaweiRouteRows(router: Router, table: any[]): string[] {
   return rows;
 }
 
+/**
+ * La table telle qu'un VRP la montre : seulement les routes RÉELLEMENT
+ * installées.
+ *
+ * Ces vues lisaient `getRoutingTable()` brut, sans jamais demander si la
+ * route était utilisable — si bien qu'une statique survivait à un
+ * `shutdown` de son interface de sortie sur Huawei alors qu'elle
+ * disparaissait sur Cisco, pour la même topologie et le même défaut.
+ * Mesuré avant correction, et le piège est là : la forme `permanent`
+ * semblait juste (la route restait), mais la forme ORDINAIRE restait
+ * aussi — rien ne filtrait, la conformité apparente était un hasard.
+ */
+function installedRoutes(router: Router) {
+  return router.getRoutingTable().filter((r) => router.isRouteUsable(r));
+}
+
+/**
+ * La queue d'une ligne `ip route-static` : cible, préférence,
+ * `permanent` — même correction que côté IOS et pour la même raison,
+ * une configuration relue REFAIT la route au lieu de la décrire. VRP
+ * écrit la distance derrière le mot-clé `preference`, contrairement à
+ * IOS qui la pose nue.
+ */
+function vrpStaticRouteTail(r: {
+  nextHop: { toString(): string } | null; iface: string;
+  ifaceConfigured?: boolean; preference?: number; permanent?: boolean;
+}): string {
+  const nh = r.nextHop ? r.nextHop.toString() : '';
+  const parts: string[] = [];
+  if (r.ifaceConfigured && r.iface) {
+    parts.push(r.iface);
+    if (nh && nh !== '0.0.0.0') parts.push(nh);
+  } else {
+    parts.push(nh);
+  }
+  if (r.preference !== undefined) parts.push('preference', String(r.preference));
+  if (r.permanent) parts.push('permanent');
+  return parts.join(' ');
+}
+
 export function displayIpRoutingTable(router: Router): string {
-  const table = router.getRoutingTable();
+  const table = installedRoutes(router);
   const destSet = new Set(table.map(r => `${r.network}/${r.mask.toCIDR()}`));
   const lines = [
     'Route Flags: R - relay, D - download to fib',
@@ -197,7 +237,7 @@ export function displayIpRoutingTable(router: Router): string {
 
 export function displayIpRoutingTableProtocol(router: Router, proto: string): string {
   const wanted = proto.toLowerCase();
-  const table = router.getRoutingTable().filter(r => {
+  const table = installedRoutes(router).filter(r => {
     const name = huaweiProtoName(r).toLowerCase();
     if (wanted === 'direct') return r.type === 'connected';
     if (wanted === 'static') return r.type === 'static' || r.type === 'default';
@@ -216,7 +256,7 @@ export function displayIpRoutingTableProtocol(router: Router, proto: string): st
 }
 
 export function displayIpRoutingTableForDest(router: Router, dest: string): string {
-  const table = router.getRoutingTable();
+  const table = installedRoutes(router);
   const targetInt = (() => {
     try { return new IPAddress(dest).toUint32(); } catch { return null; }
   })();
@@ -518,10 +558,10 @@ export function displayCurrentConfig(
 
   for (const r of table) {
     if (r.type === 'static' && r.nextHop) {
-      lines.push(`ip route-static ${r.network} ${r.mask} ${r.nextHop}`);
+      lines.push(`ip route-static ${r.network} ${r.mask} ${vrpStaticRouteTail(r)}`);
     }
     if (r.type === 'default' && r.nextHop) {
-      lines.push(`ip route-static 0.0.0.0 0.0.0.0 ${r.nextHop}`);
+      lines.push(`ip route-static 0.0.0.0 0.0.0.0 ${vrpStaticRouteTail(r)}`);
     }
   }
   // RIP config

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-08-03T11:43:23.950Z
+Generated: 2026-08-04T08:22:23.046Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -1449,8 +1449,8 @@ Total steps: 286
   No NTP associations
 
 [217/286] r1 <R1> display clock
-  2026-08-03 11:43:23
-  Monday
+  2026-08-04 08:22:23
+  Tuesday
   Time Zone(UTC) : UTC
 
 [218/286] r1 <R1> display lldp neighbor
@@ -1462,13 +1462,13 @@ Total steps: 286
 [220/286] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-03 11:43:23
+  CPU Usage Stat. Time : 2026-08-04 08:22:23
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-03 11:43:23
+  Memory utilization statistics at 2026-08-04 08:22:23
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1510,49 +1510,49 @@ Total steps: 286
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 43
-  2026-08-03 11:43:23 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-08-03 11:43:23 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-08-03 11:43:23 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-08-03 11:43:23 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-08-03 11:43:23 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-08-03 11:43:23 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-08-03 11:43:23 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-03 11:43:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-03 11:43:23 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-03 11:43:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.100.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv6 address 2001:db8:1::1 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, MTU changed to 9000
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack1, IPv4 address 10.255.255.1/255.255.255.255 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack2, IPv4 address 10.255.255.2/255.255.255.255 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack3, IPv4 address 10.255.255.3/255.255.255.255 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack4, IPv4 address 10.255.255.4/255.255.255.255 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack5, IPv4 address 10.255.255.5/255.255.255.255 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack6, IPv4 address 10.255.255.6/255.255.255.255 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack7, IPv4 address 10.255.255.7/255.255.255.255 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack8, IPv4 address 10.255.255.8/255.255.255.255 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.10, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.20, IPv4 address 192.168.2.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.30, IPv4 address 192.168.3.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.40, IPv4 address 192.168.4.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.50, IPv4 address 192.168.5.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.60, IPv4 address 192.168.6.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.70, IPv4 address 192.168.7.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.80, IPv4 address 192.168.8.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.90, IPv4 address 192.168.9.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.100, IPv4 address 192.168.10.1/255.255.255.0 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface Tunnel0/0/0, IPv4 address 172.16.0.1/255.255.255.252 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface Tunnel0/0/1, IPv4 address 172.16.0.5/255.255.255.252 assigned
-  2026-08-03 11:43:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv6 address 2001:db8:abcd::1 assigned
-  2026-08-03 11:43:23 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to down
-  2026-08-03 11:43:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-03 11:43:23 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-03 11:43:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-03 11:43:23 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to down
-  2026-08-03 11:43:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to down
-  2026-08-03 11:43:23 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-03 11:43:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-04 08:22:22 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-08-04 08:22:22 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-08-04 08:22:22 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-08-04 08:22:22 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-08-04 08:22:22 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-08-04 08:22:22 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-08-04 08:22:23 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-04 08:22:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-04 08:22:23 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-04 08:22:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.100.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv6 address 2001:db8:1::1 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, MTU changed to 9000
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack1, IPv4 address 10.255.255.1/255.255.255.255 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack2, IPv4 address 10.255.255.2/255.255.255.255 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack3, IPv4 address 10.255.255.3/255.255.255.255 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack4, IPv4 address 10.255.255.4/255.255.255.255 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack5, IPv4 address 10.255.255.5/255.255.255.255 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack6, IPv4 address 10.255.255.6/255.255.255.255 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack7, IPv4 address 10.255.255.7/255.255.255.255 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface LoopBack8, IPv4 address 10.255.255.8/255.255.255.255 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.10, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.20, IPv4 address 192.168.2.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.30, IPv4 address 192.168.3.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.40, IPv4 address 192.168.4.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.50, IPv4 address 192.168.5.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.60, IPv4 address 192.168.6.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.70, IPv4 address 192.168.7.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.80, IPv4 address 192.168.8.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.90, IPv4 address 192.168.9.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0.100, IPv4 address 192.168.10.1/255.255.255.0 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface Tunnel0/0/0, IPv4 address 172.16.0.1/255.255.255.252 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface Tunnel0/0/1, IPv4 address 172.16.0.5/255.255.255.252 assigned
+  2026-08-04 08:22:23 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv6 address 2001:db8:abcd::1 assigned
+  2026-08-04 08:22:23 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to down
+  2026-08-04 08:22:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-08-04 08:22:23 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-04 08:22:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-04 08:22:23 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to down
+  2026-08-04 08:22:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to down
+  2026-08-04 08:22:23 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-04 08:22:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
 
 [226/286] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled

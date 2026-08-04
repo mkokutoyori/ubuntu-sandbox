@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-08-03T11:43:13.618Z
+Generated: 2026-08-04T08:22:11.164Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1826,7 +1826,7 @@ Total steps: 369
 [297/369] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1AFD51.A7EF9DB2 (11:43:13.656 UTC Mon Aug 3 2026)
+  reference time is EE1C1FB3.32B020C4 (08:22:11.198 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1# show ntp associations
@@ -1835,7 +1835,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *11:43:13.000 UTC Mon Aug 3 2026
+  *08:22:11.000 UTC Tue Aug 4 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1878,7 +1878,7 @@ Total steps: 369
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [305/369] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -2699,6 +2699,7 @@ Total steps: 369
 
 [366/369] r1 R1(config)# no ?
     sntp         Configure SNTP
+    boot         
     hostname     Reset hostname
     alias        Remove a command alias
     cdp          CDP global configuration

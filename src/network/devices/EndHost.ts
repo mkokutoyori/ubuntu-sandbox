@@ -23,8 +23,8 @@ import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
-import type { TcpSegment } from '../tcp/types';
-import { computeUdpChecksum, verifyUdpChecksum } from '../tcp/types';
+import type { TcpSegment, UdpChecksumInput } from '../tcp/types';
+import { computeTcpChecksum, computeUdpChecksum, verifyUdpChecksum } from '../tcp/types';
 import { TimerSet } from '@/events/TimerSet';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
@@ -256,6 +256,51 @@ function pickBestRouteInTable(destInt: number, table: HostRouteEntry[]): HostRou
     }
   }
   return bestRoute;
+}
+
+/** `--to-destination`/`--to-source` as iptables/ip6tables accept them: a bare "ip" or "ip:port". */
+function parseNatAddress(spec: string): { ip: string; port?: number } {
+  const idx = spec.lastIndexOf(':');
+  if (idx === -1) return { ip: spec };
+  const port = parseInt(spec.slice(idx + 1), 10);
+  if (isNaN(port) || port < 1 || port > 65535) return { ip: spec };
+  return { ip: spec.slice(0, idx), port };
+}
+
+/**
+ * Rewrites a packet's source or destination IP (and, when given, port) for
+ * DNAT/SNAT, then recomputes the IPv4 header checksum and the TCP/UDP
+ * checksum covering both addresses via the pseudo-header (RFC 793/RFC 768)
+ * — fixing up only the IPv4 header leaves every real segment's checksum
+ * verifying against the pre-NAT address, so the first SYN (or any UDP
+ * datagram carrying a real checksum) is silently dropped as bad-checksum
+ * by the receiver.
+ */
+function rewriteNatAddress(pkt: IPv4Packet, target: 'src' | 'dst', ip: string, port?: number): IPv4Packet {
+  const result: IPv4Packet = target === 'src'
+    ? { ...pkt, sourceIP: new IPAddress(ip), headerChecksum: 0 }
+    : { ...pkt, destinationIP: new IPAddress(ip), headerChecksum: 0 };
+
+  if (port !== undefined) {
+    const payload = pkt.payload as (UDPPacket | TCPPacket | undefined);
+    if (payload?.type === 'udp' || payload?.type === 'tcp') {
+      result.payload = target === 'src'
+        ? { ...payload, sourcePort: port }
+        : { ...payload, destinationPort: port };
+    }
+  }
+
+  const payload = result.payload as (UDPPacket | TCPPacket | undefined);
+  const srcIp = result.sourceIP.toString();
+  const dstIp = result.destinationIP.toString();
+  if (payload?.type === 'tcp') {
+    result.payload = { ...payload, checksum: computeTcpChecksum(payload as unknown as TcpSegment, srcIp, dstIp) };
+  } else if (payload?.type === 'udp') {
+    result.payload = { ...payload, checksum: computeUdpChecksum(payload as unknown as UdpChecksumInput, srcIp, dstIp) };
+  }
+
+  result.headerChecksum = computeIPv4Checksum(result);
+  return result;
 }
 
 // ─── EndHost ───────────────────────────────────────────────────────
@@ -1667,6 +1712,20 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * Evaluate nat OUTPUT-chain DNAT/REDIRECT rules against this host's own
+   * locally-generated traffic, before it picks an egress route — real on
+   * Linux exactly like PREROUTING is for network-arriving traffic.
+   * Subclasses override to implement iptables nat OUTPUT chain.
+   * Returns null (no NAT) by default.
+   */
+  protected evaluateNatOutput(
+    _srcIP: string, _dstIP: IPAddress, _dstPort: number, _srcPort: number,
+    _protocol: number, _tentativeOutIface: string,
+  ): { action: string; address?: string } | null {
+    return null;
+  }
+
+  /**
    * Evaluate ip6tables PREROUTING DNAT rules for a packet destined to this
    * host itself, before local delivery. There is no IPv6 counterpart to
    * `evaluateNat`/POSTROUTING here: end hosts don't forward IPv6 packets
@@ -1748,14 +1807,18 @@ export abstract class EndHost extends Equipment {
     const preNat = this.evaluatePreRouting(portName, ipPkt);
     if (preNat && preNat.action === 'DNAT' && preNat.address) {
       try {
-        const newDst = new IPAddress(preNat.address.split(':')[0]);
-        ipPkt = {
-          ...ipPkt,
-          destinationIP: newDst,
-          headerChecksum: 0,
-        };
-        ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+        const { ip, port } = parseNatAddress(preNat.address);
+        ipPkt = rewriteNatAddress(ipPkt, 'dst', ip, port);
       } catch { /* keep original */ }
+    } else if (preNat && preNat.action === 'REDIRECT') {
+      // REDIRECT has no --to-destination to read: real Linux maps the
+      // destination to this box's own address on the interface that
+      // received the packet (`--to-ports` optionally changes the port).
+      const localIP = this.ports.get(portName)?.getIPAddress();
+      if (localIP) {
+        const portNum = preNat.address ? parseInt(preNat.address, 10) : NaN;
+        ipPkt = rewriteNatAddress(ipPkt, 'dst', localIP.toString(), Number.isNaN(portNum) ? undefined : portNum);
+      }
     }
 
     // Check if packet is for us
@@ -1853,33 +1916,31 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    // NAT: apply POSTROUTING rules (MASQUERADE/SNAT)
-    let srcIP = ipPkt.sourceIP;
-    let dstIP = ipPkt.destinationIP;
+    // NAT: apply POSTROUTING rules (MASQUERADE/SNAT/DNAT)
+    let fwdPkt: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
+    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+
     const natResult = this.evaluateNat(ipPkt, inPort, outPortName);
     if (natResult) {
       if (natResult.action === 'MASQUERADE') {
         const outPortIP = route.port.getIPAddress();
-        if (outPortIP) srcIP = outPortIP;
+        if (outPortIP) fwdPkt = rewriteNatAddress(fwdPkt, 'src', outPortIP.toString());
       } else if (natResult.action === 'SNAT' && natResult.address) {
-        try { srcIP = new IPAddress(natResult.address.split(':')[0]); } catch { /* keep original */ }
+        try {
+          const { ip, port } = parseNatAddress(natResult.address);
+          fwdPkt = rewriteNatAddress(fwdPkt, 'src', ip, port);
+        } catch { /* keep original */ }
       } else if (natResult.action === 'DNAT' && natResult.address) {
-        try { dstIP = new IPAddress(natResult.address.split(':')[0]); } catch { /* keep original */ }
+        try {
+          const { ip, port } = parseNatAddress(natResult.address);
+          fwdPkt = rewriteNatAddress(fwdPkt, 'dst', ip, port);
+        } catch { /* keep original */ }
       }
     } else if (this.masqueradeOnInterfaces.has(outPortName)) {
       // Fallback: legacy masquerade support
       const outPortIP = route.port.getIPAddress();
-      if (outPortIP) srcIP = outPortIP;
+      if (outPortIP) fwdPkt = rewriteNatAddress(fwdPkt, 'src', outPortIP.toString());
     }
-
-    const fwdPkt: IPv4Packet = {
-      ...ipPkt,
-      sourceIP: srcIP,
-      destinationIP: dstIP,
-      ttl: newTTL,
-      headerChecksum: 0,
-    };
-    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
 
     // RFC 791 §3.2 / RFC 1191: this NAT-gateway forward can cross an MTU
     // boundary just like a real router forward can. DF=1 gets an ICMP
@@ -2367,6 +2428,33 @@ export abstract class EndHost extends Equipment {
     payloadBytes: number = 0,
     options: { df?: boolean; iface?: string } = {},
   ): boolean {
+    // OUTPUT: nat OUTPUT-chain DNAT/REDIRECT applies to this host's own
+    // outbound traffic before the loopback/local-delivery decision below,
+    // mirroring real Linux's early routing decision + LOCAL_OUT hook
+    // ordering. Skipped for multicast/broadcast/loopback — none is a
+    // realistic DNAT/REDIRECT target and no rule ever matches them.
+    if (!destinationIP.isLoopback()
+      && !isMulticastIpv4(destinationIP.toString())
+      && destinationIP.toString() !== '255.255.255.255') {
+      const tentativeRoute = this.resolveRoute(destinationIP);
+      const outputNat = this.evaluateNatOutput(
+        tentativeRoute?.port.getIPAddress()?.toString() ?? '0.0.0.0',
+        destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '',
+      );
+      if (outputNat?.action === 'REDIRECT') {
+        // No --to-destination to read: real Linux maps a locally-generated
+        // packet's destination to loopback (there is no "incoming
+        // interface" for traffic this host originates itself).
+        const portNum = outputNat.address ? parseInt(outputNat.address, 10) : NaN;
+        destinationIP = new IPAddress('127.0.0.1');
+        if (!Number.isNaN(portNum)) destinationPort = portNum;
+      } else if (outputNat?.action === 'DNAT' && outputNat.address) {
+        const { ip, port } = parseNatAddress(outputNat.address);
+        destinationIP = new IPAddress(ip);
+        if (port !== undefined) destinationPort = port;
+      }
+    }
+
     const udpBase = { type: 'udp' as const, sourcePort, destinationPort, length: 8 + payloadBytes, payload };
     // Preserve the existing DF=1 default (every prior caller relied on
     // it); pass { df: false } to originate fragmentable UDP traffic that

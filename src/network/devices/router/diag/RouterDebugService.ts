@@ -397,12 +397,16 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'pim': return 'ip.pim';
       case 'vxlan': return 'vxlan';
       case 'port_security': return 'port-security';
+      case 'ospf': return 'ip.ospf.events';
       default: return null;
     }
   }
 
   /** Is the `debug` behind this syslog tag currently on? */
   isEnabledForSyslogTag(tag: string): boolean {
+    if (tag === 'ospf') {
+      return [...this.flags.keys()].some(k => String(k).startsWith('ip.ospf.'));
+    }
     const category = RouterDebugService.categoryForSyslogTag(tag);
     return category !== null && this.isEnabled(category);
   }

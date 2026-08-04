@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-08-03T11:43:00.316Z
+Generated: 2026-08-04T08:22:04.365Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [4/482] r1 R1> show calendar
-  11:43:00 UTC Mon Aug 3 2026
+  08:22:04 UTC Tue Aug 4 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -435,7 +435,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1AFD44.53F7CED9 (11:43:00.328 UTC Mon Aug 3 2026)
+  reference time is EE1C1FAC.6189374B (08:22:04.381 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -449,7 +449,7 @@ Total steps: 482
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [46/482] r1 R1> show file systems
   File Systems:
@@ -494,9 +494,12 @@ Total steps: 482
     (hostname: R1)
 
 [52/482] r1 R1> show boot
-  BOOT variable does not exist
+  BOOT variable = 
   CONFIG_FILE variable does not exist
+  BOOTLDR variable does not exist
   Configuration register is 0x2102
+  
+  Standby not ready to show bootvar
 
 [53/482] r1 R1> show redundancy
   Redundant System Information :
@@ -586,6 +589,11 @@ Total steps: 482
     where       List open outgoing connections
     disconnect  Close an outgoing connection
     resume      Resume an outgoing connection
+    dir         List files on a filesystem
+    more        Display a file
+    verify      Verify a file
+    delete      Delete a file
+    pwd         Display current working directory
     clear       Reset functions
     terminal    Set terminal parameters
     ssh         Open an SSH connection to a remote host
@@ -605,6 +613,8 @@ Total steps: 482
     interfaces     Display interface status
     memory         Display memory statistics
     flash:         Display flash filesystem
+    bootvar        Display boot variables
+    boot           Display boot variables
     platform       Display platform information
     license        Display licenses
     diag           Display chassis diagnostics
@@ -623,7 +633,6 @@ Total steps: 482
     ssh            Display SSH connections
     hosts          Display host cache
     vrf            Display VRFs
-    boot           Display boot variables
     redundancy     Display redundancy state
     file           Display file systems
     calendar       Display hardware calendar
@@ -637,6 +646,7 @@ Total steps: 482
     aliases        Display command aliases
     arp            Display ARP table
     bgp            Display BGP
+    eigrp          Enhanced Interior Gateway Routing Protocol
     standby        Display HSRP state
     vrrp           Display VRRP state
     glbp           Display GLBP state
@@ -714,10 +724,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [81/482] r1 R1# show calendar
-  11:43:00 UTC Mon Aug 3 2026
+  08:22:04 UTC Tue Aug 4 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1131,7 +1141,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1AFD44.56041893 (11:43:00.336 UTC Mon Aug 3 2026)
+  reference time is EE1C1FAC.63D70A3D (08:22:04.390 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1145,7 +1155,7 @@ Total steps: 482
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [123/482] r1 R1# show file systems
   File Systems:
@@ -1190,9 +1200,12 @@ Total steps: 482
     (hostname: R1)
 
 [129/482] r1 R1# show boot
-  BOOT variable does not exist
+  BOOT variable = 
   CONFIG_FILE variable does not exist
+  BOOTLDR variable does not exist
   Configuration register is 0x2102
+  
+  Standby not ready to show bootvar
 
 [130/482] r1 R1# show redundancy
   Redundant System Information :
@@ -1530,7 +1543,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1539,7 +1552,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1548,7 +1561,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1557,7 +1570,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1566,7 +1579,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1575,7 +1588,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1584,7 +1597,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1593,7 +1606,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1602,7 +1615,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1611,7 +1624,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1620,7 +1633,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1629,7 +1642,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1638,7 +1651,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1647,7 +1660,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1656,7 +1669,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1665,7 +1678,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1674,7 +1687,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1683,7 +1696,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1692,7 +1705,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1701,7 +1714,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1710,7 +1723,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1719,7 +1732,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config)# do show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [221/482] r1 R1(config)# exit
 <empty>
@@ -1922,6 +1935,7 @@ Total steps: 482
 
 [258/482] r1 R1-EDGE(config)# no ?
     sntp         Configure SNTP
+    boot         
     hostname     Reset hostname
     alias        Remove a command alias
     cdp          CDP global configuration
@@ -2069,9 +2083,10 @@ Total steps: 482
     flow                NetFlow
 
 [273/482] r1 R1-EDGE(config-if)# ip address ?
-    dhcp       Configure IP via DHCP
-    secondary  
-    <cr>       
+    dhcp        Configure IP via DHCP
+    negotiated  
+    secondary   
+    <cr>        
 
 [274/482] r1 R1-EDGE(config-if)# ip ospf ?
     bfd                  Enable BFD on this OSPF interface
@@ -3245,7 +3260,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1AFD44.6AC08312 (11:43:00.417 UTC Mon Aug 3 2026)
+  reference time is EE1C1FAC.7851EB85 (08:22:04.470 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -3254,7 +3269,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *11:43:00.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3296,7 +3311,7 @@ Total steps: 482
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [418/482] r1 R1-EDGE# show users
       Line       User       Host(s)              Idle       Location
@@ -4136,6 +4151,7 @@ Total steps: 482
 
 [479/482] r1 R1-EDGE(config)# no ?
     sntp         Configure SNTP
+    boot         
     hostname     Reset hostname
     alias        Remove a command alias
     cdp          CDP global configuration

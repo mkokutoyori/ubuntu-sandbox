@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-08-03T11:43:20.903Z
+Generated: 2026-08-04T08:22:26.046Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -1296,14 +1296,14 @@ Total steps: 300
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
   ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
-  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6 preference 200
   ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
   ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2 preference 250
+  ip route-static 192.168.52.0 255.255.255.0 NULL0
   ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   #
 
 [199/300] r1 <R1> display saved-configuration
@@ -1522,8 +1522,8 @@ Total steps: 300
   No NTP associations
 
 [231/300] r1 <R1> display clock
-  2026-08-03 11:43:20
-  Monday
+  2026-08-04 08:22:26
+  Tuesday
   Time Zone(UTC) : UTC
 
 [232/300] r1 <R1> display lldp neighbor
@@ -1535,13 +1535,13 @@ Total steps: 300
 [234/300] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-03 11:43:20
+  CPU Usage Stat. Time : 2026-08-04 08:22:26
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-03 11:43:20
+  Memory utilization statistics at 2026-08-04 08:22:26
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1583,18 +1583,18 @@ Total steps: 300
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 12
-  2026-08-03 11:43:20 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-08-03 11:43:20 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-08-03 11:43:20 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-08-03 11:43:20 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-08-03 11:43:20 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-08-03 11:43:20 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-08-03 11:43:20 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-03 11:43:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-03 11:43:20 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-03 11:43:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-03 11:43:20 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  2026-08-03 11:43:20 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  2026-08-04 08:22:25 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-08-04 08:22:25 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-08-04 08:22:25 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-08-04 08:22:25 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-08-04 08:22:25 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-08-04 08:22:25 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-08-04 08:22:26 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-04 08:22:26 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-04 08:22:26 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-04 08:22:26 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-04 08:22:26 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
+  2026-08-04 08:22:26 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
 
 [240/300] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1732,14 +1732,14 @@ Total steps: 300
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
   ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
-  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6 preference 200
   ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
   ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2 preference 250
+  ip route-static 192.168.52.0 255.255.255.0 NULL0
   ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   #
 
 [250/300] r1 <R1> display diagnostic-information
@@ -1850,14 +1850,14 @@ Total steps: 300
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
   ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
-  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6 preference 200
   ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
   ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2 preference 250
+  ip route-static 192.168.52.0 255.255.255.0 NULL0
   ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   #
 
 [259/300] r1 <R1> display current-configuration | exclude #
@@ -1915,14 +1915,14 @@ Total steps: 300
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
   ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
-  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6 preference 200
   ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
   ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2 preference 250
+  ip route-static 192.168.52.0 255.255.255.0 NULL0
   ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
-  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
 
 [260/300] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0

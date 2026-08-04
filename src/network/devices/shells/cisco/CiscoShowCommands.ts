@@ -12,10 +12,11 @@ import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
+import { formatInvalidInputAt } from '../CommandTrie';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
-  const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig'));
+  const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig') && !n.includes('.'));
   const hw = CISCO_HARDWARE_PROFILES[profile];
   const uptimeMs = router._getUptimeMs?.() ?? 0;
   return [
@@ -35,6 +36,38 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
     '',
     `Configuration register is 0x2102`,
   ].join('\n');
+}
+
+/**
+ * La queue d'une ligne `ip route` : cible, distance, `permanent`.
+ *
+ * Elle ne rendait que le prochain saut, ce qui perdait trois choses que
+ * l'opérateur avait écrites — et une configuration relue à l'import
+ * d'une topologie n'est pas un affichage, c'est ce qui REFAIT la route.
+ * La forme par interface revenait en `ip route … 0.0.0.0` (une autre
+ * route), une flottante en distance 200 revenait en distance 1 (elle
+ * cessait d'être flottante, donc de servir de secours) et `permanent`
+ * disparaissait.
+ *
+ * `ifaceConfigured` est ce qui distingue l'interface NOMMÉE de celle
+ * déduite du prochain saut : sans lui, `ip route … 10.1.1.2` se
+ * réécrirait en `ip route … GigabitEthernet0/0 10.1.1.2`.
+ */
+function staticRouteTail(r: {
+  nextHop: { toString(): string } | null; iface: string;
+  ifaceConfigured?: boolean; preference?: number; permanent?: boolean;
+}): string {
+  const nh = r.nextHop ? r.nextHop.toString() : '';
+  const parts: string[] = [];
+  if (r.ifaceConfigured && r.iface) {
+    parts.push(r.iface);
+    if (nh && nh !== '0.0.0.0') parts.push(nh);
+  } else {
+    parts.push(nh);
+  }
+  if (r.preference !== undefined) parts.push(String(r.preference));
+  if (r.permanent) parts.push('permanent');
+  return parts.join(' ');
 }
 
 function formatUptime(ms: number): string {
@@ -92,7 +125,8 @@ export function showIpIntBrief(router: Router): string {
   for (const [name, port] of ports) {
     const ip = port.getIPAddress()?.toString() || 'unassigned';
     const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(name);
-    const adminUp = port.getIsUp();
+    const carrier = carrierPort(router, name, port);
+    const adminUp = port.getIsUp() && carrier.getIsUp();
     let status: string;
     let proto: string;
     if (!adminUp) {
@@ -101,7 +135,7 @@ export function showIpIntBrief(router: Router): string {
     } else if (isVirtual) {
       status = 'up';
       proto = 'up';
-    } else if (port.isConnected()) {
+    } else if (carrier.isConnected()) {
       status = 'up';
       proto = 'up';
     } else {
@@ -111,6 +145,16 @@ export function showIpIntBrief(router: Router): string {
     lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES manual ${status.padEnd(22)}${proto}`);
   }
   return lines.join('\n');
+}
+
+function carrierPort(
+  router: Router,
+  name: string,
+  port: import('../../../hardware/Port').Port,
+): import('../../../hardware/Port').Port {
+  const dot = name.indexOf('.');
+  if (dot <= 0) return port;
+  return router._getPortsInternal().get(name.slice(0, dot)) ?? port;
 }
 
 /** IOS prints the ARP timeout as hh:mm:ss (default 04:00:00). */
@@ -137,7 +181,7 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
   if (!port) {
     const line = `show interface ${ifName}`;
     const marker = ' '.repeat(line.indexOf(ifName)) + '^';
-    return `% Invalid input detected at '^' marker.\n${line}\n${marker}`;
+    return formatInvalidInputAt(marker);
   }
 
   const isUp = port.getIsUp();
@@ -369,6 +413,11 @@ export function showRunningConfig(router: Router): string {
     const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
     if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
     lines.push(...igmpInterfaceRunningConfigLines(router, name));
+    // `rate-limit` (CAR historique) était STOCKÉ sur le port et rendu
+    // nulle part : la commande était acceptée, absente de la
+    // running-config, et sans vue pour la contredire. Le stockage
+    // existait, il lui manquait ses deux portes.
+    for (const r of (router.getCarPolicer(name)?.list() ?? [])) lines.push(` ${r.raw}`);
     const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
     const pending = ospfExtra?.pendingIfConfig.get(name);
     if (pending) {
@@ -417,8 +466,8 @@ export function showRunningConfig(router: Router): string {
   }
 
   for (const r of table) {
-    if (r.type === 'static' && r.nextHop) lines.push(`ip route ${r.network} ${r.mask} ${r.nextHop}`);
-    if (r.type === 'default' && r.nextHop) lines.push(`ip route 0.0.0.0 0.0.0.0 ${r.nextHop}`);
+    if (r.type === 'static' && r.nextHop) lines.push(`ip route ${r.network} ${r.mask} ${staticRouteTail(r)}`);
+    if (r.type === 'default' && r.nextHop) lines.push(`ip route 0.0.0.0 0.0.0.0 ${staticRouteTail(r)}`);
   }
 
   // RIP config
@@ -773,6 +822,42 @@ export function showInterfaceStats(router: Router, ifName: string): string {
     `      Distributed cache          0           0           0           0`,
     `                  Total ${String(c.framesIn).padStart(10)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
   ].join('\n');
+}
+
+/**
+ * `show interfaces <if> rate-limit` — les politiques CAR posées sur
+ * l'interface.
+ *
+ * Choix assumé, et il suit la maison plutôt qu'une préférence : la QoS
+ * de ce simulateur est fidèle au niveau CONFIGURATION et ne police
+ * aucun paquet. Mesuré avant de trancher — la MQC moderne
+ * (`class-map`/`policy-map`/`police`) est stockée, rendue en
+ * running-config ET affichée par `show policy-map`, sans qu'aucun octet
+ * ne soit jamais jeté. Refuser `rate-limit`, qui est le CAR historique
+ * de la même famille, aurait rendu la plateforme incohérente avec
+ * elle-même : `police` accepté, `rate-limit` refusé, pour la même
+ * absence de moteur.
+ *
+ * Les compteurs sont donc à zéro et c'est la vérité de cet équipement,
+ * pas un remplissage : rien ne mesure, donc rien n'est compté.
+ */
+export function showInterfaceRateLimit(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid interface ${ifName}`;
+  const regles = router.getCarPolicer(ifName)?.list() ?? [];
+  if (regles.length === 0) return `${ifName}`;
+  const lines = [`${ifName}`];
+  const maintenant = Date.now();
+  for (const r of regles) {
+    lines.push(`  ${r.direction === 'input' ? 'Input' : 'Output'}`);
+    lines.push(`    matches: all traffic`);
+    lines.push(`      params:  ${r.bitsPerSecond} bps, ${r.normalBurstBytes} limit, ${r.maxBurstBytes} extended limit`);
+    lines.push(`      conformed ${r.conformedPackets} packets, ${r.conformedBytes} bytes; action: ${r.conformAction}`);
+    lines.push(`      exceeded ${r.exceededPackets} packets, ${r.exceededBytes} bytes; action: ${r.exceedAction}`);
+    const depuis = r.lastPacketMs === null ? 'never' : `${maintenant - r.lastPacketMs}ms ago`;
+    lines.push(`      last packet: ${depuis}, current burst: ${Math.round(r.tokens)} bytes`);
+  }
+  return lines.join('\n');
 }
 
 export function showInterfaceSwitchport(router: Router, ifName: string): string {

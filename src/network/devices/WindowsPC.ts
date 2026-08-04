@@ -676,7 +676,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
-    this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable);
+    this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable, this.getTcpStack());
     this.portProxyTable.attachBus(bus, this.id);
     this.rdp.sessions.attachBus(bus, this.getHostname());
 

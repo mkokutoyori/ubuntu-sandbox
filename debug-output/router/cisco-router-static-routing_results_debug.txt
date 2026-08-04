@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-08-03T11:43:05.918Z
+Generated: 2026-08-04T08:22:03.107Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -1392,7 +1392,7 @@ Total steps: 325
 [218/325] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 2495 bytes
+  Current configuration : 2541 bytes
   !
   hostname R1
   !
@@ -1452,14 +1452,14 @@ Total steps: 325
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.2
-  ip route 0.0.0.0 0.0.0.0 10.0.0.6
-  ip route 0.0.0.0 0.0.0.0 0.0.0.0
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6 200
+  ip route 0.0.0.0 0.0.0.0 GigabitEthernet0/1
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
-  ip route 192.168.51.0 255.255.255.0 10.0.0.2
-  ip route 192.168.52.0 255.255.255.0 0.0.0.0
-  ip route 192.168.53.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2 250
+  ip route 192.168.52.0 255.255.255.0 Null0
+  ip route 192.168.53.0 255.255.255.0 GigabitEthernet0/1 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
-  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   !
   router ospf 1
    router-id 192.168.1.1
@@ -1779,7 +1779,7 @@ Total steps: 325
 [253/325] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1AFD4A.051EB851 (11:43:06.020 UTC Mon Aug 3 2026)
+  reference time is EE1C1FAB.2F1A9FBE (08:22:03.184 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [254/325] r1 R1# show ntp associations
@@ -1788,7 +1788,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1# show clock
-  *11:43:06.000 UTC Mon Aug 3 2026
+  *08:22:03.000 UTC Tue Aug 4 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1831,7 +1831,7 @@ Total steps: 325
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [261/325] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -2021,7 +2021,7 @@ Total steps: 325
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 2495 bytes
+  Current configuration : 2541 bytes
   !
   hostname R1
   !
@@ -2081,14 +2081,14 @@ Total steps: 325
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.2
-  ip route 0.0.0.0 0.0.0.0 10.0.0.6
-  ip route 0.0.0.0 0.0.0.0 0.0.0.0
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6 200
+  ip route 0.0.0.0 0.0.0.0 GigabitEthernet0/1
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
-  ip route 192.168.51.0 255.255.255.0 10.0.0.2
-  ip route 192.168.52.0 255.255.255.0 0.0.0.0
-  ip route 192.168.53.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2 250
+  ip route 192.168.52.0 255.255.255.0 Null0
+  ip route 192.168.53.0 255.255.255.0 GigabitEthernet0/1 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
-  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   !
   router ospf 1
    router-id 192.168.1.1
@@ -2400,7 +2400,7 @@ Total steps: 325
 [282/325] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 2495 bytes
+  Current configuration : 2541 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -2452,14 +2452,14 @@ Total steps: 325
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.2
-  ip route 0.0.0.0 0.0.0.0 10.0.0.6
-  ip route 0.0.0.0 0.0.0.0 0.0.0.0
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6 200
+  ip route 0.0.0.0 0.0.0.0 GigabitEthernet0/1
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
-  ip route 192.168.51.0 255.255.255.0 10.0.0.2
-  ip route 192.168.52.0 255.255.255.0 0.0.0.0
-  ip route 192.168.53.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2 250
+  ip route 192.168.52.0 255.255.255.0 Null0
+  ip route 192.168.53.0 255.255.255.0 GigabitEthernet0/1 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
-  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   router ospf 1
    router-id 192.168.1.1
   end
@@ -2688,6 +2688,7 @@ Total steps: 325
 
 [322/325] r1 R1(config)# no ?
     sntp         Configure SNTP
+    boot         
     hostname     Reset hostname
     alias        Remove a command alias
     cdp          CDP global configuration

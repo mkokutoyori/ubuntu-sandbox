@@ -235,24 +235,162 @@ Le reste de la surface SQL moderne refusée, par famille :
 
 Classé par rapport entre ce que ça débloque et ce que ça coûte.
 
-1. **La cohérence de `which`** (5 noms). Aucune nouvelle fonctionnalité
-   à écrire pour supprimer la contradiction : soit implémenter, soit
-   retirer de la liste. C'est le seul défaut du lot qui fait *mentir* la
-   machine plutôt que la laisser incomplète.
-2. **Colonnes `IDENTITY` Oracle.** Une fonctionnalité d'analyseur,
+1. ✅ **La cohérence de `which`** (5 noms). Aucune nouvelle
+   fonctionnalité à écrire pour supprimer la contradiction : soit
+   implémenter, soit retirer de la liste. C'est le seul défaut du lot
+   qui fait *mentir* la machine plutôt que la laisser incomplète.
+2. ✅ **Colonnes `IDENTITY` Oracle.** Une fonctionnalité d'analyseur,
    quarante étapes débloquées dans une seule suite.
-3. **Le système de fichiers IOS** (`dir`/`more`/`verify`/`delete` +
+3. ✅ **Le système de fichiers IOS** (`dir`/`more`/`verify`/`delete` +
    `boot system`/`config-register`). Un chapitre entier de cours, et le
    socle de l'exercice de récupération de mot de passe.
-4. **`mac address-table static`.** Le sujet déclaré d'une suite de 346
-   étapes.
-5. **`timeout -s`** et **`wget` sur IP littérale.** Deux corrections
+4. ✅ **`mac address-table static`.** Le sujet déclaré d'une suite de
+   346 étapes.
+5. ✅ **`timeout -s`** et **`wget` sur IP littérale.** Deux corrections
    d'une ligne chacune, du même genre que celles de la phase 4.
-6. **Les utilitaires Linux absents** (§3). Quatorze commandes, sans
+6. ✅ **Les utilitaires Linux absents** (§3). Quatorze commandes, sans
    dépendance entre elles — un lot qui se découpe librement.
-7. **LoopBack Huawei** et les `display` manquants.
-8. **EIGRP mode nommé, `show storm-control`, BGP peer-group.** Le plus
-   coûteux, et le moins bloquant.
+7. ✅ **LoopBack Huawei** et les `display` manquants.
+8. ⚠️ **EIGRP mode nommé, `show storm-control`, BGP peer-group.** Le plus
+   coûteux, et le moins bloquant. Fait, sauf les minuteries du mode
+   nommé — voir ci-dessous.
+
+### Le lot 8 : le groupe de pairs était pire que décrit
+
+L'audit notait que `neighbor IBGP peer-group` était accepté puis
+`neighbor IBGP remote-as` refusé. Mesuré sur un `CiscoRouter` neuf, il y
+avait une **seconde conséquence invisible dans les transcripts** : le nom
+du groupe était enregistré comme un voisin dans le moteur BGP, si bien
+que `show ip bgp summary` affichait
+
+    IBGP            4 0          0        0       0    0    0 never    Idle
+
+un pair qui n'existe pas, avec un AS 0 qui n'existe pas non plus.
+
+Un groupe de pairs est un MODÈLE : pas de session, pas d'établissement,
+rien à faire dans cette table. `BgpPeerGroup` est donc tenu à part des
+voisins pour qu'on ne puisse pas les confondre, et `applyBgpPeerGroup`
+recopie les réglages sur les membres après CHAQUE modification du
+gabarit — sur un vrai IOS l'ordre ne compte pas, régler `remote-as` sur
+le groupe après que les membres l'ont rejoint doit les atteindre quand
+même. Un réglage posé explicitement sur le voisin n'est jamais écrasé :
+le gabarit fournit un défaut, il ne confisque pas.
+
+Livré avec : `no bgp default ipv4-unicast`, `metric maximum-hops`,
+`show ip eigrp traffic` (compteurs **réels**, ajoutés aux points
+d'émission et de réception du moteur), `show ip eigrp accounting`,
+`clear ip eigrp neighbors` (qui jette vraiment les adjacences),
+`show eigrp protocols`, `show eigrp address-family ipv4 neighbors`,
+`log-adjacency-changes detail`, et `show storm-control` — dont la
+configuration était acceptée et rangée depuis toujours sans qu'aucune vue
+ne la lise.
+
+**Deux corrections à l'audit lui-même**, toutes deux dues à une cascade
+de mode dans le relevé initial : `show archive` et `archive` fonctionnent
+(ils étaient mesurés depuis l'invite exec après un `exit` de trop), et
+`log-adjacency-changes` marchait déjà — seul le suffixe `detail`
+manquait.
+
+**Restent délibérément refusés** : les sous-commandes de minuterie du
+mode nommé (`hello-interval`, `hold-time`, `authentication mode`). Le
+moteur EIGRP est explicitement sans minuteries — « une passe de
+convergence EST l'intervalle de hello » — donc les accepter donnerait une
+valeur que rien ne lirait. Query/Reply/SIA restent à zéro dans
+`show ip eigrp traffic` pour la même raison, et c'est un fait plutôt
+qu'un trou : ce moteur n'a pas d'état Active et n'en émet jamais.
+
+### Le lot 7 : le routeur savait déjà, le switch refusait
+
+Mesuré sur un `HuaweiSwitch` ET un `HuaweiRouter` neufs avant d'écrire
+une ligne, ce qui a changé le diagnostic : **le routeur faisait déjà tout
+correctement** — `ip address` sur LoopBack0, `display ip interface
+LoopBack0`, la ligne dans `display ip interface brief`. Le manque était
+côté switch seulement, dont le handler `ip address` était câblé en dur
+sur Vlanif.
+
+La LoopBack est une vraie interface, pas un affichage : `Switch` porte
+désormais un magasin de loopbacks, et `SwitchSvi.isOwnAddress()` unifie
+« SVI ou LoopBack » en UN endroit, celui que le plan L3 consulte pour
+décider « pour nous ». Sans ce dernier point, un ping vers la loopback
+serait routé au lieu d'être répondu et l'interface ne serait qu'une ligne
+de texte.
+
+Trois défauts préexistants sont tombés en mesurant, pas en relisant :
+
+- `SwitchSecurityService.configureDhcpSnooping` testait `snooping enable`
+  AVANT `snooping enable vlan <n>` : la branche `vlan` était
+  **inatteignable**, le drapeau global était posé et le VLAN jamais
+  enregistré. Invisible jusqu'ici parce que rien ne lisait cet état.
+- `dhcp snooping trusted interface <if>` en vue SYSTÈME était refusé,
+  si bien que `SwitchSecurityService.dhcpSnoopingTrust` n'était
+  atteignable par **aucun** chemin. Les deux orthographes écrivent
+  maintenant dans le magasin qui APPLIQUE, pas seulement dans celui qui
+  décrit — accepter la commande sans l'appliquer aurait été pire que la
+  refuser.
+- `display port` et `display dhcp snooping` répondaient « Incomplete
+  command » alors que l'état existait des deux côtés.
+
+**Restent refusés, et c'est la bonne réponse** : `display ospfv3`,
+`ipv6 enable`, `ipv6 address` et `dhcpv6 server` sur un switch.
+`HuaweiSwitchShell` ne contient aucune occurrence d'IPv6 et `Switch` n'a
+pas de pile v6 — les accepter demanderait de la construire, ce qui est un
+chantier distinct et non une extension bornée de ce lot.
+
+### Un défaut de la priorité 3, trouvé après coup
+
+La priorité 3 avait été livrée **sans test**, et c'est ce qui a laissé
+passer ceci : `show boot` était inscrit deux fois dans l'arbre de
+commandes — la nouvelle version branchée sur le magasin vivant, et une
+vieille figée (`showBoot()` de `CiscoCommonShow`) qui rendait
+« Configuration register is 0x2102 » en dur. `CommandTrie` laisse
+silencieusement la dernière inscription écraser la précédente, et la
+figée était déclarée plus loin dans le fichier : `show boot` répondait
+donc toujours 0x2102, **y compris après `config-register 0x2142`**, pile
+dans l'exercice de récupération de mot de passe que la priorité 3 visait,
+pendant que `show bootvar` annonçait 0x2142. Deux commandes synonymes qui
+se contredisaient.
+
+Le garde-fou qui l'a attrapé est `command-trie-hygiene.test.ts`, un test
+qui existait déjà et qui n'était simplement pas dans le lot de fichiers
+que j'avais fait tourner. La vieille fonction a été **supprimée** plutôt
+qu'ajoutée à la liste d'exceptions du test : elle ne pouvait rien dire de
+vrai sur un registre devenu modifiable. La priorité 3 a maintenant sa
+sonde (`probe-ios-01-systeme-de-fichiers.test.ts`, 9 cas), qui vérifie
+aussi ce que rien ne vérifiait — que le magasin flash est bien par
+équipement et persistant.
+
+### Ce que le lot 6 a coûté, et ce qu'il a fallu mesurer
+
+Les quatorze sont écrites comme des `LinuxCommand` (sonde
+`probe-utils-01-quatorze-absentes.test.ts`, 41 cas). Trois d'entre elles
+n'étaient PAS de simples habillages, et c'est là que le travail était :
+
+- **`lsmod`/`modinfo`** n'avaient aucune donnée derrière : il n'existait
+  pas de notion de module. Une liste en dur n'aurait décrit aucun état,
+  alors `kernel/KernelModuleTable.ts` en est un vrai — la table est
+  **dérivée du matériel** (le pilote listé est celui de la carte réseau
+  de la machine, la version celle de son noyau), « Used by » est
+  l'inverse calculé des dépendances déclarées plutôt qu'une donnée
+  parallèle, et `/proc/modules` est la source dont `lsmod` n'est que le
+  lecteur — les deux vues ne peuvent donc pas diverger.
+- **`pmap`** totalise exactement le `vsize` que `ps` annonce pour le même
+  PID, mais le *découpage* en régions n'a aucune source (pas de
+  `/proc/<pid>/maps`, pas de chargeur ELF). C'est écrit dans le fichier :
+  le total est mesuré, la répartition est une illustration cohérente.
+- **`yes`** ne peut pas être infini ici — le tube du simulateur est
+  séquentiel, chaque étage s'exécutant en entier avant le suivant. Le
+  flux est donc borné, et la borne est écrite dans la commande plutôt que
+  subie.
+
+Quatre écarts n'ont été trouvés qu'en comparant à un vrai binaire
+installé pour l'occasion (`tree`, `ncal`, `lm-sensors`), pas en relisant
+une documentation : le corps de `cal` fait **toujours six semaines**
+(deux lignes blanches après février), l'année de `cal 2026` est centrée
+sur les grilles **séparateurs exclus** (28 espaces, pas 30),
+`lsb_release -cs` est une option **groupée** que `args.includes('-c')`
+ne voit pas, et le décompte de `tree` porte sur ce qui a été **listé**,
+pas parcouru. Les quatre sont des erreurs que j'avais écrites et que la
+mesure a corrigées.
 
 ---
 

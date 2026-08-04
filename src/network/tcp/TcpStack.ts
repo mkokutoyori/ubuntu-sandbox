@@ -790,19 +790,28 @@ export class TcpStack {
   }
 
   private flushPendingSends(socket: TcpSocket): void {
-    if (socket.pendingSendQueue.length === 0) return;
-    const queued = socket.pendingSendQueue.slice();
-    socket.pendingSendQueue.length = 0;
-    // Delegate to _sendData (now that the socket is actually established)
-    // rather than duplicating its sequence-advance/chunking logic here:
-    // this used to always advance sendNext by exactly 1 regardless of the
-    // queued payload's real length, permanently desyncing the sequence
-    // space for any socket that had data queued before the handshake
-    // completed (e.g. a server writing a greeting banner from `onAccept`,
-    // which fires while still in 'syn-received') — every segment after
-    // the first queued one would then carry a sequence number the peer's
-    // `acceptInOrder` rejects as out-of-order, silently dropping it.
-    for (const data of queued) this._sendData(socket, data);
+    // `closeAfterFlush` must be honored even with nothing queued — a
+    // `.close()` during `onAccept`/`onOpen` (still 'syn-received'/'syn-sent',
+    // no data ever written) used to return here before reaching the check
+    // below, silently losing the close forever: the socket just stayed
+    // open. That is exactly what a bidirectional relay's error path does
+    // (closing the accepted side the instant the far side's connect is
+    // refused, with nothing queued yet) — PRD-Port-Forwarding.md Phase 7's
+    // portproxy relay surfaced this while testing a refused connect side.
+    if (socket.pendingSendQueue.length > 0) {
+      const queued = socket.pendingSendQueue.slice();
+      socket.pendingSendQueue.length = 0;
+      // Delegate to _sendData (now that the socket is actually established)
+      // rather than duplicating its sequence-advance/chunking logic here:
+      // this used to always advance sendNext by exactly 1 regardless of the
+      // queued payload's real length, permanently desyncing the sequence
+      // space for any socket that had data queued before the handshake
+      // completed (e.g. a server writing a greeting banner from `onAccept`,
+      // which fires while still in 'syn-received') — every segment after
+      // the first queued one would then carry a sequence number the peer's
+      // `acceptInOrder` rejects as out-of-order, silently dropping it.
+      for (const data of queued) this._sendData(socket, data);
+    }
     if (socket.closeAfterFlush) {
       socket.closeAfterFlush = false;
       this._initiateClose(socket);
@@ -1434,7 +1443,7 @@ export class TcpStack {
   }
 
   private shipSegment(
-    egress: { name: string; port: import('../hardware/Port').Port; nextHopIp?: string },
+    egress: { name: string; port?: import('../hardware/Port').Port; nextHopIp?: string },
     srcIp: string, dstIp: string, seg: TcpSegment,
   ): void {
     const family = ipFamilyOf(dstIp);
@@ -1452,6 +1461,11 @@ export class TcpStack {
         payloadSize: seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1),
       },
     });
+    const isLoopback = family === 'ipv6' ? new IPv6Address(dstIp).isLoopback() : new IPAddress(dstIp).isLoopback();
+    if (isLoopback) {
+      this.handleSegment(srcIp, dstIp, seg);
+      return;
+    }
     const nextHopIp = egress.nextHopIp ?? dstIp;
     if (family === 'ipv6') {
       if (this.host.sendIpv6FrameNdpAware) {
@@ -1466,7 +1480,7 @@ export class TcpStack {
       ? (this.host.resolveMac6?.(dstIp) ?? null)
       : (this.host.resolveMac?.(dstIp) ?? null);
     const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
+      srcMAC: egress.port!.getMAC(),
       dstMAC: resolvedMac ?? MACAddress.broadcast(),
       etherType: family === 'ipv6' ? ETHERTYPE_IPV6 : ETHERTYPE_IPV4,
       payload: l3Packet,
@@ -1556,8 +1570,9 @@ export class TcpStack {
 
   private resolveEgress(
     targetIp: string,
-  ): { name: string; port: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
+  ): { name: string; port?: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
     if (ipFamilyOf(targetIp) === 'ipv6') return this.resolveEgress6(targetIp);
+    if (new IPAddress(targetIp).isLoopback()) return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
 
     if (this.host.resolveRoute) {
       const route = this.host.resolveRoute(targetIp);
@@ -1593,7 +1608,8 @@ export class TcpStack {
 
   private resolveEgress6(
     targetIp: string,
-  ): { name: string; port: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
+  ): { name: string; port?: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
+    if (new IPv6Address(targetIp).isLoopback()) return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
     if (!this.host.resolveRoute6 || !this.host.localAddress6) return null;
     const route = this.host.resolveRoute6(targetIp);
     if (!route) return null;

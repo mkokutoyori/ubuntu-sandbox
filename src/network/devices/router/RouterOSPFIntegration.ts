@@ -68,6 +68,8 @@ export interface OSPFExtraConfig {
   summaryAddresses?: Array<{ network: string; mask: string }>;
   capabilities?: { transit?: boolean; opaque?: boolean };
   logAdjacencyChanges?: boolean;
+  /** `log-adjacency-changes detail` — journalise chaque transition d'état. */
+  logAdjacencyChangesDetail?: boolean;
 }
 
 // ─── Router Context Interface ───────────────────────────────────

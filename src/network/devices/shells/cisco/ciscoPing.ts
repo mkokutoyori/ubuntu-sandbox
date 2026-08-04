@@ -16,6 +16,10 @@ export type CiscoPingFailure =
   | 'timeout'
   /** An ICMP Destination Unreachable was received (type 3, any code but 4). */
   | 'unreachable'
+  /** No route to the destination (type 3 code 0). */
+  | 'network-unreachable'
+  /** Refused by an ACL (type 3 code 13). */
+  | 'admin-prohibited'
   /** An ICMP Time Exceeded was received (type 11). */
   | 'ttl-exceeded'
   /** An ICMP Fragmentation Needed was received while DF was set (type 3 code 4). */
@@ -40,6 +44,8 @@ export function ciscoPingMark(row: CiscoPingRow): string {
   if (row.success) return '!';
   switch (row.error) {
     case 'unreachable': return 'U';
+    case 'network-unreachable': return 'N';
+    case 'admin-prohibited': return 'A';
     case 'ttl-exceeded': return '&';
     case 'frag-needed': return 'M';
     default: return '.';

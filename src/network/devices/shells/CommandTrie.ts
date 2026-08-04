@@ -824,7 +824,21 @@ export class CommandTrie {
   }
 
   private formatInvalidInput(input: string, errorPos: number): string {
-    const marker = ' '.repeat(errorPos) + '^';
-    return `% Invalid input detected at '^' marker.\n${input}\n${marker}`;
+    void input;
+    return formatInvalidInput(errorPos);
   }
+}
+
+let largeurPrompt = 0;
+export function setInvalidInputPromptWidth(n: number): void {
+  largeurPrompt = Math.max(0, n | 0);
+}
+
+export function formatInvalidInput(errorPos: number): string {
+  const marker = ' '.repeat(largeurPrompt + Math.max(0, errorPos)) + '^';
+  return `${marker}\n% Invalid input detected at '^' marker.`;
+}
+
+export function formatInvalidInputAt(marker: string): string {
+  return formatInvalidInput(Math.max(0, marker.indexOf('^')));
 }

@@ -35,7 +35,7 @@ import {
   showCdp, showLldp, showSnmp, showSnmpCommunity, showSnmpHost,
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
   showNtpStatus, showNtpAssociations,
-  showLine, showIpSsh, showSshSessions, showHosts, showVrf, showBoot,
+  showLine, showIpSsh, showSshSessions, showHosts, showVrf,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
@@ -46,6 +46,7 @@ import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepos
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
+import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/CiscoArchiveCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
 import {
   getManagementService, getSnmpService, getSnmpAgent, getNtpAgent,
@@ -287,6 +288,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Optional: called on 'write memory' / 'copy running-config startup-config' */
   protected abstract onSave(): string;
+
+  /**
+   * `archive` + `write-memory` : une sauvegarde archive la
+   * configuration. Le mot-clé était mémorisé et lu par personne, donc
+   * l'archivage automatique — la raison d'être de la fonction — ne se
+   * produisait jamais. Appelé par le `onSave()` des deux shells.
+   */
+  protected archiveAfterSave(): void {
+    archiveOnWriteMemory(
+      () => this.archiveService(),
+      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+    );
+  }
+
+  /**
+   * Le service d'archivage de l'équipement, avec SON `flash:` branché.
+   *
+   * Le branchement se fait ici et pas dans le constructeur de
+   * l'appareil, parce que le système de fichiers appartient au shell
+   * (`this.fs()`, semé au premier accès) : c'est le même objet que
+   * `dir flash:` et `more flash:` lisent, donc une archive écrite est
+   * une archive que ces commandes voient. Deux systèmes de fichiers
+   * distincts feraient de `show archive` un catalogue de fichiers
+   * introuvables.
+   */
+  protected archiveService(): import('../router/archive/ArchiveService').ArchiveService | undefined {
+    const s = (this.d() as unknown as {
+      getArchiveService?: () => import('../router/archive/ArchiveService').ArchiveService;
+    }).getArchiveService?.();
+    if (s && !s.hasStorage()) s.attachStorage(this.fs());
+    return s;
+  }
 
   /**
    * Called on 'erase startup-config' / 'write erase' / 'erase nvram:'.
@@ -576,7 +609,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('pwd', 'Display current working directory', () => 'flash:');
 
     trie.register('show bootvar', 'Display boot variables', () => this.fs().renderBootvar());
-    trie.register('show boot', 'Display boot variables', () => this.fs().renderBootvar());
+    // Greedy comme l'inscription figée qu'elle remplace, pour que
+    // `show boot` suivi d'un mot continue de résoudre.
+    trie.registerGreedy('show boot', 'Display boot variables', () => this.fs().renderBootvar());
   }
 
   /** `dir nvram:` — deux entrées, comme sur le vrai. */
@@ -1205,17 +1240,57 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
   };
 
-  protected parseClockSetArgs(args: string[]): number | null {
-    if (args.length < 5) return null;
+  /**
+   * `clock set 10:30:00 3 June 2026` — rend l'instant en millisecondes,
+   * ou le message de refus d'IOS.
+   *
+   * Le seuil était `args.length < 5` alors que la forme normale d'IOS en
+   * compte QUATRE (`hh:mm:ss <jour> <Mois> <année>`) : mesuré, la
+   * commande était acceptée et ne posait rien, et ne marchait qu'avec un
+   * cinquième mot parasite. Un `clock set` qui rend la main sans rien
+   * changer est pire qu'un refus.
+   *
+   * IOS accepte aussi les deux ordres (`<jour> <Mois> <année>` et
+   * `<Mois> <jour> <année>`) et abrège les mois sur trois lettres ; les
+   * deux sont acceptés ici pour la raison qui les fait accepter sur un
+   * vrai routeur — c'est ce que les gens tapent.
+   */
+  protected parseClockSetArgs(args: string[]): number | string {
+    if (args.length < 4) return '% Incomplete command.';
     const hm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(args[0]);
-    if (!hm) return null;
-    const day = parseInt(args[1], 10);
-    const month = CiscoShellBase.MONTH_MAP[args[2]?.toLowerCase()];
-    const year = parseInt(args[3], 10);
-    if (isNaN(day) || !month || isNaN(year)) return null;
-    const date = new Date(Date.UTC(year, month - 1, day,
-      parseInt(hm[1], 10), parseInt(hm[2], 10), hm[3] ? parseInt(hm[3], 10) : 0));
-    return date.getTime();
+    if (!hm) return "% Invalid input detected at '^' marker.";
+    const [h, mn, sec] = [+hm[1], +hm[2], hm[3] ? +hm[3] : 0];
+    if (h > 23 || mn > 59 || sec > 59) return "% Invalid input detected at '^' marker.";
+
+    const moisDe = (mot: string): number => {
+      const bas = (mot ?? '').toLowerCase();
+      if (!bas) return 0;
+      const nom = Object.keys(CiscoShellBase.MONTH_MAP).find((m) => m.startsWith(bas));
+      return nom ? CiscoShellBase.MONTH_MAP[nom] : 0;
+    };
+
+    let jour = parseInt(args[1], 10);
+    let mois = moisDe(args[2]);
+    const annee = parseInt(args[3], 10);
+    if (isNaN(jour) || !mois) {
+      // L'autre ordre : `clock set 10:30:00 June 3 2026`.
+      mois = moisDe(args[1]);
+      jour = parseInt(args[2], 10);
+    }
+    if (!mois || isNaN(jour) || isNaN(annee)) return "% Invalid input detected at '^' marker.";
+    if (jour < 1 || jour > 31 || annee < 1993 || annee > 2035) {
+      return "% Invalid input detected at '^' marker.";
+    }
+    return Date.UTC(annee, mois - 1, jour, h, mn, sec);
+  }
+
+  /** Le seul point qui pose l'horloge, partagé par les deux modes. */
+  protected applyClockSet(args: string[]): string {
+    const q = this.parseClockSetArgs(args);
+    if (typeof q === 'string') return q;
+    const dev = this.d() as unknown as { _setSystemClock?: (ms: number) => void };
+    dev._setSystemClock?.(q);
+    return '';
   }
 
   protected resolveNtpTarget(target: string): string | null {
@@ -1240,9 +1315,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     try {
       const completions = trie.getCompletions(input);
       if (completions.length === 0) {
-        const trimmed = input.trim();
-        const isPrefixQuery = trimmed.length > 0 && !input.endsWith(' ');
-        return isPrefixQuery ? '' : CISCO_ERRORS.UNRECOGNIZED_HELP;
+        return CISCO_ERRORS.UNRECOGNIZED_HELP;
       }
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -1369,10 +1442,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       for (const e of table.values()) lines.push(`${String(e.vlan ?? 1).padEnd(8)}${e.mac.padEnd(18)}${(e.type ?? 'DYNAMIC').padEnd(12)}${e.ifName}`);
       return lines.join('\n');
     });
+    // `_getRunningConfigText` n'est défini sur AUCUN appareil : il n'est
+    // que lu, ici et à deux autres endroits. Mesuré avant correction,
+    // `show running-config all` rendait donc « Building configuration... »
+    // et rien d'autre, pendant que `show running-config` rendait ses 17
+    // lignes sur la même machine. La méthode réellement portée par
+    // `Router` comme par `Switch` est `getRunningConfig()`.
     trie.registerGreedy('show running-config all', 'Show running-config with defaults', () => {
-      const dev = this.d() as unknown as { _getRunningConfigText?: () => string };
-      const cfg = dev._getRunningConfigText?.() ?? '';
-      return cfg.length > 0 ? `Building configuration...\n${cfg}\nend` : 'Building configuration...';
+      const dev = this.d() as unknown as { getRunningConfig?: () => string };
+      const cfg = dev.getRunningConfig?.() ?? '';
+      return cfg.length > 0 ? `Building configuration...\n${cfg}` : 'Building configuration...';
     });
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.currentPrivilegeLevel));
@@ -1439,7 +1518,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
     trie.register('show ip vrf', 'Display VRFs', () => showVrf(this.d()));
     trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf(this.d()));
-    trie.registerGreedy('show boot', 'Display boot variables', () => showBoot());
     trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
       showRedundancy());
     trie.registerGreedy('show file', 'Display file systems', () =>
@@ -1525,10 +1603,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
       if (sub === 'history') { this.terminalHistoryEnabled = false; return ''; }
-      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; this.terminalMonitorExplicit = true; return ''; }
+      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; this.terminalMonitorExplicit = true; this.logging.setTerminalMonitor(false); return ''; }
       return CISCO_ERRORS.INVALID_INPUT;
     }
-    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; this.terminalMonitorExplicit = true; return ''; }
+    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; this.terminalMonitorExplicit = true; this.logging.setTerminalMonitor(true); return ''; }
     if (head === 'exec') return '';
     if (head === 'history') {
       if ((rest[0] ?? '').toLowerCase() === 'size') {
@@ -1542,6 +1620,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     }
     return CISCO_ERRORS.INVALID_INPUT;
+  }
+
+  private applyServiceTimestamps(args: string[], negate: boolean): string {
+    const cible = (args[0] ?? '').toLowerCase();
+    if (cible !== 'debug' && cible !== 'log') return CISCO_ERRORS.INVALID_INPUT;
+    const reste = args.slice(1).map(s => s.toLowerCase());
+    if (!negate && reste.length > 0 && reste[0] !== 'datetime' && reste[0] !== 'uptime') {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
+    this.attachLoggingToDevice(this.d());
+    if (cible === 'debug') this.logging.timestampsDebug = !negate;
+    else this.logging.timestamps = !negate;
+    if (!negate && reste.includes('msec')) this.logging.timestampsMsec = true;
+    return '';
   }
 
   /** Public read accessor — used by CLITerminalSession to size the pager. */
@@ -1591,6 +1683,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       `Destination filename [startup-config]?\n${this.onSave()}`;
 
     this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
+
+    // `archive config` / `show archive` — enregistrées ici, donc pour le
+    // routeur ET le switch, parce qu'un Catalyst connaît cette famille
+    // tout autant qu'un routeur et qu'elle était refusée en bloc sur le
+    // switch. Un équipement sans service d'archivage rend le message de
+    // table vide plutôt que de planter.
+    registerArchiveExecCommands(
+      this.privilegedTrie,
+      () => this.archiveService(),
+      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+    );
 
     const eraseNvram = () => {
       this.onErase();
@@ -1851,6 +1954,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');
     this.privilegedTrie.registerGreedy('no debug port-security', 'Disable port-security debug', () => genericDebug()?.disable('port-security') ?? '');
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
+    // `clear ip eigrp neighbors` : la commande promet de rejeter les
+    // adjacences, elle doit donc vraiment les rejeter — sinon elle serait
+    // acceptée sans rien faire, ce qui est pire que refusée.
+    this.privilegedTrie.registerGreedy('clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
+      const dev = this.d() as unknown as {
+        getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
+      };
+      const e = dev.getEIGRPEngine?.();
+      if (!e) return '';
+      const quoi = (args[0] ?? 'neighbors').toLowerCase();
+      if (quoi === 'traffic') e.resetTraffic?.();
+      else e.clearNeighbors?.();
+      return '';
+    });
     this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
       this.attachLoggingToDevice(this.d());
       (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
@@ -1944,6 +2061,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.registerCommonShowCommands(this.privilegedTrie);
+
+    // `clock set` est une commande d'EXEC privilégié sur IOS, et n'était
+    // enregistrée qu'en mode configuration — donc refusée là où on la
+    // tape. Elle est posée ici, à côté des autres commandes réservées au
+    // privilégié, et surtout PAS dans `registerCommonShowCommands`, qui
+    // est appelée une fois par arbre (utilisateur puis privilégié) : y
+    // toucher au `privilegedTrie` l'enregistrerait deux fois, ce que
+    // `command-trie-hygiene.test.ts` signale à juste titre.
+    this.privilegedTrie.registerGreedy('clock set', 'Set the system clock',
+      (args) => this.applyClockSet(args));
+
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
     registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
@@ -2507,6 +2635,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.syncSyslogAgent();
       return '';
     });
+    this.configTrie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
+      this.applyServiceTimestamps(args, false));
+    this.configTrie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>
+      this.applyServiceTimestamps(args, true));
     this.configTrie.registerGreedy('ntp', 'NTP configuration', (args) => {
       const a = args.map(s => s.toLowerCase());
       if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
@@ -2581,12 +2713,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-    this.configTrie.registerGreedy('clock set', 'Set system clock', (args) => {
-      const dev = this.d() as unknown as { _setSystemClock?: (epochMs: number) => void };
-      const parsedMs = this.parseClockSetArgs(args);
-      if (parsedMs !== null) dev._setSystemClock?.(parsedMs);
-      return '';
-    });
+    // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
+    // pour une seule commande finiraient par se contredire sur la même
+    // date.
+    this.configTrie.registerGreedy('clock set', 'Set system clock',
+      (args) => this.applyClockSet(args));
     this.configTrie.registerGreedy('clock', 'Clock configuration (unhandled)', (args, raw) => {
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `clock ${args.join(' ')}`);

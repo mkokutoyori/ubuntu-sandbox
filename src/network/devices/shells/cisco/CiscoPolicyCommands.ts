@@ -4,6 +4,7 @@
  * sub-mode + their show family. Router-only.
  */
 import type { CommandTrie } from '../CommandTrie';
+import { formatInvalidInput } from '../CommandTrie';
 import type { PolicyRepository, PrefixListEntry }
   from '../../inspection/config/PolicyRepository';
 
@@ -115,6 +116,8 @@ export function registerPolicyShow(
     repo.renderPrefixLists(a.find((x) => !/^detail|summary$/.test(x)), false));
   trie.registerGreedy('show ipv6 prefix-list', 'Display IPv6 prefix-lists', (a) =>
     repo.renderPrefixLists(a.find((x) => !/^detail|summary$/.test(x)), true));
-  trie.registerGreedy('show route-map', 'Display route-maps', (a) =>
-    repo.renderRouteMaps(a[0]));
+  trie.registerGreedy('show route-map', 'Display route-maps', (a) => {
+    if (a.length > 1) return formatInvalidInput('show route-map '.length + a[0].length + 1);
+    return repo.renderRouteMaps(a[0]);
+  });
 }

@@ -112,6 +112,18 @@ import { aptCacheCommand } from './system/AptCache';
 import { newgrpCommand } from './iam/Newgrp';
 import { tracepathCommand } from './net/Tracepath';
 import { mtrCommand } from './net/MtrReport';
+import { conntrackCommand } from './net/Conntrack';
+import { treeCommand } from './coreutils/Tree';
+import { calCommand } from './coreutils/Cal';
+import { yesCommand } from './coreutils/Yes';
+import { getconfCommand } from './system/Getconf';
+import { lsbReleaseCommand } from './system/LsbRelease';
+import { swaponCommand, swapoffCommand } from './system/Swapon';
+import { lsmodCommand, modinfoCommand } from './system/Lsmod';
+import { pmapCommand } from './system/Pmap';
+import { sensorsCommand } from './hw/Sensors';
+import { lognameCommand, usersCommand } from './iam/Logname';
+import { lidCommand, membersCommand } from './iam/Lid';
 
 export {
   sysctlCommand,
@@ -216,6 +228,22 @@ export {
   newgrpCommand,
   tracepathCommand,
   mtrCommand,
+  conntrackCommand,
+  treeCommand,
+  calCommand,
+  yesCommand,
+  getconfCommand,
+  lsbReleaseCommand,
+  swaponCommand,
+  swapoffCommand,
+  lsmodCommand,
+  modinfoCommand,
+  pmapCommand,
+  sensorsCommand,
+  lognameCommand,
+  usersCommand,
+  lidCommand,
+  membersCommand,
   TEXT_STREAM_COMMANDS,
   bcCommand,
 };
@@ -326,6 +354,22 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   newgrpCommand,
   tracepathCommand,
   mtrCommand,
+  conntrackCommand,
+  treeCommand,
+  calCommand,
+  yesCommand,
+  getconfCommand,
+  lsbReleaseCommand,
+  swaponCommand,
+  swapoffCommand,
+  lsmodCommand,
+  modinfoCommand,
+  pmapCommand,
+  sensorsCommand,
+  lognameCommand,
+  usersCommand,
+  lidCommand,
+  membersCommand,
   ...TEXT_STREAM_COMMANDS,
   bcCommand,
 ];

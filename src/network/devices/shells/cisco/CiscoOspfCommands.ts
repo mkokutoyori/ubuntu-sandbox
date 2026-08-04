@@ -144,6 +144,14 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
+function adresseReseau(ip: string, wildcard: string): string {
+  const o = ip.split('.').map(Number);
+  const w = wildcard.split('.').map(Number);
+  if (o.length !== 4 || w.length !== 4 || [...o, ...w].some(n => !Number.isFinite(n))) return ip;
+  return o.map((v, i) => v & (~w[i] & 255)).join('.');
+}
+
+
   trie.registerGreedy('network', 'Define OSPF network/area', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return '% OSPF is not enabled.';
@@ -155,7 +163,7 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     if (!'area'.startsWith(args[2].toLowerCase())) return '% Invalid input. Expected "area" keyword.';
     const areaId = args[3];
 
-    ospf.addNetwork(network, wildcard, areaId);
+    ospf.addNetwork(adresseReseau(network, wildcard), wildcard, areaId);
     ctx.r()._ospfAutoConverge();
     return '';
   });
@@ -403,9 +411,16 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
-  trie.register('log-adjacency-changes', 'Log OSPF adjacency changes', () => {
+  // `detail` était refusé faute d'être greedy — le suffixe le plus
+  // courant en cours (il fait journaliser CHAQUE transition d'état de
+  // l'adjacence, pas seulement l'entrée et la sortie de Full).
+  trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
+    if (args.length > 0 && args[0] !== 'detail') {
+      return "% Invalid input detected at '^' marker.";
+    }
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.logAdjacencyChanges = true;
+    extra.logAdjacencyChangesDetail = args[0] === 'detail';
     // Enable in the OSPF engine if already running
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (ospf) ospf.logAdjacencyChanges = true;
@@ -1129,8 +1144,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   });
   trie.registerGreedy('debug ip ospf', 'Enable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
-    ospf.logAdjacencyChanges = true;
+    if (ospf) ospf.logAdjacencyChanges = true;
     const flag = args.join(' ').toLowerCase() || 'adj';
     const debugSvc = getRouter().getDebugService();
     if (flag.startsWith('adj')) return debugSvc.enable('ip.ospf.adj');
@@ -1143,8 +1157,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   });
   trie.registerGreedy('no debug ip ospf', 'Disable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
-    ospf.logAdjacencyChanges = false;
+    if (ospf) ospf.logAdjacencyChanges = false;
     const debugSvc = getRouter().getDebugService();
     const flag = args.join(' ').toLowerCase() || 'adj';
     if (flag.startsWith('adj')) return debugSvc.disable('ip.ospf.adj');
@@ -1326,16 +1339,24 @@ export function showIpOspfNeighbor(router: Router): string {
   for (const n of neighbors) {
     const iface = ospf.getInterface(n.iface);
     const stateStr = `${n.state.toUpperCase()}/  -`;
-    const deadTime = iface ? `${iface.deadInterval}` : '-';
+    const deadTime = compteARebours(iface, n.lastHelloReceived);
 
     lines.push(
       `${n.routerId.padEnd(16)}${String(n.priority).padEnd(6)}` +
-      `${stateStr.padEnd(16)}${(deadTime + 's').padEnd(12)}` +
+      `${stateStr.padEnd(16)}${deadTime.padEnd(12)}` +
       `${n.ipAddress.padEnd(16)}${n.iface}`
     );
   }
 
   return lines.join('\n');
+}
+
+function compteARebours(iface: { deadInterval?: number } | undefined, lastHelloMs: number): string {
+  const dead = iface?.deadInterval ?? 40;
+  const ecoule = Math.max(0, Date.now() - lastHelloMs) / 1000;
+  const restant = Math.max(0, Math.min(dead, Math.floor(dead - ecoule)));
+  const pad = (v: number) => String(v).padStart(2, '0');
+  return `${pad(Math.floor(restant / 3600))}:${pad(Math.floor((restant % 3600) / 60))}:${pad(restant % 60)}`;
 }
 
 function showIpOspfDatabaseSummaryCounts(router: Router): string {
@@ -2218,7 +2239,7 @@ function showIpRouteAll(router: Router): string {
   router._ospfAutoConverge();
   router.convergeDynamicRouting();
   const rt = bestRoutesPerPrefix(
-    ((router as any).routingTable as any[]).filter((r) => router.isRouteInterfaceUsable(r.iface) && router.isRouteTrackUp(r.track)),
+    ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)),
   );
   const lines: string[] = ['Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area',
     '       O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP',
@@ -2330,7 +2351,7 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   let best: any = null;
   let bestLen = -1;
   for (const r of rt) {
-    if (!router.isRouteInterfaceUsable(r.iface) || !router.isRouteTrackUp(r.track)) continue;
+    if (!router.isRouteUsable(r)) continue;
     const netStr = r.network.toString();
     const maskStr = r.mask.toString();
     const cidr = maskToCIDR(maskStr);

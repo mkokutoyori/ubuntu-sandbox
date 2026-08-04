@@ -529,7 +529,23 @@ export class IPSecEngine implements IProtocolEngine {
   // ── IKEv1 Configuration ──────────────────────────────────────────
   private isakmpPolicies: Map<number, ISAKMPPolicy> = new Map();
   /** peer IP → PSK (use '0.0.0.0' for wildcard) */
-  private preSharedKeys: Map<string, string> = new Map();
+  /**
+   * Les clés pré-partagées IKEv1, indexées par l'IDENTITÉ du pair —
+   * une adresse (`crypto isakmp key K address IP`) ou un nom d'hôte
+   * (`... hostname NOM`).
+   *
+   * La forme est retenue parce que la running-config doit reproduire la
+   * commande écrite : rendre une clé par nom d'hôte en `address
+   * peer.lab.local` donnerait une ligne invalide, rejetée à la
+   * relecture d'une topologie. Le même piège que les routes statiques
+   * de l'audit précédent.
+   *
+   * Une seule table pour les deux formes, et c'est ce qui fait marcher
+   * l'authentification par nom : le répondeur cherche déjà la clé par
+   * `offer.identity` avant l'adresse source, et un pair configuré
+   * `crypto isakmp identity hostname` annonce précisément son nom.
+   */
+  private preSharedKeys: Map<string, { key: string; byHostname: boolean }> = new Map();
   private transformSets: Map<string, TransformSet> = new Map();
   private cryptoMaps: Map<string, CryptoMap> = new Map();
   /** `mapName:seq` → DDNS resolver for a `set peer <hostname> dynamic` entry. */
@@ -974,8 +990,8 @@ export class IPSecEngine implements IProtocolEngine {
     return this.isakmpPolicies.get(priority)!;
   }
 
-  addPreSharedKey(address: string, key: string): void {
-    this.preSharedKeys.set(address, key);
+  addPreSharedKey(identity: string, key: string, byHostname = false): void {
+    this.preSharedKeys.set(identity, { key, byHostname });
   }
 
   getOrCreateISAKMPKeyring(name: string): ISAKMPKeyring {
@@ -1016,6 +1032,23 @@ export class IPSecEngine implements IProtocolEngine {
    * IOS's profile-scoped keyring resolution. Falls back to the flat
    * `crypto isakmp key ... address ...` table otherwise.
    */
+  /**
+   * Les noms d'hôte de la table locale qui désignent cette adresse.
+   *
+   * L'initiateur ne connaît son pair que par son adresse (`set peer`),
+   * alors que la clé a pu être posée sous son NOM. Sans cette
+   * résolution inverse, une session `hostname` ne s'authentifierait que
+   * dans un sens : le répondeur trouverait la clé par l'identité
+   * annoncée, l'initiateur non. On lit la table `ip host` de
+   * l'équipement, la même que le reste de ce fichier consulte déjà.
+   */
+  private hostnamesFor(ip: string): string[] {
+    try {
+      return this.router._getHostsTable().entries()
+        .filter((e) => e.ip === ip).map((e) => e.name);
+    } catch { return []; }
+  }
+
   private findISAKMPPSK(entry: CryptoMapEntry | null, ...candidateIPs: string[]): string {
     const profile = entry?.isakmpProfileName ? this.isakmpProfiles.get(entry.isakmpProfileName) : undefined;
     if (profile?.keyring) {
@@ -1032,11 +1065,14 @@ export class IPSecEngine implements IProtocolEngine {
         }
       }
     }
-    for (const ip of candidateIPs) {
-      const key = this.preSharedKeys.get(ip);
-      if (key) return key;
+    for (const c of candidateIPs) {
+      // Exact d'abord, puis en minuscules : une adresse ne change pas,
+      // un nom d'hôte est insensible à la casse et l'identité annoncée
+      // par le pair peut être écrite autrement que la clé configurée.
+      const e = this.preSharedKeys.get(c) ?? this.preSharedKeys.get(c.toLowerCase());
+      if (e) return e.key;
     }
-    return this.preSharedKeys.get('0.0.0.0') || '';
+    return this.preSharedKeys.get('0.0.0.0')?.key ?? '';
   }
 
   /**
@@ -1432,8 +1468,8 @@ export class IPSecEngine implements IProtocolEngine {
     this.isakmpPolicies.delete(priority);
   }
 
-  removePreSharedKey(address: string): void {
-    this.preSharedKeys.delete(address);
+  removePreSharedKey(identity: string): void {
+    this.preSharedKeys.delete(identity);
   }
 
   removeTransformSet(name: string): void {
@@ -1806,7 +1842,9 @@ export class IPSecEngine implements IProtocolEngine {
     const oldSA = oldChildSAs[0];
 
     const entry = this.findEntryForPeer(peerIP, null);
-    const myPSK = this.ikeCertAuth ? 'cert-auth-key' : this.findISAKMPPSK(entry, peerIP);
+    const myPSK = this.ikeCertAuth
+      ? 'cert-auth-key'
+      : this.findISAKMPPSK(entry, peerIP, ...this.hostnamesFor(peerIP));
     const spiIn = randomSPI();
     const spiOut = randomSPI();
     const loSpi = Math.min(spiIn, spiOut);
@@ -3382,7 +3420,7 @@ export class IPSecEngine implements IProtocolEngine {
     }
     const myPSK = version === 2
       ? (this.findIKEv2PSK(peerIP) ?? '')
-      : this.findISAKMPPSK(entry, peerIP);
+      : this.findISAKMPPSK(entry, peerIP, ...this.hostnamesFor(peerIP));
     const profile = version === 1 && entry.isakmpProfileName
       ? this.isakmpProfiles.get(entry.isakmpProfileName) : undefined;
     const identity = version === 1
@@ -3691,14 +3729,14 @@ export class IPSecEngine implements IProtocolEngine {
     } else {
       const myPSK = isV2
         ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? '')
-        : this.findISAKMPPSK(pending.entry, srcIp, pending.apparentSrcIP);
+        : this.findISAKMPPSK(pending.entry, srcIp, pending.apparentSrcIP, ...this.hostnamesFor(srcIp));
       if (!myPSK || this.ikePskProof(myPSK) !== accept.pskProof) {
         this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
       }
     }
     const myPSK = isV2
       ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? 'cert-auth-key')
-      : (this.findISAKMPPSK(pending.entry, srcIp, pending.apparentSrcIP) || 'cert-auth-key');
+      : (this.findISAKMPPSK(pending.entry, srcIp, pending.apparentSrcIP, ...this.hostnamesFor(srcIp)) || 'cert-auth-key');
     const spiInitIn = pending.spiInitIn;
     const transforms = accept.chosenTransform.transforms;
     const loSpi = Math.min(spiInitIn, accept.ipsecSpiIn);
@@ -4464,8 +4502,8 @@ export class IPSecEngine implements IProtocolEngine {
   showCryptoISAKMPKey(): string {
     if (this.preSharedKeys.size === 0) return 'No pre-shared keys configured.';
     const lines: string[] = ['Keychain  Hostname / Address   Preshared Key'];
-    for (const [addr, key] of this.preSharedKeys) {
-      lines.push(`default   ${addr.padEnd(21)}${key.replace(/./g, '*')}`);
+    for (const [ident, e] of this.preSharedKeys) {
+      lines.push(`default   ${ident.padEnd(21)}${e.key.replace(/./g, '*')}`);
     }
     return lines.join('\n');
   }
@@ -4546,8 +4584,8 @@ export class IPSecEngine implements IProtocolEngine {
       if (p.lifetime !== 86400) lines.push(` lifetime ${p.lifetime}`);
     }
     // PSKs
-    for (const [addr, key] of this.preSharedKeys) {
-      lines.push(`crypto isakmp key ${key} address ${addr}`);
+    for (const [ident, e] of this.preSharedKeys) {
+      lines.push(`crypto isakmp key ${e.key} ${e.byHostname ? 'hostname' : 'address'} ${ident}`);
     }
     if (this.natKeepaliveInterval > 0) {
       lines.push(`crypto isakmp nat keepalive ${this.natKeepaliveInterval}`);
@@ -4703,8 +4741,8 @@ export class IPSecEngine implements IProtocolEngine {
       if (p.group) lines.push(` group ${p.group}`);
       if (p.lifetime !== 86400) lines.push(` lifetime ${p.lifetime}`);
     }
-    for (const [peer, key] of this.preSharedKeys) {
-      lines.push(`crypto isakmp key ${key} address ${peer}`);
+    for (const [ident, e] of this.preSharedKeys) {
+      lines.push(`crypto isakmp key ${e.key} ${e.byHostname ? 'hostname' : 'address'} ${ident}`);
     }
     if (this.natKeepaliveInterval > 0) {
       lines.push(`crypto isakmp keepalive ${this.natKeepaliveInterval} ${(this.dpdConfig as DPDConfig & { retryInterval?: number } | null)?.retryInterval ?? 3}`);

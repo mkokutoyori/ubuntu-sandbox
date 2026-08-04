@@ -11,9 +11,10 @@
 import { IPAddress, SubnetMask, IPv6Address } from '../../../core/types';
 import { isValidIPv4, isValidSubnetMask } from '../../../core/ip';
 import type { Router } from '../../Router';
-import { CommandTrie } from '../CommandTrie';
+import { CommandTrie, formatInvalidInput } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
+import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -132,7 +133,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
           }
         }
       }
-      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
+      if (!ifName) return formatInvalidInput(10);
     }
     ctx.setSelectedInterface(ifName);
     ctx.setMode(/\.\d+$/.test(ifName) ? 'config-subif' : 'config-if');
@@ -152,10 +153,10 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     const name = typed
       ? `${typeMap[typed[1].toLowerCase()]}${typed[2]}`
       : ctx.resolveInterfaceName(raw);
-    if (!name) return `% Invalid input detected at '^' marker.\nno interface ${raw}\n             ^`;
+    if (!name) return formatInvalidInput(13);
     if (!ctx.r()._removeVirtualInterface(name)) {
       // Real IOS on a physical port: the hardware is not going anywhere.
-      return `% Invalid input detected at '^' marker.\nno interface ${raw}\n             ^`;
+      return formatInvalidInput(13);
     }
     if (ctx.getSelectedInterface?.() === name) ctx.setSelectedInterface(null);
     return '';
@@ -397,19 +398,46 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
           }
         }
       }
-      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
+      if (!ifName) return formatInvalidInput(10);
     }
     ctx.setSelectedInterface(ifName);
     ctx.setMode('config-if');
     return '';
   });
 
+  function refusSousInterfaceSansEncapsulation(c: CiscoShellContext): string | null {
+    const nom = c.getSelectedInterface();
+    if (!nom || !/\.\d+$/.test(nom)) return null;
+    const port = c.r().getPort(nom);
+    const encap = (port as unknown as { encapsulation?: { type?: string } } | undefined)?.encapsulation;
+    if (encap?.type) return null;
+    return '% Configuring IP routing on a LAN subinterface is only allowed if that '
+      + 'subinterface is already configured as part of an 802.1Q, or ISL vlan.';
+  }
+
   trie.registerGreedy('ip address', 'Set interface IP address', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
     if (!ctx.getSelectedInterface()) return '% No interface selected';
+    // `ip address dhcp` / `ip address negotiated` — l'adresse est
+    // apprise, pas saisie : c'est le cas normal d'un lien opérateur, et
+    // `negotiated` répondait « Incomplete command » faute d'être
+    // reconnu avant le test de longueur. `dhcp` passe par le client DHCP
+    // réel de l'interface ; `negotiated` est la forme PPP/IPCP, que ce
+    // simulateur n'a pas — elle est donc mémorisée pour la
+    // running-config et l'interface reste sans adresse, ce qui est
+    // exactement ce que montre un vrai routeur tant que la négociation
+    // n'a pas abouti.
+    const mot = (args[0] ?? '').toLowerCase();
+    if (mot === 'negotiated') {
+      if (args.length > 1) return "% Invalid input detected at '^' marker.";
+      ctx.r().setInterfaceAddressMode?.(ctx.getSelectedInterface()!, 'negotiated');
+      return '';
+    }
+    if (args.length < 2) return '% Incomplete command.';
     if (!isValidIPv4(args[0]) || !isValidSubnetMask(args[1])) {
       return "% Invalid input detected at '^' marker.";
     }
+    const refus = refusSousInterfaceSansEncapsulation(ctx);
+    if (refus) return refus;
     const secondary = args[2]?.toLowerCase() === 'secondary';
     if (args[2] !== undefined && !secondary) {
       return "% Invalid input detected at '^' marker.";
@@ -742,9 +770,21 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
   trie.registerGreedy('rate-limit', 'Rate-limit (legacy CAR)', (args, raw) => {
-    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.rateLimits ??= []).push(raw ?? `rate-limit ${args.join(' ')}`);
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    // La règle est ANALYSÉE puis posée sur un vrai policier. Avant, la
+    // ligne brute était empilée sur le port et lue par personne : la
+    // commande était acceptée, absente de la running-config, sans vue,
+    // et surtout sans effet sur un seul paquet.
+    const regle = parseRateLimitRule(args, raw ?? `rate-limit ${args.join(' ')}`);
+    if (!regle) return "% Invalid input detected at '^' marker.";
+    ctx.r().getCarPolicer(ifName, true)!.add(regle);
+    return '';
+  });
+  trie.registerGreedy('no rate-limit', 'Remove rate-limit (CAR)', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    ctx.r().getCarPolicer(ifName)?.clear();
     return '';
   });
   trie.register('ip nbar protocol-discovery', 'Enable NBAR protocol discovery', () => {
@@ -937,6 +977,17 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     trackId = rest[trackIdx + 1];
     rest = rest.slice(0, trackIdx).concat(rest.slice(trackIdx + 2));
   }
+  // `permanent` — la route reste dans la table quand son interface de
+  // sortie tombe. Le mot-clé était accepté et jeté (il ne ressemble ni à
+  // une distance ni à `track`, donc rien ne le lisait) : la route
+  // disparaissait au `shutdown` comme une statique ordinaire, soit
+  // exactement ce que ce mot-clé sert à empêcher.
+  let permanent = false;
+  const permIdx = rest.indexOf('permanent');
+  if (permIdx >= 0) {
+    permanent = true;
+    rest = rest.slice(0, permIdx).concat(rest.slice(permIdx + 1));
+  }
   // Optional administrative distance (RFC: 1-255).
   let ad: number | undefined;
   const adTok = rest.find((t) => /^\d+$/.test(t));
@@ -953,9 +1004,10 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     vrfs.set(vrfName, list);
     return '';
   }
-  const opts: { preference?: number; iface?: string; track?: string } = {};
+  const opts: { preference?: number; iface?: string; track?: string; permanent?: boolean } = {};
   if (ad !== undefined) opts.preference = ad;
   if (trackId !== undefined) opts.track = trackId;
+  if (permanent) opts.permanent = true;
   if (outIface) {
     opts.iface = outIface;
     const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
@@ -967,7 +1019,8 @@ export function cmdIpRoute(router: Router, args: string[]): string {
       return router.setDefaultRoute(nextHop, 0, ad !== undefined ? { preference: ad } : undefined)
         ? '' : '% Next-hop is not reachable';
     }
-    return router.addStaticRoute(network, mask, nextHop, 0, (ad !== undefined || trackId !== undefined) ? opts : undefined)
+    return router.addStaticRoute(network, mask, nextHop, 0,
+      (ad !== undefined || trackId !== undefined || permanent) ? opts : undefined)
       ? '' : '% Next-hop is not reachable';
   }
   return '% Incomplete command.';

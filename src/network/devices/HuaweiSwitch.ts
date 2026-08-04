@@ -32,6 +32,17 @@ export class HuaweiSwitch extends Switch {
 
   constructor(type: DeviceType = 'switch-huawei', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
+    this.natEngine.setDeviceId(this.id, this.getHostname());
+    this.natEngine.setEventBus(this.getBus());
+    this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
+      const pkt = realPkt ?? ({ type: 'ipv4', sourceIP: new IPAddress(srcIP) } as unknown as IPv4Packet);
+      return this.getVaclEngine().evaluateACLByName(String(aclId), pkt) === 'permit';
+    });
+    this.natEngine.setInterfaceIPFn((iface) => {
+      const m = iface.match(/^Vlanif(\d+)$/);
+      if (!m) return null;
+      return this.getSvi(Number(m[1]))?.ip?.toString() ?? null;
+    });
     const hostBase = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),

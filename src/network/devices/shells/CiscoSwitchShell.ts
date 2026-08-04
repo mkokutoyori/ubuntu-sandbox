@@ -15,7 +15,7 @@
  */
 
 import { CiscoShellBase } from './CiscoShellBase';
-import { CommandTrie } from './CommandTrie';
+import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -27,6 +27,7 @@ import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRen
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import { showInterface } from './cisco/CiscoShowCommands';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
+import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
@@ -40,7 +41,7 @@ import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
   | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp'
-  | 'config-access-map';
+  | 'config-access-map' | 'config-archive' | 'config-archive-log';
 
 /**
  * Raised when a command needs a protocol this switch does not run.
@@ -72,6 +73,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configVlanTrie = new CommandTrie();
   private configMstTrie = new CommandTrie();
+  private configArchiveTrie = new CommandTrie();
+  private configArchiveLogTrie = new CommandTrie();
   private configDhcpTrie = new CommandTrie();
   private selectedDhcpPool: string | null = null;
 
@@ -257,7 +260,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   protected getPromptMap(): PromptMap { return CISCO_SWITCH_PROMPTS; }
 
   protected onSave(): string {
-    return this.d().writeMemory();
+    const out = this.d().writeMemory();
+    this.archiveAfterSave();
+    return out;
   }
 
   protected getActiveTrie(): CommandTrie {
@@ -268,6 +273,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       case 'config-if':   return this.configIfTrie;
       case 'config-vlan': return this.configVlanTrie;
       case 'config-mst':  return this.configMstTrie;
+      case 'config-archive':     return this.configArchiveTrie;
+      case 'config-archive-log': return this.configArchiveLogTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-acl':  return this.configAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
@@ -1680,6 +1687,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
+    // `archive` — la même famille que sur le routeur, construite par le
+    // même module (`CiscoArchiveCommands`) plutôt que recopiée : deux
+    // plateformes qui archivent différemment seraient un défaut, pas une
+    // fonctionnalité.
+    this.configTrie.register('archive', 'Enter archive configuration', () => {
+      this.mode = 'config-archive';
+      return '';
+    });
+    const archiveOf = () => this.archiveService();
+    buildArchiveSubmodeOn(this.configArchiveTrie, archiveOf, () => {
+      this.mode = 'config-archive-log';
+    });
+    buildArchiveLogSubmodeOn(this.configArchiveLogTrie, archiveOf);
+
     // config-mst sub-mode
     this.configMstTrie.registerGreedy('name', 'Set MST region name', (a) => {
       this.stpAgentOf(this.d())?.setMstName(a.join(' '));
@@ -2023,6 +2044,45 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private registerPrivilegedCommands(): void {
     this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
 
+    // `show storm-control` — la configuration était acceptée et
+    // rangée (elle revient dans `show running-config interface`), mais
+    // aucune vue ne la lisait. Les seuils affichés sont donc les vrais.
+    //
+    // Ce qui est honnête de dire : la colonne « Current » reste à 0.00%
+    // parce qu'il n'existe pas de compteur de débit par port et par type
+    // de trafic dans le plan de données. Inventer un pourcentage courant
+    // serait la seule façon de mentir ici ; le seuil, lui, est exact.
+    this.privilegedTrie.registerGreedy('show storm-control', 'Display storm-control settings', (args) => {
+      const filtre = (args[0] ?? '').toLowerCase();
+      const types = ['broadcast', 'multicast', 'unicast'];
+      const voulu = types.includes(filtre) ? [filtre] : types;
+      const lignes = ['Interface  Filter State   Upper        Lower        Current'];
+      let trouve = false;
+      for (const nom of this.d().getPortNames()) {
+        const conf = (this.ifExtra.get(nom) ?? []).filter((l) => l.startsWith('storm-control'));
+        for (const type of voulu) {
+          const seuil = conf.find((l) => l.startsWith(`storm-control ${type} level`));
+          if (!seuil) continue;
+          trouve = true;
+          // `storm-control <type> level <haut> [<bas>]` — le seuil haut
+          // est le 4ᵉ mot, le bas est optionnel et vaut le haut sinon,
+          // exactement comme sur IOS. Les pourcentages sortent à deux
+          // décimales, la forme du vrai binaire.
+          const parts = seuil.split(/\s+/);
+          const pct = (v: string | undefined, defaut: string) => {
+            const n = parseFloat(v ?? '');
+            return `${(Number.isNaN(n) ? parseFloat(defaut) : n).toFixed(2)}%`;
+          };
+          const haut = pct(parts[3], '100');
+          const bas = pct(parts[4], parts[3] ?? '100');
+          lignes.push(`${this.abbreviateInterface(nom).padEnd(11)}${'Forwarding'.padEnd(15)}`
+            + `${haut.padEnd(13)}${bas.padEnd(13)}0.00%`);
+        }
+      }
+      if (!trouve) return lignes[0];
+      return lignes.join('\n');
+    });
+
     this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
       const a = args.map(x => x.toLowerCase());
       if (a[0] === 'count') return this.showMACAddressTableCount(this.d());
@@ -2118,7 +2178,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args.length === 0) return this.showInterfacesCounters(null);
       const name = this.resolveInterfaceName(args.join(' '));
       if (!name || !this.d().getPort(name)) {
-        return `% Invalid input detected at '^' marker.\nshow interfaces counters ${args.join(' ')}\n                ^`;
+        return formatInvalidInput(16);
       }
       return this.showInterfacesCounters(name);
     });
@@ -2139,7 +2199,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (target) {
           const name = this.resolveInterfaceName(target);
           if (!name || !this.d().getPort(name)) {
-            return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+            return formatInvalidInput(16);
           }
           return this.showInterfacesCounters(name);
         }
@@ -2149,7 +2209,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (last === 'trunk' && args.length > 1) {
         const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
         if (!name || !this.d().getPort(name)) {
-          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+          return formatInvalidInput(16);
         }
         return this.showTrunkTable([name]);
       }
@@ -2157,7 +2217,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (args.length === 1) return this.showInterfacesStatus(this.d());
         const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
         if (!name || !this.d().getPort(name)) {
-          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+          return formatInvalidInput(16);
         }
         return this.showInterfacesStatus(this.d(), name);
       }
@@ -2168,20 +2228,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args.length > 1 && args[args.length - 1].toLowerCase() === 'etherchannel') {
         const target = this.resolveInterfaceName(args.slice(0, -1).join(' '));
         if (!target || !this.d().getPort(target)) {
-          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+          return formatInvalidInput(16);
         }
         return this.showInterfaceEtherchannel(target);
       }
       const name = this.resolveInterfaceName(args.join(' '));
       if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
-      return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+      return formatInvalidInput(16);
     });
 
     this.privilegedTrie.registerGreedy('show queuing interface', 'Display the 802.1p trust state of an interface', (args) => {
       const target = args.join(' ');
       const name = this.resolveInterfaceName(target) ?? target;
       if (!name || !this.d().getPort(name)) {
-        return `% Invalid input detected at '^' marker.\nshow queuing interface ${args.join(' ')}\n                       ^`;
+        return formatInvalidInput(23);
       }
       return this.showQueuingInterface(name);
     });
@@ -3217,6 +3277,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
 
     for (const l of this.logging.asRunningConfigLines()) lines.push(l);
+
+    // Sans ce bloc, un `archive` configuré sur le switch serait perdu à
+    // l'import d'une topologie — la running-config est ce qui REFAIT la
+    // configuration, pas seulement ce qui la décrit.
+    const archive = (sw as unknown as {
+      getArchiveService?: () => import('../router/archive/ArchiveService').ArchiveService;
+    }).getArchiveService?.();
+    if (archive) {
+      const al = archive.asRunningConfigLines();
+      if (al.length > 0) { lines.push('!'); lines.push(...al); }
+    }
 
     const unhandled = (sw as unknown as { getUnhandledConfigLines?: () => readonly string[] }).getUnhandledConfigLines?.() ?? [];
     if (unhandled.length > 0) {

@@ -1,0 +1,21 @@
+import { describe, it, beforeEach } from 'vitest';
+import { writeFileSync, appendFileSync } from 'node:fs';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+const OUT='/tmp/p.txt'; writeFileSync(OUT,'');
+const log=(...a:unknown[])=>appendFileSync(OUT,a.map(String).join(' ')+'\n');
+beforeEach(()=>{EquipmentRegistry.resetInstance();});
+describe('p',()=>{it('x',async()=>{
+  const r=new CiscoRouter('R1');
+  await r.executeCommand('enable');
+  log('debug ip ospf events ->', JSON.stringify(await r.executeCommand('debug ip ospf events')));
+  log('show debugging ->', JSON.stringify(await r.executeCommand('show debugging')));
+  log('debug ip ospf hello ->', JSON.stringify(await r.executeCommand('debug ip ospf hello')));
+  log('show debug ->', JSON.stringify(await r.executeCommand('show debug')));
+  await r.executeCommand('configure terminal');
+  await r.executeCommand('router ospf 1');
+  log('network wildcard ->', JSON.stringify(await r.executeCommand('network 192.168.1.1 0.0.0.255 area 0')));
+  await r.executeCommand('end');
+  const cfg=await r.executeCommand('show running-config');
+  log('cfg network line ->', cfg.split('\n').filter(l=>l.includes('network')).join(' | '));
+});});

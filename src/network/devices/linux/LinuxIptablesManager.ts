@@ -103,6 +103,20 @@ const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'icmpv6', 'ipv6-i
 const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
 const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN', 'MARK', 'NOTRACK']);
 
+// Real netfilter's xt_nat hook mask (verified against a real `iptables`
+// binary, not assumed): DNAT/REDIRECT only take effect before a routing
+// decision is made (PREROUTING for network-arriving traffic, OUTPUT for
+// locally-generated traffic); SNAT/MASQUERADE only after one (POSTROUTING),
+// with SNAT additionally valid in INPUT for a packet already decided as
+// locally-destined. `-A INPUT -j DNAT` is rejected on real Linux, not
+// silently accepted — this table is what lets that rejection be real here.
+const NAT_TARGET_HOOKS: Record<string, string[]> = {
+  DNAT: ['PREROUTING', 'OUTPUT'],
+  REDIRECT: ['PREROUTING', 'OUTPUT'],
+  SNAT: ['POSTROUTING', 'INPUT'],
+  MASQUERADE: ['POSTROUTING'],
+};
+
 // ─── Manager ─────────────────────────────────────────────────────────
 
 export type IptablesServiceResolver = (port: number, proto: string) => string | null;
@@ -243,10 +257,13 @@ export class LinuxIptablesManager {
   }
 
   /**
-   * Evaluate nat table for a packet (PREROUTING or POSTROUTING).
-   * Returns DNAT/SNAT/MASQUERADE target info or null.
+   * Evaluate nat table for a packet (PREROUTING, OUTPUT, or POSTROUTING —
+   * OUTPUT is a locally-generated packet's own DNAT/REDIRECT hook, real on
+   * Linux exactly like PREROUTING's, just before that host's own outbound
+   * routing decision instead of an arriving one).
+   * Returns DNAT/SNAT/MASQUERADE/REDIRECT target info or null.
    */
-  evaluateNat(pkt: PacketInfo, hook: 'PREROUTING' | 'POSTROUTING'): NatResult | null {
+  evaluateNat(pkt: PacketInfo, hook: 'PREROUTING' | 'OUTPUT' | 'POSTROUTING'): NatResult | null {
     const natTable = this.tables.get('nat');
     if (!natTable) return null;
     const chain = natTable.chains.get(hook);
@@ -283,6 +300,64 @@ export class LinuxIptablesManager {
 
   // ─── Connection tracking ──────────────────────────────────────
 
+  // ─── Lecture de la table, pour `conntrack -L` / `-S` ────────────
+  //
+  // La table existait et faisait déjà marcher `iptables -m state`, mais
+  // rien ne la nommait : encore un moteur sans porte. Ce qui suit ne
+  // fabrique aucun état, il expose celui qui décide déjà du sort des
+  // paquets.
+
+  /** Compteurs réels de `conntrack -S`, incrémentés aux vrais points. */
+  readonly conntrackStats = { insert: 0, found: 0, invalid: 0, drop: 0 };
+
+  /**
+   * Les flux vivants, une entrée par CONNEXION (pas par direction).
+   *
+   * La table indexe les deux sens séparément — c'est ce dont
+   * `isEstablished` a besoin. `conntrack -L`, lui, montre un flux avec
+   * ses deux tuples, donc on les réunit ici : le sens ORIGINAL est celui
+   * dont le tuple inverse existe aussi, et l'absence de retour est
+   * exactement ce que le vrai binaire marque `[UNREPLIED]`.
+   */
+  listConntrack(): Array<{
+    protocol: string; srcIP: string; srcPort: number;
+    dstIP: string; dstPort: number; ageMs: number; replied: boolean;
+  }> {
+    const now = Date.now();
+    const vus = new Set<string>();
+    const flux: Array<{
+      protocol: string; srcIP: string; srcPort: number;
+      dstIP: string; dstPort: number; ageMs: number; replied: boolean;
+    }> = [];
+    for (const [cle, ts] of this.conntrack) {
+      if (now - ts > this.CONNTRACK_TIMEOUT) continue;
+      const p = cle.split(':');
+      if (p.length < 5) continue;
+      const [protocol, srcIP, srcPort, dstIP, dstPort] = p;
+      const inverse = `${protocol}:${dstIP}:${dstPort}:${srcIP}:${srcPort}`;
+      if (vus.has(cle) || vus.has(inverse)) continue;
+      vus.add(cle);
+      flux.push({
+        protocol,
+        srcIP, srcPort: parseInt(srcPort, 10) || 0,
+        dstIP, dstPort: parseInt(dstPort, 10) || 0,
+        ageMs: now - ts,
+        replied: this.conntrack.has(inverse),
+      });
+    }
+    return flux;
+  }
+
+  /** Le délai d'expiration, ce que `conntrack -L` décompte par flux. */
+  conntrackTimeoutSec(): number { return this.CONNTRACK_TIMEOUT / 1000; }
+
+  /** `conntrack -F` — vide la table, et rend le nombre d'entrées jetées. */
+  flushConntrack(): number {
+    const n = this.conntrack.size;
+    this.conntrack.clear();
+    return n;
+  }
+
   /** Track a connection for state/conntrack matching (ESTABLISHED,RELATED) */
   private trackConnection(pkt: PacketInfo): void {
     // Track the reply direction: so the reply (dst→src) is ESTABLISHED
@@ -290,6 +365,7 @@ export class LinuxIptablesManager {
     this.conntrack.set(replyKey, Date.now());
     // Also track original direction
     const origKey = `${pkt.protocol}:${pkt.srcIP}:${pkt.srcPort}:${pkt.dstIP}:${pkt.dstPort}`;
+    if (!this.conntrack.has(origKey)) this.conntrackStats.insert++;
     this.conntrack.set(origKey, Date.now());
     // Periodically clean old entries (keep it simple — clean on every 50th insert)
     if (this.conntrack.size > 200) this.cleanConntrack();
@@ -304,6 +380,7 @@ export class LinuxIptablesManager {
       this.conntrack.delete(key);
       return false;
     }
+    this.conntrackStats.found++;
     return true;
   }
 
@@ -923,8 +1000,30 @@ export class LinuxIptablesManager {
     if (r.target && !VALID_TARGETS.has(r.target) && !table.chains.has(r.target)) {
       return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     }
+    const natErr = this.natTargetChainError(table, cn, r.target, 'RULE_APPEND');
+    if (natErr) return { output: natErr, exitCode: 4 };
     ch.rules.push(r);
     return { output: '', exitCode: 0 };
+  }
+
+  /**
+   * Reject a nat-table target in a built-in chain its real netfilter hook
+   * mask doesn't cover (see NAT_TARGET_HOOKS) — e.g. `-A INPUT -j DNAT`.
+   * A jump into a user-defined chain isn't traced back to which built-in
+   * chain(s) can reach it, so only direct rules on a built-in chain are
+   * checked here, matching the scope already accepted elsewhere in this
+   * manager for chain-reachability analysis.
+   */
+  private natTargetChainError(
+    table: IptablesTable, chainName: string, target: string,
+    op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
+  ): string | null {
+    if (table.name !== 'nat') return null;
+    const allowedChains = NAT_TARGET_HOOKS[target];
+    if (!allowedChains) return null;
+    if (!TABLE_BUILTIN_CHAINS.nat.includes(chainName)) return null;
+    if (allowedChains.includes(chainName)) return null;
+    return `iptables v1.8.7 (nf_tables):  ${op} failed (Invalid argument): rule in chain ${chainName}`;
   }
 
   // ─── -D ────────────────────────────────────────────────────────
@@ -971,6 +1070,8 @@ export class LinuxIptablesManager {
 
     const r = this.parseRule(ruleArgs);
     if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const natErrI = this.natTargetChainError(table, cn, r.target, 'RULE_INSERT');
+    if (natErrI) return { output: natErrI, exitCode: 4 };
     ch.rules.splice(Math.min(pos - 1, ch.rules.length), 0, r);
     return { output: '', exitCode: 0 };
   }
@@ -986,6 +1087,8 @@ export class LinuxIptablesManager {
     if (isNaN(num) || num < 1 || num > ch.rules.length) return { output: 'iptables: Index of replacement too big.', exitCode: 1 };
     const r = this.parseRule(args.slice(2));
     if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const natErrR = this.natTargetChainError(table, cn, r.target, 'RULE_REPLACE');
+    if (natErrR) return { output: natErrR, exitCode: 4 };
     ch.rules[num - 1] = r;
     return { output: '', exitCode: 0 };
   }

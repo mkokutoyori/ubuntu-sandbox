@@ -80,6 +80,7 @@ import {
 import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac } from '../core/ip';
 import { Logger } from '../core/Logger';
+import { CarPolicer } from './router/qos/CarPolicer';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
@@ -142,6 +143,19 @@ export interface RouteEntry extends IIPv4Route {
   track?: string;
   vpnInstance?: string;
   permanent?: boolean;
+  /**
+   * L'opérateur a-t-il NOMMÉ l'interface de sortie, ou a-t-elle été
+   * déduite du prochain saut ?
+   *
+   * `iface` seul ne permet pas de répondre : `addStaticRoute` le
+   * remplit dans les deux cas, par `findInterfaceForIP` pour la forme
+   * `ip route <net> <mask> <prochain-saut>`. Sans cette distinction, le
+   * rendu de configuration ne peut que deviner — et il devinait mal,
+   * réécrivant `ip route … GigabitEthernet0/0` en
+   * `ip route … 0.0.0.0`, une route différente, rechargée telle quelle
+   * à l'import d'une topologie.
+   */
+  ifaceConfigured?: boolean;
 }
 
 // ─── Performance Counters (SNMP-ready) ──────────────────────────────
@@ -662,6 +676,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.routeTrackResolver(trackId);
   }
 
+  /**
+   * Une route est-elle installable dans la table ?
+   *
+   * C'est LA question que posent le plan de données (`lookupRoute`) et
+   * chaque vue de table des deux constructeurs. Elle vivait en trois
+   * morceaux recopiés (`isRouteInterfaceUsable(r.iface) &&
+   * isRouteTrackUp(r.track)`), et les vues VRP n'en appelaient aucun —
+   * si bien qu'une route statique survivait à un `shutdown` sur Huawei
+   * alors qu'elle disparaissait sur Cisco, pour la même topologie.
+   *
+   * `permanent` (IOS `ip route ... permanent`, VRP `ip route-static ...
+   * permanent`) est exactement l'exception que ce mot-clé existe pour
+   * créer : la route RESTE quand son interface de sortie tombe. Elle
+   * était mémorisée sur `RouteEntry` et lue par personne.
+   *
+   * Ce que `permanent` ne fait PAS, et c'est volontaire : il ne rend pas
+   * le trafic acheminable. La route reste dans la table, les paquets
+   * partent vers une interface éteinte et se perdent — c'est le trou
+   * noir que ce mot-clé provoque sur un vrai routeur, et la raison pour
+   * laquelle on s'en méfie. Il ne court-circuite pas non plus `track` :
+   * un objet suivi qui tombe est une condition explicite posée par
+   * l'opérateur, pas une panne d'interface.
+   */
+  isRouteUsable(route: { iface: string; track?: string; permanent?: boolean }): boolean {
+    if (!this.isRouteTrackUp(route.track)) return false;
+    if (route.permanent) return true;
+    return this.isRouteInterfaceUsable(route.iface);
+  }
+
   private _setupPortMonitoring(): void {
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
@@ -784,6 +827,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (this.ports.has(name)) return true; // already exists
     const port = new Port(name, 'ethernet');
     port.setUp(true); // virtual interfaces are always up
+    const dot = name.indexOf('.');
+    if (dot > 0) {
+      const parent = this.ports.get(name.slice(0, dot));
+      if (parent) port.setMAC(parent.getMAC());
+    }
     this.addPort(port);
     // Register OSPF monitor
     port.onLinkChange((state) => {
@@ -1078,6 +1126,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       track: opts?.track,
       vpnInstance: opts?.vpnInstance,
       permanent: opts?.permanent,
+      ifaceConfigured: opts?.iface !== undefined ? true : undefined,
     });
 
     Logger.info(this.id, 'router:route-add',
@@ -1153,12 +1202,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (!this.isRouteInterfaceUsable(route.iface)) {
         // Interface went down — clear any IPSec SAs using this interface
         // (mirrors IOS: "line protocol down" triggers SA teardown)
+        // Le démontage porte sur l'INTERFACE, pas sur la route : il a
+        // donc lieu même pour une route `permanent`, qui elle survit.
         if (this.ipsecEngine) {
           this.ipsecEngine.clearSAsForInterface(route.iface);
         }
-        continue;
       }
-      if (!this.isRouteTrackUp(route.track)) continue;
+      if (!this.isRouteUsable(route)) continue;
 
       const netInt = route.network.toUint32();
       const maskInt = route.mask.toUint32();
@@ -1571,7 +1621,37 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     // C.2: Not for us → forward via FIB
+    // `rate-limit input` police AVANT le routage : sur un vrai IOS, CAR
+    // s'applique à l'entrée de l'interface, donc un paquet en excès est
+    // jeté sans jamais consommer de décision de routage.
+    if (!this.policeCar(inPort, 'input', ipPkt)) return;
     this.forwardPacket(inPort, ipPkt, originalPkt);
+  }
+
+  // ─── CAR (`rate-limit`) ────────────────────────────────────────
+  private readonly carPolicers = new Map<string, CarPolicer>();
+
+  /** Le policier d'une interface, créé au premier `rate-limit`. */
+  getCarPolicer(ifName: string, creer = false): CarPolicer | undefined {
+    let p = this.carPolicers.get(ifName);
+    if (!p && creer) { p = new CarPolicer(); this.carPolicers.set(ifName, p); }
+    return p;
+  }
+
+  /**
+   * Applique CAR et rend `false` quand le paquet doit être jeté.
+   *
+   * La taille prise en compte est `totalLength`, c'est-à-dire l'en-tête
+   * IP compris — c'est ce que CAR compte sur un vrai routeur, la police
+   * portant sur le débit du lien et non sur la charge utile.
+   */
+  private policeCar(ifName: string, direction: 'input' | 'output', pkt: IPv4Packet): boolean {
+    const p = this.carPolicers.get(ifName);
+    if (!p || p.isEmpty()) return true;
+    if (p.police(direction, pkt.totalLength)) return true;
+    Logger.info(this.id, 'router:car-drop',
+      `${this.name}: rate-limit ${direction} dropped ${pkt.sourceIP} → ${pkt.destinationIP} on ${ifName}`);
+    return false;
   }
 
   /**
@@ -1972,6 +2052,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const outsideIP = this.ports.get(route.iface)?.getIPAddress()?.toString();
       fwdPkt = outsideIP ? inspectAndRewriteFtpAlg(natOutbound, this.natEngine, outsideIP) : natOutbound;
     }
+
+    // `rate-limit output` police à la SORTIE, donc sur l'interface
+    // choisie par le routage et non sur celle d'arrivée, et avant l'ACL
+    // sortante : un paquet jeté par CAR n'a pas à être filtré ensuite.
+    if (!this.policeCar(route.iface, 'output', fwdPkt)) return;
 
     // Phase E.2b: Outbound ACL check
     const outboundACL = this.aclEngine.getInterfaceACL(route.iface, 'out');
@@ -2882,6 +2967,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (idx >= 0) this._unhandledConfigLines.splice(idx, 1);
   }
 
+  /**
+   * `ip address negotiated` (PPP/IPCP) — le mode d'obtention d'adresse
+   * déclaré sur une interface. Mémorisé pour la running-config ; il n'y
+   * a pas de pile PPP derrière, donc l'interface reste sans adresse,
+   * ce qu'un vrai routeur montre aussi tant que la négociation n'a pas
+   * abouti.
+   */
+  private readonly _ifAddressMode = new Map<string, 'negotiated'>();
+  setInterfaceAddressMode(iface: string, mode: 'negotiated'): void {
+    this._ifAddressMode.set(iface, mode);
+  }
+  getInterfaceAddressMode(iface: string): 'negotiated' | undefined {
+    return this._ifAddressMode.get(iface);
+  }
+
   _setSystemClock(epochMs: number): void {
     this._systemClockOverrideMs = epochMs;
     this._systemClockSetAtMs = Date.now();
@@ -3500,10 +3600,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    // Route lookup
     const route = this.lookupRoute(targetIP);
     if (!route) {
-      return []; // empty = unreachable
+      const rows = [];
+      for (let seq = 1; seq <= count; seq++) {
+        if (hooks?.shouldStop?.()) break;
+        const row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'network-unreachable' };
+        rows.push(row);
+        hooks?.onResult?.(row);
+      }
+      return rows;
     }
 
     const outPort = this.ports.get(route.iface);
@@ -3522,14 +3628,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // Determine next-hop IP
     const nextHopIP = route.nextHop || targetIP;
 
-    // ARP resolution for next-hop
     const existingArp = this.arpTable.get(nextHopIP.toString());
     let nextHopMAC: MACAddress | null = existingArp ? existingArp.mac : null;
+    const arpAApprendre = !nextHopMAC;
 
     if (!nextHopMAC) {
-      // Send ARP request and wait
       nextHopMAC = await this._resolveARPForPing(route.iface, outPort, nextHopIP, timeoutMs);
-      if (!nextHopMAC) return []; // ARP failed
+      if (!nextHopMAC) return [];
     }
 
     // Send pings
@@ -3537,6 +3642,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     for (let seq = 1; seq <= count; seq++) {
       if (hooks?.shouldStop?.()) break;
       let row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string };
+      if (seq === 1 && arpAApprendre) {
+        row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
+        results.push(row);
+        hooks?.onResult?.(row);
+        continue;
+      }
       try {
         row = await this._sendPing(
           route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs,
@@ -3815,9 +3926,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           ? 'ttl-exceeded'
           : /code 4\b/.test(winner.r.reason)
             ? 'frag-needed'
-            : /Destination unreachable/i.test(winner.r.reason)
-              ? 'unreachable'
-              : 'timeout';
+            : /code 13\b/.test(winner.r.reason)
+              ? 'admin-prohibited'
+              : /code 0\b/.test(winner.r.reason)
+                ? 'network-unreachable'
+                : /Destination unreachable/i.test(winner.r.reason)
+                  ? 'unreachable'
+                  : 'timeout';
         throw err;
       }
       const rtt = performance.now() - sentAt;

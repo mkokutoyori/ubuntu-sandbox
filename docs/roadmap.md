@@ -2,6 +2,8 @@
 
 > Document de suivi des fonctionnalites manquantes et a implementer.
 > Genere le 2026-03-25 a partir d'un audit complet du code source.
+>
+> **Perime par endroits** : ce document n'a pas ete tenu a jour au fil des correctifs ulterieurs (NAT/PAT, STP/RSTP, curseurs PL/SQL, etc. sont aujourd'hui largement implementes — voir `CLAUDE.md` et les PRD/BRD specifiques pour l'etat reel). Traiter comme un instantane historique, pas comme une source de verite sur ce qui manque aujourd'hui.
 
 ---
 
@@ -1112,6 +1114,8 @@ Ameliorations du systeme de fichiers en memoire.
 ### 14.1 NAT / PAT
 
 **Priorite : Haute** — Enseigne dans tous les cours CCNA et fondamental pour la connectivite Internet.
+
+**Section perimee** : ce document date du 2026-03-25 et decrit ces fonctionnalites comme manquantes ; elles sont toutes implementees depuis (`router/NATEngine.ts` pour static/dynamic/PAT/pool, `show`/`clear`/`debug ip nat`, ICMP ID translation). `docs/PRD-Port-Forwarding.md` (Phases 1-9) a depuis ajoute le port forwarding statique bout-en-bout (voie retour, ordre NAT/ACL, Huawei L3, Linux iptables REDIRECT/OUTPUT, Windows portproxy, SSH `-L`/`-R`) ; voir ce PRD et `CLAUDE.md` pour l'etat reel a jour plutot que le tableau ci-dessous.
 
 | Fonctionnalite | Description |
 |---|---|

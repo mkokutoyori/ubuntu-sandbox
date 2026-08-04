@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-08-mac-forwarding
-Generated: 2026-08-03T11:40:39.614Z
+Generated: 2026-08-04T08:19:40.794Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix
 Total steps: 346
@@ -81,48 +81,48 @@ Total steps: 346
 --- [8] § full connectivity matrix (VLAN 1, all pairs) ---
 [9/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.327 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.132 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.265 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.814 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.132/2.230/3.327/1.097 ms
+  rtt min/avg/max/mdev = 0.814/2.039/3.265/1.225 ms
 
 [10/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.567 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.959 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.519 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.847 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.567/0.763/0.959/0.196 ms
+  rtt min/avg/max/mdev = 0.519/0.683/0.847/0.164 ms
 
 [11/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.246 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.434 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.950 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.144 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.246/1.340/1.434/0.094 ms
+  rtt min/avg/max/mdev = 0.950/1.047/1.144/0.097 ms
 
 [12/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.725 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.335 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.673 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.878 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.725/1.030/1.335/0.305 ms
+  rtt min/avg/max/mdev = 0.673/0.776/0.878/0.102 ms
 
 [13/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=1.080 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.195 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=1.075 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.931 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.080/1.138/1.195/0.058 ms
+  rtt min/avg/max/mdev = 0.931/1.003/1.075/0.072 ms
 
 [14/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -166,7 +166,7 @@ Total steps: 346
   Ping statistics for 192.168.1.22:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [18/346] w1 w1$ ping -n 2 192.168.1.23
   
@@ -181,93 +181,93 @@ Total steps: 346
 
 [19/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.260 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.612 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.423 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.477 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.260/0.436/0.612/0.176 ms
+  rtt min/avg/max/mdev = 0.423/0.450/0.477/0.027 ms
 
 [20/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.513 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.911 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.463 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.654 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.513/0.712/0.911/0.199 ms
+  rtt min/avg/max/mdev = 0.463/0.559/0.654/0.095 ms
 
 [21/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.584 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.096 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.773 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.882 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.584/0.840/1.096/0.256 ms
+  rtt min/avg/max/mdev = 0.773/0.828/0.882/0.054 ms
 
 [22/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.501 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.690 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.859 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.767 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.501/0.596/0.690/0.094 ms
+  rtt min/avg/max/mdev = 0.767/0.813/0.859/0.046 ms
 
 [23/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.521 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.898 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.506 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.663 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.521/0.709/0.898/0.188 ms
+  rtt min/avg/max/mdev = 0.506/0.585/0.663/0.079 ms
 
 [24/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.564 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.827 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.446 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.714 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.564/0.696/0.827/0.132 ms
+  rtt min/avg/max/mdev = 0.446/0.580/0.714/0.134 ms
 
 [25/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.541 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.820 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.529 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.038 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.541/0.680/0.820/0.140 ms
+  rtt min/avg/max/mdev = 0.529/0.784/1.038/0.254 ms
 
 [26/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.443 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.728 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.656 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.811 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.443/0.585/0.728/0.143 ms
+  rtt min/avg/max/mdev = 0.656/0.733/0.811/0.077 ms
 
 [27/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.481 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.605 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.429 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.577 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.481/0.543/0.605/0.062 ms
+  rtt min/avg/max/mdev = 0.429/0.503/0.577/0.074 ms
 
 [28/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.385 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.987 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.304 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.575 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.385/0.686/0.987/0.301 ms
+  rtt min/avg/max/mdev = 0.304/0.440/0.575/0.135 ms
 
 [29/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -278,18 +278,18 @@ Total steps: 346
   Ping statistics for 192.168.1.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [30/346] w2 w2$ ping -n 2 192.168.1.12
   
   Pinging 192.168.1.12 with 32 bytes of data:
+  Reply from 192.168.1.12: bytes=32 time=3ms TTL=128
   Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
-  Reply from 192.168.1.12: bytes=32 time=2ms TTL=128
   
   Ping statistics for 192.168.1.12:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 3ms, Average = 2ms
 
 [31/346] w2 w2$ ping -n 2 192.168.1.13
   
@@ -326,48 +326,48 @@ Total steps: 346
 
 [34/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.517 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.945 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.458 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.626 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.517/0.731/0.945/0.214 ms
+  rtt min/avg/max/mdev = 0.458/0.542/0.626/0.084 ms
 
 [35/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.580 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.815 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.342 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.761 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.580/0.697/0.815/0.117 ms
+  rtt min/avg/max/mdev = 0.342/0.552/0.761/0.210 ms
 
 [36/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.489 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.780 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.439 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.623 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.489/0.635/0.780/0.146 ms
+  rtt min/avg/max/mdev = 0.439/0.531/0.623/0.092 ms
 
 [37/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.764 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.671 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.241 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.619 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.671/1.218/1.764/0.547 ms
+  rtt min/avg/max/mdev = 0.241/0.430/0.619/0.189 ms
 
 [38/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.464 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.706 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.346 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.505 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.464/0.585/0.706/0.121 ms
+  rtt min/avg/max/mdev = 0.346/0.426/0.505/0.080 ms
 
 
 --- [39] § MAC table populated by matrix ---
@@ -478,54 +478,34 @@ Total steps: 346
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [52/346] sw1 SW1(config)# mac address-table static 0000.dead.0001 vlan 1 interface FastEthernet0/1
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0001 vlan 1 interface FastEthernet0/1
-                    ^
+<empty>
 
 [53/346] sw1 SW1(config)# mac address-table static 0000.dead.0002 vlan 1 interface FastEthernet0/2
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0002 vlan 1 interface FastEthernet0/2
-                    ^
+<empty>
 
 [54/346] sw1 SW1(config)# mac address-table static 0000.dead.0003 vlan 1 interface FastEthernet0/3
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0003 vlan 1 interface FastEthernet0/3
-                    ^
+<empty>
 
 [55/346] sw1 SW1(config)# mac address-table static 0000.dead.0004 vlan 1 interface FastEthernet0/4
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0004 vlan 1 interface FastEthernet0/4
-                    ^
+<empty>
 
 [56/346] sw1 SW1(config)# mac address-table static 0000.dead.0005 vlan 1 interface FastEthernet0/5
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0005 vlan 1 interface FastEthernet0/5
-                    ^
+<empty>
 
 [57/346] sw1 SW1(config)# mac address-table static 0000.dead.0006 vlan 1 interface FastEthernet0/6
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0006 vlan 1 interface FastEthernet0/6
-                    ^
+<empty>
 
 [58/346] sw1 SW1(config)# mac address-table static 0000.dead.0007 vlan 1 interface FastEthernet0/7
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0007 vlan 1 interface FastEthernet0/7
-                    ^
+<empty>
 
 [59/346] sw1 SW1(config)# mac address-table static 0000.dead.0008 vlan 1 interface FastEthernet0/8
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0008 vlan 1 interface FastEthernet0/8
-                    ^
+<empty>
 
 [60/346] sw1 SW1(config)# mac address-table static 0000.dead.0009 vlan 1 interface FastEthernet0/9
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0009 vlan 1 interface FastEthernet0/9
-                    ^
+<empty>
 
 [61/346] sw1 SW1(config)# mac address-table static 0000.dead.0010 vlan 1 interface FastEthernet0/10
-  % Invalid input detected at '^' marker.
-  mac address-table static 0000.dead.0010 vlan 1 interface FastEthernet0/10
-                    ^
+<empty>
 
 [62/346] sw1 SW1(config)# mac address-table aging-time 120
 <empty>
@@ -541,7 +521,21 @@ Total steps: 346
 [65/346] sw1 SW1# show mac address-table static
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0001    STATIC      FastEthernet0/1
+  1       0000.dead.0002    STATIC      FastEthernet0/2
+  1       0000.dead.0003    STATIC      FastEthernet0/3
+  1       0000.dead.0004    STATIC      FastEthernet0/4
+  1       0000.dead.0005    STATIC      FastEthernet0/5
+  1       0000.dead.0006    STATIC      FastEthernet0/6
+  1       0000.dead.0007    STATIC      FastEthernet0/7
+  1       0000.dead.0008    STATIC      FastEthernet0/8
+  1       0000.dead.0009    STATIC      FastEthernet0/9
+  1       0000.dead.0010    STATIC      FastEthernet0/10
+  
+  Total Mac Addresses for this criterion: 10
 
 [66/346] sw1 SW1# show mac address-table aging-time
   Mac Address Table
@@ -577,12 +571,12 @@ Total steps: 346
 
 [70/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.645 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.643 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.489 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.559 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.643/0.644/0.645/0.001 ms
+  rtt min/avg/max/mdev = 0.489/0.524/0.559/0.035 ms
 
 [71/346] sw1 SW1# show mac address-table dynamic
   Mac Address Table
@@ -603,9 +597,9 @@ Total steps: 346
   -------------------------------------------
   Vlan    Mac Address Count
   ------  -----------------
-  1             0
+  1             10
   
-  Total Mac Addresses for this criterion: 0
+  Total Mac Addresses for this criterion: 10
 
 [74/346] sw1 SW1# clear mac address-table dynamic interface FastEthernet0/1
 <empty>
@@ -627,7 +621,21 @@ Total steps: 346
 [79/346] sw1 SW1(config-if)# do show mac address-table
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0001    STATIC      FastEthernet0/1
+  1       0000.dead.0002    STATIC      FastEthernet0/2
+  1       0000.dead.0003    STATIC      FastEthernet0/3
+  1       0000.dead.0004    STATIC      FastEthernet0/4
+  1       0000.dead.0005    STATIC      FastEthernet0/5
+  1       0000.dead.0006    STATIC      FastEthernet0/6
+  1       0000.dead.0007    STATIC      FastEthernet0/7
+  1       0000.dead.0008    STATIC      FastEthernet0/8
+  1       0000.dead.0009    STATIC      FastEthernet0/9
+  1       0000.dead.0010    STATIC      FastEthernet0/10
+  
+  Total Mac Addresses for this criterion: 10
 
 [80/346] sw1 SW1(config-if)# no shutdown
 <empty>
@@ -637,12 +645,12 @@ Total steps: 346
 
 [82/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.670 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.694 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.365 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.628 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.670/0.682/0.694/0.012 ms
+  rtt min/avg/max/mdev = 0.365/0.496/0.628/0.131 ms
 
 [83/346] sw1 SW1# show mac address-table
   Mac Address Table
@@ -650,57 +658,67 @@ Total steps: 346
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  1       0000.dead.0001    STATIC      FastEthernet0/1
+  1       0000.dead.0002    STATIC      FastEthernet0/2
+  1       0000.dead.0003    STATIC      FastEthernet0/3
+  1       0000.dead.0004    STATIC      FastEthernet0/4
+  1       0000.dead.0005    STATIC      FastEthernet0/5
+  1       0000.dead.0006    STATIC      FastEthernet0/6
+  1       0000.dead.0007    STATIC      FastEthernet0/7
+  1       0000.dead.0008    STATIC      FastEthernet0/8
+  1       0000.dead.0009    STATIC      FastEthernet0/9
+  1       0000.dead.0010    STATIC      FastEthernet0/10
   1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
   1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
   
-  Total Mac Addresses for this criterion: 2
+  Total Mac Addresses for this criterion: 12
 
 
 --- [84] § second connectivity matrix (re-learn) ---
 [85/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.804 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.526 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.469 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.546 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.526/0.665/0.804/0.139 ms
+  rtt min/avg/max/mdev = 0.469/0.507/0.546/0.039 ms
 
 [86/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.687 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.632 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.427 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.734 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.632/0.659/0.687/0.027 ms
+  rtt min/avg/max/mdev = 0.734/1.080/1.427/0.347 ms
 
 [87/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.798 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.984 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.108 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.672 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.984/1.391/1.798/0.407 ms
+  rtt min/avg/max/mdev = 0.672/1.390/2.108/0.718 ms
 
 [88/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.846 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.701 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.440 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.791 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.701/0.773/0.846/0.073 ms
+  rtt min/avg/max/mdev = 0.440/0.616/0.791/0.175 ms
 
 [89/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.747 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.984 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.788 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.705 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.747/0.865/0.984/0.118 ms
+  rtt min/avg/max/mdev = 0.705/0.747/0.788/0.042 ms
 
 [90/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -738,13 +756,13 @@ Total steps: 346
 [93/346] w1 w1$ ping -n 2 192.168.1.22
   
   Pinging 192.168.1.22 with 32 bytes of data:
-  Reply from 192.168.1.22: bytes=32 time=2ms TTL=128
+  Reply from 192.168.1.22: bytes=32 time=1ms TTL=128
   Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
   
   Ping statistics for 192.168.1.22:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 2ms, Average = 1ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [94/346] w1 w1$ ping -n 2 192.168.1.23
   
@@ -759,93 +777,93 @@ Total steps: 346
 
 [95/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.266 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.708 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.238 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.499 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.266/0.487/0.708/0.221 ms
+  rtt min/avg/max/mdev = 0.238/0.369/0.499/0.130 ms
 
 [96/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.612 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.537 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.258 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.457 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.537/0.574/0.612/0.037 ms
+  rtt min/avg/max/mdev = 0.258/0.358/0.457/0.099 ms
 
 [97/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.494 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.944 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.424 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.766 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.494/0.719/0.944/0.225 ms
+  rtt min/avg/max/mdev = 0.424/0.595/0.766/0.171 ms
 
 [98/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
   64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.404 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.642 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.069 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.404/0.523/0.642/0.119 ms
+  rtt min/avg/max/mdev = 0.404/0.737/1.069/0.332 ms
 
 [99/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.438 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.163 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.672 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.842 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.438/0.801/1.163/0.362 ms
+  rtt min/avg/max/mdev = 0.672/0.757/0.842/0.085 ms
 
 [100/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.811 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.836 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.637 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.761 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.811/0.823/0.836/0.013 ms
+  rtt min/avg/max/mdev = 0.637/0.699/0.761/0.062 ms
 
 [101/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.419 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.776 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.484 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.688 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.419/0.597/0.776/0.178 ms
+  rtt min/avg/max/mdev = 0.484/0.586/0.688/0.102 ms
 
 [102/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.714 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.823 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.340 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=5.021 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.823/1.268/1.714/0.446 ms
+  rtt min/avg/max/mdev = 0.340/2.681/5.021/2.340 ms
 
 [103/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.297 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.622 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.393 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.564 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.297/0.460/0.622/0.163 ms
+  rtt min/avg/max/mdev = 0.393/0.478/0.564/0.085 ms
 
 [104/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.353 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.686 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.520 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.661 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.353/0.520/0.686/0.166 ms
+  rtt min/avg/max/mdev = 0.520/0.590/0.661/0.070 ms
 
 [105/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -878,7 +896,7 @@ Total steps: 346
   Ping statistics for 192.168.1.13:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [108/346] w2 w2$ ping -n 2 192.168.1.21
   
@@ -904,48 +922,48 @@ Total steps: 346
 
 [110/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.359 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.001 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.474 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.782 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.359/0.680/1.001/0.321 ms
+  rtt min/avg/max/mdev = 0.474/0.628/0.782/0.154 ms
 
 [111/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.693 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.852 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.457 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.077 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.693/0.773/0.852/0.080 ms
+  rtt min/avg/max/mdev = 0.457/0.767/1.077/0.310 ms
 
 [112/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.689 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.956 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.623 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.726 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.956/1.322/1.689/0.367 ms
+  rtt min/avg/max/mdev = 0.623/0.675/0.726/0.051 ms
 
 [113/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.345 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.687 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.237 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.996 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.345/0.516/0.687/0.171 ms
+  rtt min/avg/max/mdev = 0.237/0.616/0.996/0.379 ms
 
 [114/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.259 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.489 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.307 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.470 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.259/0.374/0.489/0.115 ms
+  rtt min/avg/max/mdev = 0.307/0.388/0.470/0.081 ms
 
 
 --- [115] § per-VLAN MAC inspection loop ---
@@ -955,6 +973,16 @@ Total steps: 346
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  1       0000.dead.0001    STATIC      FastEthernet0/1
+  1       0000.dead.0002    STATIC      FastEthernet0/2
+  1       0000.dead.0003    STATIC      FastEthernet0/3
+  1       0000.dead.0004    STATIC      FastEthernet0/4
+  1       0000.dead.0005    STATIC      FastEthernet0/5
+  1       0000.dead.0006    STATIC      FastEthernet0/6
+  1       0000.dead.0007    STATIC      FastEthernet0/7
+  1       0000.dead.0008    STATIC      FastEthernet0/8
+  1       0000.dead.0009    STATIC      FastEthernet0/9
+  1       0000.dead.0010    STATIC      FastEthernet0/10
   1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
   1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
   1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
@@ -962,7 +990,7 @@ Total steps: 346
   1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 6
+  Total Mac Addresses for this criterion: 16
 
 [117/346] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
@@ -997,9 +1025,11 @@ Total steps: 346
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  1       0000.dead.0001    STATIC      FastEthernet0/1
+  1       0000.dead.0010    STATIC      FastEthernet0/10
   1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
   
-  Total Mac Addresses for this criterion: 1
+  Total Mac Addresses for this criterion: 3
 
 [124/346] sw1 SW1# show mac address-table interface FastEthernet0/2
   Mac Address Table
@@ -1007,9 +1037,10 @@ Total steps: 346
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  1       0000.dead.0002    STATIC      FastEthernet0/2
   1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
   
-  Total Mac Addresses for this criterion: 1
+  Total Mac Addresses for this criterion: 2
 
 [125/346] sw1 SW1# show mac address-table interface FastEthernet0/3
   Mac Address Table
@@ -1017,44 +1048,80 @@ Total steps: 346
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  1       0000.dead.0003    STATIC      FastEthernet0/3
   1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
   
-  Total Mac Addresses for this criterion: 1
+  Total Mac Addresses for this criterion: 2
 
 [126/346] sw1 SW1# show mac address-table interface FastEthernet0/4
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0004    STATIC      FastEthernet0/4
+  
+  Total Mac Addresses for this criterion: 1
 
 [127/346] sw1 SW1# show mac address-table interface FastEthernet0/5
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0005    STATIC      FastEthernet0/5
+  
+  Total Mac Addresses for this criterion: 1
 
 [128/346] sw1 SW1# show mac address-table interface FastEthernet0/6
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0006    STATIC      FastEthernet0/6
+  
+  Total Mac Addresses for this criterion: 1
 
 [129/346] sw1 SW1# show mac address-table interface FastEthernet0/7
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0007    STATIC      FastEthernet0/7
+  
+  Total Mac Addresses for this criterion: 1
 
 [130/346] sw1 SW1# show mac address-table interface FastEthernet0/8
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0008    STATIC      FastEthernet0/8
+  
+  Total Mac Addresses for this criterion: 1
 
 [131/346] sw1 SW1# show mac address-table interface FastEthernet0/9
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0009    STATIC      FastEthernet0/9
+  
+  Total Mac Addresses for this criterion: 1
 
 [132/346] sw1 SW1# show mac address-table interface FastEthernet0/10
   Mac Address Table
   -------------------------------------------
-  No entries.
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       0000.dead.0010    STATIC      FastEthernet0/10
+  
+  Total Mac Addresses for this criterion: 1
 
 [133/346] sw1 SW1# show mac address-table interface FastEthernet0/11
   Mac Address Table
@@ -1138,6 +1205,16 @@ Total steps: 346
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  1       0000.dead.0001    STATIC      FastEthernet0/1
+  1       0000.dead.0002    STATIC      FastEthernet0/2
+  1       0000.dead.0003    STATIC      FastEthernet0/3
+  1       0000.dead.0004    STATIC      FastEthernet0/4
+  1       0000.dead.0005    STATIC      FastEthernet0/5
+  1       0000.dead.0006    STATIC      FastEthernet0/6
+  1       0000.dead.0007    STATIC      FastEthernet0/7
+  1       0000.dead.0008    STATIC      FastEthernet0/8
+  1       0000.dead.0009    STATIC      FastEthernet0/9
+  1       0000.dead.0010    STATIC      FastEthernet0/10
   1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
   1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
   1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
@@ -1145,7 +1222,7 @@ Total steps: 346
   1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 6
+  Total Mac Addresses for this criterion: 16
 
 [149/346] l1 l1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -1955,6 +2032,16 @@ Total steps: 346
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
+  1       0000.dead.0001    STATIC      FastEthernet0/1
+  1       0000.dead.0002    STATIC      FastEthernet0/2
+  1       0000.dead.0003    STATIC      FastEthernet0/3
+  1       0000.dead.0004    STATIC      FastEthernet0/4
+  1       0000.dead.0005    STATIC      FastEthernet0/5
+  1       0000.dead.0006    STATIC      FastEthernet0/6
+  1       0000.dead.0007    STATIC      FastEthernet0/7
+  1       0000.dead.0008    STATIC      FastEthernet0/8
+  1       0000.dead.0009    STATIC      FastEthernet0/9
+  1       0000.dead.0010    STATIC      FastEthernet0/10
   1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
   1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
   1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
@@ -1962,16 +2049,16 @@ Total steps: 346
   1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 6
+  Total Mac Addresses for this criterion: 16
 
 [270/346] sw1 SW1# show mac address-table count
   Mac Address Table
   -------------------------------------------
   Vlan    Mac Address Count
   ------  -----------------
-  1             6
+  1             16
   
-  Total Mac Addresses for this criterion: 6
+  Total Mac Addresses for this criterion: 16
 
 [271/346] sw2 SW2> show mac address-table
   Mac Address Table

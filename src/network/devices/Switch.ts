@@ -327,8 +327,18 @@ export abstract class Switch extends Equipment {
   private psecAgingScheduler: IScheduler | null = null;
   private psecUnsubscribers: Array<() => void> = [];
 
+  /**
+   * Les interfaces LoopBack de la boîte. VRP en autorise sur un switch
+   * L3 et c'est le procédé normal pour fixer un identifiant de routeur —
+   * une adresse qui ne tombe pas avec un port. Elles sont toujours up :
+   * c'est la définition d'une loopback, pas un raccourci.
+   */
+  private readonly loopbacks = new Map<string, { name: string; ip?: IPAddress; mask?: SubnetMask }>();
+
   // ─── L3 Management Plane (SVIs) ────────────────────────────────
   private readonly svi: SwitchSvi = new SwitchSvi({
+    getNonSviLocalIps: () => [...this.loopbacks.values()]
+      .map((l) => l.ip).filter((ip): ip is IPAddress => ip !== undefined),
     deviceId: this.id,
     getHostname: () => this.getHostname(),
     getBridgeMac: () => this.getBridgeMac(),
@@ -352,7 +362,15 @@ export abstract class Switch extends Equipment {
     isDhcpRelayInfoEnabled: () => this.dhcpServer.isRelayInformationOptionEnabled(),
     getDhcpServer: () => this.dhcpServer,
     recordArp: (dir, op) => this.arpStats.record(dir, op),
+    natTranslateInbound: (pkt, inIface) => this.getNATEngine()?.translateInbound(pkt, inIface) ?? null,
+    natTranslateOutbound: (pkt, outIface, inIface, opts) =>
+      this.getNATEngine()?.translateOutbound(pkt, outIface, inIface, opts) ?? null,
+    natIsOutsideInterface: (iface) => this.getNATEngine()?.isOutsideInterface(iface) ?? false,
   });
+
+  private getNATEngine(): import('./router/NATEngine').NATEngine | null {
+    return (this as unknown as { _getNATEngine?: () => import('./router/NATEngine').NATEngine })._getNATEngine?.() ?? null;
+  }
 
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: ISwitchShell;
@@ -2229,6 +2247,39 @@ export abstract class Switch extends Equipment {
       payload: { deviceId: this.id, portName },
     });
   }
+  // ─── LoopBack configuration API (used by the vendor shell) ────────
+
+  /** `interface LoopBack N` — matérialise l'interface si elle est neuve. */
+  ensureLoopback(name: string): void {
+    if (!this.loopbacks.has(name)) this.loopbacks.set(name, { name });
+  }
+
+  configureLoopbackIp(name: string, ip: IPAddress, mask: SubnetMask): void {
+    const lb = this.loopbacks.get(name) ?? { name };
+    lb.ip = ip;
+    lb.mask = mask;
+    this.loopbacks.set(name, lb);
+  }
+
+  clearLoopbackIp(name: string): void {
+    const lb = this.loopbacks.get(name);
+    if (lb) { lb.ip = undefined; lb.mask = undefined; }
+  }
+
+  /** `undo interface LoopBack N` — l'interface disparaît entièrement. */
+  removeLoopback(name: string): boolean { return this.loopbacks.delete(name); }
+
+  hasLoopback(name: string): boolean { return this.loopbacks.has(name); }
+
+  getLoopbacks(): Array<{ name: string; ip?: IPAddress; mask?: SubnetMask }> {
+    return [...this.loopbacks.values()]
+      .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
+  }
+
+  getLoopback(name: string): { name: string; ip?: IPAddress; mask?: SubnetMask } | undefined {
+    return this.loopbacks.get(name);
+  }
+
   hasSvi(vlan: number): boolean { return this.svi.hasSvi(vlan); }
   setIpRoutingEnabled(v: boolean): void { this.ipRoutingEnabled = v; }
   isIpRoutingEnabled(): boolean { return this.ipRoutingEnabled; }

@@ -3086,6 +3086,21 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.iptables.evaluateNat(pkt, 'PREROUTING');
   }
 
+  protected override evaluateNatOutput(
+    srcIP: string, dstIP: IPAddress, dstPort: number, srcPort: number,
+    protocol: number, tentativeOutIface: string,
+  ): { action: string; address?: string } | null {
+    const pkt: PacketInfo = {
+      direction: 'out',
+      protocol,
+      srcIP,
+      dstIP: dstIP.toString(),
+      srcPort, dstPort,
+      iface: tentativeOutIface,
+    };
+    return this.executor.iptables.evaluateNat(pkt, 'OUTPUT');
+  }
+
   protected override evaluatePreRouting6(
     inPort: string,
     ipv6Pkt: import('../core/types').IPv6Packet,

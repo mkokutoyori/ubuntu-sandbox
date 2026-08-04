@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-08-03T11:43:08.457Z
+Generated: 2026-08-04T08:22:08.510Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1821,7 +1821,7 @@ Total steps: 413
 [341/413] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1AFD4C.82D0E560 (11:43:08.511 UTC Mon Aug 3 2026)
+  reference time is EE1C1FB0.9126E978 (08:22:08.567 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1# show ntp associations
@@ -1830,7 +1830,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *11:43:08.000 UTC Mon Aug 3 2026
+  *08:22:08.000 UTC Tue Aug 4 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1873,7 +1873,7 @@ Total steps: 413
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [349/413] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -2577,6 +2577,7 @@ Total steps: 413
 
 [410/413] r1 R1(config)# no ?
     sntp         Configure SNTP
+    boot         
     hostname     Reset hostname
     alias        Remove a command alias
     cdp          CDP global configuration
