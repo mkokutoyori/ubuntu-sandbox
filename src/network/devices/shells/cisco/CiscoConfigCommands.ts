@@ -14,6 +14,7 @@ import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
+import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -757,9 +758,21 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
   trie.registerGreedy('rate-limit', 'Rate-limit (legacy CAR)', (args, raw) => {
-    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.rateLimits ??= []).push(raw ?? `rate-limit ${args.join(' ')}`);
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    // La règle est ANALYSÉE puis posée sur un vrai policier. Avant, la
+    // ligne brute était empilée sur le port et lue par personne : la
+    // commande était acceptée, absente de la running-config, sans vue,
+    // et surtout sans effet sur un seul paquet.
+    const regle = parseRateLimitRule(args, raw ?? `rate-limit ${args.join(' ')}`);
+    if (!regle) return "% Invalid input detected at '^' marker.";
+    ctx.r().getCarPolicer(ifName, true)!.add(regle);
+    return '';
+  });
+  trie.registerGreedy('no rate-limit', 'Remove rate-limit (CAR)', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    ctx.r().getCarPolicer(ifName)?.clear();
     return '';
   });
   trie.register('ip nbar protocol-discovery', 'Enable NBAR protocol discovery', () => {

@@ -512,6 +512,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected onSave(): string {
     this.d().writeMemory();
     this.startupAliases = this.aliases.snapshot();
+    this.archiveAfterSave();
     return 'Building configuration...\n[OK]';
   }
 
@@ -947,7 +948,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (sub === 'summary') return Show.showInterfacesSummary(getRouter());
       if (sub === 'trunk') return Show.showInterfacesTrunk(getRouter());
       const last = args[args.length - 1]?.toLowerCase();
-      const isViewModifier = last === 'accounting' || last === 'stats' || last === 'switchport';
+      const isViewModifier = last === 'accounting' || last === 'stats'
+        || last === 'switchport' || last === 'rate-limit';
       const ifPart = isViewModifier ? args.slice(0, -1).join(' ') : args.join(' ');
       const ifName = resolveInterfaceName(getRouter(), ifPart);
       if (!ifName) {
@@ -960,6 +962,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (last === 'accounting') return Show.showInterfaceAccounting(getRouter(), ifName);
       if (last === 'stats') return Show.showInterfaceStats(getRouter(), ifName);
       if (last === 'switchport') return Show.showInterfaceSwitchport(getRouter(), ifName);
+      if (last === 'rate-limit') return Show.showInterfaceRateLimit(getRouter(), ifName);
       return Show.showInterface(getRouter(), ifName);
     };
     trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);

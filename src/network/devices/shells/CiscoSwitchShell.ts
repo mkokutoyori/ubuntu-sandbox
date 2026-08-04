@@ -27,6 +27,7 @@ import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRen
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import { showInterface } from './cisco/CiscoShowCommands';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
+import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
@@ -40,7 +41,7 @@ import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
   | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp'
-  | 'config-access-map';
+  | 'config-access-map' | 'config-archive' | 'config-archive-log';
 
 /**
  * Raised when a command needs a protocol this switch does not run.
@@ -72,6 +73,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configVlanTrie = new CommandTrie();
   private configMstTrie = new CommandTrie();
+  private configArchiveTrie = new CommandTrie();
+  private configArchiveLogTrie = new CommandTrie();
   private configDhcpTrie = new CommandTrie();
   private selectedDhcpPool: string | null = null;
 
@@ -257,7 +260,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   protected getPromptMap(): PromptMap { return CISCO_SWITCH_PROMPTS; }
 
   protected onSave(): string {
-    return this.d().writeMemory();
+    const out = this.d().writeMemory();
+    this.archiveAfterSave();
+    return out;
   }
 
   protected getActiveTrie(): CommandTrie {
@@ -268,6 +273,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       case 'config-if':   return this.configIfTrie;
       case 'config-vlan': return this.configVlanTrie;
       case 'config-mst':  return this.configMstTrie;
+      case 'config-archive':     return this.configArchiveTrie;
+      case 'config-archive-log': return this.configArchiveLogTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-acl':  return this.configAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
@@ -1679,6 +1686,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     });
+
+    // `archive` — la même famille que sur le routeur, construite par le
+    // même module (`CiscoArchiveCommands`) plutôt que recopiée : deux
+    // plateformes qui archivent différemment seraient un défaut, pas une
+    // fonctionnalité.
+    this.configTrie.register('archive', 'Enter archive configuration', () => {
+      this.mode = 'config-archive';
+      return '';
+    });
+    const archiveOf = () => this.archiveService();
+    buildArchiveSubmodeOn(this.configArchiveTrie, archiveOf, () => {
+      this.mode = 'config-archive-log';
+    });
+    buildArchiveLogSubmodeOn(this.configArchiveLogTrie, archiveOf);
 
     // config-mst sub-mode
     this.configMstTrie.registerGreedy('name', 'Set MST region name', (a) => {
@@ -3256,6 +3277,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
 
     for (const l of this.logging.asRunningConfigLines()) lines.push(l);
+
+    // Sans ce bloc, un `archive` configuré sur le switch serait perdu à
+    // l'import d'une topologie — la running-config est ce qui REFAIT la
+    // configuration, pas seulement ce qui la décrit.
+    const archive = (sw as unknown as {
+      getArchiveService?: () => import('../router/archive/ArchiveService').ArchiveService;
+    }).getArchiveService?.();
+    if (archive) {
+      const al = archive.asRunningConfigLines();
+      if (al.length > 0) { lines.push('!'); lines.push(...al); }
+    }
 
     const unhandled = (sw as unknown as { getUnhandledConfigLines?: () => readonly string[] }).getUnhandledConfigLines?.() ?? [];
     if (unhandled.length > 0) {
