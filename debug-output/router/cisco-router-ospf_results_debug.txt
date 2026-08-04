@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-08-03T17:42:05.644Z
+Generated: 2026-08-04T08:22:05.047Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1428,7 +1428,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1B516D.D0E56041 (17:42:05.816 UTC Mon Aug 3 2026)
+  reference time is EE1C1FAD.249BA5E3 (08:22:05.143 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1437,7 +1437,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *17:42:05.000 UTC Mon Aug 3 2026
+  *08:22:05.000 UTC Tue Aug 4 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-08-03T17:40:15.700Z
+Generated: 2026-08-04T08:20:27.713Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -1009,18 +1009,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-08-03 17:40:18--  http://192.168.10.1
+  --2026-08-04 08:20:30--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-08-03 17:40:18--  http://192.168.10.1
+  --2026-08-04 08:20:30--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-08-03 17:40:18--  http://192.168.10.99
+  --2026-08-04 08:20:30--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1186,11 +1186,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 77 Aug  3 17:40 /tmp/id_rsa
-  -rw-r--r-- 1 user user 38 Aug  3 17:40 /tmp/id_rsa.pub
+  -rw------- 1 user user 77 Aug  4 08:20 /tmp/id_rsa
+  -rw-r--r-- 1 user user 38 Aug  4 08:20 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAA2scsk1mornr user@linux-pc
+  ssh-rsa AAAAbn8ml2o57yf user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1199,7 +1199,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAj2lcbv5baos user@localhost
+  ssh-ed25519 AAAA85njkr5m4j5 user@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]

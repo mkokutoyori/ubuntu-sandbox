@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-08-03T17:42:04.642Z
+Generated: 2026-08-04T08:22:04.365Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [4/482] r1 R1> show calendar
-  17:42:04 UTC Mon Aug 3 2026
+  08:22:04 UTC Tue Aug 4 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -435,7 +435,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1B516C.A872B020 (17:42:04.658 UTC Mon Aug 3 2026)
+  reference time is EE1C1FAC.6189374B (08:22:04.381 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -724,10 +724,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [81/482] r1 R1# show calendar
-  17:42:04 UTC Mon Aug 3 2026
+  08:22:04 UTC Tue Aug 4 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1141,7 +1141,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1B516C.AB851EB8 (17:42:04.670 UTC Mon Aug 3 2026)
+  reference time is EE1C1FAC.63D70A3D (08:22:04.390 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1543,7 +1543,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1552,7 +1552,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1561,7 +1561,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1570,7 +1570,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1579,7 +1579,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1588,7 +1588,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1597,7 +1597,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1606,7 +1606,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1615,7 +1615,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1624,7 +1624,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1633,7 +1633,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1642,7 +1642,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1651,7 +1651,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1660,7 +1660,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1669,7 +1669,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1678,7 +1678,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1687,7 +1687,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1696,7 +1696,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1705,7 +1705,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1714,7 +1714,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1723,7 +1723,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1732,7 +1732,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config)# do show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [221/482] r1 R1(config)# exit
 <empty>
@@ -2083,9 +2083,10 @@ Total steps: 482
     flow                NetFlow
 
 [273/482] r1 R1-EDGE(config-if)# ip address ?
-    dhcp       Configure IP via DHCP
-    secondary  
-    <cr>       
+    dhcp        Configure IP via DHCP
+    negotiated  
+    secondary   
+    <cr>        
 
 [274/482] r1 R1-EDGE(config-if)# ip ospf ?
     bfd                  Enable BFD on this OSPF interface
@@ -3259,7 +3260,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1B516C.D53F7CED (17:42:04.833 UTC Mon Aug 3 2026)
+  reference time is EE1C1FAC.7851EB85 (08:22:04.470 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -3268,7 +3269,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *17:42:04.000 UTC Mon Aug 3 2026
+  *08:22:04.000 UTC Tue Aug 4 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
