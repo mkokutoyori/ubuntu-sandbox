@@ -179,7 +179,21 @@ export class ServicePortProjection {
   private releaseBound(unit: string, binding: ServicePortBinding): void {
     const server = this.servers.get(unit);
     if (!server) return;
-    for (const spec of this.bound.get(unit) ?? []) {
+    // L'union de ce que la projection a inscrit ET de ce que l'unité
+    // déclare aujourd'hui. Le registre seul suffirait si la projection
+    // était la seule à lier, mais un port posé directement au démarrage
+    // (le 1521 du listener TNS) n'y figure pas et survivrait au `stop` ;
+    // la liste déclarée seule, elle, raterait un port que la configuration
+    // a changé depuis. Il faut les deux.
+    const seen = new Set<string>();
+    const toRelease = [...(this.bound.get(unit) ?? []), ...binding.sockets]
+      .filter((spec) => {
+        const key = `${spec.protocol}:${spec.address ?? ALL_INTERFACES}:${spec.port}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    for (const spec of toRelease) {
       const address = spec.address ?? ALL_INTERFACES;
       server.close(spec);
       const removed = this.socketTable.unbind(spec.protocol, address, spec.port);

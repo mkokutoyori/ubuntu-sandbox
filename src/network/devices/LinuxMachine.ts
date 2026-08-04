@@ -921,6 +921,14 @@ export abstract class LinuxMachine extends EndHost
     // posée hors de la projection. Il déclare donc son serveur — APRÈS
     // l'avoir ouverte — sinon `ss` cacherait un port joignable, l'erreur
     // symétrique de celle que §P0 corrige et tout aussi trompeuse.
+    // Même statut que la dette du port 1521 ci-dessus : le listener TNS est
+    // piloté par `lsnrctl`/systemd et doit continuer à apparaître, faute de
+    // quoi c'est tout le sous-système Oracle qui perd sa cohérence — sans
+    // que ce chantier lui ait donné pour autant une écoute réelle.
+    this.executor.registerServiceSocketServer('oracle-ohasd', {
+      open: () => true,
+      close: () => { /* pas d'écoute réelle à fermer : voir la dette ci-dessus */ },
+    });
     this.executor.registerServiceSocketServer('systemd-resolved', {
       open: () => this.resolvedStubBound,
       close: () => { /* le stub appartient au resolver, pas à la projection */ },
@@ -1821,6 +1829,14 @@ export abstract class LinuxMachine extends EndHost
 
     if (isServer) {
       const tnsBanner = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
+      // DETTE CONNUE, et non traitée par docs/PRD-Nginx.md §P0 : rien
+      // n'appelle jamais `TcpStack.listen(1521)`, donc ce port est
+      // décoratif au même titre que celui d'apache2 — `ss` le montre et
+      // aucune connexion n'aboutirait. Il est conservé parce que tout un
+      // sous-système en dépend (la bannière lue ici même, `lsnrctl`, la
+      // détection Oracle de `nmap`), et le nettoyer suppose de donner au
+      // listener TNS une vraie boucle d'acceptation : un chantier à part.
+      // Il est déclaré ici pour que le silence ne le fasse pas oublier.
       this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr', tnsBanner);
       this.socketTable.bind('tcp', '::', 1521, 2001, 'tnslsnr', tnsBanner);
     }
@@ -3268,7 +3284,20 @@ export abstract class LinuxMachine extends EndHost
     // Declare the unit's sockets/daemon BEFORE the reload so the scan
     // stamps them and the port projection binds/unbinds them on
     // start/stop — netstat/ss/ps stay coherent with the service state.
-    if (spec.listener) mgr.registerServiceListener(spec.name, spec.listener);
+    if (spec.listener) {
+      mgr.registerServiceListener(spec.name, spec.listener);
+      // Une unité installée à l'exécution DÉCLARE son écoute : le
+      // sous-système qui la pose affirme posséder le démon, et c'est cette
+      // affirmation qui vaut serveur. La règle de docs/PRD-Nginx.md §P0
+      // porte sur la table statique `SERVICE_LISTENERS`, où vit le décor.
+      // Réserve honnête : le listener TNS d'Oracle passe par ici et n'a
+      // toujours pas de boucle d'acceptation réelle — voir la dette notée
+      // au point de liaison du port 1521.
+      this.executor.registerServiceSocketServer(spec.name, {
+        open: () => true,
+        close: () => { /* l'écoute appartient au sous-système déclarant */ },
+      }, { reconcile: false });
+    }
     mgr.daemonReload();
     if (desired === 'active') {
       mgr.enable(spec.name);

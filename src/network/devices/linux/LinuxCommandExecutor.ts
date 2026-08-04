@@ -376,13 +376,20 @@ export class LinuxCommandExecutor {
    * Sans lui, l'unité peut être `active` et avoir un PID sans ouvrir aucun
    * port — et surtout sans en afficher aucun (docs/PRD-Nginx.md §P0).
    */
-  registerServiceSocketServer(unit: string, server: ServiceSocketServer): void {
+  registerServiceSocketServer(
+    unit: string,
+    server: ServiceSocketServer,
+    opts: { reconcile?: boolean } = {},
+  ): void {
     this.pendingSocketServers.set(unit, server);
     if (!this.servicePortProjection) return;
     this.servicePortProjection.registerServer(unit, server);
     // La projection s'est peut-être déjà réconciliée sans connaître ce
     // serveur : un service actif à cet instant n'aurait ouvert aucun port.
-    this.servicePortProjection.reconcile();
+    // Une unité posée à l'exécution s'en passe : son `start`/`stop` suit
+    // immédiatement et pilotera la liaison par les événements de cycle de
+    // vie — réconcilier ici lutterait contre l'arrêt qu'elle demande.
+    if (opts.reconcile !== false) this.servicePortProjection.reconcile();
   }
 
   private readonly pendingSocketServers = new Map<string, ServiceSocketServer>();

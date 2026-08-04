@@ -99,7 +99,11 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   open(spec: PortSpec): boolean {
     if (spec.protocol !== 'tcp') return false;
     if (this.servers.length === 0 && this.loadConfig() !== null) return false;
-    if (!this.configuredPorts().includes(spec.port)) return false;
+    // Le port demandé vient de systemd, qui a déjà tranché entre ce que
+    // déclare le fichier et un `portOverride` passé en ligne de commande —
+    // et l'override prime, comme sur une vraie machine. Le refuser ici
+    // ferait de `-p 9090` une option acceptée sans effet.
+    if (this.servers.length === 0) return false;
     if (this.sessions.has(spec.port)) return true;
     const session = new Http1ServerSession(
       this.host.tcpStack(), spec.port, (req) => this.respond(spec.port, req),
@@ -146,7 +150,10 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private selectServer(port: number, hostHeader: string): NginxServerBlock | null {
     const onPort = this.servers.filter((s) => s.listen.some((l) => l.port === port));
-    if (onPort.length === 0) return null;
+    // Écoute forcée sur un port qu'aucun bloc ne déclare : le site
+    // configuré est quand même servi, sinon l'override ouvrirait un port
+    // qui ne répond rien.
+    if (onPort.length === 0) return this.servers[0] ?? null;
     const byName = onPort.find((s) => hostMatches(s, hostHeader));
     if (byName) return byName;
     return onPort.find((s) => s.listen.some((l) => l.port === port && l.defaultServer)) ?? onPort[0];
