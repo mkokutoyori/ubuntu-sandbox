@@ -524,6 +524,16 @@ export class LoggingConfig {
         this.append('notifications', 'cdp',
           `Neighbor ${p.remoteHost ?? '?'} expired on ${p.localPort ?? '?'}`);
       }),
+      bus.subscribeWhere('cdp.native-vlan.mismatch', isOurs, (e) => {
+        const p = e.payload as unknown as {
+          port?: string; localVlan?: number; remoteHost?: string;
+          remotePort?: string; remoteVlan?: number;
+        };
+        this.append('warnings', 'cdp',
+          `Native VLAN mismatch discovered on ${p.port ?? '?'} (${p.localVlan ?? '?'}), ` +
+          `with ${p.remoteHost ?? '?'} ${p.remotePort ?? '?'} (${p.remoteVlan ?? '?'}).`,
+          true, 'NATIVE_VLAN_MISMATCH');
+      }),
       bus.subscribeWhere('vrrp.state.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; vrid?: number; oldState?: string; newState?: string };
         this.append('notifications', 'vrrp',
@@ -772,6 +782,7 @@ export class LoggingConfig {
         this.append('warnings', 'sec', p.message, false);
         return;
       }
+      if (p.event === 'cdp:native-vlan-mismatch') return;
       if (p.level === 'error') {
         this.append('errors', this.tagFromEvent(p.event), p.message, false);
       } else if (p.level === 'warn') {

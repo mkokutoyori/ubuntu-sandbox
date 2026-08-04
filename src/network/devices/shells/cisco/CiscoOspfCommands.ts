@@ -171,6 +171,7 @@ function adresseReseau(ip: string, wildcard: string): string {
   trie.registerGreedy('router-id', 'Set OSPF Router ID', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
+    ctx.r().getOspfIntegration().routerIdManuel = true;
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return '% OSPF is not enabled.';
     ospf.setRouterId(args[0]);
@@ -1138,6 +1139,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     else if (last === 'redistribution') router._ospfAutoConverge();
     else if (last === 'process' || last === 'force-spf' || args.length === 0) {
       ospf.clearEventLog();
+      if (last === 'process') router.getOspfIntegration().reelireRouterId();
       router._ospfAutoConverge();
     }
     return '';

@@ -876,6 +876,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   protected abstract createShell(): IRouterShell;
 
   getShell(): IRouterShell { return this.shell; }
+  getOspfIntegration(): RouterOSPFIntegration { return this.ospfIntegration; }
 
   /**
    * `exec-timeout` of the VTY line, in milliseconds. Real IOS hangs an
@@ -2992,6 +2993,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private _startupConfigSnapshot: string | null = null;
+  private readonly _hostnameUsine = this.name;
   _captureStartupConfig(snapshot: string): void { this._startupConfigSnapshot = snapshot; }
   _eraseStartupConfig(): void { this._startupConfigSnapshot = null; }
 
@@ -3034,6 +3036,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * fidelity this mirrors from `Switch._applyConfigText`).
    */
   _resetConfigurableStateForReload(): void {
+    this._setHostnameInternal(this._hostnameUsine);
     for (const ifName of [...this.ports.keys()]) {
       this.unconfigureInterface(ifName);
       this.setInterfaceDescription(ifName, '');

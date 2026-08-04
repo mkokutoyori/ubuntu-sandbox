@@ -387,6 +387,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (path === 'reload' && m.args.length === 0) {
       return this.reloadInteractionPlan();
     }
+    if (path === 'clear ip ospf' && m.args[0]?.toLowerCase() === 'process') {
+      return {
+        steps: [
+          {
+            kind: 'confirmation',
+            prompt: 'Reset ALL OSPF processes? [no]:',
+            defaultAnswer: 'no',
+            storeAs: 'ospf_reset_confirmed',
+          },
+          { kind: 'run', run: async (rt) => { await rt.exec('clear ip ospf process'); } },
+        ],
+      };
+    }
     if (path === 'copy' && m.args.length === 2) {
       const norm = (a: string): string => {
         const t = a.toLowerCase();

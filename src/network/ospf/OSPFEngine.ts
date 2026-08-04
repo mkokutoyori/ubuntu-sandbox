@@ -788,9 +788,13 @@ export class OSPFEngine implements IProtocolEngine {
     const iface = this.interfaces.get(ifName);
     if (iface) {
       iface.passive = true;
-      // Stop hello timer on passive interfaces
       this.timers.clear(iface.helloTimer);
       iface.helloTimer = null;
+      for (const neighbor of [...iface.neighbors.values()]) {
+        this.neighborEvent(iface, neighbor, 'KillNbr');
+      }
+      iface.neighbors.clear();
+      this.scheduleSPF();
     }
   }
 
