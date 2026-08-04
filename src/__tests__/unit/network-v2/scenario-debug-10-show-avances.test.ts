@@ -49,6 +49,7 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
     // Buffer de logs et horodatage milliseconde, comme préconisé par le scénario.
     await rtr.executeCommand('logging buffered 1000000 debug');
     await rtr.executeCommand('service timestamps debug datetime msec');
+    await rtr.executeCommand('service timestamps log datetime msec');
     // Accès SSH pour la collecte à distance.
     await rtr.executeCommand('username admin privilege 15 secret Mandeng2025');
     await rtr.executeCommand('ip domain-name mandeng.local');

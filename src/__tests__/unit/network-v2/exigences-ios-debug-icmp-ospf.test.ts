@@ -125,6 +125,9 @@ describe('Exigence 2 — arrêt global du debug et état courant', () => {
 
   it('un drapeau actif est listé nommément', async () => {
     const r = await routeurPrivilegie();
+    await run(r, 'configure terminal');
+    await run(r, 'router ospf 1');
+    await run(r, 'end');
     await run(r, 'debug ip ospf events');
     const out = await run(r, 'show debugging');
     expect(out).toMatch(/OSPF events debugging is on/i);
@@ -132,6 +135,9 @@ describe('Exigence 2 — arrêt global du debug et état courant', () => {
 
   it('`undebug all` coupe tout et le confirme', async () => {
     const r = await routeurPrivilegie();
+    await run(r, 'configure terminal');
+    await run(r, 'router ospf 1');
+    await run(r, 'end');
     await run(r, 'debug ip ospf events');
     expect(await run(r, 'undebug all')).toContain('All possible debugging has been turned off');
     expect(await run(r, 'show debugging')).toContain('No debug flags are enabled');
@@ -184,6 +190,7 @@ describe('Exigence 3 — horodatage standardisé des logs', () => {
     journal.subscribeConsole((l) => vues.push(l));
     await run(r, 'configure terminal');
     await run(r, 'service timestamps debug datetime msec');
+    await run(r, 'router ospf 1');
     await run(r, 'end');
     await run(r, 'debug ip ospf events');
 
@@ -209,11 +216,11 @@ describe('Exigence 5 — chaque caractère de ping est une réponse ICMP précis
     await run(r, 'no shutdown');
     await run(r, 'end');
     const out = await run(r, 'ping 203.0.113.9');
-    expect(out).toMatch(/N{2,}/);
+    expect(out).toMatch(/\.{2,}/);
     expect(out).toMatch(/Success rate is 0 percent/);
   });
 
-  it('`A` quand la cible refuse par ACL (type 3 code 13)', async () => {
+  it('`U` quand la cible refuse par ACL — IOS ne distingue pas le code', async () => {
     // Une ACL SORTANTE ne filtre pas le trafic que le routeur produit
     // lui-même : c'est le pair qui refuse, en entrée, et qui renvoie
     // l'ICMP Administratively Prohibited.
@@ -226,7 +233,7 @@ describe('Exigence 5 — chaque caractère de ping est une réponse ICMP précis
     await run(r2, 'ip access-group 101 in');
     await run(r2, 'end');
     const out = await run(r1, 'ping 10.0.0.2');
-    expect(out).toMatch(/A{2,}/);
+    expect(out).toMatch(/U{2,}/);
   });
 });
 
@@ -307,14 +314,19 @@ describe('Exigence 8 — un masque discordant interdit l\'adjacence OSPF', () =>
     const journal = r1.getLoggingConfig()!;
     const vues: string[] = [];
     journal.subscribeConsole((l) => vues.push(l));
+    // `debug ip ospf` exige un processus OSPF : on monte celui de r1, on arme
+    // le debug, PUIS r2 rejoint — sinon la discordance est déjà passée.
+    await run(r1, 'configure terminal');
+    await run(r1, 'router ospf 1');
+    await run(r1, 'router-id 1.1.1.1');
+    await run(r1, 'network 10.0.0.0 0.0.0.255 area 0');
+    await run(r1, 'end');
     await run(r1, 'debug ip ospf hello');
-    for (const [r, rid] of [[r1, '1.1.1.1'], [r2, '2.2.2.2']] as [CiscoRouter, string][]) {
-      await run(r, 'configure terminal');
-      await run(r, 'router ospf 1');
-      await run(r, `router-id ${rid}`);
-      await run(r, 'network 10.0.0.0 0.0.0.255 area 0');
-      await run(r, 'end');
-    }
+    await run(r2, 'configure terminal');
+    await run(r2, 'router ospf 1');
+    await run(r2, 'router-id 2.2.2.2');
+    await run(r2, 'network 10.0.0.0 0.0.0.255 area 0');
+    await run(r2, 'end');
     const tout = vues.join('\n');
     expect(tout).toMatch(/Mismatched hello parameters from 10\.0\.0\.2/);
     expect(tout).toMatch(/Dead R 40 C 40, Hello R 10 C 10, Mask R 255\.255\.255\.128 C 255\.255\.255\.0/);

@@ -78,6 +78,28 @@ export interface LoggingClockSource {
   authoritative(): boolean;
 }
 
+/**
+ * Built here rather than at each call site so the shell and the device
+ * cannot hand the same logging config two different clocks.
+ */
+export function deviceClockSource(device: unknown): LoggingClockSource {
+  const dev = device as {
+    getUptimeMs?: () => number;
+    getSystemClockMs?: () => number;
+    getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
+    getNtpAgent?: () => { isSynced?: () => boolean };
+  };
+  return {
+    uptimeMs: () => dev.getUptimeMs?.() ?? 0,
+    epochMs: () => dev.getSystemClockMs?.() ?? Date.now(),
+    zone: () => {
+      const c = dev.getManagementService?.().getClock();
+      return { name: c?.timezone ?? 'UTC', offsetMin: c?.offsetMin ?? 0 };
+    },
+    authoritative: () => dev.getNtpAgent?.().isSynced?.() ?? false,
+  };
+}
+
 export class LoggingConfig {
   enabled = true;                       // `logging on` (IOS default on)
   buffered = false;
@@ -269,6 +291,18 @@ export class LoggingConfig {
    * which have no `log`-topic equivalent) keep the default `true` so
    * `device.syslog.entry` remains their only forwarding path.
    */
+  appendDebugLine(text: string): void {
+    if (!this.enabled) return;
+    const ts = this.clock?.epochMs() ?? Date.now();
+    // Même fabrication de ligne que `append` : le tampon garde le rendu,
+    // et deux façons de le construire finiraient par se contredire sur
+    // l'horodatage.
+    const rendu = this.formatEntry('debugging', 'debug', text, ts, undefined, this.uptimeNow());
+    this.messages.push({ ts, severity: 'debugging', tag: 'debug', text, rendu });
+    const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
+    while (this.messages.length > cap) this.messages.shift();
+  }
+
   append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
     if (!this.enabled) return;
     if (severity === 'debugging' && !this.debugAllowed(tag)) return;
@@ -378,6 +412,9 @@ export class LoggingConfig {
       }),
       bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload;
+        const versFull = String(p.newState).toLowerCase() === 'full';
+        const quitteFull = String(p.oldState).toLowerCase() === 'full';
+        if (!versFull && !quitteFull) return;
         this.append('notifications', 'ospf',
           `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`,
           true, 'ADJCHG');

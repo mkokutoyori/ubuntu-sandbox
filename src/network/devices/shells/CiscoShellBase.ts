@@ -43,7 +43,7 @@ import {
 } from './cisco/CiscoCommonShow';
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
-import { LoggingConfig, defaultTimestampSpec } from '../inspection/config/LoggingConfig';
+import { LoggingConfig, defaultTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
@@ -141,19 +141,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // counter, its own `clock set` clock, its own `clock timezone`, and
     // its own NTP state for the `*` marker. A switch carries none of the
     // last three and takes the defaults.
-    const dev = device as unknown as {
-      getUptimeMs?: () => number;
-      getSystemClockMs?: () => number;
-    };
-    this.logging.attachClockSource({
-      uptimeMs: () => dev.getUptimeMs?.() ?? 0,
-      epochMs: () => dev.getSystemClockMs?.() ?? Date.now(),
-      zone: () => {
-        const c = getManagementService(device)?.getClock();
-        return { name: c?.timezone ?? 'UTC', offsetMin: c?.offsetMin ?? 0 };
-      },
-      authoritative: () => getNtpAgent(device)?.isSynced?.() ?? false,
-    });
+    this.logging.attachClockSource(deviceClockSource(device));
   }
 
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
@@ -998,6 +986,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const lower = cmdPart.toLowerCase();
     const firstWord = cmdPart.split(/\s+/)[0];
     if (/[A-Z]/.test(firstWord) && (firstWord.toLowerCase() === 'debug' || firstWord.toLowerCase() === 'undebug')) {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
+    if (this.mode === 'user' && /^(un)?deb(u(g)?)?\b/i.test(cmdPart)) {
       return CISCO_ERRORS.INVALID_INPUT;
     }
     if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
@@ -1973,7 +1964,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       getDebugService?: () => {
         enable(c: string, scope?: string): string;
         disable(c: string): string;
-        addCondition(kind: 'interface' | 'vrf', value: string): string;
+        addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
         removeCondition(kind: 'interface' | 'vrf', value: string): string;
         clearConditions(): void;
       };
@@ -2005,7 +1996,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!svc) return '';
       const kind = (args[0] ?? '').toLowerCase();
       const value = args.slice(1).join(' ').trim();
-      if (kind !== 'interface' && kind !== 'vrf') return CISCO_ERRORS.INVALID_INPUT;
+      if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;
       const resolved = kind === 'interface'
         ? (this.resolveInterfaceNameForDebug(value) ?? value)
@@ -2018,7 +2009,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const kind = (args[0] ?? '').toLowerCase();
       if (kind === 'all') { svc.clearConditions(); return 'All conditions have been removed'; }
       const value = args.slice(1).join(' ').trim();
-      if (kind !== 'interface' && kind !== 'vrf') return CISCO_ERRORS.INVALID_INPUT;
+      if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;
       const resolved = kind === 'interface'
         ? (this.resolveInterfaceNameForDebug(value) ?? value)

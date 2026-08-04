@@ -2773,8 +2773,9 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     it('250. should execute successfully and return status 0 on clean diagnostics query', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
-      const output = await topo.r1.executeCommand('show ip nat translations && echo "DIAG_OK"');
-      expect(output).toContain('DIAG_OK');
+      const output = await topo.r1.executeCommand('show ip nat translations');
+      expect(output).toContain('Inside global');
+      expect(output).not.toContain('Invalid input');
     });
   });
 
@@ -4273,8 +4274,9 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       const topo = setupNATTopology();
       await configureBasicNATRouting(topo);
       await topo.r1.executeCommand('enable');
-      const output = await topo.r1.executeCommand('show ip nat translations && echo "NAT_PAT_COMPLETE"');
-      expect(output).toContain('NAT_PAT_COMPLETE');
+      const output = await topo.r1.executeCommand('show ip nat translations');
+      expect(output).toContain('Inside global');
+      expect(output).not.toContain('Invalid input');
     });
   });
 });

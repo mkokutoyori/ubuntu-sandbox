@@ -333,7 +333,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('37. should return unlisted/blank suggestions if no commands match typed prefix ("z?")', async () => {
       const r = setupRouter();
       const output = await r.executeCommand('z?');
-      expect(output.trim()).toBe('');
+      expect(output.trim()).toBe('% Unrecognized command');
     });
 
     it('38. should list command sub-arguments dynamically ("show ip route ?")', async () => {
@@ -829,8 +829,9 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
 
     it('100. should execute successfully and return status 0 on default help commands validations', async () => {
       const r = setupRouter();
-      const output = await r.executeCommand('? && echo "CLI_OK"');
-      expect(output).toContain('CLI_OK');
+      const output = await r.executeCommand('?');
+      expect(output).toMatch(/^\s{2}\S+\s{2,}\S/m);
+      expect(output).not.toContain('Invalid input');
     });
   });
 
@@ -1238,8 +1239,10 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('145. should execute successfully and return status 0 on clean history checks', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('show history && echo "HISTORY_OK"');
-      expect(output).toContain('HISTORY_OK');
+      await r.executeCommand('show clock');
+      const output = await r.executeCommand('show history');
+      expect(output).toContain('show clock');
+      expect(output).not.toContain('Invalid input');
     });
   });
 
@@ -1435,8 +1438,10 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('165. should execute successfully and return status 0 on default banner deletions', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('configure terminal && no banner motd && end && echo "BANNER_CLEARED"');
-      expect(output).toContain('BANNER_CLEARED');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('no banner motd');
+      await r.executeCommand('end');
+      expect(await r.executeCommand('show running-config')).not.toContain('banner motd');
     });
   });
 
@@ -1641,8 +1646,11 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('185. should execute successfully and return status 0 on complete login authentication configurations', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('configure terminal && line console 0 && login && end && echo "LOGIN_OK"');
-      expect(output).toContain('LOGIN_OK');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('line console 0');
+      expect(await r.executeCommand('login')).not.toContain('Invalid input');
+      await r.executeCommand('end');
+      expect(await r.executeCommand('show running-config')).toMatch(/line con(sole)? 0/);
     });
   });
 
@@ -1765,8 +1773,9 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('200. should execute successfully and return status 0 on complete terminal test sweeps', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('show version && echo "TERMINAL_COMPLETE"');
-      expect(output).toContain('TERMINAL_COMPLETE');
+      const output = await r.executeCommand('show version');
+      expect(output).toContain('Cisco IOS Software');
+      expect(output).not.toContain('Invalid input');
     });
   });
 
@@ -2006,8 +2015,10 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('225. should execute successfully and return status 0 on complete alias configurations', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('configure terminal && alias exec c show clock && end && echo "ALIAS_OK"');
-      expect(output).toContain('ALIAS_OK');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('alias exec c show clock');
+      await r.executeCommand('end');
+      expect(await r.executeCommand('show running-config')).toContain('alias exec c show clock');
     });
   });
 
@@ -2248,8 +2259,10 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('250. should execute successfully and return status 0 on clean enable secrets config', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('configure terminal && enable secret super && end && echo "SECRET_OK"');
-      expect(output).toContain('SECRET_OK');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('enable secret super');
+      await r.executeCommand('end');
+      expect(await r.executeCommand('show running-config')).toContain('enable secret');
     });
   });
 
@@ -2494,8 +2507,11 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('275. should execute successfully and return status 0 on advanced VRF and route transitions checks', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('configure terminal && ip vrf RED && rd 100:1 && end && echo "VRF_OK"');
-      expect(output).toContain('VRF_OK');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('ip vrf RED');
+      await r.executeCommand('rd 100:1');
+      await r.executeCommand('end');
+      expect(await r.executeCommand('show running-config')).toContain('ip vrf RED');
     });
   });
 
@@ -2711,8 +2727,9 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('300. should execute successfully and return status 0 on complete terminal sweeps execution', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('show version && echo "CISCO_TERMINAL_COMPLETE"');
-      expect(output).toContain('CISCO_TERMINAL_COMPLETE');
+      const output = await r.executeCommand('show version');
+      expect(output).toContain('Cisco IOS Software');
+      expect(output).not.toContain('Invalid input');
     });
   });
 });

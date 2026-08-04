@@ -1146,19 +1146,26 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   });
   trie.registerGreedy('debug ip ospf', 'Enable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return '% OSPF is not enabled.';
     if (ospf) ospf.logAdjacencyChanges = true;
     const flag = args.join(' ').toLowerCase() || 'adj';
     const debugSvc = getRouter().getDebugService();
-    if (flag.startsWith('adj')) return debugSvc.enable('ip.ospf.adj');
-    if (flag.startsWith('events')) return debugSvc.enable('ip.ospf.events');
-    if (flag.startsWith('spf')) return debugSvc.enable('ip.ospf.spf');
-    if (flag.startsWith('hello')) return debugSvc.enable('ip.ospf.hello');
-    if (flag.startsWith('packet')) return debugSvc.enable('ip.ospf.packet');
-    if (flag.startsWith('lsa')) return debugSvc.enable('ip.ospf.lsa-generation');
+    const motsCles: Array<[string, string]> = [
+      ['adj', 'ip.ospf.adj'],
+      ['events', 'ip.ospf.events'],
+      ['spf', 'ip.ospf.spf'],
+      ['hello', 'ip.ospf.hello'],
+      ['packet', 'ip.ospf.packet'],
+      ['lsa-generation', 'ip.ospf.lsa-generation'],
+    ];
+    for (const [mot, cat] of motsCles) {
+      if (mot.startsWith(flag)) return debugSvc.enable(cat as never);
+    }
     return debugSvc.enable('ip.ospf.adj', flag);
   });
   trie.registerGreedy('no debug ip ospf', 'Disable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return '% OSPF is not enabled.';
     if (ospf) ospf.logAdjacencyChanges = false;
     const debugSvc = getRouter().getDebugService();
     const flag = args.join(' ').toLowerCase() || 'adj';
