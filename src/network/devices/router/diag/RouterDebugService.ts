@@ -190,6 +190,38 @@ export class RouterDebugService implements TerminalDebugSource {
     this.tamponSyslog?.(line);
   }
 
+  private readonly tcpVues = new Map<string, string>();
+
+  private tracerTcp(ip: { src: string; dst: string; transport?: unknown }, dir: string): void {
+    const t = ip.transport as { sourcePort?: number; destinationPort?: number;
+      sequenceNumber?: number; acknowledgementNumber?: number;
+      flags?: { syn?: boolean; ack?: boolean; fin?: boolean; rst?: boolean } } | undefined;
+    if (!t) return;
+    const f = t.flags ?? {};
+    const nom = f.rst ? 'RST'
+      : f.syn && f.ack ? 'SYN-ACK'
+      : f.syn ? 'SYN'
+      : f.fin && f.ack ? 'FIN-ACK'
+      : f.fin ? 'FIN'
+      : f.ack ? 'ACK' : null;
+    if (!nom) return;
+    const verbe = dir === 'rcvd' ? 'received' : 'sending';
+    if (nom === 'RST') {
+      this.emit('ip.tcp', 'TCP: received RST');
+      return;
+    }
+    this.emit('ip.tcp',
+      `TCP: ${verbe} ${nom}, seq ${t.sequenceNumber ?? 0}, ack ${t.acknowledgementNumber ?? 0}`);
+
+    const cle = [ip.src, t.sourcePort, ip.dst, t.destinationPort].join(':');
+    const inverse = [ip.dst, t.destinationPort, ip.src, t.sourcePort].join(':');
+    if (nom === 'SYN-ACK') this.tcpVues.set(inverse, 'syn-ack');
+    else if (nom === 'ACK' && this.tcpVues.get(cle) === 'syn-ack') {
+      this.tcpVues.delete(cle);
+      this.emit('ip.tcp', `TCP: Connection to ${ip.dst}:${t.destinationPort} ESTABLISHED`);
+    }
+  }
+
   private static ligneTransport(proto: number, t: unknown): string | null {
     if (proto === 6) {
       const s = t as { sourcePort?: number; destinationPort?: number; sequenceNumber?: number;
@@ -363,6 +395,7 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('ip.packet', `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`);
       const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
       if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail);
+      if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir);
       if (ip.proto === 1) {
         if (ip.icmpType === 'echo-request') {
           this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`);
@@ -420,8 +453,8 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.routing': return 'IP routing';
       case 'ip.icmp': return 'ICMP packet';
       case 'ip.packet': return 'IP packet';
-      case 'ip.tcp': return 'IP TCP';
-      case 'ip.udp': return 'IP UDP';
+      case 'ip.tcp': return 'TCP special event';
+      case 'ip.udp': return 'UDP packet';
       case 'ip.nat': return 'IP NAT';
       case 'ip.arp': return 'ARP packet';
       case 'interface': return 'Interface';

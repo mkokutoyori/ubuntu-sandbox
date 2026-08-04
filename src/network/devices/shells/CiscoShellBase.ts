@@ -1870,8 +1870,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return `IP packet debugging is on for access list ${aclName}${detail ? ' (detailed)' : ''}`;
       }
       if (sub === 'icmp') return svc.enable('ip.icmp');
-      if (sub === 'tcp') return svc.enable('ip.tcp');
-      if (sub === 'udp') return svc.enable('ip.udp');
+      if (sub === 'tcp' || sub.startsWith('tcp ')) {
+        const reste = args.slice(1).filter(a => !/^transactions$/i.test(a));
+        const acl = reste[0];
+        svc.enable('ip.tcp', acl);
+        return acl
+          ? `TCP special event debugging is on for access list ${acl}`
+          : 'TCP special event debugging is on';
+      }
+      if (sub === 'udp' || sub.startsWith('udp ')) {
+        const acl = args.slice(1)[0];
+        svc.enable('ip.udp', acl);
+        return acl
+          ? `UDP packet debugging is on for access list ${acl}`
+          : 'UDP packet debugging is on';
+      }
       if (sub === 'nat') return svc.enable('ip.nat');
       if (sub === 'arp') return svc.enable('ip.arp');
       if (sub === 'routing') return svc.enable('ip.routing');
