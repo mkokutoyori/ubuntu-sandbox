@@ -240,22 +240,43 @@ describe('Scénarios 4 et 7 — debug condition', () => {
 });
 
 describe('Scénario 5 — changement d\'horodatage à chaud', () => {
+  /**
+   * Deux prémisses corrigées par la mesure, les mêmes que dans
+   * `probe-debug-01` : le format d'IOS est `*Aug  4 13:45:46.046:` et non
+   * un fragment d'ISO `08-04 …`, et c'est `service timestamps log` — pas
+   * `debug` — qui horodate un `%LINK`/`%LINEPROTO`. Le modèle ne portait
+   * qu'un drapeau pour les deux canaux, ce qui rendait les deux formes
+   * interchangeables ici.
+   *
+   * Ce que le cas vérifie reste le même : le format en vigueur est celui
+   * du moment où le message est écrit, sans avoir à relancer quoi que ce
+   * soit.
+   */
   it('le format bascule dès le message suivant', async () => {
-    const { run } = await routeur();
+    const { run, r } = await routeur();
     for (const c of [
       'configure terminal', 'logging buffered 64000 debugging',
-      'service timestamps debug uptime', 'end',
+      'service timestamps log uptime', 'end',
     ]) await run(c);
-    const [g0] = (await routeur()).r.getPortNames();
-    for (const c of ['configure terminal', `interface ${g0}`, 'no shutdown', 'end']) await run(c);
-
-    for (const c of ['configure terminal', 'service timestamps debug datetime msec', 'service timestamps log datetime msec', 'end']) {
-      await run(c);
-    }
+    const [g0] = r.getPortNames();
+    // Un `shutdown`, pas un `no shutdown` : sur un routeur sans câble le
+    // lien ne monte pas, donc seule la mise hors service administrative
+    // produit un message.
     for (const c of ['configure terminal', `interface ${g0}`, 'shutdown', 'end']) await run(c);
 
+    const avant = (await run('show logging')).split('\n')
+      .filter((l) => /^\d{2}:\d{2}:\d{2}: %/.test(l));
+    expect(avant.length, 'le premier message porte la forme uptime').toBeGreaterThan(0);
+
+    for (const c of ['configure terminal', 'service timestamps log datetime msec', 'end']) {
+      await run(c);
+    }
+    for (const c of [
+      'configure terminal', `interface ${g0}`, 'no shutdown', 'shutdown', 'end',
+    ]) await run(c);
+
     const journal = (await run('show logging')).split('\n');
-    const horodatee = journal.filter((l) => /\*?[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}: %/.test(l));
+    const horodatee = journal.filter((l) => /^\*[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}: %/.test(l));
     expect(
       horodatee.length,
       'le message postérieur au changement porte le nouveau format, sans relancer le debug',

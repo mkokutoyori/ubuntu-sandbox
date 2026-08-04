@@ -1477,13 +1477,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     t.register('terminal monitor', 'Send log output to this terminal', () => {
       this.terminalMonitor = true;
-      this.logging.setTerminalMonitor(true);
       return 'Info: Current terminal monitor is on.';
     });
     t.register('undo terminal monitor', 'Stop sending log output to this terminal', () => {
       this.terminalMonitor = false;
       this.terminalDebugging = false;
-      this.logging.setTerminalMonitor(false);
       return 'Info: Current terminal monitor is off.';
     });
 

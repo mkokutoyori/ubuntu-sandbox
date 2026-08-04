@@ -38,6 +38,7 @@
 import { Equipment } from '../equipment/Equipment';
 import type { TaggedEthernetFrame } from './Switch';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
+import { deviceClockSource } from './inspection/config/LoggingConfig';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
@@ -2252,6 +2253,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.counters.icmpOutMsgs++;
     if (icmpType === 'time-exceeded') this.counters.icmpOutTimeExcds++;
     if (icmpType === 'destination-unreachable') this.counters.icmpOutDestUnreachs++;
+    this._debugService?.emitIcmpError(
+      icmpType, code,
+      offendingPkt.destinationIP.toString(), myIP.toString(),
+      offendingPkt.sourceIP.toString());
 
     const route = this.lookupRoute(offendingPkt.sourceIP);
     if (!route) return;
@@ -2322,10 +2327,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private queueAndResolve(pkt: IPv4Packet, iface: string, nextHopIP: IPAddress, port: Port): void {
     const key = nextHopIP.toString();
     const timer = this.routerTimers.setTimeout(() => {
+      const abandonnes = this.packetQueue.filter(
+        q => q.nextHopIP.equals(nextHopIP) && q.outIface === iface
+      );
       this.packetQueue = this.packetQueue.filter(
         q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
       );
       this.inFlightFwdARPs.delete(key);
+      for (const q of abandonnes) {
+        this._debugService?.emitLine('ip.packet',
+          `IP: s=${q.frame.sourceIP} (${iface}), d=${q.frame.destinationIP}, encapsulation failed`);
+        this.sendICMPError(iface, q.frame, 'destination-unreachable', 1);
+      }
     }, 2000);
 
     this.packetQueue.push({ frame: pkt, outIface: iface, nextHopIP, timer });
@@ -3087,7 +3100,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     journal?.setDebugGate(
       (tag) => this.getDebugService().isEnabledForSyslogTag(tag));
     if (journal) {
-      journal.setUptimeProvider(() => this.getUptimeMs());
+      journal.attachClockSource(deviceClockSource(this));
       this.getDebugService().setSyslogSink((line) => journal.appendDebugLine(line));
     }
   }

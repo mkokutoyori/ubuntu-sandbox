@@ -8,7 +8,8 @@
  *   8  `debug ip nat` montre la translation exacte de l'en-tête
  *   9  un flux massif ne fait pas tomber le simulateur : il est bridé,
  *      et la perte est annoncée
- *  10  `service timestamps debug datetime msec` préfixe chaque ligne
+ *  10  `service timestamps log datetime msec` préfixe chaque ligne, et le
+ *      canal `debug` ne couvre pas le canal `log`
  *  11  `debug ip ospf events` n'expose que le plan de contrôle
  *
  * Ces probes restent dans l'arbre : elles décrivent le contrat de la
@@ -74,11 +75,11 @@ async function lab(): Promise<Lab> {
 describe('Scénario 1 — debug ip icmp', () => {
   it('trace la requête et la réponse avec leurs adresses', async () => {
     const { run, poste, lignes } = await lab();
-    expect(await run('debug ip icmp')).toBe('IP ICMP debugging is on');
+    expect(await run('debug ip icmp')).toBe('ICMP packet debugging is on');
 
     await poste.executeCommand('ping -c 1 10.0.0.1');
 
-    const req = lignes.find((l) => /echo request/.test(l));
+    const req = lignes.find((l) => /echo received/.test(l));
     const rep = lignes.find((l) => /echo reply/.test(l));
     expect(req, 'la requête doit être tracée').toBeDefined();
     expect(req).toContain('src 10.0.0.2');
@@ -218,11 +219,25 @@ describe('Scénario 9 — le debug sous charge est bridé, pas mortel', () => {
 });
 
 describe('Scénario 10 — horodatage à la milliseconde', () => {
-  it('`service timestamps debug datetime msec` préfixe les messages', async () => {
+  /**
+   * Deux prémisses de ce cas étaient fausses, et la mesure les a corrigées.
+   *
+   *  1. Le format attendu était `08-04 13:45:46.046: %…`, un fragment
+   *     d'ISO. IOS écrit `*Aug  4 13:45:46.046: %…` : mois abrégé, jour
+   *     cadré sur deux colonnes, et `*` tant que l'horloge n'est pas
+   *     autoritaire.
+   *  2. Le message inspecté est un `%LINEPROTO-5-UPDOWN`, c'est-à-dire du
+   *     syslog, pas de la sortie de `debug`. Sur IOS, `service timestamps
+   *     debug` ne l'horodate pas — c'est `service timestamps log` qui le
+   *     fait. Le modèle ne portait alors qu'un seul drapeau pour les deux
+   *     canaux, ce qui masquait la distinction.
+   */
+  const HORODATAGE_MSEC = /^\*[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}: %/;
+
+  it('`service timestamps log datetime msec` préfixe les messages', async () => {
     const { run, gIn } = await lab();
     for (const c of [
       'configure terminal',
-      'service timestamps debug datetime msec',
       'service timestamps log datetime msec',
       'logging buffered 64000 debugging',
       'end',
@@ -233,12 +248,34 @@ describe('Scénario 10 — horodatage à la milliseconde', () => {
     }
 
     const journal = await run('show logging');
-    const horodatee = journal.split('\n').find((l) => l.includes('%LINK') || l.includes('%LINEPROTO'));
-    expect(horodatee, 'il faut au moins un message à horodater').toBeDefined();
+    // La DERNIÈRE : le montage du lab a déjà produit des messages de lien
+    // avant que l'horodatage soit configuré, et le tampon les garde tels
+    // qu'ils ont été écrits.
+    const lignes = journal.split('\n').filter((l) => l.includes('%LINK') || l.includes('%LINEPROTO'));
+    expect(lignes.length, 'il faut au moins un message à horodater').toBeGreaterThan(0);
     expect(
-      horodatee,
+      lignes.at(-1),
       'datetime msec = date, heure, et millièmes',
-    ).toMatch(/\*?[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}: %/);
+    ).toMatch(HORODATAGE_MSEC);
+  }, LONG);
+
+  it('`service timestamps debug` seul n\'horodate pas le syslog', async () => {
+    const { run, gIn } = await lab();
+    for (const c of [
+      'configure terminal',
+      'service timestamps debug datetime msec',
+      'logging buffered 64000 debugging',
+      'end',
+    ]) await run(c);
+
+    for (const c of ['configure terminal', `interface ${gIn}`, 'shutdown', 'no shutdown', 'end']) {
+      await run(c);
+    }
+
+    const journal = await run('show logging');
+    const lignes = journal.split('\n').filter((l) => l.includes('%LINK') || l.includes('%LINEPROTO'));
+    expect(lignes.length, 'il faut au moins un message à examiner').toBeGreaterThan(0);
+    expect(lignes.at(-1), 'le canal debug ne couvre pas le canal log').toMatch(/^%[A-Z]/);
   }, LONG);
 
   it('sans l\'option, aucun préfixe d\'horodatage', async () => {

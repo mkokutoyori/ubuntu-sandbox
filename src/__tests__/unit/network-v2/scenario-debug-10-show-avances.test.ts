@@ -121,7 +121,14 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(await run('show logging')).toMatch(/Buffer logging: level debugging, 1000000 bytes/);
     });
 
-    it('`service timestamps debug datetime msec` devrait horodater le buffer à la milliseconde', async () => {
+    it('`service timestamps log datetime msec` devrait horodater le buffer à la milliseconde', async () => {
+      // Prémisse corrigée par la mesure : les lignes examinées ici sont
+      // des `%LINK`/`%LINEPROTO`, c'est-à-dire du syslog. Sur IOS c'est
+      // `service timestamps log` qui les horodate ; `debug` ne couvre que
+      // la sortie des commandes `debug`.
+      await run('configure terminal');
+      await run('service timestamps log datetime msec');
+      await run('end');
       lienWan.connect(rtr.getPort(wan)!, admin.getPort('eth0')!);
       lienWan.disconnect();
 
