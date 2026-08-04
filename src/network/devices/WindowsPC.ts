@@ -153,6 +153,8 @@ import { cmdSlmgr } from './windows/WinSlmgr';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { CurlHost } from '@/network/http/curl/CurlHost';
+import { runCurl } from '@/network/http/curl/CurlEngine';
 import { cmdPrint } from './windows/WinPrint';
 import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
 import type { RunasHost } from './windows/WinRunas';
@@ -291,6 +293,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** `Cert:\LocalMachine\My` stand-in (PRD-Windows-Server-Advanced.md §5 P13/P14) — available on every Windows host, not just servers, matching real Windows' personal certificate store. */
   private readonly certStore = new WindowsCertStore();
   getCertStore(): WindowsCertStore { return this.certStore; }
+  /** `Cert:\LocalMachine\Root` — the anchors outbound TLS clients on this host verify against. */
+  private readonly trustedCAs: X509Certificate[] = [];
+  addTrustedCertificateAuthority(cert: X509Certificate): void {
+    this.trustedCAs.push(cert);
+  }
+  getTrustedCertificateAuthorities(): readonly X509Certificate[] { return this.trustedCAs; }
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
@@ -2410,8 +2418,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return outputs.join('\n');
     }
 
-    // Handle piped commands (but not inside redirects)
-    if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
+    // Handle piped commands (but not inside redirects). A `|` inside double
+    // quotes is a literal, exactly as in real cmd.exe — `splitCmdChain`
+    // above already tracks quoting for `||`, and reading this one blind
+    // made `curl -w "%{http_code}|%{size_download}" URL` look like a
+    // pipeline whose right-hand side was a format string.
+    if (WindowsPC.hasUnquotedPipe(trimmed) && !trimmed.match(/[>]/)) {
       return this.executePipedCommand(trimmed);
     }
 
@@ -2732,6 +2744,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'route':    return cmdRoute(netCtx, args);
       case 'wevtutil': return cmdWevtutil(netCtx, args);
       case 'nslookup': return this.cmdNslookup(args);
+      case 'curl':
+      case 'curl.exe': return this.cmdCurl(args);
       case 'ssh':      return this.cmdSsh(args);
       case 'sftp':     return this.cmdSftp(args);
       case 'scp':      return this.cmdScp(args);
@@ -2748,6 +2762,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * respecting double quotes. A single `|` is a PIPE (left intact for
    * the segment's own pipe handling); only `||` is a chain operator.
    */
+  private static hasUnquotedPipe(line: string): boolean {
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; continue; }
+      if (c === '|' && !inQuote) return true;
+    }
+    return false;
+  }
+
   private splitCmdChain(line: string): Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> {
     const links: Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> = [];
     let buf = '';
@@ -3641,6 +3665,28 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private cmdReg(args: string[]): string {
     return winCmdReg(this.registry, args);
+  }
+
+  private curlHost(): CurlHost {
+    return {
+      resolveHostname: async (name: string): Promise<string | null> => {
+        const ip = await this.resolveHostname(name);
+        return ip ? ip.toString() : null;
+      },
+      tcpStack: () => this.getTcpStack(),
+      trustAnchors: () => this.trustedCAs,
+      writeFile: (target: string, content: string): boolean =>
+        this.fs.createFile(this.fs.normalizePath(target, this.cwd), content).ok,
+    };
+  }
+
+  async cmdCurl(args: string[]): Promise<string> {
+    const result = await runCurl(this.curlHost(), args);
+    return [result.output, result.stderr].filter((s) => s.length > 0).join('\n');
+  }
+
+  async runCurlWithStatus(args: string[]): Promise<{ output: string; exitCode: number; stderr: string }> {
+    return runCurl(this.curlHost(), args);
   }
 
   /** nslookup command implementation for Windows */

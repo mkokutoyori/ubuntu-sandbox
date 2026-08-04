@@ -62,6 +62,7 @@ const GLOBAL_MODULES: readonly WebModuleInfo[] = [
 const DEFAULT_APP_POOL = 'DefaultAppPool';
 
 const IIS_SERVER_HEADER = 'Microsoft-IIS/10.0';
+const STATIC_ALLOWED_METHODS = 'GET, HEAD, OPTIONS, TRACE';
 const DEFAULT_SITE_NAME = 'Default Web Site';
 const DEFAULT_PHYSICAL_PATH = 'C:\\inetpub\\wwwroot';
 const DEFAULT_DOCUMENT = 'iisstart.htm';
@@ -270,6 +271,22 @@ export class WindowsIisRole {
   // ─── Request handling ────────────────────────────────────────────────
 
   private buildResponse(site: SiteState, req: HttpMessage): HttpMessage {
+    const method = req.method ?? 'GET';
+    if (method === 'OPTIONS') {
+      const res = createResponse(200, 'OK');
+      res.headers.set('Server', IIS_SERVER_HEADER);
+      res.headers.set('Allow', STATIC_ALLOWED_METHODS);
+      res.headers.set('Content-Length', '0');
+      return res;
+    }
+    if (method !== 'GET' && method !== 'HEAD') {
+      const res = createResponse(405, 'Method Not Allowed');
+      res.headers.set('Server', IIS_SERVER_HEADER);
+      res.headers.set('Allow', STATIC_ALLOWED_METHODS);
+      res.headers.set('Content-Type', 'text/html');
+      res.body = binaryStringToBytes('<html><body><h1>405 - HTTP verb used to access this page is not allowed.</h1></body></html>');
+      return res;
+    }
     const reqPath = !req.target || req.target === '/' ? `/${DEFAULT_DOCUMENT}` : req.target;
     const fsPath = `${site.physicalPath}${reqPath.replace(/\//g, '\\')}`;
     const file = this.fs.readFile(fsPath);

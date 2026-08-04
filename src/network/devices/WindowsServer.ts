@@ -104,6 +104,22 @@ export class WindowsServer extends WindowsPC {
     // account logged in by default. WindowsPC's 'User' default is correct
     // for a client SKU but wrong here, so override it post-construction.
     this.getUserManager().setCurrentUser('Administrator');
+    this.roleManager.onFeatureLifecycle(() => this.materializeInstalledRoles());
+  }
+
+  /**
+   * Bring every installed role's real listener up — and drop the one whose
+   * feature was just uninstalled — at the instant the feature changes,
+   * rather than on the first cmdlet that happens to reach for it. Each
+   * getter is already idempotent and already returns null (stopping its
+   * instance) when its feature is absent, so calling them all is the whole
+   * implementation.
+   */
+  private materializeInstalledRoles(): void {
+    this.getDnsServerRole();
+    this.getDhcpServerRole();
+    this.getNpsRole();
+    this.getIisRole();
   }
 
   override getWindowsEdition(): 'client' | 'server' { return 'server'; }

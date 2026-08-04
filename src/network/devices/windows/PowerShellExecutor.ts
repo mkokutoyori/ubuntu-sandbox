@@ -2655,7 +2655,7 @@ export class PowerShellExecutor {
 
     // Native commands that work in both CMD and PS
     if (['ipconfig', 'ping', 'netsh', 'tracert', 'route', 'arp', 'systeminfo', 'ver',
-         'tasklist', 'taskkill', 'sc', 'sc.exe'].includes(cmdLower)) {
+         'tasklist', 'taskkill', 'sc', 'sc.exe', 'curl', 'curl.exe'].includes(cmdLower)) {
       return await this.device.executeCmdCommand(cmdLower + ' ' + args.join(' '));
     }
 

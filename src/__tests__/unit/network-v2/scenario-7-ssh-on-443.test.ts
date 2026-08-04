@@ -81,7 +81,11 @@ describe('Scenario 7 — sshd hijacked onto port 443', () => {
     expect(serviceLine.toLowerCase()).toContain('ssh');
     expect(serviceLine.toLowerCase()).not.toContain('https');
 
-    const curl = await attacker.executeCommand('curl -s -k https://192.168.1.1:443/');
+    // `-sS` et non `-s` seul : depuis docs/PRD-Curl.md §P1, `-s` tait
+    // vraiment les erreurs (il était parsé puis jeté), donc `-s` seul ne
+    // dirait plus rien du tout ici. `-sS` est l'idiome réel quand on veut
+    // le silence de la barre de progression mais pas celui du diagnostic.
+    const curl = await attacker.executeCommand('curl -sS -k https://192.168.1.1:443/');
     expect(curl).not.toMatch(/<html>|<!DOCTYPE|HTTP\/1/i);
     expect(curl.toLowerCase()).toMatch(/wrong version|protocol|unexpected|ssh|ssl/);
   });

@@ -41,13 +41,37 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   });
 
   // ── crypto isakmp key KEY address IP ─────────────────────────────
+  /**
+   * `crypto isakmp key KEY {address IP | hostname NOM}`
+   *
+   * La forme `hostname` était refusée, alors que tout ce qu'il lui faut
+   * existait déjà : un pair configuré `crypto isakmp identity hostname`
+   * annonce son nom dans l'offre IKE, et le répondeur cherche la clé par
+   * cette identité AVANT l'adresse source. Il ne manquait que la
+   * commande qui pose la clé sous un nom — l'authentification par nom
+   * marche donc pour de vrai, elle n'est pas mémorisée pour l'affichage.
+   */
   trie.registerGreedy('crypto isakmp key', 'Set IKE pre-shared key', (args) => {
-    // Syntax: crypto isakmp key KEY address IP [/mask]
-    const addrIdx = args.indexOf('address');
-    if (addrIdx === -1 || addrIdx === 0) return '% Incomplete command. Usage: crypto isakmp key KEY address IP';
-    const key = args.slice(0, addrIdx).join(' ');
-    const addr = args[addrIdx + 1] || '0.0.0.0';
-    eng(ctx).addPreSharedKey(addr, key);
+    const idx = args.findIndex((a) => a === 'address' || a === 'hostname');
+    if (idx <= 0) {
+      return '% Incomplete command. Usage: crypto isakmp key KEY {address IP | hostname NAME}';
+    }
+    const cible = args[idx + 1];
+    if (!cible) return '% Incomplete command.';
+    const key = args.slice(0, idx).join(' ');
+    if (args[idx] === 'hostname') {
+      // Un nom, pas une adresse : le refuser ici évite qu'une faute de
+      // frappe soit stockée comme une identité que rien n'annoncera.
+      if (isIPv4Literal(cible)) return "% Invalid input detected at '^' marker.";
+      // Minuscule à la pose : un nom d'hôte est insensible à la casse
+      // (RFC 4343), et la table `ip host` de l'équipement le range déjà
+      // ainsi. Sans cette normalisation, `hostname rB` ne se retrouvait
+      // pas depuis un `ip host rB …` rangé en `rb` — mesuré : le tunnel
+      // ne montait pas alors que les deux côtés étaient bien configurés.
+      eng(ctx).addPreSharedKey(cible.toLowerCase(), key, true);
+      return '';
+    }
+    eng(ctx).addPreSharedKey(cible, key);
     return '';
   });
 
@@ -78,11 +102,16 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  // ── no crypto isakmp key KEY address IP ─────────────────────────
+  // ── no crypto isakmp key KEY {address IP | hostname NOM} ────────
+  // La forme `hostname` retirait l'entrée `0.0.0.0` au lieu de la
+  // bonne : `indexOf('address')` ne la voyait pas et le repli sur le
+  // joker s'appliquait, si bien que la clé nommée survivait à son
+  // propre `no` — et qu'une clé joker configurée disparaissait à sa
+  // place.
   trie.registerGreedy('no crypto isakmp key', 'Remove IKE pre-shared key', (args) => {
-    const addrIdx = args.indexOf('address');
-    const addr = addrIdx >= 0 ? (args[addrIdx + 1] || '0.0.0.0') : '0.0.0.0';
-    eng(ctx).removePreSharedKey(addr);
+    const idx = args.findIndex((a) => a === 'address' || a === 'hostname');
+    const cible = idx >= 0 ? (args[idx + 1] || '0.0.0.0') : '0.0.0.0';
+    eng(ctx).removePreSharedKey(args[idx] === 'hostname' ? cible.toLowerCase() : cible);
     return '';
   });
 

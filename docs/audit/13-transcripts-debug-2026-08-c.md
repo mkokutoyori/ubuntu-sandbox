@@ -139,13 +139,41 @@ l'implémentation, pas de mesurer. Ce qui est établi, c'est l'écart
 observable entre ce qui est accepté et ce qui est rendu — même classe
 que 4.1.
 
-### 4.4 Reportés, inchangés
+### 4.4 Les quatre derniers — TRAITÉS : un implémenté, trois refusés à raison
 
-`crypto isakmp key … hostname <nom>`, `ipv6 ospf hello-interval` /
-`dead-interval` : une occurrence chacun, toujours absents, déjà classés
-en dernière priorité par l'audit 12 §5. `show module` et `fsck flash:`
-sont absents des deux plateformes (commandes de châssis, une occurrence
-chacune).
+**`crypto isakmp key … hostname <nom>` : implémenté, et il cachait deux
+défauts.** Tout ce qu'il fallait existait déjà — un pair configuré
+`crypto isakmp identity hostname` annonce son nom dans l'offre IKE, et le
+répondeur cherche la clé par cette identité AVANT l'adresse source. Mais
+écrire la commande ne suffisait pas : (1) la table `ip host` range les
+noms en minuscules, à raison (RFC 4343), si bien qu'une clé posée sous
+`rB` ne se retrouvait pas ; (2) la clé est cherchée à TROIS endroits —
+émission, réception, et vérification de la réponse par l'initiateur — et
+ce dernier ne connaissait que l'adresse, donc l'initiateur rejetait sa
+propre session pour « PSK mismatch » après avoir pourtant trouvé la clé à
+l'émission. Défaut voisin corrigé au passage : `no crypto isakmp key …
+hostname NOM` retirait l'entrée joker `0.0.0.0` au lieu de la bonne.
+
+Un tunnel monte maintenant réellement avec des clés posées par nom, et
+des clés discordantes échouent — vérifié par ping traversant, avec une
+**référence par adresse montée dans le même banc**, sans laquelle un lab
+mal monté et une fonctionnalité cassée seraient indiscernables.
+
+**Les trois autres sont refusés, et le refus est le bon comportement.**
+
+- **`ipv6 ospf hello-interval` / `dead-interval`.** OSPFv3 forme son
+  adjacence hors-bande (`RouterOSPFIntegration.v3FormAdjacency`, appelée
+  directement, sans aucun échange de Hello) et ne porte aucun champ de
+  minuterie. Les accepter stockerait une valeur que rien ne lirait —
+  exactement la décision prise pour le mode nommé d'EIGRP au lot 8.
+- **`show module`.** Les trois profils châssis du simulateur (`c2900`,
+  `c2960`, `c3560`) sont tous à configuration FIXE. `show module` est une
+  commande de châssis modulaire ; sur un ISR 2911 ou un Catalyst 2960
+  réel, elle est refusée. L'implémenter demanderait d'inventer un
+  inventaire de cartes qu'aucun état d'équipement ne porte.
+- **`fsck flash:`.** `CiscoFileSystem` est une table de fichiers sans
+  modèle de corruption : un `fsck` répondrait « OK » quoi qu'il arrive.
+  Une commande de vérification qui ne peut rien trouver est un décor.
 
 ## 5. Ce qui n'est PAS un manque, et pourquoi — vérifié un par un
 

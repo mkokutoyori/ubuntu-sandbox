@@ -145,10 +145,25 @@ describe('§F9.3 — les journaux que rsyslog tient ouverts SONT ses descripteur
     await pc.executeCommand('sudo rm /var/log/syslog');
     await pc.executeCommand('logger -t essai "dans-le-vide"');
 
+    const ps = await pc.executeCommand('ps aux');
+    const pid = ps.split('\n').find((l) => l.includes('rsyslogd'))!
+      .trim().split(/\s+/)[1];
+
     const out = await pc.executeCommand('lsof');
     const line = out.split('\n').find((l) => l.includes('(deleted)'));
     expect(line, 'le descripteur supprimé devrait apparaître').toBeTruthy();
-    // Le numéro sortait d'un `7w` écrit en dur au point de rendu.
-    expect(line).toMatch(/rsyslogd\s+\d+\s+\S+\s+3w/);
+
+    // Le numéro sortait d'un `7w` écrit en dur au point de rendu. Ce cas
+    // attendait `3w`, ce qui re-codait en dur la même chose sous une autre
+    // forme : 3 n'est le bon numéro que si syslog se trouve être le premier
+    // journal que le démon ouvre, or cela dépend de ce qui est écrit en
+    // premier au démarrage. On vérifie donc l'invariant réel — `lsof` et
+    // `/proc/<pid>/fd` donnent le MÊME numéro pour le même fichier.
+    const fds = await pc.executeCommand(`ls -l /proc/${pid}/fd`);
+    // Le numéro de descripteur est le jeton juste avant `->` ; les autres
+    // colonnes numériques de `ls -l` (liens, taille) ne sont pas lui.
+    const fromProc = /(\d+)\s+->\s+\/var\/log\/syslog/.exec(fds)?.[1];
+    expect(fromProc, 'le journal devrait être un descripteur du processus').toBeTruthy();
+    expect(line).toMatch(new RegExp(`rsyslogd\\s+\\d+\\s+\\S+\\s+${fromProc}w`));
   });
 });

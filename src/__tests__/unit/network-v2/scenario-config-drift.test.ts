@@ -107,25 +107,34 @@ describe('Scénario 12 — Dérive de configuration: port déclaré vs port bind
     await writeConfig(server, 8080);
     svcMgr(server).setPortOverride('nginx', 9090, 'cli', '-p 9090');
     svcMgr(server).start('nginx');
-    server.getTcpStack().listen(9090, { onAccept: () => undefined });
+    // Ce cas liait la pile TCP à la main, parce que `systemctl start nginx`
+    // n'ouvrait aucune écoute réelle (docs/PRD-Nginx.md §P0) : nginx écoute
+    // maintenant pour de bon sur le port retenu, et ce second `listen`
+    // lèverait EADDRINUSE.
     const ok = await client.executeCommand('nc -zv 10.0.0.20 9090');
     expect(ok).toMatch(/succeeded|open/i);
     const ko = await client.executeCommand('nc -zv 10.0.0.20 8080');
     expect(ko).toMatch(/refused|timed out/i);
   });
 
+  // Ce cas écrivait `listen 8080` puis exigeait que `ss` NE montre PAS
+  // `:8080` : il ne passait que parce que la configuration était ignorée et
+  // que `SERVICE_LISTENERS` imposait 80 quoi qu'il arrive. Il encodait donc
+  // le décor que docs/PRD-Nginx.md §P0 retire. La propriété visée reste
+  // vraie et se teste maintenant pour de bon : on démarre sur un port, on
+  // change le FICHIER pour un autre, et l'écoute ne bouge pas sans reload.
   it('config stale: modifier /etc/nginx/nginx.conf sans reload ne change PAS le port bindé', async () => {
     const { server } = await buildLab();
     await writeConfig(server, 8080);
     svcMgr(server).start('nginx');
-    const ssBefore = await server.executeCommand('ss -tlnp');
-    expect(ssBefore).toMatch(/:80/);
-    await writeConfig(server, 8080);
-    const declaredAfter = await declaredPortFromConfig(server);
+    expect(await server.executeCommand('ss -tlnp')).toMatch(/:8080/);
+
+    await writeConfig(server, 9099);
+
+    expect(await declaredPortFromConfig(server)).toBe(9099);
     const ssAfter = await server.executeCommand('ss -tlnp');
-    expect(declaredAfter).toBe(8080);
-    expect(ssAfter).toMatch(/:80/);
-    expect(ssAfter).not.toMatch(/:8080/);
+    expect(ssAfter).toMatch(/:8080/);
+    expect(ssAfter).not.toMatch(/:9099/);
   });
 
   it('la source du port peut être remontée à posteriori: getPortOverride() rend la source', async () => {
