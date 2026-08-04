@@ -3066,23 +3066,42 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this._routingTableLimit = max === null ? null : { max, thresholdPct };
   }
 
-  private debugLineMatchesAcl(aclRef: string, line: string): boolean {
+  private debugLineMatchesAcl(
+    aclRef: string,
+    line: string,
+    faits?: import('./router/diag/RouterDebugService').DebugPacketFacts,
+  ): boolean {
     const ref = /^\d+$/.test(aclRef) ? Number(aclRef) : aclRef;
     const acl = typeof ref === 'number'
       ? this.aclEngine.findById(ref)
       : this.aclEngine.findByName(ref);
     if (!acl || acl.entries.length === 0) return true;
 
-    const ips = line.match(/\d{1,3}(?:\.\d{1,3}){3}/g);
-    if (!ips || ips.length === 0) return true;
+    let src = faits?.src;
+    let dst = faits?.dst;
+    if (!src || !dst) {
+      const ips = line.match(/\d{1,3}(?:\.\d{1,3}){3}/g);
+      if (!ips || ips.length === 0) return true;
+      src = ips[0];
+      dst = ips[1] ?? ips[0];
+    }
+
+    const proto = faits?.proto ?? 1;
+    const ports = faits && (faits.srcPort !== undefined || faits.dstPort !== undefined)
+      ? {
+        type: proto === 6 ? 'tcp' : 'udp',
+        sourcePort: faits.srcPort ?? 0,
+        destinationPort: faits.dstPort ?? 0,
+      }
+      : undefined;
 
     const probe = {
-      version: 4, ihl: 5, dscp: 0, ecn: 0,
+      version: 4, ihl: 5, dscp: 0, ecn: 0, tos: 0,
       totalLength: 20, identification: 0, flags: 0, fragmentOffset: 0,
-      ttl: 255, protocol: 1, headerChecksum: 0,
-      sourceIP: new IPAddress(ips[0]),
-      destinationIP: new IPAddress(ips[1] ?? ips[0]),
-      payload: undefined,
+      ttl: 255, protocol: proto, headerChecksum: 0,
+      sourceIP: new IPAddress(src),
+      destinationIP: new IPAddress(dst),
+      payload: ports,
     } as unknown as IPv4Packet;
 
     return this.aclEngine.evaluateACL(ref, probe) !== 'deny';
@@ -3111,7 +3130,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const svc = this._debugService;
       this.natEngine.setDebugEmitter((line) => svc.emitLine('ip.nat', line));
       this._getDHCPServerInternal().setDebugEmitter((line) => svc.emitLine('ip.dhcp.server', line));
-      svc.setAclFilterEvaluator((aclName, line) => this.debugLineMatchesAcl(aclName, line));
+      svc.setAclFilterEvaluator((aclName, line, faits) => this.debugLineMatchesAcl(aclName, line, faits));
       svc.setCategoryRenderer('ip.dhcp.server', () => this._getDHCPServerInternal().formatDebugShow());
       this.ipsecEngine?.setDebugEmitter((kind, line) => {
         svc.emitLine(kind === 'ipsec' ? 'crypto.ipsec' : 'crypto.isakmp', line);
