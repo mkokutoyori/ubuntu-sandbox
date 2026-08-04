@@ -446,9 +446,14 @@ describe('§5 — Linux → Cisco IOS SSH', () => {
       contains: [/IOS|Cisco/i], excludes: [/bash:|command not found/i],
     },
     {
-      name: 'show interfaces status lists router data ports',
-      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show interfaces status"',
-      contains: [/connected|notconnect|Port\s+Name|GigabitEthernet/i],
+      // `show interfaces status` est une commande de commutation LAN :
+      // ciscoR1 est un ROUTEUR, et un vrai ISR ne la connaît pas. Le nom
+      // de ce cas — « lists router data ports » — décrit bien l'intention,
+      // c'est la commande qui ne correspondait pas à l'équipement.
+      // `show ip interface brief` est son équivalent côté routeur.
+      name: 'show ip interface brief lists router data ports',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show ip interface brief"',
+      contains: [/GigabitEthernet/i, /Interface\s+IP-Address/i],
     },
     {
       name: 'remote prompt is the IOS hostname, never bash',

@@ -187,16 +187,22 @@ describe('Scénario 3 — intégrité de show debug', () => {
     expect(etat, 'et le niveau de détail demandé').toMatch(/detail/i);
   }, LONG);
 
+  // `show debug` ne dit plus « IP ICMP » mais regroupe par protocole et
+  // écrit la phrase d'IOS, `ICMP packet debugging is on` — la réécriture
+  // « Debug lot 3 » l'a rapprochée du vrai routeur. Les assertions de ce
+  // fichier étaient restées sur l'ancienne étiquette, qu'aucun IOS
+  // n'imprime ; elles portent maintenant sur la phrase, et non sur
+  // l'en-tête de regroupement, qui n'est pas ce qu'elles vérifient.
   it('le debug coupé disparaît de la liste, les autres restent', async () => {
     const { run } = await routeurSeul();
     await run('debug ip icmp');
     await run('debug arp');
-    expect(await run('show debug')).toContain('IP ICMP');
+    expect(await run('show debug')).toContain('ICMP packet debugging is on');
 
     await run('no debug ip icmp');
 
     const etat = await run('show debug');
-    expect(etat).not.toContain('IP ICMP');
+    expect(etat).not.toContain('ICMP packet debugging is on');
     expect(etat, 'couper l\'un ne coupe pas l\'autre').toContain('ARP');
   }, LONG);
 });
@@ -240,7 +246,7 @@ describe('Scénario 5 — synonymes de la CLI', () => {
     async (commande) => {
       const { run } = await routeurSeul();
       await run('debug ip icmp');
-      expect(await run('show debug')).toContain('IP ICMP');
+      expect(await run('show debug')).toContain('ICMP packet debugging is on');
 
       const sortie = await run(commande);
       expect(sortie, 'la syntaxe doit être reconnue').not.toContain('Invalid input');
@@ -376,7 +382,7 @@ describe('Scénario 9 — capture et debug coexistent', () => {
     await pc.executeCommand('sudo tcpdump -i eth0 -c 1 -w /tmp/c2.cap');
     await pc.executeCommand('ping -c 1 10.0.0.1');
 
-    expect(await run('show debug')).toContain('IP ICMP');
+    expect(await run('show debug')).toContain('ICMP packet debugging is on');
     expect(lignes.length, 'le debug continue de produire').toBeGreaterThan(0);
   }, LONG);
 });

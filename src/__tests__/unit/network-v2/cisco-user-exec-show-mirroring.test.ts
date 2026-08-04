@@ -101,10 +101,25 @@ describe('router — mirroring does not lose the user trie s own commands', () =
     expect(await r.executeCommand('show ip interface brief')).toMatch(/Interface\s+IP-Address/);
   });
 
-  it('`show interfaces status` keeps working at level 1', async () => {
+  /**
+   * `show interfaces status` est une commande de commutation LAN : elle
+   * vit sur un Catalyst, pas sur un routeur sans module EtherSwitch — un
+   * vrai ISR répond `% Invalid input detected at '^' marker.`. Le cas
+   * switch est couvert plus haut, et le commit qui a introduit ce
+   * fichier énumère lui-même ce que le ROUTEUR avait gagné :
+   * `show crypto engine brief` et `show crypto engine configuration`.
+   * C'est donc sur celles-là que porte la non-régression côté routeur ;
+   * exiger la commande de switch ici demandait au routeur d'être ce
+   * qu'il n'est pas.
+   */
+  it('les commandes gagnées par le routeur répondent bien au niveau 1', async () => {
     const r = new CiscoRouter('R1');
-    const out = await r.executeCommand('show interfaces status');
-    expect(out).not.toContain('Invalid input');
-    expect(out).toMatch(/Port\s+Name\s+Status/);
+    expect(await r.executeCommand('show crypto engine brief')).not.toContain('Invalid input');
+    expect(await r.executeCommand('show crypto engine configuration')).not.toContain('Invalid input');
+  });
+
+  it('une commande de switch reste refusée sur un routeur', async () => {
+    const r = new CiscoRouter('R1');
+    expect(await r.executeCommand('show interfaces status')).toContain('Invalid input');
   });
 });

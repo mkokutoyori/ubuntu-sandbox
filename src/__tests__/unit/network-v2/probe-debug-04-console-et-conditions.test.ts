@@ -169,7 +169,7 @@ describe('Scénario 3 — no logging on, l\'interrupteur général', () => {
 
     expect(lignes.length, 'plus rien ne sort').toBe(1);
     const etat = await run('show debug');
-    expect(etat, 'mais l\'instrumentation reste armée').toContain('IP ICMP');
+    expect(etat, 'mais l\'instrumentation reste armée').toContain('ICMP packet debugging is on');
     expect(etat).toContain('ARP');
   }, LONG);
 

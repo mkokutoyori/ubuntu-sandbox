@@ -4,6 +4,7 @@ import { createResponse, type HttpMessage } from '@/network/http/semantics/types
 import { contentTypeForPath } from '@/network/http/HttpTypes';
 import type { PortSpec } from '../../../core/ports/PortNumber';
 import type { ServiceSocketServer } from '../ports/ServiceSocketServer';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import {
   parseNginxConfig, extractServers, validateNginxConfig,
   type NginxFileSource, type NginxServerBlock, type NginxLocation,
@@ -120,7 +121,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return [...ports].sort((a, b) => a - b);
   }
 
-  open(spec: PortSpec): boolean {
+  open(spec: PortSpec, identity?: ListenerIdentity): boolean {
     if (spec.protocol !== 'tcp') return false;
     if (this.servers.length === 0 && this.loadConfig() !== null) return false;
     // Le port demandé vient de systemd, qui a déjà tranché entre ce que
@@ -133,7 +134,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       this.host.tcpStack(), spec.port, (req) => this.respond(spec.port, req),
     );
     try {
-      session.start();
+      session.start(identity);
     } catch {
       return false;
     }

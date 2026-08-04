@@ -693,14 +693,11 @@ export abstract class LinuxMachine extends EndHost
     try {
       bindDnsTlsServer(this, (query) => this.answerDnsQuery(query));
     } catch { /* port already bound (e.g. service restarted) */ }
-    // `TcpStack.listen()` n'inscrit rien dans la table des sockets : sans
-    // ces deux lignes, `ss`/`netstat` ne montreraient ni le 53/tcp ni le
-    // 853, alors que les deux répondent réellement.
-    for (const port of [DNS_PORT, DOT_PORT]) {
-      try {
-        this.socketTable.bind('tcp', '0.0.0.0', port, undefined, 'dnsmasq');
-      } catch { /* déjà annoncé */ }
-    }
+    // Il y avait ici deux `socketTable.bind()` manuels, dont le
+    // commentaire disait qu'ils n'existaient que parce que
+    // `TcpStack.listen()` n'inscrivait rien. Il inscrit désormais, avec le
+    // nom du démon — le premier des cinq contournements du §3 à
+    // disparaître (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
   }
 
   // ─── systemd-resolved ────────────────────────────────────────────────
@@ -915,6 +912,15 @@ export abstract class LinuxMachine extends EndHost
         if (immediate) { send(immediate); return; }
         void this.answerResolvedQuery(query).then(send);
       }, 'systemd-resolved');
+      // Le stub répond aussi en TCP sur une vraie machine — c'est par là
+      // que passe une réponse trop grande pour un datagramme (RFC 7766).
+      // L'entrée `tcp 127.0.0.53:53` figurait déjà dans `ss` ; jusqu'ici
+      // rien n'écoutait derrière
+      // (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
+      bindDnsTcpServer(this, (query) => {
+        const immediate = this.answerResolvedQuerySync(query);
+        return immediate ?? this.answerResolvedQuery(query);
+      }, DNS_PORT, { address: STUB_ADDRESS, processName: 'systemd-resolved' });
       this.resolvedStubBound = true;
     } catch { /* déjà lié */ }
     // systemd-resolved est le contre-exemple de docs/PRD-Nginx.md §P0 : son

@@ -175,6 +175,32 @@ sous la protection du test de croisement.
   `PRD-Nginx` §P0 avait laissée ouverte —, et aucune suite existante ne
   régresse.
 
+#### Ce que P1 a effectivement changé
+
+Le sink a d'abord fait **échouer nginx**, et c'est le risque que cette
+phase avait annoncé : `ServicePortProjection` ouvrait le serveur puis
+liait le port une seconde fois, se heurtait à son propre `EADDRINUSE`, et
+son rattrapage refermait le serveur qu'elle venait d'ouvrir. Réparé
+comme P1 le prévoyait — l'identité passe par `ServiceSocketServer.open()`
+jusqu'au `listen()`, et la projection ne lie plus que ce que personne n'a
+annoncé. Le doublon a disparu au lieu d'être toléré.
+
+Deux écoutes réelles sont sorties de l'ombre, et l'inventaire de P0 ne
+les avait pas vues parce qu'elles ne se manifestent qu'une fois le
+croisement écrit :
+
+- **RADIUS-over-TCP (RFC 6613)**, port 1812 : une écoute authentique,
+  invisible dans `ss`, à côté de ses propres sockets UDP qui, eux, s'y
+  affichaient. Elle porte désormais le nom de son démon.
+- **Le stub de systemd-resolved en TCP**, `127.0.0.53:53` : l'inverse —
+  la ligne existait, rien n'écoutait derrière. Traité en P2 plutôt que
+  masqué, puisqu'un vrai résolveur répond bien en TCP quand la réponse
+  ne tient pas dans un datagramme (RFC 7766).
+
+Enfin, `scenario-listen-vs-filtered.test.ts` — la troisième des cinq
+rencontres documentées au §3 — posait à la main les deux moitiés que P1
+réunit. Son contournement a été retiré, pas contourné à son tour.
+
 ### P2 — Les entrées décoratives, une par une
 
 Ce que P0 aura classé en (c). Pour chacune : soit lui donner une écoute
@@ -187,6 +213,35 @@ qu'il faut nommer plutôt que de le trancher au passage.
 
 - **Acceptation :** toute entrée `LISTEN` restante sans écoute réelle est
   justifiée par un commentaire au point de liaison.
+
+#### P2a — fait
+
+- **DNS 53/tcp et DoT 853** : les deux `socketTable.bind()` manuels sont
+  partis. Leur propre commentaire disait qu'ils n'existaient que parce
+  que `listen()` n'inscrivait rien ; il inscrit, avec le nom du démon.
+  Première des cinq rencontres du §3 à disparaître pour de bon.
+- **Windows 22, 445, 3389** : trois doublons d'un `listen()` situé
+  quelques lignes plus bas dans le même fichier. Leur pid et leur nom de
+  processus voyagent maintenant avec l'écoute.
+- **Windows 139** : le cas décoratif pur. `ss` l'annonçait depuis
+  toujours et rien ne répondait. Il sert désormais le même SMB que le
+  445 et s'éteint avec le même `LanmanServer` — un port joignable qui
+  parle le bon protocole vaut mieux qu'un port affiché qui ne parle
+  rien. Ce que ce raccourci ne fait pas, écrit au point de liaison : le
+  préambule NetBIOS (RFC 1002 §4.3), faute de couche NBSS ici et de
+  client qui l'attendrait.
+
+#### P2b — reste à faire
+
+- **sshd 22 (v4 et v6) et les ports de `sshd_config`.** Doublons, mais
+  pas anodins : ils portent la bannière SSH, et l'entrée `:::22` n'a pas
+  d'écoute propre — `findListener` rabat une connexion v6 sur le
+  générique v4. Les retirer sans donner au `listen()` une écoute `::`
+  ferait apparaître l'erreur symétrique en v6. À traiter seul, pour que
+  la régression reste attribuable sur une surface aussi testée.
+- **Le listener TNS d'Oracle (1521).** Inchangé, et pour la raison déjà
+  écrite au point de liaison : lui donner une vraie boucle d'acceptation
+  suppose un serveur TNS. Nommé plutôt que tranché au passage.
 
 ### P3 — Le garde-fou
 
