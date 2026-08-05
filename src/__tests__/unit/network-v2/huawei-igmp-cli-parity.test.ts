@@ -112,7 +112,10 @@ describe('Huawei VRP IGMP CLI — router (P6)', () => {
     expect(out).toMatch(new RegExp(`${rPort.replace(/\//g, '\\/')}\\(10\\.0\\.0\\.1\\)`));
     expect(out).toMatch(/IGMP is enabled/);
     expect(out).toMatch(/Current IGMP version is 2/);
-    expect(out).toMatch(/IGMPv3 .* is not supported/);
+    // Le pied de page « IGMPv3 n'est pas supporté » a été retiré des
+    // sorties `display` : un équipement ne commente pas ses sorties.
+    // Le refus de `igmp version 3` reste testé plus haut.
+    expect(out).not.toMatch(/not supported in this simulator/);
   });
 });
 

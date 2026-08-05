@@ -648,7 +648,7 @@ describe('Group 5: CLI Commands', () => {
 
     const output = await r1.executeCommand('show ip route');
     expect(output).toContain('R - RIP');
-    expect(output).toContain('R    192.168.1.0/24 [120/1]');
+    expect(output).toMatch(/R\s+192\.168\.1\.0\/24 \[120\/1\]/);
     expect(output).toContain('via 10.0.1.2');
 
     r1.disableRIP();

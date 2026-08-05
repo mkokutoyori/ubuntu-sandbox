@@ -349,9 +349,11 @@ describe('Group 3: CLI — Route Display & Management', () => {
       );
 
       const output = await router.executeCommand('show ip route');
-      expect(output).toContain('C    10.0.1.0/24 is directly connected');
-      expect(output).toContain('C    10.0.2.0/24 is directly connected');
-      expect(output).toContain('S    10.0.3.0/24 [1/0] via 10.0.2.2');
+      // IOS 15.x indente les routes sous leur en-tête classful ; le
+      // format à quatre espaces datait du rendu précédent.
+      expect(output).toMatch(/C\s+10\.0\.1\.0\/24 is directly connected/);
+      expect(output).toMatch(/C\s+10\.0\.2\.0\/24 is directly connected/);
+      expect(output).toMatch(/S\s+10\.0\.3\.0\/24 \[1\/0\] via 10\.0\.2\.2/);
     });
   });
 });

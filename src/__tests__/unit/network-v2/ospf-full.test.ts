@@ -427,7 +427,7 @@ describe('OSPFv2 – Multi‑Area', () => {
 
     // On R3, should see summary route 192.168.0.0/16, not individual /24s
     const route = await r3.executeCommand('show ip route');
-    expect(route).toContain('O IA 192.168.0.0/16 [110/');
+    expect(route).toMatch(/O IA\s+192\.168\.0\.0\/16 \[110\//);
     expect(route).not.toContain('192.168.1.0/24');
     expect(route).not.toContain('192.168.2.0/24');
   });

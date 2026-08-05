@@ -333,7 +333,9 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('37. should return unlisted/blank suggestions if no commands match typed prefix ("z?")', async () => {
       const r = setupRouter();
       const output = await r.executeCommand('z?');
-      expect(output.trim()).toBe('% Unrecognized command');
+      // IOS n'émet jamais « % Unrecognized command » : un `?` sans
+      // correspondance rend le refus habituel.
+      expect(output.trim()).toBe('% Invalid input detected at \'^\' marker.');
     });
 
     it('38. should list command sub-arguments dynamically ("show ip route ?")', async () => {
