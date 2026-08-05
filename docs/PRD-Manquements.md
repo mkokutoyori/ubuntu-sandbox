@@ -131,20 +131,43 @@ démarrés de plus y entrent aussi, et §P3 énonce la règle plutôt que la
 liste — écoute tardive, écoute sur adresse précise, cycle
 ouverture/fermeture complet.
 
-### §M3 — UDP (C1)
+### §M3 — UDP (C1) — mesuré, et la prémisse était fausse
 
-Le §7 le renvoyait à plus tard « si P1 se passe bien ». Il s'est bien
-passé.
+Le §3 de ce document annonçait « même structure à deux tables ». **C'est
+faux**, et je l'avais écrit d'après la formulation du §7 de `PRD-Sockets`
+plutôt que d'après le code. La mesure corrige :
 
-Un socket UDP n'a pas d'écoute au sens de `TcpStack.listeners` : c'est
-`EndHost.udpBind()` qui fait foi, et il inscrit déjà dans la
-`SocketTable`. La question n'est donc pas la même que pour TCP — elle
-est : **existe-t-il des `udpBind()` sans gestionnaire, ou des entrées UDP
-sans `udpBind()` ?** À mesurer avant d'écrire quoi que ce soit, comme
-§P0 l'a fait pour TCP.
+- `EndHost.udpBind()` inscrit l'entrée de la `SocketTable` **et** pose le
+  gestionnaire, en deux lignes voisines de la même fonction ;
+  `udpClose()` retire les deux. Idem pour
+  `udpBindAddress()`/`udpCloseAddress()`. Il n'y a pas de seconde table
+  à faire diverger : **une seule fonction, une seule vérité**, par
+  construction.
+- L'ordre est bon, et ce n'est pas un hasard : `socketTable.bind()` est
+  appelé **avant** le `set()` du gestionnaire, donc un `EADDRINUSE`
+  échoue sans laisser de gestionnaire orphelin.
+- La table statique des services ne déclare **qu'un seul** port UDP
+  (`systemd-resolved` 53/udp), et il est réellement lié par
+  `udpBindAddress()`. `WINDOWS_SERVICE_LISTENERS` n'en déclare **aucun**.
 
-- **Acceptation :** le croisement UDP est mesuré et rendu ; ce qui
-  diverge est traité ou justifié au point de liaison.
+Il n'y avait donc rien à corriger ici, et le dire vaut mieux que
+d'inventer un chantier. Ce qui reste utile, c'est le **garde-fou** : la
+seule façon dont cette propriété peut se perdre est qu'on écrive un
+`socketTable.bind('udp', …)` ailleurs que dans ces deux fonctions.
+
+**Une asymétrie réelle, trouvée en mesurant, et non corrigée ici.**
+`udpBind()` passe toujours `pid: undefined`, si bien que `ss -ulnp`
+laisse la colonne PID vide pour tout socket UDP, alors que TCP la porte
+depuis §P1. La corriger suppose de donner un pid à la vingtaine de
+points de liaison UDP — et c'est exactement le piège que §P1 avait
+relevé : `SocketTable.bind()` refuse avec `EMFILE` dès qu'un pid est
+fourni et que le garde de descripteurs (§F9.3) dit non. Passer des pids
+partout ferait donc entrer une vingtaine de services sous une contrainte
+qu'ils ne subissaient pas. À traiter comme un chantier propre, avec sa
+propre mesure, plutôt qu'en passant.
+
+- **Acceptation :** un test échoue si une entrée UDP existe sans
+  gestionnaire, ou l'inverse, sur chaque machine construite.
 
 ### §M4 — apache2 et nginx-HTTPS (C4, C3)
 
