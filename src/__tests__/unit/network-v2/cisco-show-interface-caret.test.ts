@@ -14,11 +14,12 @@ describe('Scénario — Cisco "show interface <bad-name>" : caret sous le nom in
     const r = new CiscoRouter('R1', 0, 0);
     const out = await r.executeCommand('show interface FastEthernet99/99');
     const lines = out.split('\n');
-    expect(lines[0]).toBe('% Invalid input detected at \'^\' marker.');
-    expect(lines[1]).toBe('show interface FastEthernet99/99');
-    // "show interface " is 15 chars — the bad name starts at column 15.
-    expect(lines[2]).toBe(`${' '.repeat('show interface '.length)}^`);
-    expect(lines[2]).not.toBe(`${' '.repeat(5)}^`); // the old, wrong position
+    // IOS met le caret AVANT le message et ne réécrit pas la ligne saisie :
+    // le terminal l'a déjà affichée, prompt compris — d'où le décalage.
+    const prompt = 'R1#'.length;
+    expect(lines[0]).toBe(`${' '.repeat(prompt + 'show interface '.length)}^`);
+    expect(lines[1]).toBe('% Invalid input detected at \'^\' marker.');
+    expect(lines[0]).not.toBe(`${' '.repeat(5)}^`);
   });
 
   it('la position du caret s\'adapte à la longueur du nom d\'interface', async () => {
@@ -26,7 +27,8 @@ describe('Scénario — Cisco "show interface <bad-name>" : caret sous le nom in
     const r = new CiscoRouter('R1', 0, 0);
     const out = await r.executeCommand('show interface Gi0/0/99');
     const lines = out.split('\n');
-    expect(lines[1]).toBe('show interface Gi0/0/99');
-    expect(lines[2]).toBe(`${' '.repeat('show interface '.length)}^`);
+    const prompt = 'R1#'.length;
+    expect(lines[0]).toBe(`${' '.repeat(prompt + 'show interface '.length)}^`);
+    expect(lines[1]).toBe('% Invalid input detected at \'^\' marker.');
   });
 });

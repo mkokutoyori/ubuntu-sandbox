@@ -200,6 +200,11 @@ export class RadiusTcpServer {
   private installListener(): void {
     if (this.listenerInstalled) return;
     this.getTcpStack().listen(this.config.port, {
+      // RADIUS-over-TCP (RFC 6613) écoutait vraiment sans jamais paraître
+      // dans `ss`, à côté de ses propres sockets UDP qui, eux, s'y
+      // affichaient. Le nom vient d'ici pour que les deux lignes désignent
+      // le même démon (docs/PRD-Sockets-Une-Seule-Verite.md §P1).
+      identity: { processName: 'freeradius' },
       onAccept: (socket) => {
         socket.onData((data) => {
           if (!this.config.enabled) { socket.close(); return; }

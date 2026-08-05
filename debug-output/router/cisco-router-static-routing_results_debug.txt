@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-08-04T08:22:03.107Z
+Generated: 2026-08-04T11:16:38.417Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -1779,7 +1779,7 @@ Total steps: 325
 [253/325] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C1FAB.2F1A9FBE (08:22:03.184 UTC Tue Aug 4 2026)
+  reference time is EE1C4896.7CED9168 (11:16:38.488 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [254/325] r1 R1# show ntp associations
@@ -1788,7 +1788,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1# show clock
-  *08:22:03.000 UTC Tue Aug 4 2026
+  *11:16:38.000 UTC Tue Aug 4 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2698,9 +2698,9 @@ Total steps: 325
     banner       Remove a banner
     privilege    Remove privilege command rule
     logging      Disable logging
+    service      Disable a service
     ntp          Remove NTP config
     enable       Modify enable password parameters
-    service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
     interface    Remove a virtual interface

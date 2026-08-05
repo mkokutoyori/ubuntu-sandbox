@@ -43,7 +43,8 @@ import {
 } from './cisco/CiscoCommonShow';
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
-import { LoggingConfig } from '../inspection/config/LoggingConfig';
+import { LoggingConfig, defaultTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
+import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/CiscoArchiveCommands';
@@ -136,6 +137,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected attachLoggingToDevice(device: TDevice): void {
     (device as unknown as { _loggingConfig?: LoggingConfig })._loggingConfig = this.logging;
+    // A timestamp has to come from the machine it dates: its own boot
+    // counter, its own `clock set` clock, its own `clock timezone`, and
+    // its own NTP state for the `*` marker. A switch carries none of the
+    // last three and takes the defaults.
+    this.logging.attachClockSource(deviceClockSource(device));
   }
 
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
@@ -386,6 +392,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (path === 'reload' && m.args.length === 0) {
       return this.reloadInteractionPlan();
+    }
+    if (path === 'clear ip ospf' && m.args[0]?.toLowerCase() === 'process') {
+      return {
+        steps: [
+          {
+            kind: 'confirmation',
+            prompt: 'Reset ALL OSPF processes? [no]:',
+            defaultAnswer: 'no',
+            storeAs: 'ospf_reset_confirmed',
+          },
+          { kind: 'run', run: async (rt) => { await rt.exec('clear ip ospf process'); } },
+        ],
+      };
     }
     if (path === 'copy' && m.args.length === 2) {
       const norm = (a: string): string => {
@@ -967,6 +986,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const lower = cmdPart.toLowerCase();
     const firstWord = cmdPart.split(/\s+/)[0];
     if (/[A-Z]/.test(firstWord) && (firstWord.toLowerCase() === 'debug' || firstWord.toLowerCase() === 'undebug')) {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
+    if (this.mode === 'user' && /^(un)?deb(u(g)?)?\b/i.test(cmdPart)) {
       return CISCO_ERRORS.INVALID_INPUT;
     }
     if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
@@ -1603,10 +1625,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
       if (sub === 'history') { this.terminalHistoryEnabled = false; return ''; }
-      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; this.terminalMonitorExplicit = true; this.logging.setTerminalMonitor(false); return ''; }
+      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; this.terminalMonitorExplicit = true; return ''; }
       return CISCO_ERRORS.INVALID_INPUT;
     }
-    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; this.terminalMonitorExplicit = true; this.logging.setTerminalMonitor(true); return ''; }
+    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; this.terminalMonitorExplicit = true; return ''; }
     if (head === 'exec') return '';
     if (head === 'history') {
       if ((rest[0] ?? '').toLowerCase() === 'size') {
@@ -1622,18 +1644,63 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return CISCO_ERRORS.INVALID_INPUT;
   }
 
+  /**
+   * `[no] service timestamps [debug|log] [uptime | datetime [msec]
+   * [localtime] [show-timezone] [year]]`.
+   *
+   * The bare form is legal on IOS and means `service timestamps debug
+   * uptime` — refusing it (the state this replaced) rejected a command a
+   * real router accepts. Bare `no service timestamps` turns BOTH channels
+   * off, since with no channel named there is nothing to restrict it to.
+   */
   private applyServiceTimestamps(args: string[], negate: boolean): string {
-    const cible = (args[0] ?? '').toLowerCase();
-    if (cible !== 'debug' && cible !== 'log') return CISCO_ERRORS.INVALID_INPUT;
-    const reste = args.slice(1).map(s => s.toLowerCase());
-    if (!negate && reste.length > 0 && reste[0] !== 'datetime' && reste[0] !== 'uptime') {
-      return CISCO_ERRORS.INVALID_INPUT;
-    }
+    const mots = args.map(s => s.toLowerCase());
     this.attachLoggingToDevice(this.d());
-    if (cible === 'debug') this.logging.timestampsDebug = !negate;
-    else this.logging.timestamps = !negate;
-    if (!negate && reste.includes('msec')) this.logging.timestampsMsec = true;
+    const canaux: Array<'debug' | 'log'> = mots[0] === 'debug' || mots[0] === 'log'
+      ? [mots[0] as 'debug' | 'log']
+      : ['debug', 'log'];
+    const nomme = canaux.length === 1;
+    const reste = mots.slice(nomme ? 1 : 0);
+
+    if (negate) {
+      if (reste.length > 0 && !this.horodatageOptionsValides(reste)) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
+      for (const c of canaux) this.logging.setTimestampSpec(c, defaultTimestampSpec());
+      return '';
+    }
+
+    if (!nomme && reste.length > 0) return CISCO_ERRORS.INVALID_INPUT;
+    const spec = this.parseHorodatage(reste);
+    if (!spec) return CISCO_ERRORS.INVALID_INPUT;
+    for (const c of canaux) this.logging.setTimestampSpec(c, { ...spec });
     return '';
+  }
+
+  private horodatageOptionsValides(mots: string[]): boolean {
+    return this.parseHorodatage(mots) !== null;
+  }
+
+  /**
+   * `uptime` takes no modifier of its own on IOS beyond `msec`; the rest
+   * only mean something for a real date, so accepting them after `uptime`
+   * would store a flag nothing can read.
+   */
+  private parseHorodatage(mots: string[]): TimestampSpec | null {
+    const spec = defaultTimestampSpec();
+    spec.enabled = true;
+    if (mots.length === 0) return spec;
+    if (mots[0] !== 'uptime' && mots[0] !== 'datetime') return null;
+    spec.format = mots[0];
+    for (const m of mots.slice(1)) {
+      if (m === 'msec') { spec.msec = true; continue; }
+      if (spec.format !== 'datetime') return null;
+      if (m === 'localtime') { spec.localtime = true; continue; }
+      if (m === 'show-timezone') { spec.showTimezone = true; continue; }
+      if (m === 'year') { spec.year = true; continue; }
+      return null;
+    }
+    return spec;
   }
 
   /** Public read accessor — used by CLITerminalSession to size the pager. */
@@ -1846,8 +1913,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return `IP packet debugging is on for access list ${aclName}${detail ? ' (detailed)' : ''}`;
       }
       if (sub === 'icmp') return svc.enable('ip.icmp');
-      if (sub === 'tcp') return svc.enable('ip.tcp');
-      if (sub === 'udp') return svc.enable('ip.udp');
+      if (sub === 'tcp' || sub.startsWith('tcp ')) {
+        const reste = args.slice(1).filter(a => !/^transactions$/i.test(a));
+        const acl = reste[0];
+        svc.enable('ip.tcp', acl);
+        return acl
+          ? `TCP special event debugging is on for access list ${acl}`
+          : 'TCP special event debugging is on';
+      }
+      if (sub === 'udp' || sub.startsWith('udp ')) {
+        const acl = args.slice(1)[0];
+        svc.enable('ip.udp', acl);
+        return acl
+          ? `UDP packet debugging is on for access list ${acl}`
+          : 'UDP packet debugging is on';
+      }
       if (sub === 'nat') return svc.enable('ip.nat');
       if (sub === 'arp') return svc.enable('ip.arp');
       if (sub === 'routing') return svc.enable('ip.routing');
@@ -1897,7 +1977,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       getDebugService?: () => {
         enable(c: string, scope?: string): string;
         disable(c: string): string;
-        addCondition(kind: 'interface' | 'vrf', value: string): string;
+        addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
         removeCondition(kind: 'interface' | 'vrf', value: string): string;
         clearConditions(): void;
       };
@@ -1929,7 +2009,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!svc) return '';
       const kind = (args[0] ?? '').toLowerCase();
       const value = args.slice(1).join(' ').trim();
-      if (kind !== 'interface' && kind !== 'vrf') return CISCO_ERRORS.INVALID_INPUT;
+      if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;
       const resolved = kind === 'interface'
         ? (this.resolveInterfaceNameForDebug(value) ?? value)
@@ -1942,7 +2022,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const kind = (args[0] ?? '').toLowerCase();
       if (kind === 'all') { svc.clearConditions(); return 'All conditions have been removed'; }
       const value = args.slice(1).join(' ').trim();
-      if (kind !== 'interface' && kind !== 'vrf') return CISCO_ERRORS.INVALID_INPUT;
+      if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;
       const resolved = kind === 'interface'
         ? (this.resolveInterfaceNameForDebug(value) ?? value)
@@ -2866,25 +2946,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
       return '';
     });
-    const applyServiceTimestamps = (args: string[], on: boolean): void => {
-      const a = args.map((s) => s.toLowerCase());
-      if (a[0] !== 'timestamps') return;
-      this.attachLoggingToDevice(this.d());
-      this.logging.timestamps = on && a.includes('datetime');
-      this.logging.timestampsMsec = on && a.includes('msec');
-    };
+    // `service timestamps` has its own registration above and the trie
+    // routes to the more specific one, so the second parser this handler
+    // used to carry never ran — it could only ever contradict the first.
     this.configTrie.registerGreedy('service', 'Service configuration', (args) => {
       const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
       const name = args.join(' ');
       if (name) dev._setServiceFlag?.(name, true);
-      applyServiceTimestamps(args, true);
       return '';
     });
     this.configTrie.registerGreedy('no service', 'Disable a service', (args) => {
       const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
       const name = args.join(' ');
       if (name) dev._setServiceFlag?.(name, false);
-      applyServiceTimestamps(args, false);
       return '';
     });
     this.configTrie.registerGreedy('no username', 'Remove a local user', (args) => {

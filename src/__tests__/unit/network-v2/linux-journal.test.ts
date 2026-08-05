@@ -485,7 +485,15 @@ describe('Group 8: Permissions and error handling', () => {
   it('should allow non-root to view journal', async () => {
     const pc = new LinuxPC('pc', 'PC1');
     const result = await pc.executeCommand('journalctl -n 5');
-    expect(result).toContain('localhost');
+    // Ce cas vérifie qu'un utilisateur non root OBTIENT le journal, et
+    // non son contenu exact. Il s'accrochait au mot `localhost`, qui ne
+    // s'y trouvait que parce qu'une ligne ancienne tenait encore dans la
+    // fenêtre des 5 dernières : ajouter une ligne légitime ailleurs dans
+    // le démarrage l'en chassait. On affirme donc ce que le cas veut
+    // dire — du journal, et pas un refus.
+    expect(result).toContain('-- Logs begin at');
+    expect(result).not.toMatch(/Permission denied|not permitted/i);
+    expect(result.split('\n').filter((l) => l.trim()).length).toBeGreaterThan(1);
   });
 
   it('should allow non-root to use dmesg', async () => {

@@ -61,10 +61,18 @@ async function buildRouted(): Promise<RoutedLab> {
   return { clientRemote, server, gw, lanSw, wanSw };
 }
 
+/**
+ * L'écoute et sa ligne dans `ss` sont une seule opération depuis
+ * docs/PRD-Sockets-Une-Seule-Verite.md §P1. Ce test posait les deux à la
+ * main — un `listen()` puis un `socketTable.bind()` — parce que le premier
+ * n'annonçait rien ; le second lèverait maintenant `EADDRINUSE` contre
+ * l'entrée que le premier vient de créer.
+ */
 function installListener(server: LinuxServer, port: number): void {
-  server.getTcpStack().listen(port, { onAccept: () => undefined });
-  const st = (server as unknown as { executor: { socketTable: { bind: (p: 'tcp', a: string, port: number, pid?: number, name?: string) => unknown } } }).executor.socketTable;
-  st.bind('tcp', '0.0.0.0', port, 4242, 'myapp');
+  server.getTcpStack().listen(port, {
+    onAccept: () => undefined,
+    identity: { pid: 4242, processName: 'myapp' },
+  });
 }
 
 async function baseFirewall(server: LinuxServer): Promise<void> {

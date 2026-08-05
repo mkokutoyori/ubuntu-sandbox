@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-08-04T08:22:08.510Z
+Generated: 2026-08-04T11:16:25.857Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1341,7 +1341,8 @@ Total steps: 413
    No table-maps configured.
 
 [284/413] r1 R1# show mls qos
-   MLS QoS is disabled.
+          ^
+  % Invalid input detected at '^' marker.
 
 
 --- [285] § legacy QoS / NBAR ---
@@ -1394,9 +1395,13 @@ Total steps: 413
    Interface uses FIFO queueing.
 
 [301/413] r1 R1# show interfaces GigabitEthernet0/1 rate-limit
-  % Invalid input detected at '^' marker.
-  show interface GigabitEthernet0/1 rate-limit
-                 ^
+  GigabitEthernet0/1
+    Output
+      matches: all traffic
+        params:  8000000 bps, 1500000 limit, 3000000 extended limit
+        conformed 0 packets, 0 bytes; action: transmit
+        exceeded 0 packets, 0 bytes; action: drop
+        last packet: never, current burst: 1500000 bytes
 
 [302/413] r1 R1# show traffic-shape
    No traffic shaping configured.
@@ -1429,7 +1434,7 @@ Total steps: 413
 [306/413] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1259 bytes
+  Current configuration : 1345 bytes
   !
   hostname R1
   !
@@ -1440,6 +1445,7 @@ Total steps: 413
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
    bfd echo
   !
   interface GigabitEthernet0/2
@@ -1821,7 +1827,7 @@ Total steps: 413
 [341/413] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C1FB0.9126E978 (08:22:08.567 UTC Tue Aug 4 2026)
+  reference time is EE1C4889.E8F5C28F (11:16:25.910 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1# show ntp associations
@@ -1830,7 +1836,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *08:22:08.000 UTC Tue Aug 4 2026
+  *11:16:25.000 UTC Tue Aug 4 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2015,7 +2021,7 @@ Total steps: 413
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 1259 bytes
+  Current configuration : 1345 bytes
   !
   hostname R1
   !
@@ -2026,6 +2032,7 @@ Total steps: 413
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
    bfd echo
   !
   interface GigabitEthernet0/2
@@ -2338,6 +2345,7 @@ Total steps: 413
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
    bfd echo
   !
   interface GigabitEthernet0/2
@@ -2351,13 +2359,14 @@ Total steps: 413
 [370/413] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1259 bytes
+  Current configuration : 1345 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
    bfd echo
   interface GigabitEthernet0/2
   interface GigabitEthernet0/3
@@ -2587,9 +2596,9 @@ Total steps: 413
     banner       Remove a banner
     privilege    Remove privilege command rule
     logging      Disable logging
+    service      Disable a service
     ntp          Remove NTP config
     enable       Modify enable password parameters
-    service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
     interface    Remove a virtual interface

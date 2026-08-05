@@ -356,9 +356,15 @@ describe('Cisco telnet server — the session is real', () => {
       'line vty 0 4', 'access-class 10 in', 'end',
     ]) await cisco.executeCommand(cmd);
 
-    const client = await connectTelnet(pc, CISCO_IP);
-    await settle();
-    expect(client.received).not.toContain(`${cisco.getHostname()}>`);
+    // Un refus d'`access-class` se voit sur le fil, pas dans le contenu
+    // d'une session qui n'existe pas : le routeur refuse la connexion
+    // elle-même, exactement comme le cas `transport input ssh` juste
+    // au-dessus. Ce test ouvrait encore une session pour constater
+    // ensuite qu'elle n'affichait pas l'invite — il ne pouvait plus
+    // passer depuis que le refus est réel.
+    const socket = await (pc as unknown as { tcpConnect: (h: string, p: number) => Promise<unknown> })
+      .tcpConnect(CISCO_IP, 23);
+    expect(socket).toBeNull();
     expect(cisco.getSshSessionRegistry().list()).toHaveLength(0);
   });
 });

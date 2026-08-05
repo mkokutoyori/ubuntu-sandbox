@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-08-04T08:22:16.414Z
+Generated: 2026-08-04T11:16:14.609Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -167,7 +167,7 @@ Total steps: 370
 <empty>
 
 [53/370] r1 R1(config)# crypto isakmp key MyPreShared2 hostname peer.lab.local
-  % Incomplete command. Usage: crypto isakmp key KEY address IP
+<empty>
 
 [54/370] r1 R1(config)# crypto isakmp keepalive 10 3
 <empty>
@@ -251,6 +251,7 @@ Total steps: 370
   Keychain  Hostname / Address   Preshared Key
   default   10.0.0.2             ************
   default   10.0.0.0             ************
+  default   peer.lab.local       ************
 
 [69/370] r1 R1# show crypto isakmp sa
   IPv4 Crypto ISAKMP SA
@@ -963,7 +964,7 @@ Total steps: 370
     Certificate Serial Number: 0000000000001002
     Subject: CN=R1.lab.local
     Issuer: CN=http://10.0.0.5:80
-    Validity: 2026-08-04T08:22:16.442Z to 2027-08-04T08:22:16.442Z
+    Validity: 2026-08-04T11:16:14.634Z to 2027-08-04T11:16:14.634Z
   CA Certificate (Trustpoint CA1):
     Status: Available
     Certificate Serial Number: 0000000000001001
@@ -1050,7 +1051,7 @@ Total steps: 370
 [263/370] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 3529 bytes
+  Current configuration : 3584 bytes
   !
   hostname R1
   !
@@ -1140,6 +1141,7 @@ Total steps: 370
    lifetime 18000
   crypto isakmp key MyPreShared0 address 10.0.0.2
   crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp key MyPreShared2 hostname peer.lab.local
   crypto isakmp keepalive 20 3
   crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
   crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
@@ -1542,7 +1544,7 @@ Total steps: 370
 [298/370] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C1FB8.73F7CED9 (08:22:16.453 UTC Tue Aug 4 2026)
+  reference time is EE1C487E.A5604189 (11:16:14.646 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1# show ntp associations
@@ -1551,7 +1553,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1# show clock
-  *08:22:16.000 UTC Tue Aug 4 2026
+  *11:16:14.000 UTC Tue Aug 4 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1759,7 +1761,7 @@ Total steps: 370
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 3529 bytes
+  Current configuration : 3584 bytes
   !
   hostname R1
   !
@@ -1849,6 +1851,7 @@ Total steps: 370
    lifetime 18000
   crypto isakmp key MyPreShared0 address 10.0.0.2
   crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp key MyPreShared2 hostname peer.lab.local
   crypto isakmp keepalive 20 3
   crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
   crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
@@ -2233,7 +2236,7 @@ Total steps: 370
 [327/370] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 3529 bytes
+  Current configuration : 3584 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -2308,6 +2311,7 @@ Total steps: 370
    lifetime 18000
   crypto isakmp key MyPreShared0 address 10.0.0.2
   crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp key MyPreShared2 hostname peer.lab.local
   crypto isakmp keepalive 20 3
   crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
   crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
@@ -2560,9 +2564,9 @@ Total steps: 370
     banner       Remove a banner
     privilege    Remove privilege command rule
     logging      Disable logging
+    service      Disable a service
     ntp          Remove NTP config
     enable       Modify enable password parameters
-    service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
     interface    Remove a virtual interface

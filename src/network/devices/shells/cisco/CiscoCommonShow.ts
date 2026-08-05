@@ -325,10 +325,17 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
       '',
       'Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID',
     ];
+    const agent = dev.getCdpAgent?.();
+    const appris = agent?.getNeighbors() ?? [];
+    const resteHold = (n: NeighborDTO): number => {
+      const e = appris.find(x => x.localPort === n.localPort && x.remoteHost === n.remoteHost);
+      return e && agent ? agent.holdtimeRemainingSec(e) : 180;
+    };
     const rows = ns.map((n) =>
-      `${n.remoteHost.padEnd(16)} ${shortIf(n.localPort).padEnd(17)} 180        ` +
+      `${n.remoteHost.slice(0, 16).padEnd(16)} ${shortIf(n.localPort).slice(0, 17).padEnd(17)} ` +
+      `${String(resteHold(n)).padEnd(10)} ` +
       `${n.remoteCapability.charAt(0).padEnd(11)} ` +
-      `${n.remotePlatform.padEnd(9)} ${shortIf(n.remotePort)}`);
+      `${n.remotePlatform.slice(0, 9).padEnd(9)} ${shortIf(n.remotePort)}`);
     return [...hdr, ...rows, '', `Total cdp entries displayed : ${ns.length}`].join('\n');
   }
   const cfg = dev.getCdpAgent?.()?.getConfig();

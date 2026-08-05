@@ -693,14 +693,11 @@ export abstract class LinuxMachine extends EndHost
     try {
       bindDnsTlsServer(this, (query) => this.answerDnsQuery(query));
     } catch { /* port already bound (e.g. service restarted) */ }
-    // `TcpStack.listen()` n'inscrit rien dans la table des sockets : sans
-    // ces deux lignes, `ss`/`netstat` ne montreraient ni le 53/tcp ni le
-    // 853, alors que les deux répondent réellement.
-    for (const port of [DNS_PORT, DOT_PORT]) {
-      try {
-        this.socketTable.bind('tcp', '0.0.0.0', port, undefined, 'dnsmasq');
-      } catch { /* déjà annoncé */ }
-    }
+    // Il y avait ici deux `socketTable.bind()` manuels, dont le
+    // commentaire disait qu'ils n'existaient que parce que
+    // `TcpStack.listen()` n'inscrivait rien. Il inscrit désormais, avec le
+    // nom du démon — le premier des cinq contournements du §3 à
+    // disparaître (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
   }
 
   // ─── systemd-resolved ────────────────────────────────────────────────
@@ -915,6 +912,15 @@ export abstract class LinuxMachine extends EndHost
         if (immediate) { send(immediate); return; }
         void this.answerResolvedQuery(query).then(send);
       }, 'systemd-resolved');
+      // Le stub répond aussi en TCP sur une vraie machine — c'est par là
+      // que passe une réponse trop grande pour un datagramme (RFC 7766).
+      // L'entrée `tcp 127.0.0.53:53` figurait déjà dans `ss` ; jusqu'ici
+      // rien n'écoutait derrière
+      // (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
+      bindDnsTcpServer(this, (query) => {
+        const immediate = this.answerResolvedQuerySync(query);
+        return immediate ?? this.answerResolvedQuery(query);
+      }, DNS_PORT, { address: STUB_ADDRESS, processName: 'systemd-resolved' });
       this.resolvedStubBound = true;
     } catch { /* déjà lié */ }
     // systemd-resolved est le contre-exemple de docs/PRD-Nginx.md §P0 : son
@@ -1253,24 +1259,47 @@ export abstract class LinuxMachine extends EndHost
     return ports.length ? ports : [22];
   }
 
+  /**
+   * sshd, sur les deux familles d'adresses
+   * (docs/PRD-Sockets-Une-Seule-Verite.md §P2b).
+   *
+   * Deux `socketTable.bind()` manuels posaient ces lignes à côté, avec le
+   * pid et la bannière ; l'identité voyage maintenant avec l'écoute. Le
+   * point délicat est l'écoute `::` : l'entrée `:::22` figurait dans `ss`
+   * sans écoute propre, `findListener` rabattant une connexion v6 sur le
+   * générique v4. Retirer le doublon sans ouvrir cette écoute aurait donc
+   * créé en IPv6 l'erreur même que ce chantier corrige.
+   */
+  private static readonly SSHD_PID = 985;
+  private static readonly SSHD_BANNER = 'SSH-2.0-Sandbox-Server\r\n';
+  private static readonly SSHD_ADDRESSES = ['0.0.0.0', '::'] as const;
+
   private attachSshTcpListeners(): void {
     const stack = this.getTcpStack();
     const desired = new Set(this.sshdPortsFromConfig());
     for (const port of this._sshdActivePorts) {
       if (!desired.has(port)) {
-        stack.closeListener(port, '0.0.0.0');
+        for (const addr of LinuxMachine.SSHD_ADDRESSES) stack.closeListener(port, addr);
         this._sshdActivePorts.delete(port);
       }
     }
-    const sshdPid = this.socketTable.getAll().find((s) => s.processName === 'sshd')?.pid ?? null;
     for (const port of desired) {
       if (this._sshdActivePorts.has(port)) continue;
-      stack.listen(port, {
-        onAccept: (socket) => {
-          if (sshdPid !== null) stack.setSocketOwner(socket, sshdPid);
-          this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
-        },
-      });
+      for (const addr of LinuxMachine.SSHD_ADDRESSES) {
+        try {
+          stack.listen(port, {
+            identity: {
+              pid: LinuxMachine.SSHD_PID,
+              processName: 'sshd',
+              banner: LinuxMachine.SSHD_BANNER,
+            },
+            onAccept: (socket) => {
+              stack.setSocketOwner(socket, LinuxMachine.SSHD_PID);
+              this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+            },
+          }, addr);
+        } catch { /* déjà ouverte sur cette adresse */ }
+      }
       this._sshdActivePorts.add(port);
     }
   }
@@ -1278,7 +1307,7 @@ export abstract class LinuxMachine extends EndHost
   private detachSshTcpListeners(): void {
     const stack = this.getTcpStack();
     for (const port of this._sshdActivePorts) {
-      stack.closeListener(port, '0.0.0.0');
+      for (const addr of LinuxMachine.SSHD_ADDRESSES) stack.closeListener(port, addr);
     }
     this._sshdActivePorts.clear();
   }
@@ -1839,9 +1868,9 @@ export abstract class LinuxMachine extends EndHost
    * used by ps/netstat output so the two are coherent.
    */
   private initDefaultSockets(isServer: boolean): void {
-    const sshdBanner = 'SSH-2.0-Sandbox-Server\r\n';
-    this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd', sshdBanner);
-    this.socketTable.bind('tcp', '::', 22, 985, 'sshd', sshdBanner);
+    // Les deux `bind()` de sshd sont partis : `attachSshTcpListeners()`
+    // ouvre les écoutes v4 ET v6 en portant pid, nom et bannière, donc
+    // les lignes de `ss` viennent de l'écoute elle-même (§P2b).
     // L'entrée 127.0.0.53:53 est posée par bindResolvedStub(), avec un
     // vrai gestionnaire derrière — plus un bind() décoratif.
 
@@ -2200,6 +2229,7 @@ export abstract class LinuxMachine extends EndHost
     if (this.commands.hasNetworkCommandIn(input)) return true;
     if (input.includes('/var/lib/dhcp/')) return true;
     if (LinuxMachine.SSHPASS_TRANSFER_RE.test(input)) return true;
+    if (LinuxMachine.TRANSFER_RE.test(input)) return true;
     const words = input.split(/[\s;|&"'`()]+/);
     if (words.some(w => w === 'ps' || w === 'man' || w === 'sshd')) return true;
     // `bash script.sh` / `./script.sh` / `run-parts DIR` at the top of the
@@ -2220,6 +2250,19 @@ export abstract class LinuxMachine extends EndHost
    * majority of existing usage) is untouched and stays on the sync path.
    */
   private static readonly SSHPASS_TRANSFER_RE = /^sshpass\s+-p\s+\S+\s+(scp|sftp)\b/;
+
+  /**
+   * `scp`/`sftp` en tête de ligne, sans `sshpass`. Un transfert sans mot de
+   * passe est le cas ordinaire — et sur une vraie machine, s'il aboutit
+   * c'est parce qu'une CLÉ l'authentifie. Ces lignes partaient jusqu'ici
+   * sur le chemin synchrone, qui ne peut pas `await` l'ouverture d'une
+   * vraie session : le transfert copiait donc d'un VFS à l'autre sans
+   * qu'aucun octet ne traverse un câble (Phase 4 de la refonte SSH).
+   * Elles passent maintenant par le dispatcher async, qui tente la vraie
+   * session par clé publique avant de retomber, si elle échoue, sur le
+   * comportement inchangé.
+   */
+  private static readonly TRANSFER_RE = /^\s*(?:sudo\s+)?(scp|sftp)\s+\S/;
 
   /**
    * Matches a top-of-line `bash`/`sh` file invocation (no `-c`), a direct
@@ -2623,6 +2666,21 @@ export abstract class LinuxMachine extends EndHost
         const wrappedCmd = match[1] as 'scp' | 'sftp';
         const wrappedArgs = tokenized.tokens.slice(4);
         const result = await this.executor.runSshTransportAsync(wrappedCmd, wrappedArgs, password);
+        this.executor.lastExitCode = result.exitCode;
+        return result.output;
+      }
+      case 'scp':
+      case 'sftp': {
+        // Sans mot de passe offert : `runSshTransportAsync` tente la vraie
+        // session par clé, puis retombe sur la résolution directe si elle
+        // n'aboutit pas — c'est ce repli qui garde intacts les scénarios
+        // qui n'ont jamais posé de clé.
+        const tokenized = LinuxMachine.tokenizeArgsDetailed(noSudo);
+        if (tokenized.unterminatedQuote) {
+          return 'bash: syntax error: unexpected end of file (unterminated quote)';
+        }
+        const result = await this.executor.runSshTransportAsync(
+          firstCmd as 'scp' | 'sftp', tokenized.tokens.slice(1), '');
         this.executor.lastExitCode = result.exitCode;
         return result.output;
       }

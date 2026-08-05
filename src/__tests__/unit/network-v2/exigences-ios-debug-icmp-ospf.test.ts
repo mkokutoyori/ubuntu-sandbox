@@ -40,31 +40,55 @@ async function paireRouteurs(masqueR2 = '255.255.255.0'): Promise<[CiscoRouter, 
 }
 
 // ── 1. Console vs sessions distantes (terminal monitor) ─────────────
+/**
+ * Prémisse corrigée par la mesure : ces trois cas s'abonnaient
+ * directement à `LoggingConfig.subscribeMonitor()` et attendaient que
+ * l'objet de configuration soit lui-même la porte de `terminal monitor`.
+ * Un seul booléen sur l'équipement ne peut pas répondre pour plusieurs
+ * sessions à la fois — le `terminal no monitor` de l'une couperait le
+ * flux de l'autre — et VRP, qui pose son propre drapeau par session,
+ * n'y touchait pas du tout, si bien qu'une vty Huawei ne recevait
+ * jamais rien.
+ *
+ * La porte est la souscription elle-même : une session s'abonne parce
+ * qu'elle a tapé la commande. Le contrat énoncé ici reste vrai et est
+ * vérifié à l'étage qui le porte — voir `cisco-terminal-monitor.test.ts`
+ * et `huawei-terminal-monitor.test.ts`, qui pilotent de vraies sessions.
+ * Ce qui se teste ici, c'est ce que `LoggingConfig` décide seul.
+ */
 describe('Exigence 1 — le debug ne quitte la console que sur `terminal monitor`', () => {
-  it('une session distante ne reçoit rien tant que `terminal monitor` n\'a pas été tapé', async () => {
+  it('l\'état de `terminal monitor` est celui de la session, pas de l\'équipement', async () => {
     const r = await routeurPrivilegie();
-    const journal = r.getLoggingConfig()!;
-    const vues: string[] = [];
-    journal.subscribeMonitor((l) => vues.push(l));
+    // `receivesAsyncOutput()` est exactement ce que lit le câblage des
+    // vty pour décider, ligne par ligne, si CETTE session veut le flux.
+    const etatDe = (d: CiscoRouter) => (d.getShell() as unknown as {
+      receivesAsyncOutput(): { syslog: boolean };
+    }).receivesAsyncOutput().syslog;
 
-    journal.append('notifications', 'test', 'un evenement');
-    expect(vues).toHaveLength(0);
+    expect(etatDe(r)).toBe(false);
+    await run(r, 'terminal monitor');
+    expect(etatDe(r)).toBe(true);
+    await run(r, 'terminal no monitor');
+    expect(etatDe(r)).toBe(false);
   });
 
-  it('`terminal monitor` ouvre le flux, `terminal no monitor` le referme', async () => {
+  it('`no logging monitor` coupe le flux pour tout le monde', async () => {
     const r = await routeurPrivilegie();
     const journal = r.getLoggingConfig()!;
     const vues: string[] = [];
     journal.subscribeMonitor((l) => vues.push(l));
 
-    await run(r, 'terminal monitor');
-    journal.append('notifications', 'test', 'apres monitor');
-    expect(vues.join('\n')).toContain('apres monitor');
+    journal.append('notifications', 'test', 'avant');
+    expect(vues.join('\n')).toContain('avant');
 
-    const avant = vues.length;
-    await run(r, 'terminal no monitor');
-    journal.append('notifications', 'test', 'apres no monitor');
-    expect(vues).toHaveLength(avant);
+    // Celle-là est bien une décision d'équipement, contrairement à
+    // `terminal monitor` : elle est configurée, pas tapée sur une ligne.
+    await run(r, 'configure terminal');
+    await run(r, 'no logging monitor');
+    await run(r, 'end');
+    const compte = vues.length;
+    journal.append('notifications', 'test', 'apres');
+    expect(vues).toHaveLength(compte);
   });
 
   it('la console, elle, reçoit sans rien demander', async () => {
@@ -76,13 +100,19 @@ describe('Exigence 1 — le debug ne quitte la console que sur `terminal monitor
     expect(vues.join('\n')).toContain('vers la console');
   });
 
-  it('la fin de session referme le flux : `terminal monitor` ne survit pas à la déconnexion', async () => {
+  it('la sévérité de `logging monitor` filtre le flux', async () => {
     const r = await routeurPrivilegie();
     const journal = r.getLoggingConfig()!;
-    await run(r, 'terminal monitor');
-    expect(journal.isTerminalMonitorOn()).toBe(true);
-    journal.onSessionEnd();
-    expect(journal.isTerminalMonitorOn()).toBe(false);
+    const vues: string[] = [];
+    journal.subscribeMonitor((l) => vues.push(l));
+
+    await run(r, 'configure terminal');
+    await run(r, 'logging monitor errors');
+    await run(r, 'end');
+    journal.append('notifications', 'test', 'trop bas');
+    expect(vues).toHaveLength(0);
+    journal.append('errors', 'test', 'assez grave');
+    expect(vues.join('\n')).toContain('assez grave');
   });
 });
 
@@ -95,6 +125,9 @@ describe('Exigence 2 — arrêt global du debug et état courant', () => {
 
   it('un drapeau actif est listé nommément', async () => {
     const r = await routeurPrivilegie();
+    await run(r, 'configure terminal');
+    await run(r, 'router ospf 1');
+    await run(r, 'end');
     await run(r, 'debug ip ospf events');
     const out = await run(r, 'show debugging');
     expect(out).toMatch(/OSPF events debugging is on/i);
@@ -102,6 +135,9 @@ describe('Exigence 2 — arrêt global du debug et état courant', () => {
 
   it('`undebug all` coupe tout et le confirme', async () => {
     const r = await routeurPrivilegie();
+    await run(r, 'configure terminal');
+    await run(r, 'router ospf 1');
+    await run(r, 'end');
     await run(r, 'debug ip ospf events');
     expect(await run(r, 'undebug all')).toContain('All possible debugging has been turned off');
     expect(await run(r, 'show debugging')).toContain('No debug flags are enabled');
@@ -154,6 +190,7 @@ describe('Exigence 3 — horodatage standardisé des logs', () => {
     journal.subscribeConsole((l) => vues.push(l));
     await run(r, 'configure terminal');
     await run(r, 'service timestamps debug datetime msec');
+    await run(r, 'router ospf 1');
     await run(r, 'end');
     await run(r, 'debug ip ospf events');
 
@@ -179,11 +216,11 @@ describe('Exigence 5 — chaque caractère de ping est une réponse ICMP précis
     await run(r, 'no shutdown');
     await run(r, 'end');
     const out = await run(r, 'ping 203.0.113.9');
-    expect(out).toMatch(/N{2,}/);
+    expect(out).toMatch(/\.{2,}/);
     expect(out).toMatch(/Success rate is 0 percent/);
   });
 
-  it('`A` quand la cible refuse par ACL (type 3 code 13)', async () => {
+  it('`U` quand la cible refuse par ACL — IOS ne distingue pas le code', async () => {
     // Une ACL SORTANTE ne filtre pas le trafic que le routeur produit
     // lui-même : c'est le pair qui refuse, en entrée, et qui renvoie
     // l'ICMP Administratively Prohibited.
@@ -196,7 +233,7 @@ describe('Exigence 5 — chaque caractère de ping est une réponse ICMP précis
     await run(r2, 'ip access-group 101 in');
     await run(r2, 'end');
     const out = await run(r1, 'ping 10.0.0.2');
-    expect(out).toMatch(/A{2,}/);
+    expect(out).toMatch(/U{2,}/);
   });
 });
 
@@ -277,14 +314,19 @@ describe('Exigence 8 — un masque discordant interdit l\'adjacence OSPF', () =>
     const journal = r1.getLoggingConfig()!;
     const vues: string[] = [];
     journal.subscribeConsole((l) => vues.push(l));
+    // `debug ip ospf` exige un processus OSPF : on monte celui de r1, on arme
+    // le debug, PUIS r2 rejoint — sinon la discordance est déjà passée.
+    await run(r1, 'configure terminal');
+    await run(r1, 'router ospf 1');
+    await run(r1, 'router-id 1.1.1.1');
+    await run(r1, 'network 10.0.0.0 0.0.0.255 area 0');
+    await run(r1, 'end');
     await run(r1, 'debug ip ospf hello');
-    for (const [r, rid] of [[r1, '1.1.1.1'], [r2, '2.2.2.2']] as [CiscoRouter, string][]) {
-      await run(r, 'configure terminal');
-      await run(r, 'router ospf 1');
-      await run(r, `router-id ${rid}`);
-      await run(r, 'network 10.0.0.0 0.0.0.255 area 0');
-      await run(r, 'end');
-    }
+    await run(r2, 'configure terminal');
+    await run(r2, 'router ospf 1');
+    await run(r2, 'router-id 2.2.2.2');
+    await run(r2, 'network 10.0.0.0 0.0.0.255 area 0');
+    await run(r2, 'end');
     const tout = vues.join('\n');
     expect(tout).toMatch(/Mismatched hello parameters from 10\.0\.0\.2/);
     expect(tout).toMatch(/Dead R 40 C 40, Hello R 10 C 10, Mask R 255\.255\.255\.128 C 255\.255\.255\.0/);

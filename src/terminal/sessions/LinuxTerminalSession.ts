@@ -11,6 +11,8 @@
 
 import { Equipment, type HostCapableDevice } from '@/network';
 import { IPAddress } from '@/network/core/types';
+import { HostsFile } from '@/network/devices/HostsFile';
+import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
@@ -2874,9 +2876,23 @@ export class LinuxTerminalSession extends TerminalSession {
     const user = meta.userAtHost.includes('@')
       ? meta.userAtHost.split('@')[0]
       : this.currentUser;
-    const host = meta.userAtHost.includes('@')
+    const typedHost = meta.userAtHost.includes('@')
       ? meta.userAtHost.split('@')[1]
       : meta.userAtHost;
+
+    // Un vrai client résout le nom AVANT d'ouvrir la moindre socket, et
+    // s'arrête là s'il n'y arrive pas. Sans cette étape, `ssh localhost`
+    // descendait jusqu'à la pile TCP avec le mot « localhost » pour
+    // adresse, où il levait une exception non rattrapée.
+    const host = this.resolveSshHost(typedHost);
+    if (!host) {
+      this.addLine(
+        `ssh: Could not resolve hostname ${typedHost}: Name or service not known`,
+        'error',
+      );
+      this.notify();
+      return;
+    }
 
     // Reactive IO: password and host-key prompts are shown on demand by
     // TerminalSshInteractionHandler → QueuedTerminalIO → handleSshIOKey().
@@ -3883,6 +3899,43 @@ export class LinuxTerminalSession extends TerminalSession {
   private remoteLivenessProbe(host: string): (() => boolean) | undefined {
     if (!IPAddress.tryParse(host)) return undefined;
     return peerLiveness(this.device, host);
+  }
+
+  /**
+   * Le nom que l'opérateur a tapé, ramené à une adresse — ce qu'un vrai
+   * client ssh fait AVANT d'ouvrir quoi que ce soit.
+   *
+   * Rien ne le faisait : `ssh localhost` descendait jusqu'à
+   * `TcpStack.resolveEgress`, qui construisait `new IPAddress('localhost')`
+   * et levait. L'exception remontait par une promesse non rattrapée, donc
+   * l'utilisateur voyait une trace de pile au lieu d'une session ou d'un
+   * refus.
+   *
+   * L'ordre est celui du résolveur réel : une adresse littérale passe
+   * telle quelle, puis `/etc/hosts` de la machine locale — c'est lui qui
+   * porte `localhost` —, puis les noms d'équipements du réseau simulé.
+   * `null` signifie « nom inconnu », et l'appelant rend alors le message
+   * d'OpenSSH plutôt que d'appeler une adresse qui n'existe pas.
+   */
+  private resolveSshHost(host: string): string | null {
+    if (IPAddress.tryParse(host)) return host;
+    const vfs = (this.device as unknown as {
+      executor?: { vfs?: { readFile(p: string): string | null } };
+    }).executor?.vfs;
+    if (vfs) {
+      const needle = host.toLowerCase();
+      const short = needle.split('.')[0];
+      const raw = vfs.readFile('/etc/hosts');
+      for (const entry of HostsFile.parse(raw).entries) {
+        if (entry.hasName(needle) || entry.hasName(short)) return entry.ip;
+      }
+    }
+    const found = findHostByAddress(
+      host,
+      vfs ? { readFile: (p: string) => vfs.readFile(p) } : undefined,
+      this.device as never,
+    );
+    return found?.ip ?? null;
   }
 
   pushRemoteDevice(

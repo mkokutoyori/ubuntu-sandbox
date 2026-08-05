@@ -1015,10 +1015,14 @@ export class LinuxLogManager {
     // same machine showed that line twice, once under an invented
     // `sshd[1234]` that `ps aux | grep sshd` never matched.
     //
-    // Its IPv6 twin (`Server listening on :: port 22.`) is gone rather
-    // than kept: the simulator binds no IPv6 listener, so the line would
-    // announce a socket that does not exist — which is what an operator
-    // reading it would go on to test.
+    // Son jumeau IPv6 (`Server listening on :: port 22.`) n'est pas
+    // ensemencé non plus, et pour la même raison : il vient de
+    // l'événement réel. Il l'a d'ailleurs longtemps été à tort — cette
+    // ligne était absente parce que le simulateur ne liait aucune écoute
+    // IPv6, et l'annoncer aurait décrit une socket inexistante. Depuis
+    // que `attachSshTcpListeners` ouvre les deux familles
+    // (docs/PRD-Sockets-Une-Seule-Verite.md §P2b), la socket existe, donc
+    // la ligne existe — écrite par le même pid que sa jumelle v4.
 
     // Auth/logind messages
     const logindPid = 456;

@@ -1,4 +1,5 @@
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { createResponse, type HttpMessage } from '../semantics/types';
 import { encodeResponse, parseRequest } from './Http1Wire';
 import type { IEventBus } from '@/events/EventBus';
@@ -22,8 +23,11 @@ export class Http1ServerSession {
     private readonly eventBus?: IEventBus,
   ) {}
 
-  start(): void {
-    this.listener = this.tcpStack.listen(this.port, { onAccept: (socket) => this.handleConnection(socket) });
+  start(identity?: ListenerIdentity): void {
+    this.listener = this.tcpStack.listen(this.port, {
+      onAccept: (socket) => this.handleConnection(socket),
+      identity,
+    });
   }
 
   stop(): void {
