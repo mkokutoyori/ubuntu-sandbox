@@ -33,7 +33,7 @@ import {
   APACHE_CONF, APACHE_CONF_PATH, APACHE_PORTS_CONF, APACHE_PORTS_PATH,
   APACHE_SITES_AVAILABLE, APACHE_SITES_ENABLED, APACHE_DEFAULT_SITE,
   APACHE_DEFAULT_PAGE, APACHE_DOCROOT, APACHE_DEFAULT_MODULES, apacheModuleLoadFile,
-  APACHE_ENVVARS, APACHE_ENVVARS_PATH, APACHE_MODS_ENABLED,
+  APACHE_ENVVARS, APACHE_ENVVARS_PATH, APACHE_MODS_ENABLED, APACHE_DEFAULT_SSL_SITE,
 } from './linux/http/apache/ApacheFiles';
 import { checkNginxCriticalFiles } from './linux/service/CriticalFiles';
 import {
@@ -1237,6 +1237,11 @@ export abstract class LinuxMachine extends EndHost
     }
     const site = `${APACHE_SITES_AVAILABLE}/000-default.conf`;
     if (!vfs.exists(site)) vfs.writeFile(site, APACHE_DEFAULT_SITE, 0, 0, 0o022, true);
+    // Available and NOT enabled, exactly as Debian ships it: `a2ensite
+    // default-ssl` is the learner's own step, and so is producing the
+    // certificate it names.
+    const sslSite = `${APACHE_SITES_AVAILABLE}/default-ssl.conf`;
+    if (!vfs.exists(sslSite)) vfs.writeFile(sslSite, APACHE_DEFAULT_SSL_SITE, 0, 0, 0o022, true);
     // `a2ensite` is only an `ln -s`: the link is what a learner removes
     // with `a2dissite`, so `rm` has to be enough too.
     if (!vfs.exists(`${APACHE_SITES_ENABLED}/000-default.conf`)) {

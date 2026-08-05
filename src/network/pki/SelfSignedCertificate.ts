@@ -5,13 +5,23 @@
  * root key private). Same "simulated crypto, real protocol shape"
  * convention as the rest of `src/network/pki/`.
  */
-import { PkiKeyPair, type PkiPrivateKey } from './PkiKeyPair';
+import { PkiKeyPair, type PkiPrivateKey, type PkiPublicKey } from './PkiKeyPair';
 import { type X509Certificate, type X509CertificateFields, tbsPayload } from './X509Certificate';
 
 export interface SelfSignedCertificateOptions {
   readonly now: number;
   readonly validityMs?: number;
   readonly extKeyUsage?: readonly string[];
+  /**
+   * Certify THIS key instead of generating a fresh one.
+   *
+   * Without it, a caller that already holds a key — `openssl req -x509
+   * -keyout k.pem`, which has just written one to disk — got back a
+   * certificate bound to a DIFFERENT key generated in here. Nothing
+   * noticed as long as the two files were only ever read separately;
+   * the pair failed the moment a TLS server tried to use them together.
+   */
+  readonly keyPair?: { readonly publicKey: PkiPublicKey; readonly privateKey: PkiPrivateKey };
 }
 
 let serialCounter = 0x5000;
@@ -23,7 +33,7 @@ function nextSerial(): string {
 export function generateSelfSignedCertificate(
   subject: string, opts: SelfSignedCertificateOptions,
 ): { cert: X509Certificate; privateKey: PkiPrivateKey } {
-  const keys = PkiKeyPair.generate('rsa');
+  const keys = opts.keyPair ?? PkiKeyPair.generate('rsa');
   const fields: X509CertificateFields = {
     version: 3,
     serialNumber: nextSerial(),

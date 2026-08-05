@@ -1,4 +1,8 @@
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
+import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
+import { pemToCert, pemToPrivateKey } from '@/network/pki/pem';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 import { contentTypeForPath } from '@/network/http/HttpTypes';
 import type { PortSpec } from '../../../../core/ports/PortNumber';
@@ -70,10 +74,12 @@ function formatAccessTime(d: Date): string {
     + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} +0000`;
 }
 
+type ApacheSession = Http1ServerSession | HttpsServerSession;
+
 export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
   private config: ApacheConfig = { listenPorts: [], vhosts: [] };
   private loaded = false;
-  private readonly sessions = new Map<number, Http1ServerSession>();
+  private readonly sessions = new Map<number, ApacheSession>();
 
   constructor(private readonly host: NginxHost) {}
 
@@ -127,9 +133,18 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     if (this.config.vhosts.length === 0) return false;
     if (this.sessions.has(spec.port)) return true;
 
-    const session = new Http1ServerSession(
-      this.host.tcpStack(), spec.port, (req) => this.respond(spec.port, req),
-    );
+    const tls = this.tlsMaterialFor(spec.port);
+    if (tls === 'error') return false;
+
+    const session: ApacheSession = tls === null
+      ? new Http1ServerSession(
+        this.host.tcpStack(), spec.port, (req) => this.respond(spec.port, req),
+      )
+      : new HttpsServerSession(
+        this.host.tcpStack(), spec.port,
+        { serverCert: tls.cert, serverPrivateKey: tls.key },
+        (req) => this.respond(spec.port, req),
+      );
     try {
       session.start(identity);
     } catch {
@@ -137,6 +152,49 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     }
     this.sessions.set(spec.port, session);
     return true;
+  }
+
+  /**
+   * The certificate a port presents, `null` for plain HTTP, `'error'` when
+   * a vhost asked for TLS and cannot have it.
+   *
+   * The third outcome is the whole reason this exists, and it is the same
+   * one nginx's twin gives (`docs/PRD-Nginx.md` §P5): a `<VirtualHost
+   * *:443>` whose certificate is missing must NOT fall back to serving
+   * cleartext on 443. That was the shipped behaviour until this method —
+   * Apache's `open()` built an `Http1ServerSession` for every port — and
+   * it is the worst possible answer, since everything downstream believes
+   * 443 means encrypted.
+   */
+  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | 'error' {
+    const vhost = this.config.vhosts.find((v) => v.port === port && v.sslEngine);
+    if (!vhost) return null;
+
+    const fail = (message: string): 'error' => {
+      this.reportStartupFailure(message);
+      return 'error';
+    };
+    if (!vhost.sslCertificateFile || !vhost.sslCertificateKeyFile) {
+      return fail(`AH02572: Failed to configure at least one certificate and key `
+        + `for ${vhost.serverName ?? '*'}:${port}`);
+    }
+    const certPem = this.host.fs.read(vhost.sslCertificateFile);
+    if (certPem === null) {
+      return fail(`AH00526: Syntax error on line 1 of ${vhost.source}: `
+        + `SSLCertificateFile: file '${vhost.sslCertificateFile}' does not exist or is empty`);
+    }
+    const keyPem = this.host.fs.read(vhost.sslCertificateKeyFile);
+    if (keyPem === null) {
+      return fail(`AH00526: Syntax error on line 1 of ${vhost.source}: `
+        + `SSLCertificateKeyFile: file '${vhost.sslCertificateKeyFile}' does not exist or is empty`);
+    }
+    const cert = pemToCert(certPem);
+    const key = pemToPrivateKey(keyPem);
+    if (!cert || !key) {
+      return fail(`AH02561: Failed to configure certificate ${vhost.serverName ?? '*'}:${port}, `
+        + 'check /etc/apache2/ssl (SSL: error:0480006C:PEM routines::no start line)');
+    }
+    return { cert, key };
   }
 
   close(spec: PortSpec): void {
