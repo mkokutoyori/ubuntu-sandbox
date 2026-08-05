@@ -80,7 +80,15 @@ const proto = (vues: string[], n: number) => paquets(vues).filter(l => l.include
 const transport = (vues: string[]) => vues.filter(l => l.startsWith('TCP src=') || l.startsWith('UDP src='));
 
 async function connecter(pc: LinuxPC, srv: LinuxServer, ip: string, port: number): Promise<void> {
-  srv.getTcpStack().listen(port, { onAccept: () => {} });
+  // Le 1521 est désormais RÉELLEMENT servi dès l'amorçage d'un
+  // `LinuxServer` (docs/PRD-Manquements.md §M1) : ouvrir une seconde
+  // écoute dessus lève EADDRINUSE. Ce test posait la sienne parce que
+  // rien ne le faisait — le même contournement que §P2a a retiré de
+  // `scenario-listen-vs-filtered.test.ts`. On ne pose donc une écoute
+  // que si personne ne sert déjà ce port ; les autres ports du scénario
+  // (80, 443) en ont toujours besoin.
+  const dejaServi = srv.getTcpStack().listListeners().some((l) => l.localPort === port);
+  if (!dejaServi) srv.getTcpStack().listen(port, { onAccept: () => {} });
   pc.getTcpStack().connect(ip, port);
   await pause();
 }
