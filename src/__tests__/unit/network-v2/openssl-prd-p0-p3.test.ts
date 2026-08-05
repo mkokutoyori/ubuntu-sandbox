@@ -53,27 +53,24 @@ describe('§P0 — le paquet ne ment plus', () => {
   });
 
   /**
-   * LACUNE PRÉEXISTANTE, mesurée plutôt que supposée, et qui n'appartient
-   * pas à `openssl`.
+   * Cette lacune est FERMÉE, et ce cas était sa trace.
    *
-   * `CriticalFiles.checkCommandDependencies` fait échouer une commande
-   * dont le binaire a été supprimé — mais seulement sur le chemin
-   * synchrone du switch. Une commande servie par le REGISTRE ne passe
-   * pas par ce garde : `rm /usr/bin/curl` puis `curl` fonctionne encore,
-   * et c'est vrai de `curl`, `xxd`, `bc`, `nmap`, `nginx`, `ss`, `nc`
-   * comme de `openssl`. Le témoin est `curl`, antérieur à ce chantier.
-   *
-   * Ce cas fixe donc l'état RÉEL au lieu d'affirmer une fidélité que la
-   * plateforme n'a pas. Il tombera le jour où le garde couvrira le
-   * registre — et c'est exactement ce qu'on attend de lui.
+   * Il affirmait, mesure à l'appui et `curl` comme témoin, que le garde
+   * « binaire supprimé » de `CriticalFiles` ne couvrait pas les
+   * commandes servies par le registre : `rm /usr/bin/curl` puis `curl`
+   * fonctionnait encore. Le commentaire qu'il portait disait qu'il
+   * tomberait le jour où le garde couvrirait le registre. Il est tombé,
+   * et l'assertion s'inverse — voir `deleted-binary-registry-dispatch.test.ts`
+   * pour les trois chemins de dispatch.
    */
-  it('supprimer le binaire ne l\'arrête pas encore — même lacune que curl', async () => {
+  it('supprimer le binaire arrête la commande, comme tout binaire', async () => {
     const srv = machine();
+    expect(await srv.executeCommand('openssl version')).toContain('OpenSSL');
+
     await srv.executeCommand('rm /usr/bin/openssl');
 
-    const sortie = await srv.executeCommand('openssl version');
-
-    expect(sortie).toContain('OpenSSL 3.0.2');
+    expect(await srv.executeCommand('openssl version'))
+      .toContain('/usr/bin/openssl: No such file or directory');
   });
 
   it('un sous-mode inexistant reçoit le message d\'openssl', async () => {

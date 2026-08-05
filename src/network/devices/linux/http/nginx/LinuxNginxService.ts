@@ -2,8 +2,8 @@ import type { TcpStack } from '@/network/tcp/TcpStack';
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 import { contentTypeForPath } from '@/network/http/HttpTypes';
-import type { PortSpec } from '../../../core/ports/PortNumber';
-import type { ServiceSocketServer } from '../ports/ServiceSocketServer';
+import type { PortSpec } from '../../../../core/ports/PortNumber';
+import type { ServiceSocketServer } from '../../ports/ServiceSocketServer';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import {
   parseNginxConfig, extractServers, validateNginxConfig,

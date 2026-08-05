@@ -9,7 +9,7 @@
  * empreinte dépend de l'outil qui la calcule.
  */
 
-import { md4, md5Hex, sha1Hex, sha256Hex, sha512Hex } from '@/crypto/hash';
+import { md4, md5Hex, sha1Hex, sha256Hex, sha512Hex, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
 import { hmacHex } from '@/crypto/mac';
 import { md5Crypt } from '@/crypto/passwords';
 import {
@@ -24,6 +24,7 @@ import {
 } from '@/network/pki/pem';
 import { MANDATORY_CIPHER_SUITES } from '@/network/tls/cipherSuites';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
+import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 
 export const OPENSSL_VERSION = '3.0.2';
@@ -48,6 +49,7 @@ const IMPLEMENTED = new Set([
   'rsa', 'pkey', 'req', 'x509', 'verify', 'list', 'errstr', 'prime',
   'ciphers', 'info', 'ca', 'crl',
   'ec', 'ecparam', 'pkcs8', 'pkeyutl', 'rsautl', 'rehash', 's_client',
+  'enc', ...Object.keys(ENC_ALGOS),
   ...Object.keys(DIGESTS),
 ]);
 
@@ -77,6 +79,11 @@ function readInput(host: OpenSslHost, path: string | undefined): string | null {
   return host.readFile(path);
 }
 
+/** The algorithms `-hmac` can use, keyed by their openssl name. */
+const HMAC_HASHES: Readonly<Record<string, typeof SHA256>> = {
+  md5: MD5, sha1: SHA1, sha256: SHA256, sha512: SHA512,
+};
+
 // ─── dgst ───────────────────────────────────────────────────────────
 
 function runDgst(host: OpenSslHost, argv: readonly string[], forced?: string): OpenSslResult {
@@ -101,9 +108,12 @@ function runDgst(host: OpenSslHost, argv: readonly string[], forced?: string): O
     if (contenu === null) {
       return fail(`${cible}: No such file or directory`);
     }
+    // The HMAC is `src/crypto/mac`'s — the real one, not a digest of the
+    // key concatenated to the message. It takes the ALGORITHM (block size
+    // and output size both matter in RFC 2104), hence the object rather
+    // than its name.
     const empreinte = typeof hmacKey === 'string'
-      ? hmacHex(algo === 'sha1' ? 'sha1' : algo === 'md5' ? 'md5' : 'sha256',
-        utf8ToBytes(hmacKey), utf8ToBytes(contenu))
+      ? hmacHex(HMAC_HASHES[algo] ?? SHA256, hmacKey, contenu)
       : d.fn(contenu);
 
     if (opts.has('-r')) {
@@ -987,6 +997,9 @@ export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslR
   if (KNOWN_UNIMPLEMENTED_DIGESTS.includes(sub)) return notImplemented(sub);
   if (sub === 'rand') return runRand(host, reste);
   if (sub === 'base64') return runBase64(host, reste);
+  if (sub === 'enc') return runEnc(host, reste);
+  if (ENC_ALGOS[sub]) return runEnc(host, reste, sub);
+  if (ENC_KNOWN_UNIMPLEMENTED.includes(sub)) return notImplemented(sub);
   if (sub === 'passwd') return runPasswd(host, reste);
   if (sub === 'genrsa') return runGenRsa(host, reste);
   if (sub === 'rsa' || sub === 'pkey') return runRsa(host, reste);
