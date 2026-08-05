@@ -9,6 +9,7 @@ import type { Router } from '../../Router';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
+import { orderCiscoConfigBlocks, routingProcessConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
@@ -527,7 +528,14 @@ export function showRunningConfig(router: Router): string {
     if (enc && enc.type) {
       lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
     }
+    // `no ip address` est RENDU : sans lui, la configuration ne permet
+    // pas de distinguer une interface sans adresse d'une interface dont
+    // l'adresse aurait été omise — et c'est ce texte que l'import de
+    // topologie rejoue.
     if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
+    else if (!/^(Tunnel|Loopback|Vlan|BVI|Port-channel|Null)/i.test(name)) {
+      lines.push(' no ip address');
+    }
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
     if (!port.getIsUp()) lines.push(` shutdown`);
     if (!port.isNegotiationAuto?.()) {
@@ -821,13 +829,26 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  // `router eigrp`/`bgp`/`rip` vivent dans `RoutingConfigRepository`, qui
+  // n'avait aucun rendu de configuration : `show ip protocols` rapportait
+  // un EIGRP que la configuration ne mentionnait nulle part, et un
+  // `write memory` le perdait.
+  const routingRepo = (router as unknown as {
+    shell?: { getRoutingConfig?: () => import('../../inspection/config/RoutingConfigRepository').RoutingConfigRepository };
+  }).shell?.getRoutingConfig?.();
+  if (routingRepo) {
+    const routingLines = routingProcessConfigLines(routingRepo);
+    if (routingLines.length > 0) { lines.push('!'); lines.push(...routingLines); }
+  }
+
   // IOS closes the configuration with a separator before `end`, and its
   // header reports the stored size in bytes.
-  if (lines[lines.length - 1] !== '!') lines.push('!');
-  lines.push('end');
-  const body = lines.slice(4).join('\n');
-  lines[2] = `Current configuration : ${new TextEncoder().encode(body).length + 1} bytes`;
-  return lines.join('\n');
+  const header = lines.slice(0, 4);
+  const ordered = orderCiscoConfigBlocks(lines.slice(4));
+  const assembled = [...header, ...ordered, 'end'];
+  const body = assembled.slice(4).join('\n');
+  assembled[2] = `Current configuration : ${new TextEncoder().encode(body).length + 1} bytes`;
+  return assembled.join('\n');
 }
 
 export function showRunningConfigInterface(router: Router, ifName: string): string {
