@@ -206,13 +206,15 @@ describe('Linux end-to-end port coherence', () => {
 
   it('a service with no server behind it shows no port at all', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    await srv.executeCommand('systemctl start apache2');
+    // L'exemple était apache2 ; il ne l'est plus, parce qu'apache2 OUVRE
+    // vraiment son port depuis docs/PRD-Manquements.md §M4a. La règle que
+    // ce cas protège est intacte, et c'est mysql qui l'illustre : un
+    // service `active`, avec un vrai PID, et aucun serveur derrière lui
+    // ne doit afficher aucun port — un port affiché doit être joignable.
+    await srv.executeCommand('systemctl start mysql');
 
-    // `active`, un vrai PID, et aucun port — parce qu'aucune connexion
-    // n'aboutirait. Un port affiché doit être joignable ; un port
-    // injoignable ne doit pas être affiché.
-    expect((await srv.executeCommand('systemctl is-active apache2')).trim()).toBe('active');
-    expect(await srv.executeCommand('netstat -tln')).not.toContain(':80');
+    expect((await srv.executeCommand('systemctl is-active mysql')).trim()).toBe('active');
+    expect(await srv.executeCommand('netstat -tln')).not.toContain(':3306');
   });
 
   it('seeds /etc/services from the IANA registry', async () => {
