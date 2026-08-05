@@ -49,7 +49,7 @@ import { CommandAliasTable } from './router/cli/CommandAliasTable';
 import { IpPrefixListStore } from './router/policy/IpPrefixList';
 import { RoutePolicyStore } from './router/policy/RoutePolicy';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
-import { NqaEngine } from './router/diag/NqaEngine';
+import { NqaService } from '../nqa/NqaService';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -330,12 +330,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private ipPrefixListStore = new IpPrefixListStore();
   private routePolicyStore = new RoutePolicyStore();
   private trafficPolicyStore = new TrafficPolicyStore();
-  private nqaEngine = new NqaEngine();
+
 
   getIpPrefixListStore(): IpPrefixListStore { return this.ipPrefixListStore; }
   getRoutePolicyStore(): RoutePolicyStore { return this.routePolicyStore; }
   getTrafficPolicyStore(): TrafficPolicyStore { return this.trafficPolicyStore; }
-  getNqaEngine(): NqaEngine { return this.nqaEngine; }
+
 
   // ── Reactive (Phase 5.8) — scheduler + TimerSet + event helpers ──
   private routerScheduler: IScheduler | null = null;
@@ -453,6 +453,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.startArpAgingTimer();
     this.ipSlaEngine.start();
     this.trackService.start();
+    this.subscribeNqaResults();
   }
 
   /**
@@ -522,8 +523,30 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     () => this.getRouterScheduler(),
   );
 
+  private readonly nqaService: NqaService = new NqaService(this.ipSlaEngine);
+
   getIpSlaEngine(): IpSlaEngine { return this.ipSlaEngine; }
   getTrackService(): TrackService { return this.trackService; }
+  getNqaService(): NqaService { return this.nqaService; }
+
+  /**
+   * Un lot NQA terminé doit remonter au test qui l'a demandé. Le moteur
+   * ne connaît que des numéros d'opération ; c'est ici que le numéro
+   * redevient un couple (administrateur, test).
+   */
+  private subscribeNqaResults(): () => void {
+    return this.getBus().subscribeWhere(
+      'ipsla.probe.completed',
+      (payload) => payload.deviceId === this.id,
+      (event) => {
+        for (const test of this.nqaService.list()) {
+          if (test.operationId !== event.payload.operationId) continue;
+          const runtime = this.nqaService.runtimeOf(test);
+          if (runtime) this.nqaService.recordBatch(test, runtime, this.getSystemClockMs());
+        }
+      },
+    );
+  }
 
   private trackedRouteEntry(prefix: string, mask: string | null): RouteEntry | null {
     for (const route of this.routingTable) {

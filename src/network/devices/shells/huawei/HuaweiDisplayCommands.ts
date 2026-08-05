@@ -10,6 +10,7 @@
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
+import { nqaRunningConfigLines } from './HuaweiNqaCommands';
 import {
   getHuaweiRoutingExtras, getHuaweiVrrpService, getSwitchSecurityService,
 } from '../../../equipment/RouterServiceCapabilities';
@@ -1010,6 +1011,11 @@ function appendManagementConfig(lines: string[], router: Router): void {
   if (routingLimit) {
     lines.push('#');
     lines.push(`ip routing-table limit ${routingLimit.max}${routingLimit.thresholdPct !== undefined ? ' ' + routingLimit.thresholdPct : ''}`);
+  }
+  const nqa = nqaRunningConfigLines(router);
+  if (nqa.length > 0) {
+    lines.push('#');
+    lines.push(...nqa);
   }
 }
 

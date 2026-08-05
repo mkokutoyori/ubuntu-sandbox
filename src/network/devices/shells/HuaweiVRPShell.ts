@@ -88,8 +88,12 @@ import {
   type HuaweiPolicyShellCtx,
   registerHuaweiPolicySystemCommands, registerHuaweiPolicyDisplayCommands,
   buildRoutePolicyView, buildTrafficClassifierView, buildTrafficBehaviorView,
-  buildTrafficPolicyView, buildNqaTestView,
+  buildTrafficPolicyView,
 } from './huawei/HuaweiPolicyCommands';
+import {
+  buildHuaweiNqaSystemCommands, buildHuaweiNqaTestView,
+  registerHuaweiNqaDisplayCommands, resolveVrpTrack,
+} from './huawei/HuaweiNqaCommands';
 import {
   AR2220_HARDWARE_PROFILE,
   renderHealth, renderTemperature, renderFans, renderPower, renderEnvironment,
@@ -297,7 +301,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     buildTrafficClassifierView(this.trafficClassifierTrie, this);
     buildTrafficBehaviorView(this.trafficBehaviorTrie, this);
     buildTrafficPolicyView(this.trafficPolicyTrie, this);
-    buildNqaTestView(this.nqaTestTrie, this);
+    buildHuaweiNqaTestView(this.nqaTestTrie, this);
+    buildHuaweiNqaSystemCommands(this.systemTrie, this);
     for (const t of [
       this.userTrie, this.systemTrie, this.interfaceTrie, this.dhcpPoolTrie,
       this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ospfv3AreaTrie, this.ripTrie,
@@ -542,6 +547,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // ─── Main Execute ──────────────────────────────────────────────────
 
   execute(router: Router, rawInput: string): string | Promise<string> {
+    // `ip route-static … track nqa <admin> <test>` était analysé, rangé
+    // sur la route, et lu par personne : VRP n'appelait jamais
+    // `setRouteTrackResolver`, donc `Router.isRouteTrackUp()` répondait
+    // `true` sans condition et la route conditionnée était
+    // inconditionnelle (docs/PRD-NQA.md §0.1 item 3).
+    router.setRouteTrackResolver((track) => resolveVrpTrack(router, track));
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
 
@@ -1548,6 +1559,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDhcpDisplayCommands(t, getRouter);
     registerDhcpDebugCommands(t, getRouter);
     registerHuaweiPolicyDisplayCommands(t, getRouter);
+    registerHuaweiNqaDisplayCommands(t, getRouter);
     this.registerSecurityDisplayCommands(t);
   }
 
@@ -1809,6 +1821,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     registerHuaweiPolicySystemCommands(t, this);
     registerHuaweiPolicyDisplayCommands(t, () => this.r());
+    registerHuaweiNqaDisplayCommands(t, () => this.r());
 
     const aaa = () => this.r().getHuaweiAaaService();
     t.register('aaa', 'Enter AAA view', () => { this.setMode('aaa' as any); return ''; });

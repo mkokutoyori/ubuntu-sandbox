@@ -9,6 +9,7 @@ import {
   type IpSlaHost,
   type SlaOperationConfig,
   type SlaOperationState,
+  type SlaBatchMeasurement,
   type SlaProbeOutcome,
   type SlaReturnCode,
 } from './types';
@@ -61,6 +62,7 @@ export interface SlaOperationRuntime {
   lastRttMs: number | null;
   lastDiagText: string;
   lastRespondingAddress: string | null;
+  lastBatch: SlaBatchMeasurement | null;
   running: boolean;
   sequence: number;
   identifier: number;
@@ -91,6 +93,7 @@ function freshRuntime(config: SlaOperationConfig, epochMs: number): SlaOperation
     lastRttMs: null,
     lastDiagText: '',
     lastRespondingAddress: null,
+    lastBatch: null,
     running: false,
     sequence: 0,
     identifier: identifierCounter,
@@ -539,7 +542,59 @@ export class IpSlaEngine {
     return outcome;
   }
 
+  /**
+   * VRP mesure par lots : `probe-count` sondes agrégées en un résultat,
+   * dont le verdict est décidé par `fail-percent` plutôt que par la
+   * première perte. Avec `aggregateProbes` à 1 — le cas d'IOS — ce
+   * chemin est court-circuité et rien ne change.
+   */
   private async dispatch(runtime: SlaOperationRuntime): Promise<SlaProbeOutcome> {
+    if (runtime.config.aggregateProbes <= 1) return this.dispatchOne(runtime);
+
+    const scheduler = this.scheduler ?? this.getScheduler();
+    const config = runtime.config;
+    const count = config.aggregateProbes;
+    const rtts: number[] = [];
+    let overThreshold = 0;
+    let lastFailure: SlaProbeOutcome | null = null;
+
+    for (let index = 0; index < count; index++) {
+      const outcome = await this.dispatchOne(runtime);
+      if (outcome.rttMs === null) lastFailure = outcome;
+      else {
+        rtts.push(outcome.rttMs);
+        if (outcome.returnCode === 'overThreshold') overThreshold++;
+      }
+      if (index < count - 1 && config.intervalMs > 0) {
+        await scheduler.delay(config.intervalMs);
+      }
+    }
+
+    const batch = { sent: count, received: rtts.length, rtts, overThreshold };
+    if (rtts.length === 0) {
+      return {
+        returnCode: lastFailure?.returnCode ?? 'timeout',
+        rttMs: null,
+        diagText: lastFailure?.diagText ?? '',
+        respondingAddress: lastFailure?.respondingAddress ?? null,
+        batch,
+      };
+    }
+    const lossPercent = ((count - rtts.length) / count) * 100;
+    const mean = rtts.reduce((total, value) => total + value, 0) / rtts.length;
+    return {
+      returnCode: lossPercent >= config.failPercent
+        ? (lastFailure?.returnCode ?? 'timeout')
+        : 'ok',
+      rttMs: mean,
+      diagText: lossPercent > 0 ? (lastFailure?.diagText ?? '') : '',
+      respondingAddress: lastFailure?.respondingAddress
+        ?? (rtts.length > 0 ? config.target : null),
+      batch,
+    };
+  }
+
+  private async dispatchOne(runtime: SlaOperationRuntime): Promise<SlaProbeOutcome> {
     const config = runtime.config;
     const scheduler = this.scheduler ?? this.getScheduler();
     if (!config.target) {
@@ -624,6 +679,7 @@ export class IpSlaEngine {
     runtime.lastRttMs = outcome.rttMs;
     runtime.lastDiagText = outcome.diagText;
     runtime.lastRespondingAddress = outcome.respondingAddress;
+    runtime.lastBatch = outcome.batch ?? null;
 
     recordReturnCode(runtime.counters, outcome.returnCode);
     if (outcome.rttMs !== null) {

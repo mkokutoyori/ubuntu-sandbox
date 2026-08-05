@@ -141,8 +141,13 @@ export function cmdIpRouteStatic(router: Router, args: string[]): string {
 
     const opts = { preference, tag, description, track, vpnInstance, permanent, iface: ifaceName || undefined };
     if (isDefault) {
-      return router.setDefaultRoute(nextHop!, 0, { preference, tag, description, iface: ifaceName || undefined })
-        ? '' : 'Error: Next-hop is not reachable';
+      // `track` et `permanent` étaient extraits juste au-dessus puis
+      // jetés ici : la route par défaut VRP conditionnée par une NQA
+      // était inconditionnelle (docs/PRD-NQA.md §0.1 item 4).
+      return router.setDefaultRoute(nextHop!, 0, {
+        preference, tag, description, track, permanent,
+        iface: ifaceName || undefined,
+      }) ? '' : 'Error: Next-hop is not reachable';
     }
     return router.addStaticRoute(network, mask, nextHop!, 0, opts)
       ? '' : 'Error: Next-hop is not reachable';
