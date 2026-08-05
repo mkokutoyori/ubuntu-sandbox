@@ -114,6 +114,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-vlan':               { parent: 'config', clearOnExit: ['selectedVLAN'] },
   'config-track':              { parent: 'config', clearOnExit: ['selectedTrack'] },
   'config-ipsla':              { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-http-raw':     { parent: 'config-ipsla', clearOnExit: [] },
   'config-route-map':          { parent: 'config', clearOnExit: ['selectedRouteMap'] },
   'config-router-ospf':        { parent: 'config' },
   'config-router-ospfv3':      { parent: 'config' },

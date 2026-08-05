@@ -37,6 +37,7 @@ import type { HsrpDomainEvent } from '@/network/hsrp/events';
 import type { VrrpDomainEvent } from '@/network/vrrp/events';
 import type { GlbpDomainEvent } from '@/network/glbp/events';
 import type { BfdDomainEvent } from '@/network/bfd/events';
+import type { IpSlaDomainEvent } from '@/network/ipsla/events';
 import type { UdldDomainEvent } from '@/network/udld/events';
 import type { IgmpDomainEvent } from '@/network/igmp/events';
 import type { LlmnrDomainEvent } from '@/network/llmnr/events';
@@ -350,6 +351,9 @@ export type DomainEvent =
   | VrrpDomainEvent
   | GlbpDomainEvent
   | BfdDomainEvent
+  // IP SLA: sondes actives, cycle de vie des operations, reactions, track
+  // (sous-union, cf. src/network/ipsla/events.ts)
+  | IpSlaDomainEvent
   | UdldDomainEvent
   | IgmpDomainEvent
   | LlmnrDomainEvent

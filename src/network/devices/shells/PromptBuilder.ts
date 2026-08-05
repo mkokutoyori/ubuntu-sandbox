@@ -62,6 +62,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-vlan':               '{host}(config-vlan)#',
   'config-track':              '{host}(config-track)#',
   'config-ipsla':              '{host}(config-ip-sla)#',
+  'config-ipsla-http-raw':     '{host}(config-ip-sla-http-raw)#',
   'config-route-map':          '{host}(config-route-map)#',
   'config-router-ospf':        '{host}(config-router)#',
   'config-router-ospfv3':      '{host}(config-rtr)#',

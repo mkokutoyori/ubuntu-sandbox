@@ -45,13 +45,11 @@ import {
 import {
   buildVxlanInterfaceCommands, registerVxlanShowCommands,
 } from './cisco/CiscoVxlanCommands';
-import {
-  buildTrackSlaConfig, registerTrackSlaShow,
-} from './cisco/CiscoTrackSlaCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
-import { TrackRepository } from '../inspection/config/TrackRepository';
+import { buildTrackConfigCommands, registerTrackShowCommands } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
-import { IpSlaRepository } from '../inspection/config/IpSlaRepository';
+import { buildIpSlaConfigCommands } from './cisco/CiscoIpSlaCommands';
+import { registerIpSlaShowCommands } from './cisco/CiscoIpSlaShowCommands';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
   buildPolicyConfig, registerPolicyShow,
@@ -134,9 +132,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private readonly fhrp = new FhrpRepository();
   private readonly keyChains = new KeyChainRepository();
   getKeyChains(): KeyChainRepository { return this.keyChains; }
-  /** Real config-driven object-tracking & IP SLA state. */
-  private readonly track = new TrackRepository();
-  private readonly ipsla = new IpSlaRepository();
   private readonly policy = new PolicyRepository();
   private readonly routingCfg = new RoutingConfigRepository();
   private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
@@ -187,6 +182,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedVRF: string | null = null;
   private selectedVLAN: number | null = null;
   private configIpSlaTrie = new CommandTrie();
+  private configIpSlaHttpRawTrie = new CommandTrie();
   private configRouteMapTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
   private configRouterOspfTrie = new CommandTrie();
@@ -294,7 +290,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   execute(router: Router, rawInput: string): string | Promise<string> {
     setInvalidInputPromptWidth(this.buildDevicePrompt(router).length);
     router.setRouteTrackResolver((trackId) =>
-      this.track.state(router, this.ipsla, parseInt(trackId, 10)) === 'Up');
+      router.getTrackService().isUp(parseInt(trackId, 10)));
     this.attachDebugSource((router as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void } }).getDebugService?.());
     if (rawInput.trim() === '' && !this.isCollectingBanner()) return this.drainDebugConsole();
     return this.executeOnDevice(router, rawInput);
@@ -565,6 +561,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-vrf': return this.configVrfTrie;
       case 'config-vlan': return this.configVlanTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
+      case 'config-ipsla-http-raw': return this.configIpSlaHttpRawTrie;
       case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
@@ -693,8 +690,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       r: () => this.d(),
     });
     buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
-    buildTrackSlaConfig(this.configTrie, this.configTrackTrie,
-      this.configIpSlaTrie, this, this.track, this.ipsla);
+    buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
+    buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
+      this.configIpSlaHttpRawTrie, this);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
@@ -847,7 +845,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerIgmpShowCommands(trie, { r: () => this.d() });
     registerPimShowCommands(trie, { r: () => this.d() });
     registerVxlanShowCommands(trie, { r: () => this.d() });
-    registerTrackSlaShow(trie, this, this.track, this.ipsla);
+    registerTrackShowCommands(trie, this);
+    registerIpSlaShowCommands(trie, this);
     registerPolicyShow(trie, this.policy);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 

@@ -8,6 +8,7 @@
 import type { Router } from '../../Router';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
+import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
@@ -668,6 +669,11 @@ export function showRunningConfig(router: Router): string {
     lines.push(...securityLines);
     lines.push('!');
   }
+
+  const slaLines = ipSlaRunningConfigLines(router);
+  if (slaLines.length > 0) { lines.push('!'); lines.push(...slaLines); }
+  const trackLines = trackRunningConfigLines(router);
+  if (trackLines.length > 0) { lines.push('!'); lines.push(...trackLines); }
 
   const ipsec = router._getIPSecEngineInternal?.();
   if (ipsec) {

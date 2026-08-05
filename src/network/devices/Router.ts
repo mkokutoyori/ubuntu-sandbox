@@ -83,6 +83,12 @@ import { ipv4MulticastToMac } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { CarPolicer } from './router/qos/CarPolicer';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
+import { IpSlaEngine } from '../ipsla/IpSlaEngine';
+import { TrackService } from '../ipsla/TrackService';
+import type { IpSlaEgress } from '../ipsla/types';
+import { dialHttp } from '../http/HttpClient';
+import { md5Hex } from '@/crypto/hash/md5';
+import type { KeyChainRepository } from './inspection/config/KeyChainRepository';
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
@@ -445,6 +451,221 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.getCredentialStore();
     this.mountSshDaemon();
     this.startArpAgingTimer();
+    this.ipSlaEngine.start();
+    this.trackService.start();
+  }
+
+  /**
+   * IP SLA et suivi d'objets vivent sur l'ÉQUIPEMENT, pas sur le shell.
+   *
+   * Ils y vivaient : `CiscoIOSShell` construisait son propre
+   * `TrackRepository`/`IpSlaRepository`. Or `createVtyShell()` fabrique un
+   * shell NEUF par session — un `track` posé en SSH était donc invisible
+   * depuis la console de la même machine, et réciproquement. La
+   * running-config, qui est rendue par le shell mais décrit l'équipement,
+   * ne pouvait pas non plus les voir.
+   */
+  private readonly ipSlaEngine: IpSlaEngine = new IpSlaEngine(
+    {
+      id: this.id,
+      getHostname: () => this.getHostname(),
+      getPort: (name) => this.ports.get(name),
+      resolveEgress: (destination, sourceInterface, sourceIp) =>
+        this.resolveIpSlaEgress(destination, sourceInterface, sourceIp),
+      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      sendUdp: (destination, sourcePort, destinationPort, payload) =>
+        this.sendIpSlaUdp(destination, sourcePort, destinationPort, payload),
+      connectTcp: (ip, port, timeoutMs) => this.probeTcpConnect(ip, port, timeoutMs),
+      tracePath: async (destination, maxHops, timeoutMs) => {
+        const hops = await this.executeTraceroute(destination, maxHops, timeoutMs, 1);
+        return hops.map((hop) => ({
+          address: hop.ip ?? null,
+          rttMs: hop.rttMs ?? null,
+        }));
+      },
+      computeKeyDigest: (chain, keyId, material) => this.ipSlaKeyDigest(chain, keyId, material),
+      activeKeyId: (chain) => this.ipSlaActiveKeyId(chain),
+      fetchHttp: (ip, port, path, method) => this.probeHttp(ip, port, path, method),
+      resolveHostname: (name) => this.hostsTable.resolve(name),
+      isClockSynchronized: () => this.isNtpSynchronized(),
+      epochMs: () => this.getSystemClockMs(),
+      log: (severity, mnemonic, text) => {
+        this.getLoggingConfig()?.append(severity, 'ipsla', text, true, mnemonic);
+      },
+      sendTrap: (oid, varBindings) => { this.sendIpSlaTrap(oid, varBindings); },
+    },
+    () => this.getBus(),
+    () => this.getRouterScheduler(),
+  );
+
+  private readonly trackService: TrackService = new TrackService(
+    {
+      id: this.id,
+      getHostname: () => this.getHostname(),
+      isInterfaceLineUp: (name) => {
+        const port = this.ports.get(name);
+        return !!port && port.getIsUp() && port.isConnected();
+      },
+      isInterfaceRoutingUp: (name) => {
+        const port = this.ports.get(name);
+        return !!port && port.getIsUp() && !!port.getIPAddress();
+      },
+      hasRoute: (prefix, mask) => this.trackedRouteEntry(prefix, mask) !== null,
+      routeMetric: (prefix, mask) => this.trackedRouteEntry(prefix, mask)?.metric ?? null,
+      epochMs: () => this.getSystemClockMs(),
+      log: (severity, mnemonic, text) => {
+        this.getLoggingConfig()?.append(severity, 'tracking', text, true, mnemonic);
+      },
+    },
+    () => this.ipSlaEngine,
+    () => this.getBus(),
+    () => this.getRouterScheduler(),
+  );
+
+  getIpSlaEngine(): IpSlaEngine { return this.ipSlaEngine; }
+  getTrackService(): TrackService { return this.trackService; }
+
+  private trackedRouteEntry(prefix: string, mask: string | null): RouteEntry | null {
+    for (const route of this.routingTable) {
+      if (String(route.network) !== prefix) continue;
+      if (mask && String(route.mask) !== mask) continue;
+      if (!this.isRouteUsable(route)) continue;
+      return route;
+    }
+    return null;
+  }
+
+  private resolveIpSlaEgress(
+    destination: IPAddress,
+    sourceInterface: string | null,
+    sourceIp: string | null,
+  ): IpSlaEgress | null {
+    if (sourceInterface) {
+      const pinned = this.ports.get(sourceInterface);
+      if (!pinned || !pinned.isOperationallyUp() || !pinned.getIPAddress()) return null;
+    }
+    const route = this.lookupRoute(destination);
+    if (!route) return null;
+    const egressPort = this.ports.get(route.iface);
+    if (!egressPort || !egressPort.isOperationallyUp()) return null;
+
+    let source = egressPort.getIPAddress();
+    if (sourceInterface) {
+      source = this.ports.get(sourceInterface)?.getIPAddress() ?? source;
+    } else if (sourceIp) {
+      source = IPAddress.tryParse(sourceIp) ?? source;
+    }
+    if (!source) return null;
+
+    const nextHop = route.nextHop ?? destination;
+    const arpHit = this.arpTable.get(nextHop.toString())
+      ?? this.arpTable.get(destination.toString());
+    return {
+      iface: route.iface,
+      sourceIp: source,
+      sourceMac: egressPort.getMAC(),
+      destinationMac: arpHit ? arpHit.mac : MACAddress.broadcast(),
+    };
+  }
+
+  private async probeTcpConnect(
+    ip: string, port: number, timeoutMs: number,
+  ): Promise<{ connected: boolean; refused: boolean }> {
+    const socket = this.tcpv2.connect(ip, port);
+    if (!socket) return { connected: false, refused: false };
+    if (socket.state === 'established') {
+      socket.close();
+      return { connected: true, refused: false };
+    }
+    return new Promise((resolve) => {
+      let settled = false;
+      let offOpen: () => void = () => {};
+      let offClose: () => void = () => {};
+      const finish = (result: { connected: boolean; refused: boolean }) => {
+        if (settled) return;
+        settled = true;
+        offOpen();
+        offClose();
+        this.getRouterScheduler().clear(timer);
+        resolve(result);
+      };
+      const timer = this.getRouterScheduler().setTimeout(
+        () => { socket.close(); finish({ connected: false, refused: false }); },
+        timeoutMs,
+      );
+      offOpen = socket.onOpen(() => { socket.close(); finish({ connected: true, refused: false }); });
+      offClose = socket.onClose(() => finish({ connected: false, refused: true }));
+    });
+  }
+
+  private probeHttp(
+    ip: string, port: number, path: string, method: string,
+  ): { ok: boolean; status: number; error?: string } {
+    const result = dialHttp({ tcpStack: this.tcpv2, targetIp: ip, port, method, path });
+    if (!result.ok || !result.response) {
+      return { ok: false, status: 0, error: result.error ?? 'no response' };
+    }
+    return { ok: true, status: result.response.statusCode };
+  }
+
+  /**
+   * Un datagramme UDP émis par le plan de contrôle IP SLA, à travers la
+   * FIB, comme `_sendIkeUdp` le fait déjà pour IKE — la charge utile est
+   * l'objet typé du protocole, pas des octets, comme partout ailleurs
+   * dans ce simulateur.
+   */
+  private sendIpSlaUdp(
+    destination: IPAddress,
+    sourcePort: number,
+    destinationPort: number,
+    payload: unknown,
+  ): boolean {
+    const route = this.lookupRoute(destination);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    const sourceIp = egress?.getIPAddress();
+    if (!egress || !sourceIp || !egress.isOperationallyUp()) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort,
+      length: 8 + 64, checksum: 0, payload,
+    };
+    const packet = createIPv4Packet(sourceIp, destination, IP_PROTO_UDP, 64, udp, 8 + 64);
+    const arpHit = this.arpTable.get((route.nextHop ?? destination).toString())
+      ?? this.arpTable.get(destination.toString());
+    this.sendFrame(route.iface, {
+      srcMAC: egress.getMAC(),
+      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: packet,
+    });
+    return true;
+  }
+
+  private ipSlaKeyChains(): KeyChainRepository | undefined {
+    return (this.shell as unknown as { getKeyChains?: () => KeyChainRepository })
+      .getKeyChains?.();
+  }
+
+  private ipSlaActiveKeyId(chain: string): number | null {
+    const keys = this.ipSlaKeyChains()?.getChain(chain)?.keys;
+    if (!keys || keys.size === 0) return null;
+    return [...keys.keys()].sort((a, b) => a - b)[0];
+  }
+
+  private ipSlaKeyDigest(chain: string, keyId: number, material: string): string | null {
+    const key = this.ipSlaKeyChains()?.getChain(chain)?.keys.get(keyId);
+    if (!key || key.keyString === undefined) return null;
+    return md5Hex(`${key.keyString}|${material}`);
+  }
+
+  protected isNtpSynchronized(): boolean { return false; }
+
+  protected sendIpSlaTrap(
+    oid: string,
+    varBindings: Array<{ oid: string; kind: string; value: number | string }>,
+  ): void {
+    void oid;
+    void varBindings;
   }
 
   private arpAgingTimer: symbol | null = null;
@@ -1158,9 +1379,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.routingTable.length < before;
   }
 
+  /**
+   * `ip route 0.0.0.0 0.0.0.0 <next-hop> [track <n>] [permanent]`.
+   *
+   * `track` et `permanent` étaient acceptés par l'analyseur et perdus ici :
+   * la route par défaut passe par ce chemin plutôt que par
+   * `addStaticRoute`, et cette signature ne les portait pas. La route
+   * flottante par défaut — la forme la plus courante de tout le suivi
+   * d'objets — était donc inconditionnelle, quel que soit l'objet suivi.
+   */
   setDefaultRoute(
     nextHop: IPAddress, metric: number = 0,
-    opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'iface'>>,
+    opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'iface' | 'track' | 'permanent'>>,
   ): boolean {
     this.routingTable = this.routingTable.filter(r =>
       r.type !== 'default' || String(r.nextHop) !== String(nextHop));
@@ -1178,6 +1408,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       preference: opts?.preference,
       tag: opts?.tag,
       description: opts?.description,
+      track: opts?.track,
+      permanent: opts?.permanent,
     });
     return true;
   }
@@ -1884,6 +2116,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.handleDhcpUdp(inPort, ipPkt, udp);
       } else if (udp.destinationPort === UDP_PORT_IKE) {
         this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp);
+      } else if (this.ipSlaEngine.handleUdp(ipPkt.sourceIP, udp)) {
+        return;
       }
       // Other UDP ports silently dropped (no DNS/DHCP/etc. yet)
     }

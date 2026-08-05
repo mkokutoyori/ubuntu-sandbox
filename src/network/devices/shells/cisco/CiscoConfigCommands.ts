@@ -21,7 +21,8 @@ import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 export type CiscoShellMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-subif'
   | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
-  | 'config-track' | 'config-ipsla' | 'config-route-map' | 'config-line'
+  | 'config-track' | 'config-ipsla' | 'config-ipsla-http-raw'
+  | 'config-route-map' | 'config-line'
   | 'config-vrf' | 'config-vlan'
   | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl'
   | 'config-dhcp-pool-class'
@@ -1018,7 +1019,8 @@ export function cmdIpRoute(router: Router, args: string[]): string {
   if (nextHopStr) {
     const nextHop = new IPAddress(nextHopStr);
     if (netStr === '0.0.0.0' && maskStr === '0.0.0.0') {
-      return router.setDefaultRoute(nextHop, 0, ad !== undefined ? { preference: ad } : undefined)
+      return router.setDefaultRoute(nextHop, 0,
+        (ad !== undefined || trackId !== undefined || permanent) ? opts : undefined)
         ? '' : '% Next-hop is not reachable';
     }
     return router.addStaticRoute(network, mask, nextHop, 0,
