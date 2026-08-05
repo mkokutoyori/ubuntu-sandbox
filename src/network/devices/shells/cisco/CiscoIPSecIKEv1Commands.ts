@@ -781,7 +781,6 @@ export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellC
   trie.register('undebug all', 'Disable all debugging', turnEverythingOff);
   trie.register('no debug all', 'Disable all debugging', turnEverythingOff);
   trie.register('undebug', 'Disable all debugging', turnEverythingOff);
-  trie.register('u all', 'Disable all debugging', turnEverythingOff);
 
   // ── show crypto engine ─────────────────────────────────────────────
   trie.register('show crypto engine brief', 'Display crypto engine information', () => {

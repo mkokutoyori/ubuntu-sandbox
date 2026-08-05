@@ -457,6 +457,37 @@ de la première.
 `probe-cli-config-i-syslog.test.ts` (7 cas) couvre les deux verbes, les
 deux plateformes, l'absence en sous-mode et l'attribution vty.
 
+### 2.12 La couche B atteint le switch, et plus aucun mot-clé n'est muet
+
+Le reste annoncé en §2.9 est levé : `CiscoSwitchShell` est un shell
+distinct et ne recevait aucune déclaration d'argument. Il a désormais la
+sienne (`describeCiscoSwitchArguments`), avec les commandes d'un switch
+et leurs vraies plages — `switchport access vlan <1-4094>`,
+`channel-group <1-48>`, `spanning-tree cost <1-200000000>`,
+`switchport port-security maximum <1-8192>`, `vlan <1-4094>`,
+`name WORD`, `description LINE` — plutôt qu'un jeu recopié du routeur,
+qui aurait réintroduit exactement la fuite corrigée en §2.9.
+
+En mesurant ce que l'aide rend alors, **onze mots-clés sortaient sans
+description** sur les deux plateformes et cinq modes : `archive`, `boot`,
+`clock`, `member`, `monitor`, `port-channel`, `switchport`, `tunnel`,
+`udld`, `zone-member` et `u`. Les dix premiers sont de vraies commandes
+dont le nœud intermédiaire portait le texte de remplacement ; ils sont
+NOMMÉS dans `CliKeywordDescriptions`, comme `permit`/`deny` l'avaient été.
+
+Le onzième était d'une autre nature et méritait d'être suivi jusqu'au
+bout : `u` n'est pas une commande. `CiscoIPSecIKEv1Commands` enregistrait
+`u all` en toutes lettres — l'abréviation d'`undebug all` — ce qui
+fabriquait un nœud `u` que l'aide offrait comme une commande à part
+entière, sans description puisqu'il n'en a pas. L'enregistrement était en
+outre inutile : le trie fait déjà la correspondance par préfixe, et `u`
+ne désigne qu'`undebug` sur cette plateforme. Il est supprimé ; `u all`
+continue de répondre, par le chemin qui aurait toujours dû le servir.
+
+Le test ne vérifie plus un mode mais **tous** : deux plateformes, cinq
+modes, aucun mot-clé sans description. C'est la formulation qui garde le
+défaut fermé plutôt que le cas qui l'a révélé.
+
 ---
 
 ## 3. Phases

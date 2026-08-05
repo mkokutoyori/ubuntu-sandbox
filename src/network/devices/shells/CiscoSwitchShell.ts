@@ -36,6 +36,7 @@ import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../.
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
+import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -93,6 +94,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   constructor() {
     super();
     this.initializeCommands();
+    describeCiscoSwitchArguments({
+      config: this.configTrie,
+      configIf: this.configIfTrie,
+      configLine: this.configLineTrie,
+      configVlan: this.configVlanTrie,
+    });
   }
 
   // ─── Protocol agents this switch may not have ────────────────────

@@ -12,6 +12,16 @@
 
 const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string>([
   ['aaa', 'Authentication, Authorization and Accounting'],
+  ['archive', 'Archive the configuration'],
+  ['boot', 'Boot Commands'],
+  ['clock', 'Configure time-of-day clock'],
+  ['member', 'Configure a VNI member'],
+  ['monitor', 'Monitoring different system events'],
+  ['port-channel', 'EtherChannel/PortChannel configuration'],
+  ['switchport', 'Set switching mode characteristics'],
+  ['tunnel', 'Protocol-over-protocol tunneling'],
+  ['udld', 'Configure UDLD protocol'],
+  ['zone-member', 'Apply zone'],
   ['permit', 'Specify packets to forward'],
   ['deny', 'Specify packets to reject'],
   ['remark', 'Access list entry comment'],
