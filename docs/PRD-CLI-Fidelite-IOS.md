@@ -315,3 +315,61 @@ livre l'outil et les cas cités, pas les milliers restants.
 8. `show startup-config` : ordre canonique, pas de `service dhcp`, pas de
    `crypto key generate`, `shutdown` présent, EIGRP conservé, sels
    distincts, en-tête `Using N out of 262136 bytes`.
+
+
+---
+
+## 5. État livré et décisions (2026-08-05)
+
+### Livré
+
+- **P1 — aide contextuelle.** La marche consomme les arguments ;
+  `% Unrecognized command` disparaît de la CLI Cisco ;
+  `describeArgs(path, specs)` attache des spécifications à un nœud déjà
+  enregistré (et crée un nœud purement indicatif quand le mot-clé est
+  absorbé par un handler greedy) ; `ParamType` se rend `A.B.C.D`,
+  `<1-4094>`, `WORD`, `LINE`. Deux règles suivent : un paramètre déjà
+  fourni n'est plus proposé, et tant qu'un argument reste attendu les
+  mots-clés enfants ne sont pas des candidats — ils en étaient des
+  alternatives. 25 cas de test.
+- **P3 — table de routage.** Un seul rendu (`renderIpRouteTable`) là où
+  deux fonctions coexistaient. Routes locales `L …/32`, regroupement
+  classful, tri par préfixe, légende complète, métrique des statiques.
+- **P2 partiel — `Method unset`**, et `show controllers` n'affiche plus
+  ni loopback ni sous-interface, dans l'ordre du châssis.
+- **P4 — sorties sans commentaire** et retrait des syslog inventés.
+
+### La décision qui n'est pas la mienne : le défaut `shutdown`
+
+Le rapport a raison sur le fond — une interface physique de routeur
+démarre `shutdown` sur IOS, et c'est de là que viennent DEUX de ses
+constats : les « trois vérités » sur Gi0/3 (rendu `down` au lieu
+d'`administratively down`) et l'absence de `%LINK-3-UPDOWN` sur
+`no shutdown`. Ce second point mérite d'être précisé : **le câblage
+syslog existe déjà et il est correct** (`%LINK-3-UPDOWN`,
+`%LINK-5-CHANGED` pour un `shutdown` d'opérateur, `%LINEPROTO-5-UPDOWN`).
+S'il ne sort rien, c'est que `no shutdown` n'est pas une transition
+quand le port est déjà up.
+
+`Port.isUp` vaut `true` à la construction. L'inverser est une ligne, et
+c'est pourquoi il faut résister à la faire : **225 fichiers de test sur
+1229 activent une interface explicitement**. Les ~1000 autres
+supposent des interfaces déjà actives, tout comme les fixtures de labo
+et les topologies enregistrées. Basculer le défaut ne « corrige » pas un
+défaut isolé, cela change la ligne de base du simulateur et demande une
+migration de l'ensemble.
+
+C'est un arbitrage de produit — fidélité contre coût de migration — et
+il appartient à qui possède le projet, pas à ce lot. Le chiffre est
+donné pour qu'il se décide sur une mesure.
+
+### Reste à faire
+
+P5 (sérialiseur : ordre canonique, défauts omis, `shutdown`/`no ip
+address` rendus, sels distincts, en-tête `Using N out of 262136 bytes`,
+`crypto key generate` retiré, EIGRP conservé), P6 au-delà des commandes
+citées, et toute la traîne 🟡 (`show file systems`, `show inventory`,
+`show line`, `show snmp`, `show ip dhcp pool`, `show ip protocols`,
+`show access-lists`, `show ntp associations`, `show ip ospf interface
+brief`). Chacun est indépendant ; aucun ne partage de racine avec les
+précédents.

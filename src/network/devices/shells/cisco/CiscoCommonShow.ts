@@ -897,15 +897,51 @@ export function showIpTraffic(ports: Iterable<Port>, arp?: ArpTrafficCounters): 
 }
 
 /** `show controllers <intf>` — real per-port link/cable status. */
+/**
+ * `show controllers` interroge le CONTRÔLEUR MATÉRIEL d'une interface.
+ * Une loopback n'en a pas, une sous-interface partage celui de son
+ * parent : ni l'une ni l'autre n'y figurent sur un vrai routeur. L'ordre
+ * est celui du châssis — par type puis par index — et non celui de
+ * création.
+ */
+function hasHardwareController(name: string): boolean {
+  if (name.includes('.')) return false;
+  return !/^(Loopback|Tunnel|Vlan|BVI|Port-channel|Bundle-Ether|Null|Nve|Virtual-Template)/i
+    .test(name);
+}
+
+function chassisOrder(name: string): Array<number | string> {
+  const match = /^([A-Za-z-]+)(.*)$/.exec(name);
+  const family = match ? match[1].toLowerCase() : name.toLowerCase();
+  const indices = (match ? match[2] : '').split(/[^0-9]+/).filter(Boolean).map(Number);
+  return [family, ...indices];
+}
+
 export function showControllers(dev: ShowStateDevice, arg = ''): string {
   const want = arg.trim().toLowerCase();
-  const ports = dev.getPorts().filter((p) =>
-    !want || p.getName().toLowerCase().includes(want));
+  const ports = dev.getPorts()
+    .filter((p) => hasHardwareController(p.getName()))
+    .filter((p) => !want || p.getName().toLowerCase().includes(want))
+    .sort((a, b) => {
+      const left = chassisOrder(a.getName());
+      const right = chassisOrder(b.getName());
+      for (let i = 0; i < Math.max(left.length, right.length); i++) {
+        const l = left[i];
+        const r = right[i];
+        if (l === undefined) return -1;
+        if (r === undefined) return 1;
+        if (l === r) continue;
+        return typeof l === 'string' || typeof r === 'string'
+          ? String(l).localeCompare(String(r))
+          : (l as number) - (r as number);
+      }
+      return 0;
+    });
   if (!ports.length) return 'Interface does not exist';
   return ports.map((p) => [
     `${p.getName()} -`,
     `  Hardware is present, link is ${p.isConnected() ? 'connected' : 'down'}`,
-    `  Administrative state: ${p.getIsUp() ? 'up' : 'down'}`,
+    `  Administrative state: ${p.getIsUp() ? 'up' : 'administratively down'}`,
     '  0 carrier transitions',
   ].join('\n')).join('\n');
 }
