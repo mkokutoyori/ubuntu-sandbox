@@ -1185,8 +1185,12 @@ export abstract class LinuxMachine extends EndHost
         readFile: (p) => this.executor.vfs.readFile(p),
       });
       const error = missing.ok ? service.loadConfig() : (missing.error ?? null);
-      const conflict = error ? null : service.portConflict();
-      const failure = error ?? conflict;
+      // The certificates are read here for the same reason `nginx -t`
+      // reads them: a reload that would fail on one must be REFUSED
+      // rather than tear the running server down first.
+      const tls = error ? null : service.tlsProblem();
+      const conflict = error ?? tls ? null : service.portConflict();
+      const failure = error ?? tls ?? conflict;
       if (failure) {
         service.reportStartupFailure(failure);
         return { ok: false, error: failure, verbatim: true };
@@ -1289,8 +1293,9 @@ export abstract class LinuxMachine extends EndHost
       const service = this.apacheService;
       if (!service) return { ok: true };
       const error = service.loadConfig();
-      const conflict = error ? null : service.portConflict();
-      const failure = error ?? conflict;
+      const tls = error ? null : service.tlsProblem();
+      const conflict = error ?? tls ? null : service.portConflict();
+      const failure = error ?? tls ?? conflict;
       if (failure) {
         service.reportStartupFailure(failure);
         return { ok: false, error: failure, verbatim: true };
