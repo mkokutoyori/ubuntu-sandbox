@@ -65,6 +65,10 @@ import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 
 export class CiscoRouter extends Router {
+  protected bootsInterfacesShutdown(): boolean {
+    return true;
+  }
+
   /**
    * IOS runs no SSH server without RSA host keys. `crypto key generate
    * rsa` is what actually brings SSH up, and `crypto key zeroize rsa`

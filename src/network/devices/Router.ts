@@ -209,7 +209,7 @@ interface QueuedPacket {
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
-import { iosInterfaceUsable } from './inspection/InterfaceStatusView';
+import { iosInterfaceUsable, interfacesBootShutdown } from './inspection/InterfaceStatusView';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -874,10 +874,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   private createPorts(): void {
     const portCount = 4;
+    const adminDown = this.bootsInterfacesShutdown() && interfacesBootShutdown();
     for (let i = 0; i < portCount; i++) {
       const portName = this.getVendorPortName(i);
-      this.addPort(new Port(portName, 'ethernet'));
+      this.addPort(new Port(portName, 'ethernet', undefined, { adminDown }));
     }
+  }
+
+  protected bootsInterfacesShutdown(): boolean {
+    return false;
   }
 
   /** Register link-change handlers on all ports to trigger OSPF convergence and DPD */

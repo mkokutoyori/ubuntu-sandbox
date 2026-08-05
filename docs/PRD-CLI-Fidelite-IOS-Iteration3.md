@@ -786,6 +786,28 @@ injoignable. Et OSPF cesse d'annoncer `State DR` sur des interfaces
 mortes, l'adjacence étant elle aussi conditionnée à `protocol === 'up'`
 (`RouterOSPFIntegration.ts`, `RouterDynamicRouting.ts`).
 
+### 4.3 bis Ce que la mise en œuvre a trouvé sous les symptômes
+
+Deux causes réelles n'apparaissaient dans aucun rapport.
+
+**`shutdown` ne posait pas l'état administratif.** `Port.setAdminShutdown()`
+existe et documente son rôle, mais seul le routeur Cisco l'appelait. Le
+switch Cisco (`CiscoSwitchShell.setIfAdminState`), les deux shells Huawei
+et les rejeux de configuration appelaient `setUp()`, qui bouge l'état de
+**ligne**. `adminDown` restait donc faux après un `shutdown`, et c'est
+pourquoi toutes les vues lisaient `getIsUp()` : c'était le seul drapeau
+qui bougeait. La distinction admin/ligne n'était pas mal rendue, elle
+n'était pas alimentée.
+
+**Brancher un câble notifiait un lien up sans regarder l'état admin.**
+`Cable.connect()` appelle `_notifyLinkUp()` sur les deux extrémités
+inconditionnellement. Sur une interface `shutdown`, cela journalisait un
+`%LINK-3-UPDOWN … changed state to up` qu'aucun IOS n'émet. La
+notification suit désormais l'état résultant : rien du tout si le port
+est administrativement bas, `up` ou `down` selon la porteuse sinon — ce
+qui rend aussi truthful le `no shutdown` sur une interface non câblée,
+qui journalise `changed state to down` et non `up`.
+
 ### 4.4 L'échappatoire `wasEverCabled()`
 
 Elle ne peut pas rester où elle est (§1.5). Trois issues, par fidélité
@@ -808,6 +830,16 @@ décroissante :
 production sans transformer l'échappatoire en dette invisible : elle la
 déplace d'une heuristique implicite vers une affordance de test nommée.
 Le §4.5 montre qu'elle se déploie en un point unique.
+
+**Livré, et la mesure a été faite avant la décision.** Retirer
+l'échappatoire coûtait **10 tests sur 685** dans le domaine routage, sur
+3 fichiers. L'un d'eux — `probe-cli-route-detail.test.ts` — croyait
+câbler son routeur : il écrivait `new Cable(portA, portB)` alors que le
+constructeur prend un identifiant, et ne câblait rien depuis sa création.
+L'échappatoire avait donc masqué une fixture fausse pendant tout ce
+temps. Les deux autres n'ont réellement pas de plan de câblage et
+appellent `__assumeCarrierOnUncabledPorts(true)`, remis à zéro entre
+fichiers par `setupGlobalState`.
 
 ### 4.5 L'arbitrage différé en itération 2, et comment le lever
 
@@ -849,6 +881,15 @@ Ce qui était un big-bang de 1500 fichiers devient un changement d'une
 ligne plus une migration incrémentale optionnelle. **L'arbitrage produit
 n'a plus lieu d'être posé** : la fidélité est livrable sans en payer le
 coût d'un coup.
+
+**Livré.** `CiscoRouter.bootsInterfacesShutdown()` rend `true` ; `Router`
+rend `false`, ce qui préserve le comportement VRP, où les interfaces sont
+bien actives au démarrage. Le drapeau se pose à la construction du `Port`
+(`options.adminDown`), donc sans notification ni entrée de journal au
+boot. `setupGlobalState.ts` rend le défaut historique aux suites
+antérieures en une ligne ; la suite de fidélité appelle
+`__setInterfacesBootShutdown(true)`. Aucune régression sur 3 714 tests
+des domaines interfaces, routage, protocoles et vues.
 
 ### 4.6 Ce que ce chantier corrige
 

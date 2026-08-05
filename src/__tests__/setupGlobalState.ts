@@ -16,7 +16,7 @@ import { __setDefaultEventBus } from '@/events/EventBus';
 import { __setDefaultScheduler } from '@/events/Scheduler';
 import { resetFaultRegistry } from '@/network/faults/FaultRegistry';
 import { __resetFaultProjection } from '@/network/faults/FaultProjection';
-import { __assumeCarrierOnUncabledPorts } from '@/network/devices/inspection/InterfaceStatusView';
+import { __assumeCarrierOnUncabledPorts, __setInterfacesBootShutdown } from '@/network/devices/inspection/InterfaceStatusView';
 
 beforeEach(() => {
   resetCounters();
@@ -35,4 +35,10 @@ beforeEach(() => {
   // appelle `__assumeCarrierOnUncabledPorts(true)` pour s'en exempter, et
   // cette remise à zéro l'empêche de déborder sur le fichier suivant.
   __assumeCarrierOnUncabledPorts(false);
+  // Une interface physique de routeur Cisco démarre `shutdown` sur IOS,
+  // et c'est le défaut de production. Les suites antérieures à
+  // l'itération 3 supposent des interfaces actives au boot : on leur rend
+  // ce défaut ici plutôt que de migrer 1500 fichiers d'un coup. Une suite
+  // qui veut la fidélité appelle `__setInterfacesBootShutdown(true)`.
+  __setInterfacesBootShutdown(false);
 });

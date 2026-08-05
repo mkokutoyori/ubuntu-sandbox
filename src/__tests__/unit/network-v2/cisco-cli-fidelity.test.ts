@@ -3,12 +3,16 @@ import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFacto
 import type { Router } from '@/network/devices/Router';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { Cable } from '@/network/hardware/Cable';
+import { __setInterfacesBootShutdown } from '@/network/devices/inspection/InterfaceStatusView';
 
 beforeEach(() => {
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
   Logger.reset();
+  __setInterfacesBootShutdown(true);
 });
 
 async function router(...setup: string[]): Promise<Router> {
@@ -267,5 +271,64 @@ describe('an argument declared on the wrong trie is not declared', () => {
   it('and still offers area once the address and wildcard are given', async () => {
     const r = await router('configure terminal', 'router ospf 1');
     expect(keywords(r.cliHelp('network 10.0.0.0 0.0.0.255 '))).toContain('area');
+  });
+});
+
+describe('a Cisco router boots with its physical interfaces shut', () => {
+  it('an interface nobody touched is administratively down', async () => {
+    const r = await router();
+    const brief = String(await r.executeCommand('show ip interface brief'));
+    const row = brief.split('\n').find(l => l.includes('GigabitEthernet0/3')) ?? '';
+    expect(row).toContain('administratively down');
+  });
+
+  it('loopbacks are not shut — they have no cable to wait for', async () => {
+    const r = await router('configure terminal', 'interface Loopback0', 'end');
+    const brief = String(await r.executeCommand('show ip interface brief'));
+    const row = brief.split('\n').find(l => l.includes('Loopback0')) ?? '';
+    expect(row).not.toContain('administratively down');
+  });
+
+  it('no shutdown on a cabled interface logs the two IOS link messages', async () => {
+    const r = createDevice('router-cisco') as Router;
+    const pc = new LinuxPC('PC-link');
+    new Cable('c-link').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
+    for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
+      'no shutdown', 'end']) await r.executeCommand(c);
+
+    const log = String(await r.executeCommand('show logging'));
+    expect(log).toContain('%LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up');
+    expect(log).toContain(
+      '%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up');
+  });
+
+  it('no shutdown without a cable reports down, not up', async () => {
+    const r = await router('configure terminal', 'interface GigabitEthernet0/1',
+      'no shutdown', 'end');
+    const log = String(await r.executeCommand('show logging'));
+    expect(log).toContain('%LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down');
+    expect(log).not.toContain('Interface GigabitEthernet0/1, changed state to up');
+  });
+
+  it('shutdown is reported as administratively down, not as a link failure', async () => {
+    const r = createDevice('router-cisco') as Router;
+    const pc = new LinuxPC('PC-link');
+    new Cable('c-link').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
+    for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
+      'no shutdown', 'shutdown', 'end']) await r.executeCommand(c);
+
+    const log = String(await r.executeCommand('show logging'));
+    expect(log).toContain(
+      '%LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down');
+  });
+
+  it('cabling a shut interface logs nothing at all', async () => {
+    const r = createDevice('router-cisco') as Router;
+    const pc = new LinuxPC('PC-link');
+    await r.executeCommand('enable');
+    new Cable('c-link').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
+
+    const log = String(await r.executeCommand('show logging'));
+    expect(log).not.toContain('GigabitEthernet0/0');
   });
 });

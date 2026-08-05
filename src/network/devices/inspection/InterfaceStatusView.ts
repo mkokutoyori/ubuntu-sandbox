@@ -24,6 +24,16 @@ export function __assumeCarrierOnUncabledPorts(on: boolean): void {
   carrierAssumedOnUncabledPorts = on;
 }
 
+let interfacesBootShutdownEnabled = true;
+
+export function __setInterfacesBootShutdown(on: boolean): void {
+  interfacesBootShutdownEnabled = on;
+}
+
+export function interfacesBootShutdown(): boolean {
+  return interfacesBootShutdownEnabled;
+}
+
 export function carrierBearer(
   name: string,
   port: Port,
