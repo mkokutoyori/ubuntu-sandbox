@@ -20,14 +20,6 @@ export interface IpSlaCommandContext {
   setSelectedIpSla(id: number | null): void;
 }
 
-/**
- * Le sous-mode de configuration d'une opération est RESTREINT tant que
- * le type n'est pas choisi : IOS n'y accepte que les types d'opération,
- * puis descend dans un sous-mode propre au type, dont le prompt et le
- * jeu de paramètres dépendent de ce type. Un `frequency` proposé avant
- * tout choix de type, ou un `udp-jitter` encore proposé après un
- * `icmp-echo`, sont deux choses impossibles sur un vrai routeur.
- */
 export const IPSLA_TYPE_MODES: Record<SlaOperationType, IpSlaSubMode> = {
   'icmp-echo': 'config-ipsla-echo',
   'icmp-jitter': 'config-ipsla-icmpjitter',
@@ -40,15 +32,9 @@ export const IPSLA_TYPE_MODES: Record<SlaOperationType, IpSlaSubMode> = {
   'unknown': 'config-ipsla',
 };
 
-/** `% Invalid input detected at '^' marker.` — le seul refus qu'IOS émet ici. */
 const INVALID_INPUT = '% Invalid input detected at \'^\' marker.';
 const INCOMPLETE = '% Incomplete command.';
 
-/**
- * Les plages qu'IOS publie dans son aide et fait respecter. Un
- * `frequency abc` ou un `frequency 99999999` doivent être refusés :
- * c'est précisément ce qu'un apprenant doit rencontrer.
- */
 export const IPSLA_RANGES = {
   frequency: [1, 604800],
   timeout: [0, 604800000],
@@ -245,10 +231,6 @@ export function buildIpSlaConfigCommands(
     return engineOf(ctx).restart(id) ? '' : `% IP SLAs entry ${id} is not scheduled`;
   });
 
-  // IOS n'a pas de `ip sla enable` nu : la seule forme est
-  // `ip sla enable reaction-alerts`, qui autorise l'émission des alertes
-  // de réaction. Le `ip sla enable` global venait de la façade
-  // précédente et n'existe sur aucun routeur.
   configTrie.registerGreedy('ip sla enable reaction-alerts',
     'Enable IP SLAs reaction alerts', () => {
       engineOf(ctx).globalEnabled = true;
@@ -434,7 +416,6 @@ export function expandOperationList(list: string): number[] {
   return ids;
 }
 
-
 function extractHost(url: string): string | null {
   const match = /^(?:https?:\/\/)?([^/:]+)/i.exec(url);
   return match ? match[1] : null;
@@ -444,7 +425,7 @@ interface TypeSpec {
   keyword: string;
   description: string;
   type: SlaOperationType;
-  /** Paramètres que ce type accepte dans son sous-mode, tels qu'IOS les propose. */
+
   parameters: readonly ParameterName[];
 }
 

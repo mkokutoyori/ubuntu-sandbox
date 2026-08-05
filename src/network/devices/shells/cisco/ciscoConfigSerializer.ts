@@ -1,15 +1,5 @@
 import type { RoutingConfigRepository } from '../../inspection/config/RoutingConfigRepository';
 
-/**
- * L'ordre CANONIQUE d'IOS.
- *
- * La configuration n'était pas ordonnée : `line console 0` en deuxième
- * position, `enable secret` et `username` après `router ospf`. Ce n'est
- * pas qu'une question de lisibilité — la running-config est ce que
- * `write memory` enregistre et ce que l'import de topologie rejoue, et
- * un `username` posé après le `line vty` qui s'y réfère ne se rejoue pas
- * dans le même ordre que ce que l'opérateur a tapé.
- */
 const BLOCK_ORDER: ReadonlyArray<{ rank: number; test: RegExp }> = [
   { rank: 0, test: /^version\b/ },
   { rank: 1, test: /^(no )?service\b/ },
@@ -42,14 +32,6 @@ const BLOCK_ORDER: ReadonlyArray<{ rank: number; test: RegExp }> = [
 
 const UNRANKED = 19.5;
 
-/**
- * Lignes qui n'ont rien à faire dans une configuration.
- *
- * `crypto key generate rsa` est une commande EXEC : elle produit un
- * effet, elle ne décrit pas un état, et IOS ne la persiste jamais.
- * `service dhcp` et `ip routing` sont des DÉFAUTS : IOS ne sérialise que
- * les écarts, donc leur forme positive n'apparaît pas — leur `no`, si.
- */
 const NEVER_SERIALIZED: ReadonlyArray<RegExp> = [
   /^crypto key (generate|zeroize)\b/,
   /^service dhcp$/,
@@ -62,7 +44,6 @@ export interface ConfigBlock {
   lines: string[];
 }
 
-/** Découpe un texte de configuration en blocs de premier niveau. */
 export function splitConfigBlocks(lines: readonly string[]): ConfigBlock[] {
   const blocks: ConfigBlock[] = [];
   let current: ConfigBlock | null = null;
@@ -86,13 +67,6 @@ function rankOf(head: string): number {
   return UNRANKED;
 }
 
-/**
- * Réordonne, retire les défauts et les commandes EXEC.
- *
- * Un tri STABLE : deux blocs de même rang gardent leur ordre relatif,
- * donc les interfaces restent dans l'ordre du châssis et les `line`
- * dans l'ordre console/aux/vty que le rendu produit déjà.
- */
 export function orderCiscoConfigBlocks(body: readonly string[]): string[] {
   const blocks = splitConfigBlocks(body)
     .filter((block) => !NEVER_SERIALIZED.some((pattern) => pattern.test(block.head)));
@@ -108,14 +82,6 @@ export function orderCiscoConfigBlocks(body: readonly string[]): string[] {
   return out;
 }
 
-/**
- * `router eigrp` / `router bgp` / `router rip` étaient perdus.
- *
- * `RoutingConfigRepository` porte ces processus et n'avait aucun rendu
- * de configuration — si bien que `show ip protocols` rapportait un EIGRP
- * que la configuration ne mentionnait nulle part, et qu'un
- * `write memory` le perdait pour de bon.
- */
 export function routingProcessConfigLines(repo: RoutingConfigRepository): string[] {
   const lines: string[] = [];
 
@@ -131,8 +97,7 @@ export function routingProcessConfigLines(repo: RoutingConfigRepository): string
       lines.push(` metric maximum-hops ${process.maximumHops}`);
     }
     if (process.stub) lines.push(` eigrp stub ${process.stub}`);
-    // `auto-summary` est actif par défaut sur EIGRP classique : seul son
-    // retrait se sérialise.
+
     if (!process.autoSummary) lines.push(' no auto-summary');
     lines.push('!');
   }
@@ -175,16 +140,6 @@ export function routingProcessConfigLines(repo: RoutingConfigRepository): string
   return lines;
 }
 
-/**
- * `show startup-config` lit la NVRAM.
- *
- * Son en-tête annonce l'occupation de cette NVRAM ; « Building
- * configuration… / Current configuration : N bytes » est l'en-tête de
- * `show running-config`, que la commande empruntait. La taille est celle
- * du châssis, la même que `dir nvram:` et `show file systems` annoncent —
- * une NVRAM de deux tailles selon la vue serait le défaut que ce lot
- * corrige ailleurs.
- */
 export function renderStartupConfig(snapshot: string, nvramBytes: number): string {
   const body = snapshot
     .split('\n')

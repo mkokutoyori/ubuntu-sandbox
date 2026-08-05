@@ -370,18 +370,58 @@ et deux défauts ne se voyaient que là.
 
   Le premier jet de ce filtre était trop large et a été corrigé plutôt que
   gardé : il retirait aussi `permit`/`deny` derrière `access-list 10 ?`,
-  qui sont réels. La réponse n'est pas de les laisser nus mais de les
-  NOMMER — `CliKeywordDescriptions` les décrit désormais, et ils
-  survivent au filtre par là où ils devaient survivre.
+  qui sont réels. Une SECONDE version, plus large encore, l'a été aussi :
+  filtrer sur « le mot-clé a-t-il une description » cassait
+  `handler-keyword-extraction.test.ts`, dont le contrat explicite est
+  qu'un `registerGreedy` expose ses mots-clés de dispatch à `?` SANS
+  aucune annotation — la campagne complète l'a rapporté, et c'était un
+  vrai défaut de ma règle, pas un test à corriger. Le critère juste n'est
+  pas « sait-on le décrire » mais « la commande attend-elle encore un
+  argument DÉCLARÉ » : tant qu'un paramètre déclaré n'est pas servi, un
+  mot-clé glané dans le corps du gestionnaire n'est pas un candidat, la
+  déclaration faisant autorité sur l'heuristique. Les trois cas se
+  départagent alors sans exception : `password ?` (un paramètre déclaré,
+  non servi) n'offre plus rien d'autre, `access-list 10 ?` (paramètre
+  servi) garde `permit`/`deny`, `show widget ?` (aucun paramètre déclaré)
+  garde ses mots-clés glanés.
 
 Enfin, `description` et `password` annonçaient `WORD` là où IOS annonce
 `LINE` : `ParamType` n'a pas de `'LINE'`, le type qui rend `LINE` est
 `'STRING'`, et la faute de frappe retombait sur le `default` du rendu.
 
-Sur les trois cas ajoutés à `probe-cli-aide-contextuelle.test.ts`, un seul
+Sur les trois cas ajoutés à `probe-cli-contextual-help.test.ts`, un seul
 échoue avant le correctif — les deux autres gardent des régressions
 introduites et corrigées à l'intérieur de ce même lot, ce qui est dit
 plutôt que présenté comme une discrimination.
+
+### 2.10 `show ip route <adresse>` rend le bloc de détail d'IOS
+
+La commande existait et ne produisait pas `Routing Descriptor Blocks:`,
+qui est pourtant le cœur de sa réponse : c'est cette section qui dit par
+où le paquet part réellement, et elle seule qui montre plusieurs chemins
+quand il y en a plusieurs. À la place, elle rendait une ligne de table de
+routage (`S 10.0.0.0/8 via …`, `Connected via Gi0/0`) qu'IOS n'affiche
+jamais ici.
+
+Trois autres écarts, mesurés en écrivant la sonde :
+
+* **La distance était écrite en dur par type.** Une statique flottante
+  configurée en distance 200 se rapportait en distance 1 — elle cessait
+  d'être une route de secours aux yeux de l'opérateur qui l'inspecte,
+  alors que la table, elle, la classait correctement. Elle est lue sur
+  la route (`RouteEntry.ad`), comme le fait déjà le rendu de la table.
+* **RIP, EIGRP et BGP étaient rapportées ABSENTES.** Seuls quatre types
+  étaient traités et le reste tombait dans le `return` final : une route
+  RIP bien présente dans la table répondait `% Network not in table`.
+* **`type <code>` rendait la lettre du code** (`O E2`) là où IOS écrit le
+  type en toutes lettres (`extern 2`).
+
+L'ECMP est rendu : un bloc descripteur par chemin à égalité, l'astérisque
+sur celui du tour courant, comme IOS.
+
+`probe-cli-route-detail.test.ts` (6 cas) est discriminé au `git stash` :
+5 échouent avant le correctif ; le sixième — la destination inconnue —
+passait déjà et garde ce comportement.
 
 ---
 

@@ -2328,44 +2328,70 @@ function showIpRouteVrf(router: Router, vrfName: string): string {
   return [...codes, ...lines].join('\n');
 }
 
+const DEFAULT_DISTANCE: Record<string, number> = {
+  connected: 0, static: 1, default: 1, eigrp: 90, ospf: 110, rip: 120, bgp: 20,
+};
+
+const OSPF_ROUTE_TYPE_NAME: Record<string, string> = {
+  'O': 'intra area', 'O IA': 'inter area',
+  'O E1': 'extern 1', 'O E2': 'extern 2',
+  'O N1': 'NSSA extern 1', 'O N2': 'NSSA extern 2',
+};
+
 function showIpRouteSpecific(router: Router, destIP: string): string {
-  // Trigger convergence before looking up routes
   router._ospfAutoConverge();
   const rt = (router as any).routingTable as any[];
-  // Find the best matching route
-  let best: any = null;
+
   let bestLen = -1;
   for (const r of rt) {
     if (!router.isRouteUsable(r)) continue;
-    const netStr = r.network.toString();
-    const maskStr = r.mask.toString();
-    const cidr = maskToCIDR(maskStr);
-    // Check if destIP matches this route
-    if (ipInSubnet(destIP, netStr, maskStr) && cidr > bestLen) {
-      best = r;
+    const cidr = maskToCIDR(r.mask.toString());
+    if (ipInSubnet(destIP, r.network.toString(), r.mask.toString()) && cidr > bestLen) {
       bestLen = cidr;
     }
   }
-  if (!best) return `% Network not in table`;
+  if (bestLen < 0) return '% Network not in table';
 
-  const cidr = maskToCIDR(best.mask.toString());
+  const paths = rt.filter((r) => router.isRouteUsable(r)
+    && maskToCIDR(r.mask.toString()) === bestLen
+    && ipInSubnet(destIP, r.network.toString(), r.mask.toString()));
+  const best = paths[0];
+
   const netStr = best.network.toString();
+  const cidr = maskToCIDR(best.mask.toString());
+  const distance = best.ad ?? DEFAULT_DISTANCE[best.type] ?? 1;
+  const metric = best.metric ?? 0;
 
+  const source = best.type === 'ospf' ? `ospf ${getOSPFProcessId(router)}`
+    : best.type === 'default' ? 'static'
+      : best.type;
+
+  const lines = [`Routing entry for ${netStr}/${cidr}`];
+
+  let header = `  Known via "${source}", distance ${distance}, metric ${metric}`;
   if (best.type === 'ospf') {
-    const metric = best.metric || 0;
-    const nh = best.nextHop ? `via ${best.nextHop}` : `directly connected`;
-    // Determine route code
     const code = getOSPFRouteCode(router, netStr, cidr, best);
-    const routeDisplay = cidr === 32 ? netStr : `${netStr}/${cidr}`;
-    return `Routing entry for ${netStr}/${cidr}\n  Known via "ospf ${getOSPFProcessId(router)}", distance 110, metric ${metric}, type ${code}\n  Last update from ${nh}\n${code} ${routeDisplay} [110/${metric}] ${nh}, ${best.iface}`;
+    header += `, type ${OSPF_ROUTE_TYPE_NAME[code] ?? 'intra area'}`;
   } else if (best.type === 'connected') {
-    return `Routing entry for ${netStr}/${cidr}\n  Known via "connected", distance 0, metric 0\n  Directly connected, ${best.iface}\nConnected via ${best.iface}`;
-  } else if (best.type === 'static') {
-    return `Routing entry for ${netStr}/${cidr}\n  Known via "static", distance 1, metric 0\nS ${netStr}/${cidr} via ${best.nextHop}`;
-  } else if (best.type === 'default') {
-    return `Routing entry for ${netStr}/${cidr}\n  Known via "static", distance 1, metric 0\nS* ${netStr}/${cidr} via ${best.nextHop}`;
+    header += ' (connected, via interface)';
   }
-  return `% Network not in table`;
+  lines.push(header);
+
+  if (best.nextHop && best.type !== 'connected') {
+    lines.push(`  Last update from ${best.nextHop} on ${best.iface}, 00:00:00 ago`);
+  }
+
+  lines.push('  Routing Descriptor Blocks:');
+  for (const [i, path] of paths.entries()) {
+    const marker = i === 0 ? '  *' : '   ';
+    const target = path.nextHop
+      ? `${path.nextHop}${path.iface ? `, via ${path.iface}` : ''}`
+      : `directly connected, via ${path.iface}`;
+    lines.push(`${marker} ${target}`);
+    lines.push(`      Route metric is ${path.metric ?? 0}, traffic share count is 1`);
+  }
+
+  return lines.join('\n');
 }
 
 function getOSPFRouteCode(router: Router, net: string, cidr: number, routeEntry?: any): string {

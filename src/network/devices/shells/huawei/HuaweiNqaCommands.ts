@@ -95,9 +95,7 @@ export function buildHuaweiNqaTestView(trie: CommandTrie, ctx: HuaweiNqaShellCtx
     }
     if (!(requested in NQA_TEST_TYPES)) return WRONG_PARAM;
     const testType = requested as NqaTestType;
-    // Les défauts par type du moteur sont ceux d'IOS ; VRP repose les
-    // siens par-dessus, sans quoi un test `icmp` hériterait de la
-    // fréquence de 60 s et de la sonde unique d'IP SLA.
+
     const previousProbeCount = config.aggregateProbes;
     const previousFrequency = config.frequencySeconds;
     const previousInterval = config.intervalMs;
@@ -387,14 +385,6 @@ export function registerHuaweiNqaDisplayCommands(
   });
 }
 
-/**
- * VRP n'a qu'une forme de suivi pour une route statique :
- * `track nqa <admin> <test>`. Pas de `reachability` contre `state` comme
- * sur IOS — la route est utilisable si le test a RÉUSSI, et un
- * dépassement de `threshold rtd` ne l'abaisse donc pas
- * (docs/PRD-NQA.md §1.7). La chaîne reçue est celle que l'analyseur de
- * `ip route-static` a mise de côté, mots-clés compris.
- */
 export function resolveVrpTrack(router: Router, track: string): boolean {
   const tokens = track.trim().split(/\s+/);
   if (tokens[0] !== 'nqa') return true;

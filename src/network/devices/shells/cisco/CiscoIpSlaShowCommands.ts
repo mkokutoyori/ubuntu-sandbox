@@ -192,7 +192,6 @@ function renderStatistics(
   return lines;
 }
 
-/** IOS tronque une colonne trop large, il ne décale pas les suivantes. */
 function column(text: string, width: number): string {
   return text.length >= width ? `${text.slice(0, width - 1)} ` : text.padEnd(width);
 }
@@ -279,9 +278,6 @@ export function registerIpSlaDebugCommands(trie: CommandTrie, ctx: IpSlaShowCont
 export function registerIpSlaClearCommands(trie: CommandTrie, ctx: IpSlaShowContext): void {
   const engine = () => ctx.r().getIpSlaEngine();
 
-  // `IpSlaEngine.resetStatistics()` existait et n'avait aucun appelant :
-  // un moteur sans porte, exactement le motif que ce dépôt corrige
-  // ailleurs.
   trie.registerGreedy('clear ip sla statistics', 'Clear IP SLAs statistics', (args) => {
     const idToken = args.find((token) => /^\d+$/.test(token));
     if (idToken === undefined) { engine().resetStatistics(); return ''; }
@@ -449,10 +445,6 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
     return lines.join('\n');
   });
 
-  // `ip sla monitor` est la syntaxe héritée, retirée des images 15.x.
-  // Sans cette entrée, le greedy `show ip sla` ci-dessous l'attrapait et
-  // répondait le bloc `application` à `show ip sla monitor statistics`
-  // comme à n'importe quoi d'autre — un fallback qui accepte tout.
   trie.registerGreedy('show ip sla monitor', 'Legacy IP SLAs Monitor (removed)', () =>
     '% Invalid input detected at \'^\' marker.');
 

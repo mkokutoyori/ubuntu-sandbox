@@ -12,17 +12,6 @@ const WORD = (name: string, description: string): ParamSpec =>
 const LINE = (name: string, description: string): ParamSpec =>
   ({ name, type: 'STRING', description });
 
-/**
- * Ce que l'aide d'IOS DIT derrière un argument déjà saisi.
- *
- * La marche d'aide de `CommandTrie` sait désormais consommer un argument
- * (`docs/PRD-CLI-Fidelite-IOS.md` §1.1, couche A) ; sans déclaration,
- * elle rend les mots-clés qui peuvent suivre, ce qui est déjà juste mais
- * muet là où IOS annonce un type. Ces déclarations sont la couche B, et
- * elles se posent commande par commande — celles-ci sont les cas relevés
- * par la relecture. Le mécanisme (`describeArgs`) vaut pour toutes les
- * autres, qui restent à déclarer.
- */
 export interface ArgumentHelpTries {
   config: CommandTrie;
   configIf: CommandTrie;

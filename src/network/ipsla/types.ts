@@ -112,24 +112,9 @@ export interface SlaOperationConfig {
   owner: string | null;
   numPackets: number;
   intervalMs: number;
-  /**
-   * Nombre de sondes exécutées puis AGRÉGÉES en un seul résultat.
-   *
-   * Vaut 1 sur IOS, où l'unité de résultat est la sonde. VRP mesure par
-   * lots : `probe-count` sondes espacées d'`interval`, et
-   * `display nqa results` rend l'agrégat (`Send/Receive operation
-   * times`, `Min/Max/Average completion time`). Sans cette notion, un
-   * portage de NQA sur ce moteur rendrait un VRP qui compte comme un
-   * IOS (docs/PRD-NQA.md §1.2).
-   */
+
   aggregateProbes: number;
-  /**
-   * Taux de perte, en pourcentage, au-delà duquel un lot est déclaré en
-   * échec. 100 signifie « échec seulement si tout est perdu », qui est
-   * le défaut de VRP `fail-percent` — une sonde perdue sur trois reste
-   * donc un succès (docs/PRD-NQA.md §1.3). Sans objet quand
-   * `aggregateProbes` vaut 1.
-   */
+
   failPercent: number;
   codec: SlaCodec | null;
   advantageFactor: number;

@@ -172,18 +172,6 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     const engine = ctx.r()._getNATEngine();
     const aclId = args[0];
     const router = ctx.r() as any;
-    // L'ACL n'est PAS vérifiée ici : IOS résout la liste au moment de
-    // traduire, pas au moment de configurer. C'est ce qui rend possible
-    // le grand classique « NAT configuré, aucune traduction » — et c'est
-    // nécessaire, puisque la running-config d'IOS écrit `ip nat inside
-    // source list` AVANT `access-list` : un routeur qui refuserait la
-    // référence en avant ne pourrait pas relire sa propre configuration
-    // de démarrage.
-    //
-    // Le refus « MAC ACLs cannot be used for NAT » qui vivait ici était
-    // par ailleurs inatteignable : `AccessList.type` ne vaut que
-    // 'standard' ou 'extended', un routeur Cisco n'ayant aucune notion
-    // d'ACL MAC dans ce simulateur.
     const vrf = parseVrf(args);
     if (vrf) {
       const vrfs = router._vrfs as Map<string, unknown> | undefined;
