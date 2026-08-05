@@ -169,18 +169,53 @@ propre mesure, plutôt qu'en passant.
 - **Acceptation :** un test échoue si une entrée UDP existe sans
   gestionnaire, ou l'inverse, sur chaque machine construite.
 
-### §M4 — apache2 et nginx-HTTPS (C4, C3)
+### §M4 — apache2 et le verrou PEM (C4, C3)
 
-`LinuxNginxService` est déjà un `ServiceSocketServer` complet. apache2
-n'a besoin de rien de neuf : il lui faut un serveur du même genre,
-servant `/var/www/html` sur le 80, refusant de démarrer si nginx tient
-déjà le port — le conflit que tout TP Linux rencontre.
+#### Ce que la mesure a trouvé, et qui est pire que prévu
 
-HTTPS reste bloqué sur le même verrou qu'avant : aucun chemin
-`openssl req` → PEM n'existe côté Linux. C'est ce verrou qu'il faut
-lever, pas nginx qu'il faut contourner — et le lever sert aussi
-`curl --cacert`, sshd et les rôles Windows. Traité seulement si §M1-§M3
-laissent la place ; sinon nommé plutôt que bâclé.
+`openssl` **n'existe pas comme commande**. Ce n'est pas « le sous-mode
+`req` manque » : il n'y a aucun fichier de commande, aucun `case`,
+rien. Le seul endroit du dépôt qui en parle est
+`PackageDatabase.ts`, où le paquet est déclaré `installed: true`.
+
+Une machine affirme donc, par `dpkg -l` et `apt list --installed`,
+qu'elle a un outil dont le binaire n'existe pas. C'est **la même
+famille de défaut** que celle qui a motivé tout ce chantier — un fait
+affiché que rien ne soutient —, appliquée cette fois à un paquet plutôt
+qu'à un port, et c'est la cinquième fois qu'elle se présente.
+
+#### Le verrou est levable, et la clé existe déjà
+
+`src/network/pki/` porte de vrais objets : `PkiKeyPair.generate()`,
+`generateSelfSignedCertificate()` (qui rend un couple certificat +
+clé privée), `CertificateAuthority`, `CertificateVerifier`. Ce qui
+manque n'est ni la cryptographie ni le format X.509 — c'est qu'un
+certificat ne sait pas devenir un **fichier**. Aucun `toPem`/`fromPem`
+n'existe nulle part.
+
+C'est donc là qu'est le verrou, et il tient en un module : une armure
+PEM réelle (`-----BEGIN CERTIFICATE-----`) autour d'une charge
+simulée, exactement la convention que ce répertoire énonce déjà
+(« simulated crypto, real protocol shape »). Le codec doit savoir
+**relire** ce qu'il écrit, sans quoi le fichier ne sert à rien.
+
+Une fois posé, il sert bien au-delà de nginx : `curl --cacert`, les
+clés d'hôte sshd, les rôles Windows, et tout TP qui commence par
+« générez-vous un certificat ».
+
+- **§M4a — apache2.** `LinuxNginxService` est déjà un
+  `ServiceSocketServer` complet ; apache2 en veut un du même genre,
+  servant `/var/www/html`, lisant `Listen` dans `ports.conf`, et
+  refusant de démarrer si nginx tient déjà le port — le conflit que
+  tout TP Linux rencontre.
+- **§M4b — le codec PEM**, puis la commande `openssl` (`req -x509`,
+  `genrsa`, `x509 -in -noout -text/-subject/-dates`), puis
+  `ssl_certificate`/`ssl_certificate_key` côté nginx.
+
+- **Acceptation :** `openssl req -x509 -newkey rsa:2048 -keyout k.pem
+  -out c.pem -subj /CN=…` écrit deux fichiers que `openssl x509 -in
+  c.pem -noout -subject` relit, et que nginx sert en HTTPS ; `dpkg -l
+  openssl` ne ment plus.
 
 ### §M5 — Windows (C2) et curl P4 (C5)
 
