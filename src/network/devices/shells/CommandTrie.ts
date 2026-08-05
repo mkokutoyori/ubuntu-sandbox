@@ -77,6 +77,7 @@ export interface CommandNode {
   greedy?: boolean;
   hintSuggestions?: Array<{ keyword: string; description: string }>;
   _hintOnly?: boolean;
+  _passthrough?: boolean;
   /**
    * Keywords auto-extracted from the greedy handler's source (lazy,
    * computed once). Undefined = not yet computed.
@@ -234,7 +235,7 @@ export class CommandTrie {
   }
 
   private resolveDescription(node: CommandNode): string {
-    if (node.description === node.keyword) {
+    if (node.description === node.keyword || node.description === '') {
       return this.canonicalDescriptions.get(node.keyword)
         ?? descriptionForKeyword(node.keyword)
         ?? node.description;
@@ -543,7 +544,7 @@ export class CommandTrie {
 
     // Empty input or just spaces → show all root commands
     if (tokens.length === 0) {
-      return this.nodeCompletions(this.root, []);
+      return this.nodeCompletions(this.root);
     }
 
     let node = this.root;
@@ -561,7 +562,7 @@ export class CommandTrie {
         // "sh?" → which keywords start with "sh"? List them.
         // "show?" → which keywords start with "show"? → "show"
         // Never drill down into the match — just show the matches themselves.
-        const matches = this.prefixMatch(node, token);
+        const matches = this.prefixMatch(node, token, true);
         const listed = matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
         {
           const seen = new Set(listed.map(e => e.keyword.toLowerCase()));
@@ -573,20 +574,6 @@ export class CommandTrie {
             if (h.keyword.toLowerCase().startsWith(token) && !seen.has(h.keyword.toLowerCase())) {
               seen.add(h.keyword.toLowerCase());
               listed.push({ keyword: h.keyword, description: h.description });
-            }
-          }
-        }
-        if (this.dynamicResolver) {
-          const seen = new Set(listed.map(e => e.keyword.toLowerCase()));
-          const context: DynamicCompletionContext = {
-            path,
-            paramType: node.params[0]?.type ?? null,
-            partial: tokens[i],
-          };
-          for (const value of this.dynamicResolver.candidatesFor(context)) {
-            if (value.toLowerCase().startsWith(token) && !seen.has(value.toLowerCase())) {
-              seen.add(value.toLowerCase());
-              listed.push({ keyword: value, description: '' });
             }
           }
         }
@@ -641,7 +628,7 @@ export class CommandTrie {
     }
 
     // Trailing space → show subcommands/children of the last matched node
-    return this.nodeCompletions(node, path, consumedArgs);
+    return this.nodeCompletions(node, consumedArgs);
   }
 
   /**
@@ -723,7 +710,7 @@ export class CommandTrie {
       results.push(prefix + word);
     };
 
-    for (const m of this.prefixMatch(node, partialLower)) push(m.keyword);
+    for (const m of this.prefixMatch(node, partialLower, true)) push(m.keyword);
 
     if (node.hintSuggestions) {
       for (const h of node.hintSuggestions) {
@@ -803,6 +790,7 @@ export class CommandTrie {
         // parent greedy et rien ne change pour elle.
         child = this.createNode(key, '');
         child._hintOnly = true;
+        child._passthrough = true;
         node.children.set(key, child);
       }
       node = child;
@@ -810,10 +798,14 @@ export class CommandTrie {
     node.params = [...specs];
   }
 
-  private prefixMatch(node: CommandNode, prefix: string): CommandNode[] {
+  private prefixMatch(
+    node: CommandNode,
+    prefix: string,
+    includePassthrough = false,
+  ): CommandNode[] {
     const results: CommandNode[] = [];
     for (const [keyword, child] of node.children) {
-      if (child._hintOnly) continue;
+      if (child._hintOnly && !(includePassthrough && child._passthrough)) continue;
       if (keyword.startsWith(prefix)) {
         results.push(child);
       }
@@ -833,10 +825,9 @@ export class CommandTrie {
    */
   private nodeCompletions(
     node: CommandNode,
-    path: readonly string[],
     consumedArgs = 0,
   ): Array<{ keyword: string; description: string }> {
-    const raw = this.nodeCompletionsUnsorted(node, path, consumedArgs);
+    const raw = this.nodeCompletionsUnsorted(node, consumedArgs);
     const rank = (keyword: string): number => {
       if (keyword === '<cr>') return 2;
       if (keyword.startsWith('<')) return 1;
@@ -852,7 +843,6 @@ export class CommandTrie {
 
   private nodeCompletionsUnsorted(
     node: CommandNode,
-    path: readonly string[],
     consumedArgs = 0,
   ): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
@@ -865,7 +855,7 @@ export class CommandTrie {
     const argumentsConsumed = consumedArgs > 0 && node.params.length > consumedArgs;
     if (!argumentsConsumed) {
       for (const [, child] of node.children) {
-        if (child._hintOnly) continue;
+        if (child._hintOnly && !child._passthrough) continue;
         results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
       }
     }
@@ -894,21 +884,6 @@ export class CommandTrie {
         if (!seen.has(auto.keyword)) {
           seen.add(auto.keyword);
           results.push({ keyword: auto.keyword, description: auto.description });
-        }
-      }
-    }
-
-    if (this.dynamicResolver && path.length > 0) {
-      const seen = new Set(results.map(r => r.keyword.toLowerCase()));
-      const context: DynamicCompletionContext = {
-        path,
-        paramType: node.params[0]?.type ?? null,
-        partial: '',
-      };
-      for (const value of this.dynamicResolver.candidatesFor(context)) {
-        if (!seen.has(value.toLowerCase())) {
-          seen.add(value.toLowerCase());
-          results.push({ keyword: value, description: '' });
         }
       }
     }

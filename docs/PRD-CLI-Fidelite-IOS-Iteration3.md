@@ -535,11 +535,17 @@ R(config-router)#network ?
 ```
 
 `describeArgs('network', [IP('network', …)])` est bien appelé
-(`ciscoArgumentHelp.ts:95-97`), mais `area` est un enfant **réel** du
-nœud, et `nodeCompletionsUnsorted()` supprime les paramètres dès qu'un
-enfant est présent et qu'aucun argument n'a été consommé. Même famille que
-le `dot1q` de §1.2 : la déclaration d'argument et la structure de l'arbre
-se neutralisent l'une l'autre.
+(`ciscoArgumentHelp.ts:95-97`) — **mais sur `tries.configRouter`**, alors
+que `router ospf` bascule le shell en mode `config-router-ospf`, servi par
+un trie distinct, `configRouterOspfTrie` (`CiscoIOSShell.ts:615-616`).
+`tries.configRouterOspf` ne reçoit qu'un `router-id`.
+
+La déclaration existe donc, sur un arbre que la commande ne consulte
+jamais. Ce n'est pas un défaut de `nodeCompletions` — qui fait cohabiter
+correctement paramètres et enfants — mais une déclaration posée au mauvais
+endroit, qu'aucun test ne pouvait signaler puisque rien ne relie une
+`describeArgs` au trie réellement actif dans un mode. L'invariant §8.1
+ferme cette classe : il balaie chaque trie tel qu'il est monté.
 
 **d) Descriptions vides en série.**
 
@@ -693,13 +699,14 @@ export interface CommandNode {
 `encapsulation ?` retrouve `dot1q`, et tout `describeArgs` posé sous un
 handler greedy documente désormais son mot-clé au lieu de l'effacer.
 
-**e) Paramètres et enfants cohabitent.**
+**e) Les déclarations d'arguments visent le trie réellement actif.**
 
-Correctif de §1.13 c. La règle actuelle — « tant qu'un argument est
-attendu, les enfants ne sont pas candidats » — est juste *après*
-consommation d'un argument, et fausse *avant* : `network ?` doit proposer
-`A.B.C.D` **et** ses enfants. La condition passe de « le nœud a des
-params » à « le nœud a des params **déjà partiellement consommés** ».
+Correctif de §1.13 c. `describeCiscoArguments()` reçoit les tries par nom
+et rien ne vérifie qu'un mode donné consulte bien celui qu'on décore. Le
+`network` d'OSPF est déclaré sur `configRouter`, jamais lu en
+`config-router-ospf`. La déclaration se déplace ; l'invariant §8.1, qui
+balaie chaque trie tel qu'il est monté par `trieForMode()`, empêche la
+classe de revenir.
 
 **f) `?` cesse de consulter le résolveur dynamique.**
 

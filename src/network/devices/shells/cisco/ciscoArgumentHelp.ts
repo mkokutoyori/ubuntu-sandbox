@@ -95,6 +95,10 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configRouter.describeArgs('network', [
     IP('network', 'Network number'),
   ]);
+  tries.configRouterOspf.describeArgs('network', [
+    IP('network', 'Network number'),
+    { ...IP('wildcard', 'OSPF wild card bits'), optional: true },
+  ]);
 
   tries.configIf.describeArgs('ip helper-address', [
     IP('address', 'IP destination address'),

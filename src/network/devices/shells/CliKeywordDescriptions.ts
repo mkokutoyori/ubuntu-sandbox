@@ -13,6 +13,9 @@
 const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string>([
   ['aaa', 'Authentication, Authorization and Accounting'],
   ['archive', 'Archive the configuration'],
+  ['dot1q', 'IEEE 802.1Q Virtual LAN'],
+  ['isl', 'Cisco ISL Virtual LAN'],
+  ['native', 'Make this as native vlan'],
   ['boot', 'Boot Commands'],
   ['clock', 'Configure time-of-day clock'],
   ['member', 'Configure a VNI member'],
