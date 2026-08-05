@@ -77,10 +77,11 @@ test.describe('certificate renewal, typed by the operator', () => {
 
     await typeCmd(page, 'systemctl reload nginx');
 
-    // The renewed certificate certifies a DIFFERENT key, so a server that
-    // kept the old pair could not complete a handshake at all.
-    await typeCmd(page, 'curl -sS -k https://127.0.0.1/');
-    expect(await lastLines(page, 14)).toContain('Welcome to nginx!');
+    // Observe the certificate PRESENTED, not merely that TLS works: the
+    // old pair is consistent with itself and negotiates just as happily,
+    // so only the peer subject tells the two apart.
+    await typeCmd(page, 'curl -sS -v -k https://127.0.0.1/');
+    expect(await lastLines(page, 20)).toContain('new.lab');
   });
 
   test('a botched renewal keeps the site up instead of going dark', async ({ page }) => {
@@ -97,8 +98,13 @@ test.describe('certificate renewal, typed by the operator', () => {
     // The classic mistake: the file is replaced by something that is not a
     // certificate.
     await typeCmd(page, `sh -c 'printf "junk\\n" > /etc/ssl/certs/lab.crt'`);
-    await typeCmd(page, 'systemctl reload nginx');
 
+    // The check an operator runs before reloading — and it must FAIL,
+    // which is what keeps the reload from dismantling a working site.
+    await typeCmd(page, 'nginx -t');
+    expect(await lastLines(page, 5)).not.toContain('test is successful');
+
+    await typeCmd(page, 'systemctl reload nginx');
     await typeCmd(page, 'ss -ltn');
     expect(await lastLines(page, 10)).toContain(':443');
     await typeCmd(page, 'curl -sS -k https://127.0.0.1/');
