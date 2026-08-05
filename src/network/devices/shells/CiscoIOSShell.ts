@@ -54,6 +54,7 @@ import {
 import {
   registerIpSlaShowCommands, registerIpSlaClearCommands, registerIpSlaDebugCommands,
 } from './cisco/CiscoIpSlaShowCommands';
+import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
   buildPolicyConfig, registerPolicyShow,
@@ -295,6 +296,22 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   constructor() {
     super();
     this.initializeCommands();
+    // `registerShowCommands` est appelé pour plusieurs tries ; le debug
+    // est privilégié seulement, donc enregistré ici une seule fois.
+    registerIpSlaDebugCommands(this.privilegedTrie, this);
+    // Après TOUS les enregistrements : `describeArgs` attache les
+    // spécifications à des nœuds existants, il n'en crée pas.
+    describeCiscoArguments({
+      config: this.configTrie,
+      configIf: this.configIfTrie,
+      configLine: this.configLineTrie,
+      configDhcp: this.configDhcpTrie,
+      configRouter: this.configRouterTrie,
+      configRouterOspf: this.configRouterOspfTrie,
+      configStdNacl: this.configStdNaclTrie,
+      configExtNacl: this.configExtNaclTrie,
+      privileged: this.privilegedTrie,
+    });
   }
 
   // ─── IRouterShell ────────────────────────────────────────────────
@@ -893,7 +910,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerTrackShowCommands(trie, this);
     registerIpSlaShowCommands(trie, this);
     registerIpSlaClearCommands(trie, this);
-    registerIpSlaDebugCommands(this.privilegedTrie, this);
     registerPolicyShow(trie, this.policy);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 

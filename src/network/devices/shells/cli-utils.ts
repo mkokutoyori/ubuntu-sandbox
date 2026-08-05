@@ -12,7 +12,10 @@ export const CISCO_ERRORS = {
   INCOMPLETE: '% Incomplete command.',
   INVALID_INPUT: "% Invalid input detected at '^' marker.",
   UNRECOGNIZED: (cmd: string) => `% Unrecognized command "${cmd}"`,
-  UNRECOGNIZED_HELP: '% Unrecognized command',
+  // IOS n'émet jamais « % Unrecognized command » : un `?` sans
+  // correspondance rend le même refus que n'importe quelle saisie
+  // fautive. Le nom est conservé pour ses appelants.
+  UNRECOGNIZED_HELP: '% Invalid input detected at \'^\' marker.',
 } as const;
 
 /**

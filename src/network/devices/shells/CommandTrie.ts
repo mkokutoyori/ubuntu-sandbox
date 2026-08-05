@@ -29,6 +29,35 @@ export interface ParamSpec {
   description: string;
   optional?: boolean;
   validator?: (value: string) => boolean;
+  /** Bornes d'un `INT`, rendues `<min-max>` comme IOS le fait. */
+  range?: readonly [number, number];
+  /** Rendu littéral imposé, quand le type ne suffit pas (`LINE`, `hh:mm`). */
+  literal?: string;
+}
+
+/**
+ * IOS ne nomme pas ses arguments, il les TYPE : `A.B.C.D`, `<1-4094>`,
+ * `WORD`, `LINE`. Un `<mask>` dans une aide se voit immédiatement.
+ */
+export function renderParamKeyword(param: ParamSpec): string {
+  if (param.literal) return param.literal;
+  switch (param.type) {
+    case 'IP_ADDR':
+    case 'SUBNET_MASK':
+      return 'A.B.C.D';
+    case 'MAC_ADDR':
+      return 'H.H.H';
+    case 'INT':
+      return param.range ? `<${param.range[0]}-${param.range[1]}>` : '<0-4294967295>';
+    case 'INTERFACE':
+      return 'WORD';
+    case 'VLAN_LIST':
+      return 'WORD';
+    case 'STRING':
+      return 'LINE';
+    default:
+      return 'WORD';
+  }
 }
 
 // ─── Trie Node ──────────────────────────────────────────────────────
@@ -519,6 +548,8 @@ export class CommandTrie {
 
     let node = this.root;
     const path: string[] = [];
+    /** Combien d'arguments du nœud courant ont déjà été fournis. */
+    let consumedArgs = 0;
 
     // Navigate through all complete (non-last) tokens
     for (let i = 0; i < tokens.length; i++) {
@@ -566,6 +597,7 @@ export class CommandTrie {
       if (exactRawHelp) {
         node = exactRawHelp;
         path.push(node.keyword);
+        consumedArgs = 0;
         continue;
       }
 
@@ -573,6 +605,7 @@ export class CommandTrie {
       if (matches.length === 1) {
         node = matches[0];
         path.push(node.keyword);
+        consumedArgs = 0;
         continue;
       }
 
@@ -589,11 +622,26 @@ export class CommandTrie {
         }
       }
 
+      // Le token n'est pas un mot-clé : c'est un ARGUMENT.
+      //
+      // C'est ici que l'aide divergeait de l'exécution. La marche
+      // cherchait un enfant à chaque pas et abandonnait dès qu'elle
+      // rencontrait une valeur — une adresse, un nombre, un nom — alors
+      // que le nœud, lui, la consomme (`registerGreedy` absorbe la
+      // suite, `params` la décrit). D'où un `ip address 192.168.10.1 ?`
+      // sans réponse pour une commande qui s'exécute très bien.
+      // Consommer l'argument et poursuivre supprime la classe entière,
+      // y compris pour les commandes que personne n'a testées.
+      if (node.params.length > consumedArgs || node.greedy) {
+        consumedArgs++;
+        continue;
+      }
+
       return [];
     }
 
     // Trailing space → show subcommands/children of the last matched node
-    return this.nodeCompletions(node, path);
+    return this.nodeCompletions(node, path, consumedArgs);
   }
 
   /**
@@ -732,6 +780,36 @@ export class CommandTrie {
     return node._autoKeywords;
   }
 
+  /**
+   * Attache des spécifications d'arguments à un nœud DÉJÀ enregistré.
+   *
+   * `ParamType`/`ParamSpec` existaient depuis toujours ; ce qui manquait
+   * était leur usage — presque tous les enregistrements du dépôt passent
+   * par `registerGreedy`, qui n'accepte pas de paramètres. Plutôt que de
+   * réécrire des milliers d'appels, on décrit les arguments après coup,
+   * là où l'aide doit s'améliorer.
+   */
+  describeArgs(path: string, specs: readonly ParamSpec[]): void {
+    const keywords = path.split(/\s+/).filter(Boolean);
+    let node = this.root;
+    for (const keyword of keywords) {
+      const key = keyword.toLowerCase();
+      let child = node.children.get(key);
+      if (!child) {
+        // Le mot-clé n'est pas un nœud réel : la commande est enregistrée
+        // greedy et l'absorbe. On crée un nœud PUREMENT INDICATIF pour
+        // pouvoir y accrocher les arguments — `prefixMatch` ignore les
+        // nœuds `_hintOnly`, donc l'exécution continue de passer par le
+        // parent greedy et rien ne change pour elle.
+        child = this.createNode(key, '');
+        child._hintOnly = true;
+        node.children.set(key, child);
+      }
+      node = child;
+    }
+    node.params = [...specs];
+  }
+
   private prefixMatch(node: CommandNode, prefix: string): CommandNode[] {
     const results: CommandNode[] = [];
     for (const [keyword, child] of node.children) {
@@ -753,8 +831,12 @@ export class CommandTrie {
    * immédiatement. Les paramètres (`<...>`) restent en fin de liste,
    * comme sur un vrai routeur, et `<cr>` garde sa place finale.
    */
-  private nodeCompletions(node: CommandNode, path: readonly string[]): Array<{ keyword: string; description: string }> {
-    const raw = this.nodeCompletionsUnsorted(node, path);
+  private nodeCompletions(
+    node: CommandNode,
+    path: readonly string[],
+    consumedArgs = 0,
+  ): Array<{ keyword: string; description: string }> {
+    const raw = this.nodeCompletionsUnsorted(node, path, consumedArgs);
     const rank = (keyword: string): number => {
       if (keyword === '<cr>') return 2;
       if (keyword.startsWith('<')) return 1;
@@ -768,19 +850,33 @@ export class CommandTrie {
     });
   }
 
-  private nodeCompletionsUnsorted(node: CommandNode, path: readonly string[]): Array<{ keyword: string; description: string }> {
+  private nodeCompletionsUnsorted(
+    node: CommandNode,
+    path: readonly string[],
+    consumedArgs = 0,
+  ): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
-    for (const [, child] of node.children) {
-      results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
+    // Tant que la commande ATTEND ENCORE un argument, les mots-clés
+    // enfants ne sont pas des candidats : après `ip address
+    // 192.168.10.1`, IOS attend le masque, pas `dhcp`. Une fois les
+    // arguments servis, les mots-clés qui les suivent redeviennent
+    // proposables — `access-list 10 ?` rend bien `deny`/`permit`.
+    const argumentsConsumed = consumedArgs > 0 && node.params.length > consumedArgs;
+    if (!argumentsConsumed) {
+      for (const [, child] of node.children) {
+        results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
+      }
     }
 
-    // Parameter specs
-    for (const param of node.params) {
-      results.push({ keyword: `<${param.name}>`, description: param.description });
+    // Un paramètre déjà fourni n'est plus proposé : après
+    // `ip address 192.168.10.1`, IOS attend le masque, pas l'adresse.
+    for (const param of node.params.slice(consumedArgs)) {
+      results.push({ keyword: renderParamKeyword(param), description: param.description });
+      if (!param.optional) break;
     }
 
-    if (node.hintSuggestions && node.hintSuggestions.length > 0) {
+    if (!argumentsConsumed && node.hintSuggestions && node.hintSuggestions.length > 0) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const hint of node.hintSuggestions) {
         if (!seen.has(hint.keyword.toLowerCase())) {
@@ -790,7 +886,7 @@ export class CommandTrie {
       }
     }
 
-    {
+    if (!argumentsConsumed) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const auto of this.autoContinuations(node)) {
         if (!seen.has(auto.keyword)) {
