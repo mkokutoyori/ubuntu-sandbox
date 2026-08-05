@@ -64,9 +64,13 @@ describe('§P2 — enc: the round-trip', () => {
 
     // Chained with `&&`/`||`, which is how a real script uses it.
     // Deliberately NOT `> /dev/null 2>&1`: `bad decrypt` goes to stderr,
-    // as on a real machine, and the simulator's single-command fast path
-    // merges stdout and stderr — a real but distinct gap that does not
-    // belong to `enc`.
+    // as on a real machine, and that redirection was MEASURED not to
+    // silence it here. The cause is not established — `hasCompositeSyntax`
+    // does route a redirected line to the bash interpreter rather than the
+    // single-command fast path, so the earlier guess ("the fast path
+    // merges the two streams") is wrong. What is certain is the
+    // observation, and it is a separate subject from `enc`, which reports
+    // on the right stream and with the right exit code either way.
     const good = await srv.executeCommand(
       `sh -c 'openssl enc -aes-256-cbc -pbkdf2 -a -d -k good -in /tmp/e.b64 && echo PASSED'`);
     const bad = await srv.executeCommand(
