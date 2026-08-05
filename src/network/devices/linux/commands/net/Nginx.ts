@@ -1,8 +1,8 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
-import { parseNginxConfig, validateNginxConfig, type NginxFileSource } from '../../http/NginxConfig';
-import { NGINX_CONF_PATH, NGINX_VERSION, NGINX_BINARY } from '../../http/NginxFiles';
+import { parseNginxConfig, validateNginxConfig, type NginxFileSource } from '../../http/nginx/NginxConfig';
+import { NGINX_CONF_PATH, NGINX_VERSION, NGINX_BINARY } from '../../http/nginx/NginxFiles';
 
 function fileSource(ctx: LinuxCommandContext): NginxFileSource {
   const vfs = ctx.executor.vfs;

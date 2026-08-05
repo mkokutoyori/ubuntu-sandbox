@@ -98,7 +98,8 @@ import {
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import type { ServiceSocketServer } from './ports/ServiceSocketServer';
-import type { NginxControl } from './http/LinuxNginxService';
+import type { NginxControl } from './http/nginx/LinuxNginxService';
+import type { ApacheControl } from './http/apache/LinuxApacheService';
 import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
 import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
@@ -409,6 +410,8 @@ export class LinuxCommandExecutor {
 
   /** Le nginx de cette machine, pour la commande `nginx` (docs/PRD-Nginx.md §P2). */
   nginxService: NginxControl | null = null;
+  /** The apache2 server, for the `apachectl` command (§M4a). */
+  apacheService: ApacheControl | null = null;
   /** Records port bind / release activity into the system log, reactively. */
   private portActivityLog: PortActivityLogProjection | null = null;
   private cwd = '/root';

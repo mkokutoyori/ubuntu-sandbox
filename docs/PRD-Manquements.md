@@ -217,6 +217,62 @@ clés d'hôte sshd, les rôles Windows, et tout TP qui commence par
   c.pem -noout -subject` relit, et que nginx sert en HTTPS ; `dpkg -l
   openssl` ne ment plus.
 
+#### Résultat mesuré — §M4b, livré
+
+`src/network/pki/pem.ts` lève le verrou (armure RFC 7468 réelle, 64
+colonnes, charge JSON plutôt que DER — la signature étant simulée, un
+DER exact ne serait de toute façon pas vérifiable par un vrai openssl).
+`openssl` existe : `version`, `dgst` + alias, `enc`, `rand`, `base64`,
+`passwd`, `genrsa`, `rsa`, `pkey`, `req`, `x509`, `verify`, `ca`, `crl`,
+`ciphers`, `info`, `list`, `errstr`, `prime`, `ec`, `ecparam`, `pkcs8`,
+`pkeyutl`, `rsautl`, `rehash`, `s_client`. Le contrat qui compte est
+tenu : `sha256sum f` et `openssl dgst -sha256 f` rendent la MÊME
+empreinte, parce qu'ils appellent le même moteur.
+
+Deux limites honnêtes, écrites là où elles s'appliquent plutôt qu'ici :
+`enc` **refuse** la sortie binaire brute vers un fichier en disant
+pourquoi (le VFS stocke des chaînes UTF-8 ; des octets arbitraires
+seraient remplacés à la lecture et le déchiffrement rendrait autre
+chose, silencieusement) — `-a`, une option du vrai openssl, la lève ; et
+**3DES est absent**, le §8.3 du PRD OpenSSL se trompant en l'annonçant
+réel : `des.ts` exporte `desCbcEncrypt` et aucun `desCbcDecrypt`, donc
+`enc -des-ede3-cbc` chiffrerait sans pouvoir déchiffrer.
+
+Reste ouvert : `ssl_certificate`/`ssl_certificate_key` côté nginx
+(`PRD-Nginx` §P5) — plus bloqué par le PEM, seulement pas encore câblé.
+
+#### Résultat mesuré — §M4a, livré
+
+apache2 écoute vraiment. `src/network/devices/linux/http/` est
+désormais découpé par serveur (`apache/`, `nginx/`), chacun portant ses
+fichiers de distribution, son analyseur et son `ServiceSocketServer` ;
+aucun moteur HTTP neuf, les deux sont posés sur `Http1ServerSession`.
+Le conflit du port 80 marche **dans les deux sens**, chacun avec ses
+propres mots. `apachectl`/`apache2ctl` est un `LinuxCommand` unique
+(les deux noms sont le même fichier chez Debian) qui LIT la machine :
+`-M` suit `mods-enabled/`, `-S` suit les hôtes virtuels du disque,
+`configtest` et le démon jugent le même fichier de la même façon.
+
+Un écart assumé et un message qui n'est pas d'Apache, tous deux écrits
+dans le code : `apachectl start|stop|restart|graceful` passe **par** le
+gestionnaire de services, là où le vrai Ubuntu démarre httpd dans le dos
+de systemd (reproduire cette incohérence apprendrait surtout à se méfier
+du simulateur) ; et un `<VirtualHost *:8080>` sans `Listen 8080`
+correspondant reçoit une note préfixée `NOTE:` — le vrai Apache se tait,
+démarre, ne sert rien sur ce port et laisse chercher.
+
+Trouvé en écrivant les tests, et corrigé : `envvars` n'était pas semé,
+donc `CustomLog ${APACHE_LOG_DIR}/access.log` désignait un répertoire
+nommé littéralement `${APACHE_LOG_DIR}` et aucune requête n'était
+journalisée là où un opérateur la cherche. Corrigé aussi, mesuré au
+passage : `/usr/sbin/nginx` n'était semé nulle part, si bien que le
+garde « binaire supprimé » du §F7.7 aurait refusé `nginx -t` sur un
+fichier que personne n'avait supprimé.
+
+Un test préexistant prenait apache2 comme EXEMPLE d'un service qui
+démarre sans rien ouvrir (`nginx-prd-p0-p2`) ; la règle qu'il protège
+est intacte, c'est mysql qui l'illustre maintenant.
+
 ### §M5 — Windows (C2) et curl P4 (C5)
 
 Répliqués sur le motif éprouvé par §M1-§M2, une fois celui-ci vert.
