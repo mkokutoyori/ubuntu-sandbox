@@ -582,7 +582,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── Interface ── trust + limit rate
     this.configIfTrie.registerGreedy('mtu', 'Set MTU', (args) => {
       const n = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(n) || n < 64 || n > 9216) return "% Invalid input detected at '^' marker.";
+      if (!Number.isFinite(n)) return "% Invalid input detected at '^' marker.";
+      if (n < 68) return `% Invalid MTU: ${n}. Minimum is 68 (IPv4 minimum).`;
+      if (n > 9216) return `% Invalid MTU: ${n}. Maximum is 9216 (jumbo frame).`;
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
       for (const i of ifs) {
         const port = this.d().getPort(i);

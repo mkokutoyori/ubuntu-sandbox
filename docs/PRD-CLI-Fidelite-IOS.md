@@ -533,6 +533,43 @@ Le test ne vérifie plus un mode mais **tous** : deux plateformes, cinq
 modes, aucun mot-clé sans description. C'est la formulation qui garde le
 défaut fermé plutôt que le cas qui l'a révélé.
 
+### 2.13 Une plage annoncée est la plage réellement appliquée
+
+En relisant mes propres déclarations, je les ai éprouvées plutôt que
+relues : pour chacune, `min-1`, `min`, `max`, `max+1` tapés à la vraie
+CLI. **La moitié mentait**, et dans les deux sens.
+
+* **Des plages annoncées que rien n'applique.** `spanning-tree cost
+  <1-200000000>`, `spanning-tree port-priority <0-240>` et
+  `spanning-tree vlan <1-4094>` ne correspondent à aucun gestionnaire :
+  le `spanning-tree` greedy absorbe tout, si bien que `0` et
+  `200000001` passaient aussi bien que `1`. `vrrp <1-255>` et
+  `switchport port-security maximum <1-8192>` de même — bornes
+  affichées, jamais vérifiées. Ces déclarations sont retirées : mieux
+  vaut ne rien annoncer qu'annoncer une règle que la commande
+  n'applique pas.
+* **Des plages fausses.** `channel-group <1-48>` alors que le
+  gestionnaire accepte `1-64` ; `switchport trunk native vlan` ne
+  vérifie aucune borne. Corrigées ou retirées selon le cas.
+* **Une plage qui faisait PLANTER la CLI.** `mtu` était annoncé
+  `<64-1500>` sur le routeur ; or `Port.setMTU` n'accepte que
+  `68..9216`, et le gestionnaire du **switch** gardait `n < 64` avant
+  d'appeler `setMTU` sans filet — `mtu 64` sur un switch levait donc une
+  exception non rattrapée au lieu de refuser. Le routeur, lui,
+  enveloppait déjà l'appel. Le garde du switch est aligné sur les bornes
+  réelles et rend le message de refus plutôt que de laisser passer, et
+  les deux plateformes annoncent `<68-9216>`, ce qu'elles appliquent.
+
+Trois déclarations se sont révélées justes du premier coup et sont
+restées telles quelles (`switchport access vlan`, `ip ospf cost`,
+`standby`) ; `vlan <1-4094>` aussi — son refus de `4094` vient de la
+règle VTP sur les VLAN de plage étendue, pas de la plage elle-même.
+
+Le test ne compare plus une chaîne attendue : il TAPE les quatre valeurs
+de bord, et vérifie en outre qu'une valeur hors plage est **refusée, pas
+levée** — un `Error:` remontant d'un gestionnaire est un plantage, pas
+un message d'IOS.
+
 ---
 
 ## 3. Phases

@@ -40,7 +40,7 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     INT('kilobits', [1, 10000000], 'Bandwidth in kilobits'),
   ]);
   tries.configIf.describeArgs('mtu', [
-    INT('bytes', [64, 1500], 'MTU size in bytes'),
+    INT('bytes', [68, 9216], 'MTU size in bytes'),
   ]);
 
   tries.config.describeArgs('access-list', [
@@ -114,9 +114,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configIf.describeArgs('standby', [
     INT('group', [0, 255], 'Group number'),
   ]);
-  tries.configIf.describeArgs('vrrp', [
-    INT('group', [1, 255], 'Group number'),
-  ]);
   tries.configIf.describeArgs('description', [
     { name: 'text', type: 'STRING', description: 'Up to 240 characters describing this interface' },
   ]);
@@ -173,33 +170,18 @@ export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): vo
   tries.configIf.describeArgs('switchport access vlan', [
     INT('vlan', [1, 4094], 'VLAN of the VLAN interface'),
   ]);
-  tries.configIf.describeArgs('switchport trunk native vlan', [
-    INT('vlan', [1, 4094], 'Native VLAN of the trunk port'),
-  ]);
-  tries.configIf.describeArgs('switchport port-security maximum', [
-    INT('maximum', [1, 8192], 'Maximum addresses'),
-  ]);
   tries.configIf.describeArgs('channel-group', [
-    INT('group', [1, 48], 'Channel group number'),
-  ]);
-  tries.configIf.describeArgs('spanning-tree cost', [
-    INT('cost', [1, 200000000], 'Change an interface path cost'),
-  ]);
-  tries.configIf.describeArgs('spanning-tree port-priority', [
-    INT('priority', [0, 240], 'Change an interface priority'),
+    INT('group', [1, 64], 'Channel group number'),
   ]);
   tries.configIf.describeArgs('description', [
     LINE('text', 'Up to 240 characters describing this interface'),
   ]);
   tries.configIf.describeArgs('mtu', [
-    INT('bytes', [1500, 9198], 'MTU size in bytes'),
+    INT('bytes', [68, 9216], 'MTU size in bytes'),
   ]);
 
   tries.config.describeArgs('vlan', [
     INT('vlan', [1, 4094], 'ISL VLAN IDs 1-4094'),
-  ]);
-  tries.config.describeArgs('spanning-tree vlan', [
-    INT('vlan', [1, 4094], 'VLAN Switch Spanning Tree'),
   ]);
   tries.config.describeArgs('hostname', [
     WORD('name', 'This system\'s network name'),
