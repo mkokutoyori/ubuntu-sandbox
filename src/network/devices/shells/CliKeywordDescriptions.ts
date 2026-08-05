@@ -12,6 +12,9 @@
 
 const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string>([
   ['aaa', 'Authentication, Authorization and Accounting'],
+  ['permit', 'Specify packets to forward'],
+  ['deny', 'Specify packets to reject'],
+  ['remark', 'Access list entry comment'],
   ['access', 'Set access mode characteristics'],
   ['access-lists', 'Access lists'],
   ['arp', 'Address Resolution Protocol'],

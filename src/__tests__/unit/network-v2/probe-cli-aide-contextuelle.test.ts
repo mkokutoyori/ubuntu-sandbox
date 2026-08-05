@@ -153,3 +153,35 @@ describe('L\'exécution n\'a pas changé', () => {
     expect(await router.executeCommand('encapsulation dot1Q 10')).not.toMatch(/Invalid input/);
   });
 });
+
+describe('L\'aide n\'invente pas de commandes', () => {
+  it('un nœud purement indicatif n\'est pas proposé comme commande', async () => {
+    const router = await inInterface();
+    const aide = await router.executeCommand('?');
+    // `ip helper-address`, `ip ospf cost`… sont déclarés pour porter leurs
+    // arguments : leurs nœuds intermédiaires ne sont pas des commandes du
+    // mode interface et ne doivent pas y figurer.
+    expect(aide).not.toMatch(/^\s+helper-address\b/m);
+    expect(aide).not.toMatch(/^\s+cost\b/m);
+  });
+
+  it('aucun mot-clé proposé n\'est sans description', async () => {
+    const router = await inInterface();
+    await router.executeCommand('exit');
+    await router.executeCommand('line vty 0 4');
+    const aide = await router.executeCommand('password ?');
+
+    const sansDescription = aide.split('\n')
+      .filter((l) => l.trim().length > 0 && !l.includes('<cr>'))
+      .filter((l) => /^\s+\S+\s*$/.test(l));
+    expect(sansDescription).toEqual([]);
+  });
+
+  it('mais un mot-clé réel que le gestionnaire accepte reste proposé', async () => {
+    const router = await inConfig();
+    const aide = await router.executeCommand('access-list 10 ?');
+    expect(aide).toContain('permit');
+    expect(aide).toContain('deny');
+    expect(aide).toMatch(/permit\s+\S+/);
+  });
+});
