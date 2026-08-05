@@ -365,7 +365,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       } else if ((g = line.match(/^ip address\s+(\S+)\s+(\S+)/))) {
         try { router.configureInterface(curIface, new IPAddress(g[1]), new SubnetMask(g[2])); } catch { /* malformed */ }
       } else if (line === 'shutdown') {
-        router.getPort(curIface)?.setUp(false);
+        router.getPort(curIface)?.setAdminShutdown(true);
       }
     }
   }

@@ -16,7 +16,7 @@ beforeEach(() => {
 async function routerWithRoutes(): Promise<CiscoRouter> {
   const r = new CiscoRouter('R1');
   const pc = new LinuxPC('PC1');
-  new Cable(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
+  new Cable('c1').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
 
   for (const command of [
     'enable', 'configure terminal',
@@ -132,6 +132,8 @@ describe('show ip route <address> renders the IOS detail block', () => {
 
   it('a RIP route is found, not reported absent', async () => {
     const r = new CiscoRouter('R1');
+    const pc = new LinuxPC('PC1');
+    new Cable('c1').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
     for (const command of [
       'enable', 'configure terminal',
       'interface GigabitEthernet0/0',

@@ -343,13 +343,13 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
 
 function cmdShutdown(router: Router, ctx: HuaweiShellContext): string {
   const port = router.getPort(ctx.getSelectedInterface()!);
-  if (port) port.setUp(false);
+  if (port) port.setAdminShutdown(true);
   return '';
 }
 
 function cmdUndoShutdown(router: Router, ctx: HuaweiShellContext): string {
   const port = router.getPort(ctx.getSelectedInterface()!);
-  if (port) port.setUp(true);
+  if (port) port.setAdminShutdown(false);
   return '';
 }
 

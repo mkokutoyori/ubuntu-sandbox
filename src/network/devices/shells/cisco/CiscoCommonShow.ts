@@ -12,6 +12,7 @@ import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateV
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
+import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 
 /**
  * Minimal device surface these show helpers read real state from.
@@ -266,8 +267,8 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
       if (spec && !interfaceNameMatches(name, spec)) continue;
       if (disabled.has(name)) continue;
       if (isVirtualInterface(name)) continue;
-      lines.push(`${name} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
-        `line protocol is ${p.isConnected() && p.getIsUp() ? 'up' : 'down'}`);
+      lines.push(`${name} is ${iosInterfaceStatus(p, name).status}, ` +
+        `line protocol is ${iosInterfaceStatus(p, name).protocol}`);
       lines.push('  Encapsulation ARPA');
       lines.push(`  Sending CDP packets every ${timer} seconds`);
       lines.push(`  Holdtime is ${hold} seconds`);
@@ -937,10 +938,13 @@ export function showControllers(dev: ShowStateDevice, arg = ''): string {
       return 0;
     });
   if (!ports.length) return 'Interface does not exist';
-  return ports.map((p) => [
-    `${p.getName()} -`,
-    `  Hardware is present, link is ${p.isConnected() ? 'connected' : 'down'}`,
-    `  Administrative state: ${p.getIsUp() ? 'up' : 'administratively down'}`,
-    '  0 carrier transitions',
-  ].join('\n')).join('\n');
+  return ports.map((p) => {
+    const view = iosInterfaceStatus(p);
+    return [
+      `${p.getName()} -`,
+      `  Hardware is present, link is ${view.carrierUp ? 'connected' : 'down'}`,
+      `  Administrative state: ${view.adminUp ? 'up' : 'administratively down'}`,
+      '  0 carrier transitions',
+    ].join('\n');
+  }).join('\n');
 }

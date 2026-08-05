@@ -2466,6 +2466,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
+    this.configTrie.addCompletionKeywords('interface', [
+      { keyword: 'FastEthernet', description: 'FastEthernet IEEE 802.3' },
+      { keyword: 'GigabitEthernet', description: 'GigabitEthernet IEEE 802.3z' },
+      { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae' },
+      { keyword: 'Loopback', description: 'Loopback interface' },
+      { keyword: 'Port-channel', description: 'Ethernet Channel of interfaces' },
+      { keyword: 'Vlan', description: 'Catalyst VLANs' },
+      { keyword: 'range', description: 'interface range command' },
+    ]);
+
     this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
       if (args.length < 1) return '% Incomplete command.';
       const seconds = parseInt(args[0], 10);
@@ -4957,7 +4967,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const vlan = this.sviVlanId(iface);
     if (vlan !== null) { this.d().setSviAdminUp(vlan, up); return ''; }
     const port = this.d().getPort(iface);
-    if (port) { port.setUp(up); return ''; }
+    if (port) { port.setAdminShutdown(!up); return ''; }
     return '% Error';
   }
 

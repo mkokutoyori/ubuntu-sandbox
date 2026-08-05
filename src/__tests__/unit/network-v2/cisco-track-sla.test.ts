@@ -51,6 +51,8 @@ describe('Cisco object tracking — real resolved state', () => {
 
   it('track ip route reachability uses the REAL routing table', async () => {
     const r = new CiscoRouter('R1');
+    const pc = new LinuxPC('PC1');
+    new Cable('c-track').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('interface GigabitEthernet0/0');

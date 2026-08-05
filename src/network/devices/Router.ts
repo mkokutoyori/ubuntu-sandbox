@@ -209,6 +209,7 @@ interface QueuedPacket {
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
+import { iosInterfaceUsable, interfacesBootShutdown } from './inspection/InterfaceStatusView';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -873,10 +874,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   private createPorts(): void {
     const portCount = 4;
+    const adminDown = this.bootsInterfacesShutdown() && interfacesBootShutdown();
     for (let i = 0; i < portCount; i++) {
       const portName = this.getVendorPortName(i);
-      this.addPort(new Port(portName, 'ethernet'));
+      this.addPort(new Port(portName, 'ethernet', undefined, { adminDown }));
     }
+  }
+
+  protected bootsInterfacesShutdown(): boolean {
+    return false;
   }
 
   /** Register link-change handlers on all ports to trigger OSPF convergence and DPD */
@@ -890,19 +896,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * protocol goes down (docs/PRD-Link-State.md §2.1 P7, §3.1).
    */
   isRouteInterfaceUsable(iface: string): boolean {
-    if (/^(Tunnel|Loopback)/i.test(iface)) return true;
-    const dotIdx = iface.indexOf('.');
-    const physIface = dotIdx > 0 ? iface.slice(0, dotIdx) : iface;
-    const port = this.ports.get(physIface);
+    const port = this.ports.get(iface)
+      ?? this.ports.get(iface.includes('.') ? iface.slice(0, iface.indexOf('.')) : iface);
     if (!port) return true;
-    // A port that has never had a cable at all is a fixture built without
-    // a cable plant (unit tests exercising CLI/RIB behavior in isolation),
-    // not a real severed link — judge it on line/admin state alone, same
-    // "never wired" vs "unplugged" distinction Port.wasEverCabled() exists
-    // for (docs/PRD-Link-State.md §2.1 P6). Once a cable HAS been attached,
-    // full operational state (including carrier) is required as before.
-    if (!port.wasEverCabled()) return port.getIsUp() && !port.isAdminDown();
-    return port.isOperationallyUp();
+    return iosInterfaceUsable(port, iface, this.ports);
   }
 
   /**

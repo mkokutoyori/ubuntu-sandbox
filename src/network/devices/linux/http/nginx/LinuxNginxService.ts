@@ -77,6 +77,8 @@ const NGINX_GID = 33;
 /** Ce que la commande `nginx` pilote, sans dépendre de la classe entière. */
 export interface NginxControl {
   loadConfig(): string | null;
+  /** First certificate a declared TLS port cannot present, if any. */
+  tlsProblem(): string | null;
   reload(): string | null;
   stopAll(): void;
   listeningPorts(): number[];
@@ -98,9 +100,39 @@ export interface NginxControl {
  */
 type NginxSession = Http1ServerSession | HttpsServerSession;
 
+/** A port that asked for TLS and cannot have it, with the server's own words. */
+interface TlsProblem { readonly error: string }
+
+function isTlsProblem(v: unknown): v is TlsProblem {
+  return typeof v === 'object' && v !== null && 'error' in v;
+}
+
+/**
+ * Identifies the material a port is currently serving, so a reload can
+ * tell a renewed pair from the same one.
+ *
+ * The key's material is part of it on purpose: replacing only the KEY
+ * file leaves the certificate's serial unchanged, and a fingerprint built
+ * from the certificate alone would miss that — the server would keep
+ * presenting a pair whose halves no longer match. It lives in a private
+ * in-memory map, no more exposed than the key already is inside the live
+ * TLS session.
+ */
+function tlsFingerprint(m: { cert: X509Certificate; key: PkiPrivateKey }): string {
+  return `${m.cert.serialNumber}|${m.cert.notAfter}|${m.key.material}`;
+}
+
+
 export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private servers: NginxServerBlock[] = [];
   private readonly sessions = new Map<number, NginxSession>();
+  /**
+   * What each open TLS port was started with, so a reload can tell a
+   * renewed certificate from the same one. Without it, `systemctl reload`
+   * after replacing the PEM kept serving the OLD certificate — the exact
+   * operation certbot automates, and the one moment an operator checks.
+   */
+  private readonly tlsInUse = new Map<number, string>();
 
   constructor(private readonly host: NginxHost) {}
 
@@ -152,7 +184,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     if (this.sessions.has(spec.port)) return true;
 
     const tls = this.tlsMaterialFor(spec.port);
-    if (tls === 'error') return false;
+    if (isTlsProblem(tls)) { this.reportStartupFailure(tls.error); return false; }
 
     const session: NginxSession = tls === null
       ? new Http1ServerSession(
@@ -169,6 +201,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       return false;
     }
     this.sessions.set(spec.port, session);
+    if (tls !== null) this.tlsInUse.set(spec.port, tlsFingerprint(tls));
     return true;
   }
 
@@ -182,14 +215,16 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    * point is that it is not. The failure is written to `error.log` with
    * nginx's own wording, and the port stays shut.
    */
-  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | 'error' {
+  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
     const server = this.servers.find((s) => s.listen.some((l) => l.port === port && l.ssl));
     if (!server) return null;
+    return this.tlsMaterialForServer(server, port);
+  }
 
-    const fail = (message: string): 'error' => {
-      this.reportStartupFailure(`nginx: [emerg] ${message}`);
-      return 'error';
-    };
+  private tlsMaterialForServer(
+    server: NginxServerBlock, port: number,
+  ): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
+    const fail = (message: string): TlsProblem => ({ error: `nginx: [emerg] ${message}` });
     if (!server.sslCertificate || !server.sslCertificateKey) {
       return fail(`no "ssl_certificate" is defined for the "listen ... ssl" directive`);
     }
@@ -224,6 +259,32 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   }
 
   /** `-s reload` : relit la configuration sans fermer les écoutes déjà ouvertes. */
+  /**
+   * The first TLS port whose certificate cannot be presented.
+   *
+   * The real `nginx -t` / `apachectl configtest` READ the certificates —
+   * a configuration pointing at an unreadable one fails the test rather
+   * than passing it and failing later. That is also what keeps a botched
+   * renewal from taking the site down: the reload is refused before
+   * anything is torn down, and the running server keeps serving.
+   */
+  tlsProblem(): string | null {
+    // Parsed FRESH into a local, never through `this.servers`: `nginx -t`
+    // is a read-only command and must not move the running server's view
+    // of its own configuration, and the files on disk are what it is
+    // being asked about.
+    const parsed = parseNginxConfig(this.host.fs);
+    if (parsed.ok === false) return null;
+    for (const server of extractServers(parsed.tree)) {
+      for (const l of server.listen) {
+        if (!l.ssl) continue;
+        const material = this.tlsMaterialForServer(server, l.port);
+        if (isTlsProblem(material)) return material.error;
+      }
+    }
+    return null;
+  }
+
   reload(): string | null {
     const error = this.loadConfig();
     if (error) return error;
@@ -231,10 +292,46 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     for (const port of [...this.sessions.keys()]) {
       if (!wanted.has(port)) this.close({ port, protocol: 'tcp' });
     }
+    this.reopenRenewedTlsPorts();
     for (const port of wanted) {
       if (!this.sessions.has(port)) this.open({ port, protocol: 'tcp' });
     }
     return null;
+  }
+
+  /**
+   * A reload re-reads the certificates, because renewing one and
+   * reloading is THE routine TLS operation — it is what certbot does.
+   *
+   * This exists for `nginx -s reload` SPECIFICALLY, and the measurement
+   * is worth recording: `systemctl reload nginx` already picked a renewal
+   * up on its own, because the service manager's `resyncServicePorts`
+   * releases and rebinds the unit's sockets, which re-reads the files.
+   * `nginx -s reload` goes straight to the server with nothing behind it,
+   * so without this the running session kept the certificate it started
+   * with. Apache has no equivalent path — its `reload()` is only ever
+   * reached through the lifecycle — so it deliberately has no twin of
+   * this method rather than a copy nothing exercises.
+   *
+   * A port whose new material cannot be read is left ALONE rather than
+   * closed: the real server aborts the reload and its old workers keep
+   * serving with the old certificate. Going dark on a bad renewal would
+   * turn a recoverable mistake into an outage.
+   */
+  private reopenRenewedTlsPorts(): void {
+    for (const port of [...this.sessions.keys()]) {
+      const previous = this.tlsInUse.get(port);
+      if (previous === undefined) continue;
+      const fresh = this.tlsMaterialFor(port);
+      if (fresh === null || isTlsProblem(fresh)) continue;
+      if (tlsFingerprint(fresh) === previous) continue;
+      // Close AND reopen here rather than closing and trusting someone
+      // else to notice: this method is the only thing that knows the
+      // material changed, so leaving the port shut for another step to
+      // pick up would make a renewal depend on who runs next.
+      this.close({ port, protocol: 'tcp' });
+      this.open({ port, protocol: 'tcp' });
+    }
   }
 
   stopAll(): void {

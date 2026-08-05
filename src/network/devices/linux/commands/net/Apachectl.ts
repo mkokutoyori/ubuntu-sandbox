@@ -54,6 +54,11 @@ function readConfig(ctx: LinuxCommandContext) {
 function configtest(ctx: LinuxCommandContext): Outcome {
   const { config, error } = readConfig(ctx);
   if (error) return { output: error.message, exitCode: 1 };
+  // Apache reads the certificates at configtest too — a vhost pointing at
+  // an unreadable one fails the test rather than passing and refusing to
+  // bind later.
+  const tls = ctx.executor.apacheService?.tlsProblem() ?? null;
+  if (tls) return { output: tls, exitCode: 1 };
   return { output: [...apacheWarnings(config), 'Syntax OK'].join('\n'), exitCode: 0 };
 }
 

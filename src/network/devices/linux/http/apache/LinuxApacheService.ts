@@ -11,7 +11,7 @@ import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { NginxHost } from '../nginx/LinuxNginxService';
 import {
   parseApacheConfig, apacheWarnings, selectVirtualHost,
-  type ApacheConfig,
+  type ApacheConfig, type ApacheVirtualHost,
 } from './ApacheConfig';
 import {
   APACHE_VERSION, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
@@ -39,6 +39,8 @@ const APACHE_GID = 33;
 
 export interface ApacheControl {
   loadConfig(): string | null;
+  /** First certificate a declared TLS port cannot present, if any. */
+  tlsProblem(): string | null;
   reload(): string | null;
   stopAll(): void;
   listeningPorts(): number[];
@@ -75,6 +77,14 @@ function formatAccessTime(d: Date): string {
 }
 
 type ApacheSession = Http1ServerSession | HttpsServerSession;
+
+/** A port that asked for TLS and cannot have it, with the server's own words. */
+interface TlsProblem { readonly error: string }
+
+function isTlsProblem(v: unknown): v is TlsProblem {
+  return typeof v === 'object' && v !== null && 'error' in v;
+}
+
 
 export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
   private config: ApacheConfig = { listenPorts: [], vhosts: [] };
@@ -134,7 +144,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     if (this.sessions.has(spec.port)) return true;
 
     const tls = this.tlsMaterialFor(spec.port);
-    if (tls === 'error') return false;
+    if (isTlsProblem(tls)) { this.reportStartupFailure(tls.error); return false; }
 
     const session: ApacheSession = tls === null
       ? new Http1ServerSession(
@@ -166,14 +176,17 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
    * it is the worst possible answer, since everything downstream believes
    * 443 means encrypted.
    */
-  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | 'error' {
+  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
     const vhost = this.config.vhosts.find((v) => v.port === port && v.sslEngine);
     if (!vhost) return null;
+    return this.tlsMaterialForVhost(vhost);
+  }
 
-    const fail = (message: string): 'error' => {
-      this.reportStartupFailure(message);
-      return 'error';
-    };
+  private tlsMaterialForVhost(
+    vhost: ApacheVirtualHost,
+  ): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
+    const port = vhost.port;
+    const fail = (message: string): TlsProblem => ({ error: message });
     if (!vhost.sslCertificateFile || !vhost.sslCertificateKeyFile) {
       return fail(`AH02572: Failed to configure at least one certificate and key `
         + `for ${vhost.serverName ?? '*'}:${port}`);
@@ -214,6 +227,30 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
   }
 
   /** `apachectl graceful`: re-reads without closing the open listeners. */
+  /**
+   * The first TLS port whose certificate cannot be presented.
+   *
+   * The real `nginx -t` / `apachectl configtest` READ the certificates —
+   * a configuration pointing at an unreadable one fails the test rather
+   * than passing it and failing later. That is also what keeps a botched
+   * renewal from taking the site down: the reload is refused before
+   * anything is torn down, and the running server keeps serving.
+   */
+  tlsProblem(): string | null {
+    // Parsed FRESH into a local, never through `this.config`:
+    // `apachectl configtest` is read-only and must not move the running
+    // server's view of its own configuration.
+    const { config } = parseApacheConfig(
+      this.host.fs, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
+    );
+    for (const vhost of config.vhosts) {
+      if (!vhost.sslEngine) continue;
+      const material = this.tlsMaterialForVhost(vhost);
+      if (isTlsProblem(material)) return material.error;
+    }
+    return null;
+  }
+
   reload(): string | null {
     const error = this.loadConfig();
     if (error) return error;
@@ -223,6 +260,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     }
     return null;
   }
+
 
   // ─── serving ──────────────────────────────────────────────────────
 

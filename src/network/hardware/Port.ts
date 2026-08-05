@@ -190,10 +190,20 @@ export class Port {
    */
   private busOverride: IEventBus | null = null;
 
-  constructor(name: string, type: ConnectionType = 'ethernet', mac?: MACAddress) {
+  constructor(
+    name: string,
+    type: ConnectionType = 'ethernet',
+    mac?: MACAddress,
+    options?: { adminDown?: boolean },
+  ) {
     this.name = name;
     this.type = type;
     this.mac = mac || MACAddress.generate();
+    if (options?.adminDown) {
+      this.adminDown = true;
+      this.isUp = false;
+      this.lastTransmitting = false;
+    }
   }
 
   /** Test-only / multi-topology bus injection. */
@@ -717,7 +727,7 @@ export class Port {
     this.adminDown = down;
     this.isUp = !down;
     Logger.info(this.equipmentId, 'port:admin', `${this.name}: admin ${down ? 'disabled' : 'enabled'}`);
-    this.notifyLinkChange(down ? 'down' : 'up');
+    this.notifyLinkChange(!down && this.hasCarrier() ? 'up' : 'down');
   }
 
   setUp(up: boolean): void {
@@ -783,6 +793,10 @@ export class Port {
 
   /** Fire link-up handlers. Used by Cable.connect after both ends are wired. */
   _notifyLinkUp(): void {
+    if (this.adminDown || !this.isUp) {
+      this.propagateCarrierToPeer();
+      return;
+    }
     this.notifyLinkChange('up');
   }
 
