@@ -2,7 +2,7 @@ import type { Router } from '../../Router';
 import type { SlaOperationRuntime } from '../../../ipsla/IpSlaEngine';
 import type { SlaOperationConfig } from '../../../ipsla/types';
 import { CODEC_PROFILES, OPERATION_TYPE_DEFAULTS } from '../../../ipsla/types';
-import { describeTrack, type TrackObject } from '../../../ipsla/TrackService';
+import type { TrackObject } from '../../../ipsla/TrackService';
 
 function defaultOf(config: SlaOperationConfig, field: keyof SlaOperationConfig): unknown {
   const typeDefaults = OPERATION_TYPE_DEFAULTS[config.type];
@@ -121,7 +121,6 @@ function trackLines(object: TrackObject): string[] {
     const down = object.delayDownSeconds > 0 ? ` down ${object.delayDownSeconds}` : '';
     lines.push(` delay${up}${down}`);
   }
-  void describeTrack;
   return lines;
 }
 

@@ -47,11 +47,7 @@ function parseClockToken(token: string | undefined): number | null {
 }
 
 function applyTarget(config: SlaOperationConfig, args: string[], type: SlaOperationType): string {
-  const positional = args.filter((token, index) => {
-    if (index === 0) return true;
-    return false;
-  });
-  const target = positional[0];
+  const target = args[0];
   if (!target) return '% Incomplete command.';
   config.target = target;
 

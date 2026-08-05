@@ -381,7 +381,7 @@ export class IpSlaEngine {
       return { ok: true };
     }
     const now = this.now();
-    const delayMs = this.startDelayMs(schedule, now);
+    const delayMs = this.startDelayMs(schedule);
     if (delayMs <= 0) this.activate(runtime, 'schedule');
     else {
       this.transition(runtime, 'pending', 'schedule');
@@ -414,15 +414,13 @@ export class IpSlaEngine {
     return true;
   }
 
-  private startDelayMs(schedule: SlaOperationConfig['schedule'], nowMs: number): number {
+  private startDelayMs(schedule: SlaOperationConfig['schedule']): number {
     if (schedule.startAfterSeconds !== null) return schedule.startAfterSeconds * 1000;
     if (schedule.startAtSecondsOfDay === null) return 0;
-    const epoch = this.host.epochMs();
     const dayMs = 86400000;
-    const secondsIntoDay = Math.floor((epoch % dayMs) / 1000);
+    const secondsIntoDay = Math.floor((this.host.epochMs() % dayMs) / 1000);
     let delta = schedule.startAtSecondsOfDay - secondsIntoDay;
     if (delta < 0) delta += 86400;
-    void nowMs;
     return delta * 1000;
   }
 
@@ -475,7 +473,7 @@ export class IpSlaEngine {
         if (ageout > 0 && runtime.inactiveSinceMs !== null
           && now - runtime.inactiveSinceMs >= ageout * 1000) {
           this.operations.delete(runtime.config.id);
-          this.transition(runtime, 'inactive', 'ageout');
+          this.mibRegistered.delete(runtime.config.id);
         }
         continue;
       }
