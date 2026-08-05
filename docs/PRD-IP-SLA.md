@@ -687,6 +687,72 @@ NTP) — même patron que `BfdHost`/`EemHost`.
 
 ---
 
+## 8bis. État livré (2026-08-05)
+
+Livré et discriminé par `git stash` :
+
+- **Moteur** `src/network/ipsla/` : cycle de vie complet (Pending →
+  Active → Inactive, `ageout` qui supprime, `recurring`, `restart`),
+  minuteries réelles sur `src/events/Scheduler`, codes de retour de
+  `rttMonLatestRttOperSense`, agrégats RTT, distribution, historique.
+- **Sondes** : `icmp-echo`, `udp-echo`, `udp-jitter` (+ codec),
+  `tcp-connect`, `http`, `dns`, `icmp-jitter`, `path-echo`.
+- **Responder** + control protocol UDP/1967, ports permanents et
+  négociés, authentification par key-chain MD5.
+- **Statistiques de gigue** signées par direction, pertes SD/DS/MIA
+  distinguées, unidirectionnel conditionné à NTP des deux côtés,
+  MOS/ICPIF par l'E-model.
+- **Réactions** : cinq types de seuil, hystérésis, polarité déclarée par
+  élément, `reaction-trigger`, `%RTT-3-IPSLATHRESHOLD`.
+- **`track`** : deux formes IP SLA distinctes, `delay up`/`down`,
+  compteur de changements, `Tracked by:`, `%TRACKING-5-STATE`.
+- **running-config** : blocs `ip sla`, `ip sla schedule`,
+  `ip sla reaction-configuration`, `ip sla responder`, `track`.
+- **CISCO-RTTMON-MIB** : accesseurs paresseux sur l'état vivant.
+
+### Trois défauts trouvés en écrivant ce lot, hors périmètre initial
+
+1. **`ip route 0.0.0.0 0.0.0.0 <nh> track <n>` perdait son `track`.** La
+   route par défaut passe par `setDefaultRoute()`, dont la signature ne
+   portait ni `track` ni `permanent` — l'analyseur les extrayait et les
+   jetait. La route flottante par défaut, forme la plus courante de tout
+   le suivi d'objets, était donc inconditionnelle.
+2. **IP SLA et `track` vivaient sur le shell.** `createVtyShell()`
+   fabrique un shell neuf par session : un `track` posé en SSH était
+   invisible depuis la console de la même machine, et la running-config
+   — rendue par le shell mais décrivant l'équipement — ne pouvait pas
+   les voir. Ils vivent désormais sur `Router`.
+3. **`show ip sla statistics` répondait `(reachable)`**, mot qui
+   n'existe dans aucune sortie IOS ; il venait de la façade.
+
+### Écarts assumés, mesurés plutôt que supposés
+
+- **Le RTT vaut 0 ms en temps virtuel.** La livraison de trame est
+  synchrone dans ce simulateur : aucun chemin ne peut franchir un seuil
+  par lui-même. `overThreshold` est donc atteignable par la logique
+  (testée) mais pas par la topologie. Le jour où `Cable` portera une
+  latence, ce cas deviendra observable sans changer une ligne du moteur.
+- **Une cible morte derrière un routeur donne `Dropped`, pas
+  `Timeout`.** Le dernier routeur répond un ICMP Destination
+  Unreachable : c'est une réponse négative, pas une absence de réponse.
+  Rendre cela en `Timeout` jetterait une information que la machine a
+  réellement reçue.
+- **`verify-data` est appliqué et structurellement inatteignable** :
+  rien ne corrompt une charge utile ICMP dans ce simulateur (une trame
+  corrompue n'arrive jamais), donc le cas produit un `Timeout`.
+- **Le responder rapporte la LISTE des numéros de séquence reçus**, là
+  où un vrai responder envoie un compteur. C'est ce qui rend la
+  répartition SD/DS exacte au lieu d'être une attribution au jugé ; le
+  prix est que ce simulateur est ici mieux renseigné que le matériel.
+- **`ip sla key-chain` vaut pour les deux rôles** (signer ce qu'on émet,
+  vérifier ce qu'on reçoit) : aucune commande IOS ne permet d'exprimer
+  deux clés différentes pour ces deux rôles.
+
+Restent non faits, tels que §6 les décrit : `path-jitter`, `ftp`,
+`dhcp`, `voip`, MPLS, Y.1731, cibles IPv6, VRF, TWAMP, et Huawei NQA.
+
+---
+
 ## 9. Plan de test
 
 Chaque phase livre une suite discriminée par `git stash` : les cas
