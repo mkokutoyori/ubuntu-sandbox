@@ -419,9 +419,32 @@ Trois autres écarts, mesurés en écrivant la sonde :
 L'ECMP est rendu : un bloc descripteur par chemin à égalité, l'astérisque
 sur celui du tour courant, comme IOS.
 
-`probe-cli-route-detail.test.ts` (6 cas) est discriminé au `git stash` :
-5 échouent avant le correctif ; le sixième — la destination inconnue —
-passait déjà et garde ce comportement.
+**Deux défauts de ce correctif, trouvés par la campagne complète et
+corrigés plutôt que contournés :**
+
+* **Les codes étoilés n'étaient pas reconnus.** `getOSPFRouteCode` rend
+  `O*E2`, `O*E1`, `O*IA` pour une route par défaut ; la table de
+  traduction ne connaissait que les formes sans étoile, si bien qu'une
+  défaut externe se rendait `type intra area` — faux, et silencieux.
+* **Une route de SECOURS était rendue à côté de la route active.** Le
+  premier jet ne filtrait que sur la longueur de préfixe, donc une
+  statique flottante en distance 200 apparaissait comme un second bloc
+  descripteur, c'est-à-dire comme un chemin à égalité en cours d'usage.
+  C'est précisément le défaut que ce PRD combat : afficher ce qui n'est
+  pas. La sélection reprend maintenant la règle de `lookupRoute` —
+  meilleure distance, puis meilleure métrique — et l'ECMP ne rend
+  plusieurs blocs que lorsqu'il y a réellement plusieurs chemins retenus.
+
+Douze cas de trois suites existantes échouaient sur ce lot ; ils
+figeaient tous l'ancien rendu — soit la ligne de table qu'IOS n'affiche
+pas ici (`O E2 172.16.0.0/16 [110/20] via 10.0.12.1`), soit le `via`
+placé devant le prochain saut, alors qu'IOS le place devant
+l'INTERFACE. Ils sont corrigés sur leur intention : le code de route
+devient le type en toutes lettres (`type extern 2`), et le prochain
+saut est vérifié dans son bloc descripteur.
+
+`probe-cli-route-detail.test.ts` (8 cas) est discriminé au `git stash` :
+5 échouent avant le correctif ; la destination inconnue passait déjà.
 
 ### 2.11 `%SYS-5-CONFIG_I` — quitter le mode configuration se journalise
 

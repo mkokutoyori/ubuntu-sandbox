@@ -238,8 +238,8 @@ describe('OSPFv2 – Basic Single Area', () => {
 
     // On R1, check route to 2.2.2.2 – should be via 10.0.12.2 (cost 10+? = 11?) Actually cost from R1 to R2 direct: interface cost 10 (R1 G0/0) + maybe loopback cost 1 = 11. Via R3: R1 G0/1 cost 20 + R3 G0/1 cost 10 + R2 loopback cost 1 = 31. So direct path preferred.
     const route = await r1.executeCommand('show ip route 2.2.2.2');
-    expect(route).toContain('via 10.0.12.2');
-    expect(route).not.toContain('via 10.0.13.2');
+    expect(route).toMatch(/^ {2}\* 10\.0\.12\.2/m);
+    expect(route).not.toContain('10.0.13.2');
   });
 
   // 1.06 – OSPF priority and DR/BDR election
@@ -332,7 +332,9 @@ describe('OSPFv2 – Basic Single Area', () => {
 
     // On R2, check for default route
     const route = await r2.executeCommand('show ip route 0.0.0.0');
-    expect(route).toContain('O*E2 0.0.0.0/0 [110/1] via 10.0.12.1');
+    expect(route).toContain('Routing entry for 0.0.0.0/0');
+    expect(route).toContain('type extern 2');
+    expect(route).toMatch(/^ {2}\* 10\.0\.12\.1/m);
   });
 
   // 1.10 – OSPF metric-type for default route (E1 vs E2)
@@ -352,7 +354,7 @@ describe('OSPFv2 – Basic Single Area', () => {
     const cable = new Cable('cable'); cable.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
 
     const route = await r2.executeCommand('show ip route 0.0.0.0');
-    expect(route).toContain('O*E1'); // Type 1 external
+    expect(route).toContain('type extern 1'); // Type 1 external
   });
 });
 
@@ -393,8 +395,9 @@ describe('OSPFv2 – Multi‑Area', () => {
 
     // Verify on R3 that it sees 1.1.1.1 as inter‑area (O IA)
     const route = await r3.executeCommand('show ip route 1.1.1.1');
-    expect(route).toContain('O IA 1.1.1.1 [110/');
-    expect(route).toContain('via 10.0.23.2');
+    expect(route).toContain('Routing entry for 1.1.1.1/32');
+    expect(route).toContain('type inter area');
+    expect(route).toMatch(/^ {2}\* 10\.0\.23\.2/m);
   });
 
   // 2.12 – ABR route summarization (area range)
@@ -450,7 +453,9 @@ describe('OSPFv2 – Multi‑Area', () => {
     const cable = new Cable('cable'); cable.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
 
     const route = await r2.executeCommand('show ip route 172.16.0.0');
-    expect(route).toContain('O E2 172.16.0.0/16 [110/20] via 10.0.12.1');
+    expect(route).toContain('Routing entry for 172.16.0.0/16');
+    expect(route).toContain('type extern 2');
+    expect(route).toMatch(/^ {2}\* 10\.0\.12\.1/m);
   });
 
   // 2.14 – External route type 1 vs type 2
@@ -480,10 +485,11 @@ describe('OSPFv2 – Multi‑Area', () => {
 
     // On R3, the external route should have metric = external_metric + internal_cost_to_ASBR
     const route = await r3.executeCommand('show ip route 192.168.100.0');
-    expect(route).toContain('O E1 192.168.100.0/24 [110/');
+    expect(route).toContain('Routing entry for 192.168.100.0/24');
+    expect(route).toContain('type extern 1');
     // The cost will be external seed metric (20 by default) plus cost from R3 to R1.
     // R3 to R1: R3->R2 (cost 1? depends on interface cost) + R2->R1 (cost 1) = 2, plus external 20 = 22.
-    expect(route).toContain('via 10.0.23.2');
+    expect(route).toMatch(/^ {2}\* 10\.0\.23\.2/m);
   });
 
   // 2.15 – Stub area configuration
@@ -504,7 +510,8 @@ describe('OSPFv2 – Multi‑Area', () => {
 
     // On R2, there should be a default route 0.0.0.0/0 of type O*IA (inter-area default)
     const route = await r2.executeCommand('show ip route 0.0.0.0');
-    expect(route).toContain('O*IA 0.0.0.0/0 [110/');
+    expect(route).toContain('Routing entry for 0.0.0.0/0');
+    expect(route).toContain('type inter area');
     // No external routes present
   });
 
@@ -558,7 +565,8 @@ describe('OSPFv2 – Multi‑Area', () => {
 
     // On R3, external route should be present (converted from Type 7 to Type 5)
     const route = await r3.executeCommand('show ip route 172.16.1.0');
-    expect(route).toContain('O E2 172.16.1.0/24');
+    expect(route).toContain('Routing entry for 172.16.1.0/24');
+    expect(route).toContain('type extern 2');
   });
 
   // 2.18 – Virtual link to connect discontinuous area 0
@@ -611,7 +619,7 @@ describe('OSPFv2 – Multi‑Area', () => {
 
     // Now R4 should see R1's networks
     const route = await r4.executeCommand('show ip route 10.0.12.0');
-    expect(route).toContain('O IA'); // inter-area via virtual link
+    expect(route).toContain('type inter area'); // inter-area via virtual link
   });
 
   // 2.19 – OSPF authentication (plaintext)

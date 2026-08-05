@@ -2352,15 +2352,21 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   }
   if (bestLen < 0) return '% Network not in table';
 
-  const paths = rt.filter((r) => router.isRouteUsable(r)
+  const candidates = rt.filter((r) => router.isRouteUsable(r)
     && maskToCIDR(r.mask.toString()) === bestLen
     && ipInSubnet(destIP, r.network.toString(), r.mask.toString()));
+
+  const distanceOf = (r: any) => r.ad ?? DEFAULT_DISTANCE[r.type] ?? 1;
+  const bestDistance = Math.min(...candidates.map(distanceOf));
+  const preferred = candidates.filter((r) => distanceOf(r) === bestDistance);
+  const bestMetric = Math.min(...preferred.map((r) => r.metric ?? 0));
+  const paths = preferred.filter((r) => (r.metric ?? 0) === bestMetric);
   const best = paths[0];
 
   const netStr = best.network.toString();
   const cidr = maskToCIDR(best.mask.toString());
-  const distance = best.ad ?? DEFAULT_DISTANCE[best.type] ?? 1;
-  const metric = best.metric ?? 0;
+  const distance = bestDistance;
+  const metric = bestMetric;
 
   const source = best.type === 'ospf' ? `ospf ${getOSPFProcessId(router)}`
     : best.type === 'default' ? 'static'
@@ -2370,7 +2376,7 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
 
   let header = `  Known via "${source}", distance ${distance}, metric ${metric}`;
   if (best.type === 'ospf') {
-    const code = getOSPFRouteCode(router, netStr, cidr, best);
+    const code = getOSPFRouteCode(router, netStr, cidr, best).replace('*', ' ').trim();
     header += `, type ${OSPF_ROUTE_TYPE_NAME[code] ?? 'intra area'}`;
   } else if (best.type === 'connected') {
     header += ' (connected, via interface)';

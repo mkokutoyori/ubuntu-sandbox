@@ -68,6 +68,33 @@ describe('show ip route <address> renders the IOS detail block', () => {
     }
   });
 
+  it('a floating backup is NOT shown beside the active route', async () => {
+    const r = await routerWithRoutes();
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('ip route 10.0.0.0 255.0.0.0 192.168.10.9 200');
+    await r.executeCommand('end');
+
+    const out = await r.executeCommand('show ip route 10.1.2.3');
+    expect(out).toContain('distance 1,');
+    expect(out).toMatch(/^ {2}\* 192\.168\.10\.2/m);
+    expect(out).not.toContain('192.168.10.9');
+  });
+
+  it('an OSPF external default keeps its external type, star and all', async () => {
+    const r = await routerWithRoutes();
+    (r as unknown as { routingTable: unknown[] }).routingTable.push({
+      network: { toString: () => '0.0.0.0', toUint32: () => 0 },
+      mask: { toString: () => '0.0.0.0', toCIDR: () => 0 },
+      type: 'ospf', nextHop: '192.168.10.2', iface: 'GigabitEthernet0/0',
+      ad: 110, metric: 1, routeType: 'external-type2',
+    });
+
+    const out = await r.executeCommand('show ip route 8.8.8.8');
+    expect(out).toContain('Routing entry for 0.0.0.0/0');
+    expect(out).toContain('type extern 2');
+    expect(out).not.toContain('intra area');
+  });
+
   it('an unknown destination is reported absent', async () => {
     const r = await routerWithRoutes();
     expect(await r.executeCommand('show ip route 203.0.113.7'))
