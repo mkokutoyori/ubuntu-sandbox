@@ -34,6 +34,9 @@ const APPLIED_DIRECTIVES = new Set([
   'listen', 'server_name', 'root', 'index', 'try_files', 'return',
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
   'add_header', 'default_type',
+  // §P5 — these two DECIDE which certificate a `listen … ssl` port
+  // presents, so they belong here and not in `ACCEPTED_INERT`.
+  'ssl_certificate', 'ssl_certificate_key',
 ]);
 
 /**
@@ -66,7 +69,12 @@ const KNOWN_UNSUPPORTED = new Set([
   'proxy_read_timeout', 'proxy_connect_timeout', 'upstream',
   'fastcgi_pass', 'fastcgi_param', 'fastcgi_index', 'include_fastcgi',
   'rewrite', 'limit_req', 'limit_req_zone', 'limit_conn', 'limit_conn_zone',
-  'auth_basic', 'auth_basic_user_file', 'ssl_certificate', 'ssl_certificate_key',
+  'auth_basic', 'auth_basic_user_file',
+  // `ssl_certificate`/`ssl_certificate_key` are IMPLEMENTED since
+  // docs/PRD-Nginx.md §P5 and no longer belong here. The remaining
+  // `ssl_*` are handshake knobs: this TLS engine picks its own suite and
+  // groups, so accepting them would store a value nothing reads — the
+  // same rule this file applies to every other directive.
   'ssl_protocols', 'ssl_ciphers', 'ssl_prefer_server_ciphers', 'ssl_session_cache',
   'ssl_session_timeout', 'ssl_dhparam', 'stub_status', 'sub_filter',
   'geo', 'map', 'split_clients', 'perl', 'lua_package_path',
@@ -286,6 +294,9 @@ export interface NginxServerBlock {
   readonly accessLog: string | null;
   readonly errorLog: string | null;
   readonly addHeaders: readonly (readonly [string, string])[];
+  /** §P5 — the PEM files this server presents, as written in the file. */
+  readonly sslCertificate: string | null;
+  readonly sslCertificateKey: string | null;
 }
 
 function parseListen(args: readonly string[]): { port: number; defaultServer: boolean; ssl: boolean } | null {
@@ -337,9 +348,13 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
   let errorLog = httpDefaults.errorLog;
   const locations: NginxLocation[] = [];
   const addHeaders: (readonly [string, string])[] = [];
+  let sslCertificate: string | null = null;
+  let sslCertificateKey: string | null = null;
 
   for (const d of node.block ?? []) {
-    if (d.name === 'listen') {
+    if (d.name === 'ssl_certificate') sslCertificate = d.args[0] ?? null;
+    else if (d.name === 'ssl_certificate_key') sslCertificateKey = d.args[0] ?? null;
+    else if (d.name === 'listen') {
       const spec = parseListen(d.args);
       if (spec && !listen.some((l) => l.port === spec.port)) listen.push(spec);
     } else if (d.name === 'server_name') serverNames = [...d.args];
@@ -353,7 +368,10 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
     if (d.name === 'location') locations.push(collectLocation(d, root));
   }
 
-  return { listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders };
+  return {
+    listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
+    sslCertificate, sslCertificateKey,
+  };
 }
 
 export function extractServers(tree: readonly NginxDirective[]): NginxServerBlock[] {

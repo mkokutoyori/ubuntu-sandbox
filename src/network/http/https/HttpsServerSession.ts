@@ -6,6 +6,7 @@
  * mirroring `Http1ServerSession.ts`'s per-connection request loop.
  */
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { createResponse, type HttpMessage } from '../semantics/types';
 import type { Http1RequestHandler } from '../http1/Http1ServerSession';
 import { parseRequest, encodeResponse } from '../http1/Http1Wire';
@@ -48,8 +49,18 @@ export class HttpsServerSession {
     private readonly eventBus?: IEventBus,
   ) {}
 
-  start(): void {
-    this.listener = this.tcpStack.listen(this.port, { onAccept: (socket) => this.handleConnection(socket) });
+  /**
+   * `identity` is the same one `Http1ServerSession.start` takes: the
+   * listener sink (`ListenerSocketSink`) is what names the process in
+   * `ss -ltnp`/`netstat`, and without it a TLS port would appear with no
+   * owner while the cleartext port next to it has one — the two views of
+   * the same machine disagreeing about the same server.
+   */
+  start(identity?: ListenerIdentity): void {
+    this.listener = this.tcpStack.listen(this.port, {
+      onAccept: (socket) => this.handleConnection(socket),
+      identity,
+    });
   }
 
   stop(): void {

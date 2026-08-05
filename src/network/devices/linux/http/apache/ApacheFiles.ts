@@ -130,6 +130,29 @@ export const APACHE_DEFAULT_SITE = `<VirtualHost *:80>
 </VirtualHost>
 `;
 
+/**
+ * `sites-available/default-ssl.conf`, shipped DISABLED exactly as Debian
+ * ships it. Its certificate paths point at the snakeoil pair that the
+ * `ssl-cert` package generates at install time and that this image does
+ * not have — so enabling it as-is refuses to start and says which file is
+ * missing. That is not a gap: it is the real first step of every Apache
+ * TLS lab, which is to produce a certificate before enabling the site.
+ */
+export const APACHE_DEFAULT_SSL_SITE = `<IfModule mod_ssl.c>
+	<VirtualHost _default_:443>
+		ServerAdmin webmaster@localhost
+		DocumentRoot /var/www/html
+
+		ErrorLog \${APACHE_LOG_DIR}/error.log
+		CustomLog \${APACHE_LOG_DIR}/access.log combined
+
+		SSLEngine on
+		SSLCertificateFile	/etc/ssl/certs/ssl-cert-snakeoil.pem
+		SSLCertificateKeyFile	/etc/ssl/private/ssl-cert-snakeoil.key
+	</VirtualHost>
+</IfModule>
+`;
+
 /** The "Apache2 Ubuntu Default Page", trimmed to what actually reads. */
 export const APACHE_DEFAULT_PAGE = `<!DOCTYPE html>
 <html lang="en">

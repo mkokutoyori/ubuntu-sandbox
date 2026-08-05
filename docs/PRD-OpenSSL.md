@@ -35,6 +35,47 @@ aussi, nommément :
   signature, révocation), dont les objets existent déjà en TypeScript et
   n'ont aucune porte de commande.
 
+## Défauts trouvés APRÈS livraison, et par quoi
+
+Les deux qui suivent n'ont pas été trouvés en relisant `openssl` mais en
+faisant SERVIR sa sortie : `docs/PRD-Nginx.md` §P5 a présenté à un serveur
+TLS le couple certificat + clé que `req -x509` venait d'écrire. C'est la
+seule épreuve qui les distingue d'un comportement correct, et elle
+n'existait pas tant que rien ne consommait les deux fichiers ensemble.
+
+**1. Le certificat ne certifiait pas la clé écrite à côté de lui.**
+`req -x509 -keyout k.pem -out c.pem` générait une paire, écrivait sa
+partie privée dans `-keyout`, puis appelait
+`generateSelfSignedCertificate()` — qui génère SA PROPRE paire en interne
+— et jetait la clé privée rendue. Les deux fichiers ne correspondaient
+donc pas. Rien ne s'en apercevait : `x509 -noout -subject` lit le
+certificat seul, `verify -CAfile c.pem c.pem` le vérifie contre lui-même,
+et `dgst` ne les regarde ni l'un ni l'autre. La poignée de main TLS
+échouait avec `wrong version number`, message qui n'aide pas à trouver.
+Corrigé par `SelfSignedCertificateOptions.keyPair` : un appelant qui tient
+déjà une clé la fait certifier, plutôt que de dupliquer la logique de
+signature ailleurs. `x509 -req` était déjà juste — il signe la clé
+publique portée par la CSR.
+
+**2. `rsa -modulus` publiait le secret et cassait le contrôle canonique.**
+Il rendait `Modulus=PRIV:…` là où `x509 -modulus` rend `Modulus=PUB:…`.
+Or l'appariement clé/certificat se vérifie précisément en comparant les
+deux :
+
+    openssl x509 -noout -modulus -in cert.pem | openssl md5
+    openssl rsa  -noout -modulus -in key.pem  | openssl md5
+
+Le geste que tout administrateur connaît répondait donc « ils ne
+correspondent pas » sur une paire correcte — et écrivait la matière privée
+dans une sortie que l'on colle volontiers dans un ticket. Le module est
+une quantité PUBLIQUE, moitié de la clé publique ; les deux commandes le
+rendent maintenant, et le contrôle canonique fonctionne.
+
+Ce que cela dit du reste du PRD : une commande n'est vérifiée que par un
+consommateur réel de sa sortie. Les sous-modes dont aucun autre composant
+ne lit encore le produit (`pkcs8`, `pkeyutl`, `crl`) sont dans la même
+situation qu'était `req -x509` avant §P5.
+
 ## 2. Le constat, mesuré
 
 Trois vérifications, faites avant d'écrire une ligne de ce document.

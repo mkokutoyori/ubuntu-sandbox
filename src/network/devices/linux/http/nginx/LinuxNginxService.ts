@@ -1,5 +1,9 @@
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
+import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
+import { pemToCert, pemToPrivateKey } from '@/network/pki/pem';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 import { contentTypeForPath } from '@/network/http/HttpTypes';
 import type { PortSpec } from '../../../../core/ports/PortNumber';
@@ -78,9 +82,25 @@ export interface NginxControl {
   listeningPorts(): number[];
 }
 
+/**
+ * docs/PRD-Nginx.md §P5 — HTTPS.
+ *
+ * The PRD declared this phase blocked, and named the blocker exactly: no
+ * path existed by which a certificate could reach the VFS under Linux, so
+ * nginx would have read a file no learner could produce. That blocker is
+ * gone — `openssl req -x509` writes real PEM (`docs/PRD-OpenSSL.md`) — and
+ * this is the option the PRD itself preferred: write openssl first, then
+ * let nginx read what it produces.
+ *
+ * No new TLS engine either: `HttpsServerSession` already drives a real
+ * `TlsServerSession` record by record. All that was missing was reading
+ * the two files and handing over the certificate.
+ */
+type NginxSession = Http1ServerSession | HttpsServerSession;
+
 export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private servers: NginxServerBlock[] = [];
-  private readonly sessions = new Map<number, Http1ServerSession>();
+  private readonly sessions = new Map<number, NginxSession>();
 
   constructor(private readonly host: NginxHost) {}
 
@@ -130,9 +150,19 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     // ferait de `-p 9090` une option acceptée sans effet.
     if (this.servers.length === 0) return false;
     if (this.sessions.has(spec.port)) return true;
-    const session = new Http1ServerSession(
-      this.host.tcpStack(), spec.port, (req) => this.respond(spec.port, req),
-    );
+
+    const tls = this.tlsMaterialFor(spec.port);
+    if (tls === 'error') return false;
+
+    const session: NginxSession = tls === null
+      ? new Http1ServerSession(
+        this.host.tcpStack(), spec.port, (req) => this.respond(spec.port, req),
+      )
+      : new HttpsServerSession(
+        this.host.tcpStack(), spec.port,
+        { serverCert: tls.cert, serverPrivateKey: tls.key },
+        (req) => this.respond(spec.port, req),
+      );
     try {
       session.start(identity);
     } catch {
@@ -140,6 +170,50 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     }
     this.sessions.set(spec.port, session);
     return true;
+  }
+
+  /**
+   * The certificate a port presents, or `null` when it is plain HTTP.
+   *
+   * `'error'` is a THIRD outcome and not a variant of `null`: a port
+   * declared `ssl` whose certificate cannot be read must not silently fall
+   * back to serving cleartext on 443 — that would be the worst possible
+   * answer, a machine quietly serving in the clear on the port whose whole
+   * point is that it is not. The failure is written to `error.log` with
+   * nginx's own wording, and the port stays shut.
+   */
+  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | 'error' {
+    const server = this.servers.find((s) => s.listen.some((l) => l.port === port && l.ssl));
+    if (!server) return null;
+
+    const fail = (message: string): 'error' => {
+      this.reportStartupFailure(`nginx: [emerg] ${message}`);
+      return 'error';
+    };
+    if (!server.sslCertificate || !server.sslCertificateKey) {
+      return fail(`no "ssl_certificate" is defined for the "listen ... ssl" directive`);
+    }
+    const certPem = this.host.fs.read(server.sslCertificate);
+    if (certPem === null) {
+      return fail(`cannot load certificate "${server.sslCertificate}": `
+        + 'BIO_new_file() failed (SSL: error:80000002:system library::No such file or directory)');
+    }
+    const keyPem = this.host.fs.read(server.sslCertificateKey);
+    if (keyPem === null) {
+      return fail(`cannot load certificate key "${server.sslCertificateKey}": `
+        + 'BIO_new_file() failed (SSL: error:80000002:system library::No such file or directory)');
+    }
+    const cert = pemToCert(certPem);
+    const key = pemToPrivateKey(keyPem);
+    if (!cert) {
+      return fail(`PEM_read_bio_X509_AUX("${server.sslCertificate}") failed `
+        + '(SSL: error:0480006C:PEM routines::no start line:Expecting: TRUSTED CERTIFICATE)');
+    }
+    if (!key) {
+      return fail(`cannot load certificate key "${server.sslCertificateKey}": `
+        + 'PEM_read_bio_PrivateKey() failed (SSL: error:0480006C:PEM routines::no start line)');
+    }
+    return { cert, key };
   }
 
   close(spec: PortSpec): void {

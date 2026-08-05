@@ -233,7 +233,16 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     lignes.push('     moduli; see docs/PRD-OpenSSL.md §3.2>');
   }
   if (opts.has('-check')) lignes.push('RSA key ok');
-  if (opts.has('-modulus')) lignes.push(`Modulus=${cle.material.toUpperCase()}`);
+  // The modulus is a PUBLIC quantity — it is half of the public key, and
+  // `x509 -modulus` prints exactly the same value for the certificate
+  // that certifies this key. Printing the private material here broke the
+  // canonical check every admin uses to pair a key with its certificate
+  // (`openssl x509 -noout -modulus | openssl md5` against `openssl rsa
+  // -noout -modulus | openssl md5`): a matching pair reported as
+  // mismatched, and the secret leaked into output people paste around.
+  if (opts.has('-modulus')) {
+    lignes.push(`Modulus=${cle.material.replace('priv:', 'pub:').toUpperCase()}`);
+  }
 
   if (!opts.has('-noout')) {
     lignes.push(opts.has('-pubout')
@@ -290,9 +299,14 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   if (opts.has('-x509')) {
     const jours = Number(opts.get('-days') ?? 30);
+    // The certificate MUST certify the key we just wrote to `-keyout`.
+    // Letting the helper generate its own produced a `.crt` and a `.key`
+    // that did not correspond — invisible to every command that reads one
+    // without the other, and fatal the moment nginx presented them.
     const { cert } = generateSelfSignedCertificate(sujet, {
       now: host.now(),
       validityMs: jours * 24 * 3600 * 1000,
+      keyPair: { publicKey: publique, privateKey: cle },
     });
     const complet: X509Certificate = altNames
       ? { ...cert, extensions: { ...cert.extensions, subjectAltName: altNames } }

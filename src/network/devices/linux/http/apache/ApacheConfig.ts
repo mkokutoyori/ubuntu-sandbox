@@ -28,6 +28,10 @@ export interface ApacheVirtualHost {
   readonly documentRoot: string;
   readonly directoryIndex: readonly string[];
   readonly accessLog: string | null;
+  /** §P5's Apache twin — `SSLEngine on` plus the two PEM files. */
+  readonly sslEngine: boolean;
+  readonly sslCertificateFile: string | null;
+  readonly sslCertificateKeyFile: string | null;
   /** The file it came from, for error messages. */
   readonly source: string;
 }
@@ -127,6 +131,7 @@ export function parseApacheConfig(
     let current: {
       port: number; serverName: string | null; aliases: string[];
       root: string; index: string[]; accessLog: string | null;
+      sslEngine: boolean; sslCert: string | null; sslKey: string | null;
     } | null = null;
 
     for (const { n, content } of meaningfulLines(text)) {
@@ -142,6 +147,7 @@ export function parseApacheConfig(
         current = {
           port, serverName: null, aliases: [],
           root: '/var/www/html', index: [...DEFAULT_INDEX], accessLog: null,
+          sslEngine: false, sslCert: null, sslKey: null,
         };
         continue;
       }
@@ -154,6 +160,9 @@ export function parseApacheConfig(
             documentRoot: current.root,
             directoryIndex: current.index,
             accessLog: current.accessLog,
+            sslEngine: current.sslEngine,
+            sslCertificateFile: current.sslCert,
+            sslCertificateKeyFile: current.sslKey,
             source: path,
           });
         }
@@ -175,6 +184,9 @@ export function parseApacheConfig(
         case 'serveralias': current.aliases.push(...value.toLowerCase().split(/\s+/)); break;
         case 'directoryindex': current.index = value.split(/\s+/); break;
         case 'customlog': current.accessLog = value.split(/\s+/)[0]; break;
+        case 'sslengine': current.sslEngine = /^on$/i.test(value); break;
+        case 'sslcertificatefile': current.sslCert = value; break;
+        case 'sslcertificatekeyfile': current.sslKey = value; break;
         default: break; // the rest of the grammar is read and ignored
       }
     }
