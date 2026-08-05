@@ -424,14 +424,24 @@ export class IpSlaEngine {
     return delta * 1000;
   }
 
+  /**
+   * `start-time now` démarre MAINTENANT, pas au prochain battement de
+   * l'ordonnanceur. La différence est visible : un `track ip sla …
+   * reachability` naît Down (aucune sonde n'a encore répondu, et c'est
+   * bien ce que fait IOS), donc attendre 100 ms pour la première sonde
+   * laisserait la route conditionnée hors de la table pendant ce temps —
+   * une bascule que l'opérateur n'a pas demandée.
+   */
   private activate(runtime: SlaOperationRuntime, reason: 'schedule' | 'restart' | 'trigger'): void {
     const now = this.now();
     runtime.activeSinceMs = now;
     runtime.inactiveSinceMs = null;
-    runtime.nextRunAtMs = now;
     const life = runtime.config.schedule.lifeSeconds;
     runtime.lifeEndsAtMs = life === 'forever' ? null : now + life * 1000;
     this.transition(runtime, 'active', reason);
+    if (!this.globalEnabled) { runtime.nextRunAtMs = now; return; }
+    runtime.nextRunAtMs = now + runtime.config.frequencySeconds * 1000;
+    void this.runProbe(runtime);
   }
 
   private transition(

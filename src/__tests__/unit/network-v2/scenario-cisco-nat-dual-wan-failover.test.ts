@@ -24,6 +24,21 @@ interface Lab {
   isp2: LinuxPC;
 }
 
+/**
+ * Un objet suivi adossé à une IP SLA suit la CADENCE DE LA SONDE, pas
+ * l'état de l'interface : couper Gi0/1 ne fait pas tomber `track 1`
+ * instantanément, il le fait tomber au prochain cycle qui échoue (au
+ * plus `frequency` secondes plus tard). C'est exactement pour cette
+ * raison que `track <n> interface … line-protocol` existe comme objet
+ * distinct. Plutôt que d'attendre cinq secondes de temps réel, on
+ * déclenche ici le cycle suivant.
+ */
+async function runNextProbe(router: CiscoRouter): Promise<void> {
+  const engine = router.getIpSlaEngine();
+  const runtime = engine.getOperation(1);
+  if (runtime) await engine.runProbe(runtime);
+}
+
 async function buildLab(): Promise<Lab> {
   const router = new CiscoRouter('router', 0, 0);
   const isp1 = new LinuxPC('linux-pc', 'isp1-gw', 0, 0);
@@ -83,15 +98,16 @@ describe('Scénario 12 (Cisco) — NAT et basculement dual-WAN (IP SLA + track)'
   });
 
   describe('simulation de bascule et observation', () => {
-    it('show track 1 passe à "State is Down" une fois l\'interface primaire arrêtée', async () => {
+    it('show track 1 passe à Down une fois l\'interface primaire arrêtée', async () => {
       const { router } = await buildLab();
       await router.executeCommand('configure terminal');
       await router.executeCommand('interface GigabitEthernet0/1');
       await router.executeCommand('shutdown');
       await router.executeCommand('end');
+      await runNextProbe(router);
 
       const out = await router.executeCommand('show track 1');
-      expect(out).toMatch(/State is Down/);
+      expect(out).toMatch(/Reachability is Down/);
     });
 
     it('la route par défaut bascule vers 203.0.113.6 (GigabitEthernet0/2) une fois track 1 DOWN', async () => {
@@ -100,6 +116,7 @@ describe('Scénario 12 (Cisco) — NAT et basculement dual-WAN (IP SLA + track)'
       await router.executeCommand('interface GigabitEthernet0/1');
       await router.executeCommand('shutdown');
       await router.executeCommand('end');
+      await runNextProbe(router);
 
       const out = await router.executeCommand('show ip route 0.0.0.0');
       expect(out).toMatch(/via 203\.0\.113\.6/);
