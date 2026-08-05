@@ -975,7 +975,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     const startupConfig = () => {
       const snapshot = getRouter().getStartupConfigSnapshot();
       if (snapshot === null) return '% startup-config is not present';
-      return renderStartupConfig(snapshot);
+      return renderStartupConfig(snapshot, this.fs().nvramTotalBytes());
     };
     trie.register('show startup-config', 'Display saved configuration', startupConfig);
     trie.register('show configuration', 'Display saved configuration', startupConfig);

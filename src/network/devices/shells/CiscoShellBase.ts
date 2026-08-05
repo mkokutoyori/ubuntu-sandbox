@@ -643,7 +643,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       `  190  -rw-        ${String(taille).padStart(6)}                    <no date>  startup-config`,
       '  191  ----             5                    <no date>  private-config',
       '',
-      '524288 bytes total (517000 bytes free)',
+      `${this.fs().nvramTotalBytes()} bytes total `
+        + `(${this.fs().nvramFreeBytes(taille)} bytes free)`,
     ].join('\n');
   }
 
@@ -1543,7 +1544,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
       showRedundancy());
     trie.registerGreedy('show file', 'Display file systems', () =>
-      showFileSystems());
+      showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0), [
+      { keyword: 'systems', description: 'File system information' },
+    ]);
     trie.register('show calendar', 'Display hardware calendar', () =>
       showCalendar());
     trie.registerGreedy('show terminal', 'Display terminal parameters', () =>

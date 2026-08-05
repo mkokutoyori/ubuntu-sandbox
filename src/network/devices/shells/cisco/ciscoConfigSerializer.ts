@@ -175,16 +175,17 @@ export function routingProcessConfigLines(repo: RoutingConfigRepository): string
   return lines;
 }
 
-const NVRAM_SIZE_BYTES = 262136;
-
 /**
  * `show startup-config` lit la NVRAM.
  *
  * Son en-tête annonce l'occupation de cette NVRAM ; « Building
  * configuration… / Current configuration : N bytes » est l'en-tête de
- * `show running-config`, que la commande empruntait.
+ * `show running-config`, que la commande empruntait. La taille est celle
+ * du châssis, la même que `dir nvram:` et `show file systems` annoncent —
+ * une NVRAM de deux tailles selon la vue serait le défaut que ce lot
+ * corrige ailleurs.
  */
-export function renderStartupConfig(snapshot: string): string {
+export function renderStartupConfig(snapshot: string, nvramBytes: number): string {
   const body = snapshot
     .split('\n')
     .filter((line) => !/^Building configuration/.test(line)
@@ -192,5 +193,5 @@ export function renderStartupConfig(snapshot: string): string {
     .join('\n')
     .replace(/^\n+/, '');
   const used = new TextEncoder().encode(body).length + 1;
-  return [`Using ${used} out of ${NVRAM_SIZE_BYTES} bytes`, '!', body].join('\n');
+  return [`Using ${used} out of ${nvramBytes} bytes`, '!', body].join('\n');
 }
