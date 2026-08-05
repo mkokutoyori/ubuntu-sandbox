@@ -332,8 +332,19 @@ raison :
   de fichiers ; il est supprimé, car une seconde réponse possible à la
   même question est exactement ce que ce lot corrige.
 
-`probe-cli-systemes-de-fichiers.test.ts` (9 cas) est discriminé au
-`git stash` : les 9 échouent authentiquement avant le correctif.
+**Un défaut introduit par ce correctif même, et retiré** : le premier
+jet listait aussi `system:` et `tftp:`, parce qu'IOS les liste. Mais cet
+équipement-ci n'en a aucun des deux — `dir system:` et `dir tftp:`
+répondent `%Error opening`. Annoncer un système de fichiers que la
+machine ne sait pas ouvrir est le défaut que cette section corrige, pas
+un détail de conformité : les deux lignes sont supprimées. Le test ne
+vérifie plus une liste attendue mais la RÈGLE — tout préfixe annoncé
+doit s'ouvrir — et un second vérifie que l'astérisque désigne bien le
+système de fichiers que `dir` sans argument utilise réellement.
+
+`probe-cli-file-systems.test.ts` (11 cas) est discriminé au
+`git stash` : les 9 cas d'origine échouent authentiquement avant le
+correctif, et les 2 ajoutés attrapent le défaut introduit puis retiré.
 
 ### 2.9 L'aide n'invente pas de commandes (couche B, suite)
 
@@ -370,18 +381,157 @@ et deux défauts ne se voyaient que là.
 
   Le premier jet de ce filtre était trop large et a été corrigé plutôt que
   gardé : il retirait aussi `permit`/`deny` derrière `access-list 10 ?`,
-  qui sont réels. La réponse n'est pas de les laisser nus mais de les
-  NOMMER — `CliKeywordDescriptions` les décrit désormais, et ils
-  survivent au filtre par là où ils devaient survivre.
+  qui sont réels. Une SECONDE version, plus large encore, l'a été aussi :
+  filtrer sur « le mot-clé a-t-il une description » cassait
+  `handler-keyword-extraction.test.ts`, dont le contrat explicite est
+  qu'un `registerGreedy` expose ses mots-clés de dispatch à `?` SANS
+  aucune annotation — la campagne complète l'a rapporté, et c'était un
+  vrai défaut de ma règle, pas un test à corriger. Le critère juste n'est
+  pas « sait-on le décrire » mais « la commande attend-elle encore un
+  argument DÉCLARÉ » : tant qu'un paramètre déclaré n'est pas servi, un
+  mot-clé glané dans le corps du gestionnaire n'est pas un candidat, la
+  déclaration faisant autorité sur l'heuristique. Les trois cas se
+  départagent alors sans exception : `password ?` (un paramètre déclaré,
+  non servi) n'offre plus rien d'autre, `access-list 10 ?` (paramètre
+  servi) garde `permit`/`deny`, `show widget ?` (aucun paramètre déclaré)
+  garde ses mots-clés glanés.
 
 Enfin, `description` et `password` annonçaient `WORD` là où IOS annonce
 `LINE` : `ParamType` n'a pas de `'LINE'`, le type qui rend `LINE` est
 `'STRING'`, et la faute de frappe retombait sur le `default` du rendu.
 
-Sur les trois cas ajoutés à `probe-cli-aide-contextuelle.test.ts`, un seul
+Sur les trois cas ajoutés à `probe-cli-contextual-help.test.ts`, un seul
 échoue avant le correctif — les deux autres gardent des régressions
 introduites et corrigées à l'intérieur de ce même lot, ce qui est dit
 plutôt que présenté comme une discrimination.
+
+### 2.10 `show ip route <adresse>` rend le bloc de détail d'IOS
+
+La commande existait et ne produisait pas `Routing Descriptor Blocks:`,
+qui est pourtant le cœur de sa réponse : c'est cette section qui dit par
+où le paquet part réellement, et elle seule qui montre plusieurs chemins
+quand il y en a plusieurs. À la place, elle rendait une ligne de table de
+routage (`S 10.0.0.0/8 via …`, `Connected via Gi0/0`) qu'IOS n'affiche
+jamais ici.
+
+Trois autres écarts, mesurés en écrivant la sonde :
+
+* **La distance était écrite en dur par type.** Une statique flottante
+  configurée en distance 200 se rapportait en distance 1 — elle cessait
+  d'être une route de secours aux yeux de l'opérateur qui l'inspecte,
+  alors que la table, elle, la classait correctement. Elle est lue sur
+  la route (`RouteEntry.ad`), comme le fait déjà le rendu de la table.
+* **RIP, EIGRP et BGP étaient rapportées ABSENTES.** Seuls quatre types
+  étaient traités et le reste tombait dans le `return` final : une route
+  RIP bien présente dans la table répondait `% Network not in table`.
+* **`type <code>` rendait la lettre du code** (`O E2`) là où IOS écrit le
+  type en toutes lettres (`extern 2`).
+
+L'ECMP est rendu : un bloc descripteur par chemin à égalité, l'astérisque
+sur celui du tour courant, comme IOS.
+
+**Deux défauts de ce correctif, trouvés par la campagne complète et
+corrigés plutôt que contournés :**
+
+* **Les codes étoilés n'étaient pas reconnus.** `getOSPFRouteCode` rend
+  `O*E2`, `O*E1`, `O*IA` pour une route par défaut ; la table de
+  traduction ne connaissait que les formes sans étoile, si bien qu'une
+  défaut externe se rendait `type intra area` — faux, et silencieux.
+* **Une route de SECOURS était rendue à côté de la route active.** Le
+  premier jet ne filtrait que sur la longueur de préfixe, donc une
+  statique flottante en distance 200 apparaissait comme un second bloc
+  descripteur, c'est-à-dire comme un chemin à égalité en cours d'usage.
+  C'est précisément le défaut que ce PRD combat : afficher ce qui n'est
+  pas. La sélection reprend maintenant la règle de `lookupRoute` —
+  meilleure distance, puis meilleure métrique — et l'ECMP ne rend
+  plusieurs blocs que lorsqu'il y a réellement plusieurs chemins retenus.
+
+Douze cas de trois suites existantes échouaient sur ce lot ; ils
+figeaient tous l'ancien rendu — soit la ligne de table qu'IOS n'affiche
+pas ici (`O E2 172.16.0.0/16 [110/20] via 10.0.12.1`), soit le `via`
+placé devant le prochain saut, alors qu'IOS le place devant
+l'INTERFACE. Ils sont corrigés sur leur intention : le code de route
+devient le type en toutes lettres (`type extern 2`), et le prochain
+saut est vérifié dans son bloc descripteur.
+
+**Un troisième défaut, trouvé en relisant ma propre sortie** : l'âge de
+la route (`, 00:00:00 ago`) était une CONSTANTE. Une route posée depuis
+une heure annonçait la même chose qu'une route apprise à l'instant — une
+valeur affichée que rien ne soutenait, exactement le grief que ce
+document instruit. `RouteEntry.installedAt` est désormais horodaté aux
+cinq points d'installation de `Router` (connectée, statique, défaut, et
+les deux rappels `pushRoute` des protocoles), et l'âge est CALCULÉ, au
+format d'IOS (`HH:MM:SS`, puis `1d02h` au-delà du jour). Une route dont
+la date d'installation n'est pas connue n'annonce **aucun** âge, plutôt
+qu'un âge faux.
+
+`probe-cli-route-detail.test.ts` (10 cas) est discriminé au `git stash` :
+5 échouent avant le correctif ; la destination inconnue passait déjà.
+
+### 2.11 `%SYS-5-CONFIG_I` — quitter le mode configuration se journalise
+
+Le message qu'un opérateur voit le plus souvent de sa vie n'existait
+nulle part : aucune occurrence de `CONFIG_I` dans tout le simulateur.
+Il est écrit à la SORTIE du mode configuration, et à cette sortie
+seulement — passer d'un sous-mode à un autre n'en produit pas, et un
+`end` depuis trois niveaux de profondeur en produit UN, pas trois.
+
+Deux choses trouvées en l'implémentant, et corrigées :
+
+* **`CiscoIOSShell` redéfinissait `cmdExit`** en recopiant le corps de
+  la classe de base ; le `end` passait par la base et l'`exit` par la
+  copie, si bien que le premier journalisait et le second non. La copie
+  délègue désormais l'annonce au même point que la base.
+* **Une session vty écrivait dans SON propre journal.** `createVtyShell`
+  fabrique un shell neuf, avec sa propre `LoggingConfig` : une
+  configuration faite en SSH n'apparaissait donc pas dans le journal de
+  l'équipement — c'est-à-dire précisément là où ce message existe pour
+  être vu. L'annonce est écrite dans le journal de l'ÉQUIPEMENT
+  (`Router.getLoggingConfig()`), qui est le seul endroit où la question
+  « qui a configuré cette machine » a une réponse.
+
+L'attribution porte le nom de l'utilisateur de la session
+(`Configured from console by admin`) ; `beginExecSession` le transporte
+désormais, ce qu'il ne faisait pas. Le suffixe ` on vty0 (10.0.0.5)`
+d'IOS est **délibérément omis plutôt qu'inventé** : le numéro de ligne
+n'est pas transmis au shell — il vit dans `SshSessionRegistry`, de
+l'autre côté du contrat de session SSH/telnet, que l'effort d'unification
+SSH possède. Une ligne inventée serait fausse à chaque session au-delà
+de la première.
+
+`probe-cli-config-i-syslog.test.ts` (7 cas) couvre les deux verbes, les
+deux plateformes, l'absence en sous-mode et l'attribution vty.
+
+### 2.12 La couche B atteint le switch, et plus aucun mot-clé n'est muet
+
+Le reste annoncé en §2.9 est levé : `CiscoSwitchShell` est un shell
+distinct et ne recevait aucune déclaration d'argument. Il a désormais la
+sienne (`describeCiscoSwitchArguments`), avec les commandes d'un switch
+et leurs vraies plages — `switchport access vlan <1-4094>`,
+`channel-group <1-48>`, `spanning-tree cost <1-200000000>`,
+`switchport port-security maximum <1-8192>`, `vlan <1-4094>`,
+`name WORD`, `description LINE` — plutôt qu'un jeu recopié du routeur,
+qui aurait réintroduit exactement la fuite corrigée en §2.9.
+
+En mesurant ce que l'aide rend alors, **onze mots-clés sortaient sans
+description** sur les deux plateformes et cinq modes : `archive`, `boot`,
+`clock`, `member`, `monitor`, `port-channel`, `switchport`, `tunnel`,
+`udld`, `zone-member` et `u`. Les dix premiers sont de vraies commandes
+dont le nœud intermédiaire portait le texte de remplacement ; ils sont
+NOMMÉS dans `CliKeywordDescriptions`, comme `permit`/`deny` l'avaient été.
+
+Le onzième était d'une autre nature et méritait d'être suivi jusqu'au
+bout : `u` n'est pas une commande. `CiscoIPSecIKEv1Commands` enregistrait
+`u all` en toutes lettres — l'abréviation d'`undebug all` — ce qui
+fabriquait un nœud `u` que l'aide offrait comme une commande à part
+entière, sans description puisqu'il n'en a pas. L'enregistrement était en
+outre inutile : le trie fait déjà la correspondance par préfixe, et `u`
+ne désigne qu'`undebug` sur cette plateforme. Il est supprimé ; `u all`
+continue de répondre, par le chemin qui aurait toujours dû le servir.
+
+Le test ne vérifie plus un mode mais **tous** : deux plateformes, cinq
+modes, aucun mot-clé sans description. C'est la formulation qui garde le
+défaut fermé plutôt que le cas qui l'a révélé.
 
 ---
 

@@ -12,17 +12,6 @@ const WORD = (name: string, description: string): ParamSpec =>
 const LINE = (name: string, description: string): ParamSpec =>
   ({ name, type: 'STRING', description });
 
-/**
- * Ce que l'aide d'IOS DIT derrière un argument déjà saisi.
- *
- * La marche d'aide de `CommandTrie` sait désormais consommer un argument
- * (`docs/PRD-CLI-Fidelite-IOS.md` §1.1, couche A) ; sans déclaration,
- * elle rend les mots-clés qui peuvent suivre, ce qui est déjà juste mais
- * muet là où IOS annonce un type. Ces déclarations sont la couche B, et
- * elles se posent commande par commande — celles-ci sont les cas relevés
- * par la relecture. Le mécanisme (`describeArgs`) vaut pour toutes les
- * autres, qui restent à déclarer.
- */
 export interface ArgumentHelpTries {
   config: CommandTrie;
   configIf: CommandTrie;
@@ -167,5 +156,83 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
       { name: 'source', type: 'IP_ADDR', description: 'Source address', optional: true },
     ]);
   }
-  void LINE;
+}
+
+export interface SwitchArgumentHelpTries {
+  config: CommandTrie;
+  configIf: CommandTrie;
+  configLine: CommandTrie;
+  configVlan: CommandTrie;
+}
+
+export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): void {
+  tries.configIf.describeArgs('ip address', [
+    IP('address', 'IP address'),
+    MASK('IP subnet mask'),
+  ]);
+  tries.configIf.describeArgs('switchport access vlan', [
+    INT('vlan', [1, 4094], 'VLAN of the VLAN interface'),
+  ]);
+  tries.configIf.describeArgs('switchport trunk native vlan', [
+    INT('vlan', [1, 4094], 'Native VLAN of the trunk port'),
+  ]);
+  tries.configIf.describeArgs('switchport port-security maximum', [
+    INT('maximum', [1, 8192], 'Maximum addresses'),
+  ]);
+  tries.configIf.describeArgs('channel-group', [
+    INT('group', [1, 48], 'Channel group number'),
+  ]);
+  tries.configIf.describeArgs('spanning-tree cost', [
+    INT('cost', [1, 200000000], 'Change an interface path cost'),
+  ]);
+  tries.configIf.describeArgs('spanning-tree port-priority', [
+    INT('priority', [0, 240], 'Change an interface priority'),
+  ]);
+  tries.configIf.describeArgs('description', [
+    LINE('text', 'Up to 240 characters describing this interface'),
+  ]);
+  tries.configIf.describeArgs('mtu', [
+    INT('bytes', [1500, 9198], 'MTU size in bytes'),
+  ]);
+
+  tries.config.describeArgs('vlan', [
+    INT('vlan', [1, 4094], 'ISL VLAN IDs 1-4094'),
+  ]);
+  tries.config.describeArgs('spanning-tree vlan', [
+    INT('vlan', [1, 4094], 'VLAN Switch Spanning Tree'),
+  ]);
+  tries.config.describeArgs('hostname', [
+    WORD('name', 'This system\'s network name'),
+  ]);
+  tries.config.describeArgs('ip default-gateway', [
+    IP('address', 'IP address of default gateway'),
+  ]);
+  tries.config.describeArgs('ip domain-name', [
+    WORD('name', 'Default domain name'),
+  ]);
+  tries.config.describeArgs('ip name-server', [
+    IP('address', 'Domain server IP address'),
+  ]);
+  tries.config.describeArgs('logging host', [
+    IP('address', 'IP address of the syslog server'),
+  ]);
+  tries.config.describeArgs('ntp server', [
+    IP('address', 'IP address of peer'),
+  ]);
+  tries.config.describeArgs('snmp-server community', [
+    WORD('community', 'SNMP community string'),
+  ]);
+
+  tries.configVlan.describeArgs('name', [
+    WORD('name', 'The ascii name for the VLAN'),
+  ]);
+
+  tries.configLine.describeArgs('exec-timeout', [
+    INT('minutes', [0, 35791], 'Timeout in minutes'),
+    { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
+      range: [0, 2147483] },
+  ]);
+  tries.configLine.describeArgs('password', [
+    LINE('password', 'The UNENCRYPTED (cleartext) line password'),
+  ]);
 }

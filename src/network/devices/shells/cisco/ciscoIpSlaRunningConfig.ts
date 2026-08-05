@@ -124,14 +124,6 @@ function trackLines(object: TrackObject): string[] {
   return lines;
 }
 
-/**
- * IP SLA et `track` n'apparaissaient nulle part dans la running-config.
- * Ce n'est pas qu'un affichage : la configuration rendue est ce que
- * `write memory` enregistre et ce qu'un import de topologie rejoue. Une
- * route statique conditionnée par `track 1`, elle, ÉTAIT sauvegardée —
- * la machine rechargée avait donc des routes suspendues à des objets qui
- * n'existaient plus.
- */
 export function ipSlaRunningConfigLines(router: Router): string[] {
   const engine = router.getIpSlaEngine();
   const lines: string[] = [];

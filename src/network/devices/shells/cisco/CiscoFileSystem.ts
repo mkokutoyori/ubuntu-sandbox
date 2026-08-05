@@ -57,16 +57,8 @@ export const CONFIG_REGISTER_DEFAUT = 0x2102;
 /** Le bit qui fait ignorer `nvram:` au démarrage — d'où `0x2142`. */
 export const BIT_IGNORER_NVRAM = 0x40;
 
-/** `private-config`, la seconde entrée de `nvram:` — 5 octets sur IOS. */
 export const NVRAM_PRIVATE_CONFIG_BYTES = 5;
 
-/**
- * Les octets qu'IOS réserve en tête de NVRAM.
- *
- * `show version` annonce « 256K bytes of non-volatile configuration
- * memory » là où `dir nvram:` compte 262136 et non 262144 : les deux
- * sont vrais, et l'écart est cette réserve.
- */
 const NVRAM_RESERVE_BYTES = 8;
 
 export class CiscoFileSystem {

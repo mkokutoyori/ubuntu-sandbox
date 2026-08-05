@@ -27,14 +27,6 @@ export interface MibRegistrar {
   (oid: string, read: () => SnmpValue): void;
 }
 
-/**
- * Projection CISCO-RTTMON-MIB.
- *
- * Chaque OID est un accesseur PARESSEUX sur l'état vivant du moteur, pas
- * une copie prise à l'enregistrement : un `snmpget` répond la mesure de
- * l'instant, comme sur un vrai routeur, et il n'y a rien à resynchroniser
- * après chaque sonde.
- */
 export function registerRttMonOperation(
   register: MibRegistrar,
   engine: IpSlaEngine,

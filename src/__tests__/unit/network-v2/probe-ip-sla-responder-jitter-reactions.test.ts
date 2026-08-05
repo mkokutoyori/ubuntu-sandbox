@@ -1,11 +1,3 @@
-/**
- * IP SLA — responder, gigue, MOS et réactions.
- *
- * Trois choses que l'implémentation précédente ne pouvait pas faire du
- * tout (docs/PRD-IP-SLA.md §3.4, §3.8, §4) : ouvrir un port par le
- * control protocol UDP/1967, distinguer une perte aller d'une perte
- * retour, et évaluer un seuil avec hystérésis.
- */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
@@ -61,8 +53,8 @@ async function buildPair() {
   return { source, target, cable };
 }
 
-describe('IP SLA Control Protocol — le responder ouvre vraiment un port', () => {
-  it('une sonde udp-echo aboutit quand le responder est actif', async () => {
+describe('IP SLA Control Protocol - the responder really opens a port', () => {
+  it('a udp-echo probe succeeds when the responder is enabled', async () => {
     const { source, target } = await buildPair();
     for (const command of [
       'configure terminal', 'ip sla responder', 'end',
@@ -80,14 +72,13 @@ describe('IP SLA Control Protocol — le responder ouvre vraiment un port', () =
     expect(runtime.lastReturnCode).toBe('ok');
     expect(runtime.counters.successes).toBeGreaterThan(0);
 
-    // Le port négocié existe côté responder, et il n'est pas permanent.
     const ports = target.getIpSlaEngine().getResponder().listPorts();
     expect(ports.some((entry) => entry.port === 5000 && !entry.permanent)).toBe(true);
     expect(await target.executeCommand('show ip sla responder'))
       .toContain('IP SLAs Responder is: Enabled');
   });
 
-  it('sans responder, la sonde est refusée (Dropped) et non mise en Timeout', async () => {
+  it('with no responder the probe is refused (Dropped), not timed out', async () => {
     const { source } = await buildPair();
     for (const command of [
       'configure terminal',
@@ -102,7 +93,7 @@ describe('IP SLA Control Protocol — le responder ouvre vraiment un port', () =
     expect(runtime.lastDiagText).toContain('IP SLA Control Protocol');
   });
 
-  it('control disable saute la négociation : sans écouteur, c\'est un Timeout', async () => {
+  it('control disable skips negotiation: with no listener it is a Timeout', async () => {
     const { source } = await buildPair();
     for (const command of [
       'configure terminal',
@@ -116,7 +107,7 @@ describe('IP SLA Control Protocol — le responder ouvre vraiment un port', () =
     expect(runtime.lastReturnCode).toBe('timeout');
   });
 
-  it('une clé discordante fait refuser la négociation', async () => {
+  it('a mismatched key makes negotiation fail', async () => {
     const { source, target } = await buildPair();
     for (const command of [
       'configure terminal',
@@ -139,7 +130,7 @@ describe('IP SLA Control Protocol — le responder ouvre vraiment un port', () =
     expect(runtime.lastDiagText).toContain('authentication failure');
   });
 
-  it('la même clé des deux côtés laisse passer', async () => {
+  it('the same key on both sides lets it through', async () => {
     const { source, target } = await buildPair();
     for (const command of [
       'configure terminal',
@@ -161,8 +152,8 @@ describe('IP SLA Control Protocol — le responder ouvre vraiment un port', () =
   });
 });
 
-describe('IP SLA udp-jitter — les pertes sont attribuées à une direction', () => {
-  it('mesure un aller-retour complet et compte les paquets envoyés', async () => {
+describe('IP SLA udp-jitter - losses are attributed to a direction', () => {
+  it('measures a full round trip and counts packets sent', async () => {
     const { source, target } = await buildPair();
     await target.executeCommand('enable');
     for (const command of [
@@ -171,8 +162,7 @@ describe('IP SLA udp-jitter — les pertes sont attribuées à une direction', (
 
     for (const command of [
       'configure terminal',
-      // `num-packets`/`interval` sont des mots-clés de la LIGNE
-      // `udp-jitter` sur IOS, pas des sous-commandes du mode.
+
       'ip sla 1', 'udp-jitter 10.0.0.2 5000 num-packets 10 interval 20',
       'frequency 60', 'exit',
       'ip sla schedule 1 life forever start-time now',
@@ -192,7 +182,7 @@ describe('IP SLA udp-jitter — les pertes sont attribuées à une direction', (
     expect(statistics).toContain('One Way Values:');
   });
 
-  it('sans NTP, aucun échantillon unidirectionnel n\'est comptabilisé', async () => {
+  it('with no NTP, no one-way sample is counted', async () => {
     const { source, target } = await buildPair();
     for (const command of [
       'configure terminal', 'ip sla responder', 'end',
@@ -214,8 +204,8 @@ describe('IP SLA udp-jitter — les pertes sont attribuées à une direction', (
   });
 });
 
-describe('E-model ITU-T G.107 — le MOS suit la perte et le codec', () => {
-  it('un chemin parfait en G.711 donne le MOS haut de l\'échelle', () => {
+describe('ITU-T G.107 E-model - MOS follows loss and codec', () => {
+  it('a perfect G.711 path yields the top-of-scale MOS', () => {
     const result = evaluateEModel({
       codec: 'g711alaw', packetLossPercent: 0, oneWayDelayMs: 10, advantageFactor: 0,
     });
@@ -225,7 +215,7 @@ describe('E-model ITU-T G.107 — le MOS suit la perte et le codec', () => {
     expect(result.icpif).toBe(0);
   });
 
-  it('5 % de perte effondre le MOS', () => {
+  it('5% loss collapses the MOS', () => {
     const clean = evaluateEModel({
       codec: 'g711alaw', packetLossPercent: 0, oneWayDelayMs: 10, advantageFactor: 0,
     });
@@ -236,7 +226,7 @@ describe('E-model ITU-T G.107 — le MOS suit la perte et le codec', () => {
     expect(lossy.icpif).toBeGreaterThan(clean.icpif);
   });
 
-  it('sans perte, G.729A est en dessous de G.711 (Ie 11 contre 0)', () => {
+  it('with no loss, G.729A sits below G.711 (Ie 11 against 0)', () => {
     const g711 = evaluateEModel({
       codec: 'g711ulaw', packetLossPercent: 0, oneWayDelayMs: 30, advantageFactor: 0,
     });
@@ -246,10 +236,7 @@ describe('E-model ITU-T G.107 — le MOS suit la perte et le codec', () => {
     expect(g729.mos).toBeLessThan(g711.mos);
   });
 
-  it('avec de la perte, G.729A REPASSE devant — c\'est ce que dit G.113', () => {
-    // Bpl vaut 4.3 pour G.711 et 19 pour G.729A : le second encaisse
-    // beaucoup mieux la perte. Le croisement est une propriété réelle du
-    // modèle, pas une anomalie de ce calcul, et l'inverser serait le bug.
+  it('with loss, G.729A goes BACK ahead - that is what G.113 says', () => {
     const g711 = evaluateEModel({
       codec: 'g711ulaw', packetLossPercent: 2, oneWayDelayMs: 30, advantageFactor: 0,
     });
@@ -259,7 +246,7 @@ describe('E-model ITU-T G.107 — le MOS suit la perte et le codec', () => {
     expect(g729.mos).toBeGreaterThan(g711.mos);
   });
 
-  it('un délai unidirectionnel au-delà de G.114 dégrade le score', () => {
+  it('a one-way delay beyond G.114 degrades the score', () => {
     const short = evaluateEModel({
       codec: 'g711alaw', packetLossPercent: 0, oneWayDelayMs: 50, advantageFactor: 0,
     });
@@ -271,7 +258,7 @@ describe('E-model ITU-T G.107 — le MOS suit la perte et le codec', () => {
     expect(short.delayImpairment).toBe(0);
   });
 
-  it('la conversion R → MOS est bornée aux deux extrémités', () => {
+  it('the R to MOS conversion is bounded at both ends', () => {
     expect(mosFromRFactor(-10)).toBe(1);
     expect(mosFromRFactor(150)).toBe(4.5);
   });
@@ -306,8 +293,8 @@ function fakeRuntime(rtt: number, mos?: number): SlaOperationRuntime {
   } as unknown as SlaOperationRuntime;
 }
 
-describe('Réactions — types de seuil, hystérésis, polarité', () => {
-  it('immediate déclenche au premier franchissement', () => {
+describe('Reactions - threshold types, hysteresis, polarity', () => {
+  it('immediate fires on the first crossing', () => {
     const reaction = createReaction(1, 'rtt');
     reaction.thresholdType = 'immediate';
     reaction.thresholdUpper = 100;
@@ -315,7 +302,7 @@ describe('Réactions — types de seuil, hystérésis, polarité', () => {
     expect(evaluateReaction(reaction, fakeRuntime(150)).verdict).toBe('triggered');
   });
 
-  it('consecutive 3 ne déclenche qu\'à la troisième mesure d\'affilée', () => {
+  it('consecutive 3 fires only on the third measurement in a row', () => {
     const reaction = createReaction(1, 'rtt');
     reaction.thresholdType = 'consecutive';
     reaction.consecutiveCount = 3;
@@ -326,7 +313,7 @@ describe('Réactions — types de seuil, hystérésis, polarité', () => {
     expect(evaluateReaction(reaction, fakeRuntime(150)).verdict).toBe('triggered');
   });
 
-  it('consecutive est remis à zéro par une mesure sous le seuil', () => {
+  it('consecutive is reset by a measurement under the threshold', () => {
     const reaction = createReaction(1, 'rtt');
     reaction.thresholdType = 'consecutive';
     reaction.consecutiveCount = 3;
@@ -338,7 +325,7 @@ describe('Réactions — types de seuil, hystérésis, polarité', () => {
     expect(evaluateReaction(reaction, fakeRuntime(150)).verdict).toBe('none');
   });
 
-  it('xOfy déclenche sur un motif non consécutif', () => {
+  it('xOfy fires on a non-consecutive pattern', () => {
     const reaction = createReaction(1, 'rtt');
     reaction.thresholdType = 'xOfy';
     reaction.xOfyX = 2;
@@ -350,7 +337,7 @@ describe('Réactions — types de seuil, hystérésis, polarité', () => {
     expect(evaluateReaction(reaction, fakeRuntime(150)).verdict).toBe('triggered');
   });
 
-  it('average compare la moyenne de la fenêtre, pas la dernière mesure', () => {
+  it('average compares the window mean, not the last measurement', () => {
     const reaction = createReaction(1, 'rtt');
     reaction.thresholdType = 'average';
     reaction.averageCount = 3;
@@ -358,22 +345,22 @@ describe('Réactions — types de seuil, hystérésis, polarité', () => {
     reaction.thresholdLower = 50;
     evaluateReaction(reaction, fakeRuntime(200));
     evaluateReaction(reaction, fakeRuntime(200));
-    // Moyenne (200+200+10)/3 = 136 > 100 alors que la dernière est à 10.
+
     expect(evaluateReaction(reaction, fakeRuntime(10)).verdict).toBe('triggered');
   });
 
-  it('l\'hystérésis exige de repasser sous le seuil BAS pour lever', () => {
+  it('hysteresis requires going back under the LOW threshold to clear', () => {
     const reaction = createReaction(1, 'rtt');
     reaction.thresholdType = 'immediate';
     reaction.thresholdUpper = 100;
     reaction.thresholdLower = 50;
     expect(evaluateReaction(reaction, fakeRuntime(150)).verdict).toBe('triggered');
-    // Entre les deux seuils : la condition reste armée.
+
     expect(evaluateReaction(reaction, fakeRuntime(75)).verdict).toBe('none');
     expect(evaluateReaction(reaction, fakeRuntime(30)).verdict).toBe('cleared');
   });
 
-  it('le MOS a la polarité inverse : c\'est un score BAS qui déclenche', () => {
+  it('MOS has inverse polarity: a LOW score is what fires', () => {
     const reaction = createReaction(1, 'mos');
     reaction.thresholdType = 'immediate';
     reaction.thresholdUpper = 4;
@@ -385,8 +372,8 @@ describe('Réactions — types de seuil, hystérésis, polarité', () => {
   });
 });
 
-describe('Réactions — la CLI et le syslog', () => {
-  it('un dépassement écrit %RTT-3-IPSLATHRESHOLD dans le journal', async () => {
+describe('Reactions - the CLI and syslog', () => {
+  it('a crossing writes %RTT-3-IPSLATHRESHOLD to the log', async () => {
     const { source } = await buildPair();
     for (const command of [
       'configure terminal',
@@ -404,7 +391,7 @@ describe('Réactions — la CLI et le syslog', () => {
     expect(logging).toContain('IP SLAs(1)');
   });
 
-  it('reaction-trigger exige une opération cible en start-time pending', async () => {
+  it('reaction-trigger requires a target operation in start-time pending', async () => {
     const { source } = await buildPair();
     for (const command of [
       'configure terminal',
@@ -423,8 +410,8 @@ describe('Réactions — la CLI et le syslog', () => {
   });
 });
 
-describe('IP SLA et track dans la running-config', () => {
-  it('la configuration est relue telle qu\'elle a été tapée', async () => {
+describe('IP SLA and track in the running-config', () => {
+  it('the configuration reads back as it was typed', async () => {
     const { source } = await buildPair();
     for (const command of [
       'configure terminal',
@@ -454,7 +441,7 @@ describe('IP SLA et track dans la running-config', () => {
     expect(running).toContain(' delay up 5 down 20');
   });
 
-  it('la valeur par défaut d\'un type n\'est pas rendue', async () => {
+  it('a type default value is not rendered', async () => {
     const { source } = await buildPair();
     for (const command of [
       'configure terminal', 'ip sla 1', 'icmp-echo 10.0.0.2', 'exit', 'end',

@@ -1,17 +1,3 @@
-/**
- * NQA (VRP) — le jumeau Huawei d'IP SLA, sur le même moteur de sondes.
- *
- * `NqaEngine` existait, avec les bonnes structures, et n'était alimenté
- * par personne : `recordProbeBatch()` et `isTrackUp()` n'avaient aucun
- * appelant, `display nqa results` affichait donc `Min/Max/Avg RTT:
- * 0/0/0 ms` pour n'importe quelle topologie, et `track nqa` n'était
- * même pas câblé — `HuaweiVRPShell` n'appelait jamais
- * `setRouteTrackResolver` (docs/PRD-NQA.md §0.1).
- *
- * Ce fichier vérifie aussi ce qui distingue NQA d'IP SLA plutôt que ce
- * qui les rapproche : `frequency 0` par défaut (une seule passe), le lot
- * de `probe-count` sondes comme unité de résultat, et `fail-percent`.
- */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -37,12 +23,6 @@ afterEach(() => {
   __setDefaultScheduler(null);
 });
 
-/**
- * Le moteur bat toutes les 100 ms ; avancer par pas plus fins ne change
- * rien au résultat et coûte une macrotâche réelle par pas. Les sondes se
- * règlent par promesses, donc vider la file de microtâches suffit à les
- * laisser progresser.
- */
 async function settle(ms: number): Promise<void> {
   const step = 100;
   for (let elapsed = 0; elapsed < ms; elapsed += step) {
@@ -51,7 +31,6 @@ async function settle(ms: number): Promise<void> {
   }
 }
 
-/** R1(VRP) ── R2(VRP) ── PC : la cible est deux sauts plus loin. */
 async function buildLab() {
   const r1 = new HuaweiRouter('R1');
   const r2 = new HuaweiRouter('R2');
@@ -94,8 +73,8 @@ async function defineIcmpTest(
   ]) await router.executeCommand(command);
 }
 
-describe('NQA — la sonde mesure vraiment', () => {
-  it('un test icmp rend un lot de trois sondes et un RTT', async () => {
+describe('NQA - the probe really measures', () => {
+  it('an icmp test yields a batch of three probes and an RTT', async () => {
     const { r1 } = await buildLab();
     await defineIcmpTest(r1);
     await settle(15000);
@@ -113,7 +92,7 @@ describe('NQA — la sonde mesure vraiment', () => {
     expect(results).toContain('Destination ip address:192.168.1.10');
   });
 
-  it('LE CAS : la cible tombe, la route de R1 ne bouge pas, le test échoue', async () => {
+  it('THE CASE: the target dies, R1 route does not move, the test fails', async () => {
     const { r1, pc, access } = await buildLab();
     await defineIcmpTest(r1, ['frequency 10']);
     await settle(15000);
@@ -135,8 +114,8 @@ describe('NQA — la sonde mesure vraiment', () => {
   });
 });
 
-describe('NQA — ce qui le distingue d\'IP SLA', () => {
-  it('frequency 0 (le défaut VRP) exécute UNE passe et s\'arrête', async () => {
+describe('NQA - what sets it apart from IP SLA', () => {
+  it('frequency 0 (the VRP default) runs ONE pass then stops', async () => {
     const { r1 } = await buildLab();
     await defineIcmpTest(r1);
     await settle(15000);
@@ -147,13 +126,11 @@ describe('NQA — ce qui le distingue d\'IP SLA', () => {
     expect(await r1.executeCommand('display nqa results test-instance admin test1'))
       .toContain('The test is finished');
 
-    // Une minute de plus ne relance rien : c'est ce que veut dire
-    // « une passe », et c'est l'inverse du défaut d'IOS.
     await settle(60000);
     expect(r1.getNqaService().get('admin', 'test1')!.attempts).toBe(1);
   });
 
-  it('frequency 10 répète les passes', async () => {
+  it('frequency 10 repeats the passes', async () => {
     const { r1 } = await buildLab();
     await defineIcmpTest(r1, ['frequency 10']);
     await settle(15000);
@@ -164,7 +141,7 @@ describe('NQA — ce qui le distingue d\'IP SLA', () => {
     expect(r1.getNqaService().get('admin', 'test1')!.attempts).toBeGreaterThan(first);
   });
 
-  it('probe-count fixe la taille du lot', async () => {
+  it('probe-count sets the batch size', async () => {
     const { r1 } = await buildLab();
     await defineIcmpTest(r1, ['probe-count 5', 'interval milliseconds 20']);
     await settle(5000);
@@ -175,7 +152,7 @@ describe('NQA — ce qui le distingue d\'IP SLA', () => {
     expect(test.history.length).toBe(5);
   });
 
-  it('fail-percent : une perte sur trois reste un succès par défaut', async () => {
+  it('fail-percent: one loss out of three is still a success by default', async () => {
     const { r1 } = await buildLab();
     await defineIcmpTest(r1, ['interval milliseconds 20']);
     await settle(5000);
@@ -185,13 +162,12 @@ describe('NQA — ce qui le distingue d\'IP SLA', () => {
     const runtime = service.runtimeOf(test)!;
     expect(runtime.config.failPercent).toBe(100);
 
-    // Le défaut VRP est « échec seulement si tout se perd ».
     await r1.executeCommand('nqa test-instance admin test1');
     expect(await r1.executeCommand('fail-percent 1')).toBe('');
     expect(service.runtimeOf(test)!.config.failPercent).toBe(1);
   });
 
-  it('threshold rtd compte les dépassements sans faire échouer le test', async () => {
+  it('threshold rtd counts crossings without failing the test', async () => {
     const { r1 } = await buildLab();
     await defineIcmpTest(r1, ['threshold rtd 5000', 'interval milliseconds 20']);
     await settle(5000);
@@ -202,7 +178,7 @@ describe('NQA — ce qui le distingue d\'IP SLA', () => {
       .toContain('RTD OverThresholds number: 0');
   });
 
-  it('un test-type que VRP connaît mais que ce simulateur ne peut pas mesurer est refusé', async () => {
+  it('a test-type VRP knows but this simulator cannot measure is refused', async () => {
     const { r1 } = await buildLab();
     await r1.executeCommand('nqa test-instance admin test2');
     const refusal = await r1.executeCommand('test-type lspping');
@@ -211,7 +187,7 @@ describe('NQA — ce qui le distingue d\'IP SLA', () => {
     expect(r1.getNqaService().get('admin', 'test2')!.testType).toBeNull();
   });
 
-  it('un test-type inexistant est refusé, pas stocké', async () => {
+  it('a nonexistent test-type is refused, not stored', async () => {
     const { r1 } = await buildLab();
     await r1.executeCommand('nqa test-instance admin test3');
     expect(await r1.executeCommand('test-type nimportequoi')).toContain('Wrong parameter');
@@ -219,8 +195,8 @@ describe('NQA — ce qui le distingue d\'IP SLA', () => {
   });
 });
 
-describe('NQA — track nqa conditionne vraiment une route', () => {
-  it('la route statique quitte la table quand le test échoue', async () => {
+describe('NQA - track nqa really conditions a route', () => {
+  it('the static route leaves the table when the test fails', async () => {
     const { r1, pc, access } = await buildLab();
     await defineIcmpTest(r1, ['frequency 10']);
     await r1.executeCommand('ip route-static 172.16.0.0 255.255.0.0 10.0.0.2 track nqa admin test1');
@@ -237,7 +213,7 @@ describe('NQA — track nqa conditionne vraiment une route', () => {
     expect(await r1.executeCommand('display ip routing-table')).not.toContain('172.16.0.0');
   });
 
-  it('la route par défaut aussi est conditionnée', async () => {
+  it('the default route is conditioned too', async () => {
     const { r1, pc, access } = await buildLab();
     await defineIcmpTest(r1, ['frequency 10']);
     await r1.executeCommand('ip route-static 0.0.0.0 0.0.0.0 10.0.0.2 track nqa admin test1');
@@ -252,8 +228,8 @@ describe('NQA — track nqa conditionne vraiment une route', () => {
   });
 });
 
-describe('NQA — le serveur', () => {
-  it('nqa-server udpecho ouvre un port qu\'un test udp atteint', async () => {
+describe('NQA - the server', () => {
+  it('nqa-server udpecho opens a port a udp test reaches', async () => {
     const { r1, r2 } = await buildLab();
     for (const command of [
       'nqa-server udpecho 10.0.0.2 5000',
@@ -276,7 +252,7 @@ describe('NQA — le serveur', () => {
     expect(await r2.executeCommand('display nqa-server')).toContain('udpecho server: 10.0.0.2');
   });
 
-  it('sans nqa-server, le même test échoue', async () => {
+  it('with no nqa-server, the same test fails', async () => {
     const { r1 } = await buildLab();
     for (const command of [
       'nqa test-instance admin udp1',
@@ -295,8 +271,8 @@ describe('NQA — le serveur', () => {
   });
 });
 
-describe('NQA — la configuration est relue telle qu\'elle a été tapée', () => {
-  it('display current-configuration reproduit le bloc nqa test-instance', async () => {
+describe('NQA - the configuration reads back as it was typed', () => {
+  it('display current-configuration reproduces the nqa test-instance block', async () => {
     const { r1 } = await buildLab();
     await defineIcmpTest(r1, [
       'frequency 30', 'probe-count 5', 'timeout 2',
@@ -316,7 +292,7 @@ describe('NQA — la configuration est relue telle qu\'elle a été tapée', () 
     expect(config).toContain('nqa-server udpecho 10.0.0.1 5000');
   });
 
-  it('les valeurs par défaut VRP ne sont pas rendues', async () => {
+  it('VRP default values are not rendered', async () => {
     const { r1 } = await buildLab();
     await defineIcmpTest(r1);
     const config = await r1.executeCommand('display current-configuration');
@@ -327,8 +303,8 @@ describe('NQA — la configuration est relue telle qu\'elle a été tapée', () 
   });
 });
 
-describe('NQA — le moteur partagé n\'a pas changé de comportement pour IOS', () => {
-  it('une opération IP SLA garde une sonde par cycle', async () => {
+describe('NQA - the shared engine did not change behaviour for IOS', () => {
+  it('an IP SLA operation keeps one probe per cycle', async () => {
     const router = new CiscoRouter('R1');
     const pc = new LinuxPC('PC1');
     new Cable('c').connect(router.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);

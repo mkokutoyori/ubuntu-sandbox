@@ -1,12 +1,3 @@
-/**
- * IP SLA — la sonde mesure le chemin, elle ne relit pas la table de routage.
- *
- * Le cas qui définit tout le sous-système (docs/PRD-IP-SLA.md §0.1) : une
- * cible qui cesse de répondre alors que le câble ET la route restent
- * intacts. L'ancienne implémentation répondait « reachable » en consultant
- * `router.getRoutingTable()` ; un vrai IOS répond Timeout et abaisse
- * l'objet suivi, ce qui est la raison d'être d'une route flottante.
- */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -39,10 +30,6 @@ async function settle(ms: number): Promise<void> {
   }
 }
 
-/**
- * R1 ── R2 ── PC.  La sonde de R1 vise le PC, deux sauts plus loin : ni le
- * lien de R1 ni sa route statique ne bougent quand le PC disparaît.
- */
 async function buildLab() {
   const r1 = new CiscoRouter('R1');
   const r2 = new CiscoRouter('R2');
@@ -87,8 +74,8 @@ async function configureIcmpEchoSla(router: CiscoRouter, target: string): Promis
   ]) await router.executeCommand(command);
 }
 
-describe('IP SLA — la sonde est un vrai aller-retour', () => {
-  it('mesure un RTT réel vers une cible vivante', async () => {
+describe('IP SLA - the probe is a real round trip', () => {
+  it('measures a real RTT toward a live target', async () => {
     const { r1 } = await buildLab();
     await configureIcmpEchoSla(r1, '192.168.1.10');
     await settle(200);
@@ -104,7 +91,7 @@ describe('IP SLA — la sonde est un vrai aller-retour', () => {
     expect(statistics).toMatch(/Number of successes: [1-9]/);
   });
 
-  it('LE CAS : la cible tombe, le câble et la route de R1 ne bougent pas', async () => {
+  it('THE CASE: the target dies, R1 cable and route do not move', async () => {
     const { r1, pc, access } = await buildLab();
     await configureIcmpEchoSla(r1, '192.168.1.10');
     await settle(200);
@@ -112,9 +99,6 @@ describe('IP SLA — la sonde est un vrai aller-retour', () => {
     expect(r1.getTrackService().isUp(1)).toBe(true);
     const successesWhileAlive = r1.getIpSlaEngine().getOperation(1)!.counters.successes;
 
-    // La cible disparaît — R1 n'en sait rien : son lien est up, sa route
-    // statique est intacte, et c'est exactement ce qui rendait l'ancienne
-    // implémentation incapable de voir la panne.
     access.disconnect();
     pc.getPort('eth0')!.setUp(false);
 
@@ -125,11 +109,6 @@ describe('IP SLA — la sonde est un vrai aller-retour', () => {
 
     await settle(12000);
 
-    // R2 n'a plus de route utilisable vers le PC : il répond un ICMP
-    // Destination Unreachable. C'est une REPONSE — negative — et non une
-    // absence de reponse, donc `Dropped` (rttMonLatestRttOperSense
-    // dropped(7)) et pas `Timeout`. Rendre cela en `Timeout` reviendrait a
-    // jeter l'information que la machine a effectivement recue.
     const runtime = r1.getIpSlaEngine().getOperation(1)!;
     expect(runtime.lastReturnCode).toBe('dropped');
     expect(runtime.counters.failures).toBeGreaterThan(0);
@@ -142,7 +121,7 @@ describe('IP SLA — la sonde est un vrai aller-retour', () => {
     expect(track).toContain('Latest operation return code: Dropped');
   });
 
-  it('rien n\'est émis tant que l\'opération n\'est pas planifiée', async () => {
+  it('nothing is sent until the operation is scheduled', async () => {
     const { r1 } = await buildLab();
     for (const command of [
       'configure terminal', 'ip sla 1', 'icmp-echo 192.168.1.10', 'frequency 5', 'exit', 'end',
@@ -158,7 +137,7 @@ describe('IP SLA — la sonde est un vrai aller-retour', () => {
       .toContain('No statistics gathered');
   });
 
-  it('la fréquence gouverne le rythme des sondes', async () => {
+  it('frequency governs the probe cadence', async () => {
     const { r1 } = await buildLab();
     await configureIcmpEchoSla(r1, '192.168.1.10');
     await settle(100);
@@ -172,7 +151,7 @@ describe('IP SLA — la sonde est un vrai aller-retour', () => {
     expect(r1.getIpSlaEngine().getOperation(1)!.counters.successes).toBe(2);
   });
 
-  it('une interface source éteinte échoue en Not connected, sans attendre le timeout', async () => {
+  it('a shut source interface fails Not connected, without waiting the timeout', async () => {
     const { r1 } = await buildLab();
     for (const command of [
       'configure terminal',
@@ -189,7 +168,7 @@ describe('IP SLA — la sonde est un vrai aller-retour', () => {
     expect(runtime.counters.connectionLosses).toBeGreaterThan(0);
   });
 
-  it('life épuisée : l\'opération devient Inactive et GARDE ses statistiques', async () => {
+  it('life exhausted: the operation goes Inactive and KEEPS its statistics', async () => {
     const { r1 } = await buildLab();
     for (const command of [
       'configure terminal',
@@ -210,8 +189,8 @@ describe('IP SLA — la sonde est un vrai aller-retour', () => {
   });
 });
 
-describe('IP SLA — reachability et state ne sont pas la même question', () => {
-  it('un RTT au-dessus du seuil laisse reachability Up et fait tomber state', async () => {
+describe('IP SLA - reachability and state are not the same question', () => {
+  it('an RTT over threshold leaves reachability Up and brings state down', async () => {
     const { r1 } = await buildLab();
     for (const command of [
       'configure terminal',
@@ -224,12 +203,6 @@ describe('IP SLA — reachability et state ne sont pas la même question', () =>
 
     await settle(300);
 
-    // Une livraison de trame est synchrone dans ce simulateur : le RTT
-    // mesuré vaut 0 ms en temps virtuel, donc aucun seuil configurable ne
-    // peut être franchi par le chemin lui-même. Ce que ce cas doit
-    // prouver n'est pas la mesure — le cas précédent s'en charge — mais
-    // que les DEUX formes de suivi lisent deux prédicats différents. Le
-    // verdict est donc posé explicitement.
     const runtime = r1.getIpSlaEngine().getOperation(1)!;
     expect(runtime.lastReturnCode).toBe('ok');
     expect(r1.getTrackService().isUp(1)).toBe(true);
@@ -243,8 +216,8 @@ describe('IP SLA — reachability et state ne sont pas la même question', () =>
   });
 });
 
-describe('IP SLA — track applique son anti-rebond', () => {
-  it('delay down retient une chute isolée', async () => {
+describe('IP SLA - track applies its anti-flap delay', () => {
+  it('delay down holds back an isolated drop', async () => {
     const { r1, access, pc } = await buildLab();
     for (const command of [
       'configure terminal',
@@ -262,7 +235,6 @@ describe('IP SLA — track applique son anti-rebond', () => {
     pc.getPort('eth0')!.setUp(false);
     await settle(12000);
 
-    // La sonde a bien échoué, mais le délai n'est pas écoulé.
     expect(r1.getIpSlaEngine().getOperation(1)!.lastReturnCode).toBe('dropped');
     expect(r1.getTrackService().isUp(1)).toBe(true);
 
@@ -271,8 +243,8 @@ describe('IP SLA — track applique son anti-rebond', () => {
   });
 });
 
-describe('IP SLA — une route flottante bascule sur la sonde', () => {
-  it('la route track-conditionnée quitte la table quand la sonde tombe', async () => {
+describe('IP SLA - a floating route fails over on the probe', () => {
+  it('the track-conditioned route leaves the table when the probe fails', async () => {
     const { r1, access, pc } = await buildLab();
     for (const command of [
       'configure terminal',

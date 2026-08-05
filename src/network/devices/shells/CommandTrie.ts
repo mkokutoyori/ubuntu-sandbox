@@ -865,10 +865,6 @@ export class CommandTrie {
     const argumentsConsumed = consumedArgs > 0 && node.params.length > consumedArgs;
     if (!argumentsConsumed) {
       for (const [, child] of node.children) {
-        // Un nœud `_hintOnly` n'est pas une commande : il n'existe que
-        // pour porter les arguments d'un parent greedy qui l'absorbe.
-        // Le proposer inventerait une commande que l'équipement n'a pas,
-        // et sans description puisqu'il n'en porte aucune.
         if (child._hintOnly) continue;
         results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
       }
@@ -891,15 +887,10 @@ export class CommandTrie {
       }
     }
 
-    if (!argumentsConsumed) {
+    const awaitsDeclaredArgument = node.params.length > consumedArgs;
+    if (!argumentsConsumed && !awaitsDeclaredArgument) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const auto of this.autoContinuations(node)) {
-        // Un mot-clé extrait du corps du gestionnaire dont on ne sait pas
-        // dire ce qu'il fait n'est pas proposé : IOS n'affiche jamais un
-        // mot-clé sans texte d'aide, et celui qu'on ne sait pas décrire
-        // est justement celui dont on est le moins sûr qu'il existe. La
-        // complétion par tabulation, elle, continue de l'accepter.
-        if (!auto.description) continue;
         if (!seen.has(auto.keyword)) {
           seen.add(auto.keyword);
           results.push({ keyword: auto.keyword, description: auto.description });

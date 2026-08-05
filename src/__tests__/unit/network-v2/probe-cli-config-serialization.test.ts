@@ -1,12 +1,3 @@
-/**
- * Le sérialiseur de configuration (docs/PRD-CLI-Fidelite-IOS.md §1.7).
- *
- * Ce que rend `show running-config` n'est pas un affichage : c'est ce que
- * `write memory` enregistre et ce que l'import de topologie rejoue. Une
- * commande EXEC qui s'y glisse, un processus de routage qui en disparaît
- * ou un état qui ne s'y déduit pas sont donc des pertes de données, pas
- * des écarts de présentation.
- */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { MACAddress, resetCounters } from '@/network/core/types';
@@ -44,14 +35,14 @@ function indexOfLine(config: string, pattern: RegExp): number {
   return config.split('\n').findIndex((line) => pattern.test(line));
 }
 
-describe('Ce qui n\'a rien à faire dans une configuration', () => {
-  it('une commande EXEC n\'est pas persistée', async () => {
+describe('What has no business in a configuration', () => {
+  it('an EXEC command is not persisted', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
     expect(config).not.toContain('crypto key generate');
   });
 
-  it('un défaut n\'est pas sérialisé', async () => {
+  it('a default is not serialized', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
     expect(config).not.toMatch(/^service dhcp$/m);
@@ -59,22 +50,22 @@ describe('Ce qui n\'a rien à faire dans une configuration', () => {
   });
 });
 
-describe('Rien ne se perd', () => {
-  it('router eigrp survit à la sérialisation', async () => {
+describe('Nothing is lost', () => {
+  it('router eigrp survives serialization', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
     expect(config).toContain('router eigrp 100');
     expect(config).toMatch(/^ network 192\.168\.10\.0$/m);
   });
 
-  it('router ospf aussi, et les deux coexistent', async () => {
+  it('router ospf too, and both coexist', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
     expect(config).toContain('router ospf 1');
     expect(config).toContain('router eigrp 100');
   });
 
-  it('router bgp et router rip sont rendus', async () => {
+  it('router bgp and router rip are rendered', async () => {
     const router = new CiscoRouter('R1');
     for (const command of [
       'enable', 'configure terminal',
@@ -91,7 +82,7 @@ describe('Rien ne se perd', () => {
     expect(config).toContain(' no auto-summary');
   });
 
-  it('une interface sans adresse rend `no ip address`', async () => {
+  it('an interface with no address renders no ip address', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
     const block = config.slice(config.indexOf('interface GigabitEthernet0/3'));
@@ -99,22 +90,20 @@ describe('Rien ne se perd', () => {
     expect(block).toMatch(/^ shutdown$/m);
   });
 
-  it('la configuration permet de reconstruire l\'état admin d\'une interface', async () => {
+  it('the configuration lets an interface admin state be rebuilt', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
     const gi0 = config.slice(config.indexOf('interface GigabitEthernet0/0'),
       config.indexOf('interface GigabitEthernet0/1'));
     const gi3 = config.slice(config.indexOf('interface GigabitEthernet0/3'));
-    // Une interface active ne rend rien (le défaut IOS est `shutdown`,
-    // mais ce simulateur démarre up — ce qui compte ici est que l'état
-    // arrêté, lui, soit écrit).
+
     expect(gi0).not.toMatch(/^ shutdown$/m);
     expect(gi3).toMatch(/^ shutdown$/m);
   });
 });
 
-describe('L\'ordre est celui d\'IOS', () => {
-  it('hostname, secrets, identité, interfaces, routage, lignes', async () => {
+describe('The order is the one IOS uses', () => {
+  it('hostname, secrets, identity, interfaces, routing, lines', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
 
@@ -133,7 +122,7 @@ describe('L\'ordre est celui d\'IOS', () => {
     expect(line).toBeGreaterThan(routing);
   });
 
-  it('les interfaces gardent l\'ordre du châssis', async () => {
+  it('interfaces keep the chassis order', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
     const order = config.split('\n')
@@ -143,8 +132,8 @@ describe('L\'ordre est celui d\'IOS', () => {
   });
 });
 
-describe('Les secrets ne partagent pas leur sel', () => {
-  it('deux secrets distincts portent deux sels distincts', async () => {
+describe('Secrets do not share their salt', () => {
+  it('two distinct secrets carry two distinct salts', async () => {
     const router = await configuredRouter();
     const config = await router.executeCommand('show running-config');
     const salts = [...config.matchAll(/\$1\$([^$]+)\$/g)].map((m) => m[1]);
@@ -153,8 +142,8 @@ describe('Les secrets ne partagent pas leur sel', () => {
   });
 });
 
-describe('show startup-config lit la NVRAM', () => {
-  it('son en-tête annonce l\'occupation, pas « Building configuration »', async () => {
+describe('show startup-config reads NVRAM', () => {
+  it('its header announces usage, not Building configuration', async () => {
     const router = await configuredRouter();
     await router.executeCommand('write memory');
     const startup = await router.executeCommand('show startup-config');
@@ -164,7 +153,7 @@ describe('show startup-config lit la NVRAM', () => {
     expect(startup).not.toMatch(/^Current configuration :/m);
   });
 
-  it('show running-config garde son propre en-tête', async () => {
+  it('show running-config keeps its own header', async () => {
     const router = await configuredRouter();
     const running = await router.executeCommand('show running-config');
     expect(running).toContain('Building configuration...');
@@ -172,7 +161,7 @@ describe('show startup-config lit la NVRAM', () => {
     expect(running).not.toMatch(/^Using \d+ out of/m);
   });
 
-  it('sans sauvegarde, la NVRAM est vide', async () => {
+  it('with no save, NVRAM is empty', async () => {
     const router = new CiscoRouter('R1');
     await router.executeCommand('enable');
     expect(await router.executeCommand('show startup-config'))

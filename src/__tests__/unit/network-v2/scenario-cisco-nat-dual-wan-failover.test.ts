@@ -93,7 +93,7 @@ describe('Scénario 12 (Cisco) — NAT et basculement dual-WAN (IP SLA + track)'
       const { router } = await buildLab();
       const out = await router.executeCommand('show ip route 0.0.0.0');
       expect(out).toMatch(/distance 1, metric 0/);
-      expect(out).toMatch(/via 203\.0\.113\.2/);
+      expect(out).toMatch(/^ {2}\* 203\.0\.113\.2/m);
     });
   });
 
@@ -119,7 +119,7 @@ describe('Scénario 12 (Cisco) — NAT et basculement dual-WAN (IP SLA + track)'
       await runNextProbe(router);
 
       const out = await router.executeCommand('show ip route 0.0.0.0');
-      expect(out).toMatch(/via 203\.0\.113\.6/);
+      expect(out).toMatch(/^ {2}\* 203\.0\.113\.6/m);
     });
 
     it('show ip nat statistics référence GigabitEthernet0/2 comme interface outside active après la bascule', async () => {

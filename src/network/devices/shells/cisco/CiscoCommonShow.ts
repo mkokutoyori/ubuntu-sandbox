@@ -715,8 +715,6 @@ export function showFileSystems(fs: FileSystemUsage, startupConfigSize: number):
     row('*', String(fs.capacityBytes()), String(fs.freeBytes()), 'flash', 'flash:'),
     row(' ', String(fs.nvramTotalBytes()),
       String(fs.nvramFreeBytes(startupConfigSize)), 'nvram', 'nvram:'),
-    row(' ', '-', '-', 'opaque', 'system:'),
-    row(' ', '-', '-', 'network', 'tftp:'),
   ].join('\n');
 }
 

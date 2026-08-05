@@ -1,14 +1,3 @@
-/**
- * L'aide contextuelle ne s'effondre plus derrière un argument.
- *
- * `CommandTrie.getCompletions()` cherchait un mot-clé enfant à chaque
- * token et abandonnait (`return []`) dès qu'elle en rencontrait un qui
- * n'en était pas un — une adresse, un nombre, un nom. L'exécution, elle,
- * consomme ces valeurs comme arguments. Aide et exécution divergeaient
- * donc par construction, et `ip address 192.168.10.1 ?` restait sans
- * réponse pour une commande qui s'exécute très bien
- * (docs/PRD-CLI-Fidelite-IOS.md §1.1).
- */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { MACAddress, resetCounters } from '@/network/core/types';
@@ -35,12 +24,12 @@ async function inInterface(): Promise<CiscoRouter> {
   return router;
 }
 
-describe('Un argument consommé ne casse plus l\'aide', () => {
+describe('A consumed argument no longer breaks help', () => {
   it.each([
     'ip address 192.168.10.1 ?',
     'mtu ?',
     'bandwidth ?',
-  ])('%s répond quelque chose', async (command) => {
+  ])('%s answers something', async (command) => {
     const router = await inInterface();
     const help = await router.executeCommand(command);
     expect(help).not.toContain('Unrecognized');
@@ -55,14 +44,14 @@ describe('Un argument consommé ne casse plus l\'aide', () => {
     'router ospf ?',
     'ip dhcp excluded-address ?',
     'ip ssh time-out ?',
-  ])('%s répond quelque chose', async (command) => {
+  ])('%s answers something', async (command) => {
     const router = await inConfig();
     const help = await router.executeCommand(command);
     expect(help).not.toContain('Unrecognized');
     expect(help.trim().length).toBeGreaterThan(0);
   });
 
-  it('« % Unrecognized command » n\'est plus émis par la CLI Cisco', async () => {
+  it('the Cisco CLI no longer emits % Unrecognized command', async () => {
     const router = await inInterface();
     const probes = [
       'ip address 192.168.10.1 ?',
@@ -76,30 +65,29 @@ describe('Un argument consommé ne casse plus l\'aide', () => {
     }
   });
 
-  it('une saisie sans correspondance rend le refus d\'IOS', async () => {
+  it('an unmatched input returns the IOS refusal', async () => {
     const router = await inConfig();
     expect(await router.executeCommand('zzzz ?'))
       .toMatch(/% Invalid input detected at '\^' marker\./);
   });
 });
 
-describe('L\'aide annonce le TYPE de l\'argument, comme IOS', () => {
-  it('ip address <adresse> ? annonce le masque', async () => {
+describe('L\'help annonce le TYPE de l\'argument, comme IOS', () => {
+  it('ip address <address> ? announces the mask', async () => {
     const router = await inInterface();
     const help = await router.executeCommand('ip address 192.168.10.1 ?');
     expect(help).toContain('A.B.C.D');
     expect(help).toContain('IP subnet mask');
-    // Une alternative au premier argument n'a plus de sens une fois
-    // celui-ci saisi.
+
     expect(help).not.toContain('dhcp');
   });
 
-  it('encapsulation dot1Q ? annonce la plage de VLAN', async () => {
+  it('encapsulation dot1Q ? announces the VLAN range', async () => {
     const router = await inInterface();
     expect(await router.executeCommand('encapsulation dot1Q ?')).toContain('<1-4094>');
   });
 
-  it('mtu ? et bandwidth ? annoncent leurs plages', async () => {
+  it('mtu ? and bandwidth ? announce their ranges', async () => {
     const router = await inInterface();
     expect(await router.executeCommand('mtu ?')).toContain('<64-1500>');
     expect(await router.executeCommand('bandwidth ?')).toContain('<1-10000000>');
@@ -112,30 +100,29 @@ describe('L\'aide annonce le TYPE de l\'argument, comme IOS', () => {
     ['router ospf ?', '<1-65535>'],
     ['access-list ?', '<1-2699>'],
     ['ip ssh time-out ?', '<1-120>'],
-  ])('%s annonce %s', async (command, expected) => {
+  ])('%s announces %s', async (command, expected) => {
     const router = await inConfig();
     expect(await router.executeCommand(command)).toContain(expected);
   });
 
-  it('snmp-server community ? annonce WORD et sa description', async () => {
+  it('snmp-server community ? announces WORD and its description', async () => {
     const router = await inConfig();
     const help = await router.executeCommand('snmp-server community ?');
     expect(help).toContain('WORD');
     expect(help).toContain('SNMP community string');
   });
 
-  it('un mot-clé qui SUIT l\'argument reste proposé', async () => {
+  it('a keyword FOLLOWING the argument is still offered', async () => {
     const router = await inConfig();
-    // `access-list` n'attend qu'un numéro ; une fois donné, les actions
-    // redeviennent des candidats — contrairement au cas `ip address`.
+
     const help = await router.executeCommand('access-list 10 ?');
     expect(help).toContain('permit');
     expect(help).toContain('deny');
   });
 });
 
-describe('L\'exécution n\'a pas changé', () => {
-  it('les commandes dont l\'aide a été déclarée s\'exécutent toujours', async () => {
+describe('Execution is unchanged', () => {
+  it('commands whose help was declared still execute', async () => {
     const router = await inInterface();
     expect(await router.executeCommand('ip address 192.168.10.1 255.255.255.0')).toBe('');
     expect(await router.executeCommand('mtu 1400')).toBe('');
@@ -146,42 +133,39 @@ describe('L\'exécution n\'a pas changé', () => {
       .toBe('192.168.10.1');
   });
 
-  it('un nœud purement indicatif ne devient pas exécutable', async () => {
+  it('a hint-only node does not become executable', async () => {
     const router = await inInterface();
-    // `dot1Q` n'existe comme nœud que pour porter l'aide ; la commande
-    // reste servie par le handler greedy d'`encapsulation`.
+
     expect(await router.executeCommand('encapsulation dot1Q 10')).not.toMatch(/Invalid input/);
   });
 });
 
-describe('L\'aide n\'invente pas de commandes', () => {
-  it('un nœud purement indicatif n\'est pas proposé comme commande', async () => {
+describe('L\'help n\'invente pas de commandes', () => {
+  it('a hint-only node is not offered as a command', async () => {
     const router = await inInterface();
-    const aide = await router.executeCommand('?');
-    // `ip helper-address`, `ip ospf cost`… sont déclarés pour porter leurs
-    // arguments : leurs nœuds intermédiaires ne sont pas des commandes du
-    // mode interface et ne doivent pas y figurer.
-    expect(aide).not.toMatch(/^\s+helper-address\b/m);
-    expect(aide).not.toMatch(/^\s+cost\b/m);
+    const help = await router.executeCommand('?');
+
+    expect(help).not.toMatch(/^\s+helper-address\b/m);
+    expect(help).not.toMatch(/^\s+cost\b/m);
   });
 
-  it('aucun mot-clé proposé n\'est sans description', async () => {
+  it('no offered keyword lacks a description', async () => {
     const router = await inInterface();
     await router.executeCommand('exit');
     await router.executeCommand('line vty 0 4');
-    const aide = await router.executeCommand('password ?');
+    const help = await router.executeCommand('password ?');
 
-    const sansDescription = aide.split('\n')
+    const undescribed = help.split('\n')
       .filter((l) => l.trim().length > 0 && !l.includes('<cr>'))
       .filter((l) => /^\s+\S+\s*$/.test(l));
-    expect(sansDescription).toEqual([]);
+    expect(undescribed).toEqual([]);
   });
 
-  it('mais un mot-clé réel que le gestionnaire accepte reste proposé', async () => {
+  it('but a real keyword the handler accepts is still offered', async () => {
     const router = await inConfig();
-    const aide = await router.executeCommand('access-list 10 ?');
-    expect(aide).toContain('permit');
-    expect(aide).toContain('deny');
-    expect(aide).toMatch(/permit\s+\S+/);
+    const help = await router.executeCommand('access-list 10 ?');
+    expect(help).toContain('permit');
+    expect(help).toContain('deny');
+    expect(help).toMatch(/permit\s+\S+/);
   });
 });

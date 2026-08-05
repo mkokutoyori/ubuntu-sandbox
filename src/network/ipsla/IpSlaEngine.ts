@@ -259,24 +259,12 @@ export class IpSlaEngine {
 
   private keyChain: string | null = null;
   getKeyChain(): string | null { return this.keyChain; }
-  /**
-   * `ip sla key-chain` vaut pour les deux rôles de la machine : elle
-   * signe les demandes qu'elle émet et vérifie celles qu'elle reçoit. Les
-   * séparer laisserait un routeur signer avec une clé et en exiger une
-   * autre de ses pairs, ce qu'aucune commande ne permet d'exprimer.
-   */
+
   setKeyChain(chain: string | null): void {
     this.keyChain = chain;
     this.responder.setKeyChain(chain);
   }
 
-  /**
-   * Point d'entrée UDP du routeur. Le responder passe en premier : sur un
-   * vrai IOS, une machine peut être à la fois source et responder, et
-   * c'est le port de destination qui tranche — 1967 ou un port négocié
-   * pour le responder, un port éphémère que NOUS avons ouvert pour une
-   * réponse à notre propre sonde.
-   */
   handleUdp(sourceIp: IPAddress, udp: UDPPacket): boolean {
     const listener = this.udpListeners.get(udp.destinationPort);
     if (listener) {
@@ -427,14 +415,6 @@ export class IpSlaEngine {
     return delta * 1000;
   }
 
-  /**
-   * `start-time now` démarre MAINTENANT, pas au prochain battement de
-   * l'ordonnanceur. La différence est visible : un `track ip sla …
-   * reachability` naît Down (aucune sonde n'a encore répondu, et c'est
-   * bien ce que fait IOS), donc attendre 100 ms pour la première sonde
-   * laisserait la route conditionnée hors de la table pendant ce temps —
-   * une bascule que l'opérateur n'a pas demandée.
-   */
   private activate(runtime: SlaOperationRuntime, reason: 'schedule' | 'restart' | 'trigger'): void {
     const now = this.now();
     runtime.activeSinceMs = now;
@@ -542,12 +522,6 @@ export class IpSlaEngine {
     return outcome;
   }
 
-  /**
-   * VRP mesure par lots : `probe-count` sondes agrégées en un résultat,
-   * dont le verdict est décidé par `fail-percent` plutôt que par la
-   * première perte. Avec `aggregateProbes` à 1 — le cas d'IOS — ce
-   * chemin est court-circuité et rien ne change.
-   */
   private async dispatch(runtime: SlaOperationRuntime): Promise<SlaProbeOutcome> {
     if (runtime.config.aggregateProbes <= 1) return this.dispatchOne(runtime);
 

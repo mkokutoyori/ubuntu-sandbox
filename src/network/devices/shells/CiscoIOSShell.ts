@@ -349,9 +349,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
    * setting one without the other made `show privilege` disagree with the
    * prompt the same session was showing.
    */
-  beginExecSession(level: number): void {
+  beginExecSession(level: number, user?: string): void {
     this.currentPrivilegeLevel = level;
     this.setMode(level >= 15 ? 'privileged' : 'user');
+    if (user) this.configSessionLabel = user;
   }
 
   override getMode(): CiscoShellMode { return this.mode as CiscoShellMode; }
@@ -577,10 +578,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected override cmdExit(): string {
     if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
+    const wasConfig = this.isConfigMode();
     this.fsm.mode = this.mode as CiscoShellMode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = newMode;
     this.clearFields(fieldsToCllear);
+    this.announceConfigExit(wasConfig);
     return '';
   }
 

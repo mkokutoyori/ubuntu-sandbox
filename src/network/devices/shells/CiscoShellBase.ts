@@ -983,6 +983,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (expansion) cmdPart = expansion + (sp === -1 ? '' : cmdPart.slice(sp));
     }
 
+    this.configExitLogTarget = device;
+
     // Global shortcuts (no device ref needed)
     const lower = cmdPart.toLowerCase();
     const firstWord = cmdPart.split(/\s+/)[0];
@@ -1228,21 +1230,40 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── FSM Transitions ───────────────────────────────────────────
 
+  protected configSessionLabel = 'console';
+
+  protected announceConfigExit(wasConfig: boolean): void {
+    if (!wasConfig || this.isConfigMode()) return;
+    const device = this.configExitLogTarget as {
+      _loggingConfig?: LoggingConfig;
+      getLoggingConfig?: () => LoggingConfig | undefined;
+    } | null;
+    const target = device?._loggingConfig ?? device?.getLoggingConfig?.() ?? this.logging;
+    target.append('notifications', 'sys',
+      `Configured from console by ${this.configSessionLabel}`, true, 'CONFIG_I');
+  }
+
+  protected configExitLogTarget: unknown = null;
+
   protected cmdExit(): string {
     if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
     if (this.mode === 'privileged') this.terminalMonitor = false;
+    const wasConfig = this.isConfigMode();
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = newMode;
     this.clearFields(fieldsToCllear);
+    this.announceConfigExit(wasConfig);
     return '';
   }
 
   protected cmdEnd(): string {
+    const wasConfig = this.isConfigMode();
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.end();
     this.mode = newMode;
     this.clearFields(fieldsToCllear);
+    this.announceConfigExit(wasConfig);
     return '';
   }
 

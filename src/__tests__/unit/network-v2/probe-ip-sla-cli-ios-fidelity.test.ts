@@ -1,14 +1,3 @@
-/**
- * IP SLA — fidélité de la surface CLI à IOS 15.7.
- *
- * Le moteur mesurait juste ; la CLI, elle, trahissait la simulation. Ce
- * fichier verrouille les écarts relevés par une relecture externe et
- * vérifiés un par un contre le code (docs/PRD-IP-SLA.md §8ter) :
- * un sous-mode qui n'était pas restreint puis pas spécialisé par type,
- * une entrée sans type qui survivait, un fourre-tout qui répondait à
- * `show ip sla monitor <n'importe quoi>`, l'absence de plages
- * numériques, et un `ip sla enable` qui n'existe sur aucun routeur.
- */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { MACAddress, resetCounters } from '@/network/core/types';
@@ -31,8 +20,8 @@ async function config(): Promise<CiscoRouter> {
 
 const INVALID = /% Invalid input detected at '\^' marker\./;
 
-describe('Sous-mode ip sla : restreint, puis spécialisé par type', () => {
-  it('avant tout type, l\'aide n\'offre QUE des types d\'opération', async () => {
+describe('ip sla submode: restricted, then specialised per type', () => {
+  it('before any type, help offers ONLY operation types', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     const help = await router.executeCommand('?');
@@ -45,14 +34,14 @@ describe('Sous-mode ip sla : restreint, puis spécialisé par type', () => {
     }
   });
 
-  it('un paramètre tapé avant le type est refusé', async () => {
+  it('a parameter typed before the type is refused', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     expect(await router.executeCommand('frequency 60')).toMatch(INVALID);
     expect(await router.executeCommand('tag WAN')).toMatch(INVALID);
   });
 
-  it('le prompt descend dans le sous-mode du type choisi', async () => {
+  it('the prompt descends into the chosen type submode', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     expect(router.getPrompt()).toContain('(config-ip-sla)');
@@ -76,7 +65,7 @@ describe('Sous-mode ip sla : restreint, puis spécialisé par type', () => {
     expect(router.getPrompt()).toContain(prompt);
   });
 
-  it('un type déjà choisi est figé : les autres types disparaissent', async () => {
+  it('an already chosen type is frozen: the other types disappear', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('icmp-echo 8.8.8.8');
@@ -88,12 +77,12 @@ describe('Sous-mode ip sla : restreint, puis spécialisé par type', () => {
     expect(router.getIpSlaEngine().getOperation(1)!.config.type).toBe('icmp-echo');
   });
 
-  it('chaque sous-mode n\'offre que les paramètres de son type', async () => {
+  it('each submode offers only its own type parameters', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('tcp-connect 8.8.8.8 80');
     const tcpHelp = await router.executeCommand('?');
-    // tcp-connect n'a ni charge utile à dimensionner ni données à vérifier.
+
     expect(tcpHelp).not.toContain('request-data-size');
     expect(tcpHelp).not.toContain('verify-data');
     expect(tcpHelp).toContain('frequency');
@@ -106,7 +95,7 @@ describe('Sous-mode ip sla : restreint, puis spécialisé par type', () => {
     expect(echoHelp).toContain('verify-data');
   });
 
-  it('une destination manquante donne % Incomplete command.', async () => {
+  it('a missing destination gives % Incomplete command.', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     expect(await router.executeCommand('icmp-echo')).toBe('% Incomplete command.');
@@ -114,8 +103,8 @@ describe('Sous-mode ip sla : restreint, puis spécialisé par type', () => {
   });
 });
 
-describe('Une entrée sans type d\'opération n\'existe pas', () => {
-  it('elle est abandonnée à la sortie du sous-mode', async () => {
+describe('An entry with no operation type does not exist', () => {
+  it('it is discarded on leaving the submode', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('exit');
@@ -124,7 +113,7 @@ describe('Une entrée sans type d\'opération n\'existe pas', () => {
     expect(await router.executeCommand('do show ip sla summary')).not.toContain('not configured');
   });
 
-  it('elle ne pollue ni la running-config ni le résumé', async () => {
+  it('it pollutes neither the running-config nor the summary', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('exit');
@@ -141,7 +130,7 @@ describe('Une entrée sans type d\'opération n\'existe pas', () => {
     expect(summary).not.toContain('not configured');
   });
 
-  it('les colonnes du résumé restent alignées sous leurs en-têtes', async () => {
+  it('the summary columns stay aligned under their headers', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('icmp-echo 8.8.8.8');
@@ -155,7 +144,7 @@ describe('Une entrée sans type d\'opération n\'existe pas', () => {
   });
 });
 
-describe('Plages numériques : IOS refuse, il n\'absorbe pas', () => {
+describe('Numeric ranges: IOS refuses, it does not absorb', () => {
   it.each([
     ['frequency abc'],
     ['frequency 0'],
@@ -163,7 +152,7 @@ describe('Plages numériques : IOS refuse, il n\'absorbe pas', () => {
     ['timeout 604800001'],
     ['tos 256'],
     ['request-data-size 16385'],
-  ])('%s est refusé', async (command) => {
+  ])('%s is refused', async (command) => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('icmp-echo 8.8.8.8');
@@ -175,7 +164,7 @@ describe('Plages numériques : IOS refuse, il n\'absorbe pas', () => {
     ['frequency 1', 'frequencySeconds', 1],
     ['tos 255', 'tos', 255],
     ['request-data-size 16384', 'requestDataSize', 16384],
-  ])('%s est accepté aux bornes', async (command, field, expected) => {
+  ])('%s is accepted at the bounds', async (command, field, expected) => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('icmp-echo 8.8.8.8');
@@ -186,34 +175,34 @@ describe('Plages numériques : IOS refuse, il n\'absorbe pas', () => {
   });
 });
 
-describe('La branche héritée ip sla monitor est refusée, pas absorbée', () => {
+describe('The legacy ip sla monitor branch is refused, not absorbed', () => {
   it.each([
     'show ip sla monitor',
     'show ip sla monitor statistics',
     'show ip sla monitor configuration',
     'show ip sla monitor responder',
-  ])('%s est refusé', async (command) => {
+  ])('%s is refused', async (command) => {
     const router = new CiscoRouter('R1');
     await router.executeCommand('enable');
     expect(await router.executeCommand(command)).toMatch(INVALID);
   });
 
-  it('show ip sla nu répond toujours le bloc application', async () => {
+  it('bare show ip sla still answers the application block', async () => {
     const router = new CiscoRouter('R1');
     await router.executeCommand('enable');
     expect(await router.executeCommand('show ip sla'))
       .toContain('IP Service Level Agreements');
   });
 
-  it('un mot inconnu derrière show ip sla est refusé', async () => {
+  it('an unknown word after show ip sla is refused', async () => {
     const router = new CiscoRouter('R1');
     await router.executeCommand('enable');
     expect(await router.executeCommand('show ip sla nimportequoi')).toMatch(INVALID);
   });
 });
 
-describe('Commandes qui manquaient', () => {
-  it('clear ip sla statistics remet les compteurs à zéro', async () => {
+describe('Commands that were missing', () => {
+  it('clear ip sla statistics resets the counters', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('icmp-echo 8.8.8.8');
@@ -228,7 +217,7 @@ describe('Commandes qui manquaient', () => {
     expect(router.getIpSlaEngine().getOperation(1)!.aggregate.numRtts).toBe(0);
   });
 
-  it('clear ip sla statistics <n> ne touche que l\'opération visée', async () => {
+  it('clear ip sla statistics <n> touches only the targeted operation', async () => {
     const router = await config();
     for (const id of [1, 2]) {
       await router.executeCommand(`ip sla ${id}`);
@@ -245,14 +234,14 @@ describe('Commandes qui manquaient', () => {
     expect(engine.getOperation(2)!.counters.successes).toBe(9);
   });
 
-  it('clear ip sla statistics sur une entrée inexistante est refusé', async () => {
+  it('clear ip sla statistics on a nonexistent entry is refused', async () => {
     const router = new CiscoRouter('R1');
     await router.executeCommand('enable');
     expect(await router.executeCommand('clear ip sla statistics 42'))
       .toContain('does not exist');
   });
 
-  it('debug ip sla trace est une vraie catégorie, pas le fourre-tout debug ip', async () => {
+  it('debug ip sla trace is a real category, not the debug ip catch-all', async () => {
     const router = new CiscoRouter('R1');
     await router.executeCommand('enable');
     const out = await router.executeCommand('debug ip sla trace');
@@ -262,14 +251,14 @@ describe('Commandes qui manquaient', () => {
     expect(router.getDebugService().isEnabled('ip.sla.trace')).toBe(false);
   });
 
-  it('debug track suit les objets', async () => {
+  it('debug track follows the objects', async () => {
     const router = new CiscoRouter('R1');
     await router.executeCommand('enable');
     await router.executeCommand('debug track');
     expect(router.getDebugService().isEnabled('track')).toBe(true);
   });
 
-  it('show ip sla group schedule rend les groupes planifiés', async () => {
+  it('show ip sla group schedule renders the scheduled groups', async () => {
     const router = await config();
     for (const id of [1, 2]) {
       await router.executeCommand(`ip sla ${id}`);
@@ -286,24 +275,22 @@ describe('Commandes qui manquaient', () => {
   });
 });
 
-describe('ip sla enable : la forme réelle est reaction-alerts', () => {
-  it('la forme nue est incomplète, pas invalide', async () => {
+describe('ip sla enable: the real form is reaction-alerts', () => {
+  it('the bare form is incomplete, not invalid', async () => {
     const router = await config();
-    // `reaction-alerts` est le seul complément : taper le préfixe donne
-    // « % Incomplete command. », ce que fait aussi un vrai IOS. Ce n'est
-    // donc pas `% Invalid input` qu'il faut attendre ici.
+
     expect(await router.executeCommand('ip sla enable')).toBe('% Incomplete command.');
   });
 
-  it('reaction-alerts est acceptée', async () => {
+  it('reaction-alerts is accepted', async () => {
     const router = await config();
     expect(await router.executeCommand('ip sla enable reaction-alerts')).toBe('');
     expect(await router.executeCommand('no ip sla enable reaction-alerts')).toBe('');
   });
 });
 
-describe('L\'aide est triée alphabétiquement, comme sur IOS', () => {
-  it('les types d\'opération sortent dans l\'ordre alphabétique', async () => {
+describe('Help is sorted alphabetically, as on IOS', () => {
+  it('operation types come out in alphabetical order', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     const keywords = (await router.executeCommand('?'))
@@ -313,7 +300,7 @@ describe('L\'aide est triée alphabétiquement, comme sur IOS', () => {
     expect(keywords).toEqual([...keywords].sort((a, b) => a.localeCompare(b, 'en')));
   });
 
-  it('les paramètres d\'un sous-mode aussi', async () => {
+  it('so do a submode parameters', async () => {
     const router = await config();
     await router.executeCommand('ip sla 1');
     await router.executeCommand('icmp-echo 8.8.8.8');

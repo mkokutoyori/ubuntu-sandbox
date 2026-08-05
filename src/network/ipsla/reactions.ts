@@ -27,13 +27,6 @@ export type ReactionThresholdType = 'never' | 'immediate' | 'consecutive' | 'xOf
 
 export type ReactionActionType = 'none' | 'trapOnly' | 'triggerOnly' | 'trapAndTrigger';
 
-/**
- * Un élément surveillé est soit un ÉVÉNEMENT (il s'est produit ou non),
- * soit une MESURE comparée à un seuil — et pour les mesures, le sens de la
- * comparaison n'est pas le même partout : un RTT élevé est mauvais, un MOS
- * bas l'est. Traiter les deux avec la même comparaison serait un bug
- * silencieux, d'où cette table plutôt qu'un `>` en dur.
- */
 export const REACTION_ELEMENTS: Record<ReactionElement, {
   kind: 'event' | 'measure';
   polarity: 'rising' | 'falling';
@@ -164,12 +157,6 @@ function clears(reaction: SlaReaction, value: number): boolean {
 
 export type ReactionVerdict = 'none' | 'triggered' | 'cleared';
 
-/**
- * L'hystérésis est la raison d'être des DEUX seuils : une réaction armée
- * ne se lève qu'en repassant sous le seuil bas (au-dessus du seuil haut
- * pour un élément à polarité descendante comme le MOS). Sans cela une
- * valeur qui oscille autour d'un seuil unique produit un battement.
- */
 export function evaluateReaction(
   reaction: SlaReaction,
   runtime: SlaOperationRuntime,
