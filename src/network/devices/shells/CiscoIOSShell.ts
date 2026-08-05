@@ -539,9 +539,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
           router.configureInterface(curIface, new IPAddress(g[1]), new SubnetMask(g[2]), !!g[3]);
         } catch { /* malformed saved line — skip */ }
       } else if (line === 'shutdown') {
-        router.getPort(curIface)?.setUp(false);
+        router.getPort(curIface)?.setAdminShutdown(true);
       } else if (line === 'no shutdown') {
-        router.getPort(curIface)?.setUp(true);
+        router.getPort(curIface)?.setAdminShutdown(false);
       }
     }
   }

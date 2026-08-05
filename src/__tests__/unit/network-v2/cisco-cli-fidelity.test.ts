@@ -193,6 +193,71 @@ describe('? shows <cr> exactly when the command is executable as typed', () => {
   }
 });
 
+describe('every view reports the same interface state', () => {
+  const IF = 'GigabitEthernet0/1';
+
+  async function views(r: Router): Promise<Record<string, string>> {
+    const line = (out: string, needle: string): string =>
+      out.split('\n').find(l => l.includes(needle)) ?? '';
+    return {
+      brief: line(String(await r.executeCommand('show ip interface brief')), IF),
+      description: line(String(await r.executeCommand('show interfaces description')), IF),
+      interfaces: String(await r.executeCommand(`show interfaces ${IF}`)).split('\n')[0],
+      controllers: String(await r.executeCommand('show controllers'))
+        .split(`${IF} -`)[1]?.split('\n')[2] ?? '',
+    };
+  }
+
+  it('an interface never brought up reads administratively down everywhere', async () => {
+    const r = await router('configure terminal', `interface ${IF}`, 'shutdown', 'end');
+    const v = await views(r);
+
+    expect(v.brief).toContain('administratively down');
+    expect(v.brief.trim().endsWith('down')).toBe(true);
+    expect(v.description).toContain('admin down');
+    expect(v.interfaces).toContain(`${IF} is administratively down, line protocol is down`);
+    expect(v.controllers).toContain('Administrative state: administratively down');
+  });
+
+  it('an uncabled interface reads down, never administratively down', async () => {
+    const r = await router('configure terminal', `interface ${IF}`, 'no shutdown', 'end');
+    const v = await views(r);
+
+    expect(v.brief).toContain('down');
+    expect(v.brief).not.toContain('administratively');
+    expect(v.description).not.toContain('admin down');
+    expect(v.interfaces).toContain(`${IF} is down, line protocol is down`);
+    expect(v.controllers).toContain('Administrative state: up');
+  });
+
+  it('the routing table follows the interfaces, not its own rule', async () => {
+    const r = await router(
+      'configure terminal', `interface ${IF}`,
+      'ip address 10.9.9.1 255.255.255.0', 'no shutdown', 'end',
+    );
+    const brief = String(await r.executeCommand('show ip interface brief'));
+    const route = String(await r.executeCommand('show ip route'));
+
+    const ifaceUp = !/GigabitEthernet0\/1\s+\S+\s+YES\s+\S+\s+up/.test(brief);
+    expect(ifaceUp).toBe(true);
+    expect(route).not.toContain('10.9.9.0/24 is directly connected');
+    expect(route).not.toContain('10.9.9.1/32 is directly connected');
+  });
+
+  it('a loopback is up in every view without any cable', async () => {
+    const r = await router(
+      'configure terminal', 'interface Loopback0',
+      'ip address 1.1.1.1 255.255.255.255', 'end',
+    );
+    const brief = String(await r.executeCommand('show ip interface brief'));
+    const loop = brief.split('\n').find(l => l.includes('Loopback0')) ?? '';
+
+    expect(loop).toContain('up');
+    expect(loop).not.toContain('administratively');
+    expect(String(await r.executeCommand('show controllers'))).not.toContain('Loopback0');
+  });
+});
+
 describe('an argument declared on the wrong trie is not declared', () => {
   it('network ? under router ospf offers the network number', async () => {
     const r = await router('configure terminal', 'router ospf 1');

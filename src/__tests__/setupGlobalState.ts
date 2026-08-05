@@ -16,6 +16,7 @@ import { __setDefaultEventBus } from '@/events/EventBus';
 import { __setDefaultScheduler } from '@/events/Scheduler';
 import { resetFaultRegistry } from '@/network/faults/FaultRegistry';
 import { __resetFaultProjection } from '@/network/faults/FaultProjection';
+import { __assumeCarrierOnUncabledPorts } from '@/network/devices/inspection/InterfaceStatusView';
 
 beforeEach(() => {
   resetCounters();
@@ -29,4 +30,9 @@ beforeEach(() => {
   // it holds subscriptions on the bus that was just discarded.
   __resetFaultProjection();
   resetFaultRegistry();
+  // Un port jamais câblé n'a pas de porteuse, donc pas de route : c'est le
+  // comportement de production. Une fixture bâtie sans plan de câblage
+  // appelle `__assumeCarrierOnUncabledPorts(true)` pour s'en exempter, et
+  // cette remise à zéro l'empêche de déborder sur le fichier suivant.
+  __assumeCarrierOnUncabledPorts(false);
 });

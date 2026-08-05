@@ -4965,7 +4965,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const vlan = this.sviVlanId(iface);
     if (vlan !== null) { this.d().setSviAdminUp(vlan, up); return ''; }
     const port = this.d().getPort(iface);
-    if (port) { port.setUp(up); return ''; }
+    if (port) { port.setAdminShutdown(!up); return ''; }
     return '% Error';
   }
 

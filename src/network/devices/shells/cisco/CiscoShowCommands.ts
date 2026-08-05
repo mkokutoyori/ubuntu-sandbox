@@ -15,6 +15,7 @@ import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
+import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
@@ -260,40 +261,11 @@ export function showIpIntBrief(router: Router): string {
   const lines = ['Interface                  IP-Address      OK? Method Status                Protocol'];
   for (const [name, port] of ports) {
     const ip = port.getIPAddress()?.toString() || 'unassigned';
-    const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(name);
-    const carrier = carrierPort(router, name, port);
-    const adminUp = port.getIsUp() && carrier.getIsUp();
-    let status: string;
-    let proto: string;
-    if (!adminUp) {
-      status = 'administratively down';
-      proto = 'down';
-    } else if (isVirtual) {
-      status = 'up';
-      proto = 'up';
-    } else if (carrier.isConnected()) {
-      status = 'up';
-      proto = 'up';
-    } else {
-      status = 'down';
-      proto = 'down';
-    }
-    // IOS écrit `unset` tant qu'aucune adresse n'a été posée ; `manual`
-    // veut dire « configurée à la main », pas « il y a une interface ».
-    const method = port.getIPAddress() ? 'manual' : 'unset ';
-    lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES ${method} ${status.padEnd(22)}${proto}`);
+    const { status, protocol } = iosInterfaceStatus(port, name, ports);
+    const method = iosAddressMethod(port).padEnd(6);
+    lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES ${method} ${status.padEnd(22)}${protocol}`);
   }
   return lines.join('\n');
-}
-
-function carrierPort(
-  router: Router,
-  name: string,
-  port: import('../../../hardware/Port').Port,
-): import('../../../hardware/Port').Port {
-  const dot = name.indexOf('.');
-  if (dot <= 0) return port;
-  return router._getPortsInternal().get(name.slice(0, dot)) ?? port;
 }
 
 /** IOS prints the ARP timeout as hh:mm:ss (default 04:00:00). */
@@ -323,27 +295,21 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
     return formatInvalidInputAt(marker);
   }
 
-  const isUp = port.getIsUp();
-  const connected = port.hasCarrier();
-  const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(ifName);
+  const view = iosInterfaceStatus(port, ifName, ports);
+  const isVirtual = view.virtual;
+  const status = view.status;
+  const lineProto = view.protocol;
   const ip = port.getIPAddress()?.toString() || 'unassigned';
   const maskObj = port.getSubnetMask();
   const cidr = maskObj ? maskObj.toCIDR() : '';
   const mac = port.getMAC().toCiscoString();
-
-  let status: string;
-  let lineProto: string;
-  if (!isUp) { status = 'administratively down'; lineProto = 'down'; }
-  else if (isVirtual) { status = 'up'; lineProto = 'up'; }
-  else if (connected) { status = 'up'; lineProto = 'up'; }
-  else { status = 'down'; lineProto = 'down'; }
 
   const isTunnel = ifName.startsWith('Tunnel');
   const isLoopback = ifName.startsWith('Loopback');
 
   const reason = !catalyst || isVirtual || lineProto === 'up'
     ? ''
-    : (isUp ? ' (notconnect)' : ' (disabled)');
+    : (view.adminUp ? ' (notconnect)' : ' (disabled)');
 
   const lines = [
     `${ifName} is ${status}, line protocol is ${lineProto}${reason}`,
@@ -398,7 +364,8 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
 
   if (!isTunnel && !isLoopback) {
     const c = port.getCounters();
-    const rxPause = `  Last input ${connected ? '00:00:00' : 'never'}, output ${connected ? '00:00:00' : 'never'}, output hang never`;
+    const seen = view.carrierUp ? '00:00:00' : 'never';
+    const rxPause = `  Last input ${seen}, output ${seen}, output hang never`;
     lines.push(rxPause);
     lines.push(`  Queueing strategy: fifo`);
     lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
@@ -1047,9 +1014,8 @@ export function showIpv6InterfaceBrief(router: Router): string {
   const lines: string[] = [];
   for (const [name, port] of ports) {
     const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
-    const up = port.getIsUp() ? 'up' : 'administratively down';
-    const proto = (port.getIsUp() && (port.isConnected() || /^(Tunnel|Loopback|Vlan)/i.test(name))) ? 'up' : 'down';
-    lines.push(`${name.padEnd(27)}[${up}/${proto}]`);
+    const { status, protocol } = iosInterfaceStatus(port, name, ports);
+    lines.push(`${name.padEnd(27)}[${status}/${protocol}]`);
     if (v6.length === 0) lines.push(`    unassigned`);
     else for (const a of v6) lines.push(`    ${a}`);
   }
@@ -1061,7 +1027,8 @@ export function showIpv6Interface(router: Router, ifName: string): string {
   if (!port) return `% Invalid interface ${ifName}`;
   const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
   return [
-    `${ifName} is ${port.getIsUp() ? 'up' : 'administratively down'}, line protocol is ${port.getIsUp() && port.isConnected() ? 'up' : 'down'}`,
+    `${ifName} is ${iosInterfaceStatus(port, ifName, router._getPortsInternal()).status}, `
+      + `line protocol is ${iosInterfaceStatus(port, ifName, router._getPortsInternal()).protocol}`,
     `  IPv6 is ${v6.length > 0 ? 'enabled' : 'disabled'}`,
     ...v6.map(a => `  Address: ${a}`),
     `  MTU is ${port.getMTU()} bytes`,
@@ -1077,12 +1044,12 @@ export function showInterfacesAll(router: Router): string {
 /** `show interfaces description` — real status/protocol/description table. */
 export function showInterfacesDescription(router: Router): string {
   const rows = ['Interface                      Status         Protocol Description'];
-  for (const [name, port] of router._getPortsInternal()) {
-    const up = port.getIsUp();
-    const status = up ? 'up' : 'admin down';
-    const proto = up && port.isConnected() ? 'up' : 'down';
+  const ports = router._getPortsInternal();
+  for (const [name, port] of ports) {
+    const { status, protocol } = iosInterfaceStatus(port, name, ports);
     const desc = router.getInterfaceDescription(name) || '';
-    rows.push(`${name.padEnd(31)}${status.padEnd(15)}${proto.padEnd(9)}${desc}`);
+    const shown = status === 'administratively down' ? 'admin down' : status;
+    rows.push(`${name.padEnd(31)}${shown.padEnd(15)}${protocol.padEnd(9)}${desc}`);
   }
   return rows.join('\n');
 }
@@ -1091,12 +1058,12 @@ export function showInterfacesDescription(router: Router): string {
 export function showInterfacesStatus(router: Router): string {
   const rows = ['Port      Name               Status       Vlan       Duplex  Speed Type'];
   for (const [name, port] of router._getPortsInternal()) {
-    const status = port.getIsUp()
-      ? (port.isConnected() ? 'connected' : 'notconnect')
-      : 'disabled';
+    const view = iosInterfaceStatus(port, name, router._getPortsInternal());
+    const status = !view.adminUp ? 'disabled'
+      : view.protocol === 'up' ? 'connected' : 'notconnect';
     const desc = (router.getInterfaceDescription(name) || '').slice(0, 17);
     rows.push(
-      `${name.slice(0, 9).padEnd(10)}${desc.padEnd(19)}${status.padEnd(13)}` +
+      `${iosShortInterfaceName(name).padEnd(10)}${desc.padEnd(19)}${status.padEnd(13)}` +
       `${'routed'.padEnd(11)}${String(port.getDuplex()).padEnd(8)}` +
       `${String(port.getSpeed()).padEnd(6)}${name.startsWith('Gig') ? '1000BASE-T' : '10/100BaseTX'}`);
   }
@@ -1120,14 +1087,14 @@ export function showIpInterfaceAll(router: Router): string {
   const blocks: string[] = [];
   const nat = router._getNATEngine();
   for (const [name, port] of router._getPortsInternal()) {
-    const up = port.getIsUp();
+    const view = iosInterfaceStatus(port, name, router._getPortsInternal());
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
       : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
     blocks.push([
-      `${name} is ${up ? 'up' : 'administratively down'}, ` +
-        `line protocol is ${up && port.isConnected() ? 'up' : 'down'}${natTag}`,
+      `${name} is ${view.status}, ` +
+        `line protocol is ${view.protocol}${natTag}`,
       ip
         ? `  Internet address is ${ip}${mask ? `/${mask.toCIDR()}` : ''}`
         : '  Internet protocol processing disabled',

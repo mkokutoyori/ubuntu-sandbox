@@ -209,6 +209,7 @@ interface QueuedPacket {
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
+import { iosInterfaceUsable } from './inspection/InterfaceStatusView';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -890,19 +891,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * protocol goes down (docs/PRD-Link-State.md §2.1 P7, §3.1).
    */
   isRouteInterfaceUsable(iface: string): boolean {
-    if (/^(Tunnel|Loopback)/i.test(iface)) return true;
-    const dotIdx = iface.indexOf('.');
-    const physIface = dotIdx > 0 ? iface.slice(0, dotIdx) : iface;
-    const port = this.ports.get(physIface);
+    const port = this.ports.get(iface)
+      ?? this.ports.get(iface.includes('.') ? iface.slice(0, iface.indexOf('.')) : iface);
     if (!port) return true;
-    // A port that has never had a cable at all is a fixture built without
-    // a cable plant (unit tests exercising CLI/RIB behavior in isolation),
-    // not a real severed link — judge it on line/admin state alone, same
-    // "never wired" vs "unplugged" distinction Port.wasEverCabled() exists
-    // for (docs/PRD-Link-State.md §2.1 P6). Once a cable HAS been attached,
-    // full operational state (including carrier) is required as before.
-    if (!port.wasEverCabled()) return port.getIsUp() && !port.isAdminDown();
-    return port.isOperationallyUp();
+    return iosInterfaceUsable(port, iface, this.ports);
   }
 
   /**
