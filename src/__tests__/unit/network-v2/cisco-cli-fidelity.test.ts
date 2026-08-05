@@ -151,6 +151,48 @@ describe('every keyword offered by ? carries a description', () => {
   }
 });
 
+describe('? shows <cr> exactly when the command is executable as typed', () => {
+  const cases: Array<{ setup: string[]; command: string; executable: boolean }> = [
+    { setup: [], command: 'ip route', executable: false },
+    { setup: [], command: 'router ospf', executable: false },
+    { setup: [], command: 'interface', executable: false },
+    { setup: [], command: 'ip dhcp pool', executable: false },
+    { setup: [], command: 'enable secret', executable: false },
+    { setup: [], command: 'access-list 10', executable: false },
+    { setup: [], command: 'ip dhcp excluded-address', executable: false },
+    { setup: [], command: 'logging', executable: false },
+    { setup: [], command: 'ntp server', executable: false },
+    { setup: [], command: 'snmp-server community', executable: false },
+    { setup: [], command: 'ip ssh time-out', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'ip address', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'mtu', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'bandwidth', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'description', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'speed', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'duplex', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'encapsulation', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'encapsulation dot1q', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'shutdown', executable: true },
+    { setup: ['interface GigabitEthernet0/1'], command: 'no shutdown', executable: true },
+    { setup: ['router ospf 1'], command: 'router-id', executable: false },
+    { setup: ['router ospf 1'], command: 'network', executable: false },
+    { setup: ['ip dhcp pool P1'], command: 'lease', executable: false },
+    { setup: ['ip dhcp pool P1'], command: 'network', executable: false },
+  ];
+
+  for (const { setup, command, executable } of cases) {
+    it(`${setup[0] ?? 'config'} → ${command}`, async () => {
+      const help = await router('configure terminal', ...setup)
+        .then(r => r.cliHelp(`${command} `));
+      const outcome = await router('configure terminal', ...setup)
+        .then(r => r.executeCommand(command));
+
+      expect(help.includes('<cr>')).toBe(executable);
+      expect(String(outcome ?? '').includes('% Incomplete command.')).toBe(!executable);
+    });
+  }
+});
+
 describe('an argument declared on the wrong trie is not declared', () => {
   it('network ? under router ospf offers the network number', async () => {
     const r = await router('configure terminal', 'router ospf 1');

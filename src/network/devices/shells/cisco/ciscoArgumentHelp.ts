@@ -180,7 +180,21 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     trie.describeArgs('deny', [
       { name: 'source', type: 'IP_ADDR', description: 'Source address', optional: true },
     ]);
+    trie.requireArgs('permit', 1);
+    trie.requireArgs('deny', 1);
   }
+
+  tries.config.requireArgs('interface', 1);
+  tries.config.requireArgs('ip dhcp pool', 1);
+  tries.config.requireArgs('enable secret', 1);
+  tries.config.requireArgs('enable password', 1);
+  tries.config.requireArgs('access-list', 2);
+  tries.config.requireArgs('logging', 1);
+  tries.config.requireArgs('ntp', 1);
+  tries.config.requireArgs('ip nat', 1);
+  tries.config.requireArgs('ip dhcp', 1);
+  tries.configIf.requireArgs('encapsulation', 2);
+  tries.configLine.requireArgs('transport input', 1);
 }
 
 export interface SwitchArgumentHelpTries {

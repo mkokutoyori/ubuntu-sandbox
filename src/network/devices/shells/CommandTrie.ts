@@ -77,6 +77,7 @@ export interface CommandNode {
   action?: CommandAction;
   /** If true, this node accepts remaining args as-is */
   greedy?: boolean;
+  minArgs?: number;
   hintSuggestions?: Array<{ keyword: string; description: string }>;
   _hintOnly?: boolean;
   _passthrough?: boolean;
@@ -411,7 +412,7 @@ export class CommandTrie {
           const hasChildMatch = Array.isArray(childMatch) ? childMatch.length > 0 : !!childMatch;
           if (!hasChildMatch) {
             args.push(...tokens.slice(i + 1));
-            return { status: 'ok', node, args, matchedKeywords };
+            return this.finish(node, args, matchedKeywords, input);
           }
         }
         continue;
@@ -432,7 +433,7 @@ export class CommandTrie {
           const hasChildMatch = Array.isArray(childMatch) ? childMatch.length > 0 : !!childMatch;
           if (!hasChildMatch) {
             args.push(...tokens.slice(i + 1));
-            return { status: 'ok', node, args, matchedKeywords };
+            return this.finish(node, args, matchedKeywords, input);
           }
         }
         continue;
@@ -455,7 +456,7 @@ export class CommandTrie {
             paramIdx = 0;
             if (node.greedy && i < tokens.length - 1) {
               args.push(...tokens.slice(i + 1));
-              return { status: 'ok', node, args, matchedKeywords };
+              return this.finish(node, args, matchedKeywords, input);
             }
             continue;
           }
@@ -484,7 +485,7 @@ export class CommandTrie {
       // If node has greedy action, remaining tokens are args
       if (node.greedy) {
         args.push(...tokens.slice(i));
-        return { status: 'ok', node, args, matchedKeywords };
+        return this.finish(node, args, matchedKeywords, input);
       }
 
       // If current node has params and we already have an action, pass remaining as args
@@ -507,7 +508,7 @@ export class CommandTrie {
 
     // Reached end of tokens
     if (node.action) {
-      return { status: 'ok', node, args, matchedKeywords };
+      return this.finish(node, args, matchedKeywords, input);
     }
 
     // Check if there are required params not yet supplied
@@ -521,6 +522,45 @@ export class CommandTrie {
     }
 
     return { status: 'incomplete', node, args, matchedKeywords, error: '% Incomplete command.', errorPos: input.trimEnd().length };
+  }
+
+  private requiredArity(node: CommandNode): number {
+    return Math.max(
+      node.params.filter(p => !p.optional).length,
+      node.minArgs ?? 0,
+    );
+  }
+
+  private isExecutableAt(node: CommandNode, suppliedArgs: number): boolean {
+    return !!node.action && suppliedArgs >= this.requiredArity(node);
+  }
+
+  private descendantShortfall(node: CommandNode, args: readonly string[]): boolean {
+    let target = node;
+    let consumed = 0;
+    while (consumed < args.length) {
+      const child = target.children.get(args[consumed].toLowerCase());
+      if (!child) break;
+      target = child;
+      consumed++;
+    }
+    if (target === node) return false;
+    return args.length - consumed < this.requiredArity(target);
+  }
+
+  private finish(
+    node: CommandNode,
+    args: string[],
+    matchedKeywords: string[],
+    input: string,
+  ): MatchResult {
+    if (this.isExecutableAt(node, args.length) && !this.descendantShortfall(node, args)) {
+      return { status: 'ok', node, args, matchedKeywords };
+    }
+    return {
+      status: 'incomplete', node, args, matchedKeywords,
+      error: '% Incomplete command.', errorPos: input.trimEnd().length,
+    };
   }
 
   // ─── Help & Completion ──────────────────────────────────────────
@@ -818,6 +858,22 @@ export class CommandTrie {
     return param?.type === 'ENUM' ? (param.values ?? []) : [];
   }
 
+  requireArgs(path: string, minArgs: number): void {
+    const node = this.nodeAt(path);
+    if (node) node.minArgs = minArgs;
+  }
+
+  private nodeAt(path: string): CommandNode | null {
+    let node: CommandNode = this.root;
+    for (const kw of path.split(/\s+/).filter(Boolean)) {
+      const key = kw.toLowerCase();
+      const child = node.children.get(key) ?? this.prefixMatch(node, key, true)[0];
+      if (!child) return null;
+      node = child;
+    }
+    return node;
+  }
+
   private prefixMatch(
     node: CommandNode,
     prefix: string,
@@ -922,7 +978,7 @@ export class CommandTrie {
 
     // <cr> — shown when the current command is already executable
     // (real Cisco always shows <cr> when you can press Enter)
-    if (node.action) {
+    if (this.isExecutableAt(node, consumedArgs)) {
       results.push({ keyword: '<cr>', description: '' });
     }
 
