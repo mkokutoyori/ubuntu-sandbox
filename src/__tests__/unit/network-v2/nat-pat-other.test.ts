@@ -921,13 +921,20 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       expect(running).toContain('ip nat inside source list 1 pool POOL_1');
     });
 
-    it('76. should reject dynamic NAT binding if ACL is completely undefined', async () => {
+    // IOS accepte une référence vers une ACL encore inexistante et ne
+    // traduit simplement rien : la liste est résolue à la traduction, pas
+    // à la configuration. Sa propre running-config l'exige, elle qui écrit
+    // `ip nat inside source list` avant `access-list`.
+    it('76. should accept a dynamic NAT binding whose ACL is undefined, as IOS does', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
       await topo.r1.executeCommand('configure terminal');
       await topo.r1.executeCommand('ip nat pool POOL_1 203.0.113.10 203.0.113.20 netmask 255.255.255.0');
       const output = await topo.r1.executeCommand('ip nat inside source list 99 pool POOL_1'); // ACL 99 doesn't exist
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.trim()).toBe('');
+      await topo.r1.executeCommand('end');
+      expect(await topo.r1.executeCommand('show running-config'))
+        .toContain('ip nat inside source list 99 pool POOL_1');
     });
 
     it('77. should reject dynamic NAT binding if pool is completely undefined', async () => {
@@ -1024,13 +1031,24 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       expect(table).toContain('203.0.113.10');
     });
 
-    it('87. should reject dynamic NAT binding if ACL is of type MAC address', async () => {
+    // Ce cas s'intitulait « ACL de type MAC » et n'en créait aucune : il
+    // ne passait que par le refus des ACL inexistantes, et le refus MAC
+    // qu'il croyait viser était inatteignable (un routeur Cisco n'a ici
+    // que des ACL 'standard' et 'extended'). Ce qui reste vrai et vérifiable
+    // est qu'une ACL nommée, elle, se lie normalement au pool.
+    it('87. should bind a named ACL to a NAT pool', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
       await topo.r1.executeCommand('configure terminal');
+      await topo.r1.executeCommand('ip access-list standard NAT_SRC');
+      await topo.r1.executeCommand('permit 192.168.1.0 0.0.0.255');
+      await topo.r1.executeCommand('exit');
       await topo.r1.executeCommand('ip nat pool POOL_1 203.0.113.10 203.0.113.20 netmask 255.255.255.0');
-      const output = await topo.r1.executeCommand('ip nat inside source list MAC_FILTER pool POOL_1');
-      expect(output.toLowerCase()).toContain('%');
+      const output = await topo.r1.executeCommand('ip nat inside source list NAT_SRC pool POOL_1');
+      expect(output.trim()).toBe('');
+      await topo.r1.executeCommand('end');
+      expect(await topo.r1.executeCommand('show running-config'))
+        .toContain('ip nat inside source list NAT_SRC pool POOL_1');
     });
 
     it('88. should reject dynamic NAT pool configuration if pool name has special characters', async () => {

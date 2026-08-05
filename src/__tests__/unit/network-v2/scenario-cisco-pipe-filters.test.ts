@@ -76,8 +76,10 @@ describe('Scénario 7 — Filtres de pipe Cisco sur show running-config', () => 
       const r = await buildRouter();
       const out = await r.executeCommand('show running-config | section interface');
 
-      expect(out).toContain('interface GigabitEthernet0/0\n description UPLINK\n ip address 192.168.10.1 255.255.255.0\n!');
-      expect(out).toContain('interface GigabitEthernet0/1\n description PC-LINUX-1\n!');
+      expect(out).toContain('interface GigabitEthernet0/0\n description UPLINK\n ip address 192.168.10.1 255.255.255.0\n');
+      // Chaque bloc est complet et fermé par son ! ; les lignes que
+      // l'interface rend par ailleurs (` no ip address`) ne sont pas figées.
+      expect(out).toMatch(/^interface GigabitEthernet0\/1\n description PC-LINUX-1\n(?: .*\n)*!$/m);
       // Aucun bloc tronqué : chaque ligne interface est suivie de ses
       // enfants avant le prochain bloc.
       const lines = out.split('\n');

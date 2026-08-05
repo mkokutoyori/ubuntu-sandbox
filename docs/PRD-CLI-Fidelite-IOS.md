@@ -278,6 +278,24 @@ Les valeurs par défaut ne sont pas sérialisées ; les états qui ne se
 déduisent pas (`shutdown`, `no ip address`) le sont ; les commandes EXEC
 n'y figurent pas ; chaque secret porte son propre sel.
 
+**Conséquence mesurée sur NAT.** Cet ordre — celui d'IOS — écrit
+`ip nat inside source list <n> …` **avant** `access-list <n>`. Le
+simulateur refusait jusqu'ici une règle NAT dont l'ACL n'existait pas
+encore (`% access-list N not defined.`), si bien qu'une configuration
+correctement ordonnée ne se rejouait plus : la règle NAT était perdue au
+retour de topologie. Les deux comportements sont contradictoires, et
+c'est le refus qui a tort — IOS résout la liste au moment de traduire,
+jamais au moment de configurer, ce qui est précisément l'origine du grand
+classique « NAT configuré, aucune traduction », et ce sans quoi aucun
+routeur ne pourrait relire sa propre startup-config. Le refus est retiré ;
+la règle est acceptée, rendue par la configuration, et ne traduit rien.
+Trouvé au passage et retiré aussi : le refus voisin
+`% MAC ACLs cannot be used for NAT.` était inatteignable — sur un routeur
+Cisco, `AccessList.type` ne vaut que `'standard'` ou `'extended'`, ce
+simulateur n'ayant aucune notion d'ACL MAC de ce côté. Le cas de test qui
+prétendait le couvrir ne créait aucune ACL MAC et ne passait que par le
+refus des ACL inexistantes.
+
 ---
 
 ## 3. Phases

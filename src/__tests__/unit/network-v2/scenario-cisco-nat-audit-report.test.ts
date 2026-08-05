@@ -113,16 +113,35 @@ describe('Scénario 15 (Cisco) — rapport d\'audit NAT complet', () => {
     });
   });
 
-  describe('protection proactive contre une référence NAT invalide', () => {
-    it('ip nat inside source list vers une ACL inexistante est rejetée immédiatement (pas de règle orpheline possible)', async () => {
+  describe('une référence NAT vers une ACL inexistante', () => {
+    // IOS accepte la règle et ne traduit rien : la liste est résolue au
+    // moment de traduire, pas au moment de configurer. C'est le grand
+    // classique « NAT configuré, aucune traduction », et c'est ce que la
+    // running-config d'IOS impose, elle qui écrit `ip nat inside source
+    // list` AVANT `access-list`.
+    it('est acceptée, comme sur IOS, et figure dans la configuration', async () => {
       const { router } = await buildLab();
       await router.executeCommand('configure terminal');
       const out = await router.executeCommand('ip nat inside source list ACL-INEXISTANTE interface GigabitEthernet0/1 overload');
       await router.executeCommand('end');
-      expect(out).toMatch(/access-list ACL-INEXISTANTE not defined/i);
+      expect(out.trim()).toBe('');
 
       const rules = router._getNATEngine().getDynamicRules();
-      expect(rules.every(r => r.aclId !== 'ACL-INEXISTANTE')).toBe(true);
+      expect(rules.some(r => r.aclId === 'ACL-INEXISTANTE')).toBe(true);
+      expect(await router.executeCommand('show running-config'))
+        .toContain('ip nat inside source list ACL-INEXISTANTE interface GigabitEthernet0/1 overload');
+    });
+
+    it('ne traduit aucun paquet pour autant', async () => {
+      const { pc1, router } = await buildLab();
+      await router.executeCommand('configure terminal');
+      await router.executeCommand('no ip nat inside source list 1');
+      await router.executeCommand('ip nat inside source list ACL-INEXISTANTE interface GigabitEthernet0/1 overload');
+      await router.executeCommand('end');
+
+      await pc1.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
+      const translations = await router.executeCommand('show ip nat translations');
+      expect(translations).not.toContain('192.168.10.10:');
     });
   });
 
