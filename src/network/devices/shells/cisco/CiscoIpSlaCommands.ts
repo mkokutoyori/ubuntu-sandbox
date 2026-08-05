@@ -7,11 +7,67 @@ import {
 } from '../../../ipsla/types';
 import { isReactionElement } from '../../../ipsla/reactions';
 
+export type IpSlaSubMode =
+  | 'config-ipsla' | 'config-ipsla-http-raw' | 'config'
+  | 'config-ipsla-echo' | 'config-ipsla-icmpjitter' | 'config-ipsla-jitter'
+  | 'config-ipsla-udp' | 'config-ipsla-tcp' | 'config-ipsla-http'
+  | 'config-ipsla-dns' | 'config-ipsla-pathecho';
+
 export interface IpSlaCommandContext {
   r(): Router;
-  setMode(mode: 'config-ipsla' | 'config-ipsla-http-raw' | 'config'): void;
+  setMode(mode: IpSlaSubMode): void;
   getSelectedIpSla(): number | null;
   setSelectedIpSla(id: number | null): void;
+}
+
+/**
+ * Le sous-mode de configuration d'une opération est RESTREINT tant que
+ * le type n'est pas choisi : IOS n'y accepte que les types d'opération,
+ * puis descend dans un sous-mode propre au type, dont le prompt et le
+ * jeu de paramètres dépendent de ce type. Un `frequency` proposé avant
+ * tout choix de type, ou un `udp-jitter` encore proposé après un
+ * `icmp-echo`, sont deux choses impossibles sur un vrai routeur.
+ */
+export const IPSLA_TYPE_MODES: Record<SlaOperationType, IpSlaSubMode> = {
+  'icmp-echo': 'config-ipsla-echo',
+  'icmp-jitter': 'config-ipsla-icmpjitter',
+  'udp-jitter': 'config-ipsla-jitter',
+  'udp-echo': 'config-ipsla-udp',
+  'tcp-connect': 'config-ipsla-tcp',
+  'http': 'config-ipsla-http',
+  'dns': 'config-ipsla-dns',
+  'path-echo': 'config-ipsla-pathecho',
+  'unknown': 'config-ipsla',
+};
+
+/** `% Invalid input detected at '^' marker.` — le seul refus qu'IOS émet ici. */
+const INVALID_INPUT = '% Invalid input detected at \'^\' marker.';
+const INCOMPLETE = '% Incomplete command.';
+
+/**
+ * Les plages qu'IOS publie dans son aide et fait respecter. Un
+ * `frequency abc` ou un `frequency 99999999` doivent être refusés :
+ * c'est précisément ce qu'un apprenant doit rencontrer.
+ */
+export const IPSLA_RANGES = {
+  frequency: [1, 604800],
+  timeout: [0, 604800000],
+  threshold: [0, 2147483647],
+  requestDataSize: [0, 16384],
+  tos: [0, 255],
+  numPackets: [1, 60000],
+  interval: [1, 60000],
+  bucketsKept: [1, 60],
+  livesKept: [0, 2],
+  distributions: [1, 20],
+  distributionInterval: [1, 100],
+  hoursKept: [0, 25],
+} as const;
+
+function boundedInt(token: string | undefined, range: readonly [number, number]): number | null {
+  if (token === undefined || !/^\d+$/.test(token)) return null;
+  const value = parseInt(token, 10);
+  return value < range[0] || value > range[1] ? null : value;
 }
 
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
@@ -189,14 +245,20 @@ export function buildIpSlaConfigCommands(
     return engineOf(ctx).restart(id) ? '' : `% IP SLAs entry ${id} is not scheduled`;
   });
 
-  configTrie.registerGreedy('ip sla enable', 'Enable IP SLAs', () => {
-    engineOf(ctx).globalEnabled = true;
-    return '';
-  });
-  configTrie.registerGreedy('no ip sla enable', 'Disable IP SLAs', () => {
-    engineOf(ctx).globalEnabled = false;
-    return '';
-  });
+  // IOS n'a pas de `ip sla enable` nu : la seule forme est
+  // `ip sla enable reaction-alerts`, qui autorise l'émission des alertes
+  // de réaction. Le `ip sla enable` global venait de la façade
+  // précédente et n'existe sur aucun routeur.
+  configTrie.registerGreedy('ip sla enable reaction-alerts',
+    'Enable IP SLAs reaction alerts', () => {
+      engineOf(ctx).globalEnabled = true;
+      return '';
+    });
+  configTrie.registerGreedy('no ip sla enable reaction-alerts',
+    'Disable IP SLAs reaction alerts', () => {
+      engineOf(ctx).globalEnabled = false;
+      return '';
+    });
   configTrie.registerGreedy('ip sla logging traps', 'Enable IP SLAs syslog traps', () => {
     engineOf(ctx).loggingTrapsEnabled = true;
     return '';
@@ -208,8 +270,8 @@ export function buildIpSlaConfigCommands(
 
   registerResponderCommands(configTrie, ctx);
   registerReactionCommands(configTrie, ctx);
-  registerOperationTypes(slaTrie, rawTrie, ctx);
-  registerOperationParameters(slaTrie, ctx);
+  registerOperationTypes(slaTrie, ctx);
+  void rawTrie;
 }
 
 function registerReactionCommands(configTrie: CommandTrie, ctx: IpSlaCommandContext): void {
@@ -372,199 +434,323 @@ export function expandOperationList(list: string): number[] {
   return ids;
 }
 
-function registerOperationTypes(
-  slaTrie: CommandTrie,
-  rawTrie: CommandTrie,
-  ctx: IpSlaCommandContext,
-): void {
-  const simpleTypes: Array<[string, SlaOperationType, string]> = [
-    ['icmp-echo', 'icmp-echo', 'ICMP Echo Operation'],
-    ['icmp-jitter', 'icmp-jitter', 'ICMP Jitter Operation'],
-    ['udp-echo', 'udp-echo', 'UDP Echo Operation'],
-    ['udp-jitter', 'udp-jitter', 'UDP Jitter Operation'],
-    ['tcp-connect', 'tcp-connect', 'TCP Connect Operation'],
-    ['path-echo', 'path-echo', 'Path Discovered ICMP Echo Operation'],
-  ];
-
-  for (const [keyword, type, description] of simpleTypes) {
-    slaTrie.registerGreedy(keyword, description, (args) => {
-      const runtime = selected(ctx);
-      if (!runtime) return '';
-      applyTypeDefaults(runtime.config, type);
-      runtime.config.type = type;
-      const error = applyTarget(runtime.config, args, type);
-      if (error) return error;
-      if (type === 'udp-jitter') {
-        const codecIndex = args.indexOf('codec');
-        if (codecIndex >= 0) {
-          const codec = args[codecIndex + 1] as SlaCodec | undefined;
-          if (!codec || !(codec in CODEC_PROFILES)) return '% Invalid codec';
-          applyCodecDefaults(runtime.config, codec);
-        }
-        const numPackets = positiveInt(findKeywordValue(args, 'num-packets'));
-        if (numPackets !== null) runtime.config.numPackets = numPackets;
-        const interval = positiveInt(findKeywordValue(args, 'interval'));
-        if (interval !== null) runtime.config.intervalMs = interval;
-      }
-      engineOf(ctx).noteConfigChange(runtime.config.id);
-      return '';
-    });
-  }
-
-  slaTrie.registerGreedy('dns', 'DNS Query Operation', (args) => {
-    const runtime = selected(ctx);
-    if (!runtime) return '';
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const server = findKeywordValue(args, 'name-server');
-    if (!server) return '% Incomplete command.';
-    applyTypeDefaults(runtime.config, 'dns');
-    runtime.config.type = 'dns';
-    runtime.config.dns = { name, nameServer: server };
-    runtime.config.target = server;
-    runtime.config.sourceInterface = findKeywordValue(args, 'source-interface') ?? null;
-    runtime.config.sourceIp = findKeywordValue(args, 'source-ip') ?? null;
-    engineOf(ctx).noteConfigChange(runtime.config.id);
-    return '';
-  });
-
-  slaTrie.registerGreedy('http', 'HTTP Operation', (args) => {
-    const runtime = selected(ctx);
-    if (!runtime) return '';
-    const mode = args[0];
-    if (mode !== 'get' && mode !== 'raw') return '% Invalid input detected at \'^\' marker.';
-    applyTypeDefaults(runtime.config, 'http');
-    runtime.config.type = 'http';
-    runtime.config.http.mode = mode;
-    runtime.config.http.rawRequest = [];
-    const url = args[1];
-    if (!url) return '% Incomplete command.';
-    runtime.config.http.url = url;
-    runtime.config.http.nameServer = findKeywordValue(args, 'name-server') ?? null;
-    const version = findKeywordValue(args, 'version');
-    if (version) runtime.config.http.version = version;
-    const sourceIp = findKeywordValue(args, 'source-ip');
-    runtime.config.sourceIp = sourceIp ?? null;
-    runtime.config.sourceInterface = findKeywordValue(args, 'source-interface') ?? null;
-    runtime.config.target = IPV4.test(url) ? url : extractHost(url);
-    if (mode === 'raw') ctx.setMode('config-ipsla-http-raw');
-    engineOf(ctx).noteConfigChange(runtime.config.id);
-    return '';
-  });
-
-  rawTrie.registerGreedy('exit', 'Exit raw HTTP request mode', () => {
-    ctx.setMode('config-ipsla');
-    return '';
-  });
-}
 
 function extractHost(url: string): string | null {
   const match = /^(?:https?:\/\/)?([^/:]+)/i.exec(url);
   return match ? match[1] : null;
 }
 
-function registerOperationParameters(slaTrie: CommandTrie, ctx: IpSlaCommandContext): void {
-  const numeric: Array<[string, string, (config: SlaOperationConfig, value: number) => void]> = [
-    ['frequency', 'Frequency of an operation', (config, value) => { config.frequencySeconds = value; }],
-    ['timeout', 'Timeout of an operation', (config, value) => { config.timeoutMs = value; }],
-    ['threshold', 'Operation threshold in milliseconds', (config, value) => { config.thresholdMs = value; }],
-    ['request-data-size', 'Request data size', (config, value) => { config.requestDataSize = value; }],
-    ['tos', 'Type Of Service', (config, value) => { config.tos = value; }],
-    ['num-packets', 'Number of packets', (config, value) => { config.numPackets = value; }],
-    ['interval', 'Inter-packet interval', (config, value) => { config.intervalMs = value; }],
-  ];
+interface TypeSpec {
+  keyword: string;
+  description: string;
+  type: SlaOperationType;
+  /** Paramètres que ce type accepte dans son sous-mode, tels qu'IOS les propose. */
+  parameters: readonly ParameterName[];
+}
 
-  for (const [keyword, description, apply] of numeric) {
-    slaTrie.registerGreedy(keyword, description, (args) => {
+type ParameterName =
+  | 'frequency' | 'timeout' | 'threshold' | 'request-data-size' | 'tos'
+  | 'verify-data' | 'tag' | 'owner' | 'precision' | 'history' | 'vrf'
+  | 'http-raw-request';
+
+const COMMON_PARAMETERS: readonly ParameterName[] = [
+  'frequency', 'history', 'owner', 'tag', 'threshold', 'timeout', 'tos', 'vrf',
+];
+
+const TYPE_SPECS: readonly TypeSpec[] = [
+  {
+    keyword: 'icmp-echo', description: 'ICMP Echo Operation', type: 'icmp-echo',
+    parameters: [...COMMON_PARAMETERS, 'request-data-size', 'verify-data'],
+  },
+  {
+    keyword: 'icmp-jitter', description: 'ICMP Jitter Operation', type: 'icmp-jitter',
+    parameters: [...COMMON_PARAMETERS, 'request-data-size', 'precision', 'verify-data'],
+  },
+  {
+    keyword: 'udp-echo', description: 'UDP Echo Operation', type: 'udp-echo',
+    parameters: [...COMMON_PARAMETERS, 'request-data-size', 'verify-data'],
+  },
+  {
+    keyword: 'udp-jitter', description: 'UDP Jitter Operation', type: 'udp-jitter',
+    parameters: [...COMMON_PARAMETERS, 'request-data-size', 'precision', 'verify-data'],
+  },
+  {
+    keyword: 'tcp-connect', description: 'TCP Connect Operation', type: 'tcp-connect',
+    parameters: COMMON_PARAMETERS,
+  },
+  {
+    keyword: 'http', description: 'HTTP Operation', type: 'http',
+    parameters: [...COMMON_PARAMETERS, 'http-raw-request'],
+  },
+  { keyword: 'dns', description: 'DNS Query Operation', type: 'dns', parameters: COMMON_PARAMETERS },
+  {
+    keyword: 'path-echo', description: 'Path Discovered ICMP Echo Operation', type: 'path-echo',
+    parameters: [...COMMON_PARAMETERS, 'request-data-size', 'verify-data'],
+  },
+];
+
+function registerOperationTypes(
+  slaTrie: CommandTrie,
+  ctx: IpSlaCommandContext,
+): void {
+  for (const spec of TYPE_SPECS) {
+    slaTrie.registerGreedy(spec.keyword, spec.description, (args) => {
       const runtime = selected(ctx);
       if (!runtime) return '';
-      const value = positiveInt(args[0]);
-      if (value === null) return '% Incomplete command.';
-      apply(runtime.config, value);
+      if (args.length === 0) return INCOMPLETE;
+
+      applyTypeDefaults(runtime.config, spec.type);
+      runtime.config.type = spec.type;
+
+      const error = spec.type === 'http'
+        ? applyHttpOperand(runtime.config, args, ctx)
+        : spec.type === 'dns'
+          ? applyDnsOperand(runtime.config, args)
+          : applyTarget(runtime.config, args, spec.type);
+      if (error) {
+        runtime.config.type = 'unknown';
+        return error;
+      }
+
+      if (spec.type === 'udp-jitter') {
+        const codecIndex = args.indexOf('codec');
+        if (codecIndex >= 0) {
+          const codec = args[codecIndex + 1] as SlaCodec | undefined;
+          if (!codec || !(codec in CODEC_PROFILES)) {
+            runtime.config.type = 'unknown';
+            return INVALID_INPUT;
+          }
+          applyCodecDefaults(runtime.config, codec);
+        }
+      }
+      if (spec.type === 'udp-jitter' || spec.type === 'icmp-jitter') {
+        const numPackets = boundedInt(
+          findKeywordValue(args, 'num-packets'), IPSLA_RANGES.numPackets);
+        if (numPackets !== null) runtime.config.numPackets = numPackets;
+        const interval = boundedInt(findKeywordValue(args, 'interval'), IPSLA_RANGES.interval);
+        if (interval !== null) runtime.config.intervalMs = interval;
+      }
+
       engineOf(ctx).noteConfigChange(runtime.config.id);
+      ctx.setMode(IPSLA_TYPE_MODES[spec.type]);
       return '';
     });
   }
+}
 
-  slaTrie.registerGreedy('tag', 'User defined tag', (args) => {
-    const runtime = selected(ctx);
-    if (runtime) runtime.config.tag = args.join(' ') || null;
-    return '';
-  });
+function applyDnsOperand(config: SlaOperationConfig, args: string[]): string {
+  const name = args[0];
+  if (!name) return INCOMPLETE;
+  const server = findKeywordValue(args, 'name-server');
+  if (!server) return INCOMPLETE;
+  config.dns = { name, nameServer: server };
+  config.target = server;
+  config.sourceInterface = findKeywordValue(args, 'source-interface') ?? null;
+  config.sourceIp = findKeywordValue(args, 'source-ip') ?? null;
+  return '';
+}
 
-  slaTrie.registerGreedy('owner', 'Owner of entry', (args) => {
-    const runtime = selected(ctx);
-    if (runtime) runtime.config.owner = args.join(' ') || null;
-    return '';
-  });
+function applyHttpOperand(
+  config: SlaOperationConfig,
+  args: string[],
+  ctx: IpSlaCommandContext,
+): string {
+  const mode = args[0];
+  if (mode !== 'get' && mode !== 'raw') return INVALID_INPUT;
+  const url = args[1];
+  if (!url) return INCOMPLETE;
+  config.http.mode = mode;
+  config.http.rawRequest = [];
+  config.http.url = url;
+  config.http.nameServer = findKeywordValue(args, 'name-server') ?? null;
+  const version = findKeywordValue(args, 'version');
+  if (version) config.http.version = version;
+  config.sourceIp = findKeywordValue(args, 'source-ip') ?? null;
+  config.sourceInterface = findKeywordValue(args, 'source-interface') ?? null;
+  config.target = IPV4.test(url) ? url : extractHost(url);
+  void ctx;
+  return '';
+}
 
-  slaTrie.registerGreedy('verify-data', 'Verify data in response', () => {
-    const runtime = selected(ctx);
-    if (runtime) runtime.config.verifyData = true;
-    return '';
-  });
-  slaTrie.registerGreedy('no verify-data', 'Do not verify data', () => {
-    const runtime = selected(ctx);
-    if (runtime) runtime.config.verifyData = false;
-    return '';
-  });
+function registerParameter(
+  trie: CommandTrie,
+  name: ParameterName,
+  ctx: IpSlaCommandContext,
+): void {
+  const engine = () => engineOf(ctx);
+  switch (name) {
+    case 'frequency':
+      trie.registerGreedy('frequency', 'Frequency of an operation', (args) => {
+        const runtime = selected(ctx);
+        if (!runtime) return '';
+        const value = boundedInt(args[0], IPSLA_RANGES.frequency);
+        if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
+        runtime.config.frequencySeconds = value;
+        engine().noteConfigChange(runtime.config.id);
+        return '';
+      });
+      return;
+    case 'timeout':
+      trie.registerGreedy('timeout', 'Timeout of an operation', (args) => {
+        const runtime = selected(ctx);
+        if (!runtime) return '';
+        const value = boundedInt(args[0], IPSLA_RANGES.timeout);
+        if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
+        runtime.config.timeoutMs = value;
+        return '';
+      });
+      return;
+    case 'threshold':
+      trie.registerGreedy('threshold', 'Operation threshold in milliseconds', (args) => {
+        const runtime = selected(ctx);
+        if (!runtime) return '';
+        const value = boundedInt(args[0], IPSLA_RANGES.threshold);
+        if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
+        runtime.config.thresholdMs = value;
+        return '';
+      });
+      return;
+    case 'request-data-size':
+      trie.registerGreedy('request-data-size', 'Request data size', (args) => {
+        const runtime = selected(ctx);
+        if (!runtime) return '';
+        const value = boundedInt(args[0], IPSLA_RANGES.requestDataSize);
+        if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
+        runtime.config.requestDataSize = value;
+        return '';
+      });
+      return;
+    case 'tos':
+      trie.registerGreedy('tos', 'Type Of Service', (args) => {
+        const runtime = selected(ctx);
+        if (!runtime) return '';
+        const value = boundedInt(args[0], IPSLA_RANGES.tos);
+        if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
+        runtime.config.tos = value;
+        return '';
+      });
+      return;
+    case 'verify-data':
+      trie.register('verify-data', 'Verify data in response', () => {
+        const runtime = selected(ctx);
+        if (runtime) runtime.config.verifyData = true;
+        return '';
+      });
+      trie.register('no verify-data', 'Do not verify data in response', () => {
+        const runtime = selected(ctx);
+        if (runtime) runtime.config.verifyData = false;
+        return '';
+      });
+      return;
+    case 'tag':
+      trie.registerGreedy('tag', 'User defined tag', (args) => {
+        const runtime = selected(ctx);
+        if (!runtime) return '';
+        if (args.length === 0) return INCOMPLETE;
+        runtime.config.tag = args.join(' ');
+        return '';
+      });
+      return;
+    case 'owner':
+      trie.registerGreedy('owner', 'Owner of entry', (args) => {
+        const runtime = selected(ctx);
+        if (!runtime) return '';
+        if (args.length === 0) return INCOMPLETE;
+        runtime.config.owner = args.join(' ');
+        return '';
+      });
+      return;
+    case 'precision':
+      trie.registerGreedy('precision', 'Timestamp precision', (args) => {
+        const runtime = selected(ctx);
+        if (!runtime) return '';
+        if (args[0] !== 'milliseconds' && args[0] !== 'microseconds') return INVALID_INPUT;
+        runtime.config.precision = args[0];
+        return '';
+      });
+      return;
+    case 'vrf':
+      trie.registerGreedy('vrf', 'Configure IP SLAs for a VRF', () =>
+        '% VRF-aware IP SLAs is not supported in this simulator '
+        + '(no per-VRF forwarding plane)');
+      return;
+    case 'http-raw-request':
+      trie.register('http-raw-request', 'Enter HTTP raw request mode', () => {
+        ctx.setMode('config-ipsla-http-raw');
+        return '';
+      });
+      return;
+    case 'history':
+      trie.registerGreedy('history', 'History and Distribution Data', (args) =>
+        applyHistory(ctx, args));
+      return;
+  }
+}
 
-  slaTrie.registerGreedy('precision', 'Timestamp precision', (args) => {
-    const runtime = selected(ctx);
-    if (!runtime) return '';
-    if (args[0] !== 'milliseconds' && args[0] !== 'microseconds') {
-      return '% Invalid input detected at \'^\' marker.';
+function applyHistory(ctx: IpSlaCommandContext, args: string[]): string {
+  const runtime = selected(ctx);
+  if (!runtime) return '';
+  const config = runtime.config;
+  switch (args[0]) {
+    case 'lives-kept': {
+      const value = boundedInt(args[1], IPSLA_RANGES.livesKept);
+      if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
+      config.historyLivesKept = value;
+      if (value > 0 && config.historyFilter === 'none') config.historyFilter = 'all';
+      break;
     }
-    runtime.config.precision = args[0];
-    return '';
-  });
-
-  slaTrie.registerGreedy('history', 'History and Distribution Data', (args) => {
-    const runtime = selected(ctx);
-    if (!runtime) return '';
-    const config = runtime.config;
-    const keyword = args[0];
-    const value = positiveInt(args[1]);
-    switch (keyword) {
-      case 'lives-kept':
-        if (value === null) return '% Incomplete command.';
-        config.historyLivesKept = value;
-        if (value > 0 && config.historyFilter === 'none') config.historyFilter = 'all';
-        break;
-      case 'buckets-kept':
-        if (value === null) return '% Incomplete command.';
-        config.historyBucketsKept = value;
-        break;
-      case 'filter': {
-        const filter = args[1];
-        if (filter !== 'none' && filter !== 'all' && filter !== 'overThreshold'
-          && filter !== 'failures') {
-          return '% Invalid input detected at \'^\' marker.';
-        }
-        config.historyFilter = filter;
-        break;
-      }
-      case 'distributions-of-statistics-kept':
-        if (value === null) return '% Incomplete command.';
-        config.distributionsKept = value;
-        break;
-      case 'statistics-distribution-interval':
-        if (value === null) return '% Incomplete command.';
-        config.distributionIntervalMs = value;
-        break;
-      case 'hours-of-statistics-kept':
-        if (value === null) return '% Incomplete command.';
-        config.hoursOfStatisticsKept = value;
-        break;
-      case 'enhanced':
-        break;
-      default:
-        return '% Invalid input detected at \'^\' marker.';
+    case 'buckets-kept': {
+      const value = boundedInt(args[1], IPSLA_RANGES.bucketsKept);
+      if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
+      config.historyBucketsKept = value;
+      break;
     }
-    engineOf(ctx).noteConfigChange(config.id);
+    case 'filter': {
+      const filter = args[1];
+      if (filter !== 'none' && filter !== 'all' && filter !== 'overThreshold'
+        && filter !== 'failures') return INVALID_INPUT;
+      config.historyFilter = filter;
+      break;
+    }
+    case 'distributions-of-statistics-kept': {
+      const value = boundedInt(args[1], IPSLA_RANGES.distributions);
+      if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
+      config.distributionsKept = value;
+      break;
+    }
+    case 'statistics-distribution-interval': {
+      const value = boundedInt(args[1], IPSLA_RANGES.distributionInterval);
+      if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
+      config.distributionIntervalMs = value;
+      break;
+    }
+    case 'hours-of-statistics-kept': {
+      const value = boundedInt(args[1], IPSLA_RANGES.hoursKept);
+      if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
+      config.hoursOfStatisticsKept = value;
+      break;
+    }
+    case 'enhanced':
+      break;
+    default:
+      return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
+  }
+  engineOf(ctx).noteConfigChange(config.id);
+  return '';
+}
+
+export function registerIpSlaTypeSubModes(
+  tries: Record<string, CommandTrie>,
+  rawTrie: CommandTrie,
+  ctx: IpSlaCommandContext,
+): void {
+  for (const spec of TYPE_SPECS) {
+    const trie = tries[IPSLA_TYPE_MODES[spec.type]];
+    if (!trie) continue;
+    for (const parameter of spec.parameters) registerParameter(trie, parameter, ctx);
+  }
+  rawTrie.registerGreedy('exit', 'Exit the raw HTTP request mode', () => {
+    ctx.setMode('config-ipsla-http');
     return '';
   });
-
-  slaTrie.registerGreedy('vrf', 'Configure IP SLAs for a VRF', () =>
-    '% VRF-aware IP SLAs is not supported in this simulator (no per-VRF forwarding plane)');
 }

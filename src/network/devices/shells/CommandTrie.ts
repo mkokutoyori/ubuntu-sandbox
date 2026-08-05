@@ -747,7 +747,28 @@ export class CommandTrie {
    * Build the completions list for a node's children/params.
    * Includes <cr> when the node itself is executable (real Cisco behavior).
    */
+  /**
+   * IOS trie TOUJOURS son aide alphabétiquement ; l'ordre d'insertion
+   * dans le registre est un artefact d'implémentation qui se voit
+   * immédiatement. Les paramètres (`<...>`) restent en fin de liste,
+   * comme sur un vrai routeur, et `<cr>` garde sa place finale.
+   */
   private nodeCompletions(node: CommandNode, path: readonly string[]): Array<{ keyword: string; description: string }> {
+    const raw = this.nodeCompletionsUnsorted(node, path);
+    const rank = (keyword: string): number => {
+      if (keyword === '<cr>') return 2;
+      if (keyword.startsWith('<')) return 1;
+      return 0;
+    };
+    return raw.slice().sort((a, b) => {
+      const byRank = rank(a.keyword) - rank(b.keyword);
+      if (byRank !== 0) return byRank;
+      if (rank(a.keyword) !== 0) return 0;
+      return a.keyword.localeCompare(b.keyword, 'en');
+    });
+  }
+
+  private nodeCompletionsUnsorted(node: CommandNode, path: readonly string[]): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
     for (const [, child] of node.children) {

@@ -753,6 +753,101 @@ Restent non faits, tels que §6 les décrit : `path-jitter`, `ftp`,
 
 ---
 
+## 8ter. Fidélité de la surface CLI (relecture externe, 2026-08-05)
+
+Une relecture externe a comparé la CLI livrée à un IOS 15.7(3)M. Chaque
+point a été **vérifié contre le code avant d'être traité** ; deux se sont
+révélés faux et sont consignés comme tels, parce qu'un rapport qu'on
+applique sans le mesurer produit des correctifs qui ne corrigent rien.
+
+### Confirmés et corrigés
+
+1. **Le sous-mode de configuration n'était ni restreint ni spécialisé.**
+   `ip sla 1` proposait les types d'opération ET tous les paramètres, et
+   après `icmp-echo 8.8.8.8` il proposait encore `udp-jitter`. Sur IOS,
+   le mode n'accepte d'abord QUE les types ; le type choisi fait
+   descendre dans un sous-mode dont le prompt change
+   (`config-ip-sla-echo`, `-jitter`, `-udp`, `-tcp`, `-http`, `-dns`,
+   `-pathEcho`, `-icmpjitter`) et dont le jeu de paramètres dépend du
+   type — `tcp-connect` n'a ni `request-data-size` ni `verify-data`.
+   Un type déjà choisi est figé.
+2. **Une entrée quittée sans type survivait**, jusque dans la
+   running-config et le résumé. Elle est abandonnée, comme sur IOS. Deux
+   symptômes que la critique listait séparément — la ligne `~1 not
+   configured` et le désalignement des colonnes du résumé — n'étaient
+   que les conséquences de celui-ci ; les colonnes sont en plus
+   **tronquées** désormais, IOS ne décalant jamais une colonne.
+3. **`show ip sla monitor <n'importe quoi>` répondait le bloc
+   `application`** : le greedy `show ip sla` attrapait tout ce qui le
+   suivait. La branche héritée `ip sla monitor` est retirée des images
+   15.x ; elle est donc refusée, et `show ip sla <mot inconnu>` aussi.
+4. **Aucune plage numérique n'était appliquée** et le refus employait le
+   mauvais message. Les plages qu'IOS publie sont désormais tenues
+   (`frequency <1-604800>`, `timeout <0-604800000>`,
+   `threshold <0-2147483647>`, `request-data-size <0-16384>`,
+   `tos <0-255>`, `num-packets`/`interval <1-60000>`), et un refus rend
+   `% Invalid input detected at '^' marker.` et non `% Incomplete`.
+5. **`ip sla enable` n'existe pas** : la seule forme est
+   `ip sla enable reaction-alerts`. Le `ip sla enable` global venait de
+   la façade d'origine.
+6. **`clear ip sla statistics [n]`** manquait — alors que
+   `IpSlaEngine.resetStatistics()` existait sans appelant : un moteur
+   sans porte, le motif que ce dépôt corrige ailleurs. Ajouté avec
+   `clear ip sla enhanced-history` et `show ip sla group schedule`.
+7. **`debug ip sla trace|error` retombait sur le fourre-tout
+   `debug ip`** et imprimait « IP packet debugging is on for sla trace ».
+   Les catégories `ip.sla.trace` et `track` étaient déclarées dans
+   `RouterDebugService` et émises par personne ; elles le sont
+   maintenant, depuis les événements de bus du moteur.
+8. **L'aide n'était pas triée.** IOS trie toujours ; l'ordre d'insertion
+   dans le registre se voyait immédiatement. Le tri est posé dans
+   `CommandTrie.nodeCompletions`, donc pour **tout** le simulateur, les
+   paramètres `<...>` restant après les mots-clés et `<cr>` en dernier.
+9. **`num-packets`/`interval` étaient des sous-commandes.** Sur IOS ce
+   sont des mots-clés de la ligne `udp-jitter`. Corrigé, et les tests
+   qui employaient l'ancienne forme ont été réécrits.
+
+### Récusés, mesure à l'appui
+
+- **« `% Unrecognized command` n'existe pas sur IOS »** — exact, et ce
+  message n'est pas émis par la CLI Cisco de ce simulateur : `shwo`
+  répond bien `% Invalid input detected at '^' marker.` avec le caret
+  positionné et la ligne rappelée. « Unrecognized command found at … »
+  est le message de **VRP**, où il est correct.
+- **« `codec` est proposé sur `icmp-echo`/`udp-echo`/`tcp-connect` »** —
+  non : `codec` n'est enregistré nulle part comme mot-clé de mode, ne
+  figure dans aucune aide, et `codec g711alaw` était déjà refusé. Il
+  n'est lu que sur la ligne `udp-jitter`, ce qui est la règle IOS. Le
+  point voisin — l'aide qui proposait les autres types après un type
+  déjà choisi — était réel et relève du point 1.
+
+### Hors périmètre de ce PRD, signalés
+
+- **La bannière de démarrage** (nombre d'interfaces du C2911, chaîne
+  `CISCO2911/K9`, tailles mémoire, OUI de la MAC, dialogue de
+  configuration initiale affiché malgré une NVRAM non vide, blocs ROM /
+  uptime / licences absents) relève du profil de châssis
+  (`CiscoCommonShow.ts`), pas d'IP SLA. Les constats semblent fondés et
+  méritent leur propre lot.
+- **`path-jitter` et `ftp get`** existent sur 15.7 : c'est exact, et ce
+  n'est pas le critère retenu ici. §6 les exclut parce que la brique
+  manque (aucune statistique de gigue par saut, aucun client FTP côté
+  routeur), pas parce qu'IOS ne les aurait pas. Les ajouter comme
+  commandes acceptées sans mesure recréerait exactement la façade que ce
+  PRD a démontée.
+- **`%SYS-5-CONFIG_I` à la sortie du mode de configuration** est absent
+  de tout le simulateur, pas seulement d'IP SLA : c'est un comportement
+  global du shell Cisco.
+- **Refonte du parseur en registre déclaratif** : `CommandTrie` est déjà
+  un arbre de commandes avec `ParamSpec`. Ce qui manquait n'était pas le
+  moteur mais son usage — les enregistrements `registerGreedy` sans
+  spécification de paramètres. Les plages ci-dessus sont posées à la
+  main dans les handlers ; les porter dans `ParamSpec` pour qu'aide,
+  validation et complétion en dérivent est un travail réel, transverse à
+  tout le simulateur, et à traiter comme tel.
+
+---
+
 ## 9. Plan de test
 
 Chaque phase livre une suite discriminée par `git stash` : les cas

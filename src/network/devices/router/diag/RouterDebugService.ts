@@ -30,6 +30,7 @@ export type DebugCategory =
   | 'glbp'
   | 'track'
   | 'ip.sla.trace'
+  | 'ip.sla.error'
   | 'aaa.authentication'
   | 'aaa.authorization'
   | 'aaa.accounting'
@@ -443,6 +444,33 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('interface', `${p.portName ?? '?'} went down`);
       this.emit('interface', `${p.portName ?? '?'} keepalive timer expired`);
     }));
+    // `ip.sla.trace`/`track` étaient déclarées comme catégories et
+    // émises par personne : `debug ip sla trace` retombait sur le
+    // fourre-tout `debug ip` et imprimait « IP packet debugging is on ».
+    this.broadcast.track(bus.subscribe('ipsla.probe.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      const rtt = p.rttMs === null ? '-' : `${Math.round(p.rttMs)} ms`;
+      this.emit('ip.sla.trace',
+        `IP SLA(${p.operationId}) Scheduler: probe completed, `
+        + `type ${p.type}, target ${p.target ?? '-'}, RTT ${rtt}, return code ${p.returnCode}`);
+      if (p.returnCode !== 'ok' && p.returnCode !== 'overThreshold') {
+        this.emit('ip.sla.error',
+          `IP SLA(${p.operationId}) ${p.returnCode}${p.diagText ? `: ${p.diagText}` : ''}`);
+      }
+    }));
+    this.broadcast.track(bus.subscribe('ipsla.operation.state-changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.sla.trace',
+        `IP SLA(${p.operationId}) Scheduler: entry ${p.oldState} -> ${p.newState} (${p.reason})`);
+    }));
+    this.broadcast.track(bus.subscribe('track.state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('track',
+        `Track ${p.objectId} ${p.description} ${p.oldState} -> ${p.newState}`);
+    }));
     this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as { frame: unknown; portName?: string };
@@ -492,6 +520,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'glbp': return 'GLBP';
       case 'track': return 'TRACK';
       case 'ip.sla.trace': return 'IP SLA';
+      case 'ip.sla.error': return 'IP SLA error';
       case 'aaa.authentication': return 'AAA Authentication';
       case 'aaa.authorization': return 'AAA Authorization';
       case 'aaa.accounting': return 'AAA Accounting';

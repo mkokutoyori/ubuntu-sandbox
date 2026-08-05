@@ -48,8 +48,12 @@ import {
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { buildTrackConfigCommands, registerTrackShowCommands } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
-import { buildIpSlaConfigCommands } from './cisco/CiscoIpSlaCommands';
-import { registerIpSlaShowCommands } from './cisco/CiscoIpSlaShowCommands';
+import {
+  buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
+} from './cisco/CiscoIpSlaCommands';
+import {
+  registerIpSlaShowCommands, registerIpSlaClearCommands, registerIpSlaDebugCommands,
+} from './cisco/CiscoIpSlaShowCommands';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
   buildPolicyConfig, registerPolicyShow,
@@ -183,6 +187,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedVLAN: number | null = null;
   private configIpSlaTrie = new CommandTrie();
   private configIpSlaHttpRawTrie = new CommandTrie();
+  private readonly configIpSlaTypeTries: Record<string, CommandTrie> = {
+    'config-ipsla-echo': new CommandTrie(),
+    'config-ipsla-icmpjitter': new CommandTrie(),
+    'config-ipsla-jitter': new CommandTrie(),
+    'config-ipsla-udp': new CommandTrie(),
+    'config-ipsla-tcp': new CommandTrie(),
+    'config-ipsla-http': new CommandTrie(),
+    'config-ipsla-dns': new CommandTrie(),
+    'config-ipsla-pathecho': new CommandTrie(),
+  };
   private configRouteMapTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
   private configRouterOspfTrie = new CommandTrie();
@@ -287,7 +301,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   getOSType(): string { return 'cisco-ios'; }
 
+  private ipSlaOwner: Router | null = null;
+
   execute(router: Router, rawInput: string): string | Promise<string> {
+    this.ipSlaOwner = router;
     setInvalidInputPromptWidth(this.buildDevicePrompt(router).length);
     router.setRouteTrackResolver((trackId) =>
       router.getTrackService().isUp(parseInt(trackId, 10)));
@@ -562,6 +579,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-vlan': return this.configVlanTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
       case 'config-ipsla-http-raw': return this.configIpSlaHttpRawTrie;
+      case 'config-ipsla-echo':
+      case 'config-ipsla-icmpjitter':
+      case 'config-ipsla-jitter':
+      case 'config-ipsla-udp':
+      case 'config-ipsla-tcp':
+      case 'config-ipsla-http':
+      case 'config-ipsla-dns':
+      case 'config-ipsla-pathecho':
+        return this.configIpSlaTypeTries[this.mode];
       case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
@@ -606,12 +632,30 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
   }
 
+  /**
+   * Une entrée `ip sla <n>` quittée SANS type d'opération n'existe pas
+   * sur IOS : la configuration est abandonnée. La garder produisait une
+   * opération « not configured » qui survivait dans `show ip sla
+   * summary`, `configuration` et la running-config — et qui, au passage,
+   * cassait l'alignement du tableau du résumé.
+   */
+  private discardUnconfiguredIpSla(): void {
+    // `exit` est traité AVANT que `executeOnDevice` ne pose la référence
+    // d'équipement, d'où cette référence posée par `execute` : `d()`
+    // lèverait ici.
+    const router = this.ipSlaOwner;
+    if (this.selectedIpSla === null || !router) return;
+    const engine = router.getIpSlaEngine();
+    const runtime = engine.getOperation(this.selectedIpSla);
+    if (runtime && runtime.config.type === 'unknown') engine.removeOperation(this.selectedIpSla);
+  }
+
   protected clearFields(fields: string[]): void {
     for (const f of fields) {
       if (f === 'selectedInterface') this.selectedInterface = null;
       if (f === 'selectedDHCPPool') this.selectedDHCPPool = null;
       if (f === 'selectedTrack') this.selectedTrack = null;
-      if (f === 'selectedIpSla') this.selectedIpSla = null;
+      if (f === 'selectedIpSla') { this.discardUnconfiguredIpSla(); this.selectedIpSla = null; }
       if (f === 'selectedRouteMap') this.selectedRouteMap = null;
       if (f === 'selectedRoutingProto') this.selectedRoutingProto = null;
       if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
@@ -693,6 +737,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);
+    registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
@@ -847,6 +892,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackShowCommands(trie, this);
     registerIpSlaShowCommands(trie, this);
+    registerIpSlaClearCommands(trie, this);
+    registerIpSlaDebugCommands(this.privilegedTrie, this);
     registerPolicyShow(trie, this.policy);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 

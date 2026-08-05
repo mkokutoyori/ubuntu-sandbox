@@ -171,7 +171,9 @@ describe('IP SLA udp-jitter — les pertes sont attribuées à une direction', (
 
     for (const command of [
       'configure terminal',
-      'ip sla 1', 'udp-jitter 10.0.0.2 5000', 'num-packets 10', 'interval 20',
+      // `num-packets`/`interval` sont des mots-clés de la LIGNE
+      // `udp-jitter` sur IOS, pas des sous-commandes du mode.
+      'ip sla 1', 'udp-jitter 10.0.0.2 5000 num-packets 10 interval 20',
       'frequency 60', 'exit',
       'ip sla schedule 1 life forever start-time now',
       'end',
@@ -197,7 +199,7 @@ describe('IP SLA udp-jitter — les pertes sont attribuées à une direction', (
     ]) await target.executeCommand(command);
     for (const command of [
       'configure terminal',
-      'ip sla 1', 'udp-jitter 10.0.0.2 5000', 'num-packets 5', 'interval 20', 'exit',
+      'ip sla 1', 'udp-jitter 10.0.0.2 5000 num-packets 5 interval 20', 'exit',
       'ip sla schedule 1 life forever start-time now',
       'end',
     ]) await source.executeCommand(command);

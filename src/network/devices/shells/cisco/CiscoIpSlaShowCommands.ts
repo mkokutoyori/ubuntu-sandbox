@@ -192,6 +192,11 @@ function renderStatistics(
   return lines;
 }
 
+/** IOS tronque une colonne trop large, il ne décale pas les suivantes. */
+function column(text: string, width: number): string {
+  return text.length >= width ? `${text.slice(0, width - 1)} ` : text.padEnd(width);
+}
+
 function renderSummary(engine: IpSlaEngine, nowMs: number): string {
   const operations = engine.listOperations();
   const lines = [
@@ -208,8 +213,9 @@ function renderSummary(engine: IpSlaEngine, nowMs: number): string {
     const code = runtime.lastReturnCode === null ? '-' : RETURN_CODE_LABEL[runtime.lastReturnCode];
     const last = runtime.lastRunAtMs === null ? 'never' : formatElapsed(nowMs - runtime.lastRunAtMs);
     lines.push(
-      `${(marker + runtime.config.id).padEnd(13)}${displayType(runtime.config.type).padEnd(12)}`
-      + `${(runtime.config.target ?? '-').padEnd(18)}${stats.padEnd(12)}${code.padEnd(12)}${last}`,
+      `${column(marker + runtime.config.id, 13)}${column(displayType(runtime.config.type), 12)}`
+      + `${column(runtime.config.target ?? '-', 18)}${column(stats, 12)}`
+      + `${column(code, 12)}${last}`,
     );
   }
   return lines.join('\n');
@@ -254,6 +260,45 @@ function renderDistribution(runtime: SlaOperationRuntime): string[] {
       + `  Sum of RTT ${Math.round(bucket.sumRtt)}`);
   }
   return lines;
+}
+
+export function registerIpSlaDebugCommands(trie: CommandTrie, ctx: IpSlaShowContext): void {
+  const service = () => ctx.r().getDebugService();
+  const branches: Array<[string, 'ip.sla.trace' | 'ip.sla.error', string]> = [
+    ['trace', 'ip.sla.trace', 'IP SLAs trace'],
+    ['error', 'ip.sla.error', 'IP SLAs errors'],
+  ];
+  for (const [keyword, category, description] of branches) {
+    trie.register(`debug ip sla ${keyword}`, description, () => service().enable(category));
+    trie.register(`no debug ip sla ${keyword}`, description, () => service().disable(category));
+  }
+  trie.register('debug track', 'Tracking state changes', () => service().enable('track'));
+  trie.register('no debug track', 'Tracking state changes', () => service().disable('track'));
+}
+
+export function registerIpSlaClearCommands(trie: CommandTrie, ctx: IpSlaShowContext): void {
+  const engine = () => ctx.r().getIpSlaEngine();
+
+  // `IpSlaEngine.resetStatistics()` existait et n'avait aucun appelant :
+  // un moteur sans porte, exactement le motif que ce dépôt corrige
+  // ailleurs.
+  trie.registerGreedy('clear ip sla statistics', 'Clear IP SLAs statistics', (args) => {
+    const idToken = args.find((token) => /^\d+$/.test(token));
+    if (idToken === undefined) { engine().resetStatistics(); return ''; }
+    const id = parseInt(idToken, 10);
+    if (!engine().getOperation(id)) return `% IP SLAs entry ${id} does not exist`;
+    engine().resetStatistics(id);
+    return '';
+  });
+
+  trie.registerGreedy('clear ip sla enhanced-history', 'Clear IP SLAs enhanced history', (args) => {
+    const idToken = args.find((token) => /^\d+$/.test(token));
+    const targets = idToken === undefined
+      ? engine().listOperations()
+      : [engine().getOperation(parseInt(idToken, 10))];
+    for (const runtime of targets) if (runtime) runtime.history = [];
+    return '';
+  });
 }
 
 export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowContext): void {
@@ -359,6 +404,28 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
     return lines.join('\n');
   });
 
+  trie.registerGreedy('show ip sla group schedule', 'IP SLAs group schedule', () => {
+    const groups = new Map<string, number[]>();
+    for (const runtime of engine().listOperations()) {
+      const group = runtime.config.schedule.groupName;
+      if (!group) continue;
+      const members = groups.get(group) ?? [];
+      members.push(runtime.config.id);
+      groups.set(group, members);
+    }
+    if (groups.size === 0) return 'No IP SLAs group schedule configured.';
+    const lines: string[] = [];
+    for (const [group, members] of [...groups.entries()].sort()) {
+      lines.push(`Group Entry Number: ${group}`);
+      lines.push(`Probes to be scheduled: ${members.sort((a, b) => a - b).join(',')}`);
+      lines.push(`Total number of probes: ${members.length}`);
+      lines.push('Schedule period: 0');
+      lines.push('Group operation frequency: Equals to schedule period');
+      lines.push('Status of entry (SNMP RowStatus): Active');
+    }
+    return lines.join('\n');
+  });
+
   trie.registerGreedy('show ip sla responder', 'IP SLAs Responder information', () => {
     const responder = engine().getResponder();
     const lines = [
@@ -382,7 +449,15 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
     return lines.join('\n');
   });
 
-  trie.registerGreedy('show ip sla', 'IP SLAs information', () => renderApplication(engine()));
+  // `ip sla monitor` est la syntaxe héritée, retirée des images 15.x.
+  // Sans cette entrée, le greedy `show ip sla` ci-dessous l'attrapait et
+  // répondait le bloc `application` à `show ip sla monitor statistics`
+  // comme à n'importe quoi d'autre — un fallback qui accepte tout.
+  trie.registerGreedy('show ip sla monitor', 'Legacy IP SLAs Monitor (removed)', () =>
+    '% Invalid input detected at \'^\' marker.');
+
+  trie.registerGreedy('show ip sla', 'IP SLAs information', (args) =>
+    args.length === 0 ? renderApplication(engine()) : '% Invalid input detected at \'^\' marker.');
 
   void now;
 }
