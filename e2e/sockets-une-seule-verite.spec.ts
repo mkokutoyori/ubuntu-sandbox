@@ -89,4 +89,27 @@ test.describe('les deux tables de ports disent la même chose', () => {
     const verdict = await lastLines(page, 4);
     expect(verdict).not.toContain('refused');
   });
+
+  test('le listener TNS répond dès l\'amorçage, sans commande Oracle préalable', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+    await openTerminal(page, await addDevice(page, 'linux-server', 400, 300));
+
+    // docs/PRD-Manquements.md §M1. Le port 1521 n'était joignable
+    // qu'APRÈS qu'une commande Oracle ait été tapée ici même : la base
+    // se matérialisait paresseusement, et c'est elle qui attachait
+    // l'écoute. Ce cas ne tape donc AUCUNE commande Oracle avant le
+    // `nc` — c'est toute sa valeur.
+    await typeCmd(page, 'ss -ltn');
+    expect(await lastLines(page, 12)).toContain(':1521');
+
+    await typeCmd(page, 'nc -zv 127.0.0.1 1521');
+    expect(await lastLines(page, 4)).not.toContain('refused');
+
+    // Et `lsnrctl stop` ferme le port pour de bon, des deux côtés.
+    await typeCmd(page, 'lsnrctl stop');
+    await typeCmd(page, 'ss -ltn');
+    expect(await lastLines(page, 12)).not.toContain(':1521');
+  });
 });

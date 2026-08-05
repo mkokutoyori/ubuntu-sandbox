@@ -89,6 +89,10 @@ import { Bind9Service } from './linux/bind9/Bind9Service';
 import { ServiceScriptRunner } from './linux/service/ServiceScriptRunner';
 
 import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
+
+/** Le listener TNS d'Oracle — §P2c de docs/PRD-Sockets-Une-Seule-Verite.md. */
+const TNS_PORT = 1521;
+const TNS_BOOT_BANNER = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
 import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCompat';
@@ -928,13 +932,19 @@ export abstract class LinuxMachine extends EndHost
     // posée hors de la projection. Il déclare donc son serveur — APRÈS
     // l'avoir ouverte — sinon `ss` cacherait un port joignable, l'erreur
     // symétrique de celle que §P0 corrige et tout aussi trompeuse.
-    // Même statut que la dette du port 1521 ci-dessus : le listener TNS est
-    // piloté par `lsnrctl`/systemd et doit continuer à apparaître, faute de
-    // quoi c'est tout le sous-système Oracle qui perd sa cohérence — sans
-    // que ce chantier lui ait donné pour autant une écoute réelle.
+    // Le listener TNS est dans le même cas depuis docs/PRD-Manquements.md
+    // §M1 : son écoute est réelle et ouverte à l'amorçage, hors de la
+    // projection. La dette qui était écrite ici — « sans écoute réelle »
+    // — n'existe plus, et `close` ferme donc vraiment : `systemctl stop
+    // oracle-ohasd` retire le port, comme `lsnrctl stop`. Un `close` qui
+    // ne fermait rien laissait l'unité arrêtée et le port ouvert.
     this.executor.registerServiceSocketServer('oracle-ohasd', {
-      open: () => true,
-      close: () => { /* pas d'écoute réelle à fermer : voir la dette ci-dessus */ },
+      open: () => { this.bindTnsListener(); return true; },
+      close: () => {
+        for (const addr of ['0.0.0.0', '::']) {
+          try { this.getTcpStack().closeListener(TNS_PORT, addr); } catch { /* déjà fermé */ }
+        }
+      },
     });
     this.executor.registerServiceSocketServer('systemd-resolved', {
       open: () => this.resolvedStubBound,
@@ -1874,18 +1884,39 @@ export abstract class LinuxMachine extends EndHost
     // L'entrée 127.0.0.53:53 est posée par bindResolvedStub(), avec un
     // vrai gestionnaire derrière — plus un bind() décoratif.
 
-    if (isServer) {
-      const tnsBanner = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
-      // DETTE CONNUE, et non traitée par docs/PRD-Nginx.md §P0 : rien
-      // n'appelle jamais `TcpStack.listen(1521)`, donc ce port est
-      // décoratif au même titre que celui d'apache2 — `ss` le montre et
-      // aucune connexion n'aboutirait. Il est conservé parce que tout un
-      // sous-système en dépend (la bannière lue ici même, `lsnrctl`, la
-      // détection Oracle de `nmap`), et le nettoyer suppose de donner au
-      // listener TNS une vraie boucle d'acceptation : un chantier à part.
-      // Il est déclaré ici pour que le silence ne le fasse pas oublier.
-      this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr', tnsBanner);
-      this.socketTable.bind('tcp', '::', 1521, 2001, 'tnslsnr', tnsBanner);
+    if (isServer) this.bindTnsListener();
+  }
+
+  /**
+   * Le listener TNS, réellement à l'écoute dès l'amorçage
+   * (docs/PRD-Sockets-Une-Seule-Verite.md §P2c).
+   *
+   * Ces deux ports étaient la dernière entrée décorative : `ss` les
+   * montrait, `lsnrctl status` annonçait le listener démarré, `ps`
+   * affichait un vrai `tnslsnr` — et une connexion venue d'une autre
+   * machine était refusée. Elle ne réussissait qu'APRÈS qu'une commande
+   * Oracle ait été tapée sur la console du serveur, parce que c'est
+   * `getOracleDatabase()` qui matérialisait la base et attachait
+   * `OracleListenerNetworkBinding`. Un client distant dépendait donc de
+   * ce que l'opérateur avait tapé en local : même défaut de
+   * matérialisation paresseuse que les rôles Windows corrigés par
+   * `docs/PRD-Curl.md` §P2.
+   *
+   * L'écoute posée ici est celle que `dbstart`/systemd auraient ouverte
+   * au démarrage — ce que le commentaire de `startListener()` affirmait
+   * déjà. Elle ne parle pas TNS : elle accepte, puis referme, ce que
+   * fait aussi `OracleListenerNetworkBinding` pour une sonde. Quand la
+   * base se matérialise, ce binding reprend le port (il ferme l'écoute
+   * en place avant d'ouvrir la sienne), et `lsnrctl stop` le ferme pour
+   * de bon.
+   */
+  private bindTnsListener(): void {
+    const stack = this.getTcpStack();
+    const identity = { pid: 2001, processName: 'tnslsnr', banner: TNS_BOOT_BANNER };
+    for (const addr of ['0.0.0.0', '::']) {
+      try {
+        stack.listen(TNS_PORT, { onAccept: (socket) => socket.close(), identity }, addr);
+      } catch { /* déjà ouvert */ }
     }
   }
 

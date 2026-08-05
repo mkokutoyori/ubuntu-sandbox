@@ -32,7 +32,12 @@ export interface OracleListenerNetworkBindingConfig {
 const DEFAULT_TNS_BANNER = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
 const TNSLSNR_PROCESS = 'tnslsnr';
 const DEFAULT_LISTENER_PID = 2001;
-const LISTEN_ADDRESSES: readonly string[] = ['0.0.0.0'];
+/**
+ * Les deux familles, comme sshd depuis §P2b : la table des sockets
+ * annonçait `:::1521` sans écoute propre, si bien qu'un client IPv6
+ * voyait un port ouvert que rien ne servait.
+ */
+const LISTEN_ADDRESSES: readonly string[] = ['0.0.0.0', '::'];
 
 export class OracleListenerNetworkBinding {
   private readonly host: HostLike;
@@ -59,13 +64,22 @@ export class OracleListenerNetworkBinding {
     }
     const port = this.listener.port;
     const stack = this.host.getTcpStack();
-    stack.listen(port, {
-      onAccept: (socket) => {
-        this.listener.recordScanAttempt(socket.remoteIp, 'syn-probe');
-        socket.close();
-      },
-    });
-    this.replaceSocketBanner(port);
+    // Reprise du port au démarrage de la base : `LinuxMachine` ouvre déjà
+    // une écoute TNS à l'amorçage (§P2c), celle que `dbstart` aurait
+    // posée. Sans cette fermeture, `listen()` lèverait EADDRINUSE et la
+    // base démarrerait sans jamais enregistrer ses sondes.
+    const advertised = this.listener.isNoBannerMode() ? '' : this.banner;
+    const identity = { pid: this.pid, processName: TNSLSNR_PROCESS, banner: advertised };
+    for (const addr of LISTEN_ADDRESSES) {
+      try { stack.closeListener(port, addr); } catch { /* rien à reprendre */ }
+      stack.listen(port, {
+        onAccept: (socket) => {
+          this.listener.recordScanAttempt(socket.remoteIp, 'syn-probe');
+          socket.close();
+        },
+        identity,
+      }, addr);
+    }
     this.boundPort = port;
     this.attached = true;
   }
@@ -73,30 +87,14 @@ export class OracleListenerNetworkBinding {
   detach(): void {
     if (!this.attached) return;
     const stack = this.host.getTcpStack();
+    // `closeListener()` retire aussi la ligne de `ss` : depuis §P1 c'est
+    // l'écoute qui l'a posée. `lsnrctl stop` ferme donc le port pour de
+    // bon — plus de doublon manuel à défaire à côté, et plus d'entrée
+    // décorative laissée derrière (§P2c).
     for (const addr of LISTEN_ADDRESSES) {
       try { stack.closeListener(this.boundPort!, addr); } catch { /* idempotent */ }
     }
-    this.restoreSocketBanner(this.boundPort!);
     this.boundPort = null;
     this.attached = false;
-  }
-
-  private replaceSocketBanner(port: number): void {
-    const st = this.host.socketTable;
-    if (!st) return;
-    st.unbind('tcp', '0.0.0.0', port);
-    st.unbind('tcp', '::', port);
-    const advertised = this.listener.isNoBannerMode() ? '' : this.banner;
-    st.bind('tcp', '0.0.0.0', port, this.pid, TNSLSNR_PROCESS, advertised);
-    st.bind('tcp', '::', port, this.pid, TNSLSNR_PROCESS, advertised);
-  }
-
-  private restoreSocketBanner(port: number): void {
-    const st = this.host.socketTable;
-    if (!st) return;
-    st.unbind('tcp', '0.0.0.0', port);
-    st.unbind('tcp', '::', port);
-    st.bind('tcp', '0.0.0.0', port, this.pid, TNSLSNR_PROCESS, this.banner);
-    st.bind('tcp', '::', port, this.pid, TNSLSNR_PROCESS, this.banner);
   }
 }

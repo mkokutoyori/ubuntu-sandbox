@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { WindowsServer } from '@/network/devices/WindowsServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 beforeEach(() => {
@@ -56,13 +57,20 @@ function afficheInjoignable(host: Host): number[] {
 }
 
 /**
- * Le décor qui subsiste, écrit plutôt que toléré en silence. Chacun est
- * justifié à son point de liaison ; §P2 les reprendra un par un.
+ * Le décor qui subsiste — et il ne subsiste rien
+ * (docs/PRD-Manquements.md §M2).
+ *
+ * Cette table a compté deux entrées : le 139 de Windows, à qui §P2a a
+ * donné le SMB qu'il annonçait, et le 1521 d'Oracle, dont §M1 a montré
+ * qu'il ne lui manquait pas un serveur TNS mais un appel à l'amorçage.
+ * On la garde VIDE plutôt que de la supprimer, parce que c'est ainsi
+ * qu'elle se défend : une entrée ajoutée ici doit s'écrire, se
+ * justifier, et se relire.
+ *
+ * Une table vide qu'un test consulte est un garde-fou ; une table pleine
+ * d'exceptions est une liste de pardons.
  */
-const DECOR_CONNU: Record<number, string> = {
-  139: 'NetBIOS Session Service — aucune écoute nulle part',
-  1521: 'listener TNS Oracle — un vrai serveur TNS est un chantier à part',
-};
+const DECOR_CONNU: Record<number, string> = {};
 
 describe('§P1 — une écoute réelle se voit dans ss', () => {
   it('un port ouvert directement sur la pile apparaît dans ss, avec son processus', async () => {
@@ -108,6 +116,10 @@ describe('§P0/§P1 — le croisement des deux tables, machine par machine', () 
     ['linux-server', () => new LinuxServer('linux-server', 'SRV') as unknown as Host],
     ['linux-pc', () => new LinuxPC('linux-pc', 'PC') as unknown as Host],
     ['windows-pc', () => new WindowsPC('windows-pc', 'WPC') as unknown as Host],
+    // §M2/B1 : c'est la machine qui ouvre le PLUS d'écoutes — WinRM,
+    // LDAP, Kerberos, réplication AD, DFSR, WSUS, LPD — et elle était
+    // la seule absente du croisement.
+    ['windows-server', () => new WindowsServer('windows-server', 'WSRV') as unknown as Host],
   ];
 
   for (const [nom, fabrique] of machines) {
@@ -134,6 +146,70 @@ describe('§P0/§P1 — le croisement des deux tables, machine par machine', () 
 
     expect(joignableInvisible(srv)).toEqual([]);
     expect(await srv.executeCommand('ss -ltn')).toContain(':80');
+  });
+
+  // §M2/B2 — nginx était le seul service démarré que le croisement
+  // vérifiait. Les autres se sont révélés sains à la mesure ; rien ne
+  // les y retenait.
+  for (const unite of ['dnsmasq', 'vsftpd', 'postfix', 'named']) {
+    it(`${unite} démarré ne crée aucune divergence`, async () => {
+      const srv = new LinuxServer('linux-server', `SRV-${unite}`) as unknown as Host;
+      srv.powerOn();
+      await srv.executeCommand(`systemctl start ${unite}`);
+
+      expect(joignableInvisible(srv)).toEqual([]);
+      for (const port of afficheInjoignable(srv)) {
+        expect(DECOR_CONNU[port], `port ${port} affiché sans écoute`).toBeDefined();
+      }
+    });
+  }
+});
+
+/**
+ * docs/PRD-Sockets-Une-Seule-Verite.md §P3 — le garde-fou.
+ *
+ * Sans lui, §P1 et §P2 se déferont au premier ajout : c'est exactement
+ * ainsi que ce défaut est né et s'est reproduit cinq fois. Ce bloc ne
+ * décrit aucune machine en particulier — il énonce la règle, pour que
+ * la prochaine écoute ajoutée n'ait pas à y penser.
+ */
+describe('§P3 — la règle, pas la liste', () => {
+  it('une écoute ouverte APRÈS le démarrage s\'annonce aussi', async () => {
+    const srv = new LinuxServer('linux-server', 'TARD') as unknown as Host;
+    srv.powerOn();
+
+    srv.getTcpStack().listen(6001, { onAccept: () => undefined });
+
+    expect(joignableInvisible(srv)).toEqual([]);
+    expect(await srv.executeCommand('ss -ltn')).toContain(':6001');
+  });
+
+  it('une écoute sur une adresse précise s\'annonce comme les autres', async () => {
+    const srv = new LinuxServer('linux-server', 'ADDR') as unknown as Host;
+    srv.powerOn();
+
+    srv.getTcpStack().listen(6002, { onAccept: () => undefined }, '127.0.0.1');
+
+    expect(joignableInvisible(srv)).toEqual([]);
+    expect(await srv.executeCommand('ss -ltn')).toContain(':6002');
+  });
+
+  it('ouvrir puis refermer ne laisse aucune trace d\'un côté ni de l\'autre', () => {
+    const srv = new LinuxServer('linux-server', 'CYCLE') as unknown as Host;
+    srv.powerOn();
+    const avant = afficheInjoignable(srv);
+
+    srv.getTcpStack().listen(6003, { onAccept: () => undefined });
+    srv.getTcpStack().closeListener(6003);
+
+    // Ni port fantôme affiché, ni écoute orpheline : le cycle complet
+    // rend la machine à l'état où il l'a trouvée.
+    expect(joignableInvisible(srv)).toEqual([]);
+    expect(afficheInjoignable(srv)).toEqual(avant);
+  });
+
+  it('aucune machine ne garde d\'entrée décorative — la table est vide', () => {
+    expect(Object.keys(DECOR_CONNU)).toEqual([]);
   });
 });
 
