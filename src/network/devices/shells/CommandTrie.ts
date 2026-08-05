@@ -21,7 +21,7 @@ import { descriptionForKeyword } from './CliKeywordDescriptions';
 
 // ─── Parameter Types ────────────────────────────────────────────────
 
-export type ParamType = 'INT' | 'STRING' | 'IP_ADDR' | 'SUBNET_MASK' | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_LIST' | 'WORD';
+export type ParamType = 'INT' | 'STRING' | 'IP_ADDR' | 'SUBNET_MASK' | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_LIST' | 'WORD' | 'ENUM';
 
 export interface ParamSpec {
   name: string;
@@ -33,6 +33,8 @@ export interface ParamSpec {
   range?: readonly [number, number];
   /** Rendu littéral imposé, quand le type ne suffit pas (`LINE`, `hh:mm`). */
   literal?: string;
+  /** Valeurs admises d'un `ENUM`, rendues chacune comme un mot-clé propre. */
+  values?: ReadonlyArray<{ keyword: string; description: string }>;
 }
 
 /**
@@ -569,6 +571,7 @@ export class CommandTrie {
           const hinted = [
             ...(node.hintSuggestions ?? []),
             ...this.autoContinuations(node),
+            ...this.enumValues(node, consumedArgs),
           ];
           for (const h of hinted) {
             if (h.keyword.toLowerCase().startsWith(token) && !seen.has(h.keyword.toLowerCase())) {
@@ -722,6 +725,10 @@ export class CommandTrie {
       if (auto.keyword.startsWith(partialLower)) push(auto.keyword);
     }
 
+    for (const v of this.enumValues(node, paramIdx)) {
+      if (v.keyword.toLowerCase().startsWith(partialLower)) push(v.keyword);
+    }
+
     if (this.dynamicResolver) {
       const context: DynamicCompletionContext = {
         path: completed,
@@ -798,6 +805,19 @@ export class CommandTrie {
     node.params = [...specs];
   }
 
+  private hintDescription(node: CommandNode, keyword: string): string {
+    const key = keyword.toLowerCase();
+    return node.hintSuggestions?.find(h => h.keyword.toLowerCase() === key)?.description ?? '';
+  }
+
+  private enumValues(
+    node: CommandNode,
+    consumedArgs: number,
+  ): ReadonlyArray<{ keyword: string; description: string }> {
+    const param = node.params[consumedArgs];
+    return param?.type === 'ENUM' ? (param.values ?? []) : [];
+  }
+
   private prefixMatch(
     node: CommandNode,
     prefix: string,
@@ -856,14 +876,22 @@ export class CommandTrie {
     if (!argumentsConsumed) {
       for (const [, child] of node.children) {
         if (child._hintOnly && !child._passthrough) continue;
-        results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
+        const described = this.resolveDescription(child);
+        results.push({
+          keyword: child.keyword,
+          description: described || this.hintDescription(node, child.keyword),
+        });
       }
     }
 
     // Un paramètre déjà fourni n'est plus proposé : après
     // `ip address 192.168.10.1`, IOS attend le masque, pas l'adresse.
     for (const param of node.params.slice(consumedArgs)) {
-      results.push({ keyword: renderParamKeyword(param), description: param.description });
+      if (param.type === 'ENUM' && param.values) {
+        for (const v of param.values) results.push({ ...v });
+      } else {
+        results.push({ keyword: renderParamKeyword(param), description: param.description });
+      }
       if (!param.optional) break;
     }
 
@@ -905,6 +933,8 @@ export class CommandTrie {
     if (spec.validator) return spec.validator(value);
 
     switch (spec.type) {
+      case 'ENUM':
+        return (spec.values ?? []).some(v => v.keyword.toLowerCase() === value.toLowerCase());
       case 'INT': return /^\d+$/.test(value);
       case 'STRING': return value.length > 0;
       case 'WORD': return /^[a-zA-Z0-9_-]+$/.test(value);

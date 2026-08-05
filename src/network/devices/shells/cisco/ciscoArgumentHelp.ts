@@ -11,6 +11,12 @@ const WORD = (name: string, description: string): ParamSpec =>
   ({ name, type: 'WORD', description });
 const LINE = (name: string, description: string): ParamSpec =>
   ({ name, type: 'STRING', description });
+const ENUM = (
+  name: string, description: string, values: ReadonlyArray<readonly [string, string]>,
+): ParamSpec => ({
+  name, type: 'ENUM', description,
+  values: values.map(([keyword, d]) => ({ keyword, description: d })),
+});
 
 export interface ArgumentHelpTries {
   config: CommandTrie;
@@ -32,10 +38,17 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configIf.describeArgs('encapsulation dot1q', [
     INT('vlan', [1, 4094], 'IEEE 802.1Q VLAN ID'),
   ]);
-  tries.configIf.describeArgs('speed', [
-    { name: 'speed', type: 'WORD', description: 'Force speed (10|100|1000|auto)',
-      literal: '10' },
-  ]);
+  tries.configIf.describeArgs('speed', [ENUM('speed', 'Force speed', [
+    ['10', 'Force 10 Mbps operation'],
+    ['100', 'Force 100 Mbps operation'],
+    ['1000', 'Force 1000 Mbps operation'],
+    ['auto', 'Enable AUTO speed configuration'],
+  ])]);
+  tries.configIf.describeArgs('duplex', [ENUM('duplex', 'Set duplex mode', [
+    ['auto', 'Enable AUTO duplex configuration'],
+    ['full', 'Force full duplex operation'],
+    ['half', 'Force half-duplex operation'],
+  ])]);
   tries.configIf.describeArgs('bandwidth', [
     INT('kilobits', [1, 10000000], 'Bandwidth in kilobits'),
   ]);
@@ -133,6 +146,14 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   ]);
   tries.config.describeArgs('logging host', [
     IP('address', 'IP address of the syslog server'),
+  ]);
+  tries.config.addCompletionKeywords('logging', [
+    { keyword: 'host', description: 'Set syslog server IP address and parameters' },
+    { keyword: 'buffered', description: 'Set buffered logging parameters' },
+    { keyword: 'console', description: 'Set console logging parameters' },
+    { keyword: 'monitor', description: 'Set terminal line (monitor) logging parameters' },
+    { keyword: 'on', description: 'Enable logging to all supported destinations' },
+    { keyword: 'trap', description: 'Set syslog server logging level' },
   ]);
   tries.config.describeArgs('banner motd', [
     { name: 'delimiter', type: 'STRING', description: 'Message text, delimited by a chosen character' },

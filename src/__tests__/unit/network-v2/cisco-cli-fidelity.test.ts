@@ -98,6 +98,59 @@ describe('? describes the grammar, never the live device', () => {
   });
 });
 
+describe('an enumerated argument renders as its values, not as one literal', () => {
+  it('speed ? offers the four real speeds, each described', async () => {
+    const r = await router('configure terminal', 'interface GigabitEthernet0/1');
+    const listed = entries(r.cliHelp('speed ')).filter(e => e.keyword !== '<cr>');
+    expect(listed.map(e => e.keyword)).toEqual(['10', '100', '1000', 'auto']);
+    expect(listed.every(e => e.description.length > 0)).toBe(true);
+  });
+
+  it('duplex ? offers auto, full and half', async () => {
+    const r = await router('configure terminal', 'interface GigabitEthernet0/1');
+    expect(keywords(r.cliHelp('duplex ')).filter(k => k !== '<cr>'))
+      .toEqual(['auto', 'full', 'half']);
+  });
+
+  it('a partial value narrows the list', async () => {
+    const r = await router('configure terminal', 'interface GigabitEthernet0/1');
+    expect(keywords(r.cliHelp('speed 1'))).toEqual(['10', '100', '1000']);
+  });
+
+  it('Tab completes an enumerated value', async () => {
+    const r = await router('configure terminal', 'interface GigabitEthernet0/1');
+    expect(r.cliTabCandidates('speed 1')).toEqual(['speed 10', 'speed 100', 'speed 1000']);
+  });
+
+  it('and the values still execute', async () => {
+    const r = await router('configure terminal', 'interface GigabitEthernet0/1');
+    expect(await r.executeCommand('speed 100')).toBe('');
+    expect(await r.executeCommand('speed auto')).toBe('');
+    expect(await r.executeCommand('duplex full')).toBe('');
+  });
+});
+
+describe('every keyword offered by ? carries a description', () => {
+  const cases: Array<[string[], string]> = [
+    [['configure terminal'], 'ip nat '],
+    [['configure terminal'], 'ip dhcp '],
+    [['configure terminal'], 'logging '],
+    [['configure terminal', 'interface GigabitEthernet0/1'], 'encapsulation '],
+    [['configure terminal', 'interface GigabitEthernet0/1'], 'speed '],
+    [['configure terminal', 'interface GigabitEthernet0/1'], 'duplex '],
+  ];
+
+  for (const [setup, query] of cases) {
+    it(`${query.trim()} ?`, async () => {
+      const r = await router(...setup);
+      const undescribed = entries(r.cliHelp(query))
+        .filter(e => e.keyword !== '<cr>' && e.description.length === 0)
+        .map(e => e.keyword);
+      expect(undescribed).toEqual([]);
+    });
+  }
+});
+
 describe('an argument declared on the wrong trie is not declared', () => {
   it('network ? under router ospf offers the network number', async () => {
     const r = await router('configure terminal', 'router ospf 1');
