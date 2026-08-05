@@ -55,6 +55,7 @@ import {
   registerIpSlaShowCommands, registerIpSlaClearCommands, registerIpSlaDebugCommands,
 } from './cisco/CiscoIpSlaShowCommands';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
+import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
   buildPolicyConfig, registerPolicyShow,
@@ -139,6 +140,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getKeyChains(): KeyChainRepository { return this.keyChains; }
   private readonly policy = new PolicyRepository();
   private readonly routingCfg = new RoutingConfigRepository();
+  /** Lu par le sérialiseur de configuration (`showRunningConfig`). */
+  getRoutingConfig(): RoutingConfigRepository { return this.routingCfg; }
   private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
   getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null {
     return this.selectedRoutingProto;
@@ -966,10 +969,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
-    trie.register('show startup-config', 'Display saved configuration', () =>
-      getRouter().getStartupConfigSnapshot() ?? '% startup-config is not present');
-    trie.register('show configuration', 'Display saved configuration', () =>
-      getRouter().getStartupConfigSnapshot() ?? '% startup-config is not present');
+    // `show startup-config` lit la NVRAM : son en-tête annonce
+    // l'occupation, pas « Building configuration… » qui appartient à
+    // `show running-config`.
+    const startupConfig = () => {
+      const snapshot = getRouter().getStartupConfigSnapshot();
+      if (snapshot === null) return '% startup-config is not present';
+      return renderStartupConfig(snapshot, this.fs().nvramTotalBytes());
+    };
+    trie.register('show startup-config', 'Display saved configuration', startupConfig);
+    trie.register('show configuration', 'Display saved configuration', startupConfig);
     trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
     // BGP/EIGRP/RIP-extras + show ip protocols come from the
     // RoutingConfigRepository (registerRoutingProtoShow), so they

@@ -278,6 +278,63 @@ Les valeurs par défaut ne sont pas sérialisées ; les états qui ne se
 déduisent pas (`shutdown`, `no ip address`) le sont ; les commandes EXEC
 n'y figurent pas ; chaque secret porte son propre sel.
 
+**Conséquence mesurée sur NAT.** Cet ordre — celui d'IOS — écrit
+`ip nat inside source list <n> …` **avant** `access-list <n>`. Le
+simulateur refusait jusqu'ici une règle NAT dont l'ACL n'existait pas
+encore (`% access-list N not defined.`), si bien qu'une configuration
+correctement ordonnée ne se rejouait plus : la règle NAT était perdue au
+retour de topologie. Les deux comportements sont contradictoires, et
+c'est le refus qui a tort — IOS résout la liste au moment de traduire,
+jamais au moment de configurer, ce qui est précisément l'origine du grand
+classique « NAT configuré, aucune traduction », et ce sans quoi aucun
+routeur ne pourrait relire sa propre startup-config. Le refus est retiré ;
+la règle est acceptée, rendue par la configuration, et ne traduit rien.
+Trouvé au passage et retiré aussi : le refus voisin
+`% MAC ACLs cannot be used for NAT.` était inatteignable — sur un routeur
+Cisco, `AccessList.type` ne vaut que `'standard'` ou `'extended'`, ce
+simulateur n'ayant aucune notion d'ACL MAC de ce côté. Le cas de test qui
+prétendait le couvrir ne créait aucune ACL MAC et ne passait que par le
+refus des ACL inexistantes.
+
+### 2.8 Un seul système de fichiers, une seule vérité
+
+La traîne 🟡 s'est révélée moins vide que prévu : `show inventory`,
+`show line`, `show snmp`, `show ntp associations`, `show ip dhcp pool`,
+`show ip protocols`, `show access-lists` et `show ip ospf interface brief`
+existaient déjà — la mesure a donc porté sur ce qu'ils **répondent**, et
+non sur leur présence.
+
+`show file systems` était le seul faux du lot : il annonçait `-` en
+taille comme en place libre, alors que le même équipement, au même
+instant, répondait des octets à `show flash:` et `dir nvram:`. La place
+libre existe — `CiscoFileSystem` la calcule depuis les fichiers
+réellement stockés — et c'est cette vue-là qui refusait de la lire. Un
+tiret n'est pas une simplification : c'est une troisième vérité sur un
+seul système de fichiers. La commande lit maintenant le système de
+fichiers de l'équipement, marque `flash:` du `*` d'IOS, et voit sa place
+libre baisser quand un `archive config` écrit vraiment.
+
+Deux divergences voisines corrigées dans la même passe, pour la même
+raison :
+
+* **La NVRAM avait deux tailles.** `dir nvram:` annonçait `524288 bytes
+  total` en dur pour tout le monde, quand le profil du châssis dit 256K
+  au routeur, 64K au switch 2960 et 128K au 3560 — et quand
+  `show version`, sur la même machine, annonçait ces derniers. La taille
+  vient désormais du châssis, et `dir nvram:`, `show file systems` et
+  l'en-tête `Using N out of M bytes` de `show startup-config` lisent le
+  même nombre. Les 8 octets d'écart entre `256K` et le `262136` qu'IOS
+  affiche sont la réserve de tête d'IOS : les deux annonces sont vraies,
+  et l'écart est nommé plutôt que subi.
+* **`showFlash()` était un second rendu de `flash:`**, calculé depuis le
+  profil du châssis et donc insensible à toute écriture ou suppression.
+  Il n'avait plus d'appelant depuis que `show flash:` lit le vrai système
+  de fichiers ; il est supprimé, car une seconde réponse possible à la
+  même question est exactement ce que ce lot corrige.
+
+`probe-cli-systemes-de-fichiers.test.ts` (9 cas) est discriminé au
+`git stash` : les 9 échouent authentiquement avant le correctif.
+
 ---
 
 ## 3. Phases

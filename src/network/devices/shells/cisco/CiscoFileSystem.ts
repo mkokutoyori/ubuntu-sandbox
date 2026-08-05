@@ -57,9 +57,22 @@ export const CONFIG_REGISTER_DEFAUT = 0x2102;
 /** Le bit qui fait ignorer `nvram:` au démarrage — d'où `0x2142`. */
 export const BIT_IGNORER_NVRAM = 0x40;
 
+/** `private-config`, la seconde entrée de `nvram:` — 5 octets sur IOS. */
+export const NVRAM_PRIVATE_CONFIG_BYTES = 5;
+
+/**
+ * Les octets qu'IOS réserve en tête de NVRAM.
+ *
+ * `show version` annonce « 256K bytes of non-volatile configuration
+ * memory » là où `dir nvram:` compte 262136 et non 262144 : les deux
+ * sont vrais, et l'écart est cette réserve.
+ */
+const NVRAM_RESERVE_BYTES = 8;
+
 export class CiscoFileSystem {
   private readonly flash = new Map<string, CiscoFile>();
   private readonly totalBytes: number;
+  private readonly nvramBytes: number;
   private configRegister = CONFIG_REGISTER_DEFAUT;
   /** `boot system flash:<image>`, dans l'ordre de déclaration. */
   private readonly bootSystem: string[] = [];
@@ -68,6 +81,7 @@ export class CiscoFileSystem {
     const hw = CISCO_HARDWARE_PROFILES[profile];
     const naissance = new Date(2024, 2, 1);
     this.totalBytes = hw.flashTotalBytes;
+    this.nvramBytes = hw.nvramKB * 1024 - NVRAM_RESERVE_BYTES;
     this.flash.set(hw.flashImage, { name: hw.flashImage, size: hw.flashImageSize, modified: naissance });
     for (const f of hw.extraFlashFiles) {
       this.flash.set(f.name, { name: f.name, size: f.size, modified: naissance });
@@ -101,6 +115,14 @@ export class CiscoFileSystem {
   freeBytes(): number {
     const utilises = [...this.flash.values()].reduce((s, f) => s + f.size, 0);
     return Math.max(0, this.totalBytes - utilises);
+  }
+
+  capacityBytes(): number { return this.totalBytes; }
+
+  nvramTotalBytes(): number { return this.nvramBytes; }
+
+  nvramFreeBytes(startupSize: number): number {
+    return Math.max(0, this.nvramBytes - startupSize - NVRAM_PRIVATE_CONFIG_BYTES);
   }
 
   // ── Registre de configuration & séquence de démarrage ───────────

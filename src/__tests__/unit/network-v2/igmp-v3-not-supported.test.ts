@@ -31,7 +31,7 @@ describe('IGMPv3 not supported — explicit user-facing disclosure (GAP §5.4 fi
     expect(await r.executeCommand('ip igmp version 2')).toBe('');
   });
 
-  it('"show ip igmp interface" emits the v3 limitation footer when at least one interface exists', async () => {
+  it('"show ip igmp interface" ne commente PAS la limitation v3', async () => {
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
@@ -41,6 +41,9 @@ describe('IGMPv3 not supported — explicit user-facing disclosure (GAP §5.4 fi
     await r.executeCommand('ip igmp version 2');
     await r.executeCommand('end');
     const out = await r.executeCommand('show ip igmp interface');
-    expect(out).toMatch(/IGMPv3 \(RFC 3376 source filtering\) is not supported/);
+    // Un équipement ne s'explique jamais dans une sortie `show` ; le
+    // refus de `ip igmp version 3` porte cette information.
+    expect(out).not.toMatch(/not supported in this simulator/);
+    expect(out).toMatch(/GigabitEthernet0\/0/);
   });
 });

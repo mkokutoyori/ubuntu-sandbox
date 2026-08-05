@@ -190,17 +190,6 @@ export function showMemoryStatistics(profile: CiscoChassisProfile = 'switch-c356
   ].join('\n');
 }
 
-export function showFlash(profile: CiscoChassisProfile = 'switch-c3560'): string {
-  const hw = CISCO_HARDWARE_PROFILES[profile];
-  const lines = ['Directory of flash:/', ''];
-  lines.push(`    1  -rwx     ${String(hw.flashImageSize).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${hw.flashImage}`);
-  for (const f of hw.extraFlashFiles) {
-    lines.push(`    ${f.index}  -rwx     ${String(f.size).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${f.name}`);
-  }
-  lines.push('', `${hw.flashTotalBytes} bytes total (${hw.flashFreeBytes} bytes free)`);
-  return lines.join('\n');
-}
-
 /** `show privilege` — current EXEC level. */
 export function showPrivilege(level: number): string {
   return `Current privilege level is ${level}`;
@@ -709,13 +698,25 @@ export function showRedundancy(): string {
   ].join('\n');
 }
 
-export function showFileSystems(): string {
+export interface FileSystemUsage {
+  capacityBytes(): number;
+  freeBytes(): number;
+  nvramTotalBytes(): number;
+  nvramFreeBytes(startupSize: number): number;
+}
+
+export function showFileSystems(fs: FileSystemUsage, startupConfigSize: number): string {
+  const row = (mark: string, size: string, free: string, type: string, prefix: string) =>
+    `${mark}${size.padStart(12)}${free.padStart(12)}  ${type.padStart(8)}     rw   ${prefix}`;
   return [
     'File Systems:',
     '',
-    '       Size(b)     Free(b)      Type  Flags  Prefixes',
-    '            -           -     flash     rw   flash:',
-    '            -           -     nvram     rw   nvram:',
+    '      Size(b)     Free(b)      Type  Flags  Prefixes',
+    row('*', String(fs.capacityBytes()), String(fs.freeBytes()), 'flash', 'flash:'),
+    row(' ', String(fs.nvramTotalBytes()),
+      String(fs.nvramFreeBytes(startupConfigSize)), 'nvram', 'nvram:'),
+    row(' ', '-', '-', 'opaque', 'system:'),
+    row(' ', '-', '-', 'network', 'tftp:'),
   ].join('\n');
 }
 
