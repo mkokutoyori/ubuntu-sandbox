@@ -313,7 +313,7 @@ Chaque commande est un `LinuxCommand` dans son propre fichier
   autre poste fait des requêtes montre les lignes arriver — le TP
   d'observation le plus classique.
 
-### P5 — HTTPS — **bloqué par une question ouverte**
+### P5 — HTTPS — **livré** (la question ouverte ci-dessous est levée)
 
 `listen 443 ssl;` + `ssl_certificate` / `ssl_certificate_key` lus depuis
 le VFS et servis par `HttpsServerSession`.
@@ -437,12 +437,13 @@ document ouvre :
 - **P3 ensuite** : c'est là que le chantier devient un TP de
   diagnostic plutôt qu'une démonstration.
 - **P4** est petit et à forte valeur d'observation.
-- **P5 est bloqué** par une dépendance nommée (`openssl`), pas par sa
-  difficulté propre.
+- **P5 était bloqué** par une dépendance nommée (`openssl`), pas par sa
+  difficulté propre — et c'est bien la dépendance qui l'a débloqué, dans
+  l'ordre que ce PRD avait choisi.
 - **P6** est un chantier à part entière.
 
 
-## 8. Ce qui a été livré (P0 → P4)
+## 8. Ce qui a été livré (P0 → P5)
 
 ### 8.1 Le décor supprimé, et jusqu'où
 
