@@ -335,6 +335,54 @@ raison :
 `probe-cli-systemes-de-fichiers.test.ts` (9 cas) est discriminé au
 `git stash` : les 9 échouent authentiquement avant le correctif.
 
+### 2.9 L'aide n'invente pas de commandes (couche B, suite)
+
+La couche B s'étend aux commandes qu'une salle de TP tape le plus
+(`ip helper-address`, `ip ospf cost|priority|hello-interval|dead-interval`,
+`standby`, `vrrp`, `description`, `ip domain-name`, `ip name-server`,
+`logging host`, `banner motd`, `exec-timeout`, `password`). Écrire les
+déclarations ne suffisait pas : **il fallait regarder ce que l'aide rend**,
+et deux défauts ne se voyaient que là.
+
+* **Un nœud purement indicatif était proposé comme commande.**
+  `describeArgs` crée les nœuds intermédiaires manquants pour y accrocher
+  les arguments d'un parent greedy ; `prefixMatch` les ignorait déjà,
+  mais le rendu de l'aide, lui, parcourait `node.children` sans les
+  filtrer. Déclarer `switchport access vlan` sur un routeur y faisait donc
+  apparaître un `switchport` — une commande que l'équipement n'a pas, et
+  sans description puisque le nœud n'en porte aucune. Les nœuds
+  `_hintOnly` sont désormais exclus du rendu de l'aide comme ils l'étaient
+  déjà de l'exécution. Les déclarations propres au switch ont par ailleurs
+  été retirées du jeu du routeur, où elles n'ont rien à faire : le shell
+  du switch est distinct et ne reçoit pas encore la couche B — c'est un
+  reste connu, dit plutôt que sous-entendu.
+
+* **Des mots-clés sans description étaient proposés.** `autoContinuations`
+  extrait des mots-clés du CORPS du gestionnaire greedy ; ceux qu'il ne
+  sait pas décrire ressortaient nus. `password ?` en mode `line` en
+  listait dix (`authentication`, `banner`, `exec`, `level`, `logging`,
+  `login`, `privilege`, `size`, `synchronous`, `password`), aucun n'étant
+  un argument de `password`. IOS n'affiche jamais un mot-clé sans texte
+  d'aide, et celui qu'on ne sait pas décrire est justement celui dont on
+  est le moins sûr qu'il existe : le rendu de l'aide les écarte. La
+  complétion par tabulation, elle, continue de les accepter — un mot-clé
+  qu'on ne sait pas décrire reste complétable.
+
+  Le premier jet de ce filtre était trop large et a été corrigé plutôt que
+  gardé : il retirait aussi `permit`/`deny` derrière `access-list 10 ?`,
+  qui sont réels. La réponse n'est pas de les laisser nus mais de les
+  NOMMER — `CliKeywordDescriptions` les décrit désormais, et ils
+  survivent au filtre par là où ils devaient survivre.
+
+Enfin, `description` et `password` annonçaient `WORD` là où IOS annonce
+`LINE` : `ParamType` n'a pas de `'LINE'`, le type qui rend `LINE` est
+`'STRING'`, et la faute de frappe retombait sur le `default` du rendu.
+
+Sur les trois cas ajoutés à `probe-cli-aide-contextuelle.test.ts`, un seul
+échoue avant le correctif — les deux autres gardent des régressions
+introduites et corrigées à l'intérieur de ce même lot, ce qui est dit
+plutôt que présenté comme une discrimination.
+
 ---
 
 ## 3. Phases

@@ -107,6 +107,53 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     IP('network', 'Network number'),
   ]);
 
+  tries.configIf.describeArgs('ip helper-address', [
+    IP('address', 'IP destination address'),
+  ]);
+  tries.configIf.describeArgs('ip ospf cost', [
+    INT('cost', [1, 65535], 'Cost'),
+  ]);
+  tries.configIf.describeArgs('ip ospf priority', [
+    INT('priority', [0, 255], 'Priority'),
+  ]);
+  tries.configIf.describeArgs('ip ospf hello-interval', [
+    INT('seconds', [1, 65535], 'Seconds'),
+  ]);
+  tries.configIf.describeArgs('ip ospf dead-interval', [
+    INT('seconds', [1, 65535], 'Seconds'),
+  ]);
+  tries.configIf.describeArgs('standby', [
+    INT('group', [0, 255], 'Group number'),
+  ]);
+  tries.configIf.describeArgs('vrrp', [
+    INT('group', [1, 255], 'Group number'),
+  ]);
+  tries.configIf.describeArgs('description', [
+    { name: 'text', type: 'STRING', description: 'Up to 240 characters describing this interface' },
+  ]);
+
+  tries.config.describeArgs('ip domain-name', [
+    { name: 'name', type: 'WORD', description: 'Default domain name', literal: 'WORD' },
+  ]);
+  tries.config.describeArgs('ip name-server', [
+    IP('address', 'Domain server IP address'),
+  ]);
+  tries.config.describeArgs('logging host', [
+    IP('address', 'IP address of the syslog server'),
+  ]);
+  tries.config.describeArgs('banner motd', [
+    { name: 'delimiter', type: 'STRING', description: 'Message text, delimited by a chosen character' },
+  ]);
+
+  tries.configLine.describeArgs('exec-timeout', [
+    INT('minutes', [0, 35791], 'Timeout in minutes'),
+    { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
+      range: [0, 2147483] },
+  ]);
+  tries.configLine.describeArgs('password', [
+    { name: 'password', type: 'STRING', description: 'The UNENCRYPTED (cleartext) line password' },
+  ]);
+
   tries.privileged.describeArgs('reload', [
     { name: 'when', type: 'STRING', description: 'Reload reason', optional: true,
       literal: 'LINE' },
