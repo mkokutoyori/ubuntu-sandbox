@@ -151,7 +151,7 @@ export function registerHuaweiIgmpDisplayCommands(trie: CommandTrie, getRouter: 
       lines.push(`    Total ${a.groupsFor(iface).length} IGMP Group reported`);
     }
     lines.push('');
-    lines.push('Note: IGMPv3 (RFC 3376 source filtering) is not supported in this simulator.');
+
     return lines.join('\n');
   });
 }

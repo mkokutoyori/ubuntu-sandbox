@@ -237,7 +237,7 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     if (anyDense) {
       lines.push('');
       lines.push('Note: dense mode is displayed as configured but behaves as sparse mode');
-      lines.push('      in this simulator (explicit join only — no flood-and-prune).');
+
     }
     return lines.join('\n');
   });

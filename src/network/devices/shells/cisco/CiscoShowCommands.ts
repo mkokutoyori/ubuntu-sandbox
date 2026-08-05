@@ -84,10 +84,102 @@ function formatUptime(ms: number): string {
   return parts.join(', ');
 }
 
+/** La légende d'IOS 15.x, en six lignes. Elle en faisait deux. */
+const ROUTE_LEGEND = [
+  'Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP',
+  '       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area',
+  '       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2',
+  '       E1 - OSPF external type 1, E2 - OSPF external type 2',
+  '       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2',
+  '       ia - IS-IS inter area, * - candidate default, U - per-user static route',
+  '       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP',
+  '       a - application route',
+  '       + - replicated route, % - next hop override, p - overrides from PfR',
+];
+
+interface RenderedRoute {
+  code: string;
+  networkInt: number;
+  prefixLength: number;
+  text: string;
+}
+
+function routeCode(type: string): string {
+  switch (type) {
+    case 'connected': return 'C';
+    case 'local': return 'L';
+    case 'rip': return 'R';
+    case 'ospf': return 'O';
+    case 'eigrp': return 'D';
+    case 'bgp': return 'B';
+    case 'default': return 'S*';
+    default: return 'S';
+  }
+}
+
+/** Le réseau classful auquel une route appartient — c'est par lui qu'IOS groupe. */
+function classfulParent(networkInt: number): { base: number; prefix: number } {
+  const firstOctet = (networkInt >>> 24) & 0xff;
+  // `>>> 0` : un ET binaire rend un entier SIGNÉ en JavaScript, donc
+  // 192.168.x.x devenait négatif et se triait avant 1.0.0.0.
+  if (firstOctet < 128) return { base: (networkInt & 0xff000000) >>> 0, prefix: 8 };
+  if (firstOctet < 192) return { base: (networkInt & 0xffff0000) >>> 0, prefix: 16 };
+  return { base: (networkInt & 0xffffff00) >>> 0, prefix: 24 };
+}
+
+function intToDotted(value: number): string {
+  return [24, 16, 8, 0].map((shift) => (value >>> shift) & 0xff).join('.');
+}
+
+function dottedToInt(text: string): number {
+  return text.split('.').reduce((total, octet) => (total << 8) + Number(octet), 0) >>> 0;
+}
+
+function maskTextToCidr(text: string): number {
+  if (/^\d+$/.test(text)) return Number(text);
+  return dottedToInt(text).toString(2).split('1').length - 1;
+}
+
+/**
+ * `show ip route`.
+ *
+ * Trois faits d'IOS 15.x manquaient, et le premier n'est pas cosmétique :
+ * une route CONNECTÉE ne passait pas par `Router.isRouteUsable()` — le
+ * prédicat que le plan de données et les vues des deux constructeurs
+ * consultent déjà — si bien qu'une interface down laissait sa route
+ * affichée, en contradiction frontale avec `show ip interface brief`.
+ * Manquaient aussi les routes LOCALES `L …/32`, générées depuis
+ * 15.0(1)M pour chaque adresse d'interface, et le regroupement par
+ * réseau classful avec son en-tête `is variably subnetted`. Le tri se
+ * fait par préfixe, pas par ordre de configuration.
+ */
 export function showIpRoute(router: Router): string {
-  const table = router.getRoutingTable();
-  const lines = ['Codes: C - connected, S - static, R - RIP, O - OSPF, ' +
-    'D - EIGRP, B - BGP, * - candidate default', ''];
+  return renderIpRouteTable(router, router.getRoutingTable().filter((r) => router.isRouteUsable(r)));
+}
+
+/**
+ * Le rendu partagé.
+ *
+ * Deux fonctions produisaient `show ip route` — celle-ci et
+ * `showIpRouteAll` dans `CiscoOspfCommands.ts`, seule branchée sur la
+ * commande. Deux rendus de la même table finissent par se contredire ;
+ * c'est le défaut « trois commandes, trois vérités » à l'échelle du
+ * routage. Il n'en reste qu'un.
+ */
+export function renderIpRouteTable(
+  router: Router,
+  table: ReadonlyArray<{
+    network: { toString(): string; toUint32?: () => number };
+    mask: { toCIDR?: () => number; toString(): string };
+    type: string;
+    nextHop?: unknown;
+    iface?: string;
+    ad?: number;
+    metric?: number;
+  }>,
+  codeOverride?: (route: unknown) => string | null,
+): string {
+  const lines = [...ROUTE_LEGEND, ''];
   const def = table.find(r => r.type === 'default'
     || (r.network.toString() === '0.0.0.0' && r.mask.toCIDR() === 0));
   if (def && def.nextHop) {
@@ -95,29 +187,71 @@ export function showIpRoute(router: Router): string {
   } else {
     lines.push('Gateway of last resort is not set', '');
   }
-  const sorted = [...table].sort((a, b) => {
-    const order: Record<string, number> = {
-      connected: 0, ospf: 1, eigrp: 2, bgp: 3, rip: 4, static: 5, default: 6,
-    };
-    return (order[a.type] ?? 7) - (order[b.type] ?? 7);
-  });
-  for (const r of sorted) {
-    let code: string;
-    switch (r.type) {
-      case 'connected': code = 'C'; break;
-      case 'rip': code = 'R'; break;
-      case 'ospf': code = 'O'; break;
-      case 'eigrp': code = 'D'; break;
-      case 'bgp': code = 'B'; break;
-      case 'default': code = 'S*'; break;
-      default: code = 'S'; break;
+
+  const rendered: RenderedRoute[] = [];
+  const defaults: string[] = [];
+
+  for (const r of table) {
+    const prefixLength = r.mask.toCIDR
+      ? r.mask.toCIDR()
+      : maskTextToCidr(r.mask.toString());
+    if (r.type === 'default' || (r.network.toString() === '0.0.0.0' && prefixLength === 0)) {
+      defaults.push(`S*    0.0.0.0/0 [${r.ad ?? 1}/${r.metric ?? 0}] via ${r.nextHop}`);
+      continue;
     }
     const via = r.nextHop ? `via ${r.nextHop}` : 'is directly connected';
-    const metricStr = (r.type === 'rip' || r.type === 'ospf'
-      || r.type === 'eigrp' || r.type === 'bgp') ? ` [${r.ad}/${r.metric}]` : '';
-    lines.push(`${code}    ${r.network}/${r.mask.toCIDR()}${metricStr} ${via}, ${r.iface}`);
+    const metricStr = r.type === 'connected' || r.type === 'local'
+      ? '' : ` [${r.ad ?? 1}/${r.metric ?? 0}]`;
+    const suffix = r.type === 'static' ? '' : `, ${r.iface}`;
+    rendered.push({
+      code: codeOverride?.(r) ?? routeCode(r.type),
+      networkInt: r.network.toUint32 ? r.network.toUint32() : dottedToInt(r.network.toString()),
+      prefixLength,
+      text: `${r.network}/${prefixLength}${metricStr} ${via}${suffix}`,
+    });
   }
-  return lines.length > 2 ? lines.join('\n') : 'No routes configured.';
+
+  // Les routes locales /32 : une par adresse d'interface utilisable.
+  for (const [name, port] of router._getPortsInternal()) {
+    const ip = port.getIPAddress();
+    if (!ip || !router.isRouteInterfaceUsable(name)) continue;
+    // Une interface en /32 (une loopback, typiquement) a déjà sa route
+    // connectée à la même adresse : IOS n'en affiche pas deux.
+    const already = rendered.some((entry) =>
+      entry.networkInt === ip.toUint32() && entry.prefixLength === 32);
+    if (already) continue;
+    rendered.push({
+      code: 'L',
+      networkInt: ip.toUint32(),
+      prefixLength: 32,
+      text: `${ip}/32 is directly connected, ${name}`,
+    });
+  }
+
+  rendered.sort((a, b) => a.networkInt - b.networkInt || a.prefixLength - b.prefixLength);
+
+  const groups = new Map<string, RenderedRoute[]>();
+  for (const entry of rendered) {
+    const parent = classfulParent(entry.networkInt);
+    const key = `${parent.base}/${parent.prefix}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(entry);
+    groups.set(key, bucket);
+  }
+
+  for (const [key, bucket] of [...groups.entries()]
+    .sort((a, b) => Number(a[0].split('/')[0]) - Number(b[0].split('/')[0]))) {
+    const [baseText, parentPrefix] = key.split('/');
+    const base = intToDotted(Number(baseText));
+    const masks = new Set(bucket.map((entry) => entry.prefixLength));
+    lines.push(masks.size > 1
+      ? `      ${base}/${parentPrefix} is variably subnetted, ${bucket.length} subnets, ${masks.size} masks`
+      : `      ${base}/${parentPrefix} is subnetted, ${bucket.length} subnets`);
+    for (const entry of bucket) lines.push(`${entry.code.padEnd(2)}       ${entry.text}`);
+  }
+  for (const line of defaults) lines.push(line);
+
+  return lines.join('\n');
 }
 
 export function showIpIntBrief(router: Router): string {
@@ -143,7 +277,10 @@ export function showIpIntBrief(router: Router): string {
       status = 'down';
       proto = 'down';
     }
-    lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES manual ${status.padEnd(22)}${proto}`);
+    // IOS écrit `unset` tant qu'aucune adresse n'a été posée ; `manual`
+    // veut dire « configurée à la main », pas « il y a une interface ».
+    const method = port.getIPAddress() ? 'manual' : 'unset ';
+    lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES ${method} ${status.padEnd(22)}${proto}`);
   }
   return lines.join('\n');
 }

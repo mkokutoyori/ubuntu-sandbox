@@ -369,13 +369,6 @@ export class LoggingConfig {
         this.append('warnings', 'tcp',
           `Segment dropped (${p.reason}) from ${p.sourceIp}:${p.sourcePort} to ${p.destinationIp}:${p.destinationPort}`);
       }),
-      bus.subscribeWhere('tcp.listener.changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('notifications', 'sys',
-          p.added
-            ? `TCP listener bound to ${p.localIp}:${p.localPort}`
-            : `TCP listener closed on ${p.localIp}:${p.localPort}`);
-      }),
       bus.subscribeWhere('port.link.up', isOurs, (e) => {
         const p = e.payload;
         this.append('errors', 'link',
@@ -525,28 +518,13 @@ export class LoggingConfig {
         this.append('warnings', 'dai',
           `DAI: ${p.ingressPort ?? '?'}: Invalid ARP ${p.reason ?? ''} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
       }),
-      bus.subscribeWhere('port.config.ip-changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('informational', 'ifmgr',
-          p.ip
-            ? `Interface ${p.portName}, IPv4 address ${p.ip}/${p.mask} assigned`
-            : `Interface ${p.portName}, IPv4 address removed`);
-      }),
-      bus.subscribeWhere('port.config.mtu-changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName}, MTU changed to ${p.mtu}`);
-      }),
-      bus.subscribeWhere('port.config.speed-changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName}, speed changed to ${p.speed} Mbps`);
-      }),
-      bus.subscribeWhere('port.config.duplex-changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName}, duplex changed to ${p.duplex}`);
-      }),
+      // Aucun abonnement ici sur `port.config.ip-changed`,
+      // `mtu/speed/duplex-changed` ni `tcp.listener.changed` : IOS
+      // n'émet AUCUN message sur ces événements. Les
+      // `%IFMGR-6-INFORMATIONAL: … IPv4 address 10.0.0.1/255.255.255.0
+      // assigned` et `%SYS-5-NOTIFICATIONS: TCP listener bound` qui s'y
+      // trouvaient étaient inventés — et le premier mélangeait en plus
+      // la notation CIDR et le masque pointé.
       bus.subscribeWhere('rip.route.added', isOurs, (e) => {
         const p = e.payload as unknown as { network?: string; mask?: string; nextHop?: string; metric?: number };
         this.append('informational', 'rip',
@@ -862,16 +840,6 @@ export class LoggingConfig {
         const p = e.payload as unknown as { tunnelId?: string; added?: boolean; sourceIp?: string; destinationIp?: string };
         this.append('notifications', 'gre',
           `Tunnel ${p.tunnelId ?? '?'} ${p.added ? 'up' : 'down'} (${p.sourceIp ?? '?'} -> ${p.destinationIp ?? '?'})`);
-      }),
-      bus.subscribeWhere('port.config.ipv6-added', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; address?: string };
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName ?? '?'}, IPv6 address ${p.address ?? '?'} assigned`);
-      }),
-      bus.subscribeWhere('port.config.ipv6-removed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; address?: string };
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName ?? '?'}, IPv6 address ${p.address ?? '?'} removed`);
       }),
       bus.subscribeWhere('port.security.errdisable.cleared', isOurs, (e) => {
         const p = e.payload as unknown as { portName?: string };

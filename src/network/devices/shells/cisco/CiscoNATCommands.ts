@@ -799,7 +799,7 @@ export function showNATStatistics(router: Router): string {
         ` -- Inside Source [acl ${r.aclId}] ${r.type === 'overload' ? 'overload' : `pool ${r.poolName}`}`
       )),
     ...poolUsage,
-    `Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)`,
+    `Application Layer Gateways: none`,
   ].join('\n');
 }
 
