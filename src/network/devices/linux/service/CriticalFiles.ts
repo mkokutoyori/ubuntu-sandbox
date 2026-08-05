@@ -152,6 +152,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   date: '/bin/date', uname: '/bin/uname', hostname: '/bin/hostname',
   ps: '/bin/ps', kill: '/bin/kill', tee: '/usr/bin/tee', find: '/usr/bin/find',
   xargs: '/usr/bin/xargs', tar: '/bin/tar', gzip: '/bin/gzip', curl: '/usr/bin/curl',
+  openssl: '/usr/bin/openssl',
   wget: '/usr/bin/wget', ping: '/bin/ping', ssh: '/usr/bin/ssh', scp: '/usr/bin/scp',
   sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
   netstat: '/bin/netstat', ss: '/usr/sbin/ss', iptables: '/usr/sbin/iptables',

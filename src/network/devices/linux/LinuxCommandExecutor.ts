@@ -215,6 +215,8 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'tar', 'gzip', 'gunzip', 'zcat', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
   'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
   'mail', 'mailx', 'sendmail',
+  // Cryptographie
+  'openssl',
 ];
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
