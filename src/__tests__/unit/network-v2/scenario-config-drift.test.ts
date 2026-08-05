@@ -40,8 +40,21 @@ function svcMgr(server: LinuxServer): {
   } } }).executor.serviceMgr;
 }
 
+/**
+ * La section `events` n'est pas décorative : un vrai nginx refuse de
+ * démarrer sans elle (`nginx: [emerg] no "events" section in
+ * configuration`). Ce scénario l'omettait, et passait quand même —
+ * parce que le démon ne lisait pas encore la configuration qu'il
+ * prétendait appliquer. Depuis `PRD-Nginx` §P3, `nginx -t` et
+ * `systemctl start` rendent le même verdict sur le même fichier, et ce
+ * fichier-là est refusé des deux côtés. On écrit donc une configuration
+ * que la vraie machine accepterait : la dérive à observer ici est celle
+ * du PORT, pas d'une syntaxe invalide.
+ */
 function writeConfig(server: LinuxServer, port: number): Promise<string> {
-  return server.executeCommand(`sh -c 'mkdir -p /etc/nginx && printf "http {\\n  server { listen ${port}; }\\n}\\n" > /etc/nginx/nginx.conf'`);
+  return server.executeCommand(
+    `sh -c 'mkdir -p /etc/nginx && printf "events {\\n  worker_connections 768;\\n}\\nhttp {\\n  server { listen ${port}; }\\n}\\n" > /etc/nginx/nginx.conf'`,
+  );
 }
 
 async function declaredPortFromConfig(server: LinuxServer): Promise<number | null> {
