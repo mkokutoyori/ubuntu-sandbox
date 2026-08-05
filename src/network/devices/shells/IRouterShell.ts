@@ -21,7 +21,7 @@ export interface IRouterShell {
    * VRP's user-view prompt does not change with the account's level, so a
    * Huawei shell leaves this undefined.
    */
-  beginExecSession?(level: number): void;
+  beginExecSession?(level: number, user?: string): void;
   /** Get context-sensitive help for the given input (? behavior) */
   getHelp(inputBeforeQuestion: string, router?: Router): string;
   /** Get tab completion for the given partial input */

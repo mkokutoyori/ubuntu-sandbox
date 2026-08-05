@@ -423,6 +423,40 @@ sur celui du tour courant, comme IOS.
 5 échouent avant le correctif ; le sixième — la destination inconnue —
 passait déjà et garde ce comportement.
 
+### 2.11 `%SYS-5-CONFIG_I` — quitter le mode configuration se journalise
+
+Le message qu'un opérateur voit le plus souvent de sa vie n'existait
+nulle part : aucune occurrence de `CONFIG_I` dans tout le simulateur.
+Il est écrit à la SORTIE du mode configuration, et à cette sortie
+seulement — passer d'un sous-mode à un autre n'en produit pas, et un
+`end` depuis trois niveaux de profondeur en produit UN, pas trois.
+
+Deux choses trouvées en l'implémentant, et corrigées :
+
+* **`CiscoIOSShell` redéfinissait `cmdExit`** en recopiant le corps de
+  la classe de base ; le `end` passait par la base et l'`exit` par la
+  copie, si bien que le premier journalisait et le second non. La copie
+  délègue désormais l'annonce au même point que la base.
+* **Une session vty écrivait dans SON propre journal.** `createVtyShell`
+  fabrique un shell neuf, avec sa propre `LoggingConfig` : une
+  configuration faite en SSH n'apparaissait donc pas dans le journal de
+  l'équipement — c'est-à-dire précisément là où ce message existe pour
+  être vu. L'annonce est écrite dans le journal de l'ÉQUIPEMENT
+  (`Router.getLoggingConfig()`), qui est le seul endroit où la question
+  « qui a configuré cette machine » a une réponse.
+
+L'attribution porte le nom de l'utilisateur de la session
+(`Configured from console by admin`) ; `beginExecSession` le transporte
+désormais, ce qu'il ne faisait pas. Le suffixe ` on vty0 (10.0.0.5)`
+d'IOS est **délibérément omis plutôt qu'inventé** : le numéro de ligne
+n'est pas transmis au shell — il vit dans `SshSessionRegistry`, de
+l'autre côté du contrat de session SSH/telnet, que l'effort d'unification
+SSH possède. Une ligne inventée serait fausse à chaque session au-delà
+de la première.
+
+`probe-cli-config-i-syslog.test.ts` (7 cas) couvre les deux verbes, les
+deux plateformes, l'absence en sous-mode et l'attribution vty.
+
 ---
 
 ## 3. Phases

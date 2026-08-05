@@ -1165,7 +1165,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     dispose(): void;
   } {
     const shell = this.createShell();
-    shell.beginExecSession?.(this.resolveVtyExecLevel(user));
+    shell.beginExecSession?.(this.resolveVtyExecLevel(user), user);
     // A vendor CLI's exit word unwinds one mode at a time and, at the
     // top level, logs the VTY line out. The shell owns that state, so
     // the logout is detected here — an exit verb that leaves the prompt
