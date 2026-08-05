@@ -10,6 +10,7 @@
  */
 
 import type { Router } from '../../Router';
+import { renderIpRouteTable } from './CiscoShowCommands';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
@@ -2250,37 +2251,12 @@ function showIpRouteAll(router: Router): string {
   const rt = bestRoutesPerPrefix(
     ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)),
   );
-  const lines: string[] = ['Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area',
-    '       O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP',
-    ''];
-  const def = rt.find((r: any) => r.type === 'default'
-    || (r.network.toString() === '0.0.0.0' && maskToCIDR(r.mask.toString()) === 0));
-  if (def && def.nextHop) {
-    lines.push(`Gateway of last resort is ${def.nextHop} to network 0.0.0.0`, '');
-  } else {
-    lines.push('Gateway of last resort is not set', '');
-  }
-  for (const r of rt) {
-    const netStr = r.network.toString();
-    const cidr = maskToCIDR(r.mask.toString());
-    const nh = r.nextHop ? `via ${r.nextHop}` : 'directly connected';
-    if (r.type === 'connected') {
-      lines.push(`C    ${netStr}/${cidr} is directly connected, ${r.iface}`);
-    } else if (r.type === 'static' || r.type === 'default') {
-      const code = netStr === '0.0.0.0' && cidr === 0 ? 'S*' : 'S';
-      lines.push(`${code}    ${netStr}/${cidr} [${r.ad ?? 1}/${r.metric ?? 0}] ${nh}`);
-    } else if (r.type === 'rip') {
-      lines.push(`R    ${netStr}/${cidr} [${r.ad ?? 120}/${r.metric ?? 1}] ${nh}, ${r.iface}`);
-    } else if (r.type === 'eigrp') {
-      lines.push(`D    ${netStr}/${cidr} [${r.ad ?? 90}/${r.metric ?? 0}] ${nh}, ${r.iface}`);
-    } else if (r.type === 'bgp') {
-      lines.push(`B    ${netStr}/${cidr} [${r.ad ?? 20}/${r.metric ?? 0}] ${nh}, ${r.iface}`);
-    } else if (r.type === 'ospf') {
-      const code = getOSPFRouteCode(router, netStr, cidr, r);
-      lines.push(`${code} ${netStr}/${cidr} [110/${r.metric}] ${nh}, ${r.iface}`);
-    }
-  }
-  return lines.join('\n');
+  // Un seul rendu pour toute la table : voir `renderIpRouteTable`.
+  return renderIpRouteTable(router, rt as any, (route) => {
+    const r = route as any;
+    if (r.type !== 'ospf') return null;
+    return getOSPFRouteCode(router, r.network.toString(), maskToCIDR(r.mask.toString()), r);
+  });
 }
 
 function showIpRouteOspf(router: Router): string {

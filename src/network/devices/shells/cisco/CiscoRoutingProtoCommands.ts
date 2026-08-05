@@ -506,7 +506,7 @@ export function registerRoutingProtoShow(
     }
     return rows.join('\n');
   });
-  trie.registerGreedy('show ip bgp neighbors', 'Display BGP neighbours', () => {
+  trie.registerGreedy('show ip bgp neighbors', 'Display BGP neighbors', () => {
     const e = bgpE();
     if (!e.isEnabled()) return '% BGP not active';
     live();
@@ -575,7 +575,7 @@ export function registerRoutingProtoShow(
   });
 
   trie.registerGreedy('show eigrp address-family ipv4 neighbors',
-    'Display EIGRP neighbours (named mode)', () => {
+    'Display EIGRP neighbors (named mode)', () => {
       const e = eigrpE();
       if (!e.isEnabled()) return '';
       live();
@@ -635,14 +635,16 @@ export function registerRoutingProtoShow(
     return out.join('\n');
   });
 
-  trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbours', () => {
+  trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbors', () => {
     const e = eigrpE();
     if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
     live();
     const ns = e.getNeighbors();
     const head = `EIGRP-IPv4 Neighbors for AS(${e.getConfig().asn})\n` +
       'H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq';
-    if (!ns.length) return `${head}\n(no neighbours — no real EIGRP peer cabled)`;
+    // Un équipement ne commente pas ses sorties : IOS rend l'en-tête
+    // et rien d'autre quand il n'a aucun voisin.
+    if (!ns.length) return head;
     return [head, ...ns.map((n, i) =>
       `${i}   ${n.address.padEnd(16)}${n.iface.padEnd(12)}` +
       `13   ${n.uptimeSec}s     1      200  0  ${i + 1}`)].join('\n');

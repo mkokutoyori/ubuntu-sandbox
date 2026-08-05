@@ -147,8 +147,11 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
     }, LONG);
 
     it('`show logging | include <motif>` filtre bien le buffer', async () => {
-      const out = await run('show logging | include IFMGR');
-      expect(out).toMatch(/IFMGR/);
+      // Le filtre porte sur un message RÉEL d'IOS : l'`IFMGR` employé
+      // ici auparavant était un message inventé sur affectation
+      // d'adresse, retiré avec les autres.
+      const out = await run('show logging | include LINK');
+      expect(out).toMatch(/LINK/);
       expect(out).not.toMatch(/Syslog logging: enabled/);
     });
 
