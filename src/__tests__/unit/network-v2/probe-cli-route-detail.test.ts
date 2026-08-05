@@ -95,6 +95,35 @@ describe('show ip route <address> renders the IOS detail block', () => {
     expect(out).not.toContain('intra area');
   });
 
+  it('the age is measured, not a constant', async () => {
+    const r = await routerWithRoutes();
+    const now = Date.now();
+    const realNow = Date.now;
+    try {
+      Date.now = () => now + 125_000;
+      const out = await r.executeCommand('show ip route 10.1.2.3');
+      expect(out).toContain('Last update from 192.168.10.2 on GigabitEthernet0/0');
+      expect(out).toMatch(/00:02:05 ago/);
+      expect(out).not.toMatch(/00:00:00 ago/);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('a route with no known install time claims no age at all', async () => {
+    const r = await routerWithRoutes();
+    (r as unknown as { routingTable: unknown[] }).routingTable.push({
+      network: { toString: () => '172.31.0.0', toUint32: () => 0xac1f0000 },
+      mask: { toString: () => '255.255.0.0', toCIDR: () => 16 },
+      type: 'rip', nextHop: '192.168.10.2', iface: 'GigabitEthernet0/0',
+      ad: 120, metric: 2,
+    });
+
+    const out = await r.executeCommand('show ip route 172.31.5.5');
+    expect(out).toContain('Last update from 192.168.10.2 on GigabitEthernet0/0');
+    expect(out).not.toContain('ago');
+  });
+
   it('an unknown destination is reported absent', async () => {
     const r = await routerWithRoutes();
     expect(await r.executeCommand('show ip route 203.0.113.7'))

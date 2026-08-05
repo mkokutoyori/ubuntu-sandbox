@@ -332,8 +332,19 @@ raison :
   de fichiers ; il est supprimé, car une seconde réponse possible à la
   même question est exactement ce que ce lot corrige.
 
-`probe-cli-systemes-de-fichiers.test.ts` (9 cas) est discriminé au
-`git stash` : les 9 échouent authentiquement avant le correctif.
+**Un défaut introduit par ce correctif même, et retiré** : le premier
+jet listait aussi `system:` et `tftp:`, parce qu'IOS les liste. Mais cet
+équipement-ci n'en a aucun des deux — `dir system:` et `dir tftp:`
+répondent `%Error opening`. Annoncer un système de fichiers que la
+machine ne sait pas ouvrir est le défaut que cette section corrige, pas
+un détail de conformité : les deux lignes sont supprimées. Le test ne
+vérifie plus une liste attendue mais la RÈGLE — tout préfixe annoncé
+doit s'ouvrir — et un second vérifie que l'astérisque désigne bien le
+système de fichiers que `dir` sans argument utilise réellement.
+
+`probe-cli-file-systems.test.ts` (11 cas) est discriminé au
+`git stash` : les 9 cas d'origine échouent authentiquement avant le
+correctif, et les 2 ajoutés attrapent le défaut introduit puis retiré.
 
 ### 2.9 L'aide n'invente pas de commandes (couche B, suite)
 
@@ -443,7 +454,18 @@ l'INTERFACE. Ils sont corrigés sur leur intention : le code de route
 devient le type en toutes lettres (`type extern 2`), et le prochain
 saut est vérifié dans son bloc descripteur.
 
-`probe-cli-route-detail.test.ts` (8 cas) est discriminé au `git stash` :
+**Un troisième défaut, trouvé en relisant ma propre sortie** : l'âge de
+la route (`, 00:00:00 ago`) était une CONSTANTE. Une route posée depuis
+une heure annonçait la même chose qu'une route apprise à l'instant — une
+valeur affichée que rien ne soutenait, exactement le grief que ce
+document instruit. `RouteEntry.installedAt` est désormais horodaté aux
+cinq points d'installation de `Router` (connectée, statique, défaut, et
+les deux rappels `pushRoute` des protocoles), et l'âge est CALCULÉ, au
+format d'IOS (`HH:MM:SS`, puis `1d02h` au-delà du jour). Une route dont
+la date d'installation n'est pas connue n'annonce **aucun** âge, plutôt
+qu'un âge faux.
+
+`probe-cli-route-detail.test.ts` (10 cas) est discriminé au `git stash` :
 5 échouent avant le correctif ; la destination inconnue passait déjà.
 
 ### 2.11 `%SYS-5-CONFIG_I` — quitter le mode configuration se journalise

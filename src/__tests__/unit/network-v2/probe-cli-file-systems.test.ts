@@ -66,6 +66,29 @@ describe('show file systems reads the real filesystem', () => {
     expect(flashFree).toBe(after);
   });
 
+  it('it lists only filesystems the device can actually open', async () => {
+    const r = await enabled(new CiscoRouter('R1'));
+    const listed = (await r.executeCommand('show file systems')).split('\n')
+      .map((l) => /\srw\s+(\w+:)\s*$/.exec(l)?.[1])
+      .filter((p): p is string => p !== undefined);
+
+    expect(listed).not.toEqual([]);
+    for (const prefix of listed) {
+      expect(await r.executeCommand(`dir ${prefix}`)).not.toContain('%Error opening');
+    }
+  });
+
+  it('the asterisk marks the filesystem `dir` with no argument really uses', async () => {
+    const r = await enabled(new CiscoRouter('R1'));
+    const starred = (await r.executeCommand('show file systems')).split('\n')
+      .find((l) => l.startsWith('*'));
+    expect(starred).toBeDefined();
+    const prefix = /\srw\s+(\w+:)\s*$/.exec(starred!)![1];
+
+    expect(await r.executeCommand('pwd')).toContain(prefix);
+    expect(await r.executeCommand('dir')).toBe(await r.executeCommand(`dir ${prefix}`));
+  });
+
   it('the current filesystem carries its asterisk', async () => {
     const r = await enabled(new CiscoRouter('R1'));
     const output = await r.executeCommand('show file systems');

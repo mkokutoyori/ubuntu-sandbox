@@ -150,6 +150,7 @@ export interface RouteEntry extends IIPv4Route {
   track?: string;
   vpnInstance?: string;
   permanent?: boolean;
+  installedAt?: number;
   /**
    * L'opérateur a-t-il NOMMÉ l'interface de sortie, ou a-t-elle été
    * déduite du prochain saut ?
@@ -357,7 +358,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
-      pushRoute: (route) => { this.routingTable.push(route); },
+      pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: Date.now() }); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getRipVersion: () => this._ripVersion,
       getBus: () => this.getBus(),
@@ -389,7 +390,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
-      pushRoute: (route) => { this.routingTable.push(route); },
+      pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: Date.now() }); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getArpEntry: (ip) => this.arpTable.get(ip),
       getACLEngine: () => this.aclEngine,
@@ -1262,6 +1263,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'connected',
       ad: 0,
       metric: 0,
+      installedAt: Date.now(),
     });
 
     Logger.info(this.id, 'router:interface-config',
@@ -1366,6 +1368,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'static',
       ad: opts?.preference ?? 1,
       metric,
+      installedAt: Date.now(),
       preference: opts?.preference,
       tag: opts?.tag,
       description: opts?.description,
@@ -1428,6 +1431,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'default',
       ad: opts?.preference ?? 1,
       metric,
+      installedAt: Date.now(),
       preference: opts?.preference,
       tag: opts?.tag,
       description: opts?.description,

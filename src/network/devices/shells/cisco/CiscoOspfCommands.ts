@@ -2328,6 +2328,16 @@ function showIpRouteVrf(router: Router, vrfName: string): string {
   return [...codes, ...lines].join('\n');
 }
 
+function formatRouteAge(elapsedMs: number): string {
+  const total = Math.max(0, Math.floor(elapsedMs / 1000));
+  if (total >= 86400) {
+    const days = Math.floor(total / 86400);
+    return `${days}d${String(Math.floor((total % 86400) / 3600)).padStart(2, '0')}h`;
+  }
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${two(Math.floor(total / 3600))}:${two(Math.floor((total % 3600) / 60))}:${two(total % 60)}`;
+}
+
 const DEFAULT_DISTANCE: Record<string, number> = {
   connected: 0, static: 1, default: 1, eigrp: 90, ospf: 110, rip: 120, bgp: 20,
 };
@@ -2384,7 +2394,10 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   lines.push(header);
 
   if (best.nextHop && best.type !== 'connected') {
-    lines.push(`  Last update from ${best.nextHop} on ${best.iface}, 00:00:00 ago`);
+    const age = best.installedAt !== undefined
+      ? ` , ${formatRouteAge(Date.now() - best.installedAt)} ago`.replace(' ,', ',')
+      : '';
+    lines.push(`  Last update from ${best.nextHop} on ${best.iface}${age}`);
   }
 
   lines.push('  Routing Descriptor Blocks:');
