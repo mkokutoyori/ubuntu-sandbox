@@ -58,6 +58,24 @@ async function filtreTcp(r: CiscoRouter): Promise<void> {
 const tcp = (vues: string[]) => vues.filter(l => l.startsWith('TCP:'));
 const pause = () => new Promise((res) => setTimeout(res, 300));
 
+/**
+ * Le 1521 est désormais RÉELLEMENT servi dès l'amorçage d'un
+ * `LinuxServer` (docs/PRD-Manquements.md §M1) : y poser une seconde
+ * écoute lève EADDRINUSE. Ce test posait la sienne parce que rien ne le
+ * faisait — même correctif qu'à `scenario-debug-s07-filtres-precis`.
+ */
+function ecouter(srv: LinuxServer, port: number): void {
+  const dejaServi = srv.getTcpStack().listListeners().some((l) => l.localPort === port);
+  if (!dejaServi) srv.getTcpStack().listen(port, { onAccept: () => {} });
+}
+
+/**
+ * Un port que RIEN ne sert, pour le cas du refus. Il ne peut plus être le
+ * 1521 : c'est justement celui qu'un serveur Oracle ouvre, et un test du
+ * RST posé dessus ne mesurerait plus qu'une coïncidence.
+ */
+const PORT_FERME = 9999;
+
 describe('Scénario 5 — debug ip tcp suit les connexions', () => {
   it('la confirmation parle d\'évènements TCP et nomme l\'ACL', async () => {
     const { r } = await lab();
@@ -69,7 +87,7 @@ describe('Scénario 5 — debug ip tcp suit les connexions', () => {
 
   it('le trois-temps SYN, SYN-ACK, ACK est tracé dans l\'ordre', async () => {
     const { r, pc, srv, vues } = await lab();
-    srv.getTcpStack().listen(1521, { onAccept: () => {} });
+    ecouter(srv, 1521);
     await run(r, 'debug ip tcp');
 
     pc.getTcpStack().connect('192.168.20.20', 1521);
@@ -86,7 +104,7 @@ describe('Scénario 5 — debug ip tcp suit les connexions', () => {
 
   it('la connexion établie est annoncée avec sa cible et son port', async () => {
     const { r, pc, srv, vues } = await lab();
-    srv.getTcpStack().listen(1521, { onAccept: () => {} });
+    ecouter(srv, 1521);
     await run(r, 'debug ip tcp');
 
     pc.getTcpStack().connect('192.168.20.20', 1521);
@@ -97,7 +115,7 @@ describe('Scénario 5 — debug ip tcp suit les connexions', () => {
 
   it('une fermeture propre passe par FIN', async () => {
     const { r, pc, srv, vues } = await lab();
-    srv.getTcpStack().listen(1521, { onAccept: () => {} });
+    ecouter(srv, 1521);
     await run(r, 'debug ip tcp');
 
     const s = pc.getTcpStack().connect('192.168.20.20', 1521);
@@ -112,7 +130,7 @@ describe('Scénario 5 — debug ip tcp suit les connexions', () => {
     const { r, pc, vues } = await lab();
     await run(r, 'debug ip tcp');
 
-    pc.getTcpStack().connect('192.168.20.20', 1521);
+    pc.getTcpStack().connect('192.168.20.20', PORT_FERME);
     await pause();
 
     const lignes = tcp(vues);
@@ -125,7 +143,7 @@ describe('Scénario 5 — debug ip tcp suit les connexions', () => {
 
   it('sans debug, aucune ligne TCP n\'est émise', async () => {
     const { pc, srv, vues } = await lab();
-    srv.getTcpStack().listen(1521, { onAccept: () => {} });
+    ecouter(srv, 1521);
     pc.getTcpStack().connect('192.168.20.20', 1521);
     await pause();
     expect(tcp(vues)).toEqual([]);
@@ -133,7 +151,7 @@ describe('Scénario 5 — debug ip tcp suit les connexions', () => {
 
   it('undebug all arrête la trace', async () => {
     const { r, pc, srv, vues } = await lab();
-    srv.getTcpStack().listen(1521, { onAccept: () => {} });
+    ecouter(srv, 1521);
     await run(r, 'debug ip tcp');
     pc.getTcpStack().connect('192.168.20.20', 1521);
     await pause();
