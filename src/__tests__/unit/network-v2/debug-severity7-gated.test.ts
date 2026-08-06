@@ -28,6 +28,7 @@ import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { TerminalManager } from '@/terminal/sessions/TerminalManager';
+import { sansEstampe, estEstampee } from './_helpers/debugLines';
 import type { KeyEvent, TerminalSession } from '@/terminal/sessions/TerminalSession';
 
 beforeEach(() => {
@@ -150,7 +151,8 @@ describe('the line reads like IOS, not like a syslog message', () => {
     await cdpRound();
 
     const line = debugLines()[debugLines().length - 1];
-    expect(line).toBe('CDP-PA: Packet received from Switch1 on interface GigabitEthernet0/0');
+    expect(estEstampee(line), line).toBe(true);
+    expect(sansEstampe(line)).toBe('CDP-PA: Packet received from Switch1 on interface GigabitEthernet0/0');
   }, 30000);
 
   it('never wears the invented %CDP-7-DEBUGGING severity wrapper', async () => {
@@ -181,7 +183,8 @@ describe('a switch console behaves the same way', () => {
     await type('debug cdp');
     await cdpRound();
     const line = debugLines()[debugLines().length - 1];
-    expect(line).toBe('CDP-PA: Packet received from Router1 on interface FastEthernet0/1');
+    expect(estEstampee(line), line).toBe(true);
+    expect(sansEstampe(line)).toBe('CDP-PA: Packet received from Router1 on interface FastEthernet0/1');
 
     const whileOn = debugLines().length;
     await type('undebug all');

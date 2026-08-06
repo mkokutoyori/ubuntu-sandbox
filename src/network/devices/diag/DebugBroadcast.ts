@@ -2,6 +2,10 @@ import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 
 export type DebugLineListener = (line: string) => void;
 
+export interface DebugLineJournal {
+  record(text: string): string;
+}
+
 export interface TerminalDebugSource {
   hasAnyFlag(): boolean;
   subscribe(listener: DebugLineListener): () => void;
@@ -62,10 +66,15 @@ export class DebugBroadcast {
    */
   subscriberCount(): number { return this.listeners.size; }
 
+  private journal: DebugLineJournal | null = null;
+
+  setJournal(journal: DebugLineJournal | null): void { this.journal = journal; }
+
   fan(line: string): void {
     if (this.outputGate && !this.outputGate()) return;
+    const rendu = this.journal ? this.journal.record(line) : line;
     if (!this.admit()) return;
-    for (const listener of this.listeners) listener(line);
+    for (const listener of this.listeners) listener(rendu);
   }
 
   /**
@@ -107,7 +116,8 @@ export class DebugBroadcast {
   private emitThrottleNotice(dropped: number): void {
     this.linesThisWindow++;
     const notice = `%SYS-3-LOGGINGRATE: ${dropped} debug message${dropped === 1 ? '' : 's'} dropped by rate limiting (${this.rateLimit} msg/sec)`;
-    for (const listener of this.listeners) listener(notice);
+    const rendu = this.journal ? this.journal.record(notice) : notice;
+    for (const listener of this.listeners) listener(rendu);
   }
 
   /**

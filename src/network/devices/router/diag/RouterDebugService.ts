@@ -46,7 +46,7 @@ export type DebugCategory =
   | 'ipv6.packet';
 
 import type { IEventBus } from '@/events/EventBus';
-import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
 export function toCiscoMac(mac: string): string {
   const hex = mac.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
@@ -185,9 +185,7 @@ export class RouterDebugService implements TerminalDebugSource {
     this.aclMatchFn = fn;
   }
 
-  private tamponSyslog?: (line: string) => void;
-
-  setSyslogSink(fn: (line: string) => void): void { this.tamponSyslog = fn; }
+  setJournal(journal: DebugLineJournal | null): void { this.broadcast.setJournal(journal); }
 
   private emit(category: DebugCategory, line: string, faits?: DebugPacketFacts): void {
     const flag = this.flags.get(category);
@@ -196,7 +194,6 @@ export class RouterDebugService implements TerminalDebugSource {
     if (!this.passesConditions(line)) return;
     if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line, faits)) return;
     this.broadcast.fan(line);
-    this.tamponSyslog?.(line);
   }
 
   private static faitsDe(ip: { src: string; dst: string; proto: number; transport?: unknown }): DebugPacketFacts {

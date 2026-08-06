@@ -2626,13 +2626,23 @@ export abstract class Switch extends Equipment {
   private attachLoggingBus(bus: import('@/events/EventBus').IEventBus): void {
     const shell = this.shell as unknown as {
       attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void;
-      getLoggingConfig?: () => { setDebugGate: (g: (tag: string) => boolean) => void } | undefined;
+      getLoggingConfig?: () => {
+        setDebugGate: (g: (tag: string) => boolean) => void;
+        recordDebugLine: (text: string) => string;
+      } | undefined;
     };
     shell.attachLoggingToBus?.(bus, this.id);
-    const dev = this as unknown as { getDebugService?: () => { isEnabledForSyslogTag: (t: string) => boolean } };
+    const dev = this as unknown as {
+      getDebugService?: () => {
+        isEnabledForSyslogTag: (t: string) => boolean;
+        setJournal?: (j: { record: (text: string) => string } | null) => void;
+      };
+    };
     if (!dev.getDebugService) return;
-    shell.getLoggingConfig?.()?.setDebugGate(
-      (tag) => dev.getDebugService!().isEnabledForSyslogTag(tag));
+    const journal = shell.getLoggingConfig?.();
+    if (!journal) return;
+    journal.setDebugGate((tag) => dev.getDebugService!().isEnabledForSyslogTag(tag));
+    dev.getDebugService().setJournal?.({ record: (text) => journal.recordDebugLine(text) });
   }
 
   /**

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { collecteDebug } from './_helpers/debugLines';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
@@ -153,7 +154,7 @@ describe('D3 — debug condition filtre réellement', () => {
   it('une condition écarte les lignes qui ne la mentionnent pas', async () => {
     const r = await priv();
     const vues: string[] = [];
-    r.getDebugService().subscribe((l: string) => vues.push(l));
+    collecteDebug(r.getDebugService(), vues);
     await run(r, 'debug ip packet');
     await run(r, 'debug condition ip 10.9.9.9');
 
@@ -224,7 +225,7 @@ describe('D8 — en-tête IP détaillé', () => {
   it('le format porte source, destination, passerelle et longueur', async () => {
     const r = await priv();
     const vues: string[] = [];
-    r.getDebugService().subscribe((l: string) => vues.push(l));
+    collecteDebug(r.getDebugService(), vues);
     await run(r, 'debug ip packet');
     r.getDebugService().emitLine('ip.packet',
       'IP: s=192.168.10.1 (GigabitEthernet0/0.10), d=10.0.0.2 (GigabitEthernet0/2), g=10.0.0.2, len 100, forward');

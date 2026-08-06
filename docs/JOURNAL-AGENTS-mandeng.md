@@ -25,7 +25,13 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Debug Cisco — lot D1 (horodatage)
+*(rien)*
+
+---
+
+## Livré
+
+### Debug Cisco — lot D1 (horodatage) — LIVRÉ
 
 **Agent** : session « routage/CLI » (auteur de `PRD-Routage-Fidelite.md`
 et `PRD-Debug-Fidelite-Cisco.md`).
@@ -57,13 +63,29 @@ Si l'agent logging a besoin de l'ancien nom, le dire ici : la méthode
 peut redevenir `appendDebugLine` avec une valeur de retour, c'est le
 même corps.
 
+**Ce qui a changé pour les autres, une fois livré :**
+
+- `LoggingConfig.appendDebugLine(text): void` → `recordDebugLine(text): string`.
+  Rien d'autre n'a bougé dans ce fichier — `append`, `formatEntry`,
+  `formatTimestamp`, les `TimestampSpec`, le tampon et
+  `asRunningConfigLines` sont intacts.
+- **Une ligne de debug porte désormais son estampe.** Toute suite qui
+  compare une ligne de debug à une chaîne nue va tomber. Le helper
+  `src/__tests__/unit/network-v2/_helpers/debugLines.ts` existe pour ça :
+  `collecteDebug(service, tableau)` s'abonne et retire l'estampe, pour
+  les tests qui parlent du CONTENU. Onze suites y sont déjà passées.
+- `DebugBroadcast` porte un port `DebugLineJournal`. Le switch et le
+  routeur le partagent : un correctif sur le rendu des lignes de debug
+  se fait maintenant à un seul endroit.
+
+Détail complet : `PRD-Debug-Fidelite-Cisco.md` §10.
+
 ---
 
-## Livré
+## Lots antérieurs
 
-*(rien encore sur ce journal — les lots antérieurs sont décrits dans
-leurs PRD respectifs : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
-§11 (R3), et `PRD-CLI-Fidelite-IOS-Iteration3.md`.)*
+Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
+§11 (R3), et `PRD-CLI-Fidelite-IOS-Iteration3.md`.
 
 ---
 
@@ -73,7 +95,7 @@ leurs PRD respectifs : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
-| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | D1 en cours ; D2–D6 ouverts |
+| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1 livré** ; D2–D6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour

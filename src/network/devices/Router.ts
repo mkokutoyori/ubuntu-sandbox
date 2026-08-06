@@ -3422,7 +3422,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       (tag) => this.getDebugService().isEnabledForSyslogTag(tag));
     if (journal) {
       journal.attachClockSource(deviceClockSource(this));
-      this.getDebugService().setSyslogSink((line) => journal.appendDebugLine(line));
+      this.getDebugService().setJournal({ record: (text) => journal.recordDebugLine(text) });
     }
   }
 

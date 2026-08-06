@@ -364,16 +364,14 @@ export class LoggingConfig {
    * which have no `log`-topic equivalent) keep the default `true` so
    * `device.syslog.entry` remains their only forwarding path.
    */
-  appendDebugLine(text: string): void {
-    if (!this.enabled) return;
+  recordDebugLine(text: string): string {
     const ts = this.clock?.epochMs() ?? Date.now();
-    // Même fabrication de ligne que `append` : le tampon garde le rendu,
-    // et deux façons de le construire finiraient par se contredire sur
-    // l'horodatage.
     const rendu = this.formatEntry('debugging', 'debug', text, ts, undefined, this.uptimeNow());
+    if (!this.enabled) return rendu;
     this.messages.push({ ts, severity: 'debugging', tag: 'debug', text, rendu });
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
+    return rendu;
   }
 
   append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
