@@ -23,6 +23,7 @@ import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
 import { IPAddress, SubnetMask } from '../../core/types';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
+import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -922,9 +923,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerPolicyShow(trie, this.policy);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
-    // `show logging` — projects the real LoggingConfig (router).
-    trie.registerGreedy('show logging', 'Display syslog state', (args) =>
-      /^count$/i.test(args[0] ?? '') ? this.logging.renderCount() : this.logging.render(), ['count']);
+    registerLoggingShowCommands(trie, this.loggingCommandContext());
 
     // `show tech-support` — real aggregation of the key show outputs.
     trie.register('show tech-support', 'Aggregate diagnostic output', () => {

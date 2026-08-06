@@ -2658,6 +2658,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
   }
 
+  /**
+   * Émettre une requête ARP pour une adresse, sans paquet à envoyer.
+   *
+   * C'est ce que `logging server-arp` demande : résoudre le collecteur
+   * syslog AU MOMENT où on le configure, plutôt qu'au premier message.
+   * Le chemin ordinaire (`sendIpv4FrameArpAware`) résout aussi, mais
+   * seulement quand il a déjà un datagramme en main — la différence est
+   * exactement celle que ce mot-clé existe pour faire.
+   */
+  public sendArpRequestFor(ifaceName: string, targetIP: IPAddress): boolean {
+    const port = this.ports.get(ifaceName);
+    const myIP = port?.getIPAddress();
+    if (!port || !myIP || !port.getIsUp()) return false;
+    const key = targetIP.toString();
+    if (this.arpTable.get(key) || this.inFlightFwdARPs.has(key)) return false;
+    this.inFlightFwdARPs.add(key);
+    const arpReq: ARPPacket = {
+      type: 'arp', operation: 'request',
+      senderMAC: port.getMAC(), senderIP: myIP,
+      targetMAC: MACAddress.broadcast(), targetIP,
+    };
+    this.emitArpRequestSent(ifaceName, key);
+    this.sendFrame(ifaceName, {
+      srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP, payload: arpReq,
+    });
+    return true;
+  }
+
   private flushPacketQueue(resolvedIP: IPAddress, resolvedMAC: MACAddress): void {
     const ready = this.packetQueue.filter(q => q.nextHopIP.equals(resolvedIP));
     this.packetQueue = this.packetQueue.filter(q => !q.nextHopIP.equals(resolvedIP));
