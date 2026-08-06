@@ -68,13 +68,17 @@ describe('a router leaves the factory timestamping its messages', () => {
 });
 
 describe('a buffer the machine claims is a buffer its configuration declares', () => {
-  it('show logging and the running-config agree that it is on', async () => {
+  it('it is on out of the box, and the configuration stays silent about it', async () => {
     const r = new CiscoRouter('R1');
     const shown = await run(r, ['enable', 'show logging']);
     const cfg = String(await r.executeCommand('show running-config'));
 
+    // Le tampon EST actif d'usine sur IOS 15.x, et c'est bien ce que
+    // `show logging` doit dire. Mais une running-config ne rend pas les
+    // défauts : annoncer la ligne ferait apparaître une commande que
+    // personne n'a tapée.
     expect(shown).toContain('Buffer logging: level debugging, 4096 bytes');
-    expect(cfg).toContain('logging buffered 4096 debugging');
+    expect(cfg).not.toContain('logging buffered');
   });
 
   it('resizing it moves both views together', async () => {

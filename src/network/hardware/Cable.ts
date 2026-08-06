@@ -324,7 +324,6 @@ export class Cable {
    */
   transmit(frame: EthernetFrame, fromPort: Port): boolean {
     if (!this.isUp) {
-      Logger.warn(this.id, 'cable:blocked', `Cable ${this.id} is down, frame dropped`);
       this.getBus().publish({
         topic: 'cable.frame.lost',
         payload: { cableId: this.id, reason: 'cable-down' },
@@ -333,7 +332,6 @@ export class Cable {
     }
 
     if (!this.portA || !this.portB) {
-      Logger.warn(this.id, 'cable:blocked', `Cable ${this.id} not fully connected, frame dropped`);
       this.getBus().publish({
         topic: 'cable.frame.lost',
         payload: { cableId: this.id, reason: 'no-peer' },

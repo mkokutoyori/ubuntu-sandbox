@@ -89,13 +89,24 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * anyone asking for them. `terminal monitor` is the separate opt-in a vty
    * needs, and it keeps its own subscription.
    */
+  private offConsoleLogging: (() => void) | null = null;
+
   private startConsoleLogging(): void {
+    // Idempotent : un second appel REMPLACE l'abonnement au lieu de s'y
+    // ajouter. Un abonnement qui s'accumule ne se voit pas — il se compte,
+    // chaque message sortant une fois de plus que la fois précédente.
+    this.offConsoleLogging?.();
+    this.offConsoleLogging = null;
     const src = (this.device as unknown as {
       getLoggingConfig?: () => LoggingMonitorSource | null;
     }).getLoggingConfig?.();
     if (!src?.subscribeConsole) return;
     const unsubscribe = src.subscribeConsole((line) => this.addLine(line));
-    this.registerTearDown(unsubscribe);
+    this.offConsoleLogging = unsubscribe;
+    this.registerTearDown(() => {
+      this.offConsoleLogging?.();
+      this.offConsoleLogging = null;
+    });
   }
 
   private maybeStartConsoleLogin(): void {

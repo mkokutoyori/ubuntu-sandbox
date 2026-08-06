@@ -56,6 +56,14 @@ export interface TimestampSpec {
  * msec` et `service timestamps log datetime msec`. C'est ce que rend cette
  * fonction, et rien d'autre : elle décrit un routeur qui sort de sa boîte.
  */
+/**
+ * Ce qu'un IOS 15.x d'ISR journalise en mémoire sans qu'on lui demande
+ * rien. La journalisation tampon EST active par défaut ; ce qu'IOS
+ * n'écrit pas, c'est le DÉFAUT lui-même dans la running-config.
+ */
+export const BUFFERED_SIZE_DEFAUT = 4096;
+export const BUFFERED_SEVERITE_DEFAUT: Severity = 'debugging';
+
 export function defaultTimestampSpec(): TimestampSpec {
   return {
     enabled: true, format: 'datetime', msec: true,
@@ -129,12 +137,51 @@ export function deviceClockSource(device: unknown): LoggingClockSource {
 export class LoggingConfig {
   enabled = true;                       // `logging on` (IOS default on)
   buffered = false;
-  bufferedSize = 4096;
-  bufferedSeverity: Severity = 'debugging';
+  bufferedSize = BUFFERED_SIZE_DEFAUT;
+  bufferedSeverity: Severity = BUFFERED_SEVERITE_DEFAUT;
   /** `logging console` — on out of the box, silenced by `no logging console`. */
   consoleEnabled = true;
   /** `logging rate-limit N` — null means the platform default applies. */
   rateLimit: number | null = null;
+  /**
+   * Le seau du limiteur : la seconde en cours et ce qu'on y a déjà servi.
+   *
+   * `rateLimit` était stocké et lu par personne — la commande promettait
+   * un plafond qui n'existait pas. Le limiteur ne borne QUE les sorties
+   * temps réel (console et monitor), jamais le tampon ni le relais
+   * syslog : c'est le débit vers un écran qu'IOS protège, pas la trace.
+   */
+  private rateWindowStart = 0;
+  private rateWindowCount = 0;
+  private rateSuppressed = 0;
+
+  /**
+   * Vrai quand la ligne peut sortir en temps réel. Le premier message
+   * refusé de la seconde n'est pas perdu en silence : le suivant qui
+   * passe est précédé du compte des supprimés, comme IOS le fait.
+   */
+  private rateLimitAllows(nowMs: number): boolean {
+    const limit = this.rateLimit;
+    if (limit === null) return true;
+    const second = Math.floor(nowMs / 1000);
+    if (second !== this.rateWindowStart) {
+      this.rateWindowStart = second;
+      this.rateWindowCount = 0;
+    }
+    if (this.rateWindowCount >= limit) {
+      this.rateSuppressed++;
+      return false;
+    }
+    this.rateWindowCount++;
+    return true;
+  }
+
+  private takeSuppressedNotice(): string | null {
+    if (this.rateSuppressed === 0) return null;
+    const n = this.rateSuppressed;
+    this.rateSuppressed = 0;
+    return `%LOGGING-4-RATELIMIT: ${n} message${n === 1 ? '' : 's'} rate-limited`;
+  }
   consoleSeverity: Severity = 'debugging';
   /**
    * `logging monitor` — device-wide, and the only monitor gate that
@@ -336,12 +383,20 @@ export class LoggingConfig {
     // `clock set` must date its messages with the date it was given.
     const ts = this.clock?.epochMs() ?? Date.now();
     const rendu = this.formatEntry(severity, tag, text, ts, mnemonic, this.uptimeNow());
-    if (this.monitorEnabled
-      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
-      this.fanMonitor(rendu);
-    }
-    if (this.consoleEnabled && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.consoleSeverity]) {
-      this.fanConsole(rendu);
+    const wantsMonitor = this.monitorEnabled
+      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity];
+    const wantsConsole = this.consoleEnabled
+      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.consoleSeverity];
+    if (wantsMonitor || wantsConsole) {
+      if (this.rateLimitAllows(ts)) {
+        const notice = this.takeSuppressedNotice();
+        if (notice) {
+          if (wantsMonitor) this.fanMonitor(notice);
+          if (wantsConsole) this.fanConsole(notice);
+        }
+        if (wantsMonitor) this.fanMonitor(rendu);
+        if (wantsConsole) this.fanConsole(rendu);
+      }
     }
     if (this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.bufferedSeverity]) return;
     this.messages.push({ ts, severity, tag, text, mnemonic, rendu });
@@ -1075,10 +1130,14 @@ export class LoggingConfig {
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
     if (!this.enabled) lines.push('no logging on');
-    if (this.buffered) {
+    // Une configuration ne rend que ce qui s'écarte du défaut : le
+    // tampon est actif d'usine, donc l'annoncer reviendrait à faire
+    // apparaître une commande que personne n'a tapée.
+    const tamponParDefaut = this.bufferedSize === BUFFERED_SIZE_DEFAUT
+      && this.bufferedSeverity === BUFFERED_SEVERITE_DEFAUT;
+    if (!this.buffered) lines.push('no logging buffered');
+    else if (!tamponParDefaut) {
       lines.push(`logging buffered ${this.bufferedSize} ${this.bufferedSeverity}`);
-    } else if (this.bufferedSeverity !== 'debugging') {
-      lines.push(`logging buffered ${this.bufferedSeverity}`);
     }
     if (!this.consoleEnabled) lines.push('no logging console');
     else if (this.consoleSeverity !== 'debugging') lines.push(`logging console ${this.consoleSeverity}`);

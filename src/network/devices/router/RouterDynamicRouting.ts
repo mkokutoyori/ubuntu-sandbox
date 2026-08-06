@@ -92,6 +92,9 @@ export class RouterDynamicRouting {
     this.bgp.setWire({ connect: (ip) => this.bgpConnect(ip) });
     // An UPDATE that lands on a peer's converge must still reach our RIB.
     this.bgp.setOnRibChange(() => this.reflectRib());
+    // Same seam for EIGRP: a neighbour lost to its hold timer happens on
+    // a timer, with nobody at the CLI, and must still reprogram the RIB.
+    this.eigrp.setOnNeighborChange(() => this.reflectRib());
   }
 
   // ── BGP wire transport (TCP/179) ───────────────────────────────────
@@ -184,6 +187,23 @@ export class RouterDynamicRouting {
     this.eigrp.processPacket(
       inPort, ipPkt.sourceIP.toString(), payload,
       ipPkt.destinationIP.toString() === EIGRP_MULTICAST_IP);
+    this.eigrpRibUpdate();
+  }
+
+  /**
+   * The RIB update an EIGRP packet earns: `processPacket` stored what the
+   * neighbour advertised, DUAL recomputes from it, and the result is
+   * installed. Nothing goes back on the wire from this alone.
+   *
+   * Scoped to EIGRP on purpose. BGP has the same path of its own
+   * (`setOnRibChange`, fired by every UPDATE it accepts), and an EIGRP
+   * packet does not make a router redo its BGP best-path decision.
+   * `reflectRib()` still reads BGP's contributed routes, but takes them
+   * as BGP last computed them rather than recomputing them here.
+   */
+  private eigrpRibUpdate(): void {
+    this.eigrp.refreshFromCache();
+    this.reflectRib();
   }
 
   private connected(): ConnectedNetwork[] {
@@ -206,27 +226,36 @@ export class RouterDynamicRouting {
     return this.eigrp.isEnabled() || this.bgp.isEnabled();
   }
 
-  /** Recompute both engines and reflect their routes into the RIB. */
+  /**
+   * An interface went down: EIGRP declares its neighbours down at once
+   * rather than waiting out their hold time, which is what IOS logs as
+   * `is down: interface down`.
+   */
+  onInterfaceDown(iface: string): void {
+    if (this.eigrp.isEnabled()) this.eigrp.onInterfaceDown(iface);
+  }
+
+  /** Release protocol timers — the router is going away. */
+  shutdownTimers(): void {
+    this.eigrp.shutdownTimers();
+  }
+
+  /**
+   * A full convergence round: pump Hellos, open sessions, recompute,
+   * install. This is the control plane's *active* path, and it runs on
+   * the events that genuinely change routing — a configuration command,
+   * an interface going up or down. Never from the data path: a
+   * convergence emits packets, and forwarding a packet must not emit
+   * anything.
+   *
+   * Its passive counterpart is per-protocol, as on real hardware:
+   * {@link eigrpRibUpdate} when an EIGRP packet lands, and BGP's own
+   * `setOnRibChange` when an UPDATE does.
+   */
   converge(): void {
     this.eigrp.converge();
     if (this.bgp.isEnabled()) this.ensureBgpListener();
     this.bgp.converge();
-    this.reflectRib();
-  }
-
-  /**
-   * Data-path variant (called before every forwarding decision):
-   * reflect routes already learned from the wire WITHOUT pumping new
-   * EIGRP frames — a real router does not hello on every packet it
-   * forwards. Real rounds happen at config/show time (triggered
-   * updates) via {@link converge}.
-   */
-  refresh(): void {
-    this.eigrp.refreshFromCache();
-    if (this.bgp.isEnabled()) this.ensureBgpListener();
-    // Cache-only for BGP too — this used to call `bgp.converge()`, which
-    // dials every configured neighbour, on every forwarding decision.
-    this.bgp.refreshFromCache();
     this.reflectRib();
   }
 

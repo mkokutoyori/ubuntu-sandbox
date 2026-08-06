@@ -730,16 +730,28 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (port) (port.eigrpExtras ??= []).push(raw ?? `ip bandwidth-percent eigrp ${args.join(' ')}`);
     return '';
   });
+  // `ip hello-interval eigrp <as> <sec>` — the value drives the real
+  // Hello timer (RFC 7868 §5.3.1), not just the running-config text.
   trie.registerGreedy('ip hello-interval eigrp', 'EIGRP hello interval', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName) as any;
     if (port) (port.eigrpExtras ??= []).push(raw ?? `ip hello-interval eigrp ${args.join(' ')}`);
+    const sec = Number(args[args.length - 1]);
+    if (Number.isFinite(sec) && sec > 0) {
+      ctx.r().getEIGRPEngine().setInterfaceTiming(ifName, { helloSec: sec });
+    }
     return '';
   });
+  // `ip hold-time eigrp <as> <sec>` — independent of the Hello interval,
+  // exactly as IOS keeps it: raising one does not raise the other.
   trie.registerGreedy('ip hold-time eigrp', 'EIGRP hold time', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName) as any;
     if (port) (port.eigrpExtras ??= []).push(raw ?? `ip hold-time eigrp ${args.join(' ')}`);
+    const sec = Number(args[args.length - 1]);
+    if (Number.isFinite(sec) && sec > 0) {
+      ctx.r().getEIGRPEngine().setInterfaceTiming(ifName, { holdSec: sec });
+    }
     return '';
   });
   trie.registerGreedy('ip authentication mode eigrp', 'EIGRP auth mode', (args, raw) => {

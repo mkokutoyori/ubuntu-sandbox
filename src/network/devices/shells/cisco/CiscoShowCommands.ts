@@ -12,7 +12,7 @@ import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRu
 import { orderCiscoConfigBlocks, routingProcessConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
-import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
+import { CISCO_HARDWARE_PROFILES, formatIosUptime, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -28,7 +28,7 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
     '',
     `ROM: System Bootstrap, Version 15.0(1r)M15`,
     '',
-    `${router._getHostnameInternal()} uptime is ${formatUptime(uptimeMs)}`,
+    `${router._getHostnameInternal()} uptime is ${formatIosUptime(uptimeMs)}`,
     `System image file is "flash:${hw.flashImage}"`,
     '',
     `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
@@ -73,18 +73,7 @@ function staticRouteTail(r: {
   return parts.join(' ');
 }
 
-function formatUptime(ms: number): string {
-  if (ms < 60_000) return '0 minutes';
-  const totalMin = Math.floor(ms / 60_000);
-  const days = Math.floor(totalMin / 1440);
-  const hours = Math.floor((totalMin % 1440) / 60);
-  const mins = totalMin % 60;
-  const parts: string[] = [];
-  if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`);
-  if (hours) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
-  parts.push(`${mins} minute${mins === 1 ? '' : 's'}`);
-  return parts.join(', ');
-}
+
 
 /** La légende d'IOS 15.x, en six lignes. Elle en faisait deux. */
 const ROUTE_LEGEND = [
@@ -876,16 +865,22 @@ export function showCounters(router: Router): string {
 export function showIpProtocols(router: Router): string {
   const sections: string[] = [];
 
-  const ospf = router._getOSPFEngineInternal?.();
+  const ospf = router.isOSPFEnabled?.() ? router._getOSPFEngineInternal?.() : null;
   if (ospf) {
     const cfg = ospf.getConfig();
+    const aires = [...cfg.areas.values()];
+    const normales = aires.filter(a => !a.isStub && !a.isNSSA).length;
+    const stub = aires.filter(a => a.isStub && !a.isNSSA).length;
+    const nssa = aires.filter(a => a.isNSSA).length;
     const block: string[] = [
       `Routing Protocol is "ospf ${cfg.processId}"`,
       `  Outgoing update filter list for all interfaces is not set`,
       `  Incoming update filter list for all interfaces is not set`,
       `  Router ID ${cfg.routerId}`,
-      `  Number of areas in this router is ${cfg.areas.size}`,
+      `  Number of areas in this router is ${aires.length}.`
+        + ` ${normales} normal ${stub} stub ${nssa} nssa`,
       `  Reference bandwidth unit is ${cfg.autoCostReferenceBandwidth} mbps`,
+      '  Maximum path: 4',
       `  Routing for Networks:`,
     ];
     for (const n of cfg.networks) block.push(`    ${n.network} ${n.wildcard} area ${n.areaId}`);
@@ -1013,11 +1008,22 @@ export function showVlansRouter(router: Router): string {
   return 'No Virtual LAN sub-interfaces are configured';
 }
 
+/**
+ * `Port.getIPv6Addresses()` rend des ENTRÉES (adresse + longueur de
+ * préfixe + origine), pas des chaînes. Les deux sites d'appel le
+ * déclaraient `string[]` par coercition, ce qui a fait sortir
+ * `[object Object]` dans le terminal : une coercition qui ment au
+ * compilateur ne ment qu'à lui.
+ */
+function ipv6AddressStrings(port: import('../../../hardware/Port').Port): string[] {
+  return port.getIPv6Addresses().map(e => `${e.address}/${e.prefixLength}`);
+}
+
 export function showIpv6InterfaceBrief(router: Router): string {
   const ports = router._getPortsInternal();
   const lines: string[] = [];
   for (const [name, port] of ports) {
-    const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
+    const v6 = ipv6AddressStrings(port);
     const { status, protocol } = iosInterfaceStatus(port, name, ports);
     lines.push(`${name.padEnd(27)}[${status}/${protocol}]`);
     if (v6.length === 0) lines.push(`    unassigned`);
@@ -1029,7 +1035,7 @@ export function showIpv6InterfaceBrief(router: Router): string {
 export function showIpv6Interface(router: Router, ifName: string): string {
   const port = router._getPortsInternal().get(ifName);
   if (!port) return `% Invalid interface ${ifName}`;
-  const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
+  const v6 = ipv6AddressStrings(port);
   return [
     `${ifName} is ${iosInterfaceStatus(port, ifName, router._getPortsInternal()).status}, `
       + `line protocol is ${iosInterfaceStatus(port, ifName, router._getPortsInternal()).protocol}`,

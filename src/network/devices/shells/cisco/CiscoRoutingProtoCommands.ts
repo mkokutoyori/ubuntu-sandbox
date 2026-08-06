@@ -694,10 +694,13 @@ export function registerRoutingProtoShow(
 
   trie.register('show ip protocols', 'Display routing protocol state', () => {
     const out: string[] = [];
+    // `showIpProtocols` rend DÉJÀ les blocs OSPF et RIP. L'appeler sous
+    // condition de RIP laissait OSPF muet sans RIP ; lui ajouter un
+    // second bloc OSPF ici le rendait deux fois avec RIP. Il est le seul
+    // rendu, appelé sans condition.
+    const canonique = showIpProtocols(ctx.r());
+    if (canonique !== 'No routing protocol is configured.') out.push(canonique);
     if (ctx.r().isRIPEnabled()) {
-      // Reuse the RIP engine's canonical format (DRY), then append
-      // the extra knobs the engine doesn't model.
-      out.push(showIpProtocols(ctx.r()));
       if (!repo.rip.autoSummary) {
         out.push('  Automatic network summarization is not in effect');
       }
@@ -710,29 +713,6 @@ export function registerRoutingProtoShow(
       if (repo.rip.distance !== undefined) {
         out.push(`  Distance: ${repo.rip.distance}`);
       }
-    }
-    if (ctx.r().isOSPFEnabled()) {
-      const moteur = ctx.r()._getOSPFEngineInternal();
-      const cfg = moteur.getConfig();
-      const aires = [...cfg.areas.values()];
-      const normales = aires.filter(a => !a.isStub && !a.isNSSA).length;
-      const stub = aires.filter(a => a.isStub && !a.isNSSA).length;
-      const nssa = aires.filter(a => a.isNSSA).length;
-      out.push(`Routing Protocol is "ospf ${cfg.processId}"`);
-      out.push('  Outgoing update filter list for all interfaces is not set');
-      out.push('  Incoming update filter list for all interfaces is not set');
-      out.push(`  Router ID ${cfg.routerId}`);
-      out.push(`  Number of areas in this router is ${aires.length}.`
-        + ` ${normales} normal ${stub} stub ${nssa} nssa`);
-      out.push('  Maximum path: 4');
-      out.push('  Routing for Networks:');
-      for (const n of cfg.networks) out.push(`    ${n.network} ${n.wildcard} area ${n.areaId}`);
-      out.push('  Routing Information Sources:');
-      out.push('    Gateway         Distance      Last Update');
-      for (const v of moteur.getNeighbors()) {
-        out.push(`    ${String(v.routerId).padEnd(16)}110`);
-      }
-      out.push('  Distance: (default is 110)');
     }
     for (const p of repo.allEigrp()) {
       out.push(`Routing Protocol is "eigrp ${p.asn}"`);
