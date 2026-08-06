@@ -606,11 +606,23 @@ sur les trois vues et les deux plateformes Huawei ; ils sont nommés,
 comme l'avaient été ceux de Cisco. Le test de « aucun mot-clé muet »
 existe désormais des deux côtés.
 
-**Ce qui reste ouvert, et pourquoi.** Le suffixe ` on vty0 (10.0.0.5)`
-de `%SYS-5-CONFIG_I` demande le numéro de ligne, qui vit dans
-`SshSessionRegistry`, de l'autre côté du contrat de session SSH/telnet.
-L'omettre reste préférable à l'inventer : une ligne fausse serait fausse
-dès la deuxième session.
+**Ce qui reste ouvert, et pourquoi — mesuré cette fois, plus supposé.**
+Le suffixe ` on vty0 (10.0.0.5)` de `%SYS-5-CONFIG_I` demande le numéro
+de ligne. En telnet il est ATTEIGNABLE : `TelnetServerHandler.beginExec`
+appelle `openSession()` — qui rend `{id, line}` — avant
+`createShell()`, si bien que la ligne pourrait être passée au shell.
+En SSH, non : la ligne est allouée **de façon asynchrone**, par
+`SshSessionRegistry` qui écoute un sujet de bus au succès
+d'authentification (voir le commentaire de `Router` sur le double
+réservation), et rien ne redonne la référence au shell que
+`RouterSshServerContext.getShell` vient de créer — `SshUserContext` ne
+porte que le nom d'utilisateur.
+
+Ne le faire QUE pour telnet remplacerait une omission honnête par une
+INCOHÉRENCE entre les deux transports : la même action attribuée
+différemment selon la porte d'entrée. La corrélation shell ↔ session
+appartient à l'unification SSH ; tant qu'elle n'existe pas, l'attribution
+s'arrête au nom d'utilisateur, qui est vrai des deux côtés.
 
 ---
 
