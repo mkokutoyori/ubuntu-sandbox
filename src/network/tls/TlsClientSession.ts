@@ -15,7 +15,7 @@
  */
 import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
-import { generateKeyExchange, sharedSecret, type KeyExchangeKeyPair } from './keyExchange';
+import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchangeKeyPair } from './keyExchange';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -96,13 +96,22 @@ export class TlsClientSession {
   private readonly transcript: Uint8Array[] = [];
 
   constructor(private readonly config: TlsClientConfig) {
-    this.supportedGroups = config.supportedGroups ?? ['x25519'];
+    // Un vrai client n'annonce pas un groupe dont il n'a pas le code : le
+    // serveur le choisirait, et il faudrait alors soit abandonner plus
+    // tard, soit fabriquer un secret. Le filtre est là pour que la
+    // question ne se pose jamais.
+    this.supportedGroups = (config.supportedGroups ?? ['x25519']).filter(isImplementedGroup);
     this.pskInput = config.resumptionTicket ? deriveResumptionPsk(config.resumptionTicket) : ZERO_IKM;
   }
 
   /** Produces the initial `ClientHello` flight, offering a key_share for the first supported group. */
   start(): readonly TlsRecord[] {
     this.emit({ topic: 'tls.handshake.started', payload: { sessionId: this.sessionId, role: 'client' } });
+    // Aucun groupe calculable : rien ne part sur le fil. C'est ce que
+    // fait une vraie pile configurée avec des groupes qu'elle ne sait pas
+    // faire — elle échoue avant d'écrire, plutôt que d'ouvrir une
+    // conversation qu'elle ne peut pas conclure.
+    if (this.supportedGroups.length === 0) { this.fail('handshake_failure'); return []; }
     this.clientRandom = randomNonce('cli');
     const records = this.sendClientHello(this.supportedGroups[0]);
     if (!this.config.resumptionTicket || !this.config.earlyData) return records;
@@ -197,11 +206,9 @@ export class TlsClientSession {
     // privé que ce client n'a jamais transmis. Un témoin de la poignée de
     // main ne peut plus le recalculer, ce qui était le cas quand ce secret
     // n'était qu'un condensé des quatre valeurs publiques.
-    const dheSharedSecret = this.keyExchange === null ? null : sharedSecret(
-      this.keyExchange,
-      serverHello.extensions.keyShare ?? '',
-      [this.clientRandom, serverHello.random, this.clientKeyShare, serverHello.extensions.keyShare ?? ''].join('|'),
-    );
+    const dheSharedSecret = this.keyExchange === null
+      ? null
+      : sharedSecret(this.keyExchange, serverHello.extensions.keyShare ?? '');
     // §7.4.2 : un secret partagé tout à zéro fait abandonner la poignée de
     // main, parce que l'attaquant le connaîtrait d'avance.
     if (dheSharedSecret === null) return this.fail('illegal_parameter');

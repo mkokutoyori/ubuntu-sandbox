@@ -15,10 +15,21 @@
  * sienne sans préfixe ; il le met désormais, faute de quoi le client ne
  * saurait pas quelle courbe interpréter.
  *
- * Les groupes autres que `x25519` restent simulés — ni P-256 ni P-384
- * n'ont d'implémentation ici — et `sharedSecret` le dit en le rendant
- * explicitement, plutôt que de calculer un X25519 sur des octets qui
- * n'en sont pas.
+ * Il ne reste PLUS de groupe simulé, et c'est le sens de ce dernier
+ * passage. Tant qu'il en restait un, une poignée de main configurée des
+ * deux côtés sur `secp384r1` réussissait et les deux bouts tombaient
+ * d'accord sur un secret — mesuré, pas supposé — que n'importe quel
+ * témoin des valeurs publiques recalculait : exactement le défaut que
+ * l'étage 3 avait retiré à `x25519`, resté intact pour tout groupe sans
+ * implémentation, et invisible parce que les seuls tests nommant
+ * `secp384r1` s'en servaient pour provoquer une ABSENCE de groupe
+ * commun.
+ *
+ * Le correctif n'est pas d'implémenter P-384 mais de cesser de
+ * prétendre : un groupe qu'on ne sait pas calculer ne se négocie pas.
+ * `isImplementedGroup` dit lesquels sont réels, les deux sessions
+ * n'offrent et n'acceptent que ceux-là, et `sharedSecret` ABANDONNE au
+ * lieu de fabriquer.
  */
 
 import {
@@ -27,11 +38,23 @@ import {
   materialToP256Public, p256PublicToMaterial, P256_FIELD_BYTES,
 } from '@/crypto/ecc';
 import { bytesToHex, hexToBytes } from '@/crypto/encoding';
-import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 
 export const X25519_GROUP = 'x25519';
 /** Le nom que la RFC 8446 §4.2.7 donne à la courbe P-256. */
 export const P256_GROUP = 'secp256r1';
+
+/**
+ * Les groupes dont ce build sait réellement calculer un secret partagé.
+ *
+ * `secp384r1`, `ffdhe2048` et les autres restent des noms que la RFC
+ * 8446 §4.2.7 définit et que ce simulateur n'implémente pas — la même
+ * distinction que la troisième famille d'options du `PRD-Curl`.
+ */
+export const IMPLEMENTED_GROUPS: readonly string[] = [X25519_GROUP, P256_GROUP];
+
+export function isImplementedGroup(group: string): boolean {
+  return IMPLEMENTED_GROUPS.includes(group);
+}
 
 export interface KeyExchangeKeyPair {
   readonly group: string;
@@ -64,7 +87,12 @@ export function generateKeyExchange(group: string): KeyExchangeKeyPair {
       share: `${group}:${p256PublicToMaterial(q).slice('ec-pub:'.length)}`,
     };
   }
-  return { group, privateKey: new Uint8Array(0), share: `${group}:${simulatedDigest(`ks|${Math.random()}`)}` };
+  // Un groupe sans implémentation garde une part BIEN FORMÉE mais vide :
+  // les sessions le filtrent avant d'en arriver là, et si l'une d'elles
+  // y arrivait quand même, c'est `sharedSecret` qui abandonne. Rendre un
+  // condensé aléatoire ici donnerait une part que le pair croirait
+  // valide.
+  return { group, privateKey: new Uint8Array(0), share: `${group}:` };
 }
 
 /** `groupe:hexadécimal` → le corps de la part, avec son groupe. */
@@ -85,25 +113,25 @@ export function peerPublicKey(share: string): Uint8Array | null {
 /**
  * Le secret partagé, en hexadécimal, prêt pour `HKDF-Extract`.
  *
- * `null` quand le résultat est tout à zéro : la RFC 8446 §7.4.2 impose
- * d'ABANDONNER la poignée de main dans ce cas, parce qu'un point d'ordre
- * faible donnerait un secret que l'attaquant connaît d'avance. Laisser
- * passer serait la seule façon de transformer un vrai échange de clés en
- * faux.
+ * `null` dans les trois cas où il n'y a pas de secret à rendre, et où
+ * l'appelant doit donc émettre une alerte plutôt que continuer : un
+ * résultat tout à zéro (RFC 8446 §7.4.2 — un point d'ordre faible
+ * donnerait un secret que l'attaquant connaît d'avance), une part de
+ * pair malformée ou d'un autre groupe, et un groupe dont ce build n'a
+ * pas le code. Rendre quoi que ce soit dans l'un de ces cas serait la
+ * seule façon de transformer un vrai échange de clés en faux.
  */
-export function sharedSecret(
-  own: KeyExchangeKeyPair, peerShare: string, fallbackContext: string,
-): string | null {
+export function sharedSecret(own: KeyExchangeKeyPair, peerShare: string): string | null {
   if (own.group === X25519_GROUP) {
     const peer = peerPublicKey(peerShare);
-    if (peer === null) return simulatedDigest(fallbackContext);
+    if (peer === null) return null;
     const partage = x25519(own.privateKey, peer);
     return isAllZero(partage) ? null : bytesToHex(partage);
   }
 
   if (own.group === P256_GROUP) {
     const parsee = parseShare(peerShare);
-    if (!parsee || parsee.group !== P256_GROUP) return simulatedDigest(fallbackContext);
+    if (!parsee || parsee.group !== P256_GROUP) return null;
     const q = materialToP256Public(`ec-pub:${parsee.body}`);
     if (q === null) return null;
     const d = BigInt(`0x${bytesToHex(own.privateKey)}`);
@@ -111,7 +139,5 @@ export function sharedSecret(
     return partage === null ? null : bytesToHex(partage);
   }
 
-  // Groupe sans implémentation des deux côtés : la valeur reste simulée,
-  // et ce chemin est désormais le seul qui le soit.
-  return simulatedDigest(fallbackContext);
+  return null;
 }

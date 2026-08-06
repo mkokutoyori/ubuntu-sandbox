@@ -16,7 +16,7 @@
  */
 import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
-import { generateKeyExchange, sharedSecret } from './keyExchange';
+import { generateKeyExchange, sharedSecret, isImplementedGroup } from './keyExchange';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -103,7 +103,11 @@ export class TlsServerSession {
     this.cipherSuitePreference = preferred
       ? [preferred, ...MANDATORY_CIPHER_SUITES.filter((s) => s !== preferred)]
       : MANDATORY_CIPHER_SUITES;
-    this.supportedGroups = config.supportedGroups ?? ['x25519'];
+    // Symétrique du client : le serveur ne peut pas SÉLECTIONNER un
+    // groupe dont il n'a pas le code, ni par key_share ni par
+    // HelloRetryRequest. Sans ce filtre il en imposait un au client, et
+    // la poignée de main se concluait sur un secret fabriqué.
+    this.supportedGroups = (config.supportedGroups ?? ['x25519']).filter(isImplementedGroup);
     this.alpnProtocols = config.alpnProtocols ?? [];
   }
 
@@ -202,11 +206,7 @@ export class TlsServerSession {
     const serverHelloBytes = encodeHandshakeMessage(serverHello);
     this.transcript.push(serverHelloBytes);
 
-    const dheSharedSecret = sharedSecret(
-      echange,
-      clientHello.extensions.keyShare,
-      [clientHello.random, serverRandom, clientHello.extensions.keyShare, serverKeyShare].join('|'),
-    );
+    const dheSharedSecret = sharedSecret(echange, clientHello.extensions.keyShare);
     if (dheSharedSecret === null) return this.reject('illegal_parameter');
     // Simplification: application/resumption secrets are derived from the
     // CH+SH transcript checkpoint rather than the true through-Finished
