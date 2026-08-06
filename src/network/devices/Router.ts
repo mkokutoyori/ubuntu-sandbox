@@ -1376,7 +1376,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const iface = this.findInterfaceForIP(nextHop);
     const ifaceName = opts?.iface ?? (iface ? iface.getName() : '');
 
-    this.routingTable.push({
+    const entry: RouteEntry = {
       network, mask, nextHop,
       iface: ifaceName,
       type: 'static',
@@ -1390,7 +1390,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       vpnInstance: opts?.vpnInstance,
       permanent: opts?.permanent,
       ifaceConfigured: opts?.iface !== undefined ? true : undefined,
-    });
+    };
+
+    const same = this.routingTable.findIndex((r) => r.type === 'static'
+      && r.network.toString() === network.toString()
+      && r.mask.toString() === mask.toString()
+      && r.nextHop?.toString() === nextHop.toString()
+      && r.iface === ifaceName);
+    if (same >= 0) this.routingTable[same] = entry;
+    else this.routingTable.push(entry);
 
     Logger.info(this.id, 'router:route-add',
       `${this.name}: static route ${network}/${mask.toCIDR()} via ${nextHop} metric ${metric}`);

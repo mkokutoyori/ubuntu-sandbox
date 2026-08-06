@@ -565,3 +565,79 @@ est intacte. `basic-commandes.test.ts` (4 cas) posait des routes
 statiques vers un prochain saut qu'aucune interface ne pouvait résoudre,
 puis attendait de les voir ; `setupCiscoTopology()` adresse et active
 désormais le lien, ce qu'un vrai IOS exige pour installer la route.
+
+---
+
+## 10. R2 — Livré
+
+**L'invariant d'abord.** `cisco-config-round-trip.test.ts` (11 cas)
+sérialise, rejoue sur un routeur neuf **par le chemin de l'import de
+topologie** (`replayVendorConfig`, exporté pour l'occasion plutôt que
+réécrit dans le test — une boucle écrite pour la circonstance ne
+prouverait rien de l'import), re-sérialise et compare. Il n'énumère
+aucune commande. Écrit avant les correctifs, il tombait sur 10 cas
+sur 11 ; il en a trouvé deux que le rapport ne mentionnait pas.
+
+**Ce que l'invariant a trouvé et que personne n'avait relevé.**
+
+1. **Rejouer une configuration la faisait GROSSIR.** `network`,
+   `ip route`, `match`, `set` étaient tous empilés sans contrôle
+   d'existence, alors que retaper une déclaration déjà posée est un
+   no-op sur IOS. À l'import d'une topologie, chaque tour ajoutait un
+   doublon. Corrigé aux cinq magasins (RIP, EIGRP, BGP, OSPF, routes
+   statiques, clauses de route-map).
+2. **`!` ne refermait pas un bloc au rejeu.** `replayVendorConfig`
+   revenait à la vue de base sur une transition indenté → non indenté,
+   donc un bloc sans aucune ligne indentée (`router eigrp 0` seul) ne la
+   déclenchait pas : la tête du bloc SUIVANT était dispatchée dans le
+   sous-mode précédent. Mesuré : le second `router rip` du §1.2 était
+   refusé et ses lignes atterrissaient dans `router eigrp`. `!` est le
+   séparateur de bloc, il rend la main.
+
+**Les points du rapport.**
+
+- **§1.1** — `RedistributeSource` (protocole, identifiant, métrique,
+  `metric-type`, `subnets`, `route-map`) remplace le sac de lignes
+  brutes ; `renderRedistribute()` est le seul endroit qui écrit le mot.
+  `redistribute redistribute ospf 1 metric 5` n'est plus constructible.
+  Une source déjà déclarée est remplacée, jamais empilée.
+- **§1.2** — Chaque bloc `router …` n'a qu'un propriétaire. RIP et OSPF
+  étaient rendus par `getRunningConfig` **et** par le sérialiseur ; les
+  deux blocs sont maintenant produits par le sérialiseur seul.
+  Conséquence mesurée et voulue : ` version 2` ne paraît plus quand
+  l'opérateur ne l'a pas tapé — c'est le moteur qui tourne en v2 par
+  défaut, ce que la configuration d'IOS ne dit pas non plus.
+- **§1.3** — `router eigrp NAMED-AS` est refusé. Il devenait `NaN`, donc
+  le processus 0, qui apparaissait en configuration sans avoir été
+  demandé.
+- **§1.4** — Un second processus OSPF est refusé (`% OSPF process 1 is
+  already running, only one OSPF process is supported on this
+  platform`), et `vrf` avec lui. Le `router-id` posé sous `ospf 10`
+  n'écrase plus celui d'`ospf 1`.
+- **§1.6** — `router bgp <autre AS>` était accepté et **remplaçait** le
+  processus par un vide : tout ce qui était configuré sous 65001
+  disparaissait sans un mot. `ensureBgp` est un get-or-create, et un AS
+  différent est refusé (`% Currently a BGP peer to AS 65001`).
+  `route-map` et `ip prefix-list` sont sérialisés (`policyConfigLines`),
+  ce qu'aucun rendu ne faisait.
+- **`show route-map`** rendait `match ip address 10` là où IOS rend
+  l'argument seul sous `Match clauses:`. Même cause que §1.1 : la clause
+  gardait la ligne, et les deux rendus la préfixaient.
+
+**§1.5 est réfuté.** `network 172.16.3.0 255.255.255.0 area 0` rendu
+`network 0.0.0.0 255.255.255.0 area 0` n'est pas une corruption : IOS
+normalise l'adresse en effaçant les bits que le wildcard laisse libres,
+et `network 10.1.1.1 0.0.0.255` devient `network 10.1.1.0 0.0.0.255`
+pour la même raison. Il n'y a rien à valider non plus — IOS accepte
+n'importe quel quadruplet comme wildcard. Ce qui EST vrai et n'était pas
+vu : la ligne rendue, retapée, était ajoutée une seconde fois. Un cas de
+la suite pin la normalisation et sa stabilité.
+
+**Deux suites encodaient l'ancien état** et disent la même chose que le
+correctif : `cisco-policy.test.ts` attendait le `match` en double,
+`rip.test.ts` attendait un ` version 2` que l'opérateur n'avait pas tapé.
+
+**Reste ouvert, et sciemment.** Les refus du chantier B (`af-interface`,
+`area 0 stub`, `no shutdown` en configuration globale) — R3 ; ce sont
+des sous-modes, pas des identifiants. Le `vrf` d'OSPF est refusé plutôt
+qu'implémenté, comme §8 le prévoit.

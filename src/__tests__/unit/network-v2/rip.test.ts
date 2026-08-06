@@ -680,8 +680,13 @@ describe('Group 5: CLI Commands', () => {
 
     const output = await r1.executeCommand('show running-config');
     expect(output).toContain('router rip');
-    expect(output).toContain('version 2');
     expect(output).toContain('network 10.0.0.0');
+    // Aucun `version` n'a ete tape : IOS n'en rend pas. C'est le moteur
+    // qui tourne en v2 par defaut, ce que la configuration ne dit pas.
+    expect(output).not.toContain(' version 2');
+
+    await r1.executeCommand('version 2');
+    expect(await r1.executeCommand('show running-config')).toContain(' version 2');
 
     r1.disableRIP();
   });
