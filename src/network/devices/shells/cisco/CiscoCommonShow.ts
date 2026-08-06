@@ -101,6 +101,12 @@ export interface CiscoHardwareProfile {
   dramKB: number;
   ioMemoryKB: number;
   nvramKB: number;
+  /**
+   * Ce qu'IOS ANNONCE, qui n'est pas la taille de la puce : le
+   * chargeur s'en réserve une part, et un 2911 dont la NVRAM fait 256K
+   * écrit `255K bytes of non-volatile configuration memory.`
+   */
+  nvramDisplayKB: number;
   flashImage: string;
   flashImageSize: number;
   flashTotalBytes: number;
@@ -113,9 +119,12 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
     pid: 'CISCO2911/K9',
     description: 'Cisco ISR 2911 Integrated Services Router',
     serialNumber: 'FTX1234567A',
-    dramKB: 524288,
-    ioMemoryKB: 65536,
+    // 512 Mo se répartissent en 491520K de DRAM et 32768K d'E/S. Le
+    // couple 524288/65536 en annonçait 576, une taille qui n'existe pas.
+    dramKB: 491520,
+    ioMemoryKB: 32768,
     nvramKB: 256,
+    nvramDisplayKB: 255,
     flashImage: 'c2900-universalk9-mz.SPA.157-3.M5.bin',
     flashImageSize: 86234112,
     flashTotalBytes: 256016384,
@@ -129,6 +138,7 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
     dramKB: 131072,
     ioMemoryKB: 32768,
     nvramKB: 64,
+    nvramDisplayKB: 63,
     flashImage: 'c2960-lanbasek9-mz.150-2.SE.bin',
     flashImageSize: 17825792,
     flashTotalBytes: 64016384,
@@ -142,6 +152,7 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
     dramKB: 131072,
     ioMemoryKB: 32768,
     nvramKB: 128,
+    nvramDisplayKB: 127,
     flashImage: 'c3560-ipservicesk9-mz.122-55.SE12.bin',
     flashImageSize: 24903680,
     flashTotalBytes: 65536000,
@@ -150,10 +161,17 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
   },
 };
 
+/**
+ * `NAME` désigne l'ENTITÉ PHYSIQUE au sens de la RFC 2737, pas la machine :
+ * un châssis s'y nomme `CISCO2911/K9 chassis`, jamais du nom que
+ * l'opérateur a donné au routeur — lequel peut changer sans que le
+ * matériel bouge.
+ */
 export function showInventory(hostname: string, profile: CiscoChassisProfile = 'switch-c3560'): string {
+  void hostname;
   const c = CISCO_HARDWARE_PROFILES[profile];
   return [
-    `NAME: "${hostname}", DESCR: "${c.description}"`,
+    `NAME: "${c.pid} chassis", DESCR: "${c.description}"`,
     `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${c.serialNumber}`,
   ].join('\n');
 }
@@ -432,10 +450,15 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
  * the truthful output is the unconfigured/zero-activity state — not a
  * fabricated population.
  */
-export function showSnmp(dev?: ShowStateDevice): string {
+export function showSnmp(
+  dev?: ShowStateDevice,
+  profile: CiscoChassisProfile = 'router-isr2911',
+): string {
   const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  const chassis = CISCO_HARDWARE_PROFILES[profile].serialNumber;
   if (!svc || !svc.isEnabled()) {
     return [
+      `Chassis: ${svc?.getChassisId() || chassis}`,
       'SNMP agent not enabled',
       '0 SNMP packets input',
       '0 SNMP packets output',
@@ -443,7 +466,7 @@ export function showSnmp(dev?: ShowStateDevice): string {
   }
   const s = svc.getStats();
   const lines: string[] = [
-    `Chassis: ${svc.getChassisId() || 'n/a'}`,
+    `Chassis: ${svc.getChassisId() || chassis}`,
     `${s.pktsIn} SNMP packets input`,
     `    ${s.badVersions} Bad SNMP version errors`,
     `    ${s.badCommunityNames} Unknown community name`,

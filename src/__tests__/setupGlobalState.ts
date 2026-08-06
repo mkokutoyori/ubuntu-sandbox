@@ -16,7 +16,9 @@ import { __setDefaultEventBus } from '@/events/EventBus';
 import { __setDefaultScheduler } from '@/events/Scheduler';
 import { resetFaultRegistry } from '@/network/faults/FaultRegistry';
 import { __resetFaultProjection } from '@/network/faults/FaultProjection';
-import { __assumeCarrierOnUncabledPorts, __setInterfacesBootShutdown } from '@/network/devices/inspection/InterfaceStatusView';
+import {
+  __assumeCarrierOnUncabledPorts, __setInterfacesBootShutdown, __setLegacyRouterPortCount,
+} from '@/network/devices/inspection/InterfaceStatusView';
 
 beforeEach(() => {
   resetCounters();
@@ -41,4 +43,9 @@ beforeEach(() => {
   // ce défaut ici plutôt que de migrer 1500 fichiers d'un coup. Une suite
   // qui veut la fidélité appelle `__setInterfacesBootShutdown(true)`.
   __setInterfacesBootShutdown(false);
+  // Un ISR 2911 porte trois interfaces, et c'est ce que la production
+  // construit. Les suites antérieures en supposent quatre ; on le leur
+  // rend ici, une suite de fidélité appelant
+  // `__setLegacyRouterPortCount(null)`.
+  __setLegacyRouterPortCount(4);
 });
