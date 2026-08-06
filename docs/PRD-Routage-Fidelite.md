@@ -518,3 +518,50 @@ que j'ai cassé.
 - Les **VRF** comme plan de transfert : `ip vrf forwarding` est perdu en
   configuration, ce que le chantier A corrige, mais aucun transfert par
   VRF n'existe et ce PRD n'en crée pas.
+
+---
+
+## 9. R4 — Livré
+
+`Router.installedRoutes()` est la seule élection : utilisable
+(`isRouteUsable`), puis meilleure distance administrative par préfixe,
+les ex aequo conservés pour l'ECMP. `show ip cef` et `show ip route
+summary` la lisent ; la RIB lisait déjà `isRouteUsable`. Les trois vues
+ne peuvent donc plus décrire trois tables.
+
+Les quatre correctifs de §4.3 :
+
+1. `isRouteInterfaceUsable('')` rend `false`. Une route statique dont
+   aucune interface ne résout le prochain saut est configurée et non
+   installée — c'était l'inversion : elle était la seule à échapper au
+   contrôle, faute d'interface à vérifier, donc la seule à survivre
+   quand les routes résolues tombaient.
+2. `Null0` se rend `is directly connected, Null0` dans la RIB et
+   `attached … Null0` dans la FIB : c'est une interface de rejet, pas un
+   prochain saut vers `0.0.0.0`.
+3. La FIB dérive de la RIB. Une seule route par défaut est programmée,
+   celle de meilleure distance ; la flottante ne l'est pas. La ligne
+   `0.0.0.0/0  no route` n'est écrite que lorsque la table n'a
+   effectivement aucune route par défaut, et c'est ce que la commande
+   dit alors — pas un préfixe de plus.
+4. `show ip route summary` compte les préfixes élus, `Gateway of last
+   resort` nomme le prochain saut de la route par défaut installée.
+
+`show ip cef <préfixe>` honore son argument (point emprunté au chantier
+D, il était dans la même fonction).
+
+**Tests.** `cisco-rib-fib-agreement.test.ts` (10 cas) compare les vues
+entre elles et jamais à une chaîne écrite à la main : l'ensemble des
+préfixes de la FIB est celui de la RIB, le total du résumé est le compte
+de la FIB, câbler une interface éteinte fait apparaître ses routes dans
+les trois vues d'un coup, `shutdown` les en retire ensemble.
+Discrimination par `git stash` : 7 des 10 tombent avant le correctif.
+
+**Deux suites encodaient l'ancien état, et disaient la même chose.**
+`cisco-router-operational-show.test.ts` vérifiait que la FIB « projette
+la vraie table de routage » sur un routeur non câblé, dont la vraie
+table est vide : la topologie est maintenant réelle, l'intention du test
+est intacte. `basic-commandes.test.ts` (4 cas) posait des routes
+statiques vers un prochain saut qu'aucune interface ne pouvait résoudre,
+puis attendait de les voir ; `setupCiscoTopology()` adresse et active
+désormais le lien, ce qu'un vrai IOS exige pour installer la route.

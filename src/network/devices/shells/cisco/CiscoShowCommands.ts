@@ -190,10 +190,11 @@ export function renderIpRouteTable(
       defaults.push(`S*    0.0.0.0/0 [${r.ad ?? 1}/${r.metric ?? 0}] via ${r.nextHop}`);
       continue;
     }
-    const via = r.nextHop ? `via ${r.nextHop}` : 'is directly connected';
+    const attachee = !r.nextHop || String(r.nextHop) === '0.0.0.0';
+    const via = attachee ? 'is directly connected' : `via ${r.nextHop}`;
     const metricStr = r.type === 'connected' || r.type === 'local'
       ? '' : ` [${r.ad ?? 1}/${r.metric ?? 0}]`;
-    const suffix = r.type === 'static' ? '' : `, ${r.iface}`;
+    const suffix = r.type === 'static' && !attachee ? '' : `, ${r.iface}`;
     rendered.push({
       code: codeOverride?.(r) ?? routeCode(r.type),
       networkInt: r.network.toUint32 ? r.network.toUint32() : dottedToInt(r.network.toString()),

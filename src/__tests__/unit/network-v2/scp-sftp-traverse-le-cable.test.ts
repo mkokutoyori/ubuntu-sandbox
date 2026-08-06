@@ -96,17 +96,30 @@ describe('Phase 4 — scp/sftp passent par le câble', () => {
     expect(apres).toBeGreaterThan(avant);
   }, 60_000);
 
-  it('sans clé ni mot de passe, le transfert reste possible — et le dit', async () => {
-    // Le repli documenté : aucune clé n'est posée, donc aucune session
-    // réelle ne peut s'ouvrir. Le transfert continue de fonctionner par
-    // la résolution directe, comme avant Phase 4 — c'est ce qui garde
-    // vivants les scénarios pédagogiques qui n'ont jamais posé de clé.
-    const { client, server } = await lab();
+  /**
+   * Ce cas affirmait le contraire — « aucune session réelle ne peut
+   * s'ouvrir », « le transfert continue par la résolution directe, comme
+   * avant Phase 4 » — et la mesure le dément : 25 trames traversent le
+   * câble. La raison est que le sshd de ce simulateur accorde la session
+   * quand RIEN n'est offert (`verifyOfferedPassword`), si bien que la
+   * session filaire s'ouvre pour de bon.
+   *
+   * Le repli existe toujours et reste utile, mais pour d'autres
+   * situations : pas de connecteur TCP injecté, ou une authentification
+   * qui échoue réellement. Il n'est pas le chemin du transfert sans clé.
+   */
+  it('même sans clé ni mot de passe, le transfert passe par le câble', async () => {
+    const { client, server, c1 } = await lab();
     await server.executeCommand('useradd -m -s /bin/bash bob');
     await client.executeCommand(`sh -c 'echo "sans clef" > /tmp/nokey.txt'`);
 
+    const avant = frames(c1);
     await client.executeCommand(`scp /tmp/nokey.txt bob@${SRV}:/home/bob/nokey.txt`);
+    const apres = frames(c1);
 
     expect(await server.executeCommand('cat /home/bob/nokey.txt')).toContain('sans clef');
+    // Ce que « le fichier est arrivé » ne dit pas : la copie directe le
+    // faisait arriver tout aussi bien, sans émettre une seule trame.
+    expect(apres).toBeGreaterThan(avant);
   }, 60_000);
 });

@@ -42,11 +42,17 @@ function setupWindowsTopology() {
   return { pc1, pc2, sw };
 }
 
-function setupCiscoTopology() {
+async function setupCiscoTopology() {
   const r1 = new CiscoRouter('R1', 0, 0);
   const r2 = new CiscoRouter('R2', 100, 0);
   const cable = new Cable('c1');
   cable.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
+  for (const [dev, ip] of [[r1, '192.168.1.2'], [r2, '192.168.1.1']] as const) {
+    for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
+      `ip address ${ip} 255.255.255.0`, 'no shutdown', 'end']) {
+      await dev.executeCommand(c);
+    }
+  }
   return { r1, r2 };
 }
 
@@ -616,7 +622,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('71. should set valid IP address and mask on Cisco GigabitEthernet interface', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -628,7 +634,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('72. should overwrite previous interface IP configuration settings', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -641,7 +647,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('73. should accept variable length subnets (VLSM)', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -650,7 +656,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('74. should remove IP configuration when no ip address is executed', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -663,7 +669,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('75. should allow secondary IP address configurations', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -673,7 +679,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('76. should delete specific secondary IP allocations', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -684,7 +690,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('77. should allow configuring IP addresses when physical line states are down', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -694,7 +700,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('78. should reject discontiguous subnet mask formats', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -703,7 +709,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('79. should reject IP configurations outside valid octet range', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -712,7 +718,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('80. should reflect correct IP parameters on show ip interface brief commands', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0');
@@ -724,14 +730,14 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('81. should show advanced details for interface queries', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     const details = await r1.executeCommand('show interfaces GigabitEthernet0/0');
     expect(details).toContain('GigabitEthernet0/0');
   });
 
   it('82. should prevent IP configurations when executing in invalid modes (Global mode)', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip address 10.1.1.1 255.255.255.0');
@@ -760,7 +766,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('85. should support virtual software loopback interface allocations', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface Loopback0');
@@ -781,7 +787,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('86. should configure static routing paths using standard next-hop gateways', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 10.10.10.0 255.255.255.0 192.168.1.1');
@@ -792,7 +798,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('87. should configure static routing paths directing to physical interfaces directly', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 10.10.10.0 255.255.255.0 GigabitEthernet0/0');
@@ -800,7 +806,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('88. should configure static routing paths using interface together with next-hop gateways', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 10.10.10.0 255.255.255.0 GigabitEthernet0/0 192.168.1.1');
@@ -808,7 +814,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('89. should configure general default routes (gateway of last resort)', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 0.0.0.0 0.0.0.0 192.168.1.1');
@@ -819,7 +825,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('90. should configure administrative distance on routes (floating static routing)', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 10.10.10.0 255.255.255.0 192.168.1.1 90');
@@ -827,7 +833,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('91. should delete static route from database', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('ip route 10.10.10.0 255.255.255.0 192.168.1.1');
@@ -839,14 +845,14 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('92. should render tables clearly during show ip route operations', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     const routes = await r1.executeCommand('show ip route');
     expect(routes).toContain('Codes:');
   });
 
   it('93. should show static-specific entries when filtered', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('ip route 10.10.10.0 255.255.255.0 192.168.1.1');
@@ -856,7 +862,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('94. should query pathways for targeted addresses within active route table', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('ip route 10.10.10.0 255.255.255.0 192.168.1.1');
@@ -866,7 +872,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('95. should reject routing configurations with invalid next-hop parameters', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 10.10.10.0 255.255.255.0 300.1.1.1');
@@ -874,7 +880,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('96. should reject route configurations using discontinuous mask parameters', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 10.10.10.0 255.0.255.0 192.168.1.1');
@@ -882,7 +888,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('97. should show syntax errors on incomplete routing command definitions', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 10.10.10.0');
@@ -890,7 +896,7 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('98. should clear Gateway of Last Resort on deleting default pathways', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('ip route 0.0.0.0 0.0.0.0 192.168.1.1');
@@ -901,14 +907,14 @@ describe('Cisco IOS Static Route configurations', () => {
   });
 
   it('99. should resolve and support common route command abbreviations', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     const output = await r1.executeCommand('sh ip ro');
     expect(output).toContain('Codes:');
   });
 
   it('100. should reject host configurations containing active host bits inside network prefixes', async () => {
-    const { r1 } = setupCiscoTopology();
+    const { r1 } = await setupCiscoTopology();
     await r1.executeCommand('enable');
     await r1.executeCommand('configure terminal');
     const output = await r1.executeCommand('ip route 10.10.10.5 255.255.255.0 192.168.1.1');

@@ -1213,15 +1213,20 @@ export class LinuxCommandExecutor {
    * Audit 03, MAJEUR §4: when a real credential is available, the
    * transfer now goes through a real `SshSession` + `SshSftpChannel`
    * (`WireSftpFileSystem`) instead of the direct VFS-to-VFS copy —
-   * bytes actually cross `TcpSocket.send()`/`Port`/`Cable`. When no
-   * such credential is offered (the overwhelming majority of existing
-   * scp/sftp usage, which relies on `verifyOfferedPassword`'s
-   * "trust when nothing was offered" convenience — there is no real
-   * password to authenticate with in that case), or when the wire
-   * auth itself fails, this falls back unchanged to the same
-   * `resolveRemoteSftpFs`/`resolveRemoteSftpFsFromDevice` bypass
-   * `runSshTransport` already uses, so behavior for every passwordless
-   * scp/sftp scenario is unaffected.
+   * bytes actually cross `TcpSocket.send()`/`Port`/`Cable`.
+   *
+   * Ce commentaire affirmait qu'un transfert SANS justificatif retombait
+   * sur le contournement direct. C'est faux, et la mesure le dit : le
+   * sshd de ce simulateur accorde la session quand RIEN n'est offert
+   * (`verifyOfferedPassword`), si bien qu'un `scp` sans clé ni mot de
+   * passe ouvre une vraie session et fait passer des trames — 25 sur le
+   * câble intermédiaire, comptées par
+   * `scp-sftp-traverse-le-cable.test.ts`.
+   *
+   * Le repli sur `resolveRemoteSftpFs`/`resolveRemoteSftpFsFromDevice`
+   * subsiste et sert encore, mais à d'autres situations : aucun
+   * `tcpConnector` injecté, connexion refusée, ou authentification qui
+   * échoue réellement.
    */
   async runSshTransportAsync(
     cmd: 'scp' | 'sftp',
