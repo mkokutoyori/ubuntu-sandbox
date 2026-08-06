@@ -61,7 +61,17 @@ export type CLIMode =
  */
 class UnsupportedOnThisSwitchError extends Error {}
 
+/** @see CiscoShellBase.isControlFlowError */
+function isUnsupportedOnThisSwitch(e: unknown): boolean {
+  return e instanceof UnsupportedOnThisSwitchError;
+}
+
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
+  /** A `require*` refusal is a signal for `execute` below, not a crash. */
+  protected override isControlFlowError(err: unknown): boolean {
+    return isUnsupportedOnThisSwitch(err);
+  }
+
   // ─── Switch-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
   private selectedInterfaceRange: string[] = [];

@@ -15,6 +15,7 @@ import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { CiscoShellContext } from './CiscoConfigCommands';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────
@@ -155,6 +156,19 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
+/**
+ * The backbone, however it was spelled. IOS accepts an area id as a
+ * decimal or in dotted-quad form, so `area 0`, `area 0.0.0.0` and
+ * `area 00` all name the same area — a check on the literal text would
+ * be defeated by the second spelling.
+ */
+function isBackboneArea(areaId: string): boolean {
+  const t = areaId.trim();
+  if (/^\d+$/.test(t)) return Number(t) === 0;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(t)) return t.split('.').every((o) => Number(o) === 0);
+  return false;
+}
+
 function adresseReseau(ip: string, wildcard: string): string {
   const o = ip.split('.').map(Number);
   const w = wildcard.split('.').map(Number);
@@ -225,6 +239,15 @@ function adresseReseau(ip: string, wildcard: string): string {
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
 
+    if (subCmd === 'stub' || subCmd === 'nssa') {
+      // Area 0 carries the inter-area LSAs a stub/NSSA area exists to
+      // suppress, so the backbone can be neither (RFC 2328 §3.6). IOS
+      // refuses in these exact words rather than storing a contradiction.
+      if (isBackboneArea(areaId)) {
+        return `% OSPF: Area 0 is the backbone area and cannot be a ${
+          subCmd === 'stub' ? 'stub' : 'NSSA'} area.`;
+      }
+    }
     if (subCmd === 'stub') {
       ospf.setAreaType(areaId, args[2]?.toLowerCase() === 'no-summary' ? 'totally-stubby' : 'stub');
       return '';
@@ -575,6 +598,10 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     const v3e = ctx.r()._getOSPFv3EngineInternal()!;
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
+    if (subCmd === 'stub' && isBackboneArea(areaId)) {
+      // Same rule as OSPFv2 — the backbone is not a stub area.
+      return '% OSPF: Area 0 is the backbone area and cannot be a stub area.';
+    }
     if (subCmd === 'stub') {
       v3e.addArea(areaId, 'stub');
       v3e.setAreaType(areaId, 'stub');
