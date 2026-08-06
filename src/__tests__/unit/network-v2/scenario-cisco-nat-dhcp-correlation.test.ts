@@ -110,7 +110,7 @@ describe('Scénario 14 (Cisco) — NAT et DHCP : cohérence allocation/traductio
     it('ACL-DHCP-NAT (permit 192.168.10.0 0.0.0.255) couvre entièrement la plage DHCP allouable', async () => {
       const { router } = await buildLab();
       const out = await router.executeCommand('show ip access-lists ACL-DHCP-NAT');
-      expect(out).toContain('192.168.10.0 0.0.0.255');
+      expect(out).toContain('192.168.10.0, wildcard bits 0.0.0.255');
     });
   });
 

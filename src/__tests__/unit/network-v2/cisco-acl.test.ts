@@ -531,7 +531,7 @@ describe('Cisco ACL (Access Control Lists)', () => {
       ]);
       const output = await r.executeCommand('show access-lists');
       expect(output).toContain('Standard IP access list 10');
-      expect(output).toContain('permit 10.0.1.0 0.0.0.255');
+      expect(output).toContain('permit 10.0.1.0, wildcard bits 0.0.0.255');
       expect(output).toContain('deny any');
     });
 
@@ -575,7 +575,7 @@ describe('Cisco ACL (Access Control Lists)', () => {
       ]);
       const output = await r.executeCommand('show access-lists');
       expect(output).toContain('Standard IP access list MY_ACL');
-      expect(output).toContain('permit 10.0.1.0 0.0.0.255');
+      expect(output).toContain('permit 10.0.1.0, wildcard bits 0.0.0.255');
     });
 
     it('6.5 should display empty when no ACLs configured', async () => {
@@ -600,7 +600,7 @@ describe('Cisco ACL (Access Control Lists)', () => {
       const { pcA } = buildTopology();
       // After traffic, match counts should be shown
       const output = await r1.executeCommand('show access-lists');
-      expect(output).toContain('permit 10.0.1.0 0.0.0.255');
+      expect(output).toContain('permit 10.0.1.0, wildcard bits 0.0.0.255');
     });
   });
 

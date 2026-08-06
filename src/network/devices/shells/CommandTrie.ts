@@ -915,7 +915,7 @@ export class CommandTrie {
     consumedArgs = 0,
     firstArg: string | null = null,
   ): Array<{ keyword: string; description: string }> {
-    const raw = this.nodeCompletionsUnsorted(node, consumedArgs, firstArg);
+    const raw = dedupeByKeyword(this.nodeCompletionsUnsorted(node, consumedArgs, firstArg));
     const rank = (keyword: string): number => {
       if (keyword === '<cr>') return 2;
       if (keyword.startsWith('<')) return 1;
@@ -1026,6 +1026,24 @@ export class CommandTrie {
 let largeurPrompt = 0;
 export function setInvalidInputPromptWidth(n: number): void {
   largeurPrompt = Math.max(0, n | 0);
+}
+
+/**
+ * Un même mot-clé ne peut pas apparaître deux fois dans une aide. Il le
+ * pouvait : `describeArgs('permit tcp any any eq', …)` crée les nœuds
+ * intermédiaires `any` et `eq`, que l'énumération du nœud propose déjà
+ * par ailleurs. On garde la description la plus informative.
+ */
+function dedupeByKeyword(
+  entries: Array<{ keyword: string; description: string }>,
+): Array<{ keyword: string; description: string }> {
+  const par = new Map<string, { keyword: string; description: string }>();
+  for (const e of entries) {
+    const cle = e.keyword.toLowerCase();
+    const vu = par.get(cle);
+    if (!vu || (vu.description === '' && e.description !== '')) par.set(cle, e);
+  }
+  return [...par.values()];
 }
 
 export function formatInvalidInput(errorPos: number): string {
