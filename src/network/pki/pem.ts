@@ -20,6 +20,7 @@
 import { bytesToBase64, base64ToBytes, utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import type { X509Certificate } from './X509Certificate';
 import type { PkiPrivateKey, PkiPublicKey } from './PkiKeyPair';
+import { CertificateRevocationList, type CrlFields } from './CertificateRevocationList';
 
 export type PemLabel =
   | 'CERTIFICATE'
@@ -150,10 +151,29 @@ export function pemToCsr(pem: string): CertificateRequest | null {
 
 // ─── Liste de révocation ────────────────────────────────────────────
 
-export function crlToPem(crl: unknown): string {
+export function crlToPem(crl: CertificateRevocationList): string {
   return armour('X509 CRL', crl);
 }
 
-export function pemToCrl(pem: string): unknown | null {
-  return unarmour(pem, 'X509 CRL');
+/**
+ * Une CRL relue est une VRAIE `CertificateRevocationList`, signature
+ * comprise, et non plus l'objet quelconque que ce module rendait.
+ *
+ * Le typage n'est pas cosmétique : tant que cette fonction rendait
+ * `unknown`, aucun appelant ne pouvait demander `isValidSignature` ni
+ * `contains`, donc aucune CRL de ce simulateur n'était opposable à quoi
+ * que ce soit — `-gencrl` publiait une liste que personne ne pouvait
+ * lire autrement que pour l'afficher.
+ */
+export function pemToCrl(pem: string): CertificateRevocationList | null {
+  const o = unarmour(pem, 'X509 CRL') as (CrlFields & { signature?: string }) | null;
+  if (!o || typeof o.issuer !== 'string' || !Array.isArray(o.revoked)) return null;
+  return CertificateRevocationList.fromParsed({
+    version: 2,
+    issuer: o.issuer,
+    thisUpdate: o.thisUpdate,
+    nextUpdate: o.nextUpdate,
+    signatureAlgorithm: o.signatureAlgorithm ?? 'sha256WithRSAEncryption',
+    revoked: o.revoked,
+  }, o.signature ?? '');
 }

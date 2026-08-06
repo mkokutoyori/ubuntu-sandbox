@@ -12,31 +12,43 @@
  * server) are exact structural properties, testable without any real
  * cryptography.
  */
-import { simulatedDigest } from '@/network/dns/dnssec/Digest';
+import { sha256Hex } from '@/crypto/hash';
+import { bytesToHex } from '@/crypto/encoding';
+import { extractHex, expandLabelHex, HASH_LEN, toBytes } from './hkdf';
+import { hmac } from '@/crypto/mac';
+import { SHA256 } from '@/crypto/hash';
 
-const TLS13_LABEL_PREFIX = 'tls13 ';
+/**
+ * Le « 0 » du §7.1 : Hash.length octets nuls, soit 32 pour SHA-256 —
+ * donc 64 caractères en hexadécimal. Il en portait 32, ce qui faisait
+ * seize octets : sans conséquence tant que la dérivation était simulée,
+ * faux dès qu'elle ne l'est plus.
+ */
+export const ZERO_IKM = '0'.repeat(HASH_LEN * 2);
 
-/** Placeholder input keying material RFC 8446 §7.1 calls "0" — used when no PSK/(EC)DHE applies. */
-export const ZERO_IKM = '0'.repeat(32);
-
-/** Simulated stand-in for `HKDF-Extract(salt, ikm)`. */
+/** `HKDF-Extract(salt, ikm)`, le vrai (RFC 5869 §2.2). */
 export function extractSecret(salt: string, ikm: string): string {
-  return simulatedDigest(`hkdf-extract|${salt}|${ikm}`);
+  return extractHex(salt, ikm);
 }
 
 /**
- * Simulated stand-in for `Derive-Secret(secret, label, messages) =
- * HKDF-Expand-Label(secret, label, Transcript-Hash(messages), Hash.length)`.
- * `context` is whatever transcript-hash (or empty string, per the RFC) the
- * caller has already computed.
+ * `Derive-Secret(secret, label, messages) = HKDF-Expand-Label(secret,
+ * label, Transcript-Hash(messages), Hash.length)` (RFC 8446 §7.1).
+ * `context` est le condensé de transcription (ou la chaîne vide, comme
+ * la RFC l'autorise) que l'appelant a déjà calculé.
  */
 export function expandLabel(secret: string, label: string, context: string): string {
-  return simulatedDigest(`hkdf-expand-label|${secret}|${TLS13_LABEL_PREFIX}${label}|${context}`);
+  return expandLabelHex(secret, label, context);
 }
 
-/** Simulated stand-in for `Transcript-Hash(messages)` — order-sensitive, content-sensitive. */
+/** `Transcript-Hash(messages)` : un vrai SHA-256 sur les messages concaténés. */
 export function transcriptHash(messageBytesList: readonly Uint8Array[]): string {
-  return simulatedDigest(messageBytesList.map((bytes) => Array.from(bytes).join(',')).join('|'));
+  let total = 0;
+  for (const bytes of messageBytesList) total += bytes.length;
+  const concat = new Uint8Array(total);
+  let i = 0;
+  for (const bytes of messageBytesList) { concat.set(bytes, i); i += bytes.length; }
+  return sha256Hex(String.fromCharCode(...concat));
 }
 
 /**
@@ -107,15 +119,15 @@ export function deriveKeySchedule(
 }
 
 /**
- * Simulated stand-in for computing a Finished message's `verify_data`
- * (real RFC 8446 §4.4.4: `HMAC(finished_key, Transcript-Hash(...))`, where
- * `finished_key = HKDF-Expand-Label(BaseKey, "finished", "", Hash.length)`).
- * Binding the traffic secret directly into the digest still catches both a
- * wrong role/secret (impersonation) and a tampered transcript (integrity),
- * without needing to model the intermediate `finished_key` derivation step.
+ * Le `verify_data` d'un message Finished, tel que le §4.4.4 le définit :
+ * `HMAC(finished_key, Transcript-Hash(...))` avec `finished_key =
+ * HKDF-Expand-Label(BaseKey, "finished", "", Hash.length)`. L'étape
+ * intermédiaire n'était pas modélisée ; elle l'est, puisque le HMAC et
+ * l'expansion sont maintenant réels tous les deux.
  */
 export function computeFinished(trafficSecret: string, transcript: string): string {
-  return simulatedDigest(`finished|${trafficSecret}|${transcript}`);
+  const finishedKey = toBytes(expandLabelHex(trafficSecret, 'finished', '', HASH_LEN));
+  return bytesToHex(hmac(SHA256, finishedKey, toBytes(transcript)));
 }
 
 /**
