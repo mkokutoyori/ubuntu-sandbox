@@ -704,16 +704,6 @@ export class LoggingConfig {
         this.append('critical', 'sec',
           `Account ${p.account?.name ?? '?'} locked (${p.account?.lockReason ?? 'repeated failures'})`);
       }),
-      bus.subscribeWhere('router.aaa.account.created', isOurs, (e) => {
-        const p = e.payload as unknown as { account?: { name?: string; privilege?: number } };
-        this.append('informational', 'sys',
-          `User account '${p.account?.name ?? '?'}' created (priv ${p.account?.privilege ?? 1})`);
-      }),
-      bus.subscribeWhere('router.aaa.account.deleted', isOurs, (e) => {
-        const p = e.payload as unknown as { account?: { name?: string } };
-        this.append('informational', 'sys',
-          `User account '${p.account?.name ?? '?'}' deleted`);
-      }),
       bus.subscribeWhere('router.ssh.session.opened', isOurs, (e) => {
         const p = e.payload as unknown as { session?: { user?: string; line?: string; fromIp?: string } };
         this.append('informational', 'ssh',

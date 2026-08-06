@@ -632,7 +632,7 @@ export function showRunningConfig(router: Router): string {
     _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: SecretAlgo; factoryDefault?: boolean }>;
   })._listLocalUsers;
   if (listUsers) {
-    const users = listUsers.call(router).filter(u => !u.factoryDefault);
+    const users = listUsers.call(router);
     if (users.length > 0) {
       lines.push('!');
       for (const u of users) {
@@ -641,8 +641,8 @@ export function showRunningConfig(router: Router): string {
         // (reversible or cleartext); everything else came from `secret`
         // (always hashed, or explicitly stored as type 0 by `secret 0`).
         const field = (algo === 'type-7' || algo === 'plain-password')
-          ? `password ${renderPasswordField(u.secret, algo, serviceEncryption)}`
-          : `secret ${renderSecretField(u.secret, algo)}`;
+          ? `password ${renderPasswordField(u.secret, algo, serviceEncryption, true, `username:${u.name}`)}`
+          : `secret ${renderSecretField(u.secret, algo, `username:${u.name}`)}`;
         lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
       }
     }
@@ -664,23 +664,23 @@ export function showRunningConfig(router: Router): string {
 
   const enableSecret = router.getEnableSecret();
   if (enableSecret) {
-    lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo)}`);
+    lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo, 'enable')}`);
   }
   const enablePassword = router.getEnablePassword();
   if (enablePassword) {
     // Real IOS: unlike `username … password 0 …`, a plaintext `enable
     // password` is never shown with an explicit `0` type digit.
-    lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, serviceEncryption, false)}`);
+    lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, serviceEncryption, false, 'enable')}`);
   }
   const levelStore = router as unknown as {
     listEnableSecretLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }>;
     listEnablePasswordLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'type-7' }>;
   };
   for (const e of levelStore.listEnableSecretLevels?.() ?? []) {
-    lines.push(`enable secret level ${e.level} ${renderSecretField(e.value, e.algo)}`);
+    lines.push(`enable secret level ${e.level} ${renderSecretField(e.value, e.algo, `enable:${e.level}`)}`);
   }
   for (const e of levelStore.listEnablePasswordLevels?.() ?? []) {
-    lines.push(`enable password level ${e.level} ${renderPasswordField(e.value, e.algo, serviceEncryption, false)}`);
+    lines.push(`enable password level ${e.level} ${renderPasswordField(e.value, e.algo, serviceEncryption, false, `enable:${e.level}`)}`);
   }
   for (const [name, on] of router.getServiceFlags()) {
     lines.push(`${on ? '' : 'no '}service ${name}`);

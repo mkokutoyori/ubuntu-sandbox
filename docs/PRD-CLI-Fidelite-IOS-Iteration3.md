@@ -1042,6 +1042,22 @@ configuration, et l'on documente le choix dans `CLAUDE.md` et dans l'aide
 en ligne du simulateur. §6.2 et §6.3 s'appliquent quand même : le sel et
 le message de log sont faux dans les deux branches.
 
+**Branche A retenue et livrée.** Les trois filtres sont retirés ; les
+quatre comptes d'usine apparaissent en configuration sur les deux
+constructeurs, et un opérateur peut les modifier ou les supprimer comme
+n'importe quel autre. Deux choses ont dû suivre. Leur secret était
+mémorisé **en clair** (`passwordHashAlgorithm` par défaut à `plain`), ce
+qui les aurait rendus visibles sous la forme `secret 0 alice` — un IOS
+n'échoue jamais un secret en clair ; ils sont provisionnés en `md5`, donc
+rendus `secret 5 $1$…`. Et le switch Cisco, lui, ne provisionne aucune
+troupe d'usine : le test le vérifie sur ce qu'il détient réellement plutôt
+que de supposer la troupe, sans quoi l'invariant aurait affirmé une chose
+fausse.
+
+Coût mesuré : **8 tests sur 5 926**, tous dans le seul fichier qui
+assertait la branche B (« is hidden from show running-config as a factory
+default »). Ils basculent avec la décision.
+
 ### 6.2 Le sel — indépendant de la branche
 
 ```ts
