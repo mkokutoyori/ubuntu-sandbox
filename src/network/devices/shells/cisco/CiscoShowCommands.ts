@@ -1106,13 +1106,17 @@ export function showIpInterfaceAll(router: Router): string {
 }
 
 /** `show ip rip database` — real RIP RIB (configured + learned). */
-export function showIpRipDatabase(router: Router): string {
+export function showIpRipDatabase(router: Router, autoSummary = true): string {
   if (!router.isRIPEnabled()) return '';
   const cfg = router.getRIPConfig();
   const learned = router.getRIPRoutes();
   const lines: string[] = [];
   for (const net of cfg.networks) {
-    lines.push(`${net.network}/${net.mask.toCIDR()}    auto-summary`);
+    // L'entrée `auto-summary` EST le résumé classful : elle n'a pas lieu
+    // d'être quand `no auto-summary` est configuré. Elle était imprimée
+    // inconditionnellement, donc la vue contredisait la configuration
+    // affichée par `show running-config` sur la même machine.
+    if (autoSummary) lines.push(`${net.network}/${net.mask.toCIDR()}    auto-summary`);
     lines.push(`${net.network}/${net.mask.toCIDR()}`);
     lines.push('    [1] directly connected, via configured network');
   }

@@ -1270,6 +1270,13 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     if (first === 'summary') return showIpRouteSummary(getRouter());
     const codes = ROUTE_FILTER_CODES[first];
     if (codes) return filterRouteTableByCode(showIpRouteAll(getRouter()), codes);
+    // Ces trois-là sont des vues d'IOS, pas des préfixes. Répondre
+    // `% Network not in table` envoyait chercher une adresse que
+    // personne n'avait demandée ; la table vaut mieux que le mensonge,
+    // et la vue détaillée reste à écrire.
+    if (first === 'repair-paths' || first === 'track-table' || first === 'profile') {
+      return showIpRouteAll(getRouter());
+    }
     return showIpRouteSpecific(getRouter(), args[0]);
   });
 
