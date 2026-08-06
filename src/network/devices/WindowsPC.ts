@@ -3691,6 +3691,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
       tcpStack: () => this.getTcpStack(),
       trustAnchors: () => this.trustedCAs,
+      readFile: (path: string): string | null => {
+        const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
+        return r.ok && r.content !== undefined ? r.content : null;
+      },
       writeFile: (target: string, content: string): boolean =>
         this.fs.createFile(this.fs.normalizePath(target, this.cwd), content).ok,
     };

@@ -5,6 +5,8 @@ import {
   certificateMatchesHostname,
   type VerificationResult,
 } from '@/network/pki/CertificateVerifier';
+import { pemToCertChain } from '@/network/pki/pem';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { createRequest, type HttpMessage, type HttpMethod } from '../semantics/types';
 import { encodeBasicCredentials } from '../auth/BasicAuth';
 import { isKnownMethod } from '../semantics/methods';
@@ -197,6 +199,26 @@ export async function performCurlRequest(
   let redirects = 0;
   let remoteIp = '';
 
+  // `--cacert` REPLACES the machine's trust store, it does not add to it.
+  // That is the whole reason a lab uses it: the operator's own root has to
+  // be the only thing that can vouch for the server, otherwise passing the
+  // wrong bundle would still succeed through the system anchors and the
+  // option would prove nothing. Resolved once, before any connection, so a
+  // path that does not exist fails the way real curl fails it — before the
+  // handshake, not after.
+  let anchors: readonly X509Certificate[] = host.trustAnchors();
+  if (opts.caCert !== null) {
+    const pem = host.readFile(opts.caCert);
+    if (pem === null) {
+      return {
+        ok: false, code: 77,
+        message: `curl: (77) error setting certificate file: ${opts.caCert}`,
+        url: null, remoteIp, method, numRedirects: redirects, trace,
+      };
+    }
+    anchors = pemToCertChain(pem);
+  }
+
   for (;;) {
     const override = resolvedOverride(opts, url);
     let address = override;
@@ -221,7 +243,7 @@ export async function performCurlRequest(
     if (url.scheme === 'https') {
       const verifier = opts.insecure
         ? new InsecureCertificateVerifier({ trustAnchors: [] })
-        : new CertificateVerifier({ trustAnchors: host.trustAnchors() });
+        : new CertificateVerifier({ trustAnchors: anchors });
       let session: HttpsClientSession | null = null;
       try {
         session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier });

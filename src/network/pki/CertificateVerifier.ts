@@ -72,10 +72,19 @@ export class CertificateVerifier {
 
 export function certificateMatchesHostname(cert: X509Certificate, hostname: string): boolean {
   const target = hostname.toLowerCase();
-  const names: string[] = [...(cert.extensions?.subjectAltName ?? [])];
+  const names: string[] = [...(cert.extensions?.subjectAltName ?? [])]
+    // `subjectAltName=DNS:lab.local` / `IP:10.0.0.1` — openssl's own
+    // spelling on the command line, and what this simulator stores, so the
+    // type prefix has to come off before comparing against a hostname.
+    .map((n) => n.replace(/^\s*(?:DNS|IP|URI|email)\s*:\s*/i, '').trim());
   if (names.length === 0) {
-    const cn = /CN=([^,]+)/.exec(cert.subject);
-    if (cn) names.push(cn[1]);
+    // RFC 4514 allows whitespace around the `=`, and openssl PRINTS it that
+    // way (`subject=C = FR, CN = www.lab`) — which is how this simulator's
+    // own `openssl req` renders it. Requiring a bare `CN=` meant no
+    // certificate issued here could ever match a hostname by its common
+    // name; only a SAN worked, and only by accident.
+    const cn = /CN\s*=\s*([^,]+)/.exec(cert.subject);
+    if (cn) names.push(cn[1].trim());
   }
   return names.some(raw => {
     const name = raw.toLowerCase();

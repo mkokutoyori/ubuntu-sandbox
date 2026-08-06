@@ -23,6 +23,7 @@ export interface CurlOptions {
   userAgent: string;
   maxRedirs: number;
   resolve: CurlResolveEntry[];
+  caCert: string | null;
   urls: string[];
 }
 
@@ -63,6 +64,7 @@ const LONG_WITH_ARG: Record<string, string> = {
   'user-agent': 'A',
   resolve: 'resolve',
   'max-redirs': 'max-redirs',
+  cacert: 'cacert',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
@@ -76,7 +78,7 @@ const UNSUPPORTED_LONG: Record<string, true> = {
   'retry-max-time': true, form: true, 'form-string': true, 'upload-file': true,
   http2: true, 'http2-prior-knowledge': true, http3: true, 'http0.9': true,
   'limit-rate': true, 'continue-at': true, 'progress-bar': true, cert: true,
-  key: true, cacert: true, capath: true, interface: true, 'max-time': true,
+  key: true, capath: true, interface: true, 'max-time': true,
   'connect-timeout': true, compressed: true, 'anyauth': true, ntlm: true,
   negotiate: true, digest: true, 'proxy-user': true, socks5: true, socks4: true,
   'tlsv1.2': true, 'tlsv1.3': true, 'ciphers': true, 'keepalive-time': true,
@@ -106,6 +108,7 @@ function defaults(): CurlOptions {
     userAgent: CURL_USER_AGENT,
     maxRedirs: 50,
     resolve: [],
+    caCert: null,
     urls: [],
   };
 }
@@ -163,6 +166,7 @@ function applyValued(
       opts.resolve.push(entry);
       break;
     }
+    case 'cacert': opts.caCert = value; break;
     case 'max-redirs': {
       const n = Number(value);
       if (!Number.isFinite(n)) return missingParam(spelling);

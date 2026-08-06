@@ -307,11 +307,13 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       now: host.now(),
       validityMs: jours * 24 * 3600 * 1000,
       keyPair: { publicKey: publique, privateKey: cle },
+      // The SAN goes in BEFORE the signature. Adding it to the returned
+      // certificate — which is what this did — left a certificate whose
+      // signature covered a different content than the one on disk, so
+      // `-addext` produced a certificate no verifier could accept.
+      subjectAltName: altNames,
     });
-    const complet: X509Certificate = altNames
-      ? { ...cert, extensions: { ...cert.extensions, subjectAltName: altNames } }
-      : cert;
-    const pem = certToPem(complet);
+    const pem = certToPem(cert);
     if (typeof out === 'string') {
       return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);
     }

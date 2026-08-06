@@ -22,6 +22,17 @@ export interface SelfSignedCertificateOptions {
    * the pair failed the moment a TLS server tried to use them together.
    */
   readonly keyPair?: { readonly publicKey: PkiPublicKey; readonly privateKey: PkiPrivateKey };
+  /**
+   * Names for the subjectAltName extension.
+   *
+   * They belong HERE rather than being added to the returned certificate,
+   * because `tbsPayload` covers the extensions: a caller that grafted a SAN
+   * on afterwards produced a certificate whose signature no longer matched
+   * its own content. `openssl req -x509 -addext subjectAltName=...` did
+   * exactly that, and nothing noticed for as long as no anchor was ever
+   * checked — the same blind spot that hid the mismatched key pair above.
+   */
+  readonly subjectAltName?: readonly string[];
 }
 
 let serialCounter = 0x5000;
@@ -46,6 +57,7 @@ export function generateSelfSignedCertificate(
       basicConstraints: Object.freeze({ cA: false }),
       keyUsage: Object.freeze(['digitalSignature', 'keyEncipherment'] as const),
       extKeyUsage: opts.extKeyUsage ? Object.freeze([...opts.extKeyUsage]) : undefined,
+      subjectAltName: opts.subjectAltName ? Object.freeze([...opts.subjectAltName]) : undefined,
     }),
   };
   const signature = PkiKeyPair.sign(keys.privateKey, tbsPayload(fields));

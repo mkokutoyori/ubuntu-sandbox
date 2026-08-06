@@ -12,6 +12,10 @@ function linuxCurlHost(ctx: LinuxCommandContext): CurlHost {
     },
     tcpStack: () => ctx.net.getTcpStack(),
     trustAnchors: () => ctx.tlsTrustAnchors,
+    readFile(path: string): string | null {
+      const vfs = ctx.executor.vfs;
+      return vfs.readFile(vfs.normalizePath(path, ctx.executor.getCwd()));
+    },
     writeFile(target: string, content: string): boolean {
       const vfs = ctx.executor.vfs;
       return vfs.writeFile(
