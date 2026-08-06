@@ -87,17 +87,17 @@ describe('BGP — voisin configuré et injoignable', () => {
     expect(socketCount(r)).toBeLessThan(20);
   }, 30_000);
 
-  it("n'ouvre pas de session depuis le chemin de données", async () => {
+  it("n'ouvre pas de session depuis la moitié passive du plan de contrôle", async () => {
     const r = new CiscoRouter('router-cisco', 'R1', 100, 100);
     r.powerOn?.();
     for (const c of CONFIG) await r.executeCommand(c);
 
     const dyn = (r as unknown as {
-      dynamicRouting: { refresh(): void; bgp: { refreshFromCache(): void } };
+      dynamicRouting: { refresh(): void };
     }).dynamicRouting;
 
-    // `refresh()` est appelé avant CHAQUE décision de commutation : il
-    // reflète ce que BGP a déjà appris, il ne compose personne.
+    // `refresh()` recalcule et installe ce que les moteurs savent déjà.
+    // Il ne compose personne — c'est le travail de `converge()`.
     const before = socketCount(r);
     for (let i = 0; i < 200; i++) dyn.refresh();
     expect(socketCount(r)).toBe(before);
