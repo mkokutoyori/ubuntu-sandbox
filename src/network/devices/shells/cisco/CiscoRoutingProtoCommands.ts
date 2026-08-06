@@ -395,14 +395,12 @@ export function buildRoutingProtoConfig(
     converge();
     return '';
   });
-  routerTrie.registerGreedy('metric', 'Metric options', (a, raw) => {
+  routerTrie.registerGreedy('metric', 'Metric options', (a) => {
     const { proto } = curProto(ctx);
     if (proto === 'rip') {
       // `default-metric`-style RIP knob recorded as remembered config.
       const n = parseInt(a[a.length - 1] ?? '', 10);
       if (!isNaN(n)) repo.rip.defaultMetric = n;
-      const line = raw ?? `metric ${a.join(' ')}`.trim();
-      if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
       return '';
     }
     if (proto === 'eigrp') {
@@ -462,30 +460,64 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('address-family', 'Enter address-family', (a) => {
+    if (a.length < 1) return '% Incomplete command.';
     const p = curProto(ctx).proto;
+    if (p !== 'bgp') return "% Invalid input detected at '^' marker.";
     const af = a.join(' ');
-    if (p === 'bgp') bgp()?.addressFamilies.push(af);
-    else if (p === 'eigrp') eigrp().addressFamilies.push(af);
+    const proc = bgp();
+    if (proc && !proc.addressFamilies.includes(af)) proc.addressFamilies.push(af);
+    ctx.setMode('config-router-af');
     return '';
   });
-  // NOTE: `metric` is NOT in this catch-all list — it has a dedicated
-  // handler above (RIP default-metric / EIGRP `metric weights`).
-  for (const kw of ['exit-address-family', 'exit-af-interface',
-    'exit-af-topology', 'af-interface', 'topology',
-    'offset-list', 'output-delay', 'flash-update-threshold',
-    'validate-update-source', 'synchronization', 'no synchronization',
-    'compatible', 'log-adjacency-changes',
-    'no neighbor', 'traffic-share']) {
-    routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args, raw) => {
-      const sp = ctx.getSelectedRoutingProto();
-      const proto = sp?.proto;
-      const line = raw ?? `${kw} ${args.join(' ')}`.trim();
-      if (proto === 'rip') {
-        if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
-      }
+  routerTrie.register('exit-address-family', 'Leave address-family', () => {
+    ctx.setMode('config-router');
+    return '';
+  });
+  const PROTO_EXTRAS: ReadonlyArray<{ kw: string; protos: readonly Proto[] }> = [
+    { kw: 'offset-list', protos: ['rip', 'eigrp'] },
+    { kw: 'output-delay', protos: ['rip'] },
+    { kw: 'flash-update-threshold', protos: ['rip'] },
+    { kw: 'validate-update-source', protos: ['rip'] },
+    { kw: 'no validate-update-source', protos: ['rip'] },
+    { kw: 'traffic-share', protos: ['eigrp'] },
+  ];
+  for (const { kw, protos } of PROTO_EXTRAS) {
+    routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args) => {
+      const p = curProto(ctx).proto;
+      if (!protos.includes(p)) return "% Invalid input detected at '^' marker.";
+      const line = `${kw}${args.length ? ' ' + args.join(' ') : ''}`;
+      if (p === 'rip') pushOnce(repo.rip.extras, line);
+      else pushOnce(eigrp().extras, line);
       return '';
     });
   }
+  for (const kw of ['synchronization', 'no synchronization']) {
+    routerTrie.register(kw, `BGP ${kw}`, () => {
+      return curProto(ctx).proto === 'bgp' ? '' : "% Invalid input detected at '^' marker.";
+    });
+  }
+  routerTrie.registerGreedy('no neighbor', 'Remove a neighbor', (a) => {
+    if (a.length < 1) return '% Incomplete command.';
+    const proc = bgp();
+    if (curProto(ctx).proto === 'bgp' && proc) {
+      if (a.length === 1) {
+        proc.neighbors.delete(a[0]);
+        proc.peerGroups.delete(a[0]);
+        bgpEng().getConfig().neighbors.delete(a[0]);
+      } else {
+        const n = proc.neighbors.get(a[0]);
+        if (n && a[1] === 'activate') n.activated = false;
+        if (n && a[1] === 'peer-group') n.peerGroup = undefined;
+      }
+      converge();
+      return '';
+    }
+    if (curProto(ctx).proto === 'rip') {
+      repo.rip.neighbors = repo.rip.neighbors.filter((n) => n !== a[0]);
+      return '';
+    }
+    return "% Invalid input detected at '^' marker.";
+  });
 }
 
 // ── show family ──────────────────────────────────────────────────

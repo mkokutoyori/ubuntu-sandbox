@@ -59,6 +59,7 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
 function staticRouteTail(r: {
   nextHop: { toString(): string } | null; iface: string;
   ifaceConfigured?: boolean; preference?: number; permanent?: boolean;
+  track?: string;
 }): string {
   const nh = r.nextHop ? r.nextHop.toString() : '';
   const parts: string[] = [];
@@ -69,6 +70,7 @@ function staticRouteTail(r: {
     parts.push(nh);
   }
   if (r.preference !== undefined) parts.push(String(r.preference));
+  if (r.track) parts.push('track', r.track);
   if (r.permanent) parts.push('permanent');
   return parts.join(' ');
 }

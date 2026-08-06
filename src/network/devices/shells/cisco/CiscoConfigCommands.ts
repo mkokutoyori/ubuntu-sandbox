@@ -20,7 +20,8 @@ import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 
 export type CiscoShellMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-subif'
-  | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
+  | 'config-dhcp' | 'config-router' | 'config-router-af'
+  | 'config-router-ospf' | 'config-router-ospfv3'
   | 'config-track' | 'config-ipsla' | 'config-ipsla-http-raw'
   | 'config-ipsla-echo' | 'config-ipsla-icmpjitter' | 'config-ipsla-jitter'
   | 'config-ipsla-udp' | 'config-ipsla-tcp' | 'config-ipsla-http'
@@ -299,7 +300,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
-  trie.register('no shutdown', 'Enable (no-op in global config)', () => '');
 
   // ARP config commands are registered once for both vendors by the shared
   // CiscoShellBase (registerArpConfigCommands on the config trie); no need to

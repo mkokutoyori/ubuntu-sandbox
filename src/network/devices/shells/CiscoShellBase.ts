@@ -1074,6 +1074,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     'config-subif': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-line': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-router-af': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router-ospf': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router-ospfv3': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-vlan': CiscoShellBase.COMMON_GLOBAL_NAV,

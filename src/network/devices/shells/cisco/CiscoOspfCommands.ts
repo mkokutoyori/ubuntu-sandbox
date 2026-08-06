@@ -225,11 +225,15 @@ function adresseReseau(ip: string, wildcard: string): string {
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
 
-    if (subCmd === 'stub') {
-      ospf.setAreaType(areaId, args[2]?.toLowerCase() === 'no-summary' ? 'totally-stubby' : 'stub');
-      return '';
-    } else if (subCmd === 'nssa') {
-      ospf.setAreaType(areaId, 'nssa');
+    if (subCmd === 'stub' || subCmd === 'nssa') {
+      if (areaId === '0' || areaId === '0.0.0.0') {
+        return `% OSPF: Area 0 is the backbone area and cannot be a ${subCmd === 'stub' ? 'stub' : 'NSSA'} area`;
+      }
+      if (subCmd === 'stub') {
+        ospf.setAreaType(areaId, args[2]?.toLowerCase() === 'no-summary' ? 'totally-stubby' : 'stub');
+      } else {
+        ospf.setAreaType(areaId, 'nssa');
+      }
       return '';
     } else if (subCmd === 'range') {
       // area <id> range <network> <mask> [not-advertise]

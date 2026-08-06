@@ -125,6 +125,7 @@ export function routingProcessConfigLines(
     for (const network of process.networks) lines.push(` network ${network}`);
     for (const iface of [...process.passive].sort()) lines.push(` passive-interface ${iface}`);
     for (const source of process.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
+    for (const extra of process.extras) lines.push(` ${extra}`);
     if (process.variance !== undefined) lines.push(` variance ${process.variance}`);
     if (process.maximumPaths !== undefined) lines.push(` maximum-paths ${process.maximumPaths}`);
     if (process.maximumHops !== undefined) {
@@ -137,13 +138,15 @@ export function routingProcessConfigLines(
   }
 
   const rip = repo.rip;
-  if (rip.networks.length > 0 || rip.version !== null || rip.redistribute.length > 0) {
+  if (rip.networks.length > 0 || rip.version !== null
+    || rip.redistribute.length > 0 || rip.extras.length > 0) {
     lines.push('router rip');
     if (rip.version !== null) lines.push(` version ${rip.version}`);
     for (const network of rip.networks) lines.push(` network ${network}`);
     for (const iface of [...rip.passive].sort()) lines.push(` passive-interface ${iface}`);
     for (const neighbor of rip.neighbors) lines.push(` neighbor ${neighbor}`);
     for (const source of rip.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
+    for (const extra of rip.extras) lines.push(` ${extra}`);
     if (rip.defaultInfoOriginate) lines.push(' default-information originate');
     if (!rip.autoSummary) lines.push(' no auto-summary');
     lines.push('!');

@@ -82,6 +82,7 @@ export interface RipExtras {
   redistribute: RedistributeSource[];
   networks: string[];
   neighbors: string[];
+  extras: string[];
   distance?: number;
   defaultMetric?: number;
   defaultInfoOriginate: boolean;
@@ -95,6 +96,7 @@ export interface EigrpProcess {
   networks: string[];
   passive: Set<string>;
   redistribute: RedistributeSource[];
+  extras: string[];
   variance?: number;
   maximumPaths?: number;
   /** `metric maximum-hops <n>` — diamètre au-delà duquel une route est inaccessible. */
@@ -157,7 +159,7 @@ export class RoutingConfigRepository {
   readonly rip: RipExtras = {
     version: null, autoSummary: true, passiveDefault: false,
     passive: new Set(), redistribute: [], networks: [], neighbors: [],
-    defaultInfoOriginate: false,
+    extras: [], defaultInfoOriginate: false,
   };
   private readonly eigrp = new Map<number, EigrpProcess>();
   private bgp: BgpProcess | null = null;
@@ -167,7 +169,7 @@ export class RoutingConfigRepository {
     let p = this.eigrp.get(asn);
     if (!p) {
       p = { asn, networks: [], passive: new Set(), redistribute: [],
-        autoSummary: true, named, addressFamilies: [] };
+        extras: [], autoSummary: true, named, addressFamilies: [] };
       this.eigrp.set(asn, p);
     }
     return p;
@@ -244,7 +246,7 @@ export class RoutingConfigRepository {
     Object.assign(this.rip, {
       version: null, autoSummary: true, passiveDefault: false,
       passive: new Set<string>(), redistribute: [], networks: [],
-      neighbors: [], defaultInfoOriginate: false,
+      neighbors: [], extras: [], defaultInfoOriginate: false,
       distance: undefined, defaultMetric: undefined,
       maximumPaths: undefined, timersBasic: undefined,
     });

@@ -614,6 +614,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         return this.configIpSlaTypeTries[this.mode];
       case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
+      case 'config-router-af': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
       case 'config-router-ospfv3': return this.configRouterOspfv3Trie;
       case 'config-std-nacl': return this.configStdNaclTrie;
