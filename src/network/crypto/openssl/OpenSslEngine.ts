@@ -16,6 +16,7 @@ import {
   bytesToBase64, base64ToBytes, bytesToHex, utf8ToBytes, bytesToUtf8,
 } from '@/crypto/encoding';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
+import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
 import {
@@ -206,7 +207,12 @@ function runPasswd(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 function runGenRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts, operands } = parseArgs('genrsa', argv);
   const bits = Number(operands[0] ?? 2048);
-  const paire = PkiKeyPair.generate('rsa');
+  if (!Number.isInteger(bits) || bits < 512 || bits % 16 !== 0) {
+    return fail(`openssl: genrsa: invalid modulus size ${operands[0]}`);
+  }
+  // La taille demandée est HONORÉE : le module fait réellement ce nombre
+  // de bits, ce qu'`openssl rsa -text` affiche ensuite en le mesurant.
+  const paire = PkiKeyPair.generate('rsa', bits);
   const pem = privateKeyToPem(paire.privateKey, opts.has('-traditional'));
   const out = opts.get('-out');
   const trace = `Generating RSA private key, ${bits} bit long modulus (2 primes)`;
@@ -229,10 +235,13 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const lignes: string[] = [];
   if (opts.has('-text')) {
-    lignes.push('Private-Key: (2048 bit, 2 primes)');
+    // La taille est MESURÉE sur le module, pas annoncée : une clé de 512
+    // bits ne doit pas se présenter comme une clé de 2048.
+    const pub = materialToPublicKey(cle.material);
+    lignes.push(`Private-Key: (${pub ? bitLength(pub.n) : 0} bit, 2 primes)`);
     lignes.push('modulus:');
-    lignes.push('    <simulated key material — this build does not compute real RSA');
-    lignes.push('     moduli; see docs/PRD-OpenSSL.md §3.2>');
+    const mod = modulusHex(cle.material);
+    if (mod) for (const ligne of mod.toLowerCase().match(/.{1,30}/g) ?? []) lignes.push(`    ${ligne}`);
   }
   if (opts.has('-check')) lignes.push('RSA key ok');
   // The modulus is a PUBLIC quantity — it is half of the public key, and
@@ -243,12 +252,12 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   // -noout -modulus | openssl md5`): a matching pair reported as
   // mismatched, and the secret leaked into output people paste around.
   if (opts.has('-modulus')) {
-    lignes.push(`Modulus=${cle.material.replace('priv:', 'pub:').toUpperCase()}`);
+    lignes.push(`Modulus=${modulusHex(cle.material) ?? ''}`);
   }
 
   if (!opts.has('-noout')) {
     lignes.push(opts.has('-pubout')
-      ? publicKeyToPem({ algorithm: cle.algorithm, material: cle.material.replace('priv:', 'pub:') })
+      ? publicKeyToPem({ algorithm: cle.algorithm, material: publicPartOf(cle.material) })
       : privateKeyToPem(cle));
   }
   const sortie = lignes.join('\n');
@@ -285,14 +294,25 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const keyout = opts.get('-keyout');
   if (!cle) {
-    const paire = PkiKeyPair.generate('rsa');
+    // `-newkey rsa:2048` demande une taille, et elle est honorée : le
+    // module fait réellement ce nombre de bits.
+    const newkey = opts.get('-newkey');
+    const demande = typeof newkey === 'string' ? /^rsa:(\d+)$/.exec(newkey) : null;
+    const bits = demande ? Number(demande[1]) : undefined;
+    if (bits !== undefined && (!Number.isInteger(bits) || bits < 512 || bits % 16 !== 0)) {
+      return fail(`openssl: req: invalid modulus size ${demande?.[1]}`);
+    }
+    const paire = bits === undefined ? PkiKeyPair.generate('rsa') : PkiKeyPair.generate('rsa', bits);
     cle = paire.privateKey;
     if (typeof keyout === 'string' && !host.writeFile(keyout, privateKeyToPem(cle))) {
       return fail(`${keyout}: cannot write`);
     }
   }
 
-  const publique = { algorithm: cle.algorithm, material: cle.material.replace('priv:', 'pub:') };
+  // `publicPartOf` et non un `replace` : le matériel privé porte
+  // maintenant l'exposant secret, qu'une simple substitution de préfixe
+  // laisserait dans la moitié « publique ».
+  const publique = { algorithm: cle.algorithm, material: publicPartOf(cle.material) };
   const altNames = typeof opts.get('-addext') === 'string'
     ? String(opts.get('-addext')).replace(/^subjectAltName\s*=\s*/, '').split(',').map((s) => s.trim())
     : undefined;
@@ -365,7 +385,10 @@ function runX509(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const brut = sha256Hex(tbsPayload(cert)).toUpperCase();
     lignes.push(`SHA256 Fingerprint=${(brut.match(/.{2}/g) ?? []).join(':')}`);
   }
-  if (opts.has('-modulus')) lignes.push(`Modulus=${cert.publicKey.material.toUpperCase()}`);
+  // Le MÊME module que `rsa -modulus`, par la même fonction : c'est
+  // exactement le contrôle qu'un administrateur fait pour apparier une
+  // clé et son certificat, et deux rendus différents le casseraient.
+  if (opts.has('-modulus')) lignes.push(`Modulus=${modulusHex(cert.publicKey.material) ?? ''}`);
   if (opts.has('-text')) lignes.push(...renderText(cert));
 
   const checkend = opts.get('-checkend');
@@ -891,7 +914,7 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   }
   if (!opts.has('-noout')) {
     lignes.push(opts.has('-pubout')
-      ? publicKeyToPem({ algorithm: 'ecdsa', material: cle.material.replace('priv:', 'pub:') })
+      ? publicKeyToPem({ algorithm: 'ecdsa', material: publicPartOf(cle.material) })
       : privateKeyToPem(cle, true));
   }
   return ok(lignes.join('\n'));
@@ -960,7 +983,7 @@ function runPkeyutl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const pub = pemToPublicKey(tc)
       ?? (() => {
         const priv = pemToPrivateKey(tc);
-        return priv ? { algorithm: priv.algorithm, material: priv.material.replace('priv:', 'pub:') } : null;
+        return priv ? { algorithm: priv.algorithm, material: publicPartOf(priv.material) } : null;
       })();
     if (!pub) return fail('unable to load Public Key');
     const bon = PkiKeyPair.verify(pub, donnees, ts.trim());
