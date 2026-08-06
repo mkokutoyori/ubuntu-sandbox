@@ -23,6 +23,12 @@ import {
   publicKeyToMaterial, privateKeyToMaterial,
   DEFAULT_MODULUS_BITS,
 } from '@/crypto/rsa';
+import {
+  p256Sign, p256Verify, p256PublicKey, generateP256PrivateScalar,
+  p256PublicToMaterial, p256PrivateToMaterial,
+  materialToP256Public, materialToP256Private,
+  signatureToHex, hexToSignature, P256_FIELD_BYTES,
+} from '@/crypto/ecc';
 import { utf8ToBytes, bytesToHex, hexToBytes } from '@/crypto/encoding';
 
 export interface PkiPublicKey { readonly algorithm: 'rsa' | 'ecdsa'; readonly material: string }
@@ -42,6 +48,12 @@ function fnv1a(str: string): string {
 /** Le condensé d'appoint des clés ECDSA, encore simulées (voir l'en-tête). */
 function digest(input: string): string {
   return fnv1a(input) + fnv1a(input.split('').reverse().join('') + '|') + fnv1a(input + input);
+}
+
+function octetsAleatoires(n: number): Uint8Array {
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
+  return out;
 }
 
 function randomSeed(): string {
@@ -64,10 +76,11 @@ export class PkiKeyPair {
    */
   static generate(algorithm: 'rsa' | 'ecdsa' = 'rsa', bits: number = DEFAULT_MODULUS_BITS): PkiKeyPair {
     if (algorithm === 'ecdsa') {
-      const seed = randomSeed();
+      const d = generateP256PrivateScalar(octetsAleatoires);
+      const q = p256PublicKey(d);
       return new PkiKeyPair(
-        { algorithm, material: `pub:${seed}` },
-        { algorithm, material: `priv:${seed}` },
+        { algorithm, material: p256PublicToMaterial(q) },
+        { algorithm, material: p256PrivateToMaterial(d, q) },
       );
     }
     const paire = generateRsaKeyPair(bits);
@@ -79,11 +92,15 @@ export class PkiKeyPair {
 
   static sign(privateKey: PkiPrivateKey, data: string): string {
     const cle = materialToPrivateKey(privateKey.material);
-    if (cle === null) {
-      // ECDSA, ou une clé simulée venue d'un enregistrement ancien.
-      return `${privateKey.algorithm}:${digest(privateKey.material + '|' + data)}`;
-    }
-    return `rsa:${bytesToHex(rsaSign(cle, utf8ToBytes(data)))}`;
+    if (cle !== null) return `rsa:${bytesToHex(rsaSign(cle, utf8ToBytes(data)))}`;
+
+    const d = materialToP256Private(privateKey.material);
+    if (d !== null) return `ecdsa:${signatureToHex(p256Sign(d, utf8ToBytes(data)))}`;
+
+    // Une clé d'une forme que ce moteur ne connaît pas — une topologie
+    // enregistrée avant l'étage 4, par exemple. Le condensé d'appoint la
+    // sert encore, pour qu'un fichier ancien reste lisible.
+    return `${privateKey.algorithm}:${digest(privateKey.material + '|' + data)}`;
   }
 
   static verify(publicKey: PkiPublicKey, data: string, signature: string): boolean {
@@ -94,7 +111,15 @@ export class PkiKeyPair {
       try { octets = hexToBytes(signature.slice(4)); } catch { return false; }
       return rsaVerify(cle, utf8ToBytes(data), octets);
     }
-    // Chemin ECDSA simulé, désormais le seul à l'être.
+
+    const q = materialToP256Public(publicKey.material);
+    if (q !== null) {
+      if (!signature.startsWith('ecdsa:')) return false;
+      const sig = hexToSignature(signature.slice(6));
+      return sig !== null && p256Verify(q, utf8ToBytes(data), sig);
+    }
+
+    // Repli pour une clé d'une forme inconnue (voir `sign`).
     const seed = publicKey.material.split(':')[1];
     if (!seed) return false;
     const expected = `${publicKey.algorithm}:${digest('priv:' + seed + '|' + data)}`;

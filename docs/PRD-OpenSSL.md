@@ -155,49 +155,61 @@ chaîne est réelle.
 pas besoin. Il doit en revanche la dire à l'utilisateur plutôt que de la
 laisser croire (§5, P3).
 
-#### 3.2.1 Jusqu'où va « simulée », précisément
+#### 3.2.1 Ce qui est réel, et ce qui ne l'est pas
 
-« Simulée » est plus faible que ce que le mot laisse entendre, et mieux
-vaut l'écrire que de laisser un lecteur le supposer plus fort.
+Cette section décrivait une PKI entièrement simulée. Les cinq étages
+qu'elle listait comme travaux à faire ont été faits ; elle décrit
+maintenant l'état, et garde la trace de ce qui était en cause, parce que
+c'est ce qui explique pourquoi certains défauts n'avaient jamais pu être
+vus.
 
-Une clé de `PkiKeyPair` est une CHAÎNE : `pub:<graine>` et
-`priv:<graine>`, la même graine des deux côtés. La « signature » est une
-empreinte FNV-1a de `matériel_privé | données`, et `verify()` la
-recalcule en RECONSTITUANT le matériel privé à partir du public
-(`'priv:' + graine`). Autrement dit : **quiconque détient la clé publique
-peut forger une signature**. Il n'y a ni exponentiation modulaire, ni
-modulo, ni secret.
+**Ce qui était simulé, et ce que cela voulait dire.** Une clé de
+`PkiKeyPair` était une CHAÎNE — `pub:<graine>` et `priv:<graine>`, la
+même graine des deux côtés — et la « signature » une empreinte FNV-1a que
+`verify()` recalculait en RECONSTITUANT le matériel privé depuis le
+public. Autrement dit : quiconque détenait la clé publique pouvait
+forger. Ce n'était pas une signature faible, c'était une signature qui ne
+signait rien. Côté TLS, la protection des enregistrements était un XOR de
+flux, le calendrier de clés et le secret DHE des `simulatedDigest`.
 
-Cela ne rend pas les contrôles inutiles — c'est même tout l'objet des
-correctifs de ce lot : `verify` et `curl --cacert` s'assurent désormais
-que la BONNE clé a signé les BONS octets, dans le bon ordre, et un
-certificat émis par une autre autorité est réellement refusé. Un labo
-enseigne donc la bonne chaîne causale. Mais cette PKI n'est **pas** une
-référence de sécurité, et rien de ce qui sort d'ici ne doit servir
-ailleurs.
+**Ce qui est réel aujourd'hui**, chaque ligne confrontée à des vecteurs
+publiés plutôt qu'à elle-même :
 
-Le même avertissement vaut pour TLS, et il y est plus fort : la
-protection des enregistrements est un XOR de flux
-(`dns/transport/SimulatedTls`), le calendrier de clés de TLS 1.3 et le
-secret DHE passent par `simulatedDigest` — alors que `src/crypto/`
-contient un vrai AES-GCM et un vrai HMAC qui pourraient les servir.
+| | Où | Confronté à |
+|---|---|---|
+| SHA-1/256/512, MD4/MD5, HMAC, PBKDF2, AES-CBC/GCM | `src/crypto/` | vecteurs NIST/RFC déjà en place |
+| HKDF-SHA256 (calendrier TLS 1.3) | `network/tls/hkdf.ts` | RFC 5869 §A.1/2/3 |
+| AES-128-GCM sur les enregistrements | `network/tls/recordProtection.ts` | RFC 8446 §5.2/§5.3/§7.3 |
+| X25519 (échange de clés) | `crypto/ecc/x25519.ts` | RFC 7748 §5.2 et §6.1 |
+| RSA PKCS#1 v1.5 / SHA-256 | `crypto/rsa/rsa.ts` | RFC 8017 §8.2/§9.2 |
+| ECDSA P-256, `k` déterministe | `crypto/ecc/p256.ts` | RFC 6979 §A.2.5 |
+| ECDH P-256 (`secp256r1`) | idem | RFC 8446 §7.4.2 |
 
-Ce qu'il faudrait pour lever chaque étage, du moins cher au plus cher :
+**Ce qui reste simulé, et c'est tout :** les groupes TLS que ni X25519 ni
+P-256 ne servent (`secp384r1`, `ffdhe2048`…), faute d'implémentation des
+deux côtés. Un cas de `tls-secp256r1-key-exchange.test.ts` le pose
+explicitement.
 
-1. **HKDF-SHA256 réel** dans `tls/keySchedule.ts` — l'HMAC est déjà réel,
-   HKDF tient en une trentaine de lignes au-dessus. Petit.
-2. **AES-GCM réel** pour les enregistrements TLS — la primitive existe
-   (`crypto/cipher/aesGcm.ts`) ; le verrou est que le calendrier de clés
-   rend des chaînes et non des octets, donc (1) d'abord. Moyen.
-3. **X25519 réel** pour l'échange de clés — faisable en TypeScript pur et
-   rapide. Moyen.
-4. **RSA réel** (modexp bignum + PKCS#1 v1.5 sur un vrai SHA-256) —
-   signer et vérifier tiennent en synchrone ; c'est la GÉNÉRATION d'une
-   clé de 2048 bits (recherche de premiers) qui coûte des secondes en
-   JavaScript, à chaque `openssl genrsa`, dans un onglet. Il faudrait
-   soit un vivier de clés pré-calculées, soit des tailles réduites
-   annoncées comme telles. C'est le seul des quatre qui pose une question
-   de produit et pas seulement de code.
+**Trois avertissements qui, eux, ne changent pas.** Rien ici n'est à
+temps constant : c'est de l'arithmétique juste, pas une bibliothèque de
+sécurité. La charge des PEM reste du JSON armuré et non du DER (§7), donc
+rien n'est interopérable avec un vrai openssl. Et la taille de clé RSA
+par défaut est petite — 512 bits — parce qu'une clé de 2048 coûte 460 ms
+en moyenne à fabriquer et que la suite en génère plus de deux mille ; la
+taille DEMANDÉE est toujours honorée, seules les clés dont personne n'a
+précisé la taille prennent la petite. Rien de ce qui sort d'ici ne doit
+protéger quoi que ce soit de réel.
+
+**Ce que ce chantier a appris, et qui vaut au-delà de la crypto.** Chaque
+étage rendu réel a fait tomber un défaut que l'étage simulé rendait
+INVISIBLE, jamais l'inverse : `ZERO_IKM` faisait seize octets là où la
+RFC en veut trente-deux ; les données additionnelles portaient zéro pour
+tous les types d'enregistrement, si bien que le type n'était pas
+authentifié ; la part de clé du serveur partait sans son groupe ; cinq
+endroits dérivaient la clé publique par `replace('priv:', 'pub:')`, ce
+qui laissait l'exposant privé dans la moitié « publique » ; et
+`x509 -modulus` n'imprimait pas la même chose que `rsa -modulus`. Aucun
+de ces cinq ne pouvait se voir tant que rien ne vérifiait pour de bon.
 
 ### 3.3 Ce qui manque, et c'est un seul verrou
 

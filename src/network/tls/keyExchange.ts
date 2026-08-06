@@ -21,11 +21,17 @@
  * n'en sont pas.
  */
 
-import { x25519, x25519Base, isAllZero, X25519_KEY_LEN } from '@/crypto/ecc';
+import {
+  x25519, x25519Base, isAllZero, X25519_KEY_LEN,
+  p256Ecdh, p256PublicKey, generateP256PrivateScalar,
+  materialToP256Public, p256PublicToMaterial, P256_FIELD_BYTES,
+} from '@/crypto/ecc';
 import { bytesToHex, hexToBytes } from '@/crypto/encoding';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 
 export const X25519_GROUP = 'x25519';
+/** Le nom que la RFC 8446 §4.2.7 donne à la courbe P-256. */
+export const P256_GROUP = 'secp256r1';
 
 export interface KeyExchangeKeyPair {
   readonly group: string;
@@ -42,22 +48,38 @@ function randomScalar(): Uint8Array {
 }
 
 export function generateKeyExchange(group: string): KeyExchangeKeyPair {
-  if (group !== X25519_GROUP) {
-    return { group, privateKey: new Uint8Array(0), share: `${group}:${simulatedDigest(`ks|${Math.random()}`)}` };
+  if (group === X25519_GROUP) {
+    const privateKey = randomScalar();
+    return { group, privateKey, share: `${group}:${bytesToHex(x25519Base(privateKey))}` };
   }
-  const privateKey = randomScalar();
-  return { group, privateKey, share: `${group}:${bytesToHex(x25519Base(privateKey))}` };
+  if (group === P256_GROUP) {
+    // Le scalaire privé tient dans les mêmes octets que celui de X25519,
+    // ce qui évite un second champ dans `KeyExchangeKeyPair` : c'est
+    // `group` qui dit comment le lire.
+    const d = generateP256PrivateScalar(randomScalar);
+    const q = p256PublicKey(d);
+    return {
+      group,
+      privateKey: hexToBytes(d.toString(16).padStart(P256_FIELD_BYTES * 2, '0')),
+      share: `${group}:${p256PublicToMaterial(q).slice('ec-pub:'.length)}`,
+    };
+  }
+  return { group, privateKey: new Uint8Array(0), share: `${group}:${simulatedDigest(`ks|${Math.random()}`)}` };
 }
 
-/** `groupe:hexadécimal` → les octets de la coordonnée u, ou `null`. */
-export function peerPublicKey(share: string): Uint8Array | null {
+/** `groupe:hexadécimal` → le corps de la part, avec son groupe. */
+export function parseShare(share: string): { group: string; body: string } | null {
   const separateur = share.indexOf(':');
   if (separateur === -1) return null;
-  const groupe = share.slice(0, separateur);
-  const corps = share.slice(separateur + 1);
-  if (groupe !== X25519_GROUP) return null;
-  if (corps.length !== X25519_KEY_LEN * 2 || !/^[0-9a-f]+$/i.test(corps)) return null;
-  return hexToBytes(corps);
+  return { group: share.slice(0, separateur), body: share.slice(separateur + 1) };
+}
+
+/** Les octets de la coordonnée u d'une part X25519, ou `null`. */
+export function peerPublicKey(share: string): Uint8Array | null {
+  const parsee = parseShare(share);
+  if (!parsee || parsee.group !== X25519_GROUP) return null;
+  if (parsee.body.length !== X25519_KEY_LEN * 2 || !/^[0-9a-f]+$/i.test(parsee.body)) return null;
+  return hexToBytes(parsee.body);
 }
 
 /**
@@ -72,13 +94,24 @@ export function peerPublicKey(share: string): Uint8Array | null {
 export function sharedSecret(
   own: KeyExchangeKeyPair, peerShare: string, fallbackContext: string,
 ): string | null {
-  const peer = peerPublicKey(peerShare);
-  if (own.group !== X25519_GROUP || peer === null) {
-    // Groupe non implémenté des deux côtés : la valeur reste simulée, et
-    // ce chemin est le seul qui le soit encore.
-    return simulatedDigest(fallbackContext);
+  if (own.group === X25519_GROUP) {
+    const peer = peerPublicKey(peerShare);
+    if (peer === null) return simulatedDigest(fallbackContext);
+    const partage = x25519(own.privateKey, peer);
+    return isAllZero(partage) ? null : bytesToHex(partage);
   }
-  const partage = x25519(own.privateKey, peer);
-  if (isAllZero(partage)) return null;
-  return bytesToHex(partage);
+
+  if (own.group === P256_GROUP) {
+    const parsee = parseShare(peerShare);
+    if (!parsee || parsee.group !== P256_GROUP) return simulatedDigest(fallbackContext);
+    const q = materialToP256Public(`ec-pub:${parsee.body}`);
+    if (q === null) return null;
+    const d = BigInt(`0x${bytesToHex(own.privateKey)}`);
+    const partage = p256Ecdh(d, q);
+    return partage === null ? null : bytesToHex(partage);
+  }
+
+  // Groupe sans implémentation des deux côtés : la valeur reste simulée,
+  // et ce chemin est désormais le seul qui le soit.
+  return simulatedDigest(fallbackContext);
 }
