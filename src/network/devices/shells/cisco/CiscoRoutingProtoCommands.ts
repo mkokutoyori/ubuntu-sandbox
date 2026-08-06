@@ -9,6 +9,8 @@
  */
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { classfulMask } from './CiscoConfigCommands';
@@ -261,7 +263,12 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('timers', 'Adjust timers', (a, raw) => {
-    if (curProto(ctx).proto === 'rip') repo.rip.timersBasic = raw ?? a.join(' ');
+    const line = raw ?? `timers ${a.join(' ')}`.trim();
+    const p = curProto(ctx).proto;
+    if (p === 'rip') { repo.rip.timersBasic = raw ?? a.join(' '); return ''; }
+    // `timers bgp <keepalive> <hold>` was accepted and rendered nowhere.
+    if (p === 'bgp') { const b = bgp(); if (b) pushOnce(b.extras, line); }
+    else if (p === 'eigrp') pushOnce(eigrp().extras, line);
     return '';
   });
   routerTrie.registerGreedy('maximum-paths', 'Max parallel routes', (a) => {
@@ -281,6 +288,16 @@ export function buildRoutingProtoConfig(
     if (proto === 'rip') {
       if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
       repo.rip.neighbors.push(a[0]); return '';
+    }
+    if (proto === 'eigrp') {
+      // EIGRP's own form is `neighbor <ip> <interface>` (a unicast
+      // neighbour on a non-broadcast link). `remote-as` is a BGP keyword
+      // and does not exist here — it used to fall through every branch
+      // below and be accepted in silence, which reads as "configured".
+      if (!isValidIPv4(a[0])) throw new CliInvalidInput();
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
+      if (!ctx.r().getPort(a[1])) throw new CliInvalidInput();
+      return '';
     }
     if (proto === 'bgp') {
       const b = bgp();
@@ -454,11 +471,18 @@ export function buildRoutingProtoConfig(
       if (Number.isNaN(lp) || lp < 0) return '% Invalid local-preference';
       bgpEng().getConfig().defaultLocalPref = lp;
       converge();
+    } else {
+      // Every other `bgp <option>` — `log-neighbor-changes` and friends —
+      // was accepted and rendered nowhere. Keep the line as typed.
+      const b = bgp();
+      if (b) pushOnce(b.extras, `bgp ${a.join(' ')}`.trim());
     }
     return '';
   });
   routerTrie.registerGreedy('aggregate-address', 'BGP aggregate', (a, raw) => {
-    bgp()?.networks.push(raw ?? `aggregate-address ${a.join(' ')}`);
+    // Verbatim, NOT in `networks`: rendered from there it came back as
+    // ` network aggregate-address …`, a line IOS rejects on reload.
+    bgp()?.extras.push(raw ?? `aggregate-address ${a.join(' ')}`);
     return '';
   });
   routerTrie.registerGreedy('address-family', 'Enter address-family', (a) => {
@@ -480,9 +504,14 @@ export function buildRoutingProtoConfig(
       const sp = ctx.getSelectedRoutingProto();
       const proto = sp?.proto;
       const line = raw ?? `${kw} ${args.join(' ')}`.trim();
-      if (proto === 'rip') {
-        if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
-      }
+      // The line is kept as typed. Filing it under `redistribute` — the
+      // nearest typed bucket — lost every argument on the way out
+      // (` redistribute` alone), because a raw string is not a
+      // RedistributeSource.
+      const bucket = proto === 'rip' ? repo.rip.extras
+        : proto === 'eigrp' ? eigrp().extras
+          : proto === 'bgp' ? (bgp()?.extras ?? null) : null;
+      if (bucket && !bucket.includes(line)) bucket.push(line);
       return '';
     });
   }

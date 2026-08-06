@@ -131,19 +131,22 @@ export function routingProcessConfigLines(
       lines.push(` metric maximum-hops ${process.maximumHops}`);
     }
     if (process.stub) lines.push(` eigrp stub ${process.stub}`);
+    for (const extra of process.extras) lines.push(` ${extra}`);
 
     if (!process.autoSummary) lines.push(' no auto-summary');
     lines.push('!');
   }
 
   const rip = repo.rip;
-  if (rip.networks.length > 0 || rip.version !== null || rip.redistribute.length > 0) {
+  if (rip.networks.length > 0 || rip.version !== null
+    || rip.redistribute.length > 0 || rip.extras.length > 0) {
     lines.push('router rip');
     if (rip.version !== null) lines.push(` version ${rip.version}`);
     for (const network of rip.networks) lines.push(` network ${network}`);
     for (const iface of [...rip.passive].sort()) lines.push(` passive-interface ${iface}`);
     for (const neighbor of rip.neighbors) lines.push(` neighbor ${neighbor}`);
     for (const source of rip.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
+    for (const extra of rip.extras) lines.push(` ${extra}`);
     if (rip.defaultInfoOriginate) lines.push(' default-information originate');
     if (!rip.autoSummary) lines.push(' no auto-summary');
     lines.push('!');
@@ -165,9 +168,18 @@ export function routingProcessConfigLines(
       }
       if (neighbor.peerGroup) lines.push(` neighbor ${ip} peer-group ${neighbor.peerGroup}`);
       if (neighbor.description) lines.push(` neighbor ${ip} description ${neighbor.description}`);
+      if (neighbor.updateSource) {
+        lines.push(` neighbor ${ip} update-source ${neighbor.updateSource}`);
+      }
+      // Everything else the operator set on this neighbour, as typed.
+      // These were collected into `attrs` and then rendered by nobody, so
+      // next-hop-self, password, prefix-list, soft-reconfiguration and the
+      // rest vanished from the configuration that had just accepted them.
+      for (const attr of neighbor.attrs) lines.push(` ${attr}`);
     }
     for (const network of bgp.networks) lines.push(` network ${network}`);
     for (const source of bgp.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
+    for (const extra of bgp.extras) lines.push(` ${extra}`);
     lines.push('!');
   }
 

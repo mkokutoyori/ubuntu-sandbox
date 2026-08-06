@@ -11,11 +11,13 @@
 
 import type { Router } from '../../Router';
 import { renderIpRouteTable } from './CiscoShowCommands';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { CiscoShellContext } from './CiscoConfigCommands';
-import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
+import { iosShortInterfaceName, iosInterfaceStatus }
+  from '@/network/devices/inspection/InterfaceStatusView';
 
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────
 
@@ -155,6 +157,19 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
+/**
+ * The backbone, however it was spelled. IOS accepts an area id as a
+ * decimal or in dotted-quad form, so `area 0`, `area 0.0.0.0` and
+ * `area 00` all name the same area — a check on the literal text would
+ * be defeated by the second spelling.
+ */
+function isBackboneArea(areaId: string): boolean {
+  const t = areaId.trim();
+  if (/^\d+$/.test(t)) return Number(t) === 0;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(t)) return t.split('.').every((o) => Number(o) === 0);
+  return false;
+}
+
 function adresseReseau(ip: string, wildcard: string): string {
   const o = ip.split('.').map(Number);
   const w = wildcard.split('.').map(Number);
@@ -225,6 +240,15 @@ function adresseReseau(ip: string, wildcard: string): string {
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
 
+    if (subCmd === 'stub' || subCmd === 'nssa') {
+      // Area 0 carries the inter-area LSAs a stub/NSSA area exists to
+      // suppress, so the backbone can be neither (RFC 2328 §3.6). IOS
+      // refuses in these exact words rather than storing a contradiction.
+      if (isBackboneArea(areaId)) {
+        return `% OSPF: Area 0 is the backbone area and cannot be a ${
+          subCmd === 'stub' ? 'stub' : 'NSSA'} area.`;
+      }
+    }
     if (subCmd === 'stub') {
       ospf.setAreaType(areaId, args[2]?.toLowerCase() === 'no-summary' ? 'totally-stubby' : 'stub');
       return '';
@@ -575,6 +599,10 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     const v3e = ctx.r()._getOSPFv3EngineInternal()!;
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
+    if (subCmd === 'stub' && isBackboneArea(areaId)) {
+      // Same rule as OSPFv2 — the backbone is not a stub area.
+      return '% OSPF: Area 0 is the backbone area and cannot be a stub area.';
+    }
     if (subCmd === 'stub') {
       v3e.addArea(areaId, 'stub');
       v3e.setAreaType(areaId, 'stub');
@@ -1558,6 +1586,32 @@ function resolveOSPFIfName(ifName: string): string {
   return ifName;
 }
 
+
+/**
+ * The interface's operational state, read from the one place every other
+ * view reads it. `show ip ospf interface` used to print a hardcoded
+ * `is up, line protocol is up`, so the same interface at the same instant
+ * read up/up here and down/down in `show ip interface brief`,
+ * `show interfaces` and `show ip igmp interface`. A view that answers
+ * from its own imagination is worse than a missing view: it is the one an
+ * operator believes.
+ */
+function ospfIfaceStatusLine(router: Router, name: string): string {
+  const ports = router._getPortsInternal();
+  const port = ports.get(name);
+  if (!port) return `${name} is up, line protocol is up`;   // virtual, no bearer
+  const st = iosInterfaceStatus(port, name, ports);
+  return `${name} is ${st.status}, line protocol is ${st.protocol}`;
+}
+
+/** True when the bearer is genuinely usable — no DR on a dead link. */
+function ospfIfaceOperUp(router: Router, name: string): boolean {
+  const ports = router._getPortsInternal();
+  const port = ports.get(name);
+  if (!port) return true;
+  return iosInterfaceStatus(port, name, ports).protocol === 'up';
+}
+
 function showIpOspfInterface(router: Router, ifName?: string): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '% OSPF is not configured';
@@ -1573,10 +1627,12 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
   for (const [name, iface] of ifaces) {
     if (resolvedIfName && name !== resolvedIfName) continue;
 
-    lines.push(`${name} is up, line protocol is up`);
+    const operUp = ospfIfaceOperUp(router, name);
+    lines.push(ospfIfaceStatusLine(router, name));
     lines.push(`  Internet address is ${iface.ipAddress}/${maskToCIDR(iface.mask)}, Area ${iface.areaId}`);
     lines.push(`  Process ID ${ospf.getProcessId()}, Router ID ${ospf.getRouterId()}, Network Type ${iface.networkType.toUpperCase()}, Cost: ${iface.cost}`);
-    lines.push(`  Transmit Delay is ${iface.transmitDelay} sec, State ${iface.state}, Priority ${iface.priority}`);
+    // A dead link elects nobody: IOS reports State DOWN there, never DR.
+    lines.push(`  Transmit Delay is ${iface.transmitDelay} sec, State ${operUp ? iface.state : 'DOWN'}, Priority ${iface.priority}`);
     lines.push(`  DR: ${iface.dr}`);
     lines.push(`  BDR: ${iface.bdr}`);
     lines.push(`  Timer intervals configured, Hello ${iface.helloInterval}, Dead ${iface.deadInterval}, Wait ${iface.deadInterval}, Retransmit ${iface.retransmitInterval}`);
@@ -2511,7 +2567,7 @@ function showIpv6OspfInterface(router: Router, ifName?: string): string {
   for (const [name, iface] of v3.getInterfaces()) {
     if (resolvedIfName && name !== resolvedIfName) continue;
     const ntStr = iface.networkType === 'point-to-point' ? 'Point-to-point' : 'Broadcast';
-    lines.push(`${name} is up, line protocol is up`);
+    lines.push(ospfIfaceStatusLine(router, name));
     lines.push(`  Network Type ${ntStr}, Cost: ${iface.cost}, Priority: ${iface.priority}`);
     // For DR/BDR display, resolve router-id to IPv6 address of the neighbor
     const drAddr = resolveV3DRBDR(router, iface, iface.dr);
