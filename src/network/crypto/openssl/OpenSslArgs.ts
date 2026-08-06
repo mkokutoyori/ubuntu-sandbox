@@ -73,7 +73,10 @@ const VALUED: Readonly<Record<string, readonly string[]>> = {
   // `-topk8` est un drapeau nu : le déclarer ici lui faisait avaler le
   // `-in` qui suit, et `pkcs8 -topk8 -in k -out p8` échouait en
   // réclamant le `-in` qu'on venait de lui donner.
-  pkcs8: [],
+  // `-topk8` et `-nocrypt` sont des drapeaux nus : les déclarer ici leur
+  // ferait avaler le `-in` qui suit. `-passin`/`-passout` en revanche
+  // prennent une valeur (`pass:secret`).
+  pkcs8: ['-passin', '-passout'],
   kdf: ['-kdfopt', '-keylen'],
   mac: ['-macopt', '-digest'],
 };

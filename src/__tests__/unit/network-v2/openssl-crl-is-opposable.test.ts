@@ -24,15 +24,21 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 beforeEach(() => { EquipmentRegistry.getInstance().clear(); });
 
-/** Une autorité, un certificat émis par elle, sa série retenue. */
+/** Une autorité, un certificat émis par elle, sa série retenue. *
+ * Les clés font 512 bits, la taille par défaut : ce que ces cas mesurent
+ * est QUI a signé, jamais la force. Elles en demandaient 2048, ce qui
+ * coûtait une demi-seconde chacune depuis que RSA est réel — assez pour
+ * faire dépasser le délai de cinq secondes quand plusieurs de ces
+ * fichiers tournent ensemble.
+ */
 async function autorite(nom: string): Promise<{ srv: LinuxServer; serie: string }> {
   const srv = new LinuxServer('linux-server', nom);
   srv.powerOn();
   await srv.executeCommand('mkdir -p /etc/ssl/CA');
   await srv.executeCommand(
-    'openssl req -x509 -newkey rsa:2048 -keyout /etc/ssl/CA/ca.key '
+    'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/CA/ca.key '
     + '-out /etc/ssl/CA/ca.crt -days 365 -nodes -subj "/CN=Lab Root CA"');
-  await srv.executeCommand('openssl genrsa -out /tmp/w.key 2048');
+  await srv.executeCommand('openssl genrsa -out /tmp/w.key 512');
   await srv.executeCommand(
     'openssl req -new -key /tmp/w.key -out /tmp/w.csr -subj "/CN=www.lab"');
   await srv.executeCommand(
@@ -106,7 +112,7 @@ describe('la liste porte la signature de son autorité', () => {
     // sépare — et c'est précisément ce qui n'existait pas.
     await srv.executeCommand('mkdir -p /tmp/rogue');
     await srv.executeCommand(
-      'openssl req -x509 -newkey rsa:2048 -keyout /tmp/rogue/ca.key '
+      'openssl req -x509 -newkey rsa:512 -keyout /tmp/rogue/ca.key '
       + '-out /tmp/rogue/ca.crt -days 365 -nodes -subj "/CN=Lab Root CA"');
     await srv.executeCommand(
       'openssl ca -cert /tmp/rogue/ca.crt -keyfile /tmp/rogue/ca.key -gencrl -out /tmp/fausse.crl');

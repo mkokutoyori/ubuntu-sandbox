@@ -17,7 +17,12 @@
  * prétendrait à une interopérabilité qu'il n'a pas.
  */
 
-import { bytesToBase64, base64ToBytes, utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
+import {
+  bytesToBase64, base64ToBytes, utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes,
+} from '@/crypto/encoding';
+import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
+import { pbkdf2 } from '@/crypto/kdf';
+import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate } from './X509Certificate';
 import type { PkiPrivateKey, PkiPublicKey } from './PkiKeyPair';
 import { CertificateRevocationList, type CrlFields } from './CertificateRevocationList';
@@ -127,6 +132,81 @@ export function pemToPrivateKey(pem: string): PkiPrivateKey | null {
     if (o && typeof o.material === 'string') return o;
   }
   return null;
+}
+
+/**
+ * PKCS#8 CHIFFRÉ (`-----BEGIN ENCRYPTED PRIVATE KEY-----`).
+ *
+ * L'étiquette existait dans `PemLabel` et rien ne l'écrivait : `openssl
+ * pkcs8 -topk8` rendait toujours une clé EN CLAIR, y compris sans
+ * `-nocrypt`, alors que c'est précisément le drapeau qui sert à demander
+ * le clair. Un TP y apprenait donc le contraire de ce que la commande
+ * enseigne.
+ *
+ * Le chiffrement est RÉEL — AES-256-CBC sur une clé dérivée par PBKDF2,
+ * les deux déjà présents dans `src/crypto/` et déjà servis par
+ * `openssl enc`. L'enveloppe porte le sel, le nombre d'itérations et
+ * l'IV, comme un vrai `EncryptedPrivateKeyInfo` : sans eux la clé serait
+ * indéchiffrable, et les inventer à la lecture reviendrait à ne pas
+ * chiffrer.
+ */
+const PKCS8_ITERATIONS = 2048;
+const PKCS8_KEY_LEN = 32;
+const PKCS8_IV_LEN = 16;
+
+interface EnveloppePkcs8 {
+  readonly alg: 'aes-256-cbc';
+  readonly kdf: 'pbkdf2-sha256';
+  readonly iter: number;
+  readonly salt: string;
+  readonly iv: string;
+  readonly data: string;
+}
+
+export function encryptedPrivateKeyToPem(
+  key: PkiPrivateKey, passphrase: string, random: (n: number) => Uint8Array,
+): string {
+  const salt = random(16);
+  const iv = random(PKCS8_IV_LEN);
+  const cle = pbkdf2(SHA256, utf8ToBytes(passphrase), salt, PKCS8_ITERATIONS, PKCS8_KEY_LEN);
+  const clair = utf8ToBytes(JSON.stringify(key));
+  const enveloppe: EnveloppePkcs8 = {
+    alg: 'aes-256-cbc',
+    kdf: 'pbkdf2-sha256',
+    iter: PKCS8_ITERATIONS,
+    salt: bytesToHex(salt),
+    iv: bytesToHex(iv),
+    data: bytesToHex(aesCbcEncrypt(cle, iv, clair)),
+  };
+  return armour('ENCRYPTED PRIVATE KEY', enveloppe);
+}
+
+/**
+ * `null` sur une mauvaise phrase de passe — et c'est le seul verdict
+ * possible : le déchiffrement AES rend des octets quelconques dont le
+ * dépaddage ou le JSON échouent. C'est aussi ce que fait un vrai
+ * openssl, qui ne peut pas distinguer « mauvaise phrase » de « fichier
+ * corrompu ».
+ */
+export function pemToEncryptedPrivateKey(pem: string, passphrase: string): PkiPrivateKey | null {
+  const env = unarmour(pem, 'ENCRYPTED PRIVATE KEY') as EnveloppePkcs8 | null;
+  if (!env || typeof env.salt !== 'string' || typeof env.iv !== 'string') return null;
+  try {
+    const cle = pbkdf2(
+      SHA256, utf8ToBytes(passphrase), hexToBytes(env.salt),
+      env.iter ?? PKCS8_ITERATIONS, PKCS8_KEY_LEN,
+    );
+    const clair = aesCbcDecrypt(cle, hexToBytes(env.iv), hexToBytes(env.data));
+    const o = JSON.parse(bytesToUtf8(clair)) as PkiPrivateKey;
+    return typeof o?.material === 'string' ? o : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Une armure de clé chiffrée est-elle présente ? */
+export function isEncryptedPrivateKeyPem(pem: string): boolean {
+  return pem.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----');
 }
 
 export function publicKeyToPem(key: PkiPublicKey): string {
