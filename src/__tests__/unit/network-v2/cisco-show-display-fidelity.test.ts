@@ -113,3 +113,56 @@ describe('show ip route <vue>', () => {
     }
   }, 30_000);
 });
+
+/**
+ * Revue §3.4/§3.5 — `ipv6 address <addr> link-local`.
+ *
+ * Le mot-clé `link-local` EXCLUT la longueur de préfixe : la forme était
+ * donc refusée par le contrôle « addr/prefix attendu », c'est-à-dire par
+ * la branche qui aurait dû la reconnaître. Le message de ce refus était
+ * en plus une invention — IOS répond au caret sur une saisie malformée.
+ */
+describe('ipv6 address ... link-local', () => {
+  async function v6(): Promise<CiscoRouter> {
+    const r = new CiscoRouter('R8');
+    r.powerOn?.();
+    for (const c of ['enable', 'configure terminal', 'ipv6 unicast-routing',
+      'interface GigabitEthernet0/0']) await r.executeCommand(c);
+    return r;
+  }
+
+  it('accepte la forme sans longueur de préfixe', async () => {
+    const r = await v6();
+    expect(await r.executeCommand('ipv6 address FE80::1 link-local')).toBe('');
+  }, 30_000);
+
+  it("remplace l'adresse de lien dérivée de la MAC, ne s'y ajoute pas", async () => {
+    const r = await v6();
+    await r.executeCommand('ipv6 address 2001:DB8:12::1/64');
+    await r.executeCommand('ipv6 address FE80::1 link-local');
+    await r.executeCommand('end');
+    const out = await r.executeCommand('show ipv6 interface brief');
+    const lla = out.split('\n').filter((l) => /fe80::/i.test(l));
+    // Deux fe80:: sur une interface, dont une que personne n'a demandée.
+    expect(lla).toHaveLength(1);
+    expect(lla[0]).toContain('fe80::1');
+  }, 30_000);
+
+  it("refuse une adresse qui n'est pas de lien", async () => {
+    const r = await v6();
+    expect(await r.executeCommand('ipv6 address 2001:DB8::9 link-local'))
+      .toContain('Invalid link-local address');
+  }, 30_000);
+
+  it('répond au caret sur une saisie malformée, sans message inventé', async () => {
+    const r = await v6();
+    const out = await r.executeCommand('ipv6 address garbage');
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(out).not.toContain('expected addr/prefix');
+  }, 30_000);
+
+  it('la forme avec préfixe continue de fonctionner', async () => {
+    const r = await v6();
+    expect(await r.executeCommand('ipv6 address 2001:DB8:12::1/64')).toBe('');
+  }, 30_000);
+});
