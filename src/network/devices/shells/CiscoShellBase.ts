@@ -583,7 +583,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('dir', 'List files on a filesystem', (args) => {
       const cible = args[0] ?? 'flash:';
       if (/^nvram:/i.test(cible)) return this.renderNvramDir();
-      if (!/^(flash|bootflash|disk0):?/i.test(cible) && cible !== '') {
+      if (!/^(flash|bootflash|disk0)(:|$)/i.test(cible) && cible !== '') {
         return `%Error opening ${cible} (No such file or directory)`;
       }
       return this.fs().renderDir(cible.replace(/\/$/, '') || 'flash:');
@@ -1582,7 +1582,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show snmp user', 'Display SNMP users', () => showSnmpUser(this.cs()));
     trie.register('show snmp view', 'Display SNMP views', () => showSnmpView(this.cs()));
     trie.register('show snmp engineID', 'Display SNMP engine ID', () => showSnmpEngineId(this.cs()));
-    trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs()));
+    trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs(), this.getChassisProfile()));
     trie.registerGreedy('show controllers', 'Display controller status', (a) =>
       showControllers(this.cs(), a.join(' ')));
     trie.registerGreedy('show environment', 'Display environment', () =>

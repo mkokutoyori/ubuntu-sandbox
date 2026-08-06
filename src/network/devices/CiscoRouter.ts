@@ -63,10 +63,17 @@ import type { IEventBus } from '@/events/EventBus';
 import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
 import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
+import { CISCO_HARDWARE_PROFILES } from './shells/cisco/CiscoCommonShow';
+import { formatUptime } from './shells/cisco/CiscoTrackCommands';
 
 export class CiscoRouter extends Router {
   protected bootsInterfacesShutdown(): boolean {
     return true;
+  }
+
+  /** Un ISR 2911 porte trois interfaces GigabitEthernet, pas quatre. */
+  protected physicalPortCount(): number {
+    return 3;
   }
 
   /**
@@ -567,6 +574,7 @@ export class CiscoRouter extends Router {
     const ports = this._getPortsInternal();
     const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig') && !n.includes('.'));
     const faPorts = [...ports.keys()].filter(n => n.startsWith('Fast'));
+    const hw = CISCO_HARDWARE_PROFILES['router-isr2911'];
     return [
       '',
       'System Bootstrap, Version 15.0(1r)M15, RELEASE SOFTWARE (fc1)',
@@ -576,16 +584,41 @@ export class CiscoRouter extends Router {
       'Technical Support: http://www.cisco.com/techsupport',
       `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
       '',
-      'Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.',
-      'Processor board ID FTX1234567A',
+      `${this.hostname} uptime is ${formatUptime(this._getUptimeMs?.() ?? 0)}`,
+      'System returned to ROM by power-on',
+      'Last reload reason: power-on',
+      '',
+      '',
+      'This product contains cryptographic features and is subject to United',
+      'States and local country laws governing import, export, transfer and',
+      'use. Delivery of Cisco cryptographic products does not imply',
+      'third-party authority to import, export, distribute or use encryption.',
+      '',
+      '',
+      'Technology Package License Information for Module:\'c2900\'',
+      '',
+      '-----------------------------------------------------------------',
+      'Technology    Technology-package           Technology-package',
+      '              Current       Type           Next reboot',
+      '-----------------------------------------------------------------',
+      'ipbase        ipbasek9      Permanent      ipbasek9',
+      'security      None          None           None',
+      'uc            None          None           None',
+      'data          None          None           None',
+      '',
+      `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
+      `Processor board ID ${hw.serialNumber}`,
       `${giPorts.length} Gigabit Ethernet interfaces`,
       ...(faPorts.length > 0 ? [`${faPorts.length} FastEthernet interfaces`] : []),
       'DRAM configuration is 64 bits wide with parity enabled.',
-      '256K bytes of non-volatile configuration memory.',
+      `${hw.nvramDisplayKB}K bytes of non-volatile configuration memory.`,
+      `${Math.floor(hw.flashTotalBytes / 1024)}K bytes of ATA System CompactFlash 0 (Read/Write)`,
       '',
       `Base ethernet MAC address: ${ports.values().next().value?.getMAC() || '00:00:00:00:00:00'}`,
       '',
-      '--- System Configuration Dialog ---',
+      '         --- System Configuration Dialog ---',
+      '',
+      'Would you like to enter the initial configuration dialog? [yes/no]: no',
       '',
       'Press RETURN to get started.',
     ].join('\n');

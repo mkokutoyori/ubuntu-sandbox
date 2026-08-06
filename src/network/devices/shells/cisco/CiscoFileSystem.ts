@@ -189,8 +189,6 @@ export class CiscoFileSystem {
       'CONFIG_FILE variable does not exist',
       'BOOTLDR variable does not exist',
       `Configuration register is ${reg}`,
-      '',
-      `Standby not ready to show bootvar`,
     ].join('\n');
   }
 }

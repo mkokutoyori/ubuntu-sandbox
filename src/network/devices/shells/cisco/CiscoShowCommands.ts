@@ -31,11 +31,11 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
     `${router._getHostnameInternal()} uptime is ${formatUptime(uptimeMs)}`,
     `System image file is "flash:${hw.flashImage}"`,
     '',
-    `Cisco C2911 (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
+    `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
     `Processor board ID ${hw.serialNumber}`,
     `${giPorts.length} Gigabit Ethernet interfaces`,
     `DRAM configuration is 64 bits wide with parity enabled.`,
-    `${hw.nvramKB}K bytes of non-volatile configuration memory.`,
+    `${hw.nvramDisplayKB}K bytes of non-volatile configuration memory.`,
     '',
     `Configuration register is 0x2102`,
   ].join('\n');

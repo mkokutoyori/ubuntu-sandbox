@@ -209,7 +209,7 @@ interface QueuedPacket {
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
-import { iosInterfaceUsable, interfacesBootShutdown } from './inspection/InterfaceStatusView';
+import { iosInterfaceUsable, interfacesBootShutdown, routerPortCountOverride } from './inspection/InterfaceStatusView';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -873,7 +873,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private createPorts(): void {
-    const portCount = 4;
+    const portCount = routerPortCountOverride() ?? this.physicalPortCount();
     const adminDown = this.bootsInterfacesShutdown() && interfacesBootShutdown();
     for (let i = 0; i < portCount; i++) {
       const portName = this.getVendorPortName(i);
@@ -883,6 +883,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected bootsInterfacesShutdown(): boolean {
     return false;
+  }
+
+  protected physicalPortCount(): number {
+    return 4;
   }
 
   /** Register link-change handlers on all ports to trigger OSPF convergence and DPD */

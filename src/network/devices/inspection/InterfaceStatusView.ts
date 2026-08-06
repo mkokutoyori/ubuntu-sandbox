@@ -24,6 +24,22 @@ export function __assumeCarrierOnUncabledPorts(on: boolean): void {
   carrierAssumedOnUncabledPorts = on;
 }
 
+let legacyRouterPortCount: number | null = null;
+
+/**
+ * Le nombre d'interfaces d'un routeur est une propriété du CHÂSSIS — un
+ * ISR 2911 en porte trois. Les suites antérieures à l'itération 3 en
+ * supposent quatre ; elles récupèrent ce compte ici plutôt que d'être
+ * migrées d'un bloc.
+ */
+export function __setLegacyRouterPortCount(count: number | null): void {
+  legacyRouterPortCount = count;
+}
+
+export function routerPortCountOverride(): number | null {
+  return legacyRouterPortCount;
+}
+
 let interfacesBootShutdownEnabled = true;
 
 export function __setInterfacesBootShutdown(on: boolean): void {
