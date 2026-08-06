@@ -31,6 +31,75 @@ export interface LoggingMonitorSource {
   subscribeConsole?(listener: SyslogLineListener): () => void;
 }
 
+/** IOS timestamps the two message families separately. */
+export type TimestampChannel = 'debug' | 'log';
+
+/**
+ * One channel's `service timestamps` setting.
+ *
+ * `uptime` and `datetime` are mutually exclusive forms, not decorations:
+ * the first counts from boot and needs no clock, the second reads one.
+ * The remaining flags only apply to `datetime`, exactly as the IOS
+ * grammar allows them.
+ */
+export interface TimestampSpec {
+  enabled: boolean;
+  format: 'uptime' | 'datetime';
+  msec: boolean;
+  localtime: boolean;
+  showTimezone: boolean;
+  year: boolean;
+}
+
+export function defaultTimestampSpec(): TimestampSpec {
+  return {
+    enabled: false, format: 'uptime', msec: false,
+    localtime: false, showTimezone: false, year: false,
+  };
+}
+
+/**
+ * What a timestamp needs from the machine it is logged on.
+ *
+ * Kept as a narrow port rather than a device reference because
+ * `LoggingConfig` is shared by routers and switches, and the switch has
+ * neither a settable clock nor an NTP agent — it answers the defaults and
+ * the timestamps stay truthful instead of the format silently changing
+ * platform.
+ */
+export interface LoggingClockSource {
+  /** Milliseconds since this device booted — the `uptime` form. */
+  uptimeMs(): number;
+  /** The device's own system clock, which `clock set` can move. */
+  epochMs(): number;
+  /** `clock timezone` — what `localtime` and `show-timezone` read. */
+  zone(): { name: string; offsetMin: number };
+  /** True once NTP has synchronised; IOS drops the `*` marker then. */
+  authoritative(): boolean;
+}
+
+/**
+ * Built here rather than at each call site so the shell and the device
+ * cannot hand the same logging config two different clocks.
+ */
+export function deviceClockSource(device: unknown): LoggingClockSource {
+  const dev = device as {
+    getUptimeMs?: () => number;
+    getSystemClockMs?: () => number;
+    getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
+    getNtpAgent?: () => { isSynced?: () => boolean };
+  };
+  return {
+    uptimeMs: () => dev.getUptimeMs?.() ?? 0,
+    epochMs: () => dev.getSystemClockMs?.() ?? Date.now(),
+    zone: () => {
+      const c = dev.getManagementService?.().getClock();
+      return { name: c?.timezone ?? 'UTC', offsetMin: c?.offsetMin ?? 0 };
+    },
+    authoritative: () => dev.getNtpAgent?.().isSynced?.() ?? false,
+  };
+}
+
 export class LoggingConfig {
   enabled = true;                       // `logging on` (IOS default on)
   buffered = false;
@@ -41,22 +110,48 @@ export class LoggingConfig {
   /** `logging rate-limit N` — null means the platform default applies. */
   rateLimit: number | null = null;
   consoleSeverity: Severity = 'debugging';
+  /**
+   * `logging monitor` — device-wide, and the only monitor gate that
+   * belongs here. Who among the open sessions actually WANTS the stream
+   * is a per-line question, answered by the subscriber: a session
+   * subscribes because its own vty typed `terminal monitor`. A single
+   * device-wide boolean cannot answer it for several sessions at once,
+   * and while one existed a Huawei vty got nothing at all — VRP sets its
+   * own per-session flag and never touched this one.
+   */
   monitorEnabled = true;
-  private terminalMonitor = false;
-  isTerminalMonitorOn(): boolean { return this.terminalMonitor; }
-  setTerminalMonitor(on: boolean): void { this.terminalMonitor = on; }
-  onSessionEnd(): void { this.terminalMonitor = false; }
   monitorSeverity: Severity = 'debugging';
   trapSeverity: Severity = 'informational';
   facility = 'local7';
   sourceInterface: string | null = null;
   sequenceNumbers = false;
-  timestamps = false;
-  timestampsDebug = false;
-  timestampsMsec = false;
-  horlogeSynchronisee = false;
+  private readonly horodatage: Record<TimestampChannel, TimestampSpec> = {
+    debug: defaultTimestampSpec(),
+    log: defaultTimestampSpec(),
+  };
+  private clock: LoggingClockSource | null = null;
   readonly hosts: string[] = [];
-  private readonly messages: Array<{ ts: number; severity: Severity; tag: string; text: string; mnemonic?: string }> = [];
+  /**
+   * `rendu` is the line as it was written, stamp included, because that is
+   * what the buffer holds on a real router. Formatting at render time
+   * instead would rewrite history: changing `service timestamps` would
+   * re-date every message already logged, and a message logged before the
+   * clock was set would silently acquire the new date.
+   */
+  private readonly messages: Array<{
+    ts: number; severity: Severity;
+    tag: string; text: string; mnemonic?: string; rendu: string;
+  }> = [];
+
+  attachClockSource(source: LoggingClockSource): void { this.clock = source; }
+
+  timestampSpec(channel: TimestampChannel): Readonly<TimestampSpec> {
+    return this.horodatage[channel];
+  }
+
+  setTimestampSpec(channel: TimestampChannel, spec: TimestampSpec): void {
+    this.horodatage[channel] = spec;
+  }
 
   clearBuffer(): void { this.messages.length = 0; }
   private nextSeq = 0;
@@ -98,28 +193,72 @@ export class LoggingConfig {
     return event.slice(0, colon).replace(/[^a-z0-9_]/gi, '_').toLowerCase();
   }
 
-  private formatEntry(severity: Severity, tag: string, text: string, ts: number, mnemonic?: string): string {
-    const prefix = this.horodatageActif(severity) ? `${this.formatTimestamp(ts)}: ` : '';
+  private formatEntry(
+    severity: Severity, tag: string, text: string,
+    ts: number, mnemonic?: string, uptimeMs?: number,
+  ): string {
+    const spec = this.horodatage[severity === 'debugging' ? 'debug' : 'log'];
+    const prefix = spec.enabled
+      ? `${this.formatTimestamp(spec, ts, uptimeMs ?? this.uptimeNow())}: `
+      : '';
     if (severity === 'debugging' && !mnemonic) return `${prefix}${text}`;
     const sevNum = this.SEVERITY_ORDER[severity];
     const mnem = (mnemonic ?? severity).toUpperCase();
     return `${prefix}%${tag.toUpperCase()}-${sevNum}-${mnem}: ${text}`;
   }
 
-  private horodatageActif(severity: Severity): boolean {
-    return severity === 'debugging' ? this.timestampsDebug : this.timestamps;
+  private uptimeNow(): number { return this.clock?.uptimeMs() ?? 0; }
+
+  private formatTimestamp(spec: TimestampSpec, ts: number, uptimeMs: number): string {
+    return spec.format === 'uptime'
+      ? this.formatUptimeStamp(spec, uptimeMs)
+      : this.formatDatetimeStamp(spec, ts);
   }
 
-  private formatTimestamp(ts: number): string {
-    const d = new Date(ts);
+  /**
+   * IOS abbreviates a long uptime rather than letting the hour count grow:
+   * `HH:MM:SS` for the first day, then `1d00h`, then `1w2d`. The short
+   * forms carry no milliseconds — there is nowhere to put them, and a real
+   * `1w2d.443` is not a thing anybody has seen in a log.
+   *
+   * No `*` marker either: an uptime is a counter this device owns, so it
+   * is authoritative whatever the clock is doing.
+   */
+  private formatUptimeStamp(spec: TimestampSpec, uptimeMs: number): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const totalSec = Math.max(0, Math.floor(uptimeMs / 1000));
+    const jours = Math.floor(totalSec / 86400);
+    if (jours >= 7) {
+      const semaines = Math.floor(jours / 7);
+      return `${semaines}w${jours - semaines * 7}d`;
+    }
+    if (jours >= 1) return `${jours}d${pad(Math.floor((totalSec % 86400) / 3600))}h`;
+    const base = `${pad(Math.floor(totalSec / 3600))}:`
+      + `${pad(Math.floor((totalSec % 3600) / 60))}:${pad(totalSec % 60)}`;
+    if (!spec.msec) return base;
+    return `${base}.${String(Math.floor(uptimeMs) % 1000).padStart(3, '0')}`;
+  }
+
+  /**
+   * `*` means the clock is not authoritative — that is what the marker is
+   * for on a real router, and why a freshly booted one stamps every line
+   * with it until NTP answers.
+   */
+  private formatDatetimeStamp(spec: TimestampSpec, ts: number): string {
+    const zone = this.clock?.zone() ?? { name: 'UTC', offsetMin: 0 };
+    const d = new Date(ts + (spec.localtime ? zone.offsetMin * 60_000 : 0));
     const mois = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
     const pad = (n: number) => String(n).padStart(2, '0');
-    const base = `${this.horlogeSynchronisee ? ' ' : '*'}${mois} `
-      + `${String(d.getUTCDate()).padStart(2, ' ')} `
+    const marque = (this.clock?.authoritative() ?? false) ? ' ' : '*';
+    const annee = spec.year ? ` ${d.getUTCFullYear()}` : '';
+    let stamp = `${marque}${mois} ${String(d.getUTCDate()).padStart(2, ' ')}${annee} `
       + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
-    if (!this.timestampsMsec) return base;
-    return `${base}.${String(d.getUTCMilliseconds()).padStart(3, '0')}`;
+    if (spec.msec) stamp += `.${String(d.getUTCMilliseconds()).padStart(3, '0')}`;
+    if (spec.showTimezone) {
+      stamp += ` ${spec.localtime ? zone.name : 'UTC'}`;
+    }
+    return stamp;
   }
 
   subscribeMonitor(listener: SyslogLineListener): () => void {
@@ -152,19 +291,34 @@ export class LoggingConfig {
    * which have no `log`-topic equivalent) keep the default `true` so
    * `device.syslog.entry` remains their only forwarding path.
    */
+  appendDebugLine(text: string): void {
+    if (!this.enabled) return;
+    const ts = this.clock?.epochMs() ?? Date.now();
+    // Même fabrication de ligne que `append` : le tampon garde le rendu,
+    // et deux façons de le construire finiraient par se contredire sur
+    // l'horodatage.
+    const rendu = this.formatEntry('debugging', 'debug', text, ts, undefined, this.uptimeNow());
+    this.messages.push({ ts, severity: 'debugging', tag: 'debug', text, rendu });
+    const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
+    while (this.messages.length > cap) this.messages.shift();
+  }
+
   append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
     if (!this.enabled) return;
     if (severity === 'debugging' && !this.debugAllowed(tag)) return;
-    const ts = Date.now();
-    if (this.monitorEnabled && this.terminalMonitor
+    // The device's own clock, not the host's: a router whose operator ran
+    // `clock set` must date its messages with the date it was given.
+    const ts = this.clock?.epochMs() ?? Date.now();
+    const rendu = this.formatEntry(severity, tag, text, ts, mnemonic, this.uptimeNow());
+    if (this.monitorEnabled
       && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
-      this.fanMonitor(this.formatEntry(severity, tag, text, ts, mnemonic));
+      this.fanMonitor(rendu);
     }
     if (this.consoleEnabled && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.consoleSeverity]) {
-      this.fanConsole(this.formatEntry(severity, tag, text, ts, mnemonic));
+      this.fanConsole(rendu);
     }
     if (this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.bufferedSeverity]) return;
-    this.messages.push({ ts, severity, tag, text, mnemonic });
+    this.messages.push({ ts, severity, tag, text, mnemonic, rendu });
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
     this.nextSeq++;
@@ -215,13 +369,6 @@ export class LoggingConfig {
         this.append('warnings', 'tcp',
           `Segment dropped (${p.reason}) from ${p.sourceIp}:${p.sourcePort} to ${p.destinationIp}:${p.destinationPort}`);
       }),
-      bus.subscribeWhere('tcp.listener.changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('notifications', 'sys',
-          p.added
-            ? `TCP listener bound to ${p.localIp}:${p.localPort}`
-            : `TCP listener closed on ${p.localIp}:${p.localPort}`);
-      }),
       bus.subscribeWhere('port.link.up', isOurs, (e) => {
         const p = e.payload;
         this.append('errors', 'link',
@@ -258,6 +405,9 @@ export class LoggingConfig {
       }),
       bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload;
+        const versFull = String(p.newState).toLowerCase() === 'full';
+        const quitteFull = String(p.oldState).toLowerCase() === 'full';
+        if (!versFull && !quitteFull) return;
         this.append('notifications', 'ospf',
           `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`,
           true, 'ADJCHG');
@@ -368,28 +518,13 @@ export class LoggingConfig {
         this.append('warnings', 'dai',
           `DAI: ${p.ingressPort ?? '?'}: Invalid ARP ${p.reason ?? ''} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
       }),
-      bus.subscribeWhere('port.config.ip-changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('informational', 'ifmgr',
-          p.ip
-            ? `Interface ${p.portName}, IPv4 address ${p.ip}/${p.mask} assigned`
-            : `Interface ${p.portName}, IPv4 address removed`);
-      }),
-      bus.subscribeWhere('port.config.mtu-changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName}, MTU changed to ${p.mtu}`);
-      }),
-      bus.subscribeWhere('port.config.speed-changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName}, speed changed to ${p.speed} Mbps`);
-      }),
-      bus.subscribeWhere('port.config.duplex-changed', isOurs, (e) => {
-        const p = e.payload;
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName}, duplex changed to ${p.duplex}`);
-      }),
+      // Aucun abonnement ici sur `port.config.ip-changed`,
+      // `mtu/speed/duplex-changed` ni `tcp.listener.changed` : IOS
+      // n'émet AUCUN message sur ces événements. Les
+      // `%IFMGR-6-INFORMATIONAL: … IPv4 address 10.0.0.1/255.255.255.0
+      // assigned` et `%SYS-5-NOTIFICATIONS: TCP listener bound` qui s'y
+      // trouvaient étaient inventés — et le premier mélangeait en plus
+      // la notation CIDR et le masque pointé.
       bus.subscribeWhere('rip.route.added', isOurs, (e) => {
         const p = e.payload as unknown as { network?: string; mask?: string; nextHop?: string; metric?: number };
         this.append('informational', 'rip',
@@ -523,6 +658,16 @@ export class LoggingConfig {
         const p = e.payload as unknown as { localPort?: string; remoteHost?: string };
         this.append('notifications', 'cdp',
           `Neighbor ${p.remoteHost ?? '?'} expired on ${p.localPort ?? '?'}`);
+      }),
+      bus.subscribeWhere('cdp.native-vlan.mismatch', isOurs, (e) => {
+        const p = e.payload as unknown as {
+          port?: string; localVlan?: number; remoteHost?: string;
+          remotePort?: string; remoteVlan?: number;
+        };
+        this.append('warnings', 'cdp',
+          `Native VLAN mismatch discovered on ${p.port ?? '?'} (${p.localVlan ?? '?'}), ` +
+          `with ${p.remoteHost ?? '?'} ${p.remotePort ?? '?'} (${p.remoteVlan ?? '?'}).`,
+          true, 'NATIVE_VLAN_MISMATCH');
       }),
       bus.subscribeWhere('vrrp.state.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; vrid?: number; oldState?: string; newState?: string };
@@ -696,16 +841,6 @@ export class LoggingConfig {
         this.append('notifications', 'gre',
           `Tunnel ${p.tunnelId ?? '?'} ${p.added ? 'up' : 'down'} (${p.sourceIp ?? '?'} -> ${p.destinationIp ?? '?'})`);
       }),
-      bus.subscribeWhere('port.config.ipv6-added', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; address?: string };
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName ?? '?'}, IPv6 address ${p.address ?? '?'} assigned`);
-      }),
-      bus.subscribeWhere('port.config.ipv6-removed', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; address?: string };
-        this.append('informational', 'ifmgr',
-          `Interface ${p.portName ?? '?'}, IPv6 address ${p.address ?? '?'} removed`);
-      }),
       bus.subscribeWhere('port.security.errdisable.cleared', isOurs, (e) => {
         const p = e.payload as unknown as { portName?: string };
         this.append('informational', 'pm',
@@ -772,6 +907,7 @@ export class LoggingConfig {
         this.append('warnings', 'sec', p.message, false);
         return;
       }
+      if (p.event === 'cdp:native-vlan-mismatch') return;
       if (p.level === 'error') {
         this.append('errors', this.tagFromEvent(p.event), p.message, false);
       } else if (p.level === 'warn') {
@@ -900,8 +1036,7 @@ export class LoggingConfig {
         : 'disabled'}`,
       `    Trap logging: ${lvl(this.trapSeverity)}`,
       `    Facility: ${this.facility}`,
-      `    Timestamp${this.timestamps ? 's' : ''} logging: ` +
-        `${this.timestamps ? 'enabled' : 'disabled'}`,
+      `    Timestamp logging: ${this.horodatageResume()}`,
       `    Sequence numbers: ${this.sequenceNumbers ? 'enabled' : 'disabled'}`,
     ];
     if (this.sourceInterface) {
@@ -916,9 +1051,7 @@ export class LoggingConfig {
       lines.push('');
       lines.push('Log Buffer (' + this.bufferedSize + ' bytes):');
       lines.push('');
-      for (const m of this.messages) {
-        lines.push(this.formatEntry(m.severity, m.tag, m.text, m.ts, m.mnemonic));
-      }
+      for (const m of this.messages) lines.push(m.rendu);
     }
     return lines.join('\n');
   }
@@ -937,11 +1070,39 @@ export class LoggingConfig {
     else if (this.monitorSeverity !== 'debugging') lines.push(`logging monitor ${this.monitorSeverity}`);
     if (this.trapSeverity !== 'informational') lines.push(`logging trap ${this.trapSeverity}`);
     if (this.facility !== 'local7') lines.push(`logging facility ${this.facility}`);
-    if (this.timestamps) lines.push('service timestamps log datetime msec');
+    // Rendered from the spec rather than as a fixed string: a
+    // running-config is replayed on topology import, so a `log uptime`
+    // coming back as `log datetime msec` would remake a different router.
+    for (const canal of ['debug', 'log'] as const) {
+      const l = this.timestampConfigLine(canal);
+      if (l) lines.push(l);
+    }
     if (this.sequenceNumbers) lines.push('service sequence-numbers');
     if (this.sourceInterface) lines.push(`logging source-interface ${this.sourceInterface}`);
     for (const h of this.hosts) lines.push(`logging host ${h}`);
     return lines;
+  }
+
+  /** `service timestamps …` as the operator would have had to type it. */
+  timestampConfigLine(channel: TimestampChannel): string | null {
+    const s = this.horodatage[channel];
+    if (!s.enabled) return null;
+    const mots = [`service timestamps ${channel}`, s.format];
+    if (s.format === 'datetime') {
+      if (s.msec) mots.push('msec');
+      if (s.localtime) mots.push('localtime');
+      if (s.showTimezone) mots.push('show-timezone');
+      if (s.year) mots.push('year');
+    } else if (s.msec) {
+      mots.push('msec');
+    }
+    return mots.join(' ');
+  }
+
+  private horodatageResume(): string {
+    const actifs = (['debug', 'log'] as const).filter(c => this.horodatage[c].enabled);
+    if (actifs.length === 0) return 'disabled';
+    return actifs.map(c => `${c} ${this.horodatage[c].format}`).join(', ');
   }
 
   renderHuawei(): string {
@@ -972,6 +1133,7 @@ export class LoggingConfig {
     this.hosts.length = 0;
     this.sourceInterface = null;
     this.sequenceNumbers = false;
-    this.timestamps = false;
+    this.horodatage.debug = defaultTimestampSpec();
+    this.horodatage.log = defaultTimestampSpec();
   }
 }

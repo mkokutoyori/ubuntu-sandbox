@@ -75,17 +75,19 @@ describe('§P0 — `ss` et une connexion réelle ne peuvent plus se contredire',
   });
 
   it('un service sans serveur n\'affiche plus un port qu\'il n\'ouvre pas', async () => {
-    const { server, client } = lab();
+    const { server } = lab();
 
-    // apache2 démarre, a un PID, est `active` — mais rien n'écoute pour
-    // lui. Il ne doit donc rien afficher. C'est la régression *apparente*
-    // que le PRD assume : ce port n'a jamais accepté la moindre connexion.
-    await server.executeCommand('systemctl start apache2');
+    // L'exemple était apache2, et il ne l'est plus : depuis
+    // docs/PRD-Manquements.md §M4a, apache2 OUVRE vraiment son port —
+    // `apache2-really-listens.test.ts` le vérifie, conflit avec nginx
+    // compris. La règle que ce cas protège est intacte et c'est mysql qui
+    // l'illustre maintenant : un service qui démarre, a un PID et est
+    // `active` sans qu'aucun serveur n'écoute pour lui ne doit afficher
+    // aucun port.
+    await server.executeCommand('systemctl start mysql');
 
-    expect((await server.executeCommand('systemctl is-active apache2')).trim()).toBe('active');
-    expect(await server.executeCommand('ps aux')).toContain('apachectl');
-    expect(await server.executeCommand('ss -ltn')).not.toContain(':80');
-    expect(await client.executeCommand(`curl -sS http://${SRV_IP}/`)).toContain('curl: (7)');
+    expect((await server.executeCommand('systemctl is-active mysql')).trim()).toBe('active');
+    expect(await server.executeCommand('ss -ltn')).not.toContain(':3306');
   });
 });
 

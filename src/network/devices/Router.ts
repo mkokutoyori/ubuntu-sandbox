@@ -38,6 +38,7 @@
 import { Equipment } from '../equipment/Equipment';
 import type { TaggedEthernetFrame } from './Switch';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
+import { deviceClockSource } from './inspection/config/LoggingConfig';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
@@ -48,7 +49,7 @@ import { CommandAliasTable } from './router/cli/CommandAliasTable';
 import { IpPrefixListStore } from './router/policy/IpPrefixList';
 import { RoutePolicyStore } from './router/policy/RoutePolicy';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
-import { NqaEngine } from './router/diag/NqaEngine';
+import { NqaService } from '../nqa/NqaService';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -82,6 +83,12 @@ import { ipv4MulticastToMac } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { CarPolicer } from './router/qos/CarPolicer';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
+import { IpSlaEngine } from '../ipsla/IpSlaEngine';
+import { TrackService } from '../ipsla/TrackService';
+import type { IpSlaEgress } from '../ipsla/types';
+import { dialHttp } from '../http/HttpClient';
+import { md5Hex } from '@/crypto/hash/md5';
+import type { KeyChainRepository } from './inspection/config/KeyChainRepository';
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
@@ -143,6 +150,7 @@ export interface RouteEntry extends IIPv4Route {
   track?: string;
   vpnInstance?: string;
   permanent?: boolean;
+  installedAt?: number;
   /**
    * L'opérateur a-t-il NOMMÉ l'interface de sortie, ou a-t-elle été
    * déduite du prochain saut ?
@@ -201,6 +209,7 @@ interface QueuedPacket {
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
+import { iosInterfaceUsable, interfacesBootShutdown } from './inspection/InterfaceStatusView';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -323,12 +332,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private ipPrefixListStore = new IpPrefixListStore();
   private routePolicyStore = new RoutePolicyStore();
   private trafficPolicyStore = new TrafficPolicyStore();
-  private nqaEngine = new NqaEngine();
+
 
   getIpPrefixListStore(): IpPrefixListStore { return this.ipPrefixListStore; }
   getRoutePolicyStore(): RoutePolicyStore { return this.routePolicyStore; }
   getTrafficPolicyStore(): TrafficPolicyStore { return this.trafficPolicyStore; }
-  getNqaEngine(): NqaEngine { return this.nqaEngine; }
+
 
   // ── Reactive (Phase 5.8) — scheduler + TimerSet + event helpers ──
   private routerScheduler: IScheduler | null = null;
@@ -350,7 +359,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
-      pushRoute: (route) => { this.routingTable.push(route); },
+      pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: Date.now() }); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getRipVersion: () => this._ripVersion,
       getBus: () => this.getBus(),
@@ -382,7 +391,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
-      pushRoute: (route) => { this.routingTable.push(route); },
+      pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: Date.now() }); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getArpEntry: (ip) => this.arpTable.get(ip),
       getACLEngine: () => this.aclEngine,
@@ -444,6 +453,244 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.getCredentialStore();
     this.mountSshDaemon();
     this.startArpAgingTimer();
+    this.ipSlaEngine.start();
+    this.trackService.start();
+    this.subscribeNqaResults();
+  }
+
+  /**
+   * IP SLA et suivi d'objets vivent sur l'ÉQUIPEMENT, pas sur le shell.
+   *
+   * Ils y vivaient : `CiscoIOSShell` construisait son propre
+   * `TrackRepository`/`IpSlaRepository`. Or `createVtyShell()` fabrique un
+   * shell NEUF par session — un `track` posé en SSH était donc invisible
+   * depuis la console de la même machine, et réciproquement. La
+   * running-config, qui est rendue par le shell mais décrit l'équipement,
+   * ne pouvait pas non plus les voir.
+   */
+  private readonly ipSlaEngine: IpSlaEngine = new IpSlaEngine(
+    {
+      id: this.id,
+      getHostname: () => this.getHostname(),
+      getPort: (name) => this.ports.get(name),
+      resolveEgress: (destination, sourceInterface, sourceIp) =>
+        this.resolveIpSlaEgress(destination, sourceInterface, sourceIp),
+      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      sendUdp: (destination, sourcePort, destinationPort, payload) =>
+        this.sendIpSlaUdp(destination, sourcePort, destinationPort, payload),
+      connectTcp: (ip, port, timeoutMs) => this.probeTcpConnect(ip, port, timeoutMs),
+      tracePath: async (destination, maxHops, timeoutMs) => {
+        const hops = await this.executeTraceroute(destination, maxHops, timeoutMs, 1);
+        return hops.map((hop) => ({
+          address: hop.ip ?? null,
+          rttMs: hop.rttMs ?? null,
+        }));
+      },
+      computeKeyDigest: (chain, keyId, material) => this.ipSlaKeyDigest(chain, keyId, material),
+      activeKeyId: (chain) => this.ipSlaActiveKeyId(chain),
+      fetchHttp: (ip, port, path, method) => this.probeHttp(ip, port, path, method),
+      resolveHostname: (name) => this.hostsTable.resolve(name),
+      isClockSynchronized: () => this.isNtpSynchronized(),
+      epochMs: () => this.getSystemClockMs(),
+      log: (severity, mnemonic, text) => {
+        this.getLoggingConfig()?.append(severity, 'ipsla', text, true, mnemonic);
+      },
+      sendTrap: (oid, varBindings) => { this.sendIpSlaTrap(oid, varBindings); },
+    },
+    () => this.getBus(),
+    () => this.getRouterScheduler(),
+  );
+
+  private readonly trackService: TrackService = new TrackService(
+    {
+      id: this.id,
+      getHostname: () => this.getHostname(),
+      isInterfaceLineUp: (name) => {
+        const port = this.ports.get(name);
+        return !!port && port.getIsUp() && port.isConnected();
+      },
+      isInterfaceRoutingUp: (name) => {
+        const port = this.ports.get(name);
+        return !!port && port.getIsUp() && !!port.getIPAddress();
+      },
+      hasRoute: (prefix, mask) => this.trackedRouteEntry(prefix, mask) !== null,
+      routeMetric: (prefix, mask) => this.trackedRouteEntry(prefix, mask)?.metric ?? null,
+      epochMs: () => this.getSystemClockMs(),
+      log: (severity, mnemonic, text) => {
+        this.getLoggingConfig()?.append(severity, 'tracking', text, true, mnemonic);
+      },
+    },
+    () => this.ipSlaEngine,
+    () => this.getBus(),
+    () => this.getRouterScheduler(),
+  );
+
+  private readonly nqaService: NqaService = new NqaService(this.ipSlaEngine);
+
+  getIpSlaEngine(): IpSlaEngine { return this.ipSlaEngine; }
+  getTrackService(): TrackService { return this.trackService; }
+  getNqaService(): NqaService { return this.nqaService; }
+
+  /**
+   * Un lot NQA terminé doit remonter au test qui l'a demandé. Le moteur
+   * ne connaît que des numéros d'opération ; c'est ici que le numéro
+   * redevient un couple (administrateur, test).
+   */
+  private subscribeNqaResults(): () => void {
+    return this.getBus().subscribeWhere(
+      'ipsla.probe.completed',
+      (payload) => payload.deviceId === this.id,
+      (event) => {
+        for (const test of this.nqaService.list()) {
+          if (test.operationId !== event.payload.operationId) continue;
+          const runtime = this.nqaService.runtimeOf(test);
+          if (runtime) this.nqaService.recordBatch(test, runtime, this.getSystemClockMs());
+        }
+      },
+    );
+  }
+
+  private trackedRouteEntry(prefix: string, mask: string | null): RouteEntry | null {
+    for (const route of this.routingTable) {
+      if (String(route.network) !== prefix) continue;
+      if (mask && String(route.mask) !== mask) continue;
+      if (!this.isRouteUsable(route)) continue;
+      return route;
+    }
+    return null;
+  }
+
+  private resolveIpSlaEgress(
+    destination: IPAddress,
+    sourceInterface: string | null,
+    sourceIp: string | null,
+  ): IpSlaEgress | null {
+    if (sourceInterface) {
+      const pinned = this.ports.get(sourceInterface);
+      if (!pinned || !pinned.isOperationallyUp() || !pinned.getIPAddress()) return null;
+    }
+    const route = this.lookupRoute(destination);
+    if (!route) return null;
+    const egressPort = this.ports.get(route.iface);
+    if (!egressPort || !egressPort.isOperationallyUp()) return null;
+
+    let source = egressPort.getIPAddress();
+    if (sourceInterface) {
+      source = this.ports.get(sourceInterface)?.getIPAddress() ?? source;
+    } else if (sourceIp) {
+      source = IPAddress.tryParse(sourceIp) ?? source;
+    }
+    if (!source) return null;
+
+    const nextHop = route.nextHop ?? destination;
+    const arpHit = this.arpTable.get(nextHop.toString())
+      ?? this.arpTable.get(destination.toString());
+    return {
+      iface: route.iface,
+      sourceIp: source,
+      sourceMac: egressPort.getMAC(),
+      destinationMac: arpHit ? arpHit.mac : MACAddress.broadcast(),
+    };
+  }
+
+  private async probeTcpConnect(
+    ip: string, port: number, timeoutMs: number,
+  ): Promise<{ connected: boolean; refused: boolean }> {
+    const socket = this.tcpv2.connect(ip, port);
+    if (!socket) return { connected: false, refused: false };
+    if (socket.state === 'established') {
+      socket.close();
+      return { connected: true, refused: false };
+    }
+    return new Promise((resolve) => {
+      let settled = false;
+      let offOpen: () => void = () => {};
+      let offClose: () => void = () => {};
+      const finish = (result: { connected: boolean; refused: boolean }) => {
+        if (settled) return;
+        settled = true;
+        offOpen();
+        offClose();
+        this.getRouterScheduler().clear(timer);
+        resolve(result);
+      };
+      const timer = this.getRouterScheduler().setTimeout(
+        () => { socket.close(); finish({ connected: false, refused: false }); },
+        timeoutMs,
+      );
+      offOpen = socket.onOpen(() => { socket.close(); finish({ connected: true, refused: false }); });
+      offClose = socket.onClose(() => finish({ connected: false, refused: true }));
+    });
+  }
+
+  private probeHttp(
+    ip: string, port: number, path: string, method: string,
+  ): { ok: boolean; status: number; error?: string } {
+    const result = dialHttp({ tcpStack: this.tcpv2, targetIp: ip, port, method, path });
+    if (!result.ok || !result.response) {
+      return { ok: false, status: 0, error: result.error ?? 'no response' };
+    }
+    return { ok: true, status: result.response.statusCode };
+  }
+
+  /**
+   * Un datagramme UDP émis par le plan de contrôle IP SLA, à travers la
+   * FIB, comme `_sendIkeUdp` le fait déjà pour IKE — la charge utile est
+   * l'objet typé du protocole, pas des octets, comme partout ailleurs
+   * dans ce simulateur.
+   */
+  private sendIpSlaUdp(
+    destination: IPAddress,
+    sourcePort: number,
+    destinationPort: number,
+    payload: unknown,
+  ): boolean {
+    const route = this.lookupRoute(destination);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    const sourceIp = egress?.getIPAddress();
+    if (!egress || !sourceIp || !egress.isOperationallyUp()) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort,
+      length: 8 + 64, checksum: 0, payload,
+    };
+    const packet = createIPv4Packet(sourceIp, destination, IP_PROTO_UDP, 64, udp, 8 + 64);
+    const arpHit = this.arpTable.get((route.nextHop ?? destination).toString())
+      ?? this.arpTable.get(destination.toString());
+    this.sendFrame(route.iface, {
+      srcMAC: egress.getMAC(),
+      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: packet,
+    });
+    return true;
+  }
+
+  private ipSlaKeyChains(): KeyChainRepository | undefined {
+    return (this.shell as unknown as { getKeyChains?: () => KeyChainRepository })
+      .getKeyChains?.();
+  }
+
+  private ipSlaActiveKeyId(chain: string): number | null {
+    const keys = this.ipSlaKeyChains()?.getChain(chain)?.keys;
+    if (!keys || keys.size === 0) return null;
+    return [...keys.keys()].sort((a, b) => a - b)[0];
+  }
+
+  private ipSlaKeyDigest(chain: string, keyId: number, material: string): string | null {
+    const key = this.ipSlaKeyChains()?.getChain(chain)?.keys.get(keyId);
+    if (!key || key.keyString === undefined) return null;
+    return md5Hex(`${key.keyString}|${material}`);
+  }
+
+  protected isNtpSynchronized(): boolean { return false; }
+
+  protected sendIpSlaTrap(
+    oid: string,
+    varBindings: Array<{ oid: string; kind: string; value: number | string }>,
+  ): void {
+    void oid;
+    void varBindings;
   }
 
   private arpAgingTimer: symbol | null = null;
@@ -627,10 +874,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   private createPorts(): void {
     const portCount = 4;
+    const adminDown = this.bootsInterfacesShutdown() && interfacesBootShutdown();
     for (let i = 0; i < portCount; i++) {
       const portName = this.getVendorPortName(i);
-      this.addPort(new Port(portName, 'ethernet'));
+      this.addPort(new Port(portName, 'ethernet', undefined, { adminDown }));
     }
+  }
+
+  protected bootsInterfacesShutdown(): boolean {
+    return false;
   }
 
   /** Register link-change handlers on all ports to trigger OSPF convergence and DPD */
@@ -644,19 +896,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * protocol goes down (docs/PRD-Link-State.md §2.1 P7, §3.1).
    */
   isRouteInterfaceUsable(iface: string): boolean {
-    if (/^(Tunnel|Loopback)/i.test(iface)) return true;
-    const dotIdx = iface.indexOf('.');
-    const physIface = dotIdx > 0 ? iface.slice(0, dotIdx) : iface;
-    const port = this.ports.get(physIface);
+    const port = this.ports.get(iface)
+      ?? this.ports.get(iface.includes('.') ? iface.slice(0, iface.indexOf('.')) : iface);
     if (!port) return true;
-    // A port that has never had a cable at all is a fixture built without
-    // a cable plant (unit tests exercising CLI/RIB behavior in isolation),
-    // not a real severed link — judge it on line/admin state alone, same
-    // "never wired" vs "unplugged" distinction Port.wasEverCabled() exists
-    // for (docs/PRD-Link-State.md §2.1 P6). Once a cable HAS been attached,
-    // full operational state (including carrier) is required as before.
-    if (!port.wasEverCabled()) return port.getIsUp() && !port.isAdminDown();
-    return port.isOperationallyUp();
+    return iosInterfaceUsable(port, iface, this.ports);
   }
 
   /**
@@ -876,6 +1119,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   protected abstract createShell(): IRouterShell;
 
   getShell(): IRouterShell { return this.shell; }
+  getOspfIntegration(): RouterOSPFIntegration { return this.ospfIntegration; }
 
   /**
    * `exec-timeout` of the VTY line, in milliseconds. Real IOS hangs an
@@ -919,7 +1163,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     dispose(): void;
   } {
     const shell = this.createShell();
-    shell.beginExecSession?.(this.resolveVtyExecLevel(user));
+    shell.beginExecSession?.(this.resolveVtyExecLevel(user), user);
     // A vendor CLI's exit word unwinds one mode at a time and, at the
     // top level, logs the VTY line out. The shell owns that state, so
     // the logout is detected here — an exit verb that leaves the prompt
@@ -1016,6 +1260,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'connected',
       ad: 0,
       metric: 0,
+      installedAt: Date.now(),
     });
 
     Logger.info(this.id, 'router:interface-config',
@@ -1120,6 +1365,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'static',
       ad: opts?.preference ?? 1,
       metric,
+      installedAt: Date.now(),
       preference: opts?.preference,
       tag: opts?.tag,
       description: opts?.description,
@@ -1156,9 +1402,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.routingTable.length < before;
   }
 
+  /**
+   * `ip route 0.0.0.0 0.0.0.0 <next-hop> [track <n>] [permanent]`.
+   *
+   * `track` et `permanent` étaient acceptés par l'analyseur et perdus ici :
+   * la route par défaut passe par ce chemin plutôt que par
+   * `addStaticRoute`, et cette signature ne les portait pas. La route
+   * flottante par défaut — la forme la plus courante de tout le suivi
+   * d'objets — était donc inconditionnelle, quel que soit l'objet suivi.
+   */
   setDefaultRoute(
     nextHop: IPAddress, metric: number = 0,
-    opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'iface'>>,
+    opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'iface' | 'track' | 'permanent'>>,
   ): boolean {
     this.routingTable = this.routingTable.filter(r =>
       r.type !== 'default' || String(r.nextHop) !== String(nextHop));
@@ -1173,9 +1428,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'default',
       ad: opts?.preference ?? 1,
       metric,
+      installedAt: Date.now(),
       preference: opts?.preference,
       tag: opts?.tag,
       description: opts?.description,
+      track: opts?.track,
+      permanent: opts?.permanent,
     });
     return true;
   }
@@ -1882,6 +2140,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.handleDhcpUdp(inPort, ipPkt, udp);
       } else if (udp.destinationPort === UDP_PORT_IKE) {
         this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp);
+      } else if (this.ipSlaEngine.handleUdp(ipPkt.sourceIP, udp)) {
+        return;
       }
       // Other UDP ports silently dropped (no DNS/DHCP/etc. yet)
     }
@@ -2251,6 +2511,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.counters.icmpOutMsgs++;
     if (icmpType === 'time-exceeded') this.counters.icmpOutTimeExcds++;
     if (icmpType === 'destination-unreachable') this.counters.icmpOutDestUnreachs++;
+    this._debugService?.emitIcmpError(
+      icmpType, code,
+      offendingPkt.destinationIP.toString(), myIP.toString(),
+      offendingPkt.sourceIP.toString());
 
     const route = this.lookupRoute(offendingPkt.sourceIP);
     if (!route) return;
@@ -2321,10 +2585,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private queueAndResolve(pkt: IPv4Packet, iface: string, nextHopIP: IPAddress, port: Port): void {
     const key = nextHopIP.toString();
     const timer = this.routerTimers.setTimeout(() => {
+      const abandonnes = this.packetQueue.filter(
+        q => q.nextHopIP.equals(nextHopIP) && q.outIface === iface
+      );
       this.packetQueue = this.packetQueue.filter(
         q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
       );
       this.inFlightFwdARPs.delete(key);
+      for (const q of abandonnes) {
+        this._debugService?.emitLine('ip.packet',
+          `IP: s=${q.frame.sourceIP} (${iface}), d=${q.frame.destinationIP}, encapsulation failed`);
+        this.sendICMPError(iface, q.frame, 'destination-unreachable', 1);
+      }
     }, 2000);
 
     this.packetQueue.push({ frame: pkt, outIface: iface, nextHopIP, timer });
@@ -2992,6 +3264,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private _startupConfigSnapshot: string | null = null;
+  private readonly _hostnameUsine = this.name;
   _captureStartupConfig(snapshot: string): void { this._startupConfigSnapshot = snapshot; }
   _eraseStartupConfig(): void { this._startupConfigSnapshot = null; }
 
@@ -3034,6 +3307,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * fidelity this mirrors from `Switch._applyConfigText`).
    */
   _resetConfigurableStateForReload(): void {
+    this._setHostnameInternal(this._hostnameUsine);
     for (const ifName of [...this.ports.keys()]) {
       this.unconfigureInterface(ifName);
       this.setInterfaceDescription(ifName, '');
@@ -3050,23 +3324,42 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this._routingTableLimit = max === null ? null : { max, thresholdPct };
   }
 
-  private debugLineMatchesAcl(aclRef: string, line: string): boolean {
+  private debugLineMatchesAcl(
+    aclRef: string,
+    line: string,
+    faits?: import('./router/diag/RouterDebugService').DebugPacketFacts,
+  ): boolean {
     const ref = /^\d+$/.test(aclRef) ? Number(aclRef) : aclRef;
     const acl = typeof ref === 'number'
       ? this.aclEngine.findById(ref)
       : this.aclEngine.findByName(ref);
     if (!acl || acl.entries.length === 0) return true;
 
-    const ips = line.match(/\d{1,3}(?:\.\d{1,3}){3}/g);
-    if (!ips || ips.length === 0) return true;
+    let src = faits?.src;
+    let dst = faits?.dst;
+    if (!src || !dst) {
+      const ips = line.match(/\d{1,3}(?:\.\d{1,3}){3}/g);
+      if (!ips || ips.length === 0) return true;
+      src = ips[0];
+      dst = ips[1] ?? ips[0];
+    }
+
+    const proto = faits?.proto ?? 1;
+    const ports = faits && (faits.srcPort !== undefined || faits.dstPort !== undefined)
+      ? {
+        type: proto === 6 ? 'tcp' : 'udp',
+        sourcePort: faits.srcPort ?? 0,
+        destinationPort: faits.dstPort ?? 0,
+      }
+      : undefined;
 
     const probe = {
-      version: 4, ihl: 5, dscp: 0, ecn: 0,
+      version: 4, ihl: 5, dscp: 0, ecn: 0, tos: 0,
       totalLength: 20, identification: 0, flags: 0, fragmentOffset: 0,
-      ttl: 255, protocol: 1, headerChecksum: 0,
-      sourceIP: new IPAddress(ips[0]),
-      destinationIP: new IPAddress(ips[1] ?? ips[0]),
-      payload: undefined,
+      ttl: 255, protocol: proto, headerChecksum: 0,
+      sourceIP: new IPAddress(src),
+      destinationIP: new IPAddress(dst),
+      payload: ports,
     } as unknown as IPv4Packet;
 
     return this.aclEngine.evaluateACL(ref, probe) !== 'deny';
@@ -3080,8 +3373,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   private attachLoggingBus(bus: import('@/events/EventBus').IEventBus): void {
     this.shell.attachLoggingToBus?.(bus, this.id);
-    this.shell.getLoggingConfig?.()?.setDebugGate(
+    const journal = this.shell.getLoggingConfig?.();
+    journal?.setDebugGate(
       (tag) => this.getDebugService().isEnabledForSyslogTag(tag));
+    if (journal) {
+      journal.attachClockSource(deviceClockSource(this));
+      this.getDebugService().setSyslogSink((line) => journal.appendDebugLine(line));
+    }
   }
 
   getDebugService(): RouterDebugService {
@@ -3090,7 +3388,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const svc = this._debugService;
       this.natEngine.setDebugEmitter((line) => svc.emitLine('ip.nat', line));
       this._getDHCPServerInternal().setDebugEmitter((line) => svc.emitLine('ip.dhcp.server', line));
-      svc.setAclFilterEvaluator((aclName, line) => this.debugLineMatchesAcl(aclName, line));
+      svc.setAclFilterEvaluator((aclName, line, faits) => this.debugLineMatchesAcl(aclName, line, faits));
       svc.setCategoryRenderer('ip.dhcp.server', () => this._getDHCPServerInternal().formatDebugShow());
       this.ipsecEngine?.setDebugEmitter((kind, line) => {
         svc.emitLine(kind === 'ipsec' ? 'crypto.ipsec' : 'crypto.isakmp', line);
@@ -3605,7 +3903,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const rows = [];
       for (let seq = 1; seq <= count; seq++) {
         if (hooks?.shouldStop?.()) break;
-        const row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'network-unreachable' };
+        const row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
         rows.push(row);
         hooks?.onResult?.(row);
       }
@@ -3926,13 +4224,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           ? 'ttl-exceeded'
           : /code 4\b/.test(winner.r.reason)
             ? 'frag-needed'
-            : /code 13\b/.test(winner.r.reason)
-              ? 'admin-prohibited'
-              : /code 0\b/.test(winner.r.reason)
-                ? 'network-unreachable'
-                : /Destination unreachable/i.test(winner.r.reason)
-                  ? 'unreachable'
-                  : 'timeout';
+            : /Destination unreachable/i.test(winner.r.reason)
+              ? 'unreachable'
+              : 'timeout';
         throw err;
       }
       const rtt = performance.now() - sentAt;

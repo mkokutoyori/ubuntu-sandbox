@@ -30,6 +30,7 @@ export type DebugCategory =
   | 'glbp'
   | 'track'
   | 'ip.sla.trace'
+  | 'ip.sla.error'
   | 'aaa.authentication'
   | 'aaa.authorization'
   | 'aaa.accounting'
@@ -63,13 +64,31 @@ export interface DebugFlag {
   detail?: boolean;
 }
 
+export interface DebugPacketFacts {
+  src: string;
+  dst: string;
+  proto: number;
+  srcPort?: number;
+  dstPort?: number;
+}
+
 export class RouterDebugService implements TerminalDebugSource {
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
   private readonly broadcast = new DebugBroadcast();
 
+  private static readonly VOLUMINEUX: ReadonlySet<string> = new Set([
+    'ip.packet', 'ip.tcp', 'ip.udp', 'all',
+  ]);
+
+  private static avertissement(category: DebugCategory): string {
+    return RouterDebugService.VOLUMINEUX.has(String(category))
+      ? 'MUST NOT be used on production networks; High CPU utilization may occur.\n'
+      : '';
+  }
+
   enable(category: DebugCategory, scope?: string, detail = false): string {
     this.flags.set(category, { category, enabledAtMs: Date.now(), scope, detail });
-    return `${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
+    return `${RouterDebugService.avertissement(category)}${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
   }
 
   disable(category: DebugCategory): string {
@@ -112,16 +131,16 @@ export class RouterDebugService implements TerminalDebugSource {
    * is dropped — a condition the operator asked for must not be widened
    * by our own inability to classify a line.
    */
-  private readonly conditions: Array<{ kind: 'interface' | 'vrf'; value: string }> = [];
+  private readonly conditions: Array<{ kind: 'interface' | 'vrf' | 'ip'; value: string }> = [];
 
-  addCondition(kind: 'interface' | 'vrf', value: string): string {
+  addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string {
     if (!this.conditions.some((c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase())) {
       this.conditions.push({ kind, value });
     }
     return `Condition ${this.conditions.length} set`;
   }
 
-  removeCondition(kind: 'interface' | 'vrf', value: string): string {
+  removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string {
     const i = this.conditions.findIndex(
       (c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase());
     if (i < 0) return `% Condition not found`;
@@ -131,7 +150,7 @@ export class RouterDebugService implements TerminalDebugSource {
 
   clearConditions(): void { this.conditions.length = 0; }
 
-  listConditions(): ReadonlyArray<{ kind: 'interface' | 'vrf'; value: string }> {
+  listConditions(): ReadonlyArray<{ kind: 'interface' | 'vrf' | 'ip'; value: string }> {
     return this.conditions;
   }
 
@@ -155,24 +174,114 @@ export class RouterDebugService implements TerminalDebugSource {
   /** Report the current window's drops now, rather than on the next line. */
   flushDrops(): void { this.broadcast.flushDrops(); }
 
-  private aclMatchFn?: (aclName: string, line: string) => boolean;
+  private aclMatchFn?: (aclName: string, line: string, faits?: DebugPacketFacts) => boolean;
   private readonly categoryRenderers = new Map<DebugCategory, () => string>();
 
   setCategoryRenderer(category: DebugCategory, render: () => string): void {
     this.categoryRenderers.set(category, render);
   }
 
-  setAclFilterEvaluator(fn: (aclName: string, line: string) => boolean): void {
+  setAclFilterEvaluator(fn: (aclName: string, line: string, faits?: DebugPacketFacts) => boolean): void {
     this.aclMatchFn = fn;
   }
 
-  private emit(category: DebugCategory, line: string): void {
+  private tamponSyslog?: (line: string) => void;
+
+  setSyslogSink(fn: (line: string) => void): void { this.tamponSyslog = fn; }
+
+  private emit(category: DebugCategory, line: string, faits?: DebugPacketFacts): void {
     const flag = this.flags.get(category);
     if (!flag) return;
     this.rateLimitResolver?.();
     if (!this.passesConditions(line)) return;
-    if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line)) return;
+    if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line, faits)) return;
     this.broadcast.fan(line);
+    this.tamponSyslog?.(line);
+  }
+
+  private static faitsDe(ip: { src: string; dst: string; proto: number; transport?: unknown }): DebugPacketFacts {
+    const t = ip.transport as { sourcePort?: number; destinationPort?: number } | undefined;
+    return {
+      src: ip.src, dst: ip.dst, proto: ip.proto,
+      srcPort: t?.sourcePort, dstPort: t?.destinationPort,
+    };
+  }
+
+  private readonly tcpVues = new Map<string, string>();
+
+  private tracerTcp(ip: { src: string; dst: string; transport?: unknown }, dir: string, faits?: DebugPacketFacts): void {
+    const t = ip.transport as { sourcePort?: number; destinationPort?: number;
+      sequenceNumber?: number; acknowledgementNumber?: number;
+      flags?: { syn?: boolean; ack?: boolean; fin?: boolean; rst?: boolean } } | undefined;
+    if (!t) return;
+    const f = t.flags ?? {};
+    const nom = f.rst ? 'RST'
+      : f.syn && f.ack ? 'SYN-ACK'
+      : f.syn ? 'SYN'
+      : f.fin && f.ack ? 'FIN-ACK'
+      : f.fin ? 'FIN'
+      : f.ack ? 'ACK' : null;
+    if (!nom) return;
+    const verbe = dir === 'rcvd' ? 'received' : 'sending';
+    if (nom === 'RST') {
+      this.emit('ip.tcp', 'TCP: received RST', faits);
+      return;
+    }
+    this.emit('ip.tcp',
+      `TCP: ${verbe} ${nom}, seq ${t.sequenceNumber ?? 0}, ack ${t.acknowledgementNumber ?? 0}`, faits);
+
+    const cle = [ip.src, t.sourcePort, ip.dst, t.destinationPort].join(':');
+    const inverse = [ip.dst, t.destinationPort, ip.src, t.sourcePort].join(':');
+    if (nom === 'SYN-ACK') this.tcpVues.set(inverse, 'syn-ack');
+    else if (nom === 'ACK' && this.tcpVues.get(cle) === 'syn-ack') {
+      this.tcpVues.delete(cle);
+      this.emit('ip.tcp', `TCP: Connection to ${ip.dst}:${t.destinationPort} ESTABLISHED`, faits);
+    }
+  }
+
+  private static ligneTransport(proto: number, t: unknown): string | null {
+    if (proto === 6) {
+      const s = t as { sourcePort?: number; destinationPort?: number; sequenceNumber?: number;
+        acknowledgementNumber?: number; windowSize?: number;
+        flags?: { syn?: boolean; ack?: boolean; fin?: boolean; rst?: boolean; psh?: boolean; urg?: boolean } };
+      const f = s?.flags ?? {};
+      const noms = [
+        f.syn ? 'SYN' : '', f.ack ? 'ACK' : '', f.fin ? 'FIN' : '',
+        f.rst ? 'RST' : '', f.psh ? 'PSH' : '', f.urg ? 'URG' : '',
+      ].filter(Boolean).join(' ');
+      return `TCP src=${s?.sourcePort ?? 0}, dst=${s?.destinationPort ?? 0}, `
+        + `seq=${s?.sequenceNumber ?? 0}, ack=${s?.acknowledgementNumber ?? 0}, `
+        + `win=${s?.windowSize ?? 0}${noms ? ' ' + noms : ''}`;
+    }
+    if (proto === 17) {
+      const u = t as { sourcePort?: number; destinationPort?: number };
+      return `UDP src=${u?.sourcePort ?? 0}, dst=${u?.destinationPort ?? 0}`;
+    }
+    if (proto === 1) {
+      const i = t as { icmpType?: string; code?: number };
+      const num = i?.icmpType === 'echo-reply' ? 0
+        : i?.icmpType === 'echo-request' ? 8
+        : i?.icmpType === 'destination-unreachable' ? 3
+        : i?.icmpType === 'redirect' ? 5
+        : i?.icmpType === 'time-exceeded' ? 11 : 255;
+      return `ICMP type=${num}, code=${i?.code ?? 0}`;
+    }
+    return null;
+  }
+
+  emitIcmpError(type: string, code: number, offendingDst: string, routerIp: string, replyTo: string): void {
+    if (type === 'destination-unreachable') {
+      const quoi = code === 1 ? 'host unreachable'
+        : code === 0 ? 'net unreachable'
+        : code === 13 ? 'administratively prohibited'
+        : code === 4 ? 'frag. needed and DF set'
+        : 'unreachable';
+      this.emit('ip.icmp', `ICMP: dst (${offendingDst}) ${quoi}, src ${routerIp}`);
+      return;
+    }
+    if (type === 'time-exceeded') {
+      this.emit('ip.icmp', `ICMP: time exceeded (time to live) sent to ${replyTo}`);
+    }
   }
 
   emitLine(category: DebugCategory, line: string): void {
@@ -254,7 +363,7 @@ export class RouterDebugService implements TerminalDebugSource {
         `DHCP: ${p.iface ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
     }));
 
-    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; len: number; icmpType?: string } | null => {
+    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; len: number; icmpType?: string; transport?: unknown } | null => {
       const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; totalLength?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string; data?: { length?: number } } } };
       if (f?.etherType !== 0x0800 || f.payload?.type !== 'ipv4') return null;
       const ip = f.payload;
@@ -264,6 +373,7 @@ export class RouterDebugService implements TerminalDebugSource {
         proto: ip.protocol ?? 0,
         len: ip.totalLength ?? 0,
         icmpType: ip.payload?.type === 'icmp' ? ip.payload.icmpType : undefined,
+        transport: ip.payload,
       };
     };
     const decodeArp = (frame: unknown): { op: 'request' | 'reply'; senderIp: string; senderMac: string; targetIp: string; targetMac: string } | null => {
@@ -299,10 +409,28 @@ export class RouterDebugService implements TerminalDebugSource {
       }
       const ip = decodeIp(frame);
       if (!ip) return;
-      this.emit('ip.packet', `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`);
+      const faits = RouterDebugService.faitsDe(ip);
+      this.emit('ip.packet',
+        `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`, faits);
+      const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
+      if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail, faits);
+      if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir, faits);
+      if (ip.proto === 17 && dir === 'rcvd') {
+        const u = ip.transport as { sourcePort?: number; destinationPort?: number; length?: number } | undefined;
+        if (u) {
+          this.emit('ip.udp',
+            `UDP: src=${ip.src}(${u.sourcePort ?? 0}), dst=${ip.dst}(${u.destinationPort ?? 0}), `
+            + `length=${u.length ?? 0}`, faits);
+        }
+      }
       if (ip.proto === 1) {
-        const kind = ip.icmpType === 'echo-reply' ? 'echo reply' : ip.icmpType === 'echo-request' ? 'echo request' : (ip.icmpType ?? 'message');
-        this.emit('ip.icmp', `ICMP: ${kind} ${dir}, src ${ip.src}, dst ${ip.dst}`);
+        if (ip.icmpType === 'echo-request') {
+          this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`, faits);
+        } else if (ip.icmpType === 'echo-reply') {
+          this.emit('ip.icmp', `ICMP: echo reply sent, src ${ip.src}, dst ${ip.dst}`, faits);
+        } else {
+          this.emit('ip.icmp', `ICMP: ${ip.icmpType ?? 'message'} ${dir}, src ${ip.src}, dst ${ip.dst}`, faits);
+        }
       }
     };
     this.broadcast.track(bus.subscribe('port.link.up', (e) => {
@@ -315,6 +443,33 @@ export class RouterDebugService implements TerminalDebugSource {
       const p = e.payload as { portName?: string };
       this.emit('interface', `${p.portName ?? '?'} went down`);
       this.emit('interface', `${p.portName ?? '?'} keepalive timer expired`);
+    }));
+    // `ip.sla.trace`/`track` étaient déclarées comme catégories et
+    // émises par personne : `debug ip sla trace` retombait sur le
+    // fourre-tout `debug ip` et imprimait « IP packet debugging is on ».
+    this.broadcast.track(bus.subscribe('ipsla.probe.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      const rtt = p.rttMs === null ? '-' : `${Math.round(p.rttMs)} ms`;
+      this.emit('ip.sla.trace',
+        `IP SLA(${p.operationId}) Scheduler: probe completed, `
+        + `type ${p.type}, target ${p.target ?? '-'}, RTT ${rtt}, return code ${p.returnCode}`);
+      if (p.returnCode !== 'ok' && p.returnCode !== 'overThreshold') {
+        this.emit('ip.sla.error',
+          `IP SLA(${p.operationId}) ${p.returnCode}${p.diagText ? `: ${p.diagText}` : ''}`);
+      }
+    }));
+    this.broadcast.track(bus.subscribe('ipsla.operation.state-changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.sla.trace',
+        `IP SLA(${p.operationId}) Scheduler: entry ${p.oldState} -> ${p.newState} (${p.reason})`);
+    }));
+    this.broadcast.track(bus.subscribe('track.state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('track',
+        `Track ${p.objectId} ${p.description} ${p.oldState} -> ${p.newState}`);
     }));
     this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
       if (!mine(e.payload)) return;
@@ -350,10 +505,10 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.eigrp': return 'EIGRP';
       case 'ip.bgp': return 'BGP';
       case 'ip.routing': return 'IP routing';
-      case 'ip.icmp': return 'IP ICMP';
+      case 'ip.icmp': return 'ICMP packet';
       case 'ip.packet': return 'IP packet';
-      case 'ip.tcp': return 'IP TCP';
-      case 'ip.udp': return 'IP UDP';
+      case 'ip.tcp': return 'TCP special event';
+      case 'ip.udp': return 'UDP packet';
       case 'ip.nat': return 'IP NAT';
       case 'ip.arp': return 'ARP packet';
       case 'interface': return 'Interface';
@@ -365,6 +520,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'glbp': return 'GLBP';
       case 'track': return 'TRACK';
       case 'ip.sla.trace': return 'IP SLA';
+      case 'ip.sla.error': return 'IP SLA error';
       case 'aaa.authentication': return 'AAA Authentication';
       case 'aaa.authorization': return 'AAA Authorization';
       case 'aaa.accounting': return 'AAA Accounting';
@@ -411,15 +567,47 @@ export class RouterDebugService implements TerminalDebugSource {
     return category !== null && this.isEnabled(category);
   }
 
+  private static groupe(category: DebugCategory): string {
+    const c = String(category);
+    if (c.startsWith('ip.ospf')) return 'OSPF';
+    if (c.startsWith('crypto.pki')) return 'Crypto PKI';
+    if (c.startsWith('crypto')) return 'Crypto';
+    if (c === 'ip.arp') return 'ARP';
+    if (c === 'ip.routing') return 'IP routing';
+    if (c === 'ip.packet') return 'IP packet';
+    if (c === 'ip.icmp') return 'ICMP';
+    if (c === 'ip.nat') return 'IP NAT';
+    if (c.startsWith('ip.')) return RouterDebugService.label(category);
+    return RouterDebugService.label(category);
+  }
+
+  formatConditions(): string {
+    if (this.conditions.length === 0) return 'Condition 1 is not set';
+    return this.conditions
+      .map((c, i) => `Condition ${i + 1}: ${c.kind} ${c.value} (0 flags triggered)`)
+      .join('\n');
+  }
+
   format(): string {
     if (this.flags.size === 0) return 'No debug flags are enabled';
-    return this.list()
-      .map(f => {
-        const custom = this.categoryRenderers.get(f.category);
-        if (custom) return custom();
-        if (f.category === 'interface' && f.scope) return `Interface ${f.scope} debugging is on`;
-        return `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
-      })
-      .join('\n');
+    const parGroupe = new Map<string, string[]>();
+    for (const f of this.list()) {
+      const custom = this.categoryRenderers.get(f.category);
+      const ligne = custom
+        ? custom()
+        : f.category === 'interface' && f.scope
+          ? `Interface ${f.scope} debugging is on`
+          : `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
+      const g = RouterDebugService.groupe(f.category);
+      const dejaLa = parGroupe.get(g);
+      if (dejaLa) dejaLa.push(...ligne.split('\n'));
+      else parGroupe.set(g, ligne.split('\n'));
+    }
+    const out: string[] = [];
+    for (const [g, lignes] of parGroupe) {
+      out.push(`${g}:`);
+      for (const l of lignes) out.push(`  ${l}`);
+    }
+    return out.join('\n');
   }
 }

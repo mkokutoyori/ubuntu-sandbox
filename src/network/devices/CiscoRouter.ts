@@ -14,7 +14,6 @@ import type { IRouterShell } from './shells/IRouterShell';
 import { CiscoIOSShell } from './shells/CiscoIOSShell';
 import {
   showVersion,
-  showInterfacesStatus,
   showRunningConfig,
   showIpIntBrief,
 } from './shells/cisco/CiscoShowCommands';
@@ -47,6 +46,8 @@ import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from 
 import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
+import { v, vb } from '../snmp/types';
+import { registerRttMonOperation } from '../snmp/mibs/RttMonMib';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
@@ -64,6 +65,10 @@ import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 
 export class CiscoRouter extends Router {
+  protected bootsInterfacesShutdown(): boolean {
+    return true;
+  }
+
   /**
    * IOS runs no SSH server without RSA host keys. `crypto key generate
    * rsa` is what actually brings SSH up, and `crypto key zeroize rsa`
@@ -209,6 +214,13 @@ export class CiscoRouter extends Router {
       this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+    this.getIpSlaEngine().setMibRegistrar((operationId) => {
+      registerRttMonOperation(
+        (oid, read) => this.snmpAgent.registerMib(oid, read),
+        this.getIpSlaEngine(),
+        operationId,
+      );
+    });
   }
 
   /**
@@ -262,6 +274,25 @@ export class CiscoRouter extends Router {
         this.pimAgent.leaveGroup(e.payload.groupAddress, e.payload.iface);
       }),
     ];
+  }
+
+  /**
+   * Le trap IP SLA passe par l'agent SNMP de CETTE machine. `Router` ne
+   * connaît pas d'agent SNMP (un routeur générique n'en a pas), d'où le
+   * point d'extension surchargé ici plutôt qu'un accès direct.
+   */
+  protected override sendIpSlaTrap(
+    oid: string,
+    varBindings: Array<{ oid: string; kind: string; value: number | string }>,
+  ): void {
+    this.snmpAgent.sendTrap(oid, varBindings.map((binding) => vb(
+      binding.oid,
+      v(binding.kind === 'integer' ? 'integer' : 'gauge32', binding.value),
+    )));
+  }
+
+  protected override isNtpSynchronized(): boolean {
+    return this.ntpAgent.isSynced();
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -491,10 +522,6 @@ export class CiscoRouter extends Router {
     }
     if (/^show\s+users?\s*$/i.test(cmd)) {
       return { output: `${this.getSshSessionRegistry().formatShowUsers()}\n`, exitCode: 0 };
-    }
-    // `show interfaces status` — link state per port.
-    if (/^show\s+int(?:erfaces)?\s+status\s*$/i.test(cmd)) {
-      return { output: `${showInterfacesStatus(this)}\n`, exitCode: 0 };
     }
     // `show ip interface brief`.
     if (/^show\s+ip\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {

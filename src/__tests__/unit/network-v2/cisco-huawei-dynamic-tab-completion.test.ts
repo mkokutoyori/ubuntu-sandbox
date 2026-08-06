@@ -61,13 +61,16 @@ describe('Dynamic Tab candidates — Cisco (PRD item 2)', () => {
     expect(candidates.some(c => c === 'vlan 15')).toBe(false);
   });
 
-  it('the ? help after "interface " includes the real ports', async () => {
+  it('the ? help after "interface " lists interface TYPES, not the ports', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
     const help = sw.cliHelp('interface ');
-    expect(help).toContain('FastEthernet0/1');
-    expect(help).toContain('FastEthernet0/8');
+    expect(help).toContain('FastEthernet');
+    expect(help).toContain('Vlan');
+    expect(help).not.toContain('FastEthernet0/1');
+    expect(help).not.toContain('FastEthernet0/8');
+    expect(sw.cliTabCandidates('interface FastEthernet0/')).toContain('interface FastEthernet0/1');
   });
 
   it('works for routers too (real router port names)', async () => {

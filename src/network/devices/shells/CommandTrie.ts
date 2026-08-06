@@ -21,7 +21,7 @@ import { descriptionForKeyword } from './CliKeywordDescriptions';
 
 // ─── Parameter Types ────────────────────────────────────────────────
 
-export type ParamType = 'INT' | 'STRING' | 'IP_ADDR' | 'SUBNET_MASK' | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_LIST' | 'WORD';
+export type ParamType = 'INT' | 'STRING' | 'IP_ADDR' | 'SUBNET_MASK' | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_LIST' | 'WORD' | 'ENUM';
 
 export interface ParamSpec {
   name: string;
@@ -29,6 +29,37 @@ export interface ParamSpec {
   description: string;
   optional?: boolean;
   validator?: (value: string) => boolean;
+  /** Bornes d'un `INT`, rendues `<min-max>` comme IOS le fait. */
+  range?: readonly [number, number];
+  /** Rendu littéral imposé, quand le type ne suffit pas (`LINE`, `hh:mm`). */
+  literal?: string;
+  /** Valeurs admises d'un `ENUM`, rendues chacune comme un mot-clé propre. */
+  values?: ReadonlyArray<{ keyword: string; description: string }>;
+}
+
+/**
+ * IOS ne nomme pas ses arguments, il les TYPE : `A.B.C.D`, `<1-4094>`,
+ * `WORD`, `LINE`. Un `<mask>` dans une aide se voit immédiatement.
+ */
+export function renderParamKeyword(param: ParamSpec): string {
+  if (param.literal) return param.literal;
+  switch (param.type) {
+    case 'IP_ADDR':
+    case 'SUBNET_MASK':
+      return 'A.B.C.D';
+    case 'MAC_ADDR':
+      return 'H.H.H';
+    case 'INT':
+      return param.range ? `<${param.range[0]}-${param.range[1]}>` : '<0-4294967295>';
+    case 'INTERFACE':
+      return 'WORD';
+    case 'VLAN_LIST':
+      return 'WORD';
+    case 'STRING':
+      return 'LINE';
+    default:
+      return 'WORD';
+  }
 }
 
 // ─── Trie Node ──────────────────────────────────────────────────────
@@ -46,8 +77,10 @@ export interface CommandNode {
   action?: CommandAction;
   /** If true, this node accepts remaining args as-is */
   greedy?: boolean;
+  minArgs?: number;
   hintSuggestions?: Array<{ keyword: string; description: string }>;
   _hintOnly?: boolean;
+  _passthrough?: boolean;
   /**
    * Keywords auto-extracted from the greedy handler's source (lazy,
    * computed once). Undefined = not yet computed.
@@ -205,7 +238,7 @@ export class CommandTrie {
   }
 
   private resolveDescription(node: CommandNode): string {
-    if (node.description === node.keyword) {
+    if (node.description === node.keyword || node.description === '') {
       return this.canonicalDescriptions.get(node.keyword)
         ?? descriptionForKeyword(node.keyword)
         ?? node.description;
@@ -379,7 +412,7 @@ export class CommandTrie {
           const hasChildMatch = Array.isArray(childMatch) ? childMatch.length > 0 : !!childMatch;
           if (!hasChildMatch) {
             args.push(...tokens.slice(i + 1));
-            return { status: 'ok', node, args, matchedKeywords };
+            return this.finish(node, args, matchedKeywords, input);
           }
         }
         continue;
@@ -400,7 +433,7 @@ export class CommandTrie {
           const hasChildMatch = Array.isArray(childMatch) ? childMatch.length > 0 : !!childMatch;
           if (!hasChildMatch) {
             args.push(...tokens.slice(i + 1));
-            return { status: 'ok', node, args, matchedKeywords };
+            return this.finish(node, args, matchedKeywords, input);
           }
         }
         continue;
@@ -423,7 +456,7 @@ export class CommandTrie {
             paramIdx = 0;
             if (node.greedy && i < tokens.length - 1) {
               args.push(...tokens.slice(i + 1));
-              return { status: 'ok', node, args, matchedKeywords };
+              return this.finish(node, args, matchedKeywords, input);
             }
             continue;
           }
@@ -452,7 +485,7 @@ export class CommandTrie {
       // If node has greedy action, remaining tokens are args
       if (node.greedy) {
         args.push(...tokens.slice(i));
-        return { status: 'ok', node, args, matchedKeywords };
+        return this.finish(node, args, matchedKeywords, input);
       }
 
       // If current node has params and we already have an action, pass remaining as args
@@ -475,7 +508,7 @@ export class CommandTrie {
 
     // Reached end of tokens
     if (node.action) {
-      return { status: 'ok', node, args, matchedKeywords };
+      return this.finish(node, args, matchedKeywords, input);
     }
 
     // Check if there are required params not yet supplied
@@ -489,6 +522,45 @@ export class CommandTrie {
     }
 
     return { status: 'incomplete', node, args, matchedKeywords, error: '% Incomplete command.', errorPos: input.trimEnd().length };
+  }
+
+  private requiredArity(node: CommandNode): number {
+    return Math.max(
+      node.params.filter(p => !p.optional).length,
+      node.minArgs ?? 0,
+    );
+  }
+
+  private isExecutableAt(node: CommandNode, suppliedArgs: number): boolean {
+    return !!node.action && suppliedArgs >= this.requiredArity(node);
+  }
+
+  private descendantShortfall(node: CommandNode, args: readonly string[]): boolean {
+    let target = node;
+    let consumed = 0;
+    while (consumed < args.length) {
+      const child = target.children.get(args[consumed].toLowerCase());
+      if (!child) break;
+      target = child;
+      consumed++;
+    }
+    if (target === node) return false;
+    return args.length - consumed < this.requiredArity(target);
+  }
+
+  private finish(
+    node: CommandNode,
+    args: string[],
+    matchedKeywords: string[],
+    input: string,
+  ): MatchResult {
+    if (this.isExecutableAt(node, args.length) && !this.descendantShortfall(node, args)) {
+      return { status: 'ok', node, args, matchedKeywords };
+    }
+    return {
+      status: 'incomplete', node, args, matchedKeywords,
+      error: '% Incomplete command.', errorPos: input.trimEnd().length,
+    };
   }
 
   // ─── Help & Completion ──────────────────────────────────────────
@@ -514,11 +586,13 @@ export class CommandTrie {
 
     // Empty input or just spaces → show all root commands
     if (tokens.length === 0) {
-      return this.nodeCompletions(this.root, []);
+      return this.nodeCompletions(this.root);
     }
 
     let node = this.root;
     const path: string[] = [];
+    /** Combien d'arguments du nœud courant ont déjà été fournis. */
+    let consumedArgs = 0;
 
     // Navigate through all complete (non-last) tokens
     for (let i = 0; i < tokens.length; i++) {
@@ -530,32 +604,19 @@ export class CommandTrie {
         // "sh?" → which keywords start with "sh"? List them.
         // "show?" → which keywords start with "show"? → "show"
         // Never drill down into the match — just show the matches themselves.
-        const matches = this.prefixMatch(node, token);
+        const matches = this.prefixMatch(node, token, true);
         const listed = matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
         {
           const seen = new Set(listed.map(e => e.keyword.toLowerCase()));
           const hinted = [
             ...(node.hintSuggestions ?? []),
             ...this.autoContinuations(node),
+            ...this.enumValues(node, consumedArgs),
           ];
           for (const h of hinted) {
             if (h.keyword.toLowerCase().startsWith(token) && !seen.has(h.keyword.toLowerCase())) {
               seen.add(h.keyword.toLowerCase());
               listed.push({ keyword: h.keyword, description: h.description });
-            }
-          }
-        }
-        if (this.dynamicResolver) {
-          const seen = new Set(listed.map(e => e.keyword.toLowerCase()));
-          const context: DynamicCompletionContext = {
-            path,
-            paramType: node.params[0]?.type ?? null,
-            partial: tokens[i],
-          };
-          for (const value of this.dynamicResolver.candidatesFor(context)) {
-            if (value.toLowerCase().startsWith(token) && !seen.has(value.toLowerCase())) {
-              seen.add(value.toLowerCase());
-              listed.push({ keyword: value, description: '' });
             }
           }
         }
@@ -566,6 +627,7 @@ export class CommandTrie {
       if (exactRawHelp) {
         node = exactRawHelp;
         path.push(node.keyword);
+        consumedArgs = 0;
         continue;
       }
 
@@ -573,6 +635,7 @@ export class CommandTrie {
       if (matches.length === 1) {
         node = matches[0];
         path.push(node.keyword);
+        consumedArgs = 0;
         continue;
       }
 
@@ -589,11 +652,26 @@ export class CommandTrie {
         }
       }
 
+      // Le token n'est pas un mot-clé : c'est un ARGUMENT.
+      //
+      // C'est ici que l'aide divergeait de l'exécution. La marche
+      // cherchait un enfant à chaque pas et abandonnait dès qu'elle
+      // rencontrait une valeur — une adresse, un nombre, un nom — alors
+      // que le nœud, lui, la consomme (`registerGreedy` absorbe la
+      // suite, `params` la décrit). D'où un `ip address 192.168.10.1 ?`
+      // sans réponse pour une commande qui s'exécute très bien.
+      // Consommer l'argument et poursuivre supprime la classe entière,
+      // y compris pour les commandes que personne n'a testées.
+      if (node.params.length > consumedArgs || node.greedy) {
+        consumedArgs++;
+        continue;
+      }
+
       return [];
     }
 
     // Trailing space → show subcommands/children of the last matched node
-    return this.nodeCompletions(node, path);
+    return this.nodeCompletions(node, consumedArgs);
   }
 
   /**
@@ -675,7 +753,7 @@ export class CommandTrie {
       results.push(prefix + word);
     };
 
-    for (const m of this.prefixMatch(node, partialLower)) push(m.keyword);
+    for (const m of this.prefixMatch(node, partialLower, true)) push(m.keyword);
 
     if (node.hintSuggestions) {
       for (const h of node.hintSuggestions) {
@@ -685,6 +763,10 @@ export class CommandTrie {
 
     for (const auto of this.autoContinuations(node)) {
       if (auto.keyword.startsWith(partialLower)) push(auto.keyword);
+    }
+
+    for (const v of this.enumValues(node, paramIdx)) {
+      if (v.keyword.toLowerCase().startsWith(partialLower)) push(v.keyword);
     }
 
     if (this.dynamicResolver) {
@@ -732,10 +814,74 @@ export class CommandTrie {
     return node._autoKeywords;
   }
 
-  private prefixMatch(node: CommandNode, prefix: string): CommandNode[] {
+  /**
+   * Attache des spécifications d'arguments à un nœud DÉJÀ enregistré.
+   *
+   * `ParamType`/`ParamSpec` existaient depuis toujours ; ce qui manquait
+   * était leur usage — presque tous les enregistrements du dépôt passent
+   * par `registerGreedy`, qui n'accepte pas de paramètres. Plutôt que de
+   * réécrire des milliers d'appels, on décrit les arguments après coup,
+   * là où l'aide doit s'améliorer.
+   */
+  describeArgs(path: string, specs: readonly ParamSpec[]): void {
+    const keywords = path.split(/\s+/).filter(Boolean);
+    let node = this.root;
+    for (const keyword of keywords) {
+      const key = keyword.toLowerCase();
+      let child = node.children.get(key);
+      if (!child) {
+        // Le mot-clé n'est pas un nœud réel : la commande est enregistrée
+        // greedy et l'absorbe. On crée un nœud PUREMENT INDICATIF pour
+        // pouvoir y accrocher les arguments — `prefixMatch` ignore les
+        // nœuds `_hintOnly`, donc l'exécution continue de passer par le
+        // parent greedy et rien ne change pour elle.
+        child = this.createNode(key, '');
+        child._hintOnly = true;
+        child._passthrough = true;
+        node.children.set(key, child);
+      }
+      node = child;
+    }
+    node.params = [...specs];
+  }
+
+  private hintDescription(node: CommandNode, keyword: string): string {
+    const key = keyword.toLowerCase();
+    return node.hintSuggestions?.find(h => h.keyword.toLowerCase() === key)?.description ?? '';
+  }
+
+  private enumValues(
+    node: CommandNode,
+    consumedArgs: number,
+  ): ReadonlyArray<{ keyword: string; description: string }> {
+    const param = node.params[consumedArgs];
+    return param?.type === 'ENUM' ? (param.values ?? []) : [];
+  }
+
+  requireArgs(path: string, minArgs: number): void {
+    const node = this.nodeAt(path);
+    if (node) node.minArgs = minArgs;
+  }
+
+  private nodeAt(path: string): CommandNode | null {
+    let node: CommandNode = this.root;
+    for (const kw of path.split(/\s+/).filter(Boolean)) {
+      const key = kw.toLowerCase();
+      const child = node.children.get(key) ?? this.prefixMatch(node, key, true)[0];
+      if (!child) return null;
+      node = child;
+    }
+    return node;
+  }
+
+  private prefixMatch(
+    node: CommandNode,
+    prefix: string,
+    includePassthrough = false,
+  ): CommandNode[] {
     const results: CommandNode[] = [];
     for (const [keyword, child] of node.children) {
-      if (child._hintOnly) continue;
+      if (child._hintOnly && !(includePassthrough && child._passthrough)) continue;
       if (keyword.startsWith(prefix)) {
         results.push(child);
       }
@@ -747,19 +893,65 @@ export class CommandTrie {
    * Build the completions list for a node's children/params.
    * Includes <cr> when the node itself is executable (real Cisco behavior).
    */
-  private nodeCompletions(node: CommandNode, path: readonly string[]): Array<{ keyword: string; description: string }> {
+  /**
+   * IOS trie TOUJOURS son aide alphabétiquement ; l'ordre d'insertion
+   * dans le registre est un artefact d'implémentation qui se voit
+   * immédiatement. Les paramètres (`<...>`) restent en fin de liste,
+   * comme sur un vrai routeur, et `<cr>` garde sa place finale.
+   */
+  private nodeCompletions(
+    node: CommandNode,
+    consumedArgs = 0,
+  ): Array<{ keyword: string; description: string }> {
+    const raw = this.nodeCompletionsUnsorted(node, consumedArgs);
+    const rank = (keyword: string): number => {
+      if (keyword === '<cr>') return 2;
+      if (keyword.startsWith('<')) return 1;
+      return 0;
+    };
+    return raw.slice().sort((a, b) => {
+      const byRank = rank(a.keyword) - rank(b.keyword);
+      if (byRank !== 0) return byRank;
+      if (rank(a.keyword) !== 0) return 0;
+      return a.keyword.localeCompare(b.keyword, 'en');
+    });
+  }
+
+  private nodeCompletionsUnsorted(
+    node: CommandNode,
+    consumedArgs = 0,
+  ): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
-    for (const [, child] of node.children) {
-      results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
+    // Tant que la commande ATTEND ENCORE un argument, les mots-clés
+    // enfants ne sont pas des candidats : après `ip address
+    // 192.168.10.1`, IOS attend le masque, pas `dhcp`. Une fois les
+    // arguments servis, les mots-clés qui les suivent redeviennent
+    // proposables — `access-list 10 ?` rend bien `deny`/`permit`.
+    const argumentsConsumed = consumedArgs > 0 && node.params.length > consumedArgs;
+    if (!argumentsConsumed) {
+      for (const [, child] of node.children) {
+        if (child._hintOnly && !child._passthrough) continue;
+        const described = this.resolveDescription(child);
+        results.push({
+          keyword: child.keyword,
+          description: described || this.hintDescription(node, child.keyword),
+        });
+      }
     }
 
-    // Parameter specs
-    for (const param of node.params) {
-      results.push({ keyword: `<${param.name}>`, description: param.description });
+    // Un paramètre déjà fourni n'est plus proposé : après
+    // `ip address 192.168.10.1`, IOS attend le masque, pas l'adresse.
+    for (const param of node.params.slice(consumedArgs)) {
+      if (param.type === 'ENUM' && param.values) {
+        for (const v of param.values) results.push({ ...v });
+      } else {
+        results.push({ keyword: renderParamKeyword(param), description: param.description });
+      }
+      if (!param.optional) break;
     }
 
-    if (node.hintSuggestions && node.hintSuggestions.length > 0) {
+    if (!argumentsConsumed && node.hintSuggestions && node.hintSuggestions.length > 0) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const hint of node.hintSuggestions) {
         if (!seen.has(hint.keyword.toLowerCase())) {
@@ -769,27 +961,13 @@ export class CommandTrie {
       }
     }
 
-    {
+    const awaitsDeclaredArgument = node.params.length > consumedArgs;
+    if (!argumentsConsumed && !awaitsDeclaredArgument) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const auto of this.autoContinuations(node)) {
         if (!seen.has(auto.keyword)) {
           seen.add(auto.keyword);
           results.push({ keyword: auto.keyword, description: auto.description });
-        }
-      }
-    }
-
-    if (this.dynamicResolver && path.length > 0) {
-      const seen = new Set(results.map(r => r.keyword.toLowerCase()));
-      const context: DynamicCompletionContext = {
-        path,
-        paramType: node.params[0]?.type ?? null,
-        partial: '',
-      };
-      for (const value of this.dynamicResolver.candidatesFor(context)) {
-        if (!seen.has(value.toLowerCase())) {
-          seen.add(value.toLowerCase());
-          results.push({ keyword: value, description: '' });
         }
       }
     }
@@ -800,7 +978,7 @@ export class CommandTrie {
 
     // <cr> — shown when the current command is already executable
     // (real Cisco always shows <cr> when you can press Enter)
-    if (node.action) {
+    if (this.isExecutableAt(node, consumedArgs)) {
       results.push({ keyword: '<cr>', description: '' });
     }
 
@@ -811,6 +989,8 @@ export class CommandTrie {
     if (spec.validator) return spec.validator(value);
 
     switch (spec.type) {
+      case 'ENUM':
+        return (spec.values ?? []).some(v => v.keyword.toLowerCase() === value.toLowerCase());
       case 'INT': return /^\d+$/.test(value);
       case 'STRING': return value.length > 0;
       case 'WORD': return /^[a-zA-Z0-9_-]+$/.test(value);

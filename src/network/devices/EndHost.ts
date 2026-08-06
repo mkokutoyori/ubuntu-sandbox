@@ -310,6 +310,14 @@ export abstract class EndHost extends Equipment {
   /** Per-device socket table — tracks listening and established sockets */
   protected readonly socketTable: SocketTable = new SocketTable();
 
+  /**
+   * Les entrées `LISTEN` que le sink de `TcpStack` a posées lui-même.
+   * Il ne retire que celles-là : les `socketTable.bind()` manuels qui
+   * subsistent gardent exactement leur cycle de vie, si bien que cette
+   * passe ne peut faire disparaître aucune ligne de `ss`.
+   */
+  private readonly sinkOwnedListeners = new Set<string>();
+
   /** Bound UDP ports → datagram listeners (RFC 768 socket layer). */
   private readonly udpListeners: Map<number, UdpListener> = new Map();
 
@@ -776,6 +784,7 @@ export abstract class EndHost extends Equipment {
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
+    this.attachListenerProjection();
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
     );
@@ -1177,6 +1186,37 @@ export abstract class EndHost extends Equipment {
 
   /** Expose the per-device socket table (used by netstat/ss commands). */
   getSocketTable(): SocketTable { return this.socketTable; }
+
+  /**
+   * docs/PRD-Sockets-Une-Seule-Verite.md §P1 — une écoute réelle
+   * s'inscrit d'elle-même dans la table que lisent `ss`, `netstat`,
+   * `lsof`, `/proc/net/tcp` et `nmap`.
+   *
+   * Deux tables, deux clés : `TcpStack` clave par `ip:port`,
+   * `SocketTable` par `protocole:famille:port` — l'adresse n'entre pas
+   * dans la sienne. Deux écoutes sur le même port et des adresses
+   * différentes sont donc légales pour l'une et `EADDRINUSE` pour
+   * l'autre ; on consulte avant de lier, et on se tait plutôt que de
+   * lever.
+   */
+  private attachListenerProjection(): void {
+    this.tcpv2.attachSocketSink({
+      announce: (localIp, localPort, identity) => {
+        const family = localIp.includes(':') ? 'v6' : 'v4';
+        if (this.socketTable.isPortBound(localPort, 'tcp', family)) return;
+        try {
+          this.socketTable.bind(
+            'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,
+          );
+          this.sinkOwnedListeners.add(`${localIp}:${localPort}`);
+        } catch { /* déjà annoncé par ailleurs — l'entrée existante fait foi */ }
+      },
+      withdraw: (localIp, localPort) => {
+        if (!this.sinkOwnedListeners.delete(`${localIp}:${localPort}`)) return;
+        this.socketTable.unbind('tcp', localIp, localPort);
+      },
+    });
+  }
 
   getDHCPClient(): DHCPClient { return this.dhcpClient; }
 

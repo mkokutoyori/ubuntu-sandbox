@@ -152,6 +152,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   date: '/bin/date', uname: '/bin/uname', hostname: '/bin/hostname',
   ps: '/bin/ps', kill: '/bin/kill', tee: '/usr/bin/tee', find: '/usr/bin/find',
   xargs: '/usr/bin/xargs', tar: '/bin/tar', gzip: '/bin/gzip', curl: '/usr/bin/curl',
+  openssl: '/usr/bin/openssl',
   wget: '/usr/bin/wget', ping: '/bin/ping', ssh: '/usr/bin/ssh', scp: '/usr/bin/scp',
   sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
   netstat: '/bin/netstat', ss: '/usr/sbin/ss', iptables: '/usr/sbin/iptables',
@@ -168,6 +169,15 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   lsmod: '/usr/sbin/lsmod', modinfo: '/usr/sbin/modinfo',
   swapon: '/usr/sbin/swapon', swapoff: '/usr/sbin/swapoff',
   lid: '/usr/sbin/lid', conntrack: '/usr/sbin/conntrack',
+  // The two HTTP servers and their control tool. They are here for two
+  // reasons that meet: their systemd units name these paths in
+  // `ExecStart` (§F5.10 judges a service on the existence of its
+  // executable), and their commands declare the same path as
+  // `binaryPath` — without the seeding, `nginx -t` would fail on a file
+  // nobody deleted. `apache2ctl` is the real file on Debian and
+  // `apachectl` the link; both names exist, as on the machine.
+  nginx: '/usr/sbin/nginx', apache2: '/usr/sbin/apache2',
+  apachectl: '/usr/sbin/apachectl', apache2ctl: '/usr/sbin/apache2ctl',
 };
 
 export function resolveExePath(name: string): string {

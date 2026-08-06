@@ -36,6 +36,7 @@ import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../.
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
+import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -93,6 +94,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   constructor() {
     super();
     this.initializeCommands();
+    describeCiscoSwitchArguments({
+      config: this.configTrie,
+      configIf: this.configIfTrie,
+      configLine: this.configLineTrie,
+      configVlan: this.configVlanTrie,
+    });
   }
 
   // ─── Protocol agents this switch may not have ────────────────────
@@ -575,7 +582,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── Interface ── trust + limit rate
     this.configIfTrie.registerGreedy('mtu', 'Set MTU', (args) => {
       const n = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(n) || n < 64 || n > 9216) return "% Invalid input detected at '^' marker.";
+      if (!Number.isFinite(n)) return "% Invalid input detected at '^' marker.";
+      if (n < 68) return `% Invalid MTU: ${n}. Minimum is 68 (IPv4 minimum).`;
+      if (n > 9216) return `% Invalid MTU: ${n}. Maximum is 9216 (jumbo frame).`;
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
       for (const i of ifs) {
         const port = this.d().getPort(i);
@@ -2456,6 +2465,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.mode = 'config-if';
       return '';
     });
+
+    this.configTrie.addCompletionKeywords('interface', [
+      { keyword: 'FastEthernet', description: 'FastEthernet IEEE 802.3' },
+      { keyword: 'GigabitEthernet', description: 'GigabitEthernet IEEE 802.3z' },
+      { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae' },
+      { keyword: 'Loopback', description: 'Loopback interface' },
+      { keyword: 'Port-channel', description: 'Ethernet Channel of interfaces' },
+      { keyword: 'Vlan', description: 'Catalyst VLANs' },
+      { keyword: 'range', description: 'interface range command' },
+    ]);
 
     this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
       if (args.length < 1) return '% Incomplete command.';
@@ -4948,7 +4967,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const vlan = this.sviVlanId(iface);
     if (vlan !== null) { this.d().setSviAdminUp(vlan, up); return ''; }
     const port = this.d().getPort(iface);
-    if (port) { port.setUp(up); return ''; }
+    if (port) { port.setAdminShutdown(!up); return ''; }
     return '% Error';
   }
 

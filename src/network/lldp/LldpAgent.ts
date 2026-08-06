@@ -149,7 +149,7 @@ export class LldpAgent extends ReactiveAgentBase {
       return;
     }
     const key = neighborKey(portName, payload.chassisId, payload.portId);
-    const now = Date.now();
+    const now = this.getScheduler().now();
     const expiresAtMs = now + payload.ttlSec * 1000;
     const existing = this.neighbors.get(key);
     const entry: LldpNeighborEntry = {
@@ -252,6 +252,7 @@ export class LldpAgent extends ReactiveAgentBase {
   protected isEnabled(): boolean { return this.config.enabled; }
 
   protected armTimers(): void {
+    this.advertiseAll('periodic');
     this.scheduleInterval('advertise',
       () => this.advertiseAll('periodic'), this.config.timerSec * 1000);
     this.scheduleInterval('expiry', () => this.expireDue(), 1000);
@@ -266,7 +267,7 @@ export class LldpAgent extends ReactiveAgentBase {
   }
 
   private expireDue(): void {
-    const now = Date.now();
+    const now = this.getScheduler().now();
     for (const [key, n] of this.neighbors) {
       if (n.expiresAtMs <= now) {
         this.neighbors.delete(key);

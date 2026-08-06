@@ -11,6 +11,7 @@ import {
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
 import { encodeOptions, decodeOptions, optionsDataOffset } from './TcpOptionsCodec';
+import type { ListenerIdentity, ListenerSocketSink } from './ListenerSocketSink';
 
 /** RFC 7323 §2.2 — our own advertised window-scale shift (always offered on SYN). */
 const TCP_WINDOW_SCALE_SHIFT = 7;
@@ -75,6 +76,13 @@ export interface TcpConnectOptions {
 
 export interface TcpListenOptions {
   onAccept: TcpAcceptHandler;
+  /**
+   * Ce que la `SocketTable` sait en plus de la pile — pid, nom de
+   * processus, bannière. Fourni ici plutôt que réinscrit à côté par un
+   * `socketTable.bind()` manuel : l'identité voyage avec l'écoute, donc
+   * les deux tables ne peuvent plus en diverger.
+   */
+  identity?: ListenerIdentity;
 }
 
 export class TcpSocket {
@@ -295,6 +303,7 @@ export class TcpListener {
     readonly localIp: string,
     readonly localPort: number,
     readonly onAccept: TcpAcceptHandler,
+    readonly identity: ListenerIdentity = {},
   ) {}
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
@@ -343,17 +352,32 @@ export class TcpStack {
       this._teardown(s, 'shutdown');
     }
     this.sockets.clear();
+    for (const l of this.listeners.values()) this.socketSink?.withdraw(l.localIp, l.localPort);
     this.listeners.clear();
   }
 
   setEnabled(on: boolean): void { this.enabled = on; }
 
+  /**
+   * docs/PRD-Sockets-Une-Seule-Verite.md §P1 — le lien vers la table que
+   * lisent `ss`, `netstat`, `lsof` et `nmap`. Branché depuis l'intérieur,
+   * pas par un abonnement au bus : le bus par défaut est remis à zéro
+   * avant chaque test, et un abonné mort ne se voit pas.
+   */
+  attachSocketSink(sink: ListenerSocketSink): void {
+    this.socketSink = sink;
+    for (const l of this.listeners.values()) sink.announce(l.localIp, l.localPort, l.identity);
+  }
+
+  private socketSink: ListenerSocketSink | null = null;
+
   listen(localPort: number, opts: TcpListenOptions, localIp = '0.0.0.0'): TcpListener {
-    const listener = new TcpListener(localIp, localPort, opts.onAccept);
+    const listener = new TcpListener(localIp, localPort, opts.onAccept, opts.identity ?? {});
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${localPort} (EADDRINUSE)`);
     }
     this.listeners.set(listener.key(), listener);
+    this.socketSink?.announce(localIp, localPort, listener.identity);
     this.getBus().publish({
       topic: 'tcp.listener.changed',
       payload: {
@@ -367,6 +391,7 @@ export class TcpStack {
   closeListener(localPort: number, localIp = '0.0.0.0'): void {
     const key = makeListenerKey(localIp, localPort);
     if (!this.listeners.delete(key)) return;
+    this.socketSink?.withdraw(localIp, localPort);
     this.getBus().publish({
       topic: 'tcp.listener.changed',
       payload: {
@@ -1572,7 +1597,15 @@ export class TcpStack {
     targetIp: string,
   ): { name: string; port?: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
     if (ipFamilyOf(targetIp) === 'ipv6') return this.resolveEgress6(targetIp);
-    if (new IPAddress(targetIp).isLoopback()) return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
+    // Ce qui arrive ici est censé être une adresse : la résolution de nom
+    // est le travail de l'appelant. Mais un nom non résolu y parvenait,
+    // et `new IPAddress('localhost')` levait — une exception traversant
+    // `connect()` jusqu'à une promesse non rattrapée, donc une trace dans
+    // la console de l'utilisateur au lieu d'un refus propre. Une adresse
+    // qu'on ne sait pas lire est simplement une destination sans route.
+    const parsedTarget = IPAddress.tryParse(targetIp);
+    if (!parsedTarget) return null;
+    if (parsedTarget.isLoopback()) return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
 
     if (this.host.resolveRoute) {
       const route = this.host.resolveRoute(targetIp);

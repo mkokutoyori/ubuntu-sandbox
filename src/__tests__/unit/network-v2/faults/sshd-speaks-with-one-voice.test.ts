@@ -83,15 +83,33 @@ describe('sshd is the same process everywhere it is named', () => {
     expect(logged.filter((p) => !livePids.has(p))).toEqual([]);
   });
 
-  it('`Server listening` is written once, by the daemon that bound the socket', async () => {
+  /**
+   * « Une seule voix » veut dire un seul PID, pas une seule ligne.
+   *
+   * Un vrai sshd à double pile annonce une ligne par socket qu'il ouvre :
+   * `Server listening on 0.0.0.0 port 22.` ET `... on :: port 22.`. Ce
+   * test n'en attendait qu'une parce que le simulateur n'ouvrait aucune
+   * écoute IPv6 — le commentaire de `LinuxLogManager` disait exactement
+   * cela au point où la ligne v6 avait été retirée : « le simulateur ne
+   * lie aucun listener IPv6, la ligne annoncerait une socket qui n'existe
+   * pas ». Depuis PRD-Sockets §P2b elle existe, donc la ligne revient —
+   * par l'événement réel, et non par un ensemencement.
+   *
+   * Ce qui est vérifié reste donc la propriété que ce fichier défend :
+   * toutes ces lignes portent le pid du démon qui a réellement lié les
+   * sockets, celui que `ps` montre.
+   */
+  it('`Server listening` est écrit par le démon qui a lié les sockets, une ligne par socket', async () => {
     const srv = await afterOneLogin();
 
     const pid = sshdPidFrom(await srv.executeCommand('ps aux'));
     const auth = await srv.executeCommand('cat /var/log/auth.log');
 
     const listening = auth.split('\n').filter((l) => l.includes('Server listening'));
-    expect(listening).toHaveLength(1);
-    expect(listening[0]).toContain(`sshd[${pid}]`);
+    expect(listening).toHaveLength(2);
+    for (const line of listening) expect(line).toContain(`sshd[${pid}]`);
+    expect(listening.join('\n')).toContain('0.0.0.0 port 22');
+    expect(listening.join('\n')).toContain(':: port 22');
   });
 });
 

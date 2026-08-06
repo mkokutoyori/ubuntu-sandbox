@@ -156,19 +156,6 @@ export function registerHuaweiPolicySystemCommands(
     return '';
   });
 
-  t.registerGreedy('nqa test-instance', 'Enter NQA test instance view', (args) => {
-    if (args.length < 2) return 'Error: Incomplete command.';
-    r().getNqaEngine().upsert(args[0], args[1]);
-    ctx.setSelectedNqa(args[0], args[1]);
-    ctx.setMode('nqa-test');
-    return '';
-  });
-
-  t.registerGreedy('undo nqa test-instance', 'Remove NQA test instance', (args) => {
-    if (args.length < 2) return 'Error: Incomplete command.';
-    r().getNqaEngine().remove(args[0], args[1]);
-    return '';
-  });
 }
 
 export function registerHuaweiPolicyDisplayCommands(
@@ -226,17 +213,6 @@ export function registerHuaweiPolicyDisplayCommands(
     return apps.map(a => `traffic-policy ${a.policy} ${a.direction} on ${a.iface}`).join('\n');
   });
 
-  t.registerGreedy('display nqa results test-instance', 'Display NQA results', (args) => {
-    if (args.length < 2) return 'Error: Incomplete command.';
-    const t = getRouter().getNqaEngine().get(args[0], args[1]);
-    if (!t) return `Info: NQA test-instance ${args[0]} ${args[1]} does not exist.`;
-    return t.renderResults();
-  });
-  t.register('display nqa results', 'Display all NQA results', () => {
-    const list = getRouter().getNqaEngine().list();
-    if (list.length === 0) return 'Info: No NQA test-instance configured.';
-    return list.map(t => t.renderResults()).join('\n');
-  });
 }
 
 export function buildRoutePolicyView(t: CommandTrie, ctx: HuaweiPolicyShellCtx): void {
@@ -385,69 +361,3 @@ export function buildTrafficPolicyView(t: CommandTrie, ctx: HuaweiPolicyShellCtx
   });
 }
 
-export function buildNqaTestView(t: CommandTrie, ctx: HuaweiPolicyShellCtx): void {
-  const cur = () => {
-    const sel = ctx.getSelectedNqa(); if (!sel) return null;
-    return ctx.r().getNqaEngine().get(sel.admin, sel.name) ?? null;
-  };
-  t.registerGreedy('test-type', 'Set test type', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0]) t.testType = args[0] as any;
-    return '';
-  });
-  t.registerGreedy('destination-address', 'Set destination address', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0] === 'ipv4' && args[1]) t.destinationAddress = args[1];
-    else if (args[0] === 'ipv6' && args[1]) t.destinationAddress = args[1];
-    else if (args[0]) t.destinationAddress = args[0];
-    return '';
-  });
-  t.registerGreedy('source-address', 'Set source address', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0] === 'ipv4' && args[1]) t.sourceAddress = args[1];
-    else if (args[0]) t.sourceAddress = args[0];
-    return '';
-  });
-  t.registerGreedy('destination-port', 'Set destination port', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0]) t.destinationPort = parseInt(args[0], 10);
-    return '';
-  });
-  t.registerGreedy('frequency', 'Set probe frequency (sec)', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0]) t.frequency = parseInt(args[0], 10);
-    return '';
-  });
-  t.registerGreedy('probe-count', 'Probes per cycle', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0]) t.probeCount = parseInt(args[0], 10);
-    return '';
-  });
-  t.registerGreedy('interval', 'Probe interval', (args) => {
-    const t = cur(); if (!t) return '';
-    const i = args[0] === 'seconds' ? 1 : 0;
-    if (args[i]) t.intervalSec = parseInt(args[i], 10);
-    return '';
-  });
-  t.registerGreedy('timeout', 'Probe timeout', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0]) t.timeoutSec = parseInt(args[0], 10);
-    return '';
-  });
-  t.registerGreedy('threshold', 'Threshold', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0] === 'rtt' && args[1]) t.thresholds.rttMaxMs = parseInt(args[1], 10);
-    else if (args[0] === 'packet-loss' && args[1]) t.thresholds.packetLossPct = parseInt(args[1], 10);
-    return '';
-  });
-  t.registerGreedy('start', 'Start the test instance', (args) => {
-    const t = cur(); if (!t) return '';
-    if (args[0] === 'now') t.start();
-    return '';
-  });
-  t.registerGreedy('stop', 'Stop the test instance', () => {
-    const t = cur(); if (!t) return '';
-    t.stop();
-    return '';
-  });
-}

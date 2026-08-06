@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-08-04T08:22:20.491Z
+Generated: 2026-08-04T11:16:46.507Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-08-04 08:22:20
+  2026-08-04 11:16:46
   Tuesday
   Time Zone(UTC) : UTC
 
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-04 08:22:20
+  CPU Usage Stat. Time : 2026-08-04 11:16:46
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-04 08:22:20
+  Memory utilization statistics at 2026-08-04 11:16:46
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -290,16 +290,16 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 10
-  2026-08-04 08:22:20 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-08-04 08:22:20 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-08-04 08:22:20 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-08-04 08:22:20 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-08-04 08:22:20 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-08-04 08:22:20 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-08-04 08:22:20 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-04 08:22:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-04 08:22:20 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-04 08:22:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -536,6 +536,11 @@ Total steps: 304
 
 [61/304] r1 <R1> ping 10.0.0.2
   PING 10.0.0.2: 56  data bytes, press CTRL_C to break
+  Request timeout
+  Request timeout
+  Request timeout
+  Request timeout
+  Request timeout
   
   --- 10.0.0.2 ping statistics ---
   5 packet(s) transmitted, 0 packet(s) received, 100% packet loss
@@ -1646,33 +1651,33 @@ Total steps: 304
   Info: The system is rebooting ...
   System restart completed.
 
-[199/304] r1 <Huawei> reboot
+[199/304] r1 <R1> reboot
   Info: The system is rebooting ...
   System restart completed.
 
 
 --- [200] § regression: display family ---
-[200/304] r1 <Huawei> display version
+[200/304] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  Huawei uptime is 0 days, 0 hours, 0 minutes
+  R1 uptime is 0 days, 0 hours, 0 minutes
 
-[201/304] r1 <Huawei> display version
+[201/304] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  Huawei uptime is 0 days, 0 hours, 0 minutes
+  R1 uptime is 0 days, 0 hours, 0 minutes
 
-[202/304] r1 <Huawei> display current-configuration
+[202/304] r1 <R1> display current-configuration
   #
-  sysname Huawei
+  sysname R1
   #
   dhcp enable
   #
@@ -1718,10 +1723,10 @@ Total steps: 304
   isis 1
   #
 
-[203/304] r1 <Huawei> display saved-configuration
+[203/304] r1 <R1> display saved-configuration
   Error: The configuration file doesn't exist.
 
-[204/304] r1 <Huawei> display ip interface brief
+[204/304] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
@@ -1739,7 +1744,7 @@ Total steps: 304
   LoopBack0                         unassigned           down       down
   Tunnel0/0/0                       unassigned           down       down
 
-[205/304] r1 <Huawei> display interface
+[205/304] r1 <R1> display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
@@ -1777,7 +1782,7 @@ Total steps: 304
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[206/304] r1 <Huawei> display ip routing-table
+[206/304] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
@@ -1785,30 +1790,30 @@ Total steps: 304
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
 
-[207/304] r1 <Huawei> display ip routing-table statistics
+[207/304] r1 <R1> display ip routing-table statistics
   Proto     route
   --------------------
   --------------------
   Total     0
 
-[208/304] r1 <Huawei> display arp
+[208/304] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[209/304] r1 <Huawei> display arp all
+[209/304] r1 <R1> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[210/304] r1 <Huawei> display ospf peer
+[210/304] r1 <R1> display ospf peer
   OSPF Process with Router ID 0.0.0.0
                    Neighbor Brief Information
   
    Area ID    Interface       Neighbor ID     State
 
-[211/304] r1 <Huawei> display ospf interface
+[211/304] r1 <R1> display ospf interface
 <empty>
 
-[212/304] r1 <Huawei> display ospf routing
+[212/304] r1 <R1> display ospf routing
   OSPF Process 1 with Router ID 0.0.0.0
            Routing Tables
   
@@ -1818,17 +1823,17 @@ Total steps: 304
    Total Nets: 0
    Intra Area: 0  Inter Area: 0  ASE: 0  NSSA: 0
 
-[213/304] r1 <Huawei> display ospf lsdb
+[213/304] r1 <R1> display ospf lsdb
            OSPF Process 1 with Router ID 0.0.0.0
                     Link State Database
   
 
-[214/304] r1 <Huawei> display ospf brief
+[214/304] r1 <R1> display ospf brief
   OSPF Process 1 with Router ID 0.0.0.0
   
    Area    Type   Intf    Adj   LSA
 
-[215/304] r1 <Huawei> display rip
+[215/304] r1 <R1> display rip
   RIP process 1
     Version: 2
     Update timer: 30s
@@ -1839,7 +1844,7 @@ Total steps: 304
   
     Routes: 0
 
-[216/304] r1 <Huawei> display rip 1 route
+[216/304] r1 <R1> display rip 1 route
   RIP process 1
     Version: 2
     Update timer: 30s
@@ -1850,26 +1855,26 @@ Total steps: 304
   
     Routes: 0
 
-[217/304] r1 <Huawei> display bgp peer
+[217/304] r1 <R1> display bgp peer
   BGP local router ID : 0.0.0.0
   Local AS number : 65000
   Total number of peers : 0              Peers in established state : 0
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
 
-[218/304] r1 <Huawei> display bgp routing-table
+[218/304] r1 <R1> display bgp routing-table
   BGP Local router ID : 0.0.0.0
    Total Number of Routes: 0
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
 
-[219/304] r1 <Huawei> display nat session all
+[219/304] r1 <R1> display nat session all
   NAT Session Table Information:
    No active NAT sessions
 
-[220/304] r1 <Huawei> display nat address-group
+[220/304] r1 <R1> display nat address-group
   NAT Address Group Information:
    (no address groups configured)
 
-[221/304] r1 <Huawei> display ip pool
+[221/304] r1 <R1> display ip pool
   Pool-name      : LAN
   Pool-No        : 0
   Position       : Local
@@ -1881,10 +1886,10 @@ Total steps: 304
   Domain-name    : not configured
   Lease          : 1 day(s)
 
-[222/304] r1 <Huawei> display acl all
+[222/304] r1 <R1> display acl all
   Total 0 ACL(s)
 
-[223/304] r1 <Huawei> display dhcp server statistics
+[223/304] r1 <R1> display dhcp server statistics
   DHCP server packets statistics:
     Receive total: 0
     Send total: 0
@@ -1894,30 +1899,30 @@ Total steps: 304
     Inform: 0        Decline: 0
   Pool number: 1
 
-[224/304] r1 <Huawei> display vrrp
+[224/304] r1 <R1> display vrrp
   Info: No VRRP backup group is configured.
 
-[225/304] r1 <Huawei> display vrrp brief
+[225/304] r1 <R1> display vrrp brief
   Total: 0     Master: 0     Backup: 0     Non-active: 0
   VRID  State        Interface                Type     Virtual IP
 
-[226/304] r1 <Huawei> display ike sa
+[226/304] r1 <R1> display ike sa
   IPv4 Crypto ISAKMP SA
   dst             src             state          conn-id status
   
   There are no IKEv1 SAs (no SA established)
 
-[227/304] r1 <Huawei> display ipsec sa
+[227/304] r1 <R1> display ipsec sa
   No IPSec SAs established.
 
-[228/304] r1 <Huawei> display ipsec policy
+[228/304] r1 <R1> display ipsec policy
   No crypto maps configured.
 
-[229/304] r1 <Huawei> display ipsec proposal
+[229/304] r1 <R1> display ipsec proposal
   Transform set P1: {  }
      will negotiate = { Tunnel },
 
-[230/304] r1 <Huawei> display ike proposal
+[230/304] r1 <R1> display ike proposal
   Global IKE policy
   Protection suite of priority 1
   	encryption algorithm:   DES
@@ -1932,49 +1937,49 @@ Total steps: 304
   	Diffie-Hellman group:   #1 (768 bit)
   	lifetime:               86400 seconds, no volume limit
 
-[231/304] r1 <Huawei> display ike peer
+[231/304] r1 <R1> display ike peer
   Info: No IKE peers configured.
 
-[232/304] r1 <Huawei> display snmp-agent sys-info
+[232/304] r1 <R1> display snmp-agent sys-info
   Contact: <not set>
   Location: <not set>
   Chassis-id: <not set>
 
-[233/304] r1 <Huawei> display ntp status
+[233/304] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
   Reference clock ID: .INIT.
 
-[234/304] r1 <Huawei> display ntp session
+[234/304] r1 <R1> display ntp session
   No NTP associations
 
-[235/304] r1 <Huawei> display clock
-  2026-08-04 08:22:20
+[235/304] r1 <R1> display clock
+  2026-08-04 11:16:46
   Tuesday
   Time Zone(UTC) : UTC
 
-[236/304] r1 <Huawei> display lldp neighbor
+[236/304] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
 
-[237/304] r1 <Huawei> display lldp neighbor brief
+[237/304] r1 <R1> display lldp neighbor brief
   Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
-[238/304] r1 <Huawei> display cpu-usage
+[238/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-04 08:22:20
+  CPU Usage Stat. Time : 2026-08-04 11:16:46
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
-[239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-08-04 08:22:20
+[239/304] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-08-04 11:16:46
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
 
-[240/304] r1 <Huawei> display device
-  Huawei's Device status:
+[240/304] r1 <R1> display device
+  R1's Device status:
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
@@ -1984,13 +1989,13 @@ Total steps: 304
   3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
-[241/304] r1 <Huawei> display users
+[241/304] r1 <R1> display users
     User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   + 0    CON 0   00:00:00                              pass            no
   
   Wait     : Wait for the user to press ENTER.
 
-[242/304] r1 <Huawei> display history-command
+[242/304] r1 <R1> display history-command
   display ntp status
   display ntp session
   display clock
@@ -2002,7 +2007,7 @@ Total steps: 304
   display users
   display history-command
 
-[243/304] r1 <Huawei> display logbuffer
+[243/304] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
   Allowed max buffer size : 4096
   Actual buffer size : 4096
@@ -2010,29 +2015,29 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 21
-  2026-08-04 08:22:20 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-08-04 08:22:20 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-08-04 08:22:20 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-08-04 08:22:20 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-08-04 08:22:20 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-08-04 08:22:20 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-08-04 08:22:20 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-04 08:22:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-04 08:22:20 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-04 08:22:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-04 08:22:20 %01RIP/5/NOTIFICATIONS: RIP routing process started
-  2026-08-04 08:22:20 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:21
-  2026-08-04 08:22:20 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:21
-  2026-08-04 08:22:20 %01LLDP/6/INFORMATIONAL: LLDP enabled
-  2026-08-04 08:22:20 %01LLDP/6/INFORMATIONAL: LLDP disabled
-  2026-08-04 08:22:20 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:179
-  2026-08-04 08:22:20 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to down
-  2026-08-04 08:22:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-04 08:22:20 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-04 08:22:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-04 08:22:20 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
+  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
+  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
+  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
+  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
+  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
+  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-04 11:16:46 %01RIP/5/NOTIFICATIONS: RIP routing process started
+  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:21
+  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:21
+  2026-08-04 11:16:46 %01LLDP/6/INFORMATIONAL: LLDP enabled
+  2026-08-04 11:16:46 %01LLDP/6/INFORMATIONAL: LLDP disabled
+  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:179
+  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to down
+  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
 
-[244/304] r1 <Huawei> display trapbuffer
+[244/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
   Allowed max buffer size : 256
   Actual buffer size : 256
@@ -2040,10 +2045,10 @@ Total steps: 304
   Dropped messages : 0
   Current messages : 0
 
-[245/304] r1 <Huawei> display alarm all
+[245/304] r1 <R1> display alarm all
   Info: There is no alarm record.
 
-[246/304] r1 <Huawei> display startup
+[246/304] r1 <R1> display startup
   MainBoard:
     Configured startup system software:    flash:/vrp.cc
     Startup system software:                flash:/vrp.cc
@@ -2055,28 +2060,28 @@ Total steps: 304
     Startup patch package:                  NULL
     Next startup patch package:             NULL
 
-[247/304] r1 <Huawei> display patch-information
+[247/304] r1 <R1> display patch-information
   Info: No patch exists.
 
-[248/304] r1 <Huawei> display elabel
+[248/304] r1 <R1> display elabel
   /$[ARCHIVES INFO VERSION]
   /$ArchivesInfoVersion=3.0;
   
   [Slot_1]
   /$[Board Integrated Component]
   /$BoardType=AR2220;
-  /$BarCode=210305HUAWEI;
+  /$BarCode=210305R1;
   /$Item=02113965;
   /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
-[249/304] r1 <Huawei> display license
+[249/304] r1 <R1> display license
    Active License : default
    License State  : Trial
    Trial Days Left: 60
 
-[250/304] r1 <Huawei> display interface brief
+[250/304] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
   Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
   GE0/0/0                     up      up        0%    0%       0          0
@@ -2086,7 +2091,7 @@ Total steps: 304
   LoopBack0                   down    down      0%    0%       0          0
   Tunnel0/0/0                 down    down      0%    0%       0          0
 
-[251/304] r1 <Huawei> display ip interface GigabitEthernet0/0/0
+[251/304] r1 <R1> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is unassigned
@@ -2099,7 +2104,7 @@ Total steps: 304
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[252/304] r1 <Huawei> display interface GigabitEthernet0/0/0
+[252/304] r1 <R1> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
@@ -2107,9 +2112,9 @@ Total steps: 304
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[253/304] r1 <Huawei> display this
+[253/304] r1 <R1> display this
   #
-  sysname Huawei
+  sysname R1
   #
   dhcp enable
   #
@@ -2155,12 +2160,12 @@ Total steps: 304
   isis 1
   #
 
-[254/304] r1 <Huawei> display diagnostic-information
+[254/304] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
   please wait.....................
   Info: Diagnostic information collected.
 
-[255/304] r1 <Huawei> display aaa configuration
+[255/304] r1 <R1> display aaa configuration
     Domain Name           : default
     Domain State          : Active
     Authentication-scheme : default
@@ -2170,13 +2175,13 @@ Total steps: 304
     RADIUS-server-template: -
     HWTACACS-server-template: -
 
-[256/304] r1 <Huawei> display aaa online-fail-record
+[256/304] r1 <R1> display aaa online-fail-record
   Info: No online-fail record.
 
-[257/304] r1 <Huawei> display ssh server status
+[257/304] r1 <R1> display ssh server status
   SSH server: Disabled
 
-[258/304] r1 <Huawei> display ssh user-information
+[258/304] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
@@ -2184,7 +2189,7 @@ Total steps: 304
   SFTP server                     : Disable
   STELNET server                  : Enable
 
-[259/304] r1 <Huawei> display user-interface
+[259/304] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
   + 0      CON 0           9600     -      0      0            N      -
     34     VTY 0           -        -      0      0            N      -
@@ -2199,17 +2204,17 @@ Total steps: 304
    protocol inbound ssh
   #
 
-[260/304] r1 <Huawei> display port-security
+[260/304] r1 <R1> display port-security
   Error: Unrecognized command found at '^' position.
   display port-security
           ^
 
 
 --- [261] § regression: pipe filters ---
-[261/304] r1 <Huawei> display current-configuration | include ospf
+[261/304] r1 <R1> display current-configuration | include ospf
   ospf 1
 
-[262/304] r1 <Huawei> display current-configuration | begin interface
+[262/304] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -2250,8 +2255,8 @@ Total steps: 304
   isis 1
   #
 
-[263/304] r1 <Huawei> display current-configuration | exclude #
-  sysname Huawei
+[263/304] r1 <R1> display current-configuration | exclude #
+  sysname R1
   dhcp enable
   ip pool LAN
   interface GigabitEthernet0/0/0
@@ -2281,73 +2286,73 @@ Total steps: 304
   bgp 65000
   isis 1
 
-[264/304] r1 <Huawei> display ip routing-table | include Direct
+[264/304] r1 <R1> display ip routing-table | include Direct
 <empty>
 
-[265/304] r1 <Huawei> display ip interface brief | include up
+[265/304] r1 <R1> display ip interface brief | include up
   GigabitEthernet0/0/0              unassigned           up         up
   GigabitEthernet0/0/1              unassigned           up         up
 
 
 --- [266] § regression: view nav + undo ---
-[266/304] r1 <Huawei> system-view
+[266/304] r1 <R1> system-view
   Enter system view, return user view with return command.
 
-[267/304] r1 [Huawei] ip routing-table limit 1000
+[267/304] r1 [R1] ip routing-table limit 1000
 <empty>
 
-[268/304] r1 [Huawei] undo ip routing-table limit 1000
+[268/304] r1 [R1] undo ip routing-table limit 1000
 <empty>
 
-[269/304] r1 [Huawei] dhcp enable
+[269/304] r1 [R1] dhcp enable
 <empty>
 
-[270/304] r1 [Huawei] undo dhcp enable
+[270/304] r1 [R1] undo dhcp enable
 <empty>
 
-[271/304] r1 [Huawei] snmp-agent
+[271/304] r1 [R1] snmp-agent
 <empty>
 
-[272/304] r1 [Huawei] undo snmp-agent
+[272/304] r1 [R1] undo snmp-agent
 <empty>
 
-[273/304] r1 [Huawei] ftp server enable
+[273/304] r1 [R1] ftp server enable
 <empty>
 
-[274/304] r1 [Huawei] undo ftp server enable
+[274/304] r1 [R1] undo ftp server enable
 <empty>
 
-[275/304] r1 [Huawei] telnet server enable
+[275/304] r1 [R1] telnet server enable
 <empty>
 
-[276/304] r1 [Huawei] undo telnet server enable
+[276/304] r1 [R1] undo telnet server enable
 <empty>
 
-[277/304] r1 [Huawei] info-center enable
+[277/304] r1 [R1] info-center enable
 <empty>
 
-[278/304] r1 [Huawei] undo info-center enable
+[278/304] r1 [R1] undo info-center enable
 <empty>
 
-[279/304] r1 [Huawei] lldp enable
+[279/304] r1 [R1] lldp enable
 <empty>
 
-[280/304] r1 [Huawei] undo lldp enable
+[280/304] r1 [R1] undo lldp enable
 <empty>
 
-[281/304] r1 [Huawei] ntp-service enable
+[281/304] r1 [R1] ntp-service enable
 <empty>
 
-[282/304] r1 [Huawei] undo ntp-service enable
+[282/304] r1 [R1] undo ntp-service enable
 <empty>
 
-[283/304] r1 [Huawei] undo terminal monitor
+[283/304] r1 [R1] undo terminal monitor
   Info: Current terminal monitor is off.
 
-[284/304] r1 [Huawei] undo terminal monitor
+[284/304] r1 [R1] undo terminal monitor
   Info: Current terminal monitor is off.
 
-[285/304] r1 [Huawei] sysname TEST
+[285/304] r1 [R1] sysname TEST
 <empty>
 
 [286/304] r1 [TEST] undo sysname TEST

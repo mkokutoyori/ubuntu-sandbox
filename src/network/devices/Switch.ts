@@ -2524,7 +2524,7 @@ export abstract class Switch extends Equipment {
         else if (/^switchport mode access/.test(line)) cfg.mode = 'access';
         else if ((g = line.match(/^switchport access vlan\s+(\d+)/))) cfg.accessVlan = parseInt(g[1], 10);
         else if ((g = line.match(/^switchport trunk native vlan\s+(\d+)/))) cfg.trunkNativeVlan = parseInt(g[1], 10);
-        else if (/^shutdown$/.test(line)) { const p = this.getPort(curIface); if (p) p.setUp(false); }
+        else if (/^shutdown$/.test(line)) { const p = this.getPort(curIface); if (p) p.setAdminShutdown(true); }
       }
     }
     // Rebuild access-VLAN port membership from the restored switchport config.

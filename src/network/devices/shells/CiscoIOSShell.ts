@@ -45,13 +45,17 @@ import {
 import {
   buildVxlanInterfaceCommands, registerVxlanShowCommands,
 } from './cisco/CiscoVxlanCommands';
-import {
-  buildTrackSlaConfig, registerTrackSlaShow,
-} from './cisco/CiscoTrackSlaCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
-import { TrackRepository } from '../inspection/config/TrackRepository';
+import { buildTrackConfigCommands, registerTrackShowCommands } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
-import { IpSlaRepository } from '../inspection/config/IpSlaRepository';
+import {
+  buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
+} from './cisco/CiscoIpSlaCommands';
+import {
+  registerIpSlaShowCommands, registerIpSlaClearCommands, registerIpSlaDebugCommands,
+} from './cisco/CiscoIpSlaShowCommands';
+import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
+import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
   buildPolicyConfig, registerPolicyShow,
@@ -134,11 +138,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private readonly fhrp = new FhrpRepository();
   private readonly keyChains = new KeyChainRepository();
   getKeyChains(): KeyChainRepository { return this.keyChains; }
-  /** Real config-driven object-tracking & IP SLA state. */
-  private readonly track = new TrackRepository();
-  private readonly ipsla = new IpSlaRepository();
   private readonly policy = new PolicyRepository();
   private readonly routingCfg = new RoutingConfigRepository();
+  /** Lu par le sérialiseur de configuration (`showRunningConfig`). */
+  getRoutingConfig(): RoutingConfigRepository { return this.routingCfg; }
   private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
   getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null {
     return this.selectedRoutingProto;
@@ -187,6 +190,17 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedVRF: string | null = null;
   private selectedVLAN: number | null = null;
   private configIpSlaTrie = new CommandTrie();
+  private configIpSlaHttpRawTrie = new CommandTrie();
+  private readonly configIpSlaTypeTries: Record<string, CommandTrie> = {
+    'config-ipsla-echo': new CommandTrie(),
+    'config-ipsla-icmpjitter': new CommandTrie(),
+    'config-ipsla-jitter': new CommandTrie(),
+    'config-ipsla-udp': new CommandTrie(),
+    'config-ipsla-tcp': new CommandTrie(),
+    'config-ipsla-http': new CommandTrie(),
+    'config-ipsla-dns': new CommandTrie(),
+    'config-ipsla-pathecho': new CommandTrie(),
+  };
   private configRouteMapTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
   private configRouterOspfTrie = new CommandTrie();
@@ -285,16 +299,35 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   constructor() {
     super();
     this.initializeCommands();
+    // `registerShowCommands` est appelé pour plusieurs tries ; le debug
+    // est privilégié seulement, donc enregistré ici une seule fois.
+    registerIpSlaDebugCommands(this.privilegedTrie, this);
+    // Après TOUS les enregistrements : `describeArgs` attache les
+    // spécifications à des nœuds existants, il n'en crée pas.
+    describeCiscoArguments({
+      config: this.configTrie,
+      configIf: this.configIfTrie,
+      configLine: this.configLineTrie,
+      configDhcp: this.configDhcpTrie,
+      configRouter: this.configRouterTrie,
+      configRouterOspf: this.configRouterOspfTrie,
+      configStdNacl: this.configStdNaclTrie,
+      configExtNacl: this.configExtNaclTrie,
+      privileged: this.privilegedTrie,
+    });
   }
 
   // ─── IRouterShell ────────────────────────────────────────────────
 
   getOSType(): string { return 'cisco-ios'; }
 
+  private ipSlaOwner: Router | null = null;
+
   execute(router: Router, rawInput: string): string | Promise<string> {
+    this.ipSlaOwner = router;
     setInvalidInputPromptWidth(this.buildDevicePrompt(router).length);
     router.setRouteTrackResolver((trackId) =>
-      this.track.state(router, this.ipsla, parseInt(trackId, 10)) === 'Up');
+      router.getTrackService().isUp(parseInt(trackId, 10)));
     this.attachDebugSource((router as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void } }).getDebugService?.());
     if (rawInput.trim() === '' && !this.isCollectingBanner()) return this.drainDebugConsole();
     return this.executeOnDevice(router, rawInput);
@@ -316,9 +349,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
    * setting one without the other made `show privilege` disagree with the
    * prompt the same session was showing.
    */
-  beginExecSession(level: number): void {
+  beginExecSession(level: number, user?: string): void {
     this.currentPrivilegeLevel = level;
     this.setMode(level >= 15 ? 'privileged' : 'user');
+    if (user) this.configSessionLabel = user;
   }
 
   override getMode(): CiscoShellMode { return this.mode as CiscoShellMode; }
@@ -505,9 +539,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
           router.configureInterface(curIface, new IPAddress(g[1]), new SubnetMask(g[2]), !!g[3]);
         } catch { /* malformed saved line — skip */ }
       } else if (line === 'shutdown') {
-        router.getPort(curIface)?.setUp(false);
+        router.getPort(curIface)?.setAdminShutdown(true);
       } else if (line === 'no shutdown') {
-        router.getPort(curIface)?.setUp(true);
+        router.getPort(curIface)?.setAdminShutdown(false);
       }
     }
   }
@@ -544,10 +578,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected override cmdExit(): string {
     if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
+    const wasConfig = this.isConfigMode();
     this.fsm.mode = this.mode as CiscoShellMode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = newMode;
     this.clearFields(fieldsToCllear);
+    this.announceConfigExit(wasConfig);
     return '';
   }
 
@@ -565,6 +601,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-vrf': return this.configVrfTrie;
       case 'config-vlan': return this.configVlanTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
+      case 'config-ipsla-http-raw': return this.configIpSlaHttpRawTrie;
+      case 'config-ipsla-echo':
+      case 'config-ipsla-icmpjitter':
+      case 'config-ipsla-jitter':
+      case 'config-ipsla-udp':
+      case 'config-ipsla-tcp':
+      case 'config-ipsla-http':
+      case 'config-ipsla-dns':
+      case 'config-ipsla-pathecho':
+        return this.configIpSlaTypeTries[this.mode];
       case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
@@ -609,12 +655,30 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
   }
 
+  /**
+   * Une entrée `ip sla <n>` quittée SANS type d'opération n'existe pas
+   * sur IOS : la configuration est abandonnée. La garder produisait une
+   * opération « not configured » qui survivait dans `show ip sla
+   * summary`, `configuration` et la running-config — et qui, au passage,
+   * cassait l'alignement du tableau du résumé.
+   */
+  private discardUnconfiguredIpSla(): void {
+    // `exit` est traité AVANT que `executeOnDevice` ne pose la référence
+    // d'équipement, d'où cette référence posée par `execute` : `d()`
+    // lèverait ici.
+    const router = this.ipSlaOwner;
+    if (this.selectedIpSla === null || !router) return;
+    const engine = router.getIpSlaEngine();
+    const runtime = engine.getOperation(this.selectedIpSla);
+    if (runtime && runtime.config.type === 'unknown') engine.removeOperation(this.selectedIpSla);
+  }
+
   protected clearFields(fields: string[]): void {
     for (const f of fields) {
       if (f === 'selectedInterface') this.selectedInterface = null;
       if (f === 'selectedDHCPPool') this.selectedDHCPPool = null;
       if (f === 'selectedTrack') this.selectedTrack = null;
-      if (f === 'selectedIpSla') this.selectedIpSla = null;
+      if (f === 'selectedIpSla') { this.discardUnconfiguredIpSla(); this.selectedIpSla = null; }
       if (f === 'selectedRouteMap') this.selectedRouteMap = null;
       if (f === 'selectedRoutingProto') this.selectedRoutingProto = null;
       if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
@@ -693,8 +757,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       r: () => this.d(),
     });
     buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
-    buildTrackSlaConfig(this.configTrie, this.configTrackTrie,
-      this.configIpSlaTrie, this, this.track, this.ipsla);
+    buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
+    buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
+      this.configIpSlaHttpRawTrie, this);
+    registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
@@ -847,7 +913,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerIgmpShowCommands(trie, { r: () => this.d() });
     registerPimShowCommands(trie, { r: () => this.d() });
     registerVxlanShowCommands(trie, { r: () => this.d() });
-    registerTrackSlaShow(trie, this, this.track, this.ipsla);
+    registerTrackShowCommands(trie, this);
+    registerIpSlaShowCommands(trie, this);
+    registerIpSlaClearCommands(trie, this);
     registerPolicyShow(trie, this.policy);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
@@ -904,10 +972,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
-    trie.register('show startup-config', 'Display saved configuration', () =>
-      getRouter().getStartupConfigSnapshot() ?? '% startup-config is not present');
-    trie.register('show configuration', 'Display saved configuration', () =>
-      getRouter().getStartupConfigSnapshot() ?? '% startup-config is not present');
+    // `show startup-config` lit la NVRAM : son en-tête annonce
+    // l'occupation, pas « Building configuration… » qui appartient à
+    // `show running-config`.
+    const startupConfig = () => {
+      const snapshot = getRouter().getStartupConfigSnapshot();
+      if (snapshot === null) return '% startup-config is not present';
+      return renderStartupConfig(snapshot, this.fs().nvramTotalBytes());
+    };
+    trie.register('show startup-config', 'Display saved configuration', startupConfig);
+    trie.register('show configuration', 'Display saved configuration', startupConfig);
     trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
     // BGP/EIGRP/RIP-extras + show ip protocols come from the
     // RoutingConfigRepository (registerRoutingProtoShow), so they
@@ -947,7 +1021,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const sub = (args[0] || '').toLowerCase();
       if (args.length === 0) return Show.showInterfacesAll(getRouter());
       if (sub === 'description') return Show.showInterfacesDescription(getRouter());
-      if (sub === 'status') return Show.showInterfacesStatus(getRouter());
+      if (sub === 'status') return formatInvalidInput('show interfaces '.length);
       if (sub === 'summary') return Show.showInterfacesSummary(getRouter());
       if (sub === 'trunk') return Show.showInterfacesTrunk(getRouter());
       const last = args[args.length - 1]?.toLowerCase();

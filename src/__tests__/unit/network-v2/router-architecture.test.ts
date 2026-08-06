@@ -21,8 +21,10 @@ import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { __assumeCarrierOnUncabledPorts } from '@/network/devices/inspection/InterfaceStatusView';
 
 beforeEach(() => {
+  __assumeCarrierOnUncabledPorts(true);
   resetCounters();
   resetDeviceCounters();
   Logger.reset();

@@ -1009,7 +1009,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const vlanIfMatch = this.selectedInterface.match(/^Vlanif(\d+)$/);
       if (vlanIfMatch) { this.swRef.setSviAdminUp(parseInt(vlanIfMatch[1], 10), false); return ''; }
       const port = this.swRef.getPort(this.selectedInterface);
-      if (port) port.setUp(false);
+      if (port) port.setAdminShutdown(true);
       return '';
     });
 
@@ -1025,7 +1025,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const vlanIfMatch = this.selectedInterface.match(/^Vlanif(\d+)$/);
       if (vlanIfMatch) { this.swRef.setSviAdminUp(parseInt(vlanIfMatch[1], 10), true); return ''; }
       const port = this.swRef.getPort(this.selectedInterface);
-      if (port) port.setUp(true);
+      if (port) port.setAdminShutdown(false);
       return '';
     });
 

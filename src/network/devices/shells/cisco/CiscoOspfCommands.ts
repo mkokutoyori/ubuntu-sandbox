@@ -10,6 +10,7 @@
  */
 
 import type { Router } from '../../Router';
+import { renderIpRouteTable } from './CiscoShowCommands';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
@@ -171,6 +172,7 @@ function adresseReseau(ip: string, wildcard: string): string {
   trie.registerGreedy('router-id', 'Set OSPF Router ID', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
+    ctx.r().getOspfIntegration().routerIdManuel = true;
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return '% OSPF is not enabled.';
     ospf.setRouterId(args[0]);
@@ -1138,25 +1140,33 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     else if (last === 'redistribution') router._ospfAutoConverge();
     else if (last === 'process' || last === 'force-spf' || args.length === 0) {
       ospf.clearEventLog();
+      if (last === 'process') router.getOspfIntegration().reelireRouterId();
       router._ospfAutoConverge();
     }
     return '';
   });
   trie.registerGreedy('debug ip ospf', 'Enable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return '% OSPF is not enabled.';
     if (ospf) ospf.logAdjacencyChanges = true;
     const flag = args.join(' ').toLowerCase() || 'adj';
     const debugSvc = getRouter().getDebugService();
-    if (flag.startsWith('adj')) return debugSvc.enable('ip.ospf.adj');
-    if (flag.startsWith('events')) return debugSvc.enable('ip.ospf.events');
-    if (flag.startsWith('spf')) return debugSvc.enable('ip.ospf.spf');
-    if (flag.startsWith('hello')) return debugSvc.enable('ip.ospf.hello');
-    if (flag.startsWith('packet')) return debugSvc.enable('ip.ospf.packet');
-    if (flag.startsWith('lsa')) return debugSvc.enable('ip.ospf.lsa-generation');
+    const motsCles: Array<[string, string]> = [
+      ['adj', 'ip.ospf.adj'],
+      ['events', 'ip.ospf.events'],
+      ['spf', 'ip.ospf.spf'],
+      ['hello', 'ip.ospf.hello'],
+      ['packet', 'ip.ospf.packet'],
+      ['lsa-generation', 'ip.ospf.lsa-generation'],
+    ];
+    for (const [mot, cat] of motsCles) {
+      if (mot.startsWith(flag)) return debugSvc.enable(cat as never);
+    }
     return debugSvc.enable('ip.ospf.adj', flag);
   });
   trie.registerGreedy('no debug ip ospf', 'Disable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return '% OSPF is not enabled.';
     if (ospf) ospf.logAdjacencyChanges = false;
     const debugSvc = getRouter().getDebugService();
     const flag = args.join(' ').toLowerCase() || 'adj';
@@ -2241,37 +2251,12 @@ function showIpRouteAll(router: Router): string {
   const rt = bestRoutesPerPrefix(
     ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)),
   );
-  const lines: string[] = ['Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area',
-    '       O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP',
-    ''];
-  const def = rt.find((r: any) => r.type === 'default'
-    || (r.network.toString() === '0.0.0.0' && maskToCIDR(r.mask.toString()) === 0));
-  if (def && def.nextHop) {
-    lines.push(`Gateway of last resort is ${def.nextHop} to network 0.0.0.0`, '');
-  } else {
-    lines.push('Gateway of last resort is not set', '');
-  }
-  for (const r of rt) {
-    const netStr = r.network.toString();
-    const cidr = maskToCIDR(r.mask.toString());
-    const nh = r.nextHop ? `via ${r.nextHop}` : 'directly connected';
-    if (r.type === 'connected') {
-      lines.push(`C    ${netStr}/${cidr} is directly connected, ${r.iface}`);
-    } else if (r.type === 'static' || r.type === 'default') {
-      const code = netStr === '0.0.0.0' && cidr === 0 ? 'S*' : 'S';
-      lines.push(`${code}    ${netStr}/${cidr} [${r.ad ?? 1}/${r.metric ?? 0}] ${nh}`);
-    } else if (r.type === 'rip') {
-      lines.push(`R    ${netStr}/${cidr} [${r.ad ?? 120}/${r.metric ?? 1}] ${nh}, ${r.iface}`);
-    } else if (r.type === 'eigrp') {
-      lines.push(`D    ${netStr}/${cidr} [${r.ad ?? 90}/${r.metric ?? 0}] ${nh}, ${r.iface}`);
-    } else if (r.type === 'bgp') {
-      lines.push(`B    ${netStr}/${cidr} [${r.ad ?? 20}/${r.metric ?? 0}] ${nh}, ${r.iface}`);
-    } else if (r.type === 'ospf') {
-      const code = getOSPFRouteCode(router, netStr, cidr, r);
-      lines.push(`${code} ${netStr}/${cidr} [110/${r.metric}] ${nh}, ${r.iface}`);
-    }
-  }
-  return lines.join('\n');
+  // Un seul rendu pour toute la table : voir `renderIpRouteTable`.
+  return renderIpRouteTable(router, rt as any, (route) => {
+    const r = route as any;
+    if (r.type !== 'ospf') return null;
+    return getOSPFRouteCode(router, r.network.toString(), maskToCIDR(r.mask.toString()), r);
+  });
 }
 
 function showIpRouteOspf(router: Router): string {
@@ -2343,44 +2328,89 @@ function showIpRouteVrf(router: Router, vrfName: string): string {
   return [...codes, ...lines].join('\n');
 }
 
+function formatRouteAge(elapsedMs: number): string {
+  const total = Math.max(0, Math.floor(elapsedMs / 1000));
+  if (total >= 86400) {
+    const days = Math.floor(total / 86400);
+    return `${days}d${String(Math.floor((total % 86400) / 3600)).padStart(2, '0')}h`;
+  }
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${two(Math.floor(total / 3600))}:${two(Math.floor((total % 3600) / 60))}:${two(total % 60)}`;
+}
+
+const DEFAULT_DISTANCE: Record<string, number> = {
+  connected: 0, static: 1, default: 1, eigrp: 90, ospf: 110, rip: 120, bgp: 20,
+};
+
+const OSPF_ROUTE_TYPE_NAME: Record<string, string> = {
+  'O': 'intra area', 'O IA': 'inter area',
+  'O E1': 'extern 1', 'O E2': 'extern 2',
+  'O N1': 'NSSA extern 1', 'O N2': 'NSSA extern 2',
+};
+
 function showIpRouteSpecific(router: Router, destIP: string): string {
-  // Trigger convergence before looking up routes
   router._ospfAutoConverge();
   const rt = (router as any).routingTable as any[];
-  // Find the best matching route
-  let best: any = null;
+
   let bestLen = -1;
   for (const r of rt) {
     if (!router.isRouteUsable(r)) continue;
-    const netStr = r.network.toString();
-    const maskStr = r.mask.toString();
-    const cidr = maskToCIDR(maskStr);
-    // Check if destIP matches this route
-    if (ipInSubnet(destIP, netStr, maskStr) && cidr > bestLen) {
-      best = r;
+    const cidr = maskToCIDR(r.mask.toString());
+    if (ipInSubnet(destIP, r.network.toString(), r.mask.toString()) && cidr > bestLen) {
       bestLen = cidr;
     }
   }
-  if (!best) return `% Network not in table`;
+  if (bestLen < 0) return '% Network not in table';
 
-  const cidr = maskToCIDR(best.mask.toString());
+  const candidates = rt.filter((r) => router.isRouteUsable(r)
+    && maskToCIDR(r.mask.toString()) === bestLen
+    && ipInSubnet(destIP, r.network.toString(), r.mask.toString()));
+
+  const distanceOf = (r: any) => r.ad ?? DEFAULT_DISTANCE[r.type] ?? 1;
+  const bestDistance = Math.min(...candidates.map(distanceOf));
+  const preferred = candidates.filter((r) => distanceOf(r) === bestDistance);
+  const bestMetric = Math.min(...preferred.map((r) => r.metric ?? 0));
+  const paths = preferred.filter((r) => (r.metric ?? 0) === bestMetric);
+  const best = paths[0];
+
   const netStr = best.network.toString();
+  const cidr = maskToCIDR(best.mask.toString());
+  const distance = bestDistance;
+  const metric = bestMetric;
 
+  const source = best.type === 'ospf' ? `ospf ${getOSPFProcessId(router)}`
+    : best.type === 'default' ? 'static'
+      : best.type;
+
+  const lines = [`Routing entry for ${netStr}/${cidr}`];
+
+  let header = `  Known via "${source}", distance ${distance}, metric ${metric}`;
   if (best.type === 'ospf') {
-    const metric = best.metric || 0;
-    const nh = best.nextHop ? `via ${best.nextHop}` : `directly connected`;
-    // Determine route code
-    const code = getOSPFRouteCode(router, netStr, cidr, best);
-    const routeDisplay = cidr === 32 ? netStr : `${netStr}/${cidr}`;
-    return `Routing entry for ${netStr}/${cidr}\n  Known via "ospf ${getOSPFProcessId(router)}", distance 110, metric ${metric}, type ${code}\n  Last update from ${nh}\n${code} ${routeDisplay} [110/${metric}] ${nh}, ${best.iface}`;
+    const code = getOSPFRouteCode(router, netStr, cidr, best).replace('*', ' ').trim();
+    header += `, type ${OSPF_ROUTE_TYPE_NAME[code] ?? 'intra area'}`;
   } else if (best.type === 'connected') {
-    return `Routing entry for ${netStr}/${cidr}\n  Known via "connected", distance 0, metric 0\n  Directly connected, ${best.iface}\nConnected via ${best.iface}`;
-  } else if (best.type === 'static') {
-    return `Routing entry for ${netStr}/${cidr}\n  Known via "static", distance 1, metric 0\nS ${netStr}/${cidr} via ${best.nextHop}`;
-  } else if (best.type === 'default') {
-    return `Routing entry for ${netStr}/${cidr}\n  Known via "static", distance 1, metric 0\nS* ${netStr}/${cidr} via ${best.nextHop}`;
+    header += ' (connected, via interface)';
   }
-  return `% Network not in table`;
+  lines.push(header);
+
+  if (best.nextHop && best.type !== 'connected') {
+    const age = best.installedAt !== undefined
+      ? ` , ${formatRouteAge(Date.now() - best.installedAt)} ago`.replace(' ,', ',')
+      : '';
+    lines.push(`  Last update from ${best.nextHop} on ${best.iface}${age}`);
+  }
+
+  lines.push('  Routing Descriptor Blocks:');
+  for (const [i, path] of paths.entries()) {
+    const marker = i === 0 ? '  *' : '   ';
+    const target = path.nextHop
+      ? `${path.nextHop}${path.iface ? `, via ${path.iface}` : ''}`
+      : `directly connected, via ${path.iface}`;
+    lines.push(`${marker} ${target}`);
+    lines.push(`      Route metric is ${path.metric ?? 0}, traffic share count is 1`);
+  }
+
+  return lines.join('\n');
 }
 
 function getOSPFRouteCode(router: Router, net: string, cidr: number, routeEntry?: any): string {

@@ -12,6 +12,7 @@ import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateV
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
+import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 
 /**
  * Minimal device surface these show helpers read real state from.
@@ -190,17 +191,6 @@ export function showMemoryStatistics(profile: CiscoChassisProfile = 'switch-c356
   ].join('\n');
 }
 
-export function showFlash(profile: CiscoChassisProfile = 'switch-c3560'): string {
-  const hw = CISCO_HARDWARE_PROFILES[profile];
-  const lines = ['Directory of flash:/', ''];
-  lines.push(`    1  -rwx     ${String(hw.flashImageSize).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${hw.flashImage}`);
-  for (const f of hw.extraFlashFiles) {
-    lines.push(`    ${f.index}  -rwx     ${String(f.size).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${f.name}`);
-  }
-  lines.push('', `${hw.flashTotalBytes} bytes total (${hw.flashFreeBytes} bytes free)`);
-  return lines.join('\n');
-}
-
 /** `show privilege` — current EXEC level. */
 export function showPrivilege(level: number): string {
   return `Current privilege level is ${level}`;
@@ -277,8 +267,8 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
       if (spec && !interfaceNameMatches(name, spec)) continue;
       if (disabled.has(name)) continue;
       if (isVirtualInterface(name)) continue;
-      lines.push(`${name} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
-        `line protocol is ${p.isConnected() && p.getIsUp() ? 'up' : 'down'}`);
+      lines.push(`${name} is ${iosInterfaceStatus(p, name).status}, ` +
+        `line protocol is ${iosInterfaceStatus(p, name).protocol}`);
       lines.push('  Encapsulation ARPA');
       lines.push(`  Sending CDP packets every ${timer} seconds`);
       lines.push(`  Holdtime is ${hold} seconds`);
@@ -325,10 +315,17 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
       '',
       'Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID',
     ];
+    const agent = dev.getCdpAgent?.();
+    const appris = agent?.getNeighbors() ?? [];
+    const resteHold = (n: NeighborDTO): number => {
+      const e = appris.find(x => x.localPort === n.localPort && x.remoteHost === n.remoteHost);
+      return e && agent ? agent.holdtimeRemainingSec(e) : 180;
+    };
     const rows = ns.map((n) =>
-      `${n.remoteHost.padEnd(16)} ${shortIf(n.localPort).padEnd(17)} 180        ` +
+      `${n.remoteHost.slice(0, 16).padEnd(16)} ${shortIf(n.localPort).slice(0, 17).padEnd(17)} ` +
+      `${String(resteHold(n)).padEnd(10)} ` +
       `${n.remoteCapability.charAt(0).padEnd(11)} ` +
-      `${n.remotePlatform.padEnd(9)} ${shortIf(n.remotePort)}`);
+      `${n.remotePlatform.slice(0, 9).padEnd(9)} ${shortIf(n.remotePort)}`);
     return [...hdr, ...rows, '', `Total cdp entries displayed : ${ns.length}`].join('\n');
   }
   const cfg = dev.getCdpAgent?.()?.getConfig();
@@ -702,13 +699,23 @@ export function showRedundancy(): string {
   ].join('\n');
 }
 
-export function showFileSystems(): string {
+export interface FileSystemUsage {
+  capacityBytes(): number;
+  freeBytes(): number;
+  nvramTotalBytes(): number;
+  nvramFreeBytes(startupSize: number): number;
+}
+
+export function showFileSystems(fs: FileSystemUsage, startupConfigSize: number): string {
+  const row = (mark: string, size: string, free: string, type: string, prefix: string) =>
+    `${mark}${size.padStart(12)}${free.padStart(12)}  ${type.padStart(8)}     rw   ${prefix}`;
   return [
     'File Systems:',
     '',
-    '       Size(b)     Free(b)      Type  Flags  Prefixes',
-    '            -           -     flash     rw   flash:',
-    '            -           -     nvram     rw   nvram:',
+    '      Size(b)     Free(b)      Type  Flags  Prefixes',
+    row('*', String(fs.capacityBytes()), String(fs.freeBytes()), 'flash', 'flash:'),
+    row(' ', String(fs.nvramTotalBytes()),
+      String(fs.nvramFreeBytes(startupConfigSize)), 'nvram', 'nvram:'),
   ].join('\n');
 }
 
@@ -890,15 +897,54 @@ export function showIpTraffic(ports: Iterable<Port>, arp?: ArpTrafficCounters): 
 }
 
 /** `show controllers <intf>` — real per-port link/cable status. */
+/**
+ * `show controllers` interroge le CONTRÔLEUR MATÉRIEL d'une interface.
+ * Une loopback n'en a pas, une sous-interface partage celui de son
+ * parent : ni l'une ni l'autre n'y figurent sur un vrai routeur. L'ordre
+ * est celui du châssis — par type puis par index — et non celui de
+ * création.
+ */
+function hasHardwareController(name: string): boolean {
+  if (name.includes('.')) return false;
+  return !/^(Loopback|Tunnel|Vlan|BVI|Port-channel|Bundle-Ether|Null|Nve|Virtual-Template)/i
+    .test(name);
+}
+
+function chassisOrder(name: string): Array<number | string> {
+  const match = /^([A-Za-z-]+)(.*)$/.exec(name);
+  const family = match ? match[1].toLowerCase() : name.toLowerCase();
+  const indices = (match ? match[2] : '').split(/[^0-9]+/).filter(Boolean).map(Number);
+  return [family, ...indices];
+}
+
 export function showControllers(dev: ShowStateDevice, arg = ''): string {
   const want = arg.trim().toLowerCase();
-  const ports = dev.getPorts().filter((p) =>
-    !want || p.getName().toLowerCase().includes(want));
+  const ports = dev.getPorts()
+    .filter((p) => hasHardwareController(p.getName()))
+    .filter((p) => !want || p.getName().toLowerCase().includes(want))
+    .sort((a, b) => {
+      const left = chassisOrder(a.getName());
+      const right = chassisOrder(b.getName());
+      for (let i = 0; i < Math.max(left.length, right.length); i++) {
+        const l = left[i];
+        const r = right[i];
+        if (l === undefined) return -1;
+        if (r === undefined) return 1;
+        if (l === r) continue;
+        return typeof l === 'string' || typeof r === 'string'
+          ? String(l).localeCompare(String(r))
+          : (l as number) - (r as number);
+      }
+      return 0;
+    });
   if (!ports.length) return 'Interface does not exist';
-  return ports.map((p) => [
-    `${p.getName()} -`,
-    `  Hardware is present, link is ${p.isConnected() ? 'connected' : 'down'}`,
-    `  Administrative state: ${p.getIsUp() ? 'up' : 'down'}`,
-    '  0 carrier transitions',
-  ].join('\n')).join('\n');
+  return ports.map((p) => {
+    const view = iosInterfaceStatus(p);
+    return [
+      `${p.getName()} -`,
+      `  Hardware is present, link is ${view.carrierUp ? 'connected' : 'down'}`,
+      `  Administrative state: ${view.adminUp ? 'up' : 'administratively down'}`,
+      '  0 carrier transitions',
+    ].join('\n');
+  }).join('\n');
 }

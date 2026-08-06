@@ -21,7 +21,11 @@ import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 export type CiscoShellMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-subif'
   | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
-  | 'config-track' | 'config-ipsla' | 'config-route-map' | 'config-line'
+  | 'config-track' | 'config-ipsla' | 'config-ipsla-http-raw'
+  | 'config-ipsla-echo' | 'config-ipsla-icmpjitter' | 'config-ipsla-jitter'
+  | 'config-ipsla-udp' | 'config-ipsla-tcp' | 'config-ipsla-http'
+  | 'config-ipsla-dns' | 'config-ipsla-pathecho'
+  | 'config-route-map' | 'config-line'
   | 'config-vrf' | 'config-vlan'
   | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl'
   | 'config-dhcp-pool-class'
@@ -852,6 +856,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (args[1] !== undefined) {
       if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
       vlan = parseInt(args[1], 10);
+    } else if (type === 'dot1q' || type === 'isl') {
+      return '% Incomplete command.';
     }
     (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
       type, vlan, native: args.includes('native'),
@@ -1016,7 +1022,8 @@ export function cmdIpRoute(router: Router, args: string[]): string {
   if (nextHopStr) {
     const nextHop = new IPAddress(nextHopStr);
     if (netStr === '0.0.0.0' && maskStr === '0.0.0.0') {
-      return router.setDefaultRoute(nextHop, 0, ad !== undefined ? { preference: ad } : undefined)
+      return router.setDefaultRoute(nextHop, 0,
+        (ad !== undefined || trackId !== undefined || permanent) ? opts : undefined)
         ? '' : '% Next-hop is not reachable';
     }
     return router.addStaticRoute(network, mask, nextHop, 0,

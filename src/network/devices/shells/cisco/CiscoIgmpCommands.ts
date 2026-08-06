@@ -178,7 +178,7 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
     while (lines.length && lines[lines.length - 1] === '') lines.pop();
     if (lines.length > 0) {
       lines.push('');
-      lines.push('Note: IGMPv3 (RFC 3376 source filtering) is not supported in this simulator.');
+
     }
     return lines.join('\n');
   });

@@ -1,8 +1,16 @@
 /**
- * TDD — Lot C: object tracking + IP SLA as config-driven real state.
- * `track`/`ip sla` config is recorded; `show track`/`show ip sla …`
- * project it; track state is RESOLVED from real device state (port
- * line-protocol, routing table). No fabricated probe results.
+ * Suivi d'objets + IP SLA, surface CLI.
+ *
+ * Ce fichier date de l'époque où IP SLA était une façade qui déduisait la
+ * joignabilité de la table de routage (cf. docs/PRD-IP-SLA.md §0.1). Trois
+ * de ses assertions décrivaient cette façade et non IOS ; elles sont
+ * corrigées ici plutôt que conservées :
+ *   - `show track` rend le nom de l'état SUIVI (`Line protocol is Up`,
+ *     `Reachability is Up`), pas un générique « State is Up » ;
+ *   - `show ip sla statistics` ne contient ni « reachable » ni
+ *     « unreachable » — ce mot n'existe dans aucune sortie IOS ; une
+ *     opération qui n'a pas encore sondé répond « No statistics gathered ».
+ * Les mesures elles-mêmes vivent dans probe-ip-sla-sonde-reelle.test.ts.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -32,17 +40,19 @@ describe('Cisco object tracking — real resolved state', () => {
     await r.executeCommand('interface GigabitEthernet0/0');
     await r.executeCommand('no shutdown');
     await r.executeCommand('end');
-    expect(await r.executeCommand('show track 1')).toMatch(/State is Up/);
+    expect(await r.executeCommand('show track 1')).toMatch(/Line protocol is Up/);
 
     await r.executeCommand('configure terminal');
     await r.executeCommand('interface GigabitEthernet0/0');
     await r.executeCommand('shutdown');
     await r.executeCommand('end');
-    expect(await r.executeCommand('show track 1')).toMatch(/State is Down/);
+    expect(await r.executeCommand('show track 1')).toMatch(/Line protocol is Down/);
   });
 
   it('track ip route reachability uses the REAL routing table', async () => {
     const r = new CiscoRouter('R1');
+    const pc = new LinuxPC('PC1');
+    new Cable('c-track').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('interface GigabitEthernet0/0');
@@ -52,7 +62,7 @@ describe('Cisco object tracking — real resolved state', () => {
     await r.executeCommand('ip route 10.10.0.0 255.255.0.0 192.168.1.2');
     await r.executeCommand('track 2 ip route 10.10.0.0 255.255.0.0 reachability');
     await r.executeCommand('end');
-    expect(await r.executeCommand('show track 2')).toMatch(/State is Up/);
+    expect(await r.executeCommand('show track 2')).toMatch(/Reachability is Up/);
     expect(await r.executeCommand('show track brief')).toContain('2');
   });
 
@@ -75,10 +85,11 @@ describe('Cisco object tracking — real resolved state', () => {
     await r.executeCommand('end');
     // Gi0/1 is down ⇒ AND ⇒ Down (real composition, not a stub).
     expect(await r.executeCommand('show track 10')).toMatch(/State is Down/);
+    expect(await r.executeCommand('show track 10')).toContain('List boolean and');
   });
 });
 
-describe('Cisco IP SLA — config-driven real state', () => {
+describe('Cisco IP SLA — la configuration est relue telle qu\'elle a été tapée', () => {
   it('ip sla operation is recorded and projected', async () => {
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');
@@ -100,7 +111,7 @@ describe('Cisco IP SLA — config-driven real state', () => {
     expect(cfg).toMatch(/icmp-echo/);
     const stats = await r.executeCommand('show ip sla statistics');
     expect(stats).not.toMatch(/Invalid input/);
-    expect(stats).toMatch(/reachable/);          // 192.168.1.0/24 is connected
+    expect(stats).toContain('IPSLA operation id: 1');
     expect(await r.executeCommand('show ip sla responder')).toMatch(/Enabled/);
   });
 });

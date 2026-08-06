@@ -172,13 +172,6 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     const engine = ctx.r()._getNATEngine();
     const aclId = args[0];
     const router = ctx.r() as any;
-    const aclEngine = router.aclEngine ?? router._aclEngine ?? router.getACLEngine?.();
-    const lists: Array<{ id?: number; name?: string; type?: string }> | undefined = aclEngine?.getAccessLists?.();
-    if (lists) {
-      const acl = lists.find(a => String(a.id) === String(aclId) || a.name === aclId);
-      if (!acl) return `% access-list ${aclId} not defined.`;
-      if (acl.type && /mac/i.test(acl.type)) return '% MAC ACLs cannot be used for NAT.';
-    }
     const vrf = parseVrf(args);
     if (vrf) {
       const vrfs = router._vrfs as Map<string, unknown> | undefined;
@@ -799,7 +792,7 @@ export function showNATStatistics(router: Router): string {
         ` -- Inside Source [acl ${r.aclId}] ${r.type === 'overload' ? 'overload' : `pool ${r.poolName}`}`
       )),
     ...poolUsage,
-    `Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)`,
+    `Application Layer Gateways: none`,
   ].join('\n');
 }
 

@@ -170,6 +170,7 @@ describe('OSPFv2 NSSA Type-7→Type-5 translation is real, driven by installLSA(
     const show = await r3.executeCommand('show ip ospf database external');
     expect(show).toContain('172.16.1.0');
     const route = await r3.executeCommand('show ip route 172.16.1.0');
-    expect(route).toContain('O E2 172.16.1.0/24');
+    expect(route).toContain('Routing entry for 172.16.1.0/24');
+    expect(route).toContain('type extern 2');
   });
 });

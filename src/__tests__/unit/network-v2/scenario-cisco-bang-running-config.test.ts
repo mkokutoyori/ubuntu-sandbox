@@ -239,7 +239,12 @@ describe('Scénario 1 — Le caractère ! dans show running-config', () => {
       // sur leur ligne, et chaque bloc à enfants est fermé par un !.
       expect(run).toContain('description PC-LINUX-1!VLAN10');
       expect(lines.filter((l) => /^!$/.test(l)).length).toBeGreaterThan(0);
-      expect(run).toMatch(/interface GigabitEthernet0\/1\n description PC-LINUX-1!VLAN10\n!/);
+      // Le bloc s'ouvre sur l'interface, porte la description avec son !
+      // interne, et se ferme sur un ! seul — sans figer les autres lignes
+      // que l'interface rend (` no ip address`, notamment).
+      expect(run).toMatch(
+        /^interface GigabitEthernet0\/1\n description PC-LINUX-1!VLAN10\n(?: .*\n)*!$/m,
+      );
     });
   });
 });

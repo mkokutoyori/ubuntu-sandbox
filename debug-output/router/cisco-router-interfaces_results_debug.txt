@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-08-04T08:22:10.004Z
+Generated: 2026-08-04T11:15:48.529Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -470,21 +470,21 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
 
 [145/343] r1 R1# show interfaces GigabitEthernet0/0.10
   GigabitEthernet0/0.10 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.001a (bia 0200.0000.001a)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -587,17 +587,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
   Tunnel2                    unassigned      YES manual up                    up
@@ -660,17 +660,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual administratively down down
+  GigabitEthernet0/0.20      192.168.2.1     YES manual administratively down down
+  GigabitEthernet0/0.30      192.168.3.1     YES manual administratively down down
+  GigabitEthernet0/0.40      192.168.4.1     YES manual administratively down down
+  GigabitEthernet0/0.50      192.168.5.1     YES manual administratively down down
+  GigabitEthernet0/0.60      192.168.6.1     YES manual administratively down down
+  GigabitEthernet0/0.70      192.168.7.1     YES manual administratively down down
+  GigabitEthernet0/0.80      192.168.8.1     YES manual administratively down down
+  GigabitEthernet0/0.90      192.168.9.1     YES manual administratively down down
+  GigabitEthernet0/0.100     192.168.10.1    YES manual administratively down down
+  GigabitEthernet0/0.999     192.168.99.1    YES manual administratively down down
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
   Tunnel2                    unassigned      YES manual up                    up
@@ -702,17 +702,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
   Tunnel2                    unassigned      YES manual up                    up
@@ -856,7 +856,7 @@ Total steps: 343
     Hardware is Loopback
     Internet address is 172.31.0.1/32
   GigabitEthernet0/0.10 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.001a (bia 0200.0000.001a)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -877,7 +877,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
     Description: VLAN20
-    Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -898,7 +898,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
     Description: VLAN30
-    Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -919,7 +919,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
     Description: VLAN40
-    Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -940,7 +940,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
     Description: VLAN50
-    Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -961,7 +961,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
     Description: VLAN60
-    Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -982,7 +982,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
     Description: VLAN70
-    Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1003,7 +1003,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
     Description: VLAN80
-    Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1024,7 +1024,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
     Description: VLAN90
-    Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1045,7 +1045,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
     Description: VLAN100
-    Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1065,7 +1065,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.0024 (bia 0200.0000.0024)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1311,9 +1311,8 @@ Total steps: 343
   end
 
 [211/343] r1 R1# show interfaces Loopback0
+                    ^
   % Invalid input detected at '^' marker.
-  show interface Loopback0
-                 ^
 
 [212/343] r1 R1# show ip interface Loopback0
   % Invalid input detected at '^' marker.
@@ -1322,19 +1321,16 @@ Total steps: 343
   % Invalid input detected at '^' marker.
 
 [214/343] r1 R1# show interfaces Loopback0 accounting
+                    ^
   % Invalid input detected at '^' marker.
-  show interface Loopback0 accounting
-                 ^
 
 [215/343] r1 R1# show interfaces Loopback0 switchport
+                    ^
   % Invalid input detected at '^' marker.
-  show interface Loopback0 switchport
-                 ^
 
 [216/343] r1 R1# show interfaces Loopback0 stats
+                    ^
   % Invalid input detected at '^' marker.
-  show interface Loopback0 stats
-                 ^
 
 [217/343] r1 R1# show controllers Loopback0
   Interface does not exist
@@ -1466,17 +1462,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
   Tunnel2                    unassigned      YES manual up                    up
@@ -1555,6 +1551,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
   Tunnel2                    unassigned      YES manual up                    up
@@ -1578,7 +1585,7 @@ Total steps: 343
   
   Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
   Processor board ID FTX1234567A
-  15 Gigabit Ethernet interfaces
+  4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   256K bytes of non-volatile configuration memory.
   
@@ -1735,17 +1742,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
   Tunnel2                    unassigned      YES manual up                    up
@@ -1866,7 +1873,7 @@ Total steps: 343
     Hardware is Loopback
     Internet address is 172.31.0.1/32
   GigabitEthernet0/0.10 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.001a (bia 0200.0000.001a)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1887,7 +1894,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
     Description: VLAN20
-    Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1908,7 +1915,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
     Description: VLAN30
-    Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1929,7 +1936,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
     Description: VLAN40
-    Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1950,7 +1957,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
     Description: VLAN50
-    Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1971,7 +1978,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
     Description: VLAN60
-    Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1992,7 +1999,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
     Description: VLAN70
-    Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2013,7 +2020,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
     Description: VLAN80
-    Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2034,7 +2041,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
     Description: VLAN90
-    Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2055,7 +2062,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
     Description: VLAN100
-    Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2075,7 +2082,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.0024 (bia 0200.0000.0024)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2325,7 +2332,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C1FB2.09FBE76C (08:22:10.039 UTC Tue Aug 4 2026)
+  reference time is EE1C4864.96041893 (11:15:48.586 UTC Tue Aug 4 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -2334,7 +2341,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *08:22:10.000 UTC Tue Aug 4 2026
+  *11:15:48.000 UTC Tue Aug 4 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2625,7 +2632,7 @@ Total steps: 343
   
   Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
   Processor board ID FTX1234567A
-  15 Gigabit Ethernet interfaces
+  4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   256K bytes of non-volatile configuration memory.
   
@@ -2779,17 +2786,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
   Tunnel2                    unassigned      YES manual up                    up
@@ -2941,7 +2948,7 @@ Total steps: 343
     Hardware is Loopback
     Internet address is 172.31.0.1/32
   GigabitEthernet0/0.10 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.001a (bia 0200.0000.001a)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2962,7 +2969,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
     Description: VLAN20
-    Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2983,7 +2990,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
     Description: VLAN30
-    Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3004,7 +3011,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
     Description: VLAN40
-    Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3025,7 +3032,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
     Description: VLAN50
-    Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3046,7 +3053,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
     Description: VLAN60
-    Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3067,7 +3074,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
     Description: VLAN70
-    Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3088,7 +3095,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
     Description: VLAN80
-    Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3109,7 +3116,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
     Description: VLAN90
-    Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3130,7 +3137,7 @@ Total steps: 343
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
     Description: VLAN100
-    Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3150,7 +3157,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
-    Hardware is iGbE, address is 0200.0000.0024 (bia 0200.0000.0024)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3598,17 +3605,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
 
@@ -3695,17 +3702,17 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual up                    up
+  GigabitEthernet0/0.20      192.168.2.1     YES manual up                    up
+  GigabitEthernet0/0.30      192.168.3.1     YES manual up                    up
+  GigabitEthernet0/0.40      192.168.4.1     YES manual up                    up
+  GigabitEthernet0/0.50      192.168.5.1     YES manual up                    up
+  GigabitEthernet0/0.60      192.168.6.1     YES manual up                    up
+  GigabitEthernet0/0.70      192.168.7.1     YES manual up                    up
+  GigabitEthernet0/0.80      192.168.8.1     YES manual up                    up
+  GigabitEthernet0/0.90      192.168.9.1     YES manual up                    up
+  GigabitEthernet0/0.100     192.168.10.1    YES manual up                    up
+  GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
   Tunnel2                    unassigned      YES manual up                    up
@@ -3815,9 +3822,9 @@ Total steps: 343
     banner       Remove a banner
     privilege    Remove privilege command rule
     logging      Disable logging
+    service      Disable a service
     ntp          Remove NTP config
     enable       Modify enable password parameters
-    service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
     interface    Remove a virtual interface

@@ -24,6 +24,7 @@ import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
+import type { TcpSocket } from '../tcp/TcpStack';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
@@ -731,14 +732,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private _recoveryRunOff: (() => void) | null = null;
 
   private initDefaultSockets(): void {
-    // OpenSSH Server — SFTP transport
-    this.socketTable.bind('tcp', '0.0.0.0', 22, 1088, 'sshd.exe');
-    // RDP — Remote Desktop Protocol (TermService)
-    this.socketTable.bind('tcp', '0.0.0.0', 3389, 1096, 'svchost.exe');
-    // SMB — file sharing / domain traffic (LanmanServer)
-    this.socketTable.bind('tcp', '0.0.0.0', 445, 4, 'System');
-    // NetBIOS Session Service (LanmanServer)
-    this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
+    // Les quatre `socketTable.bind()` qui ouvraient cette méthode sont
+    // partis (docs/PRD-Sockets-Une-Seule-Verite.md §P2) : trois d'entre
+    // eux doublaient un `listen()` situé quelques lignes plus bas, et
+    // leur identité voyage désormais avec l'écoute elle-même. Le
+    // quatrième, le 139, n'écoutait nulle part — il l'a maintenant.
 
     // Persist SSH server config + host key under C:\ProgramData\ssh\ on
     // first boot so OpenSSH-for-Windows files are visible from the shell.
@@ -746,6 +744,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     // TCP SSH server on port 22 — handles SSH auth + SFTP subsystem.
     this.getTcpStack().listen(22, {
+      identity: { pid: 1088, processName: 'sshd.exe' },
       onAccept: (socket) => {
         // TcpSocket structurally satisfies TcpStream (write/send/close/onData/
         // onClose all present) — the two abstractions just predate a shared
@@ -759,15 +758,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // Refuses (drops) the connection when LanmanServer isn't Running, so the
     // client's negotiate gets no reply — same "network path not found" a
     // real client sees when the Server service is stopped.
+    const serveSmb = (socket: TcpSocket): void => {
+      if (this.svcMgr.getService('LanmanServer')?.state !== 'Running') {
+        socket.close();
+        return;
+      }
+      const clientHost = this.reverseLookupClient(socket.remoteIp);
+      this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
+    };
     this.getTcpStack().listen(445, {
-      onAccept: (socket) => {
-        if (this.svcMgr.getService('LanmanServer')?.state !== 'Running') {
-          socket.close();
-          return;
-        }
-        const clientHost = this.reverseLookupClient(socket.remoteIp);
-        this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
-      },
+      identity: { pid: 4, processName: 'System' },
+      onAccept: serveSmb,
+    });
+
+    // NetBIOS Session Service — le transport hérité du même LanmanServer,
+    // que `ss`/`netstat` annonçaient depuis toujours sans que rien ne
+    // réponde derrière (docs/PRD-Sockets-Une-Seule-Verite.md §P2). Il
+    // sert le même SMB que le 445, et s'éteint avec le même service.
+    // Ce que ce raccourci NE fait pas : le préambule NetBIOS
+    // (session request/positive response, RFC 1002 §4.3) — aucune couche
+    // NBSS n'existe ici, et un client qui l'attendrait n'existe pas non
+    // plus. Un port joignable qui parle le bon protocole vaut mieux
+    // qu'un port affiché qui ne parle rien.
+    this.getTcpStack().listen(139, {
+      identity: { pid: 4, processName: 'System' },
+      onAccept: serveSmb,
     });
 
     // TCP WinRM server on port 5985 — real Invoke-Command/Enter-PSSession/
@@ -867,6 +882,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // `Enable-RemoteDesktop` has been run, mirroring the WinRM/5985
     // listener's own enabled-flag gating above.
     this.getTcpStack().listen(RDP_PORT, {
+      identity: { pid: 1096, processName: 'svchost.exe' },
       onAccept: (socket) => {
         if (!this.rdp.enabled) { socket.close(); return; }
         new RdpServerHandler({

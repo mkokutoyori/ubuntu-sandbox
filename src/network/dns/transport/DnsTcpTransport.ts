@@ -7,8 +7,14 @@ import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { DNS_PORT, queryDnsOverUdp } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
 
-export function bindDnsTcpServer(host: EndHost, handler: DnsMessageHandler, port: number = DNS_PORT): void {
+export function bindDnsTcpServer(
+  host: EndHost,
+  handler: DnsMessageHandler,
+  port: number = DNS_PORT,
+  options: { address?: string; processName?: string } = {},
+): void {
   host.getTcpStack().listen(port, {
+    identity: { processName: options.processName ?? 'dnsmasq' },
     onAccept: (socket: TcpSocket) => {
       socket.onData((data) => {
         if (!(data instanceof Uint8Array)) return;
@@ -30,11 +36,11 @@ export function bindDnsTcpServer(host: EndHost, handler: DnsMessageHandler, port
         else send(result);
       });
     },
-  });
+  }, options.address ?? '0.0.0.0');
 }
 
-export function unbindDnsTcpServer(host: EndHost, port: number = DNS_PORT): void {
-  host.getTcpStack().closeListener(port);
+export function unbindDnsTcpServer(host: EndHost, port: number = DNS_PORT, address = '0.0.0.0'): void {
+  host.getTcpStack().closeListener(port, address);
 }
 
 export async function queryDnsOverTcp(

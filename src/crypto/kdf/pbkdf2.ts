@@ -28,6 +28,15 @@ export function pbkdf2(
   if (!Number.isInteger(iterations) || iterations <= 0) {
     throw new Error(`pbkdf2: iterations must be a positive integer (got ${iterations})`);
   }
+  // `dkLen` and `iterations` were checked; the hash itself was not. A
+  // caller passing the NAME of a digest instead of the object — an easy
+  // slip, since every other crypto helper here takes strings — made
+  // `hash.digestSize` undefined, `blocks` NaN, and this function return
+  // an EMPTY key. Silently: the caller then encrypted with a zero-length
+  // key instead of being told. A KDF must never hand back nothing.
+  if (!hash || typeof hash.digestSize !== 'number' || hash.digestSize <= 0) {
+    throw new Error('pbkdf2: hash must be a HashAlgorithm object (e.g. SHA256), not its name');
+  }
 
   const hLen = hash.digestSize;
   const blocks = Math.ceil(dkLen / hLen);

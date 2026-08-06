@@ -50,9 +50,12 @@ describe('Logging — SyslogAgent forwards buffer entries to remote servers', ()
       (p) => (p as { deviceId?: string }).deviceId === r.id,
       () => { drops++; });
 
+    // `tcp.listener.changed` ne journalise plus rien : le
+    // `%SYS-5-NOTIFICATIONS: TCP listener bound` qui s'y trouvait
+    // était inventé. On déclenche donc un message RÉEL d'IOS.
     bus.publish({
-      topic: 'tcp.listener.changed',
-      payload: { deviceId: r.id, hostname: 'R', localIp: '0.0.0.0', localPort: 8080, added: true },
+      topic: 'port.link.up',
+      payload: { deviceId: r.id, hostname: 'R', portName: 'GigabitEthernet0/0' },
     });
 
     expect(drops).toBeGreaterThan(0);
@@ -94,13 +97,16 @@ describe('Logging — unified device.syslog.entry across all device types', () =
       entries.push({ deviceId: p.deviceId, tag: p.tag, message: p.message });
     });
 
+    // `tcp.listener.changed` ne journalise plus rien : le
+    // `%SYS-5-NOTIFICATIONS: TCP listener bound` qui s'y trouvait
+    // était inventé. On déclenche donc un message RÉEL d'IOS.
     bus.publish({
-      topic: 'tcp.listener.changed',
-      payload: { deviceId: cisco.id, hostname: 'CSCO', localIp: '0.0.0.0', localPort: 9000, added: true },
+      topic: 'port.link.up',
+      payload: { deviceId: cisco.id, hostname: 'CSCO', portName: 'GigabitEthernet0/0' },
     });
     bus.publish({
-      topic: 'tcp.listener.changed',
-      payload: { deviceId: huawei.id, hostname: 'HUWI', localIp: '0.0.0.0', localPort: 9001, added: true },
+      topic: 'port.link.up',
+      payload: { deviceId: huawei.id, hostname: 'HUWI', portName: 'GigabitEthernet0/0/0' },
     });
     lnx.getPort('eth0')!.setUp(false);
     win.dynamicFirewallRules.set('Block-9999', {

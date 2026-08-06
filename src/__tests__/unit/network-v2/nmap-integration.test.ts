@@ -37,10 +37,24 @@ function startListener(server: LinuxServer, opts?: { noBanner?: boolean }) {
   return { listener, binding };
 }
 
+/**
+ * Démarre l'unité, et n'ouvre une écoute que si personne ne sert déjà ce
+ * port. `apache2` en sert un pour de bon depuis
+ * docs/PRD-Manquements.md §M4a (comme nginx avant lui), donc en poser une
+ * seconde lève EADDRINUSE ; `mysql` n'a toujours aucun serveur derrière
+ * lui et a encore besoin de celle-ci. Même correctif qu'aux scénarios
+ * s05/s07 pour le 1521.
+ */
 async function startTcpService(server: LinuxServer, unit: string, port: number): Promise<void> {
   await server.executeCommand(`sudo systemctl start ${unit}`);
-  (server as unknown as { getTcpStack(): { listen(p: number, h: { onAccept: () => void }): void } })
-    .getTcpStack().listen(port, { onAccept: () => undefined });
+  const stack = (server as unknown as {
+    getTcpStack(): {
+      listen(p: number, h: { onAccept: () => void }): void;
+      listListeners(): { localPort: number }[];
+    };
+  }).getTcpStack();
+  if (stack.listListeners().some((l) => l.localPort === port)) return;
+  stack.listen(port, { onAccept: () => undefined });
 }
 
 describe('nmap — intégration sur topologie réelle', () => {

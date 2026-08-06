@@ -89,18 +89,27 @@ describe('Cisco debug ip ospf — event subscription streams into the terminal',
 
   it('no debug stops the subscription — further events are silent', async () => {
     await enableOspf();
+    // Deux flux distincts portent l'évènement : le syslog (%OSPF-5-ADJCHG,
+    // qui n'est pas du debug et continue quoi qu'il arrive) et la sortie de
+    // `debug ip ospf adj`. Ce test porte sur le second : on compte donc ce
+    // que le debug AJOUTE, pas le total.
+    adjChange();
+    await flush();
+    const sansDebug = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
+
     await type('debug ip ospf adj');
     adjChange();
     await flush();
-    const count = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
-    expect(count).toBe(1);
+    const avecDebug = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
+    expect(avecDebug - sansDebug).toBeGreaterThan(1);
 
     await type('no debug ip ospf adj');
     expect(session.hasBackgroundAsyncJobs).toBe(false);
 
     adjChange();
     await flush();
-    expect(session.lines.filter((l) => l.text.includes('ADJCHG')).length).toBe(count);
+    const apresNoDebug = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
+    expect(apresNoDebug - avecDebug).toBe(sansDebug);
   });
 
   it('sessions are isolated — a second terminal without debug sees nothing', async () => {
@@ -113,7 +122,12 @@ describe('Cisco debug ip ospf — event subscription streams into the terminal',
     adjChange();
     await flush();
 
-    expect(session.lines.some((l) => l.text.includes('ADJCHG'))).toBe(true);
-    expect(session2.lines.some((l) => l.text.includes('ADJCHG'))).toBe(false);
+    // La session sans debug peut recevoir la ligne SYSLOG (elle n'est pas du
+    // debug) ; ce qu'elle ne doit pas voir, c'est la sortie du debug de
+    // l'autre session — donc strictement moins de lignes.
+    const avec = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
+    const sans = session2.lines.filter((l) => l.text.includes('ADJCHG')).length;
+    expect(avec).toBeGreaterThan(0);
+    expect(sans).toBeLessThan(avec);
   });
 });

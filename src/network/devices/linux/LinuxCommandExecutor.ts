@@ -98,7 +98,8 @@ import {
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import type { ServiceSocketServer } from './ports/ServiceSocketServer';
-import type { NginxControl } from './http/LinuxNginxService';
+import type { NginxControl } from './http/nginx/LinuxNginxService';
+import type { ApacheControl } from './http/apache/LinuxApacheService';
 import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
 import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
@@ -215,6 +216,8 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'tar', 'gzip', 'gunzip', 'zcat', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
   'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
   'mail', 'mailx', 'sendmail',
+  // Cryptographie
+  'openssl',
 ];
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
@@ -407,6 +410,8 @@ export class LinuxCommandExecutor {
 
   /** Le nginx de cette machine, pour la commande `nginx` (docs/PRD-Nginx.md §P2). */
   nginxService: NginxControl | null = null;
+  /** The apache2 server, for the `apachectl` command (§M4a). */
+  apacheService: ApacheControl | null = null;
   /** Records port bind / release activity into the system log, reactively. */
   private portActivityLog: PortActivityLogProjection | null = null;
   private cwd = '/root';
@@ -1249,7 +1254,15 @@ export class LinuxCommandExecutor {
     }
     if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
     probeArgs.push(`${remoteUser}@${hostPart}`, 'hostname');
-    const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs, undefined, offeredPassword) });
+    // La sonde tourne TOUJOURS, avec ou sans mot de passe : c'est elle qui
+    // porte la politique de comptes — mot de passe expiré, compte
+    // verrouillé, utilisateur refusé par `AllowUsers`. La sauter quand rien
+    // n'est offert ferait de `scp` le seul chemin d'entrée que la politique
+    // ne garde pas. Sans justificatif on la lance exactement comme le
+    // chemin synchrone le fait, c'est-à-dire sans en fournir.
+    const probe = runSshClient({
+      ...this.buildSshClientOpts(probeArgs, undefined, offeredPassword || undefined),
+    });
     if (probe.exitCode !== 0) {
       return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
     }
@@ -3184,6 +3197,10 @@ export class LinuxCommandExecutor {
     cmd: string,
     args: string[],
   ): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    // Même raison que dans {@link runDirectScriptAsync} : c'est le
+    // préambule de `dispatch()` qui émet l'`execve` de l'interpréteur, et
+    // le détour par le jumeau async le sautait.
+    this.noteInterpreterExec(cmd);
     const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
     const startupVars = cmd === 'bash'
       ? this.runBashStartupFiles(parsed.login, parsed.interactive)
@@ -3211,6 +3228,18 @@ export class LinuxCommandExecutor {
    * form or the file doesn't exist, so the caller can fall through to the
    * normal (synchronous) dispatch.
    */
+  /**
+   * L'`execve` d'une commande résolue par le PATH, tel que le préambule de
+   * `dispatch()` l'émet. Les jumeaux async court-circuitent ce préambule ;
+   * ils passent donc par ici pour que `auditctl`, `strace` et
+   * `/proc` voient la même exécution, quel que soit le chemin pris.
+   */
+  private noteInterpreterExec(cmd: string): void {
+    this.publishFsAccess(`/usr/bin/${cmd}`, 'x');
+    this.publishFsAccess(`/bin/${cmd}`, 'x');
+    this.publishSyscall('execve', resolveExePath(cmd));
+  }
+
   private async runDirectScriptAsync(
     cmd: string,
     args: string[],
@@ -3218,6 +3247,17 @@ export class LinuxCommandExecutor {
     if (!cmd.startsWith('./') && !cmd.startsWith('/')) return null;
     const absPath = this.vfs.normalizePath(cmd, this.cwd);
     if (!this.vfs.exists(absPath)) return null;
+    // Le préambule de `dispatch()` émet l'`execve` — c'est lui que lit une
+    // règle `auditctl -w <script> -p x`. Router ce script vers le jumeau
+    // async faisait sauter ce préambule, donc la règle ne voyait plus rien
+    // exécuter : l'audit s'arrêtait précisément sur la forme que Phase 2 a
+    // détournée. On l'émet ici, à l'identique, une fois qu'on sait qu'on
+    // prend la main (un retour `null` retombe sur le chemin synchrone, qui
+    // l'émet lui-même — l'émettre avant ferait double).
+    const canExec = this.userMgr.currentUid === 0 || this.path(absPath).canExecute();
+    this.publishFsAccessOutcome(absPath, 'x', 'execve', canExec);
+    this.publishSyscallOutcome('execve', absPath, canExec, canExec ? 0 : -13);
+    if (!canExec) return { output: `${cmd}: Permission denied`, exitCode: 126 };
     const commandLine = ['/bin/bash', absPath, ...args].join(' ');
     return this.runScriptProcessAsync(commandLine, (identity, bridge) =>
       runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
@@ -5697,6 +5737,7 @@ export class LinuxCommandExecutor {
    * sync path so flag handling can never diverge.
    */
   private async handleRunPartsAsync(args: string[]): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    this.noteInterpreterExec('run-parts');
     const plan = this.parseRunPartsInvocation(args);
     if (plan.kind === 'result') return { output: plan.output, exitCode: plan.exitCode };
     const { entries, absDir, scriptArgs, umaskOverride, childEnv, verbose, report, exitOnError } = plan;

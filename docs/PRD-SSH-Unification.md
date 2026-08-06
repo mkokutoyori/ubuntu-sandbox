@@ -319,3 +319,42 @@ ne pourra être replié qu'ensuite.
 - `createInteractiveShell()` (streaming, Ctrl+C temps réel) pour les
   vendeurs non-Linux : le repli documenté sur `getShell().execute()`
   reste en place.
+
+## 6. Ce qui reste sur la SECONDE pile SSH (`src/shell/`), mesuré
+
+Relevé fait pendant l'attente d'une régression, sans rien exécuter — donc
+une lecture, pas une supposition. Le plan de refonte SSH annonçait cette
+pile comme « un second chantier de taille comparable ». Elle est en fait
+**à moitié migrée**, et le reste tient en deux points précis.
+
+**Déjà filaire.** Le chemin INTERACTIF de `sshLauncher.ts` passe par
+`openWireSshShell()` puis `WireRemoteShell` (l. 438 et 478) — une vraie
+session, un vrai canal. `WireRemoteShell` dit lui-même remplacer
+`CrossVendorRemoteShell`, et `ssh-no-legacy-shell.test.ts` épingle déjà
+que la couche terminal ne référence plus l'ancien pilote.
+
+**Encore local, et c'est exactement le défaut que l'audit visait :**
+
+1. **`sshLauncher.ts:370` — `verifyCredentials()`**. Le mot de passe est
+   vérifié par un appel direct à `device.checkPassword()` / `userMgr`,
+   zéro octet sur le fil, AVANT toute session. Le serveur ne voit donc
+   pas cette authentification : ni `MaxStartups`, ni le throttling
+   fail2ban, ni `AllowUsers`, ni l'entrée d'audit ne s'appliquent. C'est
+   le même contournement que la Phase 3 a retiré du client Linux.
+2. **`runSshExec()` — `dev.executeCommand(command)`**. Le mode exec
+   (`ssh user@host cmd`) appelle la méthode de l'équipement distant en
+   mémoire. Trois appelants : `LinuxBashShell`, `WindowsCmdShell`,
+   `WindowsPowerShellShell` (deux sites chacun).
+
+**Ce que cela dit du périmètre.** Il ne s'agit pas de réécrire une pile :
+il s'agit de faire pour ces deux fonctions ce que la Phase 3 a fait pour
+`LinuxSshClient` — remplacer la vérification locale par la négociation
+que `openWireSshShell` sait déjà mener, et l'appel direct par un canal
+exec. Le chemin filaire existe et tourne juste à côté, dans le même
+fichier.
+
+**Non traité ici, et volontairement :** `WindowsPC.createVtyShell()` est
+le dernier usage de `CrossVendorRemoteShell` en production, et il est
+légitime — il est CÔTÉ SERVEUR, où empiler cmd/PowerShell localement est
+précisément ce qu'un serveur doit faire. Le replier serait une erreur, pas
+un progrès.

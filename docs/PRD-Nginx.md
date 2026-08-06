@@ -313,7 +313,7 @@ Chaque commande est un `LinuxCommand` dans son propre fichier
   autre poste fait des requêtes montre les lignes arriver — le TP
   d'observation le plus classique.
 
-### P5 — HTTPS — **bloqué par une question ouverte**
+### P5 — HTTPS — **livré** (la question ouverte ci-dessous est levée)
 
 `listen 443 ssl;` + `ssl_certificate` / `ssl_certificate_key` lus depuis
 le VFS et servis par `HttpsServerSession`.
@@ -335,6 +335,43 @@ Deux ordres possibles :
 **Le second est refusé** : il produirait un certificat que rien d'autre
 sur la machine ne sait fabriquer, donc un TP infaisable par un
 apprenant. P5 attend P-openssl.
+
+#### Résultat mesuré — P5 livré, par le premier ordre
+
+`openssl` existe (`docs/PRD-OpenSSL.md`), donc le blocage nommé ci-dessus
+a disparu, et c'est bien l'ordre 1 qui a été suivi : le certificat est
+produit PAR LA MACHINE, avec la commande que l'apprenant tape, et nginx
+lit ce que cette commande a écrit. Aucun test de cette phase ne dépose
+un PEM à la main — c'est tout l'objet du refus rappelé plus haut, et un
+test qui en planterait un ne prouverait rien sur la faisabilité du TP.
+
+`ssl_certificate`/`ssl_certificate_key` quittent `KNOWN_UNSUPPORTED` et
+sont stockés sur le bloc `server`. Les autres `ssl_*` (protocols,
+ciphers, dhparam, session cache) restent refusés : ce sont des réglages
+de poignée de main, or ce moteur TLS choisit lui-même sa suite et ses
+groupes — les accepter reviendrait à stocker une valeur que rien ne lit,
+la règle que ce fichier applique partout ailleurs.
+
+Aucun moteur TLS neuf : `HttpsServerSession` conduisait déjà une vraie
+`TlsServerSession` enregistrement par enregistrement. Il manquait la
+lecture des deux fichiers.
+
+**Trois sorties et non deux.** `tlsMaterialFor` rend `null` (le port est
+en clair), la matière TLS, ou `'error'` — qui n'est PAS une variante de
+`null`. Un port déclaré `ssl` dont le certificat est illisible garde son
+port FERMÉ ; se rabattre sur du HTTP en clair sur 443 serait la pire
+réponse possible, une machine servant en clair sur le port dont tout le
+sens est qu'il ne l'est pas.
+
+Trouvé en écrivant cette phase, et corrigé dans la foulée : **apache2
+avait exactement ce défaut**, en vrai. Son `open()` construisait un
+`Http1ServerSession` pour TOUS les ports, donc un `<VirtualHost *:443>`
+était servi en clair sur 443, sans erreur ni avertissement. Les deux
+serveurs partagent désormais la règle, chacun avec ses propres codes
+(`AH00526`/`AH02572`/`AH02561` pour Apache). Corrigé aussi :
+`HttpsServerSession.start()` ne prenait pas l'identité d'écoute, donc
+`ss -ltnp` aurait montré un `:443` sans propriétaire à côté d'un `:80`
+qui en a un — les deux vues de la même machine en désaccord.
 
 ### P6 — Proxy inverse
 
@@ -400,12 +437,13 @@ document ouvre :
 - **P3 ensuite** : c'est là que le chantier devient un TP de
   diagnostic plutôt qu'une démonstration.
 - **P4** est petit et à forte valeur d'observation.
-- **P5 est bloqué** par une dépendance nommée (`openssl`), pas par sa
-  difficulté propre.
+- **P5 était bloqué** par une dépendance nommée (`openssl`), pas par sa
+  difficulté propre — et c'est bien la dépendance qui l'a débloqué, dans
+  l'ordre que ce PRD avait choisi.
 - **P6** est un chantier à part entière.
 
 
-## 8. Ce qui a été livré (P0 → P4)
+## 8. Ce qui a été livré (P0 → P5)
 
 ### 8.1 Le décor supprimé, et jusqu'où
 
@@ -465,6 +503,6 @@ avec le chemin cherché et l'errno, et pour les refus de démarrage.
 
 ### 8.6 Non fait
 
-P5 (HTTPS) reste bloqué sur la question ouverte du §4 : aucun chemin
-`openssl req` → PEM n'existe sous Linux. P6 (`proxy_pass`) est refusé par
-`nginx -t` avec le message qui le dit, pas avalé.
+P5 (HTTPS) est livré : le chemin `openssl req` → PEM existe désormais
+sous Linux, et c'est celui que le TP emprunte. P6 (`proxy_pass`) reste
+refusé par `nginx -t` avec le message qui le dit, pas avalé.

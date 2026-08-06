@@ -26,12 +26,20 @@ import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type Host
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
-import { LinuxNginxService } from './linux/http/LinuxNginxService';
+import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
+import { LinuxApacheService } from './linux/http/apache/LinuxApacheService';
+import type { LinuxCommand } from './linux/commands/LinuxCommand';
+import {
+  APACHE_CONF, APACHE_CONF_PATH, APACHE_PORTS_CONF, APACHE_PORTS_PATH,
+  APACHE_SITES_AVAILABLE, APACHE_SITES_ENABLED, APACHE_DEFAULT_SITE,
+  APACHE_DEFAULT_PAGE, APACHE_DOCROOT, APACHE_DEFAULT_MODULES, apacheModuleLoadFile,
+  APACHE_ENVVARS, APACHE_ENVVARS_PATH, APACHE_MODS_ENABLED, APACHE_DEFAULT_SSL_SITE,
+} from './linux/http/apache/ApacheFiles';
 import { checkNginxCriticalFiles } from './linux/service/CriticalFiles';
 import {
   NGINX_CONF, NGINX_CONF_PATH, NGINX_DEFAULT_SITE, NGINX_WELCOME_PAGE,
   NGINX_SITES_AVAILABLE, NGINX_SITES_ENABLED, NGINX_DEFAULT_ROOT, NGINX_DEFAULT_INDEX,
-} from './linux/http/NginxFiles';
+} from './linux/http/nginx/NginxFiles';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpStream } from '../tcp/types';
@@ -89,6 +97,10 @@ import { Bind9Service } from './linux/bind9/Bind9Service';
 import { ServiceScriptRunner } from './linux/service/ServiceScriptRunner';
 
 import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
+
+/** Le listener TNS d'Oracle — §P2c de docs/PRD-Sockets-Une-Seule-Verite.md. */
+const TNS_PORT = 1521;
+const TNS_BOOT_BANNER = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
 import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCompat';
@@ -144,7 +156,10 @@ import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerCon
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
 import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
-import { checkSshdCriticalFiles } from './linux/service/CriticalFiles';
+import {
+  checkSshdCriticalFiles, checkCommandDependencies, canonicalBinPath,
+  commandNotFoundMessage,
+} from './linux/service/CriticalFiles';
 import { SshSessionTable } from './linux/network/SshSessionTable';
 import { renderWho } from './linux/network/whoFormatter';
 import { renderW } from './linux/network/wFormatter';
@@ -401,6 +416,8 @@ export abstract class LinuxMachine extends EndHost
     this.executor._registryCommandHook = (cmd, args, stdin) => {
       const registered = this.commands.get(cmd);
       if (!registered || !registered.needsNetworkContext) return null;
+      const unavailable = this.registryDependencyFailure(registered, cmd);
+      if (unavailable) return unavailable;
       const { argv, input } = splitRegistryStdin(registered, args, stdin);
       if (registered.runWithStatusSync) {
         return registered.runWithStatusSync(this.buildCommandContext(), argv, input);
@@ -417,6 +434,7 @@ export abstract class LinuxMachine extends EndHost
     //    pre-auth Banner have realistic content.
     this.initSshFiles();
     this.initNginx();
+    this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
     this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
@@ -507,6 +525,8 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setNetworkCommandRunner((argv, env, viaSudo = false, stdin) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
+      const unavailable = this.registryDependencyFailure(cmd, argv[0]);
+      if (unavailable) return Promise.resolve(unavailable);
       const split = splitRegistryStdin(cmd, argv.slice(1), stdin);
       const args = split.argv;
       const input = split.input;
@@ -693,14 +713,11 @@ export abstract class LinuxMachine extends EndHost
     try {
       bindDnsTlsServer(this, (query) => this.answerDnsQuery(query));
     } catch { /* port already bound (e.g. service restarted) */ }
-    // `TcpStack.listen()` n'inscrit rien dans la table des sockets : sans
-    // ces deux lignes, `ss`/`netstat` ne montreraient ni le 53/tcp ni le
-    // 853, alors que les deux répondent réellement.
-    for (const port of [DNS_PORT, DOT_PORT]) {
-      try {
-        this.socketTable.bind('tcp', '0.0.0.0', port, undefined, 'dnsmasq');
-      } catch { /* déjà annoncé */ }
-    }
+    // Il y avait ici deux `socketTable.bind()` manuels, dont le
+    // commentaire disait qu'ils n'existaient que parce que
+    // `TcpStack.listen()` n'inscrivait rien. Il inscrit désormais, avec le
+    // nom du démon — le premier des cinq contournements du §3 à
+    // disparaître (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
   }
 
   // ─── systemd-resolved ────────────────────────────────────────────────
@@ -915,6 +932,15 @@ export abstract class LinuxMachine extends EndHost
         if (immediate) { send(immediate); return; }
         void this.answerResolvedQuery(query).then(send);
       }, 'systemd-resolved');
+      // Le stub répond aussi en TCP sur une vraie machine — c'est par là
+      // que passe une réponse trop grande pour un datagramme (RFC 7766).
+      // L'entrée `tcp 127.0.0.53:53` figurait déjà dans `ss` ; jusqu'ici
+      // rien n'écoutait derrière
+      // (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
+      bindDnsTcpServer(this, (query) => {
+        const immediate = this.answerResolvedQuerySync(query);
+        return immediate ?? this.answerResolvedQuery(query);
+      }, DNS_PORT, { address: STUB_ADDRESS, processName: 'systemd-resolved' });
       this.resolvedStubBound = true;
     } catch { /* déjà lié */ }
     // systemd-resolved est le contre-exemple de docs/PRD-Nginx.md §P0 : son
@@ -922,13 +948,19 @@ export abstract class LinuxMachine extends EndHost
     // posée hors de la projection. Il déclare donc son serveur — APRÈS
     // l'avoir ouverte — sinon `ss` cacherait un port joignable, l'erreur
     // symétrique de celle que §P0 corrige et tout aussi trompeuse.
-    // Même statut que la dette du port 1521 ci-dessus : le listener TNS est
-    // piloté par `lsnrctl`/systemd et doit continuer à apparaître, faute de
-    // quoi c'est tout le sous-système Oracle qui perd sa cohérence — sans
-    // que ce chantier lui ait donné pour autant une écoute réelle.
+    // Le listener TNS est dans le même cas depuis docs/PRD-Manquements.md
+    // §M1 : son écoute est réelle et ouverte à l'amorçage, hors de la
+    // projection. La dette qui était écrite ici — « sans écoute réelle »
+    // — n'existe plus, et `close` ferme donc vraiment : `systemctl stop
+    // oracle-ohasd` retire le port, comme `lsnrctl stop`. Un `close` qui
+    // ne fermait rien laissait l'unité arrêtée et le port ouvert.
     this.executor.registerServiceSocketServer('oracle-ohasd', {
-      open: () => true,
-      close: () => { /* pas d'écoute réelle à fermer : voir la dette ci-dessus */ },
+      open: () => { this.bindTnsListener(); return true; },
+      close: () => {
+        for (const addr of ['0.0.0.0', '::']) {
+          try { this.getTcpStack().closeListener(TNS_PORT, addr); } catch { /* déjà fermé */ }
+        }
+      },
     });
     this.executor.registerServiceSocketServer('systemd-resolved', {
       open: () => this.resolvedStubBound,
@@ -1153,8 +1185,12 @@ export abstract class LinuxMachine extends EndHost
         readFile: (p) => this.executor.vfs.readFile(p),
       });
       const error = missing.ok ? service.loadConfig() : (missing.error ?? null);
-      const conflict = error ? null : service.portConflict();
-      const failure = error ?? conflict;
+      // The certificates are read here for the same reason `nginx -t`
+      // reads them: a reload that would fail on one must be REFUSED
+      // rather than tear the running server down first.
+      const tls = error ? null : service.tlsProblem();
+      const conflict = error ?? tls ? null : service.portConflict();
+      const failure = error ?? tls ?? conflict;
       if (failure) {
         service.reportStartupFailure(failure);
         return { ok: false, error: failure, verbatim: true };
@@ -1178,6 +1214,118 @@ export abstract class LinuxMachine extends EndHost
   nginxService: LinuxNginxService | null = null;
 
   /** Déclare à systemd les ports que la configuration de nginx demande. */
+
+  /**
+   * docs/PRD-Manquements.md §M4a — apache2 really listens.
+   *
+   * Same wiring as nginx, deliberately: the two units have to behave the
+   * same way under `systemctl`, otherwise the "compare the two servers"
+   * lab also compares the simulator's own defects. They share port 80 and
+   * therefore its conflict, in both directions.
+   */
+  private initApache(): void {
+    const vfs = this.executor.vfs;
+    for (const dir of ['/etc/apache2', APACHE_SITES_AVAILABLE, APACHE_SITES_ENABLED,
+                       APACHE_MODS_ENABLED, '/etc/apache2/conf-enabled',
+                       APACHE_DOCROOT, '/var/log/apache2']) {
+      if (!vfs.exists(dir)) vfs.mkdirp(dir, 0o755, 0, 0);
+    }
+    if (!vfs.exists(APACHE_CONF_PATH)) vfs.writeFile(APACHE_CONF_PATH, APACHE_CONF, 0, 0, 0o022, true);
+    if (!vfs.exists(APACHE_PORTS_PATH)) vfs.writeFile(APACHE_PORTS_PATH, APACHE_PORTS_CONF, 0, 0, 0o022, true);
+    // `envvars` is what makes `${APACHE_LOG_DIR}` mean something. Without
+    // it the shipped `CustomLog ${APACHE_LOG_DIR}/access.log` names a
+    // directory literally called `${APACHE_LOG_DIR}`, and no request is
+    // ever logged where an operator looks for it.
+    if (!vfs.exists(APACHE_ENVVARS_PATH)) {
+      vfs.writeFile(APACHE_ENVVARS_PATH, APACHE_ENVVARS, 0, 0, 0o022, true);
+    }
+    const site = `${APACHE_SITES_AVAILABLE}/000-default.conf`;
+    if (!vfs.exists(site)) vfs.writeFile(site, APACHE_DEFAULT_SITE, 0, 0, 0o022, true);
+    // Available and NOT enabled, exactly as Debian ships it: `a2ensite
+    // default-ssl` is the learner's own step, and so is producing the
+    // certificate it names.
+    const sslSite = `${APACHE_SITES_AVAILABLE}/default-ssl.conf`;
+    if (!vfs.exists(sslSite)) vfs.writeFile(sslSite, APACHE_DEFAULT_SSL_SITE, 0, 0, 0o022, true);
+    // `a2ensite` is only an `ln -s`: the link is what a learner removes
+    // with `a2dissite`, so `rm` has to be enough too.
+    if (!vfs.exists(`${APACHE_SITES_ENABLED}/000-default.conf`)) {
+      vfs.createSymlink(`${APACHE_SITES_ENABLED}/000-default.conf`,
+        '../sites-available/000-default.conf', 0, 0);
+    }
+    // The modules Debian enables at install time. `apachectl -M` READS
+    // them rather than reciting them: an `ln -s` made by hand under
+    // `mods-enabled` has to show up there and an `rm` has to remove it,
+    // since that is all `a2enmod`/`a2dismod` do.
+    for (const module of APACHE_DEFAULT_MODULES) {
+      const loadFile = `${APACHE_MODS_ENABLED}/${module}.load`;
+      if (!vfs.exists(loadFile)) {
+        vfs.writeFile(loadFile, apacheModuleLoadFile(module), 0, 0, 0o022, true);
+      }
+    }
+    // Ubuntu's default page is only laid down if nginx has not already
+    // written its own: both serve `/var/www/html`, and on a real machine
+    // the last one installed does not overwrite the first either.
+    const welcome = `${APACHE_DOCROOT}/index.html`;
+    if (!vfs.exists(welcome)) vfs.writeFile(welcome, APACHE_DEFAULT_PAGE, 0, 0, 0o022, true);
+
+    this.apacheService = new LinuxApacheService({
+      fs: {
+        read: (path) => vfs.readFile(path),
+        list: (dir) => vfs.listDirectory(dir)?.map((e) => e.name) ?? null,
+        exists: (path) => vfs.exists(path),
+        isDirectory: (path) => vfs.listDirectory(path) !== null,
+        readableBy: (path, uid, gid) => {
+          const inode = vfs.resolveInode(path);
+          return inode ? vfs.checkAccess(inode, 'r', uid, gid) : false;
+        },
+      },
+      tcpStack: () => this.getTcpStack(),
+      portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
+      appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
+      now: () => new Date(),
+    });
+
+    this.executor.registerServiceSocketServer('apache2', this.apacheService);
+    this.executor.apacheService = this.apacheService;
+    this.publishApachePorts();
+
+    this.executor.serviceMgr.registerConfigCheck('apache2', () => {
+      const service = this.apacheService;
+      if (!service) return { ok: true };
+      const error = service.loadConfig();
+      const tls = error ? null : service.tlsProblem();
+      const conflict = error ?? tls ? null : service.portConflict();
+      const failure = error ?? tls ?? conflict;
+      if (failure) {
+        service.reportStartupFailure(failure);
+        return { ok: false, error: failure, verbatim: true };
+      }
+      return { ok: true };
+    });
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'apache2') return;
+      if (event === 'stop') { this.apacheService?.stopAll(); return; }
+      if (event === 'reload') this.apacheService?.reload();
+      this.publishApachePorts();
+      this.executor.resyncServicePorts('apache2');
+    });
+  }
+
+  private publishApachePorts(): void {
+    const service = this.apacheService;
+    if (!service) return;
+    if (service.loadConfig() !== null) return;
+    const ports = service.configuredPorts();
+    if (ports.length === 0) return;
+    this.executor.serviceMgr.registerServiceListener('apache2', {
+      processName: 'apache2',
+      sockets: ports.map((port) => ({ port, protocol: 'tcp' as const })),
+    });
+  }
+
+  /** This machine's apache2 server — `null` before boot. */
+  private apacheService: LinuxApacheService | null = null;
+
   private publishNginxPorts(): void {
     const service = this.nginxService;
     if (!service) return;
@@ -1253,24 +1401,47 @@ export abstract class LinuxMachine extends EndHost
     return ports.length ? ports : [22];
   }
 
+  /**
+   * sshd, sur les deux familles d'adresses
+   * (docs/PRD-Sockets-Une-Seule-Verite.md §P2b).
+   *
+   * Deux `socketTable.bind()` manuels posaient ces lignes à côté, avec le
+   * pid et la bannière ; l'identité voyage maintenant avec l'écoute. Le
+   * point délicat est l'écoute `::` : l'entrée `:::22` figurait dans `ss`
+   * sans écoute propre, `findListener` rabattant une connexion v6 sur le
+   * générique v4. Retirer le doublon sans ouvrir cette écoute aurait donc
+   * créé en IPv6 l'erreur même que ce chantier corrige.
+   */
+  private static readonly SSHD_PID = 985;
+  private static readonly SSHD_BANNER = 'SSH-2.0-Sandbox-Server\r\n';
+  private static readonly SSHD_ADDRESSES = ['0.0.0.0', '::'] as const;
+
   private attachSshTcpListeners(): void {
     const stack = this.getTcpStack();
     const desired = new Set(this.sshdPortsFromConfig());
     for (const port of this._sshdActivePorts) {
       if (!desired.has(port)) {
-        stack.closeListener(port, '0.0.0.0');
+        for (const addr of LinuxMachine.SSHD_ADDRESSES) stack.closeListener(port, addr);
         this._sshdActivePorts.delete(port);
       }
     }
-    const sshdPid = this.socketTable.getAll().find((s) => s.processName === 'sshd')?.pid ?? null;
     for (const port of desired) {
       if (this._sshdActivePorts.has(port)) continue;
-      stack.listen(port, {
-        onAccept: (socket) => {
-          if (sshdPid !== null) stack.setSocketOwner(socket, sshdPid);
-          this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
-        },
-      });
+      for (const addr of LinuxMachine.SSHD_ADDRESSES) {
+        try {
+          stack.listen(port, {
+            identity: {
+              pid: LinuxMachine.SSHD_PID,
+              processName: 'sshd',
+              banner: LinuxMachine.SSHD_BANNER,
+            },
+            onAccept: (socket) => {
+              stack.setSocketOwner(socket, LinuxMachine.SSHD_PID);
+              this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+            },
+          }, addr);
+        } catch { /* déjà ouverte sur cette adresse */ }
+      }
       this._sshdActivePorts.add(port);
     }
   }
@@ -1278,7 +1449,7 @@ export abstract class LinuxMachine extends EndHost
   private detachSshTcpListeners(): void {
     const stack = this.getTcpStack();
     for (const port of this._sshdActivePorts) {
-      stack.closeListener(port, '0.0.0.0');
+      for (const addr of LinuxMachine.SSHD_ADDRESSES) stack.closeListener(port, addr);
     }
     this._sshdActivePorts.clear();
   }
@@ -1839,24 +2010,45 @@ export abstract class LinuxMachine extends EndHost
    * used by ps/netstat output so the two are coherent.
    */
   private initDefaultSockets(isServer: boolean): void {
-    const sshdBanner = 'SSH-2.0-Sandbox-Server\r\n';
-    this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd', sshdBanner);
-    this.socketTable.bind('tcp', '::', 22, 985, 'sshd', sshdBanner);
+    // Les deux `bind()` de sshd sont partis : `attachSshTcpListeners()`
+    // ouvre les écoutes v4 ET v6 en portant pid, nom et bannière, donc
+    // les lignes de `ss` viennent de l'écoute elle-même (§P2b).
     // L'entrée 127.0.0.53:53 est posée par bindResolvedStub(), avec un
     // vrai gestionnaire derrière — plus un bind() décoratif.
 
-    if (isServer) {
-      const tnsBanner = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
-      // DETTE CONNUE, et non traitée par docs/PRD-Nginx.md §P0 : rien
-      // n'appelle jamais `TcpStack.listen(1521)`, donc ce port est
-      // décoratif au même titre que celui d'apache2 — `ss` le montre et
-      // aucune connexion n'aboutirait. Il est conservé parce que tout un
-      // sous-système en dépend (la bannière lue ici même, `lsnrctl`, la
-      // détection Oracle de `nmap`), et le nettoyer suppose de donner au
-      // listener TNS une vraie boucle d'acceptation : un chantier à part.
-      // Il est déclaré ici pour que le silence ne le fasse pas oublier.
-      this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr', tnsBanner);
-      this.socketTable.bind('tcp', '::', 1521, 2001, 'tnslsnr', tnsBanner);
+    if (isServer) this.bindTnsListener();
+  }
+
+  /**
+   * Le listener TNS, réellement à l'écoute dès l'amorçage
+   * (docs/PRD-Sockets-Une-Seule-Verite.md §P2c).
+   *
+   * Ces deux ports étaient la dernière entrée décorative : `ss` les
+   * montrait, `lsnrctl status` annonçait le listener démarré, `ps`
+   * affichait un vrai `tnslsnr` — et une connexion venue d'une autre
+   * machine était refusée. Elle ne réussissait qu'APRÈS qu'une commande
+   * Oracle ait été tapée sur la console du serveur, parce que c'est
+   * `getOracleDatabase()` qui matérialisait la base et attachait
+   * `OracleListenerNetworkBinding`. Un client distant dépendait donc de
+   * ce que l'opérateur avait tapé en local : même défaut de
+   * matérialisation paresseuse que les rôles Windows corrigés par
+   * `docs/PRD-Curl.md` §P2.
+   *
+   * L'écoute posée ici est celle que `dbstart`/systemd auraient ouverte
+   * au démarrage — ce que le commentaire de `startListener()` affirmait
+   * déjà. Elle ne parle pas TNS : elle accepte, puis referme, ce que
+   * fait aussi `OracleListenerNetworkBinding` pour une sonde. Quand la
+   * base se matérialise, ce binding reprend le port (il ferme l'écoute
+   * en place avant d'ouvrir la sienne), et `lsnrctl stop` le ferme pour
+   * de bon.
+   */
+  private bindTnsListener(): void {
+    const stack = this.getTcpStack();
+    const identity = { pid: 2001, processName: 'tnslsnr', banner: TNS_BOOT_BANNER };
+    for (const addr of ['0.0.0.0', '::']) {
+      try {
+        stack.listen(TNS_PORT, { onAccept: (socket) => socket.close(), identity }, addr);
+      } catch { /* déjà ouvert */ }
     }
   }
 
@@ -1874,6 +2066,33 @@ export abstract class LinuxMachine extends EndHost
   }
 
   // ─── Command registry hooks ──────────────────────────────────────────
+
+
+  /**
+   * Can a REGISTRY command run at all? (docs/PRD-Pannes.md §F7.7)
+   *
+   * `dispatch()` already asked this at the top of its switch, but a
+   * command served by the registry never goes through it: it arrives via
+   * `tryNetworkCommand` or via bash's runner. Measured, with `curl` as the
+   * control: `rm /usr/bin/curl` then `curl` still worked — and likewise
+   * for `xxd`, `bc`, `nmap`, `nginx`, `ss`, `nc`, `openssl`. An `rm` that
+   * does nothing teaches that the command comes from no file at all.
+   *
+   * Two sources, in this order: the shared table first (it also carries
+   * the critical data files), then the `binaryPath` the command declares
+   * itself — that is why the field exists, and it covers the ones the
+   * table does not name.
+   */
+  private registryDependencyFailure(
+    cmd: LinuxCommand, name: string,
+  ): { output: string; exitCode: number } | null {
+    const missing = checkCommandDependencies(this.executor.vfs, name, cmd.criticalFiles);
+    if (missing) return { output: missing.message, exitCode: missing.exitCode };
+    if (cmd.binaryPath && !this.executor.vfs.exists(canonicalBinPath(cmd.binaryPath))) {
+      return { output: commandNotFoundMessage(name, cmd.binaryPath), exitCode: 127 };
+    }
+    return null;
+  }
 
   /** Register core commands (ping, traceroute, dhclient, …). */
   private registerCoreCommands(): void {
@@ -2200,6 +2419,7 @@ export abstract class LinuxMachine extends EndHost
     if (this.commands.hasNetworkCommandIn(input)) return true;
     if (input.includes('/var/lib/dhcp/')) return true;
     if (LinuxMachine.SSHPASS_TRANSFER_RE.test(input)) return true;
+    if (LinuxMachine.TRANSFER_RE.test(input)) return true;
     const words = input.split(/[\s;|&"'`()]+/);
     if (words.some(w => w === 'ps' || w === 'man' || w === 'sshd')) return true;
     // `bash script.sh` / `./script.sh` / `run-parts DIR` at the top of the
@@ -2220,6 +2440,19 @@ export abstract class LinuxMachine extends EndHost
    * majority of existing usage) is untouched and stays on the sync path.
    */
   private static readonly SSHPASS_TRANSFER_RE = /^sshpass\s+-p\s+\S+\s+(scp|sftp)\b/;
+
+  /**
+   * `scp`/`sftp` en tête de ligne, sans `sshpass`. Un transfert sans mot de
+   * passe est le cas ordinaire — et sur une vraie machine, s'il aboutit
+   * c'est parce qu'une CLÉ l'authentifie. Ces lignes partaient jusqu'ici
+   * sur le chemin synchrone, qui ne peut pas `await` l'ouverture d'une
+   * vraie session : le transfert copiait donc d'un VFS à l'autre sans
+   * qu'aucun octet ne traverse un câble (Phase 4 de la refonte SSH).
+   * Elles passent maintenant par le dispatcher async, qui tente la vraie
+   * session par clé publique avant de retomber, si elle échoue, sur le
+   * comportement inchangé.
+   */
+  private static readonly TRANSFER_RE = /^\s*(?:sudo\s+)?(scp|sftp)\s+\S/;
 
   /**
    * Matches a top-of-line `bash`/`sh` file invocation (no `-c`), a direct
@@ -2578,6 +2811,14 @@ export abstract class LinuxMachine extends EndHost
       // already did for commands — like tcpdump — whose stderr carries
       // real content (its capture summary) that `runWithStatus`'s status
       // field otherwise leaves stranded off `output`.
+      // The third path a registry command can leave by — the
+      // single-command one. All three ask the same question, otherwise
+      // `rm /usr/bin/curl` would only affect some ways of typing it.
+      const unavailable = this.registryDependencyFailure(cmd, firstCmd);
+      if (unavailable) {
+        this.executor.lastExitCode = unavailable.exitCode;
+        return unavailable.output;
+      }
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
         async () => {
@@ -2623,6 +2864,21 @@ export abstract class LinuxMachine extends EndHost
         const wrappedCmd = match[1] as 'scp' | 'sftp';
         const wrappedArgs = tokenized.tokens.slice(4);
         const result = await this.executor.runSshTransportAsync(wrappedCmd, wrappedArgs, password);
+        this.executor.lastExitCode = result.exitCode;
+        return result.output;
+      }
+      case 'scp':
+      case 'sftp': {
+        // Sans mot de passe offert : `runSshTransportAsync` tente la vraie
+        // session par clé, puis retombe sur la résolution directe si elle
+        // n'aboutit pas — c'est ce repli qui garde intacts les scénarios
+        // qui n'ont jamais posé de clé.
+        const tokenized = LinuxMachine.tokenizeArgsDetailed(noSudo);
+        if (tokenized.unterminatedQuote) {
+          return 'bash: syntax error: unexpected end of file (unterminated quote)';
+        }
+        const result = await this.executor.runSshTransportAsync(
+          firstCmd as 'scp' | 'sftp', tokenized.tokens.slice(1), '');
         this.executor.lastExitCode = result.exitCode;
         return result.output;
       }

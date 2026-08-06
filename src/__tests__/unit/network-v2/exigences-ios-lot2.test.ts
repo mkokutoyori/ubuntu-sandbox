@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Cable } from '@/network/hardware/Cable';
+import { IPAddress, SubnetMask } from '@/network/core/types';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
@@ -226,11 +228,11 @@ describe('L2-6 — exit remonte d\'un cran, end sort complètement', () => {
     const r = await priv();
     await run(r, 'configure terminal');
     await run(r, 'interface GigabitEthernet0/0.10');
-    expect(r.getShellMode?.()).toBe('config-subif');
+    expect((r.getShell() as unknown as { getMode(): string }).getMode()).toBe('config-subif');
     await run(r, 'exit');
-    expect(r.getShellMode?.()).toBe('config');
+    expect((r.getShell() as unknown as { getMode(): string }).getMode()).toBe('config');
     await run(r, 'exit');
-    expect(r.getShellMode?.()).toBe('privileged');
+    expect((r.getShell() as unknown as { getMode(): string }).getMode()).toBe('privileged');
   });
 
   it('end depuis config-subif revient directement au mode privilégié', async () => {
@@ -238,7 +240,7 @@ describe('L2-6 — exit remonte d\'un cran, end sort complètement', () => {
     await run(r, 'configure terminal');
     await run(r, 'interface GigabitEthernet0/0.10');
     await run(r, 'end');
-    expect(r.getShellMode?.()).toBe('privileged');
+    expect((r.getShell() as unknown as { getMode(): string }).getMode()).toBe('privileged');
   });
 
   it('CTRL+Z fait la même chose que end', async () => {
@@ -246,7 +248,7 @@ describe('L2-6 — exit remonte d\'un cran, end sort complètement', () => {
     await run(r, 'configure terminal');
     await run(r, 'interface GigabitEthernet0/0');
     await run(r, '\x1a');
-    expect(r.getShellMode?.()).toBe('privileged');
+    expect((r.getShell() as unknown as { getMode(): string }).getMode()).toBe('privileged');
   });
 });
 
@@ -259,6 +261,8 @@ describe('L2-7 — running-config en RAM, startup-config en NVRAM', () => {
     expect(await run(r, 'show running-config')).toContain('hostname AvantReload');
     await run(r, 'reload');
     await run(r, 'yes');
+    expect((r.getShell() as unknown as { getMode(): string }).getMode()).toBe('user');
+    await run(r, 'enable');
     expect(await run(r, 'show running-config')).not.toContain('hostname AvantReload');
   });
 
@@ -271,6 +275,7 @@ describe('L2-7 — running-config en RAM, startup-config en NVRAM', () => {
     await run(r, '');
     await run(r, 'reload');
     await run(r, 'yes');
+    await run(r, 'enable');
     expect(await run(r, 'show running-config')).toContain('hostname Sauvegarde');
   });
 });
@@ -343,14 +348,14 @@ describe('L2-10 — table NAT/PAT comme table d\'état', () => {
     await run(r, 'ip nat inside source list 1 interface GigabitEthernet0/1 overload');
     await run(r, 'end');
 
-    dedans.configureInterfaceByName?.('eth0', '192.168.1.10', '255.255.255.0');
-    dehors.configureInterfaceByName?.('eth0', '203.0.113.9', '255.255.255.0');
+    dedans.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
+    dehors.configureInterface('eth0', new IPAddress('203.0.113.9'), new SubnetMask('255.255.255.0'));
     await run(dedans, 'ip route add default via 192.168.1.1');
-    await run(dedans, 'ping -c 2 203.0.113.9');
+    expect(await run(dedans, 'ping -c 2 203.0.113.9')).toMatch(/, 0% packet loss/);
 
     const t = await run(r, 'show ip nat translations');
-    expect(t).toMatch(/192\.168\.1\.10/);
-    expect(t).toMatch(/203\.0\.113\.1/);
+    expect(t).toMatch(/^icmp\s+203\.0\.113\.1:\d+\s+192\.168\.1\.10:\d+/m);
+    expect(await run(r, 'show ip nat statistics')).toMatch(/Total active translations: 2/);
   });
 
   it('les timeouts par protocole sont ceux d\'IOS', async () => {
@@ -360,9 +365,48 @@ describe('L2-10 — table NAT/PAT comme table d\'état', () => {
     const nat = (r as unknown as { _getNATEngine?: () => { getTimeouts?: () => Record<string, number> } })._getNATEngine?.();
     const timeouts = nat?.getTimeouts?.();
     if (timeouts) {
-      expect(timeouts.tcp).toBe(86400);
-      expect(timeouts.udp).toBe(300);
-      expect(timeouts.icmp).toBe(60);
+      expect(timeouts.tcp).toBe(86_400_000);
+      expect(timeouts.udp).toBe(300_000);
+      expect(timeouts.icmp).toBe(60_000);
     }
+  });
+});
+
+describe('L2-9 — CDP signale une discordance de VLAN natif', () => {
+  async function trunkAvecNatif(nom: string, vlan: string): Promise<CiscoSwitch> {
+    const s = new CiscoSwitch('switch-cisco', nom);
+    await run(s, 'enable');
+    await run(s, 'configure terminal');
+    await run(s, 'interface FastEthernet0/1');
+    await run(s, 'switchport mode trunk');
+    await run(s, `switchport trunk native vlan ${vlan}`);
+    await run(s, 'end');
+    return s;
+  }
+
+  type AgentCdp = { advertiseAll(r: 'config-change'): void };
+  const annoncer = (s: CiscoSwitch) =>
+    (s as unknown as { getCdpAgent(): AgentCdp }).getCdpAgent().advertiseAll('config-change');
+
+  it('le message porte le mnémonique NATIVE_VLAN_MISMATCH et les deux VLAN', async () => {
+    const s1 = await trunkAvecNatif('SW1', '10');
+    const s2 = await trunkAvecNatif('SW2', '20');
+    new Cable('c').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
+    annoncer(s2);
+
+    const journal = await run(s1, 'show logging');
+    expect(journal).toContain(
+      '%CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on FastEthernet0/1 (10), ' +
+      'with SW2 FastEthernet0/1 (20).');
+    expect(journal).not.toContain('%CDP-4-WARNINGS');
+  });
+
+  it('deux VLAN natifs identiques ne produisent aucun message', async () => {
+    const s1 = await trunkAvecNatif('SW1', '99');
+    const s2 = await trunkAvecNatif('SW2', '99');
+    new Cable('c').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
+    annoncer(s2);
+
+    expect(await run(s1, 'show logging')).not.toContain('Native VLAN mismatch');
   });
 });

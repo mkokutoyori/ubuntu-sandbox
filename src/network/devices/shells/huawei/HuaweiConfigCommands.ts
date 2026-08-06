@@ -141,8 +141,13 @@ export function cmdIpRouteStatic(router: Router, args: string[]): string {
 
     const opts = { preference, tag, description, track, vpnInstance, permanent, iface: ifaceName || undefined };
     if (isDefault) {
-      return router.setDefaultRoute(nextHop!, 0, { preference, tag, description, iface: ifaceName || undefined })
-        ? '' : 'Error: Next-hop is not reachable';
+      // `track` et `permanent` étaient extraits juste au-dessus puis
+      // jetés ici : la route par défaut VRP conditionnée par une NQA
+      // était inconditionnelle (docs/PRD-NQA.md §0.1 item 4).
+      return router.setDefaultRoute(nextHop!, 0, {
+        preference, tag, description, track, permanent,
+        iface: ifaceName || undefined,
+      }) ? '' : 'Error: Next-hop is not reachable';
     }
     return router.addStaticRoute(network, mask, nextHop!, 0, opts)
       ? '' : 'Error: Next-hop is not reachable';
@@ -338,13 +343,13 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
 
 function cmdShutdown(router: Router, ctx: HuaweiShellContext): string {
   const port = router.getPort(ctx.getSelectedInterface()!);
-  if (port) port.setUp(false);
+  if (port) port.setAdminShutdown(true);
   return '';
 }
 
 function cmdUndoShutdown(router: Router, ctx: HuaweiShellContext): string {
   const port = router.getPort(ctx.getSelectedInterface()!);
-  if (port) port.setUp(true);
+  if (port) port.setAdminShutdown(false);
   return '';
 }
 

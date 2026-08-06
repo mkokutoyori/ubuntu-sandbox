@@ -188,6 +188,10 @@ export function registerIPSecShowCommands(
   });
   trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => debugSvc().disable('crypto.pki'));
   trie.register('show debugging', 'Display active debug flags', () => debugSvc().format());
+  trie.register('show debug condition', 'Display standing debug conditions',
+    () => debugSvc().formatConditions());
+  trie.register('show debugging condition', 'Display standing debug conditions',
+    () => debugSvc().formatConditions());
 
   const nhrp = () => getRouter().getNhrpService();
   trie.register('show ip nhrp', 'Display NHRP cache', () => nhrp().formatCache());

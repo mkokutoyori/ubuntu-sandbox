@@ -8,11 +8,14 @@
 import type { Router } from '../../Router';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
+import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
+import { orderCiscoConfigBlocks, routingProcessConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
+import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
@@ -83,10 +86,102 @@ function formatUptime(ms: number): string {
   return parts.join(', ');
 }
 
+/** La légende d'IOS 15.x, en six lignes. Elle en faisait deux. */
+const ROUTE_LEGEND = [
+  'Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP',
+  '       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area',
+  '       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2',
+  '       E1 - OSPF external type 1, E2 - OSPF external type 2',
+  '       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2',
+  '       ia - IS-IS inter area, * - candidate default, U - per-user static route',
+  '       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP',
+  '       a - application route',
+  '       + - replicated route, % - next hop override, p - overrides from PfR',
+];
+
+interface RenderedRoute {
+  code: string;
+  networkInt: number;
+  prefixLength: number;
+  text: string;
+}
+
+function routeCode(type: string): string {
+  switch (type) {
+    case 'connected': return 'C';
+    case 'local': return 'L';
+    case 'rip': return 'R';
+    case 'ospf': return 'O';
+    case 'eigrp': return 'D';
+    case 'bgp': return 'B';
+    case 'default': return 'S*';
+    default: return 'S';
+  }
+}
+
+/** Le réseau classful auquel une route appartient — c'est par lui qu'IOS groupe. */
+function classfulParent(networkInt: number): { base: number; prefix: number } {
+  const firstOctet = (networkInt >>> 24) & 0xff;
+  // `>>> 0` : un ET binaire rend un entier SIGNÉ en JavaScript, donc
+  // 192.168.x.x devenait négatif et se triait avant 1.0.0.0.
+  if (firstOctet < 128) return { base: (networkInt & 0xff000000) >>> 0, prefix: 8 };
+  if (firstOctet < 192) return { base: (networkInt & 0xffff0000) >>> 0, prefix: 16 };
+  return { base: (networkInt & 0xffffff00) >>> 0, prefix: 24 };
+}
+
+function intToDotted(value: number): string {
+  return [24, 16, 8, 0].map((shift) => (value >>> shift) & 0xff).join('.');
+}
+
+function dottedToInt(text: string): number {
+  return text.split('.').reduce((total, octet) => (total << 8) + Number(octet), 0) >>> 0;
+}
+
+function maskTextToCidr(text: string): number {
+  if (/^\d+$/.test(text)) return Number(text);
+  return dottedToInt(text).toString(2).split('1').length - 1;
+}
+
+/**
+ * `show ip route`.
+ *
+ * Trois faits d'IOS 15.x manquaient, et le premier n'est pas cosmétique :
+ * une route CONNECTÉE ne passait pas par `Router.isRouteUsable()` — le
+ * prédicat que le plan de données et les vues des deux constructeurs
+ * consultent déjà — si bien qu'une interface down laissait sa route
+ * affichée, en contradiction frontale avec `show ip interface brief`.
+ * Manquaient aussi les routes LOCALES `L …/32`, générées depuis
+ * 15.0(1)M pour chaque adresse d'interface, et le regroupement par
+ * réseau classful avec son en-tête `is variably subnetted`. Le tri se
+ * fait par préfixe, pas par ordre de configuration.
+ */
 export function showIpRoute(router: Router): string {
-  const table = router.getRoutingTable();
-  const lines = ['Codes: C - connected, S - static, R - RIP, O - OSPF, ' +
-    'D - EIGRP, B - BGP, * - candidate default', ''];
+  return renderIpRouteTable(router, router.getRoutingTable().filter((r) => router.isRouteUsable(r)));
+}
+
+/**
+ * Le rendu partagé.
+ *
+ * Deux fonctions produisaient `show ip route` — celle-ci et
+ * `showIpRouteAll` dans `CiscoOspfCommands.ts`, seule branchée sur la
+ * commande. Deux rendus de la même table finissent par se contredire ;
+ * c'est le défaut « trois commandes, trois vérités » à l'échelle du
+ * routage. Il n'en reste qu'un.
+ */
+export function renderIpRouteTable(
+  router: Router,
+  table: ReadonlyArray<{
+    network: { toString(): string; toUint32?: () => number };
+    mask: { toCIDR?: () => number; toString(): string };
+    type: string;
+    nextHop?: unknown;
+    iface?: string;
+    ad?: number;
+    metric?: number;
+  }>,
+  codeOverride?: (route: unknown) => string | null,
+): string {
+  const lines = [...ROUTE_LEGEND, ''];
   const def = table.find(r => r.type === 'default'
     || (r.network.toString() === '0.0.0.0' && r.mask.toCIDR() === 0));
   if (def && def.nextHop) {
@@ -94,29 +189,71 @@ export function showIpRoute(router: Router): string {
   } else {
     lines.push('Gateway of last resort is not set', '');
   }
-  const sorted = [...table].sort((a, b) => {
-    const order: Record<string, number> = {
-      connected: 0, ospf: 1, eigrp: 2, bgp: 3, rip: 4, static: 5, default: 6,
-    };
-    return (order[a.type] ?? 7) - (order[b.type] ?? 7);
-  });
-  for (const r of sorted) {
-    let code: string;
-    switch (r.type) {
-      case 'connected': code = 'C'; break;
-      case 'rip': code = 'R'; break;
-      case 'ospf': code = 'O'; break;
-      case 'eigrp': code = 'D'; break;
-      case 'bgp': code = 'B'; break;
-      case 'default': code = 'S*'; break;
-      default: code = 'S'; break;
+
+  const rendered: RenderedRoute[] = [];
+  const defaults: string[] = [];
+
+  for (const r of table) {
+    const prefixLength = r.mask.toCIDR
+      ? r.mask.toCIDR()
+      : maskTextToCidr(r.mask.toString());
+    if (r.type === 'default' || (r.network.toString() === '0.0.0.0' && prefixLength === 0)) {
+      defaults.push(`S*    0.0.0.0/0 [${r.ad ?? 1}/${r.metric ?? 0}] via ${r.nextHop}`);
+      continue;
     }
     const via = r.nextHop ? `via ${r.nextHop}` : 'is directly connected';
-    const metricStr = (r.type === 'rip' || r.type === 'ospf'
-      || r.type === 'eigrp' || r.type === 'bgp') ? ` [${r.ad}/${r.metric}]` : '';
-    lines.push(`${code}    ${r.network}/${r.mask.toCIDR()}${metricStr} ${via}, ${r.iface}`);
+    const metricStr = r.type === 'connected' || r.type === 'local'
+      ? '' : ` [${r.ad ?? 1}/${r.metric ?? 0}]`;
+    const suffix = r.type === 'static' ? '' : `, ${r.iface}`;
+    rendered.push({
+      code: codeOverride?.(r) ?? routeCode(r.type),
+      networkInt: r.network.toUint32 ? r.network.toUint32() : dottedToInt(r.network.toString()),
+      prefixLength,
+      text: `${r.network}/${prefixLength}${metricStr} ${via}${suffix}`,
+    });
   }
-  return lines.length > 2 ? lines.join('\n') : 'No routes configured.';
+
+  // Les routes locales /32 : une par adresse d'interface utilisable.
+  for (const [name, port] of router._getPortsInternal()) {
+    const ip = port.getIPAddress();
+    if (!ip || !router.isRouteInterfaceUsable(name)) continue;
+    // Une interface en /32 (une loopback, typiquement) a déjà sa route
+    // connectée à la même adresse : IOS n'en affiche pas deux.
+    const already = rendered.some((entry) =>
+      entry.networkInt === ip.toUint32() && entry.prefixLength === 32);
+    if (already) continue;
+    rendered.push({
+      code: 'L',
+      networkInt: ip.toUint32(),
+      prefixLength: 32,
+      text: `${ip}/32 is directly connected, ${name}`,
+    });
+  }
+
+  rendered.sort((a, b) => a.networkInt - b.networkInt || a.prefixLength - b.prefixLength);
+
+  const groups = new Map<string, RenderedRoute[]>();
+  for (const entry of rendered) {
+    const parent = classfulParent(entry.networkInt);
+    const key = `${parent.base}/${parent.prefix}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(entry);
+    groups.set(key, bucket);
+  }
+
+  for (const [key, bucket] of [...groups.entries()]
+    .sort((a, b) => Number(a[0].split('/')[0]) - Number(b[0].split('/')[0]))) {
+    const [baseText, parentPrefix] = key.split('/');
+    const base = intToDotted(Number(baseText));
+    const masks = new Set(bucket.map((entry) => entry.prefixLength));
+    lines.push(masks.size > 1
+      ? `      ${base}/${parentPrefix} is variably subnetted, ${bucket.length} subnets, ${masks.size} masks`
+      : `      ${base}/${parentPrefix} is subnetted, ${bucket.length} subnets`);
+    for (const entry of bucket) lines.push(`${entry.code.padEnd(2)}       ${entry.text}`);
+  }
+  for (const line of defaults) lines.push(line);
+
+  return lines.join('\n');
 }
 
 export function showIpIntBrief(router: Router): string {
@@ -124,37 +261,11 @@ export function showIpIntBrief(router: Router): string {
   const lines = ['Interface                  IP-Address      OK? Method Status                Protocol'];
   for (const [name, port] of ports) {
     const ip = port.getIPAddress()?.toString() || 'unassigned';
-    const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(name);
-    const carrier = carrierPort(router, name, port);
-    const adminUp = port.getIsUp() && carrier.getIsUp();
-    let status: string;
-    let proto: string;
-    if (!adminUp) {
-      status = 'administratively down';
-      proto = 'down';
-    } else if (isVirtual) {
-      status = 'up';
-      proto = 'up';
-    } else if (carrier.isConnected()) {
-      status = 'up';
-      proto = 'up';
-    } else {
-      status = 'down';
-      proto = 'down';
-    }
-    lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES manual ${status.padEnd(22)}${proto}`);
+    const { status, protocol } = iosInterfaceStatus(port, name, ports);
+    const method = iosAddressMethod(port).padEnd(6);
+    lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES ${method} ${status.padEnd(22)}${protocol}`);
   }
   return lines.join('\n');
-}
-
-function carrierPort(
-  router: Router,
-  name: string,
-  port: import('../../../hardware/Port').Port,
-): import('../../../hardware/Port').Port {
-  const dot = name.indexOf('.');
-  if (dot <= 0) return port;
-  return router._getPortsInternal().get(name.slice(0, dot)) ?? port;
 }
 
 /** IOS prints the ARP timeout as hh:mm:ss (default 04:00:00). */
@@ -184,27 +295,21 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
     return formatInvalidInputAt(marker);
   }
 
-  const isUp = port.getIsUp();
-  const connected = port.hasCarrier();
-  const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(ifName);
+  const view = iosInterfaceStatus(port, ifName, ports);
+  const isVirtual = view.virtual;
+  const status = view.status;
+  const lineProto = view.protocol;
   const ip = port.getIPAddress()?.toString() || 'unassigned';
   const maskObj = port.getSubnetMask();
   const cidr = maskObj ? maskObj.toCIDR() : '';
   const mac = port.getMAC().toCiscoString();
-
-  let status: string;
-  let lineProto: string;
-  if (!isUp) { status = 'administratively down'; lineProto = 'down'; }
-  else if (isVirtual) { status = 'up'; lineProto = 'up'; }
-  else if (connected) { status = 'up'; lineProto = 'up'; }
-  else { status = 'down'; lineProto = 'down'; }
 
   const isTunnel = ifName.startsWith('Tunnel');
   const isLoopback = ifName.startsWith('Loopback');
 
   const reason = !catalyst || isVirtual || lineProto === 'up'
     ? ''
-    : (isUp ? ' (notconnect)' : ' (disabled)');
+    : (view.adminUp ? ' (notconnect)' : ' (disabled)');
 
   const lines = [
     `${ifName} is ${status}, line protocol is ${lineProto}${reason}`,
@@ -259,7 +364,8 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
 
   if (!isTunnel && !isLoopback) {
     const c = port.getCounters();
-    const rxPause = `  Last input ${connected ? '00:00:00' : 'never'}, output ${connected ? '00:00:00' : 'never'}, output hang never`;
+    const seen = view.carrierUp ? '00:00:00' : 'never';
+    const rxPause = `  Last input ${seen}, output ${seen}, output hang never`;
     lines.push(rxPause);
     lines.push(`  Queueing strategy: fifo`);
     lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
@@ -389,7 +495,14 @@ export function showRunningConfig(router: Router): string {
     if (enc && enc.type) {
       lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
     }
+    // `no ip address` est RENDU : sans lui, la configuration ne permet
+    // pas de distinguer une interface sans adresse d'une interface dont
+    // l'adresse aurait été omise — et c'est ce texte que l'import de
+    // topologie rejoue.
     if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
+    else if (!/^(Tunnel|Loopback|Vlan|BVI|Port-channel|Null)/i.test(name)) {
+      lines.push(' no ip address');
+    }
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
     if (!port.getIsUp()) lines.push(` shutdown`);
     if (!port.isNegotiationAuto?.()) {
@@ -669,6 +782,11 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
+  const slaLines = ipSlaRunningConfigLines(router);
+  if (slaLines.length > 0) { lines.push('!'); lines.push(...slaLines); }
+  const trackLines = trackRunningConfigLines(router);
+  if (trackLines.length > 0) { lines.push('!'); lines.push(...trackLines); }
+
   const ipsec = router._getIPSecEngineInternal?.();
   if (ipsec) {
     const cryptoLines = ipsec.asRunningConfigLines();
@@ -678,13 +796,26 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  // `router eigrp`/`bgp`/`rip` vivent dans `RoutingConfigRepository`, qui
+  // n'avait aucun rendu de configuration : `show ip protocols` rapportait
+  // un EIGRP que la configuration ne mentionnait nulle part, et un
+  // `write memory` le perdait.
+  const routingRepo = (router as unknown as {
+    shell?: { getRoutingConfig?: () => import('../../inspection/config/RoutingConfigRepository').RoutingConfigRepository };
+  }).shell?.getRoutingConfig?.();
+  if (routingRepo) {
+    const routingLines = routingProcessConfigLines(routingRepo);
+    if (routingLines.length > 0) { lines.push('!'); lines.push(...routingLines); }
+  }
+
   // IOS closes the configuration with a separator before `end`, and its
   // header reports the stored size in bytes.
-  if (lines[lines.length - 1] !== '!') lines.push('!');
-  lines.push('end');
-  const body = lines.slice(4).join('\n');
-  lines[2] = `Current configuration : ${new TextEncoder().encode(body).length + 1} bytes`;
-  return lines.join('\n');
+  const header = lines.slice(0, 4);
+  const ordered = orderCiscoConfigBlocks(lines.slice(4));
+  const assembled = [...header, ...ordered, 'end'];
+  const body = assembled.slice(4).join('\n');
+  assembled[2] = `Current configuration : ${new TextEncoder().encode(body).length + 1} bytes`;
+  return assembled.join('\n');
 }
 
 export function showRunningConfigInterface(router: Router, ifName: string): string {
@@ -883,9 +1014,8 @@ export function showIpv6InterfaceBrief(router: Router): string {
   const lines: string[] = [];
   for (const [name, port] of ports) {
     const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
-    const up = port.getIsUp() ? 'up' : 'administratively down';
-    const proto = (port.getIsUp() && (port.isConnected() || /^(Tunnel|Loopback|Vlan)/i.test(name))) ? 'up' : 'down';
-    lines.push(`${name.padEnd(27)}[${up}/${proto}]`);
+    const { status, protocol } = iosInterfaceStatus(port, name, ports);
+    lines.push(`${name.padEnd(27)}[${status}/${protocol}]`);
     if (v6.length === 0) lines.push(`    unassigned`);
     else for (const a of v6) lines.push(`    ${a}`);
   }
@@ -897,7 +1027,8 @@ export function showIpv6Interface(router: Router, ifName: string): string {
   if (!port) return `% Invalid interface ${ifName}`;
   const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
   return [
-    `${ifName} is ${port.getIsUp() ? 'up' : 'administratively down'}, line protocol is ${port.getIsUp() && port.isConnected() ? 'up' : 'down'}`,
+    `${ifName} is ${iosInterfaceStatus(port, ifName, router._getPortsInternal()).status}, `
+      + `line protocol is ${iosInterfaceStatus(port, ifName, router._getPortsInternal()).protocol}`,
     `  IPv6 is ${v6.length > 0 ? 'enabled' : 'disabled'}`,
     ...v6.map(a => `  Address: ${a}`),
     `  MTU is ${port.getMTU()} bytes`,
@@ -913,12 +1044,12 @@ export function showInterfacesAll(router: Router): string {
 /** `show interfaces description` — real status/protocol/description table. */
 export function showInterfacesDescription(router: Router): string {
   const rows = ['Interface                      Status         Protocol Description'];
-  for (const [name, port] of router._getPortsInternal()) {
-    const up = port.getIsUp();
-    const status = up ? 'up' : 'admin down';
-    const proto = up && port.isConnected() ? 'up' : 'down';
+  const ports = router._getPortsInternal();
+  for (const [name, port] of ports) {
+    const { status, protocol } = iosInterfaceStatus(port, name, ports);
     const desc = router.getInterfaceDescription(name) || '';
-    rows.push(`${name.padEnd(31)}${status.padEnd(15)}${proto.padEnd(9)}${desc}`);
+    const shown = status === 'administratively down' ? 'admin down' : status;
+    rows.push(`${name.padEnd(31)}${shown.padEnd(15)}${protocol.padEnd(9)}${desc}`);
   }
   return rows.join('\n');
 }
@@ -927,12 +1058,12 @@ export function showInterfacesDescription(router: Router): string {
 export function showInterfacesStatus(router: Router): string {
   const rows = ['Port      Name               Status       Vlan       Duplex  Speed Type'];
   for (const [name, port] of router._getPortsInternal()) {
-    const status = port.getIsUp()
-      ? (port.isConnected() ? 'connected' : 'notconnect')
-      : 'disabled';
+    const view = iosInterfaceStatus(port, name, router._getPortsInternal());
+    const status = !view.adminUp ? 'disabled'
+      : view.protocol === 'up' ? 'connected' : 'notconnect';
     const desc = (router.getInterfaceDescription(name) || '').slice(0, 17);
     rows.push(
-      `${name.slice(0, 9).padEnd(10)}${desc.padEnd(19)}${status.padEnd(13)}` +
+      `${iosShortInterfaceName(name).padEnd(10)}${desc.padEnd(19)}${status.padEnd(13)}` +
       `${'routed'.padEnd(11)}${String(port.getDuplex()).padEnd(8)}` +
       `${String(port.getSpeed()).padEnd(6)}${name.startsWith('Gig') ? '1000BASE-T' : '10/100BaseTX'}`);
   }
@@ -956,14 +1087,14 @@ export function showIpInterfaceAll(router: Router): string {
   const blocks: string[] = [];
   const nat = router._getNATEngine();
   for (const [name, port] of router._getPortsInternal()) {
-    const up = port.getIsUp();
+    const view = iosInterfaceStatus(port, name, router._getPortsInternal());
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
       : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
     blocks.push([
-      `${name} is ${up ? 'up' : 'administratively down'}, ` +
-        `line protocol is ${up && port.isConnected() ? 'up' : 'down'}${natTag}`,
+      `${name} is ${view.status}, ` +
+        `line protocol is ${view.protocol}${natTag}`,
       ip
         ? `  Internet address is ${ip}${mask ? `/${mask.toCIDR()}` : ''}`
         : '  Internet protocol processing disabled',
