@@ -16,6 +16,7 @@
  */
 import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
+import { generateKeyExchange, sharedSecret } from './keyExchange';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -186,7 +187,11 @@ export class TlsServerSession {
     this.negotiatedAlpnProtocol = selectAlpnProtocol(clientHello.extensions.alpn, this.alpnProtocols);
 
     const serverRandom = randomNonce('srv');
-    const serverKeyShare = randomNonce('ks-srv');
+    // La part du serveur porte désormais son groupe, comme celle du
+    // client : sans ce préfixe le client ne saurait pas quelle courbe
+    // interpréter, et le §4.2.8 en fait de toute façon un `NamedGroup`.
+    const echange = generateKeyExchange(groupOf(clientHello.extensions.keyShare));
+    const serverKeyShare = echange.share;
     const serverHello: ServerHello = {
       kind: 'server_hello', random: serverRandom, cipherSuite: negotiatedSuite,
       extensions: {
@@ -197,9 +202,12 @@ export class TlsServerSession {
     const serverHelloBytes = encodeHandshakeMessage(serverHello);
     this.transcript.push(serverHelloBytes);
 
-    const dheSharedSecret = simulatedDigest(
+    const dheSharedSecret = sharedSecret(
+      echange,
+      clientHello.extensions.keyShare,
       [clientHello.random, serverRandom, clientHello.extensions.keyShare, serverKeyShare].join('|'),
     );
+    if (dheSharedSecret === null) return this.reject('illegal_parameter');
     // Simplification: application/resumption secrets are derived from the
     // CH+SH transcript checkpoint rather than the true through-Finished
     // one — per-session uniqueness already comes from dheSharedSecret/
