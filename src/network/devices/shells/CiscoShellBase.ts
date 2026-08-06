@@ -1253,9 +1253,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           // answers an unusable command with the caret; do that, and leave
           // the trace where a developer looks for it.
           this.reportHandlerCrash(cmdPart, err);
+          // `argumentOffset`, pas `offsetForInvalidInput` : ce dernier
+          // veut un CliInvalidInput pour lire son `token`/`argIndex`, et
+          // il n'y en a pas ici — l'appeler sans lui faisait planter le
+          // filet lui-même, ce qui remplaçait une exception par une autre.
           return renderCliDiagnostic('invalid', {
             line: cmdPart,
-            tokenOffset: offsetForInvalidInput(cmdPart, keywordCount),
+            tokenOffset: argumentOffset(cmdPart, keywordCount, 0),
           });
         }
         return this.attachCaretIfBare(output, cmdPart, keywordCount);

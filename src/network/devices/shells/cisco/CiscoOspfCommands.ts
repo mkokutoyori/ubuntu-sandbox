@@ -19,6 +19,19 @@ import type { CiscoShellContext } from './CiscoConfigCommands';
 import { iosShortInterfaceName, iosInterfaceStatus }
   from '@/network/devices/inspection/InterfaceStatusView';
 
+/**
+ * The backbone, however it was spelled. IOS accepts an area id as a
+ * decimal or in dotted-quad form, so `area 0`, `area 0.0.0.0` and
+ * `area 00` all name the same area — a check on the literal text would
+ * be defeated by the second spelling.
+ */
+function isBackboneArea(areaId: string): boolean {
+  const t = areaId.trim();
+  if (/^\d+$/.test(t)) return Number(t) === 0;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(t)) return t.split('.').every((o) => Number(o) === 0);
+  return false;
+}
+
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────
 
 export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoShellContext): void {
@@ -157,18 +170,6 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
-/**
- * The backbone, however it was spelled. IOS accepts an area id as a
- * decimal or in dotted-quad form, so `area 0`, `area 0.0.0.0` and
- * `area 00` all name the same area — a check on the literal text would
- * be defeated by the second spelling.
- */
-function isBackboneArea(areaId: string): boolean {
-  const t = areaId.trim();
-  if (/^\d+$/.test(t)) return Number(t) === 0;
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(t)) return t.split('.').every((o) => Number(o) === 0);
-  return false;
-}
 
 function adresseReseau(ip: string, wildcard: string): string {
   const o = ip.split('.').map(Number);
