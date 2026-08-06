@@ -19,9 +19,10 @@ import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
 import {
-  certToPem, pemToCert, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
+  certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
 } from '@/network/pki/pem';
+import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { MANDATORY_CIPHER_SUITES } from '@/network/tls/cipherSuites';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
@@ -467,6 +468,32 @@ function signCsr(
 
 // ─── verify ─────────────────────────────────────────────────────────
 
+/**
+ * Le verdict d'openssl, dit avec les mots d'openssl.
+ *
+ * `CertificateVerifier` répond par une RAISON ; `verify` affiche un
+ * NUMÉRO, et c'est ce numéro qu'un opérateur tape dans un moteur de
+ * recherche. La table est ici, en un seul endroit, pour que les deux ne
+ * puissent pas se contredire.
+ *
+ * `unknown` couvre deux situations qu'openssl distingue et que le
+ * vérificateur ne distingue pas : aucune ancre ne porte le nom de
+ * l'émetteur. Si le certificat est son propre émetteur, c'est un
+ * auto-signé non approuvé (18) ; sinon il manque le maillon (20).
+ */
+function codeOpenssl(raison: VerificationReason, cert: X509Certificate): { n: number; texte: string } {
+  switch (raison) {
+    case 'expired': return { n: 10, texte: 'certificate has expired' };
+    case 'not-yet-valid': return { n: 9, texte: 'certificate is not yet valid' };
+    case 'bad-signature': return { n: 7, texte: 'certificate signature failure' };
+    case 'revoked': return { n: 23, texte: 'certificate revoked' };
+    default:
+      return cert.subject === cert.issuer
+        ? { n: 18, texte: 'self signed certificate' }
+        : { n: 20, texte: 'unable to get local issuer certificate' };
+  }
+}
+
 function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts, operands } = parseArgs('verify', argv);
   const ancres: X509Certificate[] = [];
@@ -474,9 +501,17 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (typeof caFile === 'string') {
     const t = host.readFile(caFile);
     if (t === null) return fail(`Can't open "${caFile}" for reading, No such file or directory`);
-    const c = pemToCert(t);
-    if (c) ancres.push(c);
+    // Un `-CAfile` est un FAISCEAU : c'est ainsi qu'on approuve plusieurs
+    // racines d'un coup, et `pemToCert` n'en lisait que la première.
+    ancres.push(...pemToCertChain(t));
   }
+
+  // Le même objet que `curl --cacert` : deux avis divergents sur les
+  // mêmes deux fichiers seraient pires que deux avis faux.
+  const verificateur = new CertificateVerifier({
+    trustAnchors: ancres,
+    clock: () => host.now(),
+  });
 
   const lignes: string[] = [];
   let echec = false;
@@ -486,25 +521,13 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const cert = pemToCert(t);
     if (!cert) { lignes.push(`unable to load certificate`); echec = true; continue; }
 
-    if (cert.notAfter < host.now()) {
-      lignes.push(cert.subject);
-      lignes.push('error 10 at 0 depth lookup: certificate has expired');
-      lignes.push(`error ${cible}: verification failed`);
-      echec = true;
-      continue;
-    }
-    const emetteur = ancres.find((a) => a.subject === cert.issuer);
-    if (emetteur) { lignes.push(`${cible}: OK`); continue; }
+    const verdict = verificateur.verify(cert);
+    if (verdict.ok) { lignes.push(`${cible}: OK`); continue; }
 
-    if (cert.subject === cert.issuer) {
-      lignes.push(cert.subject);
-      lignes.push('error 18 at 0 depth lookup: self signed certificate');
-      lignes.push(`error ${cible}: verification failed`);
-    } else {
-      lignes.push(cert.subject);
-      lignes.push('error 20 at 0 depth lookup: unable to get local issuer certificate');
-      lignes.push(`error ${cible}: verification failed`);
-    }
+    const { n, texte } = codeOpenssl(verdict.reason, cert);
+    lignes.push(cert.subject);
+    lignes.push(`error ${n} at 0 depth lookup: ${texte}`);
+    lignes.push(`error ${cible}: verification failed`);
     echec = true;
   }
   // Code 2, et pas 1 : `1` signale une erreur d'usage (§11.1).
