@@ -11,6 +11,7 @@
 
 import type { Router } from '../../Router';
 import { renderIpRouteTable } from './CiscoShowCommands';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
