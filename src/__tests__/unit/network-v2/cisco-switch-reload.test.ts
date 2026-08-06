@@ -39,7 +39,7 @@ describe('Cisco switch reload — scheduling does not power off immediately', ()
 
   it('reload in with a bad or missing argument never triggers an accidental reload', async () => {
     const s = await sw();
-    expect(await s.executeCommand('reload in abc')).toBe(INVALID);
+    expect(await s.executeCommand('reload in abc')).toContain(INVALID);
     expect(await s.executeCommand('reload in')).toBe(INCOMPLETE);
     expect(await s.executeCommand('reload at')).toBe(INCOMPLETE);
     expect(isOn(s)).toBe(true);

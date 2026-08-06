@@ -169,6 +169,9 @@ describe('? shows <cr> exactly when the command is executable as typed', () => {
     { setup: [], command: 'snmp-server community', executable: false },
     { setup: [], command: 'ip ssh time-out', executable: false },
     { setup: ['interface GigabitEthernet0/1'], command: 'ip address', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'ip address 1.2.3.4', executable: false },
+    { setup: ['interface GigabitEthernet0/1'], command: 'ip address 1.2.3.4 255.255.255.0', executable: true },
+    { setup: ['interface GigabitEthernet0/1'], command: 'ip address negotiated', executable: true },
     { setup: ['interface GigabitEthernet0/1'], command: 'mtu', executable: false },
     { setup: ['interface GigabitEthernet0/1'], command: 'bandwidth', executable: false },
     { setup: ['interface GigabitEthernet0/1'], command: 'description', executable: false },
@@ -330,5 +333,72 @@ describe('a Cisco router boots with its physical interfaces shut', () => {
 
     const log = String(await r.executeCommand('show logging'));
     expect(log).not.toContain('GigabitEthernet0/0');
+  });
+});
+
+describe('one exit point renders every diagnostic', () => {
+  const caretColumn = (out: string): number => out.split('\n')[0].indexOf('^');
+
+  it('a handler-rejected argument carries its line and caret', async () => {
+    const r = await router('configure terminal', 'interface GigabitEthernet0/1');
+    const out = String(await r.executeCommand('ip address 300.1.1.1 255.255.255.0'));
+
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(caretColumn(out)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('the caret points at the offending token, not at the line start', async () => {
+    const r = await router('configure terminal', 'interface GigabitEthernet0/1');
+    const bad = String(await r.executeCommand('duplex zzz'));
+    const worse = String(await r.executeCommand('ip address 1.2.3.4 999.0.0.0'));
+
+    expect(caretColumn(worse)).toBeGreaterThan(caretColumn(bad));
+  });
+
+  it('a parser-rejected token carries one too', async () => {
+    const r = await router('configure terminal');
+    const out = String(await r.executeCommand('interface GigabitEthernet9/9'));
+
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(caretColumn(out)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('an incomplete command carries no caret, as IOS prints none', async () => {
+    const r = await router('configure terminal');
+    const out = String(await r.executeCommand('ip route 0.0.0.0 0.0.0.0'));
+
+    expect(out).toBe('% Incomplete command.');
+  });
+
+  it('an ambiguous command names the whole command, twice-spaced, with no candidate list', async () => {
+    const r = await router();
+    const out = String(await r.executeCommand('show ip s'));
+
+    expect(out).toBe('% Ambiguous command:  "show ip s"');
+    expect(out).not.toContain('matches:');
+  });
+
+  it('an unknown first word in EXEC is resolved as a host name', async () => {
+    const r = await router();
+    const out = String(await r.executeCommand('shwo version'));
+
+    expect(out).toContain('Translating "shwo"...domain server (255.255.255.255)');
+    expect(out).toContain('% Unknown command or computer name, or unable to find computer address');
+    expect(out).not.toContain('^');
+  });
+
+  it('but a real verb out of reach at this level keeps the caret', async () => {
+    const r = await router('configure terminal');
+    const out = String(await r.executeCommand('shwo version'));
+
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+  });
+
+  it('an unknown word after a known verb keeps the caret', async () => {
+    const r = await router();
+    const out = String(await r.executeCommand('show foo'));
+
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(out).not.toContain('Translating');
   });
 });

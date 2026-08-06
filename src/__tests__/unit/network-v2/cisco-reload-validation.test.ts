@@ -10,7 +10,7 @@ describe('Cisco reload — argument validation (no accidental immediate reload)'
   it('reload in <non-numeric> is rejected, not an immediate reload', async () => {
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');
-    expect(await r.executeCommand('reload in abc')).toBe("% Invalid input detected at '^' marker.");
+    expect(await r.executeCommand('reload in abc')).toContain("% Invalid input detected at '^' marker.");
     expect(await r.executeCommand('reload in')).toBe('% Incomplete command.');
     expect(await r.executeCommand('reload at')).toBe('% Incomplete command.');
   });

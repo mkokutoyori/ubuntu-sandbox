@@ -21,12 +21,12 @@ describe('Cisco config-line — argument validation', () => {
     const r = await vty();
     expect(await r.executeCommand('password')).toBe('% Incomplete command.');
     expect(await r.executeCommand('exec-timeout')).toBe('% Incomplete command.');
-    expect(await r.executeCommand('exec-timeout abc')).toBe(INVALID);
+    expect(await r.executeCommand('exec-timeout abc')).toContain(INVALID);
     expect(await r.executeCommand('transport input')).toBe('% Incomplete command.');
-    expect(await r.executeCommand('transport input foo')).toBe(INVALID);
+    expect(await r.executeCommand('transport input foo')).toContain(INVALID);
     expect(await r.executeCommand('access-class')).toBe('% Incomplete command.');
     expect(await r.executeCommand('access-class 10')).toBe('% Incomplete command.');
-    expect(await r.executeCommand('access-class 10 sideways')).toBe(INVALID);
+    expect(await r.executeCommand('access-class 10 sideways')).toContain(INVALID);
   });
 
   it('valid line commands apply and persist in running-config', async () => {
@@ -45,7 +45,7 @@ describe('Cisco config-line — argument validation', () => {
     await s.executeCommand('enable');
     await s.executeCommand('configure terminal');
     await s.executeCommand('line vty 0 4');
-    expect(await s.executeCommand('transport input foo')).toBe(INVALID);
+    expect(await s.executeCommand('transport input foo')).toContain(INVALID);
     expect(await s.executeCommand('exec-timeout')).toBe('% Incomplete command.');
   });
 });

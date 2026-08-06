@@ -269,7 +269,7 @@ describe("Scénario 1 — privilege exec level N <commande> : octroi réel d'une
 
     await type(session, 'show running-config');
     const lines = lastLines(session);
-    expect(lines[lines.length - 1]).toBe("% Invalid input detected at '^' marker.");
+    expect(lines[lines.length - 1]).toContain("% Invalid input detected at '^' marker.");
   });
 
   it('niveau 15 (admin) garde un accès complet, indépendamment des règles privilege exec level 7', async () => {
@@ -371,7 +371,7 @@ describe('Scénario 1 — connexion console : User Access Verification / Usernam
 
     await type(session, 'show running-config');
     const lines = lastLines(session);
-    expect(lines[lines.length - 1]).toBe("% Invalid input detected at '^' marker.");
+    expect(lines[lines.length - 1]).toContain("% Invalid input detected at '^' marker.");
   });
 
   it("l'opérateur (niveau 7) peut s'élever à 'enable 15' avec le bon mot de passe enable", async () => {

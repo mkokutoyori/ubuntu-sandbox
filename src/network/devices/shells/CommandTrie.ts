@@ -535,6 +535,13 @@ export class CommandTrie {
     return !!node.action && suppliedArgs >= this.requiredArity(node);
   }
 
+  private isContinuationKeyword(node: CommandNode, token: string): boolean {
+    const key = token.toLowerCase();
+    if (node.children.has(key)) return true;
+    if (node.hintSuggestions?.some(h => h.keyword.toLowerCase() === key)) return true;
+    return this.autoContinuations(node).some(a => a.keyword.toLowerCase() === key);
+  }
+
   private descendantShortfall(node: CommandNode, args: readonly string[]): boolean {
     let target = node;
     let consumed = 0;
@@ -554,7 +561,9 @@ export class CommandTrie {
     matchedKeywords: string[],
     input: string,
   ): MatchResult {
-    if (this.isExecutableAt(node, args.length) && !this.descendantShortfall(node, args)) {
+    const keywordForm = args.length > 0 && this.isContinuationKeyword(node, args[0]);
+    const arityMet = keywordForm || this.isExecutableAt(node, args.length);
+    if (arityMet && !!node.action && !this.descendantShortfall(node, args)) {
       return { status: 'ok', node, args, matchedKeywords };
     }
     return {
@@ -593,6 +602,7 @@ export class CommandTrie {
     const path: string[] = [];
     /** Combien d'arguments du nœud courant ont déjà été fournis. */
     let consumedArgs = 0;
+    let firstArg: string | null = null;
 
     // Navigate through all complete (non-last) tokens
     for (let i = 0; i < tokens.length; i++) {
@@ -663,6 +673,7 @@ export class CommandTrie {
       // Consommer l'argument et poursuivre supprime la classe entière,
       // y compris pour les commandes que personne n'a testées.
       if (node.params.length > consumedArgs || node.greedy) {
+        if (consumedArgs === 0) firstArg = tokens[i];
         consumedArgs++;
         continue;
       }
@@ -671,7 +682,7 @@ export class CommandTrie {
     }
 
     // Trailing space → show subcommands/children of the last matched node
-    return this.nodeCompletions(node, consumedArgs);
+    return this.nodeCompletions(node, consumedArgs, firstArg);
   }
 
   /**
@@ -902,8 +913,9 @@ export class CommandTrie {
   private nodeCompletions(
     node: CommandNode,
     consumedArgs = 0,
+    firstArg: string | null = null,
   ): Array<{ keyword: string; description: string }> {
-    const raw = this.nodeCompletionsUnsorted(node, consumedArgs);
+    const raw = this.nodeCompletionsUnsorted(node, consumedArgs, firstArg);
     const rank = (keyword: string): number => {
       if (keyword === '<cr>') return 2;
       if (keyword.startsWith('<')) return 1;
@@ -920,6 +932,7 @@ export class CommandTrie {
   private nodeCompletionsUnsorted(
     node: CommandNode,
     consumedArgs = 0,
+    firstArg: string | null = null,
   ): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
@@ -978,7 +991,8 @@ export class CommandTrie {
 
     // <cr> — shown when the current command is already executable
     // (real Cisco always shows <cr> when you can press Enter)
-    if (this.isExecutableAt(node, consumedArgs)) {
+    const keywordForm = firstArg !== null && this.isContinuationKeyword(node, firstArg);
+    if (!!node.action && (keywordForm || this.isExecutableAt(node, consumedArgs))) {
       results.push({ keyword: '<cr>', description: '' });
     }
 

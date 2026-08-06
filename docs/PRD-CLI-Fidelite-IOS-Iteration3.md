@@ -969,6 +969,35 @@ Ordre de migration, du mécanique au manuel :
    `% Incomplete command.` et `% Ambiguous command` hors de
    `CliDiagnostic.ts`. Sans ce verrou, les 429 sites reviennent.
 
+**Livré, avec une nuance sur l'ordre.** Le point de sortie existe et rend
+les quatre natures ; `% Ambiguous command` a **disparu** des shells
+(0 occurrence hors du rendu). Pour les deux autres, la migration est
+amorcée plutôt qu'achevée, et le verrou est un **cliquet** plutôt qu'une
+interdiction : un test compte les littéraux restants (86 pour `% Invalid
+input`, 319 pour `% Incomplete command.`) et échoue si le nombre remonte.
+La raison est que le correctif n'a pas eu besoin d'attendre la migration :
+`executeOnTrie` reconnaît le message nu que rend un handler et lui
+attache la ligne et le caret, à l'offset du premier argument. Les 86 sites
+sont donc **déjà corrects à l'affichage** ; les migrer vers
+`throw new CliInvalidInput({ argIndex })` ne gagne que la précision du
+caret quand ce n'est pas le premier argument qui fâche. Le cliquet garde
+la dette visible et décroissante sans bloquer.
+
+**Deux découvertes de mise en œuvre.**
+
+`unknown-exec` ne peut pas se déclencher sur le seul fait qu'un mot est
+refusé en EXEC : une commande que le niveau de privilège courant masque
+est refusée elle aussi, et IOS en connaît pourtant le verbe. Le
+déclencheur est donc « le premier mot n'existe dans AUCUN arbre EXEC »,
+vérifié contre le trie privilégié. Sans cette distinction, `reload` à
+privilège 7 se serait mis à répondre `Translating "reload"...`.
+
+L'arité déclarée au chantier 1 refusait `ip address negotiated`. La forme
+à mot-clé est une production distincte de `ip address A.B.C.D MASK` et ne
+partage pas son arité : `finish()` ne réclame plus les arguments du nœud
+quand le premier mot fourni est un mot-clé que le nœud reconnaît, la
+sous-forme gardant sa propre exigence.
+
 ### 5.4 Ce que ce chantier corrige
 
 §3.1 intégralement, §3.2 intégralement, §1.13 b, et il rend le

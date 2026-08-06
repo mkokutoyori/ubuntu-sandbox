@@ -279,7 +279,7 @@ describe('cli-utils', () => {
     it('should format error messages correctly', () => {
       expect(CISCO_ERRORS.AMBIGUOUS('show')).toBe('% Ambiguous command: "show"');
       expect(CISCO_ERRORS.INCOMPLETE).toBe('% Incomplete command.');
-      expect(CISCO_ERRORS.INVALID_INPUT).toBe("% Invalid input detected at '^' marker.");
+      expect(CISCO_ERRORS.INVALID_INPUT).toContain("% Invalid input detected at '^' marker.");
       expect(CISCO_ERRORS.UNRECOGNIZED('foo')).toBe('% Unrecognized command "foo"');
     });
   });

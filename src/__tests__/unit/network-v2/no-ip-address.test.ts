@@ -18,6 +18,10 @@ beforeEach(() => {
 describe('no ip address', () => {
   it('removes the interface IP and its connected route', async () => {
     const r = new CiscoRouter('R', 0, 0);
+    // Une route connectée n'existe que tant que le lien est up : une
+    // interface sans câble est down/down et ne peuple pas la RIB.
+    const pc = new LinuxPC('linux-pc', 'PC', 0, 0);
+    new Cable('lien').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
     await run(r, ['enable', 'configure terminal',
       'interface GigabitEthernet0/0', 'ip address 10.5.5.1 255.255.255.0', 'no shutdown', 'exit', 'end']);
     expect(await r.executeCommand('show ip route')).toContain('10.5.5.0');
