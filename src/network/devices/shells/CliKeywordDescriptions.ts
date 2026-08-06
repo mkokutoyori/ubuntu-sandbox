@@ -67,6 +67,7 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['enable', 'Enable the feature'],
   ['engine', 'SNMP engine'],
   ['eui-64', 'Use an EUI-64 interface identifier'],
+  ['link-local', 'Configure an IPv6 link-local address'],
   ['events', 'Events'],
   ['exec', 'EXEC process'],
   ['extend', 'Extended form'],
