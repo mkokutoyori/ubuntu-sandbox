@@ -26,6 +26,10 @@ describe('alertForVerificationReason (RFC 8446 §6 mapping)', () => {
     expect(ALERT_DESCRIPTION_CODE.handshake_failure).toBe(40);
     expect(ALERT_DESCRIPTION_CODE.unknown_ca).toBe(48);
     expect(ALERT_DESCRIPTION_CODE.no_application_protocol).toBe(120);
+    // Trouvée en passant : les deux sessions l'émettaient déjà quand
+    // l'échange de clés ne rend pas de secret, mais elle ne figurait ni
+    // dans le type ni dans le registre — son code était `undefined`.
+    expect(ALERT_DESCRIPTION_CODE.illegal_parameter).toBe(47);
   });
 });
 

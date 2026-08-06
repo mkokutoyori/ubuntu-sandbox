@@ -185,10 +185,34 @@ publiés plutôt qu'à elle-même :
 | ECDSA P-256, `k` déterministe | `crypto/ecc/p256.ts` | RFC 6979 §A.2.5 |
 | ECDH P-256 (`secp256r1`) | idem | RFC 8446 §7.4.2 |
 
-**Ce qui reste simulé, et c'est tout :** les groupes TLS que ni X25519 ni
-P-256 ne servent (`secp384r1`, `ffdhe2048`…), faute d'implémentation des
-deux côtés. Un cas de `tls-secp256r1-key-exchange.test.ts` le pose
-explicitement.
+**Il ne reste plus rien de simulé, et le dernier chemin a été retiré
+plutôt qu'implémenté.** Les groupes TLS que ni X25519 ni P-256 ne servent
+(`secp384r1`, `ffdhe2048`…) retombaient sur le condensé des quatre
+valeurs publiques de la poignée de main. Mesuré avant d'être corrigé :
+une session configurée des DEUX côtés sur `secp384r1` réussissait, et les
+deux bouts tombaient d'accord sur un secret que n'importe quel témoin
+recalculait — exactement le défaut que l'étage 3 avait retiré à
+`x25519`, resté intact partout ailleurs. Il était invisible parce que les
+seuls tests nommant `secp384r1` s'en servaient pour provoquer une
+ABSENCE de groupe commun, jamais des deux côtés à la fois.
+
+Le correctif n'est pas d'écrire P-384 : c'est de cesser de prétendre. Un
+groupe qu'on ne sait pas calculer ne se négocie pas — `IMPLEMENTED_GROUPS`
+dit lesquels sont réels, le client ne les OFFRE plus dans son
+`ClientHello`, le serveur ne les SÉLECTIONNE plus (ni par `key_share` ni
+par `HelloRetryRequest`), et `sharedSecret` rend `null`, donc une alerte,
+au lieu d'une valeur. Un client configuré uniquement sur des groupes non
+implémentés n'émet rien du tout, ce que fait une vraie pile dans la même
+situation. `tls-implemented-groups-only.test.ts` (12 cas, 9 en échec
+authentique avant le correctif) garde la référence `x25519` dans le même
+laboratoire : sans elle, un labo mal monté et un refus correct seraient
+indiscernables, les deux se soldant par un échec.
+
+Trouvé en passant et corrigé dans la même passe : l'alerte
+`illegal_parameter`, que les deux sessions émettaient déjà quand
+l'échange de clés ne rend pas de secret, ne figurait ni dans le type
+`AlertDescription` ni dans le registre des codes numériques du §6 — elle
+partait sur le fil avec un code `undefined`.
 
 **Trois avertissements qui, eux, ne changent pas.** Rien ici n'est à
 temps constant : c'est de l'arithmétique juste, pas une bibliothèque de

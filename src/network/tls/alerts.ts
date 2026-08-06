@@ -16,6 +16,7 @@ export type AlertDescription =
   | 'certificate_revoked'
   | 'certificate_expired'
   | 'certificate_unknown'
+  | 'illegal_parameter'
   | 'unknown_ca'
   | 'decode_error'
   | 'decrypt_error'
@@ -34,6 +35,10 @@ export const ALERT_DESCRIPTION_CODE: Record<AlertDescription, number> = {
   certificate_revoked: 44,
   certificate_expired: 45,
   certificate_unknown: 46,
+  // Émise par les deux sessions quand l'échange de clés ne rend aucun
+  // secret (§7.4.2). Elle partait déjà sur le fil, hors du type et hors
+  // du registre : son code numérique était `undefined`.
+  illegal_parameter: 47,
   unknown_ca: 48,
   decode_error: 50,
   decrypt_error: 51,
