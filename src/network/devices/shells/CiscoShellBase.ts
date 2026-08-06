@@ -68,6 +68,7 @@ import {
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
+  'debugging', 'debug',
 ]);
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -428,6 +429,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (path === 'reload' && m.args.length === 0) {
       return this.reloadInteractionPlan();
+    }
+    if (path === 'debug all') {
+      return {
+        steps: [
+          {
+            kind: 'confirmation',
+            prompt: 'This may severely impact network performance. Continue? (yes/[no]):',
+            defaultAnswer: 'no',
+            storeAs: 'debug_all_confirmed',
+          },
+          {
+            kind: 'run',
+            run: async (rt) => {
+              const answer = (rt.values.get('debug_all_confirmed') ?? 'no').toLowerCase();
+              if (answer.startsWith('y')) rt.output(await rt.exec('debug all'));
+            },
+          },
+        ],
+      };
     }
     if (path === 'clear ip ospf' && m.args[0]?.toLowerCase() === 'process') {
       return {
@@ -2077,35 +2097,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'nat') return svc.enable('ip.nat');
       if (sub === 'arp') return svc.enable('ip.arp');
       if (sub === 'routing') return svc.enable('ip.routing');
-      if (sub === 'dhcp server' || sub === 'dhcp server events') return svc.enable('ip.dhcp.server');
+      if (sub.startsWith('dhcp server')) return svc.enable('ip.dhcp.server');
       if (sub === 'ssh') return svc.enable('ip.ssh');
       if (sub === 'rip') return svc.enable('ip.rip');
       if (sub === 'eigrp') return svc.enable('ip.eigrp');
       if (sub === 'bgp') return svc.enable('ip.bgp');
       if (sub === 'nhrp') return svc.enable('ip.nhrp');
       if (sub === 'pim') return svc.enable('ip.pim');
-      return svc.enable('ip.packet', sub);
+      throw new CliInvalidInput({ token: args[0] });
     });
     this.privilegedTrie.registerGreedy('no debug ip', 'Disable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
       const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim') => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is off';
-      if (sub === 'packet') return svc.disable('ip.packet');
+      if (sub === 'packet' || sub.startsWith('packet ')) return svc.disable('ip.packet');
       if (sub === 'icmp') return svc.disable('ip.icmp');
-      if (sub === 'tcp') return svc.disable('ip.tcp');
-      if (sub === 'udp') return svc.disable('ip.udp');
+      if (sub === 'tcp' || sub.startsWith('tcp ')) return svc.disable('ip.tcp');
+      if (sub === 'udp' || sub.startsWith('udp ')) return svc.disable('ip.udp');
       if (sub === 'nat') return svc.disable('ip.nat');
       if (sub === 'arp') return svc.disable('ip.arp');
       if (sub === 'routing') return svc.disable('ip.routing');
-      if (sub === 'dhcp server' || sub === 'dhcp server events') return svc.disable('ip.dhcp.server');
+      if (sub.startsWith('dhcp server')) return svc.disable('ip.dhcp.server');
       if (sub === 'ssh') return svc.disable('ip.ssh');
       if (sub === 'rip') return svc.disable('ip.rip');
       if (sub === 'eigrp') return svc.disable('ip.eigrp');
       if (sub === 'bgp') return svc.disable('ip.bgp');
       if (sub === 'nhrp') return svc.disable('ip.nhrp');
       if (sub === 'pim') return svc.disable('ip.pim');
-      return svc.disable('ip.packet');
+      throw new CliInvalidInput({ token: args[0] });
     });
     const debugSvc = () => {
       const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string; disable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string } };

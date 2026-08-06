@@ -761,8 +761,11 @@ export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellC
     }, ['detail']);
   }
 
+  const ipsecEngineOf = (r: unknown): { setDebug(k: string, on: boolean): void } | undefined =>
+    (r as { _getIPSecEngineInternal?: () => { setDebug(k: string, on: boolean): void } })
+      ._getIPSecEngineInternal?.();
   const turnEverythingOff = (): string => {
-    const engine = (ctx.r() as any)._getIPSecEngineInternal();
+    const engine = ipsecEngineOf(ctx.r());
     if (engine) {
       engine.setDebug('isakmp', false);
       engine.setDebug('ipsec', false);
@@ -778,6 +781,19 @@ export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellC
     return 'All possible debugging has been turned off';
   };
 
+  trie.register('debug all', 'Enable all debugging', () => {
+    const engine = ipsecEngineOf(ctx.r());
+    if (engine) {
+      engine.setDebug('isakmp', true);
+      engine.setDebug('ipsec', true);
+    }
+    const nat = ctx.r()._getNATEngine();
+    nat.setDebugEnabled(true);
+    const dhcp = ctx.r()._getDHCPServerInternal?.();
+    dhcp?.setDebugServerPacket(true);
+    dhcp?.setDebugServerEvents(true);
+    return ctx.r().getDebugService().enableAll();
+  });
   trie.register('undebug all', 'Disable all debugging', turnEverythingOff);
   trie.register('no debug all', 'Disable all debugging', turnEverythingOff);
   trie.register('undebug', 'Disable all debugging', turnEverythingOff);

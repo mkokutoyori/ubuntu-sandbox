@@ -104,6 +104,23 @@ export class RouterDebugService implements TerminalDebugSource {
     return [...this.flags.values()].sort((a, b) => a.category.localeCompare(b.category));
   }
 
+  private static readonly ALL: ReadonlyArray<DebugCategory> = [
+    'ip.packet', 'ip.icmp', 'ip.arp', 'ip.routing', 'ip.nat', 'ip.tcp', 'ip.udp',
+    'ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
+    'ip.ospf.packet', 'ip.ospf.lsa-generation', 'ip.dhcp.server',
+    'ip.sla.trace', 'ip.sla.error', 'track', 'interface', 'ipv6.packet',
+    'cdp.packets', 'lldp.packets', 'ip.pim', 'vxlan',
+    'crypto.isakmp', 'crypto.ipsec',
+  ];
+
+  enableAll(): string {
+    const now = Date.now();
+    for (const c of RouterDebugService.ALL) {
+      if (!this.flags.has(c)) this.flags.set(c, { category: c, enabledAtMs: now });
+    }
+    return 'All possible debugging has been turned on';
+  }
+
   disableAll(): string {
     const n = this.flags.size;
     this.flags.clear();

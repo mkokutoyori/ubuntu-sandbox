@@ -25,7 +25,13 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Debug Cisco — lot D2 (cycle de vie)
+*(rien)*
+
+---
+
+## Livré
+
+### Debug Cisco — lot D2 (cycle de vie) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier B / lot D2.
@@ -59,6 +65,20 @@ si nécessaire ; si votre lot le déplace aussi, dites-le ici et je vous
 laisse la main.
 
 Je ne touche **pas** `LoggingConfig.ts` dans ce lot.
+
+**Livré. Ce qui a changé pour les autres :**
+
+- `PRIVILEGED_ONLY_SHOW` (`CiscoShellBase.ts`) gagne `debugging` et
+  `debug` : `show debugging` / `show debug` quittent le mode
+  utilisateur, sur le routeur ET le switch. Si un test appelait
+  `show debugging` sans `enable`, il faut l'ajouter.
+- `debug ip <inconnu>` et `debug ip ospf <inconnu>` **refusent** au lieu
+  d'armer autre chose. Un test qui comptait sur l'acceptation tombera.
+- `debug ip ospf …` ne répond plus jamais `% OSPF is not enabled.`
+- `debug all` existe sur le routeur, et `CiscoShellBase.interactionPlanFor`
+  a une nouvelle branche pour lui.
+
+Détail : `PRD-Debug-Fidelite-Cisco.md` §11.
 
 ---
 
@@ -237,7 +257,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
-| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1 livré** ; D2–D6 ouverts |
+| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1, D2 livrés** ; D3–D6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour

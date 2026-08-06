@@ -543,3 +543,66 @@ qu'affaiblies : elles exigent maintenant l'estampe ET le contenu.
 **Mesures.** 99 suites connexes vertes (3263 cas), typecheck au baseline
 du projet (167 erreurs préexistantes sous `tsconfig.app.json`, aucune
 ajoutée), lint identique.
+
+
+---
+
+## 11. D2 — Livré
+
+**Un drapeau de debug ne consulte plus la configuration.**
+`debug ip ospf <forme>` s'arme sur un routeur nu ; mesuré avant/après sur
+le même laboratoire : armé AVANT `router ospf 1`, l'adjacence produisait
+**0 ligne**, elle en produit maintenant. Le laboratoire OSPF le plus
+courant se fait enfin dans le bon ordre. Le moteur n'est consulté que
+pour poser `logAdjacencyChanges`, quand il existe.
+
+**Un mot-clé inconnu est refusé.** Le fourre-tout `debug ip <inconnu>`,
+qui armait une capture de paquets IP filtrée par une ACL nommée d'après
+le texte tapé, est supprimé : `debug ip rip events`, `debug ip bgp
+updates` et `debug ip zzz` répondent le message d'entrée invalide, par
+`CliInvalidInput` — donc sans ajouter de littéral au cliquet.
+`debug ip ospf zzz` diagnostique le mot-clé, plus une absence de
+processus.
+
+**`no debug X` désarme exactement `debug X`.** Les quatre asymétries du
+§1.7 sont tombées, et deux étaient de vrais pièges : `no debug ip tcp
+transactions` éteignait `ip.packet`, `no debug crypto pki transactions`
+éteignait `crypto.pki`. Les deux formes DHCP rendent maintenant un
+message au lieu de la chaîne vide, et ne coupent la catégorie que
+lorsque son jumeau est déjà éteint — `packet` et `events` partagent une
+catégorie, en éteindre un ne doit pas taire l'autre.
+
+**`debug all` existe sur le routeur**, avec les deux formes que ce dépôt
+emploie déjà pour `erase`/`reload` : la commande arme et rend le
+transcript pour le chemin scripté, et un **plan d'interaction** pose la
+question d'IOS pour le chemin terminal — `This may severely impact
+network performance. Continue? (yes/[no]):`, réponse par défaut **non**,
+et la commande n'est exécutée que si l'opérateur dit oui. Le plan vit
+dans `CiscoShellBase`, donc le switch pose la même question.
+
+**`show debugging` est privilégié** sur les deux plateformes, par une
+entrée dans `PRIVILEGED_ONLY_SHOW` — un seul endroit, qui couvre aussi
+`show debug`.
+
+**Tests.** `cisco-debug-lifecycle.test.ts` (10 cas) : deux balayages
+— *toute famille s'arme sans son protocole*, *tout `no` ne laisse rien
+derrière* — sur les trente formes que le routeur accepte, plutôt qu'une
+liste de cas particuliers. Discrimination par `git stash` : **les 10
+tombent** avant le correctif.
+
+**Une suite encodait le défaut, et le disait dans son titre.**
+`scenario-debug-04-ip-ospf.test.ts` avait un cas nommé « sur un routeur
+sans OSPF, la commande est explicitement refusée » — exactement ce que
+§1.3 identifie comme faux. Il affirme maintenant le contraire, et
+vérifie que le drapeau paraît dans `show debugging`.
+
+**Mesures.** 97 suites connexes vertes (2952 cas), typecheck au baseline
+(167), lint à **96 contre 97** — un `any` de moins qu'avant, l'accesseur
+du moteur IPSec ayant été typé plutôt que recopié.
+
+**Ce que D2 ne fait pas, et pourquoi.** Le switch garde ses libellés
+(`ip.packet debugging is on`, `(disabled)`, `show debugging` qui ne liste
+rien) : c'est le vocabulaire, donc D5, et l'unification du moteur, donc
+D6. Les huit commandes qui ne peuvent rien émettre s'arment toujours
+sans rien dire — c'est D3/D4, et l'ordre est voulu : il fallait d'abord
+que les drapeaux s'arment librement.

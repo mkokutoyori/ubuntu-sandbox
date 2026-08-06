@@ -1183,38 +1183,33 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     }
     return '';
   });
+  const OSPF_DEBUG: ReadonlyArray<readonly [string, string]> = [
+    ['adj', 'ip.ospf.adj'],
+    ['events', 'ip.ospf.events'],
+    ['spf', 'ip.ospf.spf'],
+    ['hello', 'ip.ospf.hello'],
+    ['packet', 'ip.ospf.packet'],
+    ['lsa-generation', 'ip.ospf.lsa-generation'],
+  ];
+  const ospfDebugCategory = (args: string[]): string | null => {
+    const flag = args.join(' ').toLowerCase();
+    if (!flag) return 'ip.ospf.adj';
+    for (const [mot, cat] of OSPF_DEBUG) if (mot.startsWith(flag)) return cat;
+    return null;
+  };
   trie.registerGreedy('debug ip ospf', 'Enable OSPF debugging', (args) => {
+    const cat = ospfDebugCategory(args);
+    if (!cat) throw new CliInvalidInput({ token: args[0] });
     const ospf = getRouter()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
     if (ospf) ospf.logAdjacencyChanges = true;
-    const flag = args.join(' ').toLowerCase() || 'adj';
-    const debugSvc = getRouter().getDebugService();
-    const motsCles: Array<[string, string]> = [
-      ['adj', 'ip.ospf.adj'],
-      ['events', 'ip.ospf.events'],
-      ['spf', 'ip.ospf.spf'],
-      ['hello', 'ip.ospf.hello'],
-      ['packet', 'ip.ospf.packet'],
-      ['lsa-generation', 'ip.ospf.lsa-generation'],
-    ];
-    for (const [mot, cat] of motsCles) {
-      if (mot.startsWith(flag)) return debugSvc.enable(cat as never);
-    }
-    return debugSvc.enable('ip.ospf.adj', flag);
+    return getRouter().getDebugService().enable(cat as never);
   });
   trie.registerGreedy('no debug ip ospf', 'Disable OSPF debugging', (args) => {
+    const cat = ospfDebugCategory(args);
+    if (!cat) throw new CliInvalidInput({ token: args[0] });
     const ospf = getRouter()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
     if (ospf) ospf.logAdjacencyChanges = false;
-    const debugSvc = getRouter().getDebugService();
-    const flag = args.join(' ').toLowerCase() || 'adj';
-    if (flag.startsWith('adj')) return debugSvc.disable('ip.ospf.adj');
-    if (flag.startsWith('events')) return debugSvc.disable('ip.ospf.events');
-    if (flag.startsWith('spf')) return debugSvc.disable('ip.ospf.spf');
-    if (flag.startsWith('hello')) return debugSvc.disable('ip.ospf.hello');
-    if (flag.startsWith('packet')) return debugSvc.disable('ip.ospf.packet');
-    if (flag.startsWith('lsa')) return debugSvc.disable('ip.ospf.lsa-generation');
-    return debugSvc.disable('ip.ospf.adj');
+    return getRouter().getDebugService().disable(cat as never);
   });
 
   trie.registerGreedy('show ip ospf', 'Display OSPF information', (args) => {

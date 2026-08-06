@@ -364,12 +364,16 @@ export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () 
 
   // no debug commands
   trie.register('no debug ip dhcp server packet', 'Disable DHCP packet debugging', () => {
-    getRouter()._getDHCPServerInternal().setDebugServerPacket(false);
-    return '';
+    const s = getRouter()._getDHCPServerInternal();
+    s.setDebugServerPacket(false);
+    if (!s.getDebugFlags().serverEvents) debugSvc().disable('ip.dhcp.server');
+    return 'DHCP server packet debugging is off';
   });
   trie.register('no debug ip dhcp server events', 'Disable DHCP event debugging', () => {
-    getRouter()._getDHCPServerInternal().setDebugServerEvents(false);
-    return '';
+    const s = getRouter()._getDHCPServerInternal();
+    s.setDebugServerEvents(false);
+    if (!s.getDebugFlags().serverPacket) debugSvc().disable('ip.dhcp.server');
+    return 'DHCP server event debugging is off';
   });
 
   // clear commands
