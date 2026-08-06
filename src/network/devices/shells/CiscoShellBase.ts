@@ -57,7 +57,7 @@ import type {
   InteractionPlanContext,
 } from '@/shell/interaction/CommandInteraction';
 import {
-  CliInvalidInput, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
+  CliInvalidInput, CliIncomplete, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
   tokenSpans, INVALID_INPUT_MESSAGE,
 } from './cli/CliDiagnostic';
 
@@ -1245,6 +1245,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
               line: cmdPart,
               tokenOffset: offsetForInvalidInput(cmdPart, keywordCount, err),
             });
+          }
+          if (err instanceof CliIncomplete) {
+            return renderCliDiagnostic('incomplete', { line: cmdPart });
           }
           // Anything else is a bug in a handler, and it must not reach the
           // terminal: an exception surfacing as `% Error: ReferenceError…`

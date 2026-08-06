@@ -725,3 +725,10 @@ portée de la fonction OSPFv2 alors que l'appel OSPFv3 est dans une
 autre. Les deux sont corrigés ici. Les refus ajoutés passent par
 `CliInvalidInput` et `requireArgs`, pas par des littéraux : le cliquet
 de `cisco-cli-diagnostic-single-exit.test.ts` les avait attrapés.
+
+**`CliIncomplete` est né de ce cliquet.** Un dernier littéral, venu de la
+session concurrente, ne pouvait pas passer par `requireArgs` : son
+minimum dépend de laquelle de deux formes positionnelles a été tapée.
+Le signal `% Incomplete command.` n'existait pas — seul `CliInvalidInput`
+l'était — donc le gestionnaire n'avait pas d'autre choix que d'écrire le
+message. Il existe maintenant, et c'est le cliquet qui l'a fait écrire.

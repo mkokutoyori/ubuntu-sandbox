@@ -9,7 +9,7 @@
  */
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
@@ -605,7 +605,7 @@ export function registerRoutingProtoShow(
       return `% No such neighbor or address family`;
     }
     if (sub === 'advertised-routes' || sub === 'routes') {
-      if (!wanted) return '% Incomplete command.';
+      if (!wanted) throw new CliIncomplete();
       const rows = sub === 'advertised-routes'
         ? e.getAdvertisedRoutes(wanted)
         : e.getBgpTable().filter((r) => String(r.nextHop ?? '') === wanted);
