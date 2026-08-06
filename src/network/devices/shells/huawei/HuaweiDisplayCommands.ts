@@ -661,7 +661,7 @@ export function displayCurrentConfig(
     _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean }>;
   })._listLocalUsers;
   if (listUsers) {
-    const users = listUsers.call(router).filter(u => !u.factoryDefault);
+    const users = listUsers.call(router);
     const p = router.getHuaweiAaaService().passwordPolicy;
     const hasPasswordPolicy = Object.keys(p).length > 0;
     if (users.length > 0 || hasPasswordPolicy) {

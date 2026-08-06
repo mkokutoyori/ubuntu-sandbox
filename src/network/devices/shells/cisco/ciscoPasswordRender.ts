@@ -28,16 +28,16 @@ function cryptPrefixType(value: string): number | null {
  * its type (md5crypt for type-5, PBKDF2 for type-8); values already in
  * modular-crypt form pass through under their own type number.
  */
-export function renderSecretField(value: string, algo: SecretAlgo): string {
+export function renderSecretField(value: string, algo: SecretAlgo, scope = ''): string {
   const preHashed = cryptPrefixType(value);
   if (preHashed !== null) return `${preHashed} ${value}`;
   switch (algo) {
     case 'md5':
-      return `5 ${md5Crypt(value, deriveCryptSalt(value))}`;
+      return `5 ${md5Crypt(value, deriveCryptSalt(value, scope))}`;
     case 'sha256':
-      return `8 ${ciscoType8(value, deriveType8Salt(value))}`; // PBKDF2-HMAC-SHA256
+      return `8 ${ciscoType8(value, deriveType8Salt(value, scope))}`; // PBKDF2-HMAC-SHA256
     case 'scrypt':
-      return `9 ${ciscoType9(value, deriveType9Salt(value))}`;
+      return `9 ${ciscoType9(value, deriveType9Salt(value, scope))}`;
     case 'type-7':
       return `7 ${value}`;
     default:
@@ -61,31 +61,38 @@ export function renderPasswordField(
   algo: 'plain' | 'plain-password' | 'type-7',
   serviceEncryption: boolean,
   showZeroType: boolean = true,
+  scope = '',
 ): string {
   if (algo === 'type-7') return `7 ${value}`;
-  if (serviceEncryption) return `7 ${encryptType7(value, deriveType7Salt(value))}`;
+  if (serviceEncryption) return `7 ${encryptType7(value, deriveType7Salt(value, scope))}`;
   return showZeroType ? `0 ${value}` : value;
 }
 
 /**
  * Deterministic 8-char salt drawn from the crypt alphabet (hex is a subset).
  * Real IOS randomises it; the simulator favours stable, reproducible output.
+ *
+ * `scope` is the entry's own identity (`enable`, `enable:7`,
+ * `username:admin`). Without it the salt derived from the SECRET alone, so
+ * two entries sharing a password shared their salt — which no real crypt
+ * can produce, and which `enable secret` and `username admin` demonstrated
+ * on every configuration where both used the same word.
  */
-function deriveCryptSalt(seed: string): string {
-  return md5Hex(`cisco-secret:${seed}`).slice(0, 8);
+function deriveCryptSalt(seed: string, scope: string): string {
+  return md5Hex(`cisco-secret:${scope}:${seed}`).slice(0, 8);
 }
 
 /** Deterministic 14-char type-8 salt (hex is a subset of the crypt alphabet). */
-function deriveType8Salt(seed: string): string {
-  return md5Hex(`cisco-type8:${seed}`).slice(0, 14);
+function deriveType8Salt(seed: string, scope: string): string {
+  return md5Hex(`cisco-type8:${scope}:${seed}`).slice(0, 14);
 }
 
 /** Deterministic 14-char type-9 (scrypt) salt. */
-function deriveType9Salt(seed: string): string {
-  return md5Hex(`cisco-type9:${seed}`).slice(0, 14);
+function deriveType9Salt(seed: string, scope: string): string {
+  return md5Hex(`cisco-type9:${scope}:${seed}`).slice(0, 14);
 }
 
 /** Deterministic type-7 key offset in [0, 15] derived from the secret. */
-function deriveType7Salt(seed: string): number {
-  return Number.parseInt(md5Hex(`cisco-type7:${seed}`).slice(0, 1), 16);
+function deriveType7Salt(seed: string, scope: string): number {
+  return Number.parseInt(md5Hex(`cisco-type7:${scope}:${seed}`).slice(0, 1), 16);
 }

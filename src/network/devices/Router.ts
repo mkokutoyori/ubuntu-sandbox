@@ -3586,8 +3586,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         banner: this.sshBannerText,
       });
       for (const u of ['alice', 'bob', 'carl', 'dave']) {
-        const acc = NetworkOsAccount.create({ name: u, privilege: 15, secret: u })
-          .asFactoryDefault();
+        const acc = NetworkOsAccount.create({
+          name: u, privilege: 15, secret: u, passwordHashAlgorithm: 'md5',
+        }).asFactoryDefault();
         this._credentialStore.upsert(acc);
       }
     }

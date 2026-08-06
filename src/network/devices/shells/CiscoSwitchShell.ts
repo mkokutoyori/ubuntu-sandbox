@@ -3118,21 +3118,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
 
     const enableSecret = sw.getEnableSecret();
-    if (enableSecret) lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo)}`);
+    if (enableSecret) lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo, 'enable')}`);
     const enablePassword = sw.getEnablePassword();
-    if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false, false)}`);
+    if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false, false, 'enable')}`);
     if (enableSecret || enablePassword) lines.push('!');
 
     if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
 
     // Local AAA users (`username NAME privilege N secret …`).
-    const users = sw._listLocalUsers().filter(u => !u.factoryDefault);
+    const users = sw._listLocalUsers();
     if (users.length > 0) {
       for (const u of users) {
         const field = u.secretAlgo === 'type-7'
-          ? `password ${renderPasswordField(u.secret, 'type-7', false)}`
-          : `secret ${renderSecretField(u.secret, u.secretAlgo)}`;
+          ? `password ${renderPasswordField(u.secret, 'type-7', false, true, `username:${u.name}`)}`
+          : `secret ${renderSecretField(u.secret, u.secretAlgo, `username:${u.name}`)}`;
         lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
       }
       lines.push('!');
