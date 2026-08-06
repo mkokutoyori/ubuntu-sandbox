@@ -17,6 +17,7 @@ import {
 } from '@/crypto/encoding';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
+import { materialToP256Public } from '@/crypto/ecc';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
 import {
@@ -874,18 +875,48 @@ function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 // ─── §P6 : le reste de la PKI ───────────────────────────────────────
 
 /**
- * `ec` / `ecparam` — ECDSA existe dans `PkiKeyPair`, donc la courbe est
- * une vraie option et non un décor. Ce qui reste simulé est la
- * signature, comme pour RSA (§3.2).
+ * `ec` / `ecparam`.
+ *
+ * La signature ECDSA est RÉELLE depuis l'étage 4 (P-256, RFC 6979) — ce
+ * commentaire disait le contraire. Et c'est précisément ce qui a rendu un
+ * défaut visible : tant que la courbe n'était qu'une étiquette,
+ * `-name secp384r1 -genkey` pouvait rendre n'importe quoi ; maintenant
+ * qu'une clé EC porte un vrai point sur une vraie courbe, rendre une clé
+ * P-256 à qui demande P-384 est un mensonge de la machine sur elle-même.
+ * Seule P-256 est implémentée ici, et `-genkey` le dit.
  */
+/**
+ * Les courbes qu'`ecparam` sait NOMMER — décrire n'est pas fabriquer.
+ *
+ * Le nom NIST est une TABLE et non une découpe du nom OpenSSL : le
+ * calcul précédent (`P-${courbe.slice(5, 8)}`) rendait `P-84r` pour
+ * `secp384r1` et `P-21r` pour `secp521r1`. Personne ne l'avait vu parce
+ * que rien ne lisait ces deux lignes.
+ */
+const COURBES_CONNUES: Readonly<Record<string, string>> = {
+  prime256v1: 'P-256',
+  secp384r1: 'P-384',
+  secp521r1: 'P-521',
+};
+/** Celle qu'il sait fabriquer. */
+const COURBE_IMPLEMENTEE = 'prime256v1';
 function runEcparam(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('ecparam', argv);
   const courbe = typeof opts.get('-name') === 'string' ? String(opts.get('-name')) : 'prime256v1';
-  if (!['prime256v1', 'secp384r1', 'secp521r1'].includes(courbe)) {
+  const nomNist = COURBES_CONNUES[courbe];
+  if (!nomNist) {
     return fail(`unknown curve name (${courbe})`);
   }
   if (!opts.has('-genkey')) {
-    return ok(`ASN1 OID: ${courbe}\nNIST CURVE: P-${courbe === 'prime256v1' ? '256' : courbe.slice(5, 8)}`);
+    // Décrire une courbe nommée est un fait sur la courbe, pas une
+    // prétention à savoir en fabriquer une clé.
+    return ok(`ASN1 OID: ${courbe}\nNIST CURVE: ${nomNist}`);
+  }
+  if (courbe !== COURBE_IMPLEMENTEE) {
+    // Refuser plutôt que rendre une clé d'une AUTRE courbe que celle
+    // demandée. Le message est celui de la troisième famille du §5 P4 :
+    // openssl connaît cette courbe, ce build ne l'implémente pas.
+    return fail(`openssl: ecparam -name ${courbe}: is not implemented in this simulator`);
   }
   const paire = PkiKeyPair.generate('ecdsa');
   const pem = privateKeyToPem(paire.privateKey, true);
@@ -908,8 +939,12 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const lignes: string[] = ['read EC key'];
   if (opts.has('-text')) {
+    // Lu SUR la clé, pas récité : c'est la même exigence que pour
+    // `rsa -text`, dont la taille est mesurée sur le module.
+    const q = materialToP256Public(cle.material);
+    if (!q) return fail('unable to load Key');
     lignes.push('Private-Key: (256 bit)');
-    lignes.push('ASN1 OID: prime256v1');
+    lignes.push(`ASN1 OID: ${COURBE_IMPLEMENTEE}`);
     lignes.push('NIST CURVE: P-256');
   }
   if (!opts.has('-noout')) {
