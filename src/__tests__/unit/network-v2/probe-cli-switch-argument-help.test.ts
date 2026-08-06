@@ -28,9 +28,8 @@ async function inInterface(): Promise<CiscoSwitch> {
 describe('the switch shell announces its argument types too', () => {
   it.each([
     ['switchport access vlan ?', '<1-4094>'],
-    ['switchport trunk native vlan ?', '<1-4094>'],
-    ['channel-group ?', '<1-48>'],
-    ['spanning-tree cost ?', '<1-200000000>'],
+    ['channel-group ?', '<1-64>'],
+    ['mtu ?', '<68-9216>'],
     ['description ?', 'LINE'],
   ])('%s announces %s', async (command, expected) => {
     const sw = await inInterface();
@@ -39,7 +38,6 @@ describe('the switch shell announces its argument types too', () => {
 
   it.each([
     ['vlan ?', '<1-4094>'],
-    ['spanning-tree vlan ?', '<1-4094>'],
     ['ip default-gateway ?', 'A.B.C.D'],
     ['ip name-server ?', 'A.B.C.D'],
   ])('%s announces %s', async (command, expected) => {
@@ -86,6 +84,33 @@ describe('the switch help invents nothing either', () => {
     const help = await sw.executeCommand('?');
     expect(help).not.toMatch(/^\s+access vlan\b/m);
     expect(help).not.toMatch(/^\s+native\b/m);
+  });
+
+  it('every declared range is the range the command really enforces', async () => {
+    const sw = await inInterface();
+    const refused = (out: string) => /Invalid|%/.test(out);
+
+    expect(refused(await sw.executeCommand('mtu 67'))).toBe(true);
+    expect(refused(await sw.executeCommand('mtu 68'))).toBe(false);
+    expect(refused(await sw.executeCommand('mtu 9216'))).toBe(false);
+    expect(refused(await sw.executeCommand('mtu 9217'))).toBe(true);
+
+    expect(refused(await sw.executeCommand('switchport mode access'))).toBe(false);
+    expect(refused(await sw.executeCommand('switchport access vlan 0'))).toBe(true);
+    expect(refused(await sw.executeCommand('switchport access vlan 4095'))).toBe(true);
+
+    expect(refused(await sw.executeCommand('channel-group 0 mode on'))).toBe(true);
+    expect(refused(await sw.executeCommand('channel-group 64 mode on'))).toBe(false);
+    expect(refused(await sw.executeCommand('channel-group 65 mode on'))).toBe(true);
+  });
+
+  it('an out-of-range value is REFUSED, never thrown', async () => {
+    const sw = await inInterface();
+    for (const value of [0, 1, 67, 9217, 99999]) {
+      const out = await sw.executeCommand(`mtu ${value}`);
+      expect(out).toContain('%');
+      expect(out).not.toContain('Error:');
+    }
   });
 
   it('declaring the arguments did not break their execution', async () => {

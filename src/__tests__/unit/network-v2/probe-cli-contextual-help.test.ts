@@ -89,7 +89,7 @@ describe('L\'help annonce le TYPE de l\'argument, comme IOS', () => {
 
   it('mtu ? and bandwidth ? announce their ranges', async () => {
     const router = await inInterface();
-    expect(await router.executeCommand('mtu ?')).toContain('<64-1500>');
+    expect(await router.executeCommand('mtu ?')).toContain('<68-9216>');
     expect(await router.executeCommand('bandwidth ?')).toContain('<1-10000000>');
   });
 

@@ -368,6 +368,17 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
   describe('I-L3-04: Router CLI commands', () => {
     it('should display routing table with connected and static routes', async () => {
       const router = new CiscoRouter('R1');
+      // A connected route only exists while the link is up: an uncabled
+      // interface is down/down on IOS and contributes nothing to the RIB.
+      const h1 = new LinuxPC('linux-pc', 'H1', 0, 0);
+      const h2 = new LinuxPC('linux-pc', 'H2', 0, 0);
+      new Cable('r1').connect(router.getPort('GigabitEthernet0/0')!, h1.getPort('eth0')!);
+      new Cable('r2').connect(router.getPort('GigabitEthernet0/1')!, h2.getPort('eth0')!);
+      for (const cmd of ['enable', 'configure terminal',
+        'interface GigabitEthernet0/0', 'no shutdown', 'exit',
+        'interface GigabitEthernet0/1', 'no shutdown', 'exit', 'end']) {
+        await router.executeCommand(cmd);
+      }
       router.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
       router.configureInterface('GigabitEthernet0/1', new IPAddress('10.0.2.1'), new SubnetMask('255.255.255.0'));
       router.addStaticRoute(new IPAddress('10.0.3.0'), new SubnetMask('255.255.255.0'), new IPAddress('10.0.2.2'));

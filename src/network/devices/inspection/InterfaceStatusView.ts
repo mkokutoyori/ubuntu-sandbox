@@ -55,6 +55,7 @@ export function iosInterfaceStatus(
   const bearer = carrierBearer(name, port, ports);
   const carrierUp = virtual
     || (bearer.wasEverCabled() ? bearer.hasCarrier() : carrierAssumedOnUncabledPorts);
+  const bearerAdminUp = bearer === port || !bearer.isAdminDown();
 
   if (!adminUp) {
     return {
@@ -62,7 +63,7 @@ export function iosInterfaceStatus(
       adminUp, lineUp, carrierUp, virtual,
     };
   }
-  const up = lineUp && carrierUp;
+  const up = lineUp && carrierUp && bearerAdminUp;
   return {
     status: up ? 'up' : 'down',
     protocol: up ? 'up' : 'down',
