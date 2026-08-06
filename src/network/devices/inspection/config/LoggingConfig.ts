@@ -56,6 +56,14 @@ export interface TimestampSpec {
  * msec` et `service timestamps log datetime msec`. C'est ce que rend cette
  * fonction, et rien d'autre : elle décrit un routeur qui sort de sa boîte.
  */
+/**
+ * Ce qu'un IOS 15.x d'ISR journalise en mémoire sans qu'on lui demande
+ * rien. La journalisation tampon EST active par défaut ; ce qu'IOS
+ * n'écrit pas, c'est le DÉFAUT lui-même dans la running-config.
+ */
+export const BUFFERED_SIZE_DEFAUT = 4096;
+export const BUFFERED_SEVERITE_DEFAUT: Severity = 'debugging';
+
 export function defaultTimestampSpec(): TimestampSpec {
   return {
     enabled: true, format: 'datetime', msec: true,
@@ -129,8 +137,8 @@ export function deviceClockSource(device: unknown): LoggingClockSource {
 export class LoggingConfig {
   enabled = true;                       // `logging on` (IOS default on)
   buffered = false;
-  bufferedSize = 4096;
-  bufferedSeverity: Severity = 'debugging';
+  bufferedSize = BUFFERED_SIZE_DEFAUT;
+  bufferedSeverity: Severity = BUFFERED_SEVERITE_DEFAUT;
   /** `logging console` — on out of the box, silenced by `no logging console`. */
   consoleEnabled = true;
   /** `logging rate-limit N` — null means the platform default applies. */
@@ -1075,10 +1083,14 @@ export class LoggingConfig {
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
     if (!this.enabled) lines.push('no logging on');
-    if (this.buffered) {
+    // Une configuration ne rend que ce qui s'écarte du défaut : le
+    // tampon est actif d'usine, donc l'annoncer reviendrait à faire
+    // apparaître une commande que personne n'a tapée.
+    const tamponParDefaut = this.bufferedSize === BUFFERED_SIZE_DEFAUT
+      && this.bufferedSeverity === BUFFERED_SEVERITE_DEFAUT;
+    if (!this.buffered) lines.push('no logging buffered');
+    else if (!tamponParDefaut) {
       lines.push(`logging buffered ${this.bufferedSize} ${this.bufferedSeverity}`);
-    } else if (this.bufferedSeverity !== 'debugging') {
-      lines.push(`logging buffered ${this.bufferedSeverity}`);
     }
     if (!this.consoleEnabled) lines.push('no logging console');
     else if (this.consoleSeverity !== 'debugging') lines.push(`logging console ${this.consoleSeverity}`);
