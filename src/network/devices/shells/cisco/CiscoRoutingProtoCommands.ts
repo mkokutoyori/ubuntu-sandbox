@@ -42,7 +42,7 @@ export function buildRoutingProtoConfig(
 
   configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
-    if (!/^\d+$/.test(a[0])) return "% Invalid input detected at '^' marker.";
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
     const asn = parseInt(a[0], 10);
     if (asn < 1 || asn > 65535) return '% Invalid AS number';
     repo.ensureEigrp(asn);
@@ -60,7 +60,7 @@ export function buildRoutingProtoConfig(
   });
   configTrie.registerGreedy('router bgp', 'Enter BGP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
-    if (!/^\d+$/.test(a[0])) return "% Invalid input detected at '^' marker.";
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
     const asn = parseInt(a[0], 10);
     if (asn < 1 || asn > 4294967295) return '% Invalid AS number';
     const existing = repo.getBgp();
@@ -192,7 +192,7 @@ export function buildRoutingProtoConfig(
     if (!a[0]) return '% Incomplete command.';
     if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return "% Invalid input detected at '^' marker.";
     const parsed = parseRedistribute(a);
-    if (!parsed) return "% Invalid input detected at '^' marker.";
+    if (!parsed) throw new CliInvalidInput();
     const p = curProto(ctx).proto;
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);

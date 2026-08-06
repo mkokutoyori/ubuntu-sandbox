@@ -36,7 +36,7 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
       if (args[1].toLowerCase() === 'vrf') {
         return '% VRF-aware OSPF is not supported on this platform';
       }
-      return "% Invalid input detected at '^' marker.";
+      throw new CliInvalidInput();
     }
     if (!running) router._enableOSPF(processId);
     ctx.setMode('config-router-ospf');
@@ -428,7 +428,7 @@ function adresseReseau(ip: string, wildcard: string): string {
   // l'adjacence, pas seulement l'entrée et la sortie de Full).
   trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
     if (args.length > 0 && args[0] !== 'detail') {
-      return "% Invalid input detected at '^' marker.";
+      throw new CliInvalidInput();
     }
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.logAdjacencyChanges = true;

@@ -231,6 +231,8 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['within', 'Within'],
   ['zeroize', 'Delete the key pair'],
   ['aaa', 'Authentication, Authorization and Accounting'],
+  ['cost', 'Change an interface path cost'],
+  ['port-priority', 'Change an interface priority'],
   ['address', 'Specify an address'],
   ['arp-proxy', 'ARP proxy configuration'],
   ['compare', 'Compare function'],
