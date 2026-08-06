@@ -8,9 +8,10 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { EIGRPEngine } from '@/network/eigrp/EIGRPEngine';
-import { EIGRP_MULTICAST_IP } from '@/network/eigrp/packets';
+import { EIGRP_MULTICAST_IP, EIGRP_DEFAULT_HOLD_SEC } from '@/network/eigrp/packets';
 import type { ConnectedNetwork } from '@/network/routing/RoutingPeerLocator';
 import { EventBus } from '@/events/EventBus';
+import { VirtualTimeScheduler } from '@/events/Scheduler';
 import {
   IPAddress, SubnetMask, resetCounters,
 } from '@/network/core/types';
@@ -212,16 +213,30 @@ describe('EIGRPEngine — real config-driven, over the wire', () => {
     expect(r1.eng.getNeighbors()).toHaveLength(0);
   });
 
-  it('a cut cable silences the conversation: neighbour and routes expire', () => {
+  it('a cut cable silences the conversation: le hold timer expire le voisin', () => {
+    // Le câble coupé ne descend pas l'interface ici : R2 se tait, tout
+    // simplement. C'est le cas que le hold timer traite (RFC 7868
+    // §5.3.1) — R1 tient sa route jusqu'à expiration, puis la retire,
+    // sans que personne ne tape de commande. Converger en boucle ne
+    // doit rien y changer : un tour de convergence n'est pas une preuve
+    // de mort du voisin.
+    const clock = new VirtualTimeScheduler();
     const r1 = device('R1', '192.168.1.1', '10.0.0.1');
     const r2 = device('R2', '192.168.2.1', '10.0.0.2');
+    r1.eng.setScheduler(clock);
     TestDevice.cable(r1, 'Gi0/0', r2, 'Gi0/0');
     r1.eng.enable({ asn: 100, networks: [{ network: '192.168.1.0' }, { network: '10.0.0.0' }] });
     r2.eng.enable({ asn: 100, networks: [{ network: '192.168.2.0' }, { network: '10.0.0.0' }] });
     r1.eng.converge();
     expect(r1.eng.getContributedRoutes()).toHaveLength(1);
+
     TestDevice.cut(r1, 'Gi0/0');
-    r1.eng.converge();           // next hello round hears nothing back
+    r1.eng.converge();
+    // Juste avant le hold time, le voisin est toujours là.
+    clock.advance((EIGRP_DEFAULT_HOLD_SEC - 1) * 1000);
+    expect(r1.eng.getNeighbors()).toHaveLength(1);
+
+    clock.advance(2000);
     expect(r1.eng.getNeighbors()).toHaveLength(0);
     expect(r1.eng.getContributedRoutes()).toHaveLength(0);
   });

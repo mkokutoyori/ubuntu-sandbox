@@ -92,6 +92,9 @@ export class RouterDynamicRouting {
     this.bgp.setWire({ connect: (ip) => this.bgpConnect(ip) });
     // An UPDATE that lands on a peer's converge must still reach our RIB.
     this.bgp.setOnRibChange(() => this.reflectRib());
+    // Same seam for EIGRP: a neighbour lost to its hold timer happens on
+    // a timer, with nobody at the CLI, and must still reprogram the RIB.
+    this.eigrp.setOnNeighborChange(() => this.reflectRib());
   }
 
   // ── BGP wire transport (TCP/179) ───────────────────────────────────
@@ -221,6 +224,20 @@ export class RouterDynamicRouting {
   /** True if any dynamic engine is enabled (cheap forwarding guard). */
   hasActive(): boolean {
     return this.eigrp.isEnabled() || this.bgp.isEnabled();
+  }
+
+  /**
+   * An interface went down: EIGRP declares its neighbours down at once
+   * rather than waiting out their hold time, which is what IOS logs as
+   * `is down: interface down`.
+   */
+  onInterfaceDown(iface: string): void {
+    if (this.eigrp.isEnabled()) this.eigrp.onInterfaceDown(iface);
+  }
+
+  /** Release protocol timers — the router is going away. */
+  shutdownTimers(): void {
+    this.eigrp.shutdownTimers();
   }
 
   /**

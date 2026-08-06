@@ -961,14 +961,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         } else {
           this.ipsecEngine?.onPortDown(name);
           this.ospfIntegration.onPortDown(name);
+          // EIGRP declares the neighbours on a dead interface down at
+          // once, without waiting out their hold time — IOS logs it as
+          // '%DUAL-5-NBRCHANGE … is down: interface down'.
+          this.dynamicRouting?.onInterfaceDown(name);
         }
-        // EIGRP/BGP have no port-down hook of their own (unlike OSPF's
-        // onPortDown above): without this, a dead neighbor/route just
-        // lingers in the RIB until an operator happens to run a CLI
-        // command, since converge() is otherwise only CLI-triggered
-        // (RouterDynamicRouting.ts — no real hold/SIA timers yet, see
-        // CLAUDE.md). This doesn't add real timer-driven convergence,
-        // it only makes the existing recompute run on link events too.
         if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
       });
     }
@@ -1600,6 +1597,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getBGPEngine() { return this.dynamicRouting.bgp; }
   /** Recompute EIGRP/BGP adjacencies+routes from real topology. */
   convergeDynamicRouting() { this.dynamicRouting.converge(); }
+
+  /**
+   * A powered-off router stops talking. EIGRP's Hello timer would
+   * otherwise keep multicasting from a chassis with no power — and, in a
+   * long-lived process, keep doing so forever, since nothing else ever
+   * releases it.
+   */
+  override powerOff(): void {
+    this.dynamicRouting?.shutdownTimers();
+    super.powerOff();
+  }
 
   // ─── FHRP data plane (HSRP/VRRP/GLBP) ─────────────────────────
   //
