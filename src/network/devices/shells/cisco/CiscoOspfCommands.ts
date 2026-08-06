@@ -1264,8 +1264,8 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     }
     if (first === 'ospf') return showIpRouteOspf(getRouter());
     if (first === 'summary') return showIpRouteSummary(getRouter());
-    if (first === 'connected') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('C') || l.startsWith('Codes') || l === '').join('\n');
-    if (first === 'static') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('S') || l.startsWith('Codes') || l === '').join('\n');
+    const codes = ROUTE_FILTER_CODES[first];
+    if (codes) return filterRouteTableByCode(showIpRouteAll(getRouter()), codes);
     return showIpRouteSpecific(getRouter(), args[0]);
   });
 
@@ -2313,6 +2313,55 @@ function bestRoutesPerPrefix(routes: any[]): any[] {
     if (ad === existingAd && (r.metric ?? 0) < (existing.metric ?? 0)) { best.set(key, r); }
   }
   return order.map(k => best.get(k));
+}
+
+
+/**
+ * `show ip route <protocole>` — la table complète, filtrée sur les codes
+ * du protocole demandé.
+ *
+ * Trois défauts tenaient dans l'ancienne écriture. Elle ne gardait que
+ * les lignes commençant par `Codes`, donc la légende ressortait tronquée
+ * à sa première ligne, suivie de lignes vides. Elle ne connaissait que
+ * `connected` et `static`, si bien que `local`, `eigrp` ou `rip`
+ * tombaient sur `showIpRouteSpecific` et répondaient
+ * `% Network not in table` — le message qui dit qu'un PRÉFIXE est absent,
+ * là où la bonne réponse à « aucune route de ce protocole » est une table
+ * vide. Et elle jetait les en-têtes `is subnetted` qui structurent la
+ * sortie d'IOS.
+ */
+const ROUTE_FILTER_CODES: Readonly<Record<string, readonly string[]>> = {
+  connected: ['C'],
+  local: ['L'],
+  static: ['S'],
+  rip: ['R'],
+  eigrp: ['D'],
+  bgp: ['B'],
+  isis: ['i'],
+};
+
+function filterRouteTableByCode(all: string, codes: readonly string[]): string {
+  const lines = all.split('\n');
+  // L'en-tête va jusqu'à la passerelle de dernier recours incluse.
+  const gw = lines.findIndex((l) => l.startsWith('Gateway of last resort'));
+  const headEnd = gw >= 0 ? gw + 1 : lines.findIndex((l) => l.trim() === '');
+  const head = lines.slice(0, Math.max(headEnd, 0) + 1);
+  const body = lines.slice(Math.max(headEnd, 0) + 1);
+
+  const matches = (l: string): boolean => {
+    const code = l.trimStart().split(/\s/)[0];
+    return codes.some((c) => code === c || code.startsWith(c));
+  };
+  const out: string[] = [];
+  let pendingSubnetHeader: string | null = null;
+  for (const l of body) {
+    if (l.trim() === '') continue;
+    if (/is subnetted|is variably subnetted/.test(l)) { pendingSubnetHeader = l; continue; }
+    if (!matches(l)) continue;
+    if (pendingSubnetHeader) { out.push(pendingSubnetHeader); pendingSubnetHeader = null; }
+    out.push(l);
+  }
+  return [...head, ...out].join('\n');
 }
 
 function showIpRouteAll(router: Router): string {
