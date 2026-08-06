@@ -20,6 +20,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -208,6 +209,10 @@ describe('Scénario 1 — Prise en main VRP : vues et display fondamentaux', () 
 
     it('display ip routing-table affiche la table de routage', async () => {
       const r = new HuaweiRouter('AR1');
+      // Une route Direct n'existe que tant que le lien est up : une
+      // interface sans câble est down/down et ne peuple pas la RIB.
+      const pc = new LinuxPC('linux-pc', 'PC-DIRECT', 0, 0);
+      new Cable('lien').connect(r.getPort('GE0/0/0')!, pc.getPort('eth0')!);
       await r.executeCommand('system-view');
       await r.executeCommand('interface GigabitEthernet 0/0/0');
       await r.executeCommand('ip address 192.168.1.1 255.255.255.0');

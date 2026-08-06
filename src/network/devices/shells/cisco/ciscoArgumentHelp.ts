@@ -33,7 +33,7 @@ export interface ArgumentHelpTries {
 export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configIf.describeArgs('ip address', [
     IP('address', 'IP address'),
-    MASK('IP subnet mask'),
+    { ...MASK('IP subnet mask'), optional: true },
   ]);
   tries.configIf.describeArgs('encapsulation dot1q', [
     INT('vlan', [1, 4094], 'IEEE 802.1Q VLAN ID'),
@@ -204,7 +204,7 @@ export interface SwitchArgumentHelpTries {
 export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): void {
   tries.configIf.describeArgs('ip address', [
     IP('address', 'IP address'),
-    MASK('IP subnet mask'),
+    { ...MASK('IP subnet mask'), optional: true },
   ]);
   tries.configIf.describeArgs('switchport access vlan', [
     INT('vlan', [1, 4094], 'VLAN of the VLAN interface'),
