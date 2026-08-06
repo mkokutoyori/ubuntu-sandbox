@@ -205,8 +205,13 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
       const n = Number(BigInt(String(s)));
       return n as PSValue;
     },
-    minvalue: -9223372036854775808 as PSValue,
-    maxvalue:  9223372036854775807 as PSValue,
+    // Un Int64 ne tient PAS dans un `number` JavaScript : ecrits en
+    // litteraux numeriques, ces deux bornes s'affichaient
+    // `9223372036854776000` — arrondies au seizieme chiffre, une valeur
+    // qu'un eleve recopie et qui est fausse. `PSValue` n'admet pas
+    // `bigint` ; la chaine affiche la borne EXACTE, comme PowerShell.
+    minvalue: '-9223372036854775808' as PSValue,
+    maxvalue: '9223372036854775807' as PSValue,
   } as Record<string, PSValue>,
 
   double: {

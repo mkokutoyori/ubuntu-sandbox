@@ -6,6 +6,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PSLexer } from '@/powershell/lexer/PSLexer';
 import { extractCommentHelp } from '@/powershell/cmdlets/core/MiscCmdlets';
+import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 
 beforeEach(() => {
   resetCounters();
@@ -171,5 +172,21 @@ describe('the last section of a comment-based help block is not lost', () => {
 
   it('a middle section is unaffected', () => {
     expect(extractCommentHelp(src('peu importe')).synopsis).toBe('Fait un truc');
+  });
+});
+
+describe('an Int64 bound is reported exactly', () => {
+  it('[long]::MaxValue and MinValue are not rounded', () => {
+    const i = new PSInterpreter();
+    // Un Int64 ne tient pas dans un `number` JavaScript : ecrits en
+    // litteraux, ces bornes sortaient `9223372036854776000`.
+    expect(i.execute('[long]::MaxValue').trim()).toBe('9223372036854775807');
+    expect(i.execute('[long]::MinValue').trim()).toBe('-9223372036854775808');
+  });
+
+  it('the bounds that DO fit a number are untouched', () => {
+    const i = new PSInterpreter();
+    expect(i.execute('[int]::MaxValue').trim()).toBe('2147483647');
+    expect(i.execute('[int]::MinValue').trim()).toBe('-2147483648');
   });
 });
