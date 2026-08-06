@@ -857,8 +857,12 @@ export class Port {
 
   receiveFrame(frame: EthernetFrame): void {
     if (!this.isUp || this.adminDown) {
+      // A real router COUNTS a frame dropped on a down interface — it is
+      // the `input drops` of `show interfaces` — and logs nothing. This
+      // call site used to `Logger.warn` once per frame, which the generic
+      // log bridge turned into a console line per frame: an unstoppable
+      // flood, under a `%PORT-4-WARNINGS` facility IOS does not have.
       this.counters.dropsIn++;
-      Logger.warn(this.equipmentId, 'port:recv-blocked', `${this.name}: port is down, frame dropped`);
       this.getBus().publish({
         topic: 'port.frame.dropped',
         payload: { ...this.portRef(), reason: 'link-down', srcMac: frame.srcMAC },

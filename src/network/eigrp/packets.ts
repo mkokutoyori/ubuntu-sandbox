@@ -17,6 +17,14 @@ export const EIGRP_MULTICAST_IP = '224.0.0.10';
 /** Default hold time advertised in Hellos (IOS LAN default, §5.3.4). */
 export const EIGRP_DEFAULT_HOLD_SEC = 15;
 
+/**
+ * Default Hello interval (RFC 7868 §5.3.1): 5 s on high-speed links.
+ * Low-speed NBMA (≤ T1) uses 60 s, with the hold time following at 3×
+ * — `ip hello-interval eigrp` / `ip hold-time eigrp` override both per
+ * interface, and IOS deliberately does NOT recompute one from the other.
+ */
+export const EIGRP_DEFAULT_HELLO_SEC = 5;
+
 /** Protocol version carried in the EIGRP header (§5.1). */
 export const EIGRP_VERSION = 2;
 

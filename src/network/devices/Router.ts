@@ -977,14 +977,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         } else {
           this.ipsecEngine?.onPortDown(name);
           this.ospfIntegration.onPortDown(name);
+          // EIGRP declares the neighbours on a dead interface down at
+          // once, without waiting out their hold time — IOS logs it as
+          // '%DUAL-5-NBRCHANGE … is down: interface down'.
+          this.dynamicRouting?.onInterfaceDown(name);
         }
-        // EIGRP/BGP have no port-down hook of their own (unlike OSPF's
-        // onPortDown above): without this, a dead neighbor/route just
-        // lingers in the RIB until an operator happens to run a CLI
-        // command, since converge() is otherwise only CLI-triggered
-        // (RouterDynamicRouting.ts — no real hold/SIA timers yet, see
-        // CLAUDE.md). This doesn't add real timer-driven convergence,
-        // it only makes the existing recompute run on link events too.
         if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
       });
     }
@@ -1458,15 +1455,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return true;
   }
 
-  /** Longest Prefix Match (LPM) — tiebreaking: prefix → AD → metric */
+  /**
+   * Longest Prefix Match (LPM) — tiebreaking: prefix → AD → metric.
+   *
+   * Pure data plane: it reads the RIB and nothing else. Forwarding a
+   * packet never runs protocol code, exactly as on real hardware, where
+   * the linecard consults a FIB that the control plane downloaded to it.
+   * This used to re-converge the dynamic routing engines first, which
+   * made every forwarding decision a convergence — and a convergence
+   * emits packets, so a packet could beget a convergence that begat more
+   * packets. Keeping the RIB current is the control plane's job, and it
+   * does it on the events that actually change routing: configuration,
+   * interface up/down, and protocol packets arriving from the wire.
+   */
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
-    // Keep EIGRP/BGP-learned routes fresh for the data path WITHOUT
-    // emitting protocol frames: routes already received from the wire
-    // are reflected into the RIB before every forwarding decision.
-    // Real Hello/Update rounds happen at config/show time (triggered
-    // updates) — a router does not hello on every packet it forwards.
-    if (this.dynamicRouting?.hasActive()) this.dynamicRouting.refresh();
-
     // ECMP: collect every route genuinely tied for best (same prefix
     // length, AD, and metric) instead of freezing on whichever happened
     // to be inserted first, so equal-cost paths actually get used.
@@ -1611,6 +1613,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getBGPEngine() { return this.dynamicRouting.bgp; }
   /** Recompute EIGRP/BGP adjacencies+routes from real topology. */
   convergeDynamicRouting() { this.dynamicRouting.converge(); }
+
+  /**
+   * A powered-off router stops talking. EIGRP's Hello timer would
+   * otherwise keep multicasting from a chassis with no power — and, in a
+   * long-lived process, keep doing so forever, since nothing else ever
+   * releases it.
+   */
+  override powerOff(): void {
+    this.dynamicRouting?.shutdownTimers();
+    super.powerOff();
+  }
 
   // ─── FHRP data plane (HSRP/VRRP/GLBP) ─────────────────────────
   //

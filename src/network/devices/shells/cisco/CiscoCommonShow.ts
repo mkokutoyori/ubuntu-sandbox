@@ -167,6 +167,32 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
  * l'opérateur a donné au routeur — lequel peut changer sans que le
  * matériel bouge.
  */
+/**
+ * `<hostname> uptime is ...` au format d'IOS.
+ *
+ * Deux rendus coexistaient et se trompaient différemment : l'un répondait
+ * « 0 minutes » sous la minute là où IOS compte les SECONDES, l'autre
+ * écrivait « 0 days, 0 hours, 3 minutes » là où IOS omet les composantes
+ * nulles. IOS descend de la semaine à la minute, ne garde que ce qui
+ * n'est pas nul, et bascule sur les secondes tant qu'il n'y a pas une
+ * minute entière.
+ */
+export function formatIosUptime(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  if (totalSec < 60) return `${totalSec} second${totalSec === 1 ? '' : 's'}`;
+  const totalMin = Math.floor(totalSec / 60);
+  const units: ReadonlyArray<readonly [number, string]> = [
+    [Math.floor(totalMin / 10080), 'week'],
+    [Math.floor((totalMin % 10080) / 1440), 'day'],
+    [Math.floor((totalMin % 1440) / 60), 'hour'],
+    [totalMin % 60, 'minute'],
+  ];
+  const parts = units
+    .filter(([n]) => n > 0)
+    .map(([n, label]) => `${n} ${label}${n === 1 ? '' : 's'}`);
+  return parts.length > 0 ? parts.join(', ') : '0 minutes';
+}
+
 export function showInventory(hostname: string, profile: CiscoChassisProfile = 'switch-c3560'): string {
   void hostname;
   const c = CISCO_HARDWARE_PROFILES[profile];
@@ -775,9 +801,7 @@ export function showSwitchVersion(dev: {
   const fa = names.filter((n) => n.startsWith('Fast')).length;
   const gi = names.filter((n) => n.startsWith('Gig') && !n.includes('.')).length;
   const baseMac = names.length ? (dev.getPort(names[0])?.getMAC().toCiscoString() ?? '0000.0000.0000') : '0000.0000.0000';
-  const upMin = Math.floor(dev.getUptimeMs() / 60000);
-  const up = upMin < 1 ? '0 minutes'
-    : `${Math.floor(upMin / 1440)} days, ${Math.floor((upMin % 1440) / 60)} hours, ${upMin % 60} minutes`;
+  const up = formatIosUptime(dev.getUptimeMs());
   return [
     `${ciscoSoftwareDescriptor(C3560_SOFTWARE, 'RELEASE SOFTWARE (fc3)')}`,
     'Copyright (c) 1986-2025 by Cisco Systems, Inc.',

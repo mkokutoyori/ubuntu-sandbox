@@ -12,7 +12,7 @@ import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRu
 import { orderCiscoConfigBlocks, routingProcessConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
-import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
+import { CISCO_HARDWARE_PROFILES, formatIosUptime, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -28,7 +28,7 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
     '',
     `ROM: System Bootstrap, Version 15.0(1r)M15`,
     '',
-    `${router._getHostnameInternal()} uptime is ${formatUptime(uptimeMs)}`,
+    `${router._getHostnameInternal()} uptime is ${formatIosUptime(uptimeMs)}`,
     `System image file is "flash:${hw.flashImage}"`,
     '',
     `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
@@ -73,18 +73,7 @@ function staticRouteTail(r: {
   return parts.join(' ');
 }
 
-function formatUptime(ms: number): string {
-  if (ms < 60_000) return '0 minutes';
-  const totalMin = Math.floor(ms / 60_000);
-  const days = Math.floor(totalMin / 1440);
-  const hours = Math.floor((totalMin % 1440) / 60);
-  const mins = totalMin % 60;
-  const parts: string[] = [];
-  if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`);
-  if (hours) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
-  parts.push(`${mins} minute${mins === 1 ? '' : 's'}`);
-  return parts.join(', ');
-}
+
 
 /** La légende d'IOS 15.x, en six lignes. Elle en faisait deux. */
 const ROUTE_LEGEND = [
