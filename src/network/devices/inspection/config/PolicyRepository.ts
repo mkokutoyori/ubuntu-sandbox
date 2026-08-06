@@ -85,6 +85,12 @@ export class PolicyRepository {
 
   removeRouteMap(name: string): void { this.routeMaps.delete(name); }
 
+  allPrefixLists(v6 = false): ReadonlyMap<string, readonly PrefixListEntry[]> {
+    return v6 ? this.v6PrefixLists : this.prefixLists;
+  }
+
+  allRouteMaps(): ReadonlyMap<string, readonly RouteMapClause[]> { return this.routeMaps; }
+
   renderRouteMaps(name?: string): string {
     const names = name ? [name] : [...this.routeMaps.keys()];
     if (!names.length) return 'No route-maps configured.';

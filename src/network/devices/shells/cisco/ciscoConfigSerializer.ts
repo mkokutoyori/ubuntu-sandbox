@@ -1,4 +1,6 @@
 import type { RoutingConfigRepository } from '../../inspection/config/RoutingConfigRepository';
+import { renderRedistribute } from '../../inspection/config/RoutingConfigRepository';
+import type { PolicyRepository } from '../../inspection/config/PolicyRepository';
 
 const BLOCK_ORDER: ReadonlyArray<{ rank: number; test: RegExp }> = [
   { rank: 0, test: /^version\b/ },
@@ -82,7 +84,39 @@ export function orderCiscoConfigBlocks(body: readonly string[]): string[] {
   return out;
 }
 
-export function routingProcessConfigLines(repo: RoutingConfigRepository): string[] {
+export interface OspfConfigView {
+  processId: number;
+  routerId?: string;
+  networks: ReadonlyArray<{ network: string; wildcard: string; areaId: string }>;
+}
+
+export function policyConfigLines(policy: PolicyRepository): string[] {
+  const lines: string[] = [];
+  for (const v6 of [false, true]) {
+    for (const [name, entries] of policy.allPrefixLists(v6)) {
+      for (const e of entries) {
+        lines.push(`ip${v6 ? 'v6' : ''} prefix-list ${name} seq ${e.seq} ${e.action} ${e.prefix}`
+          + `${e.ge !== undefined ? ` ge ${e.ge}` : ''}`
+          + `${e.le !== undefined ? ` le ${e.le}` : ''}`);
+      }
+      lines.push('!');
+    }
+  }
+  for (const [name, clauses] of policy.allRouteMaps()) {
+    for (const c of clauses) {
+      lines.push(`route-map ${name} ${c.action} ${c.seq}`);
+      if (c.description) lines.push(` description ${c.description}`);
+      for (const m of c.match) lines.push(` match ${m}`);
+      for (const s of c.set) lines.push(` set ${s}`);
+      lines.push('!');
+    }
+  }
+  return lines;
+}
+
+export function routingProcessConfigLines(
+  repo: RoutingConfigRepository, ospf?: OspfConfigView | null,
+): string[] {
   const lines: string[] = [];
 
   for (const process of repo.allEigrp()) {
@@ -90,7 +124,7 @@ export function routingProcessConfigLines(repo: RoutingConfigRepository): string
     if (process.routerId) lines.push(` eigrp router-id ${process.routerId}`);
     for (const network of process.networks) lines.push(` network ${network}`);
     for (const iface of [...process.passive].sort()) lines.push(` passive-interface ${iface}`);
-    for (const source of process.redistribute) lines.push(` redistribute ${source}`);
+    for (const source of process.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
     if (process.variance !== undefined) lines.push(` variance ${process.variance}`);
     if (process.maximumPaths !== undefined) lines.push(` maximum-paths ${process.maximumPaths}`);
     if (process.maximumHops !== undefined) {
@@ -109,7 +143,7 @@ export function routingProcessConfigLines(repo: RoutingConfigRepository): string
     for (const network of rip.networks) lines.push(` network ${network}`);
     for (const iface of [...rip.passive].sort()) lines.push(` passive-interface ${iface}`);
     for (const neighbor of rip.neighbors) lines.push(` neighbor ${neighbor}`);
-    for (const source of rip.redistribute) lines.push(` redistribute ${source}`);
+    for (const source of rip.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
     if (rip.defaultInfoOriginate) lines.push(' default-information originate');
     if (!rip.autoSummary) lines.push(' no auto-summary');
     lines.push('!');
@@ -133,7 +167,14 @@ export function routingProcessConfigLines(repo: RoutingConfigRepository): string
       if (neighbor.description) lines.push(` neighbor ${ip} description ${neighbor.description}`);
     }
     for (const network of bgp.networks) lines.push(` network ${network}`);
-    for (const source of bgp.redistribute) lines.push(` redistribute ${source}`);
+    for (const source of bgp.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
+    lines.push('!');
+  }
+
+  if (ospf) {
+    lines.push(`router ospf ${ospf.processId}`);
+    if (ospf.routerId && ospf.routerId !== '0.0.0.0') lines.push(` router-id ${ospf.routerId}`);
+    for (const n of ospf.networks) lines.push(` network ${n.network} ${n.wildcard} area ${n.areaId}`);
     lines.push('!');
   }
 

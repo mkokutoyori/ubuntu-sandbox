@@ -142,6 +142,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private readonly routingCfg = new RoutingConfigRepository();
   /** Lu par le sérialiseur de configuration (`showRunningConfig`). */
   getRoutingConfig(): RoutingConfigRepository { return this.routingCfg; }
+  getPolicyRepo(): PolicyRepository { return this.policy; }
   private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
   getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null {
     return this.selectedRoutingProto;

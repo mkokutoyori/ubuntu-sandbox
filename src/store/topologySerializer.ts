@@ -893,7 +893,7 @@ function restoreSwitchVlans(sw: Switch, devData: TopologyDeviceExport): void {
  * `shell.execute()` — unlike `reload`, there is no shared-shell-state
  * re-entrancy risk.
  */
-async function replayVendorConfig(device: Router | Switch, text: string): Promise<void> {
+export async function replayVendorConfig(device: Router | Switch, text: string): Promise<void> {
   const huawei = device.getOSType() === 'huawei-vrp';
   const wasOff = !device.getIsPoweredOn();
   if (wasOff) device.powerOn();
@@ -909,16 +909,23 @@ async function replayVendorConfig(device: Router | Switch, text: string): Promis
   const toBase = huawei ? ['return', 'system-view'] : ['end', 'configure terminal'];
 
   for (const line of enterBase) await device.executeCommand(line);
+  let isBase = true;
 
   let wasIndented = false;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('Building configuration') || line.startsWith('Current configuration')) continue;
+    if (line === '!') {
+      if (!isBase) { for (const l of toBase) await device.executeCommand(l); isBase = true; }
+      continue;
+    }
     const indented = /^\s/.test(raw);
-    if (!indented && wasIndented) {
+    if (!indented && wasIndented && !isBase) {
       for (const l of toBase) await device.executeCommand(l);
+      isBase = true;
     }
     await device.executeCommand(line);
+    if (!indented) isBase = false;
     wasIndented = indented;
   }
   for (const line of huawei ? ['return'] : ['end']) {

@@ -27,9 +27,18 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
       return '% Invalid OSPF process ID';
     }
     const router = ctx.r();
-    if (!router._getOSPFEngineInternal()) {
-      router._enableOSPF(processId);
+    const running = router._getOSPFEngineInternal();
+    if (running && running.getConfig().processId !== processId) {
+      return `% OSPF process ${running.getConfig().processId} is already running,`
+        + ' only one OSPF process is supported on this platform';
     }
+    if (args.length > 1) {
+      if (args[1].toLowerCase() === 'vrf') {
+        return '% VRF-aware OSPF is not supported on this platform';
+      }
+      return "% Invalid input detected at '^' marker.";
+    }
+    if (!running) router._enableOSPF(processId);
     ctx.setMode('config-router-ospf');
     return '';
   });

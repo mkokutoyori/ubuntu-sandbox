@@ -9,7 +9,7 @@ import type { Router } from '../../Router';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
-import { orderCiscoConfigBlocks, routingProcessConfigLines } from './ciscoConfigSerializer';
+import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
 import { CISCO_HARDWARE_PROFILES, formatIosUptime, type CiscoChassisProfile } from './CiscoCommonShow';
@@ -573,17 +573,6 @@ export function showRunningConfig(router: Router): string {
     if (r.type === 'default' && r.nextHop) lines.push(`ip route 0.0.0.0 0.0.0.0 ${staticRouteTail(r)}`);
   }
 
-  // RIP config
-  if (router.isRIPEnabled()) {
-    lines.push('!');
-    lines.push('router rip');
-    lines.push(` version ${router.getRipVersion()}`);
-    const cfg = router.getRIPConfig();
-    for (const net of cfg.networks) {
-      lines.push(` network ${net.network}`);
-    }
-  }
-
   const vrfs = (router as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> })._vrfs;
   if (vrfs && vrfs.size > 0) {
     lines.push('!');
@@ -600,20 +589,6 @@ export function showRunningConfig(router: Router): string {
       lines.push(`vlan ${v.id}`);
       if (v.name) lines.push(` name ${v.name}`);
     }
-  }
-
-  const ospfRun = router._getOSPFEngineInternal?.();
-  if (ospfRun) {
-    const cfg = ospfRun.getConfig();
-    lines.push('!');
-    lines.push(`router ospf ${cfg.processId}`);
-    if (cfg.routerId && cfg.routerId !== '0.0.0.0') {
-      lines.push(` router-id ${cfg.routerId}`);
-    }
-    for (const n of cfg.networks) {
-      lines.push(` network ${n.network} ${n.wildcard} area ${n.areaId}`);
-    }
-    lines.push('!');
   }
 
   // Local AAA users (`username NAME privilege N secret …`).
@@ -786,16 +761,26 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
-  // `router eigrp`/`bgp`/`rip` vivent dans `RoutingConfigRepository`, qui
-  // n'avait aucun rendu de configuration : `show ip protocols` rapportait
-  // un EIGRP que la configuration ne mentionnait nulle part, et un
-  // `write memory` le perdait.
-  const routingRepo = (router as unknown as {
-    shell?: { getRoutingConfig?: () => import('../../inspection/config/RoutingConfigRepository').RoutingConfigRepository };
-  }).shell?.getRoutingConfig?.();
+  const configShell = (router as unknown as {
+    shell?: {
+      getRoutingConfig?: () => import('../../inspection/config/RoutingConfigRepository').RoutingConfigRepository;
+      getPolicyRepo?: () => import('../../inspection/config/PolicyRepository').PolicyRepository;
+    };
+  }).shell;
+  const routingRepo = configShell?.getRoutingConfig?.();
   if (routingRepo) {
-    const routingLines = routingProcessConfigLines(routingRepo);
+    const ospfCfg = router._getOSPFEngineInternal?.()?.getConfig();
+    const routingLines = routingProcessConfigLines(routingRepo, ospfCfg ? {
+      processId: ospfCfg.processId,
+      routerId: ospfCfg.routerId,
+      networks: ospfCfg.networks,
+    } : null);
     if (routingLines.length > 0) { lines.push('!'); lines.push(...routingLines); }
+  }
+  const policyRepo = configShell?.getPolicyRepo?.();
+  if (policyRepo) {
+    const policyLines = policyConfigLines(policyRepo);
+    if (policyLines.length > 0) { lines.push('!'); lines.push(...policyLines); }
   }
 
   // IOS closes the configuration with a separator before `end`, and its
