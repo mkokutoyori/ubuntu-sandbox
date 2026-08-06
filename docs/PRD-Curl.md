@@ -14,9 +14,11 @@ utilise**, et que deux de ces quatre sont acceptées puis ignorées — ce qui
 est pire que de les refuser.
 
 > **État : implémenté.** P0 à P3 sont livrés ; P4 reste hors périmètre,
-> comme annoncé au §4. Le §7 en fin de document dit exactement ce qui a été
-> fait, ce qui a dû être corrigé ailleurs pour que P2 ne mente pas, et ce
-> qui reste ouvert.
+> comme annoncé au §4. `--cacert` a été ajouté après coup, hors phases
+> (§7.4 bis), parce que sans lui aucune vérification de certificat
+> n'existait nulle part dans le simulateur. Le §7 en fin de document dit
+> exactement ce qui a été fait, ce qui a dû être corrigé ailleurs pour
+> que P2 ne mente pas, et ce qui reste ouvert.
 
 ## 2. État des lieux, vérifié
 
@@ -65,6 +67,7 @@ par excellence** : c'est elle qu'on demande à un apprenant de taper quand
 | `-H 'K: V'` | en-tête arbitraire | P2 |
 | `-u user:pass` | authentification HTTP | P3 |
 | `--resolve` | forcer une résolution | P3 |
+| `--cacert FILE` | vérifier contre une ancre fabriquée par l'opérateur | hors phases, §7.4 bis |
 | `-x` proxy, cookies, `--retry` | | P4 |
 
 **Et un manque qui n'est pas une option** : `run` rend une `string`, donc
@@ -227,6 +230,39 @@ Trois incohérences trouvées en chemin, corrigées dans la même passe :
   "%{http_code}|%{size_download}"` passait pour un pipeline. `splitCmdChain`
   savait déjà tenir compte des guillemets pour `||` ; la détection de tube
   le fait maintenant aussi.
+
+### 7.4 bis — `--cacert`, et ce qu'il a révélé ailleurs
+
+Ajouté après coup, hors des quatre phases, parce qu'il manquait la seule
+chose qui rendait une PKI de labo utilisable : jusque-là on atteignait
+son propre serveur avec `-k`, et `-k` veut dire « ne vérifie pas ». Rien
+dans ce simulateur n'avait donc jamais contrôlé qu'un certificat était
+utilisable — seulement que les deux bouts s'entendaient.
+
+Ce qu'il fait : l'option REMPLACE le magasin de confiance au lieu de s'y
+ajouter (sinon passer la mauvaise ancre réussirait quand même, et
+l'option serait un `-k` décoré) ; un fichier absent échoue avant la
+poignée de main, avec l'erreur 77 de curl ; `CurlHost` gagne `readFile`,
+rempli des deux côtés, puisque c'est un seul moteur.
+
+Ce qu'il a trouvé — trois défauts, aucun dans curl :
+
+1. `subjectAltName` est rangé comme openssl l'écrit (`DNS:lab.local`) et
+   la comparaison prenait la chaîne entière : un certificat portant un
+   SAN ne correspondait à aucun hôte. Le SAN primant sur le nom commun,
+   en ajouter un rendait le certificat *pire*.
+2. Le repli sur le nom commun cherchait `CN=` collé, alors que la RFC
+   4514 autorise les espaces et que l'`openssl req` de cette machine
+   écrit `CN = lab.local` : aucun certificat émis ici ne pouvait
+   correspondre par son nom commun.
+3. `openssl req -x509 -addext subjectAltName=...` greffait l'extension
+   après la signature, que `tbsPayload` couvre (voir
+   `docs/PRD-OpenSSL.md`).
+
+Ce que les tests ne discriminent PAS, dit plutôt que sous-entendu : le
+magasin d'une machine Linux est vide ici, donc « remplacer » et
+« ajouter » y sont indiscernables. Les deux correctifs du comparateur,
+eux, sont discriminés par neutralisation (3 cas sur 9 tombent).
 
 ### 7.5 Limites assumées
 

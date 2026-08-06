@@ -76,6 +76,25 @@ consommateur réel de sa sortie. Les sous-modes dont aucun autre composant
 ne lit encore le produit (`pkcs8`, `pkeyutl`, `crl`) sont dans la même
 situation qu'était `req -x509` avant §P5.
 
+**Troisième défaut, trouvé par `curl --cacert` et de la même famille.**
+§P5 présentait un certificat ; `--cacert` est ce qui a d'abord VÉRIFIÉ
+un certificat, tout le reste du simulateur passant par `-k`. Il a trouvé
+que `req -x509 -addext subjectAltName=...` greffait l'extension sur le
+certificat APRÈS que `generateSelfSignedCertificate` l'eut signé — or
+`tbsPayload` couvre les extensions, donc le fichier écrit ne
+correspondait plus à ce qui avait été signé, et aucun vérificateur ne
+pouvait l'accepter. Le SAN passe désormais par
+`SelfSignedCertificateOptions.subjectAltName`, avant la signature. Les
+deux autres chemins de signature (`x509 -req`, `ca`) construisaient déjà
+les extensions dans les champs signés : rien à y changer, vérifié plutôt
+que supposé.
+
+La règle se confirme donc une troisième fois, et se précise : ce n'est
+pas « écrire un fichier » qui vérifie une commande, c'est le faire LIRE
+par un composant qui refuse. Un certificat présenté à une poignée de
+main ne prouve que l'accord des deux bouts ; il faut une ancre pour que
+quelque chose puisse dire non.
+
 ## 2. Le constat, mesuré
 
 Trois vérifications, faites avant d'écrire une ligne de ce document.
