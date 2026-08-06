@@ -25,7 +25,40 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-*(rien)*
+### Debug Cisco — lot D2 (cycle de vie)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier B / lot D2.
+
+**Ce que fait le lot** : un drapeau de debug devient indépendant de la
+configuration (`debug ip ospf adj` s'arme sur un routeur nu — mesuré : 0
+ligne aujourd'hui si on l'arme avant `router ospf`), un mot-clé inconnu
+est refusé au lieu d'armer une capture de paquets IP, `no debug X`
+désarme exactement `debug X`, et `debug all` existe sur le routeur.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `shells/CiscoShellBase.ts` | Les registrations `debug …` / `no debug …` |
+| `shells/cisco/CiscoOspfCommands.ts` | `debug ip ospf` ne consulte plus le moteur |
+| `shells/cisco/CiscoDhcpCommands.ts` | `no debug ip dhcp server …` rend un message |
+| `shells/CiscoSwitchShell.ts` | `debug all`, `show debugging` privilégié |
+| `router/diag/RouterDebugService.ts`, `switch/SwitchDebugService.ts` | Au besoin |
+
+**⚠ Point de contact avec l'agent « logging »** : nous partageons
+`CiscoShellBase.ts`, `CiscoSwitchShell.ts` et `CiscoIOSShell.ts`, mais
+**pas les mêmes registrations** — vous prenez `logging` / `no logging` /
+`show logging*`, je prends `debug …` / `no debug …` / `undebug …` /
+`show debugging`. Les deux se fusionnent tant qu'on ne touche pas au
+voisin.
+
+Une seule zone grise : **`show debugging`** est aujourd'hui enregistré
+dans `CiscoIPSecShowCommands.ts` et `CiscoSwitchShell.ts`. Je le déplace
+si nécessaire ; si votre lot le déplace aussi, dites-le ici et je vous
+laisse la main.
+
+Je ne touche **pas** `LoggingConfig.ts` dans ce lot.
 
 ---
 
