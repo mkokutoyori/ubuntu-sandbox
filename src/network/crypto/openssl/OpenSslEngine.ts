@@ -23,6 +23,7 @@ import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate'
 import {
   certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
+  encryptedPrivateKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem,
 } from '@/network/pki/pem';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
@@ -961,17 +962,53 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
  * contenu : la clé sort identique, seule son armure change — et c'est
  * exactement ce que fait le vrai outil.
  */
+/** `pass:secret` — la seule source de phrase de passe non interactive. */
+function phraseDePasse(valeur: string | true | undefined): string | null {
+  if (typeof valeur !== 'string') return null;
+  return valeur.startsWith('pass:') ? valeur.slice(5) : null;
+}
+
+/**
+ * `pkcs8` convertit la FORME d'une clé, et `-topk8` la chiffre — c'est
+ * `-nocrypt` qui demande le clair, pas l'inverse.
+ *
+ * Ce qui était faux : `-topk8` rendait toujours une clé en clair,
+ * `-nocrypt` n'était même pas lu. Un TP y apprenait donc le contraire de
+ * ce que la commande enseigne, et l'étiquette `ENCRYPTED PRIVATE KEY`,
+ * présente dans `PemLabel`, n'était jamais écrite par personne.
+ */
 function runPkcs8(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('pkcs8', argv);
   const chemin = opts.get('-in');
   if (typeof chemin !== 'string') return fail('openssl: pkcs8: -in is required');
   const texte = host.readFile(chemin);
   if (texte === null) return fail(`Can't open "${chemin}" for reading, No such file or directory`);
-  const cle = pemToPrivateKey(texte);
+
+  const passin = phraseDePasse(opts.get('-passin'));
+  let cle = pemToPrivateKey(texte);
+  if (!cle && isEncryptedPrivateKeyPem(texte)) {
+    if (passin === null) {
+      // Sans terminal, un vrai openssl ne peut pas demander la phrase et
+      // échoue ici plutôt que de rendre une clé.
+      return fail('unable to load key\nopenssl: pkcs8: an encrypted key needs -passin pass:...');
+    }
+    cle = pemToEncryptedPrivateKey(texte, passin);
+    if (!cle) return fail('unable to load key\nbad decrypt');
+  }
   if (!cle) return fail('unable to load key');
 
-  // `-topk8` demande la forme PKCS#8 ; sans lui, openssl fait l'inverse.
-  const pem = privateKeyToPem(cle, !opts.has('-topk8'));
+  let pem: string;
+  if (opts.has('-topk8') && !opts.has('-nocrypt')) {
+    const passout = phraseDePasse(opts.get('-passout'));
+    if (passout === null) {
+      return fail('unable to write key\nopenssl: pkcs8 -topk8: use -nocrypt, or -passout pass:...');
+    }
+    pem = encryptedPrivateKeyToPem(cle, passout, (n) => host.randomBytes(n));
+  } else {
+    // `-topk8` demande la forme PKCS#8 ; sans lui, openssl fait l'inverse.
+    pem = privateKeyToPem(cle, !opts.has('-topk8'));
+  }
+
   const out = opts.get('-out');
   if (typeof out === 'string') {
     return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);

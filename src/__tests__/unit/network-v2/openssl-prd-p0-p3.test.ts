@@ -488,12 +488,19 @@ describe('§P6 — le reste de la PKI', () => {
     expect(await srv.executeCommand('openssl ec -in /tmp/r.key -noout')).toContain('unable to load Key');
   });
 
-  it('`pkcs8 -topk8` change l\'armure sans changer la clé', async () => {
+  /**
+   * Ce cas invoquait `-topk8` SANS `-nocrypt` et attendait une clé en
+   * clair. C'était le défaut, pas le comportement : sur un vrai openssl,
+   * `-topk8` chiffre, et `-nocrypt` est justement le drapeau qui demande
+   * de ne pas le faire (voir `openssl-pkcs8-encrypted.test.ts`). Le test
+   * est corrigé, pas le produit.
+   */
+  it('`pkcs8 -topk8 -nocrypt` change l\'armure sans changer la clé', async () => {
     const srv = machine();
     await srv.executeCommand('openssl genrsa -traditional -out /tmp/trad.key 2048');
     expect(await srv.executeCommand('cat /tmp/trad.key')).toContain('BEGIN RSA PRIVATE KEY');
 
-    await srv.executeCommand('openssl pkcs8 -topk8 -in /tmp/trad.key -out /tmp/p8.key');
+    await srv.executeCommand('openssl pkcs8 -topk8 -nocrypt -in /tmp/trad.key -out /tmp/p8.key');
 
     expect(await srv.executeCommand('cat /tmp/p8.key')).toContain('BEGIN PRIVATE KEY');
     // La conversion porte sur la FORME : la clé doit encore servir.

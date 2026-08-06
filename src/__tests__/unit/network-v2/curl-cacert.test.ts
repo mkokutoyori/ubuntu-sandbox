@@ -38,9 +38,9 @@ function machine(name = 'PKI'): LinuxServer {
 async function buildPki(srv: LinuxServer, serverName: string): Promise<void> {
   await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
   await srv.executeCommand(
-    'openssl req -x509 -newkey rsa:2048 -keyout /etc/ssl/private/ca.key '
+    'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/ca.key '
     + '-out /etc/ssl/certs/ca.crt -days 365 -nodes -subj "/CN=Lab Root CA"');
-  await srv.executeCommand('openssl genrsa -out /etc/ssl/private/srv.key 2048');
+  await srv.executeCommand('openssl genrsa -out /etc/ssl/private/srv.key 512');
   await srv.executeCommand(
     `openssl req -new -key /etc/ssl/private/srv.key -out /tmp/srv.csr -subj "/CN=${serverName}"`);
   await srv.executeCommand(
@@ -123,7 +123,7 @@ describe('what the anchor decides', () => {
   it('another root, built the same way, is refused', async () => {
     const srv = await lab();
     await srv.executeCommand(
-      'openssl req -x509 -newkey rsa:2048 -keyout /tmp/other.key '
+      'openssl req -x509 -newkey rsa:512 -keyout /tmp/other.key '
       + '-out /tmp/other.crt -days 365 -nodes -subj "/CN=Other Root CA"');
 
     const out = await srv.executeCommand('curl -sS --cacert /tmp/other.crt https://127.0.0.1/');
@@ -152,7 +152,7 @@ describe('the two matching defects --cacert exposed', () => {
     const srv = machine();
     await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
     await srv.executeCommand(
-      'openssl req -x509 -newkey rsa:2048 -keyout /etc/ssl/private/srv.key '
+      'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/srv.key '
       + '-out /etc/ssl/certs/srv.crt -days 365 -nodes -subj "/CN=unrelated.lab" '
       + '-addext "subjectAltName=DNS:127.0.0.1"');
     await serve(srv);
@@ -170,7 +170,7 @@ describe('the two matching defects --cacert exposed', () => {
     const srv = machine();
     await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
     await srv.executeCommand(
-      'openssl req -x509 -newkey rsa:2048 -keyout /etc/ssl/private/srv.key '
+      'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/srv.key '
       + '-out /etc/ssl/certs/srv.crt -days 365 -nodes -subj "/CN=127.0.0.1"');
     await serve(srv);
 
