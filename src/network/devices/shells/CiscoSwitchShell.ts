@@ -1654,6 +1654,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const knob = Number.isNaN(perVlan) ? head : a[2];
       const knobValue = parseInt(Number.isNaN(perVlan) ? a[1] : a[3], 10);
       const vlanArg = Number.isNaN(perVlan) ? undefined : perVlan;
+      // IOS refuse hors bornes, il n'absorbe pas — et la priorite de port
+      // se pose par pas de 16, ce qu'il dit avec ses propres mots.
+      if (knob === 'cost' && !Number.isNaN(knobValue)
+        && (knobValue < 1 || knobValue > 200_000_000)) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      if (knob === 'port-priority' && !Number.isNaN(knobValue)) {
+        if (knobValue < 0 || knobValue > 240) return "% Invalid input detected at '^' marker.";
+        if (knobValue % 16 !== 0) {
+          return '% Bridge Port priority must be in increments of 16.';
+        }
+      }
       for (const i of ifs) {
         if (knob === 'cost' && !Number.isNaN(knobValue)) {
           agent.setPortCost(i, knobValue, vlanArg);
