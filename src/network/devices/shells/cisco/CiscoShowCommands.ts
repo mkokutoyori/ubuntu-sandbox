@@ -9,10 +9,10 @@ import type { Router } from '../../Router';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
-import { orderCiscoConfigBlocks, routingProcessConfigLines } from './ciscoConfigSerializer';
+import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
-import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
+import { CISCO_HARDWARE_PROFILES, formatIosUptime, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -28,7 +28,7 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
     '',
     `ROM: System Bootstrap, Version 15.0(1r)M15`,
     '',
-    `${router._getHostnameInternal()} uptime is ${formatUptime(uptimeMs)}`,
+    `${router._getHostnameInternal()} uptime is ${formatIosUptime(uptimeMs)}`,
     `System image file is "flash:${hw.flashImage}"`,
     '',
     `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
@@ -73,18 +73,7 @@ function staticRouteTail(r: {
   return parts.join(' ');
 }
 
-function formatUptime(ms: number): string {
-  if (ms < 60_000) return '0 minutes';
-  const totalMin = Math.floor(ms / 60_000);
-  const days = Math.floor(totalMin / 1440);
-  const hours = Math.floor((totalMin % 1440) / 60);
-  const mins = totalMin % 60;
-  const parts: string[] = [];
-  if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`);
-  if (hours) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
-  parts.push(`${mins} minute${mins === 1 ? '' : 's'}`);
-  return parts.join(', ');
-}
+
 
 /** La légende d'IOS 15.x, en six lignes. Elle en faisait deux. */
 const ROUTE_LEGEND = [
@@ -201,10 +190,11 @@ export function renderIpRouteTable(
       defaults.push(`S*    0.0.0.0/0 [${r.ad ?? 1}/${r.metric ?? 0}] via ${r.nextHop}`);
       continue;
     }
-    const via = r.nextHop ? `via ${r.nextHop}` : 'is directly connected';
+    const attachee = !r.nextHop || String(r.nextHop) === '0.0.0.0';
+    const via = attachee ? 'is directly connected' : `via ${r.nextHop}`;
     const metricStr = r.type === 'connected' || r.type === 'local'
       ? '' : ` [${r.ad ?? 1}/${r.metric ?? 0}]`;
-    const suffix = r.type === 'static' ? '' : `, ${r.iface}`;
+    const suffix = r.type === 'static' && !attachee ? '' : `, ${r.iface}`;
     rendered.push({
       code: codeOverride?.(r) ?? routeCode(r.type),
       networkInt: r.network.toUint32 ? r.network.toUint32() : dottedToInt(r.network.toString()),
@@ -583,17 +573,6 @@ export function showRunningConfig(router: Router): string {
     if (r.type === 'default' && r.nextHop) lines.push(`ip route 0.0.0.0 0.0.0.0 ${staticRouteTail(r)}`);
   }
 
-  // RIP config
-  if (router.isRIPEnabled()) {
-    lines.push('!');
-    lines.push('router rip');
-    lines.push(` version ${router.getRipVersion()}`);
-    const cfg = router.getRIPConfig();
-    for (const net of cfg.networks) {
-      lines.push(` network ${net.network}`);
-    }
-  }
-
   const vrfs = (router as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> })._vrfs;
   if (vrfs && vrfs.size > 0) {
     lines.push('!');
@@ -610,20 +589,6 @@ export function showRunningConfig(router: Router): string {
       lines.push(`vlan ${v.id}`);
       if (v.name) lines.push(` name ${v.name}`);
     }
-  }
-
-  const ospfRun = router._getOSPFEngineInternal?.();
-  if (ospfRun) {
-    const cfg = ospfRun.getConfig();
-    lines.push('!');
-    lines.push(`router ospf ${cfg.processId}`);
-    if (cfg.routerId && cfg.routerId !== '0.0.0.0') {
-      lines.push(` router-id ${cfg.routerId}`);
-    }
-    for (const n of cfg.networks) {
-      lines.push(` network ${n.network} ${n.wildcard} area ${n.areaId}`);
-    }
-    lines.push('!');
   }
 
   // Local AAA users (`username NAME privilege N secret …`).
@@ -796,16 +761,26 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
-  // `router eigrp`/`bgp`/`rip` vivent dans `RoutingConfigRepository`, qui
-  // n'avait aucun rendu de configuration : `show ip protocols` rapportait
-  // un EIGRP que la configuration ne mentionnait nulle part, et un
-  // `write memory` le perdait.
-  const routingRepo = (router as unknown as {
-    shell?: { getRoutingConfig?: () => import('../../inspection/config/RoutingConfigRepository').RoutingConfigRepository };
-  }).shell?.getRoutingConfig?.();
+  const configShell = (router as unknown as {
+    shell?: {
+      getRoutingConfig?: () => import('../../inspection/config/RoutingConfigRepository').RoutingConfigRepository;
+      getPolicyRepo?: () => import('../../inspection/config/PolicyRepository').PolicyRepository;
+    };
+  }).shell;
+  const routingRepo = configShell?.getRoutingConfig?.();
   if (routingRepo) {
-    const routingLines = routingProcessConfigLines(routingRepo);
+    const ospfCfg = router._getOSPFEngineInternal?.()?.getConfig();
+    const routingLines = routingProcessConfigLines(routingRepo, ospfCfg ? {
+      processId: ospfCfg.processId,
+      routerId: ospfCfg.routerId,
+      networks: ospfCfg.networks,
+    } : null);
     if (routingLines.length > 0) { lines.push('!'); lines.push(...routingLines); }
+  }
+  const policyRepo = configShell?.getPolicyRepo?.();
+  if (policyRepo) {
+    const policyLines = policyConfigLines(policyRepo);
+    if (policyLines.length > 0) { lines.push('!'); lines.push(...policyLines); }
   }
 
   // IOS closes the configuration with a separator before `end`, and its

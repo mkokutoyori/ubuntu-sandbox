@@ -36,6 +36,7 @@ import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../.
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
+import { CliInvalidInput } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 
 /** CLI Mode (FSM State) */
@@ -582,7 +583,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── Interface ── trust + limit rate
     this.configIfTrie.registerGreedy('mtu', 'Set MTU', (args) => {
       const n = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(n)) return "% Invalid input detected at '^' marker.";
+      if (!Number.isFinite(n)) throw new CliInvalidInput();
       if (n < 68) return `% Invalid MTU: ${n}. Minimum is 68 (IPv4 minimum).`;
       if (n > 9216) return `% Invalid MTU: ${n}. Maximum is 9216 (jumbo frame).`;
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
@@ -1654,6 +1655,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const knob = Number.isNaN(perVlan) ? head : a[2];
       const knobValue = parseInt(Number.isNaN(perVlan) ? a[1] : a[3], 10);
       const vlanArg = Number.isNaN(perVlan) ? undefined : perVlan;
+      // IOS refuse hors bornes, il n'absorbe pas — et la priorite de port
+      // se pose par pas de 16, ce qu'il dit avec ses propres mots.
+      if (knob === 'cost' && !Number.isNaN(knobValue)
+        && (knobValue < 1 || knobValue > 200_000_000)) {
+        throw new CliInvalidInput();
+      }
+      // Hors bornes, IOS refuse. Une valeur DANS les bornes qui n'est pas
+      // un multiple de 16 est arrondie par l'agent STP, choix déjà pris
+      // et testé ailleurs (`stp-prd-fidelity`) : la refuser ici ferait
+      // deux réponses à une même saisie.
+      if (knob === 'port-priority' && !Number.isNaN(knobValue)
+        && (knobValue < 0 || knobValue > 240)) {
+        throw new CliInvalidInput();
+      }
       for (const i of ifs) {
         if (knob === 'cost' && !Number.isNaN(knobValue)) {
           agent.setPortCost(i, knobValue, vlanArg);

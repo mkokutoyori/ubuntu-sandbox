@@ -322,8 +322,7 @@ ne pourra être replié qu'ensuite.
 
 ## 6. Ce qui reste sur la SECONDE pile SSH (`src/shell/`), mesuré
 
-Relevé fait pendant l'attente d'une régression, sans rien exécuter — donc
-une lecture, pas une supposition. Le plan de refonte SSH annonçait cette
+Relevé fait d'abord par lecture, puis MESURÉ (voir §6.1). Le plan de refonte SSH annonçait cette
 pile comme « un second chantier de taille comparable ». Elle est en fait
 **à moitié migrée**, et le reste tient en deux points précis.
 
@@ -352,6 +351,30 @@ il s'agit de faire pour ces deux fonctions ce que la Phase 3 a fait pour
 que `openWireSshShell` sait déjà mener, et l'appel direct par un canal
 exec. Le chemin filaire existe et tourne juste à côté, dans le même
 fichier.
+
+### 6.1 La mesure du point 1
+
+Le défaut annoncé par lecture a été confronté à la machine : six
+tentatives d'affilée avec un mauvais mot de passe, sur le chemin exact du
+terminal (`tryInterpretSshLaunch` puis `finalisePendingAuth`), contre un
+compte réel d'un serveur réellement câblé.
+
+Résultat : **six refus, aucun blocage**. Les six échecs sont bien tracés
+dans l'`auth.log` de la cible — mais par `tryRecordSshLogin`, côté
+CLIENT. Le serveur, lui, n'en voit aucun : son `isClientBlocked` n'est
+jamais consulté, puisqu'aucune tentative ne lui parvient. Un client peut
+donc essayer autant de mots de passe qu'il veut par ce chemin, alors
+qu'une vraie session filaire l'aurait fait tomber sous la limitation du
+serveur.
+
+C'est exactement ce que la Phase 3 a retiré du client Linux, et ce qui
+reste ici.
+
+**Ce que le correctif devra préserver, et c'est le point délicat :** les
+six lignes d'`auth.log` viennent aujourd'hui du client. Faire décider la
+session filaire sans vérifier d'abord qui écrit ces lignes ferait soit
+disparaître la trace, soit la doubler. La mesure ci-dessus est le point
+de départ du correctif, pas le correctif.
 
 **Non traité ici, et volontairement :** `WindowsPC.createVtyShell()` est
 le dernier usage de `CrossVendorRemoteShell` en production, et il est

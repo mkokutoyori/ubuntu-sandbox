@@ -611,7 +611,9 @@ export class OSPFEngine implements IProtocolEngine {
    * This determines which interfaces participate in OSPF.
    */
   addNetwork(network: string, wildcard: string, areaId: string): void {
-    this.config.networks.push({ network, wildcard, areaId });
+    const already = this.config.networks.some((n) =>
+      n.network === network && n.wildcard === wildcard && n.areaId === areaId);
+    if (!already) this.config.networks.push({ network, wildcard, areaId });
 
     // Ensure area exists
     if (!this.config.areas.has(areaId)) {

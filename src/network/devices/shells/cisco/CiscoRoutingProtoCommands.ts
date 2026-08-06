@@ -14,12 +14,20 @@ import type { CiscoShellContext } from './CiscoConfigCommands';
 import { classfulMask } from './CiscoConfigCommands';
 import type { RoutingConfigRepository }
   from '../../inspection/config/RoutingConfigRepository';
+import { parseRedistribute, upsertRedistribute }
+  from '../../inspection/config/RoutingConfigRepository';
 import { showIpProtocols } from './CiscoShowCommands';
 
 type Proto = 'rip' | 'eigrp' | 'bgp';
 
 function curProto(ctx: CiscoShellContext): { proto: Proto; asn?: number } {
   return ctx.getSelectedRoutingProto() ?? { proto: 'rip' };
+}
+
+function pushOnce(list: string[], value: string): boolean {
+  if (list.includes(value)) return false;
+  list.push(value);
+  return true;
 }
 
 export function buildRoutingProtoConfig(
@@ -34,11 +42,12 @@ export function buildRoutingProtoConfig(
 
   configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
     const asn = parseInt(a[0], 10);
-    const named = Number.isNaN(asn);
-    repo.ensureEigrp(named ? 0 : asn, named);
-    eigrpEng().enable({ asn: named ? 0 : asn });
-    ctx.setSelectedRoutingProto({ proto: 'eigrp', asn: named ? 0 : asn });
+    if (asn < 1 || asn > 65535) return '% Invalid AS number';
+    repo.ensureEigrp(asn);
+    eigrpEng().enable({ asn });
+    ctx.setSelectedRoutingProto({ proto: 'eigrp', asn });
     ctx.setMode('config-router');
     converge();
     return '';
@@ -51,9 +60,16 @@ export function buildRoutingProtoConfig(
   });
   configTrie.registerGreedy('router bgp', 'Enter BGP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
-    repo.ensureBgp(parseInt(a[0], 10));
-    bgpEng().enable({ asn: parseInt(a[0], 10) });
-    ctx.setSelectedRoutingProto({ proto: 'bgp', asn: parseInt(a[0], 10) });
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
+    const asn = parseInt(a[0], 10);
+    if (asn < 1 || asn > 4294967295) return '% Invalid AS number';
+    const existing = repo.getBgp();
+    if (existing && existing.asn !== asn) {
+      return `% Currently a BGP peer to AS ${existing.asn}`;
+    }
+    repo.ensureBgp(asn);
+    bgpEng().enable({ asn });
+    ctx.setSelectedRoutingProto({ proto: 'bgp', asn });
     ctx.setMode('config-router');
     converge();
     return '';
@@ -79,7 +95,7 @@ export function buildRoutingProtoConfig(
         const mask = args.length >= 2 && args[1] !== 'mask'
           ? new SubnetMask(args[1]) : classfulMask(net);
         ctx.r().ripAdvertiseNetwork(net, mask);
-        repo.rip.networks.push(args.join(' '));
+        pushOnce(repo.rip.networks, args.join(' '));
         return '';
       } catch (e) {
         return `% Invalid input: ${e instanceof Error ? e.message : e}`;
@@ -88,12 +104,14 @@ export function buildRoutingProtoConfig(
     if (args.length < 1) return '% Incomplete command.';
     if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
     if (proto === 'eigrp') {
-      eigrp().networks.push(args.join(' '));
-      eigrpEng().getConfig().networks.push({
-        network: args[0], wildcard: args[1] && args[1] !== 'mask' ? args[1] : undefined,
-      });
+      if (pushOnce(eigrp().networks, args.join(' '))) {
+        eigrpEng().getConfig().networks.push({
+          network: args[0], wildcard: args[1] && args[1] !== 'mask' ? args[1] : undefined,
+        });
+      }
     } else {
-      bgp()?.networks.push(args.join(' '));
+      const proc = bgp();
+      if (proc && !pushOnce(proc.networks, args.join(' '))) return '';
       const mask = args[1] === 'mask' && args[2]
         ? args[2] : String(classfulMask(new IPAddress(args[0])));
       bgpEng().getConfig().networks.push({ network: args[0], mask });
@@ -170,30 +188,28 @@ export function buildRoutingProtoConfig(
   const parseRipRedistSource = (token: string | undefined) =>
     RIP_REDIST_SOURCES.find((s) => s === (token ?? '').toLowerCase());
   const REDIST_PROTOCOLS = ['connected', 'static', 'rip', 'ospf', 'eigrp', 'bgp', 'isis'];
-  routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a, raw) => {
+  routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a) => {
     if (!a[0]) return '% Incomplete command.';
     if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return "% Invalid input detected at '^' marker.";
-    const line = raw ?? `redistribute ${a.join(' ')}`;
+    const parsed = parseRedistribute(a);
+    if (!parsed) throw new CliInvalidInput();
     const p = curProto(ctx).proto;
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);
       if (!source) return "% Invalid input detected at '^' marker.";
-      let metric: number | undefined;
-      const mIdx = a.findIndex((t) => t.toLowerCase() === 'metric');
-      if (mIdx >= 0 && a[mIdx + 1] !== undefined) {
-        const m = parseInt(a[mIdx + 1], 10);
-        if (!Number.isNaN(m)) metric = m;
-      }
-      ctx.r().ripSetRedistribution(source, metric);
-      repo.rip.redistribute.push(line);
+      ctx.r().ripSetRedistribution(source, parsed.metric?.[0]);
+      upsertRedistribute(repo.rip.redistribute, parsed);
     } else if (p === 'eigrp') {
-      eigrp().redistribute.push(line);
+      upsertRedistribute(eigrp().redistribute, parsed);
       const source = parseRipRedistSource(a[0]) ?? (a[0]?.toLowerCase() === 'rip' ? 'rip' : undefined);
       if (source && source !== 'eigrp') {
         eigrpEng().setRedistribution(source as 'static' | 'connected' | 'rip' | 'ospf' | 'bgp');
         converge();
       }
-    } else bgp()?.redistribute.push(line);
+    } else {
+      const proc = bgp();
+      if (proc) upsertRedistribute(proc.redistribute, parsed);
+    }
     return '';
   });
   routerTrie.registerGreedy('no redistribute', 'Stop redistributing routes', (a) => {
@@ -203,8 +219,7 @@ export function buildRoutingProtoConfig(
       if (source === 'static' || source === 'connected' || source === 'rip'
         || source === 'ospf' || source === 'bgp') {
         eigrpEng().removeRedistribution(source);
-        eigrp().redistribute = eigrp().redistribute.filter(
-          (l) => !l.toLowerCase().startsWith(`redistribute ${source}`));
+        eigrp().redistribute = eigrp().redistribute.filter((s) => s.protocol !== source);
         converge();
       }
       return '';
@@ -213,8 +228,7 @@ export function buildRoutingProtoConfig(
       const source = parseRipRedistSource(a[0]);
       if (!source) return '% Invalid input detected.';
       ctx.r().ripRemoveRedistribution(source);
-      repo.rip.redistribute = repo.rip.redistribute.filter(
-        (l) => !l.toLowerCase().startsWith(`redistribute ${source}`));
+      repo.rip.redistribute = repo.rip.redistribute.filter((s) => s.protocol !== source);
     }
     return '';
   });

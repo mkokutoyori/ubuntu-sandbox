@@ -24,7 +24,9 @@ function isUp(router: Router, iface: string): boolean {
 function applyVrrp(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
   const agent = getVrrpAgent(router);
   const group = parseInt(args[0], 10);
-  if (Number.isNaN(group)) return '% Invalid VRRP group';
+  // RFC 5798 : le VRID tient sur un octet et 0 n'en est pas un. La borne
+  // est celle du protocole, pas d'une plateforme.
+  if (Number.isNaN(group) || group < 1 || group > 255) return '% Invalid VRRP group';
   const g = repo.ensureVrrp(iface, group);
   agent?.ensureGroup(iface, group);
   const rest = args.slice(2);

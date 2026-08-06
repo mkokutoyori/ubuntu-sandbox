@@ -29,6 +29,8 @@ describe('the switch shell announces its argument types too', () => {
   it.each([
     ['switchport access vlan ?', '<1-4094>'],
     ['channel-group ?', '<1-64>'],
+    ['spanning-tree cost ?', '<1-200000000>'],
+    ['spanning-tree port-priority ?', '<0-240>'],
     ['mtu ?', '<68-9216>'],
     ['description ?', 'LINE'],
   ])('%s announces %s', async (command, expected) => {
@@ -102,6 +104,20 @@ describe('the switch help invents nothing either', () => {
     expect(refused(await sw.executeCommand('channel-group 0 mode on'))).toBe(true);
     expect(refused(await sw.executeCommand('channel-group 64 mode on'))).toBe(false);
     expect(refused(await sw.executeCommand('channel-group 65 mode on'))).toBe(true);
+  });
+
+  it('the ranges that IOS enforces are now enforced here too', async () => {
+    const sw = await inInterface();
+    const refused = (out: string) => /Invalid|%/.test(out);
+
+    expect(refused(await sw.executeCommand('spanning-tree cost 0'))).toBe(true);
+    expect(refused(await sw.executeCommand('spanning-tree cost 1'))).toBe(false);
+    expect(refused(await sw.executeCommand('spanning-tree cost 200000000'))).toBe(false);
+    expect(refused(await sw.executeCommand('spanning-tree cost 200000001'))).toBe(true);
+
+    expect(refused(await sw.executeCommand('spanning-tree port-priority 0'))).toBe(false);
+    expect(refused(await sw.executeCommand('spanning-tree port-priority 240'))).toBe(false);
+    expect(refused(await sw.executeCommand('spanning-tree port-priority 241'))).toBe(true);
   });
 
   it('an out-of-range value is REFUSED, never thrown', async () => {

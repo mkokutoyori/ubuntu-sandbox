@@ -8,12 +8,78 @@
  * the true state.
  */
 
+export type RedistributeProtocol =
+  'connected' | 'static' | 'rip' | 'ospf' | 'eigrp' | 'bgp' | 'isis';
+
+export interface RedistributeSource {
+  protocol: RedistributeProtocol;
+  processId?: number;
+  metric?: number[];
+  metricType?: number;
+  routeMap?: string;
+  subnets?: boolean;
+  tail?: string[];
+}
+
+export function redistributeKey(source: RedistributeSource): string {
+  return `${source.protocol}${source.processId !== undefined ? ` ${source.processId}` : ''}`;
+}
+
+export function renderRedistribute(source: RedistributeSource): string {
+  const parts: string[] = [source.protocol];
+  if (source.processId !== undefined) parts.push(String(source.processId));
+  if (source.metric && source.metric.length > 0) parts.push('metric', ...source.metric.map(String));
+  if (source.metricType !== undefined) parts.push('metric-type', String(source.metricType));
+  if (source.subnets) parts.push('subnets');
+  if (source.routeMap) parts.push('route-map', source.routeMap);
+  if (source.tail && source.tail.length > 0) parts.push(...source.tail);
+  return parts.join(' ');
+}
+
+const REDISTRIBUTE_PROTOCOLS: readonly RedistributeProtocol[] =
+  ['connected', 'static', 'rip', 'ospf', 'eigrp', 'bgp', 'isis'];
+
+export function parseRedistribute(args: readonly string[]): RedistributeSource | null {
+  const protocol = REDISTRIBUTE_PROTOCOLS.find((p) => p === (args[0] ?? '').toLowerCase());
+  if (!protocol) return null;
+  const source: RedistributeSource = { protocol };
+  let i = 1;
+  if (/^\d+$/.test(args[1] ?? '')) { source.processId = parseInt(args[1], 10); i = 2; }
+  const tail: string[] = [];
+  while (i < args.length) {
+    const token = args[i].toLowerCase();
+    if (token === 'metric') {
+      const values: number[] = [];
+      while (i + 1 < args.length && /^\d+$/.test(args[i + 1])) values.push(parseInt(args[++i], 10));
+      if (values.length === 0) return null;
+      source.metric = values;
+    } else if (token === 'metric-type' && /^\d+$/.test(args[i + 1] ?? '')) {
+      source.metricType = parseInt(args[++i], 10);
+    } else if (token === 'subnets') {
+      source.subnets = true;
+    } else if (token === 'route-map' && args[i + 1]) {
+      source.routeMap = args[++i];
+    } else {
+      tail.push(args[i]);
+    }
+    i++;
+  }
+  if (tail.length > 0) source.tail = tail;
+  return source;
+}
+
+export function upsertRedistribute(list: RedistributeSource[], source: RedistributeSource): void {
+  const key = redistributeKey(source);
+  const i = list.findIndex((s) => redistributeKey(s) === key);
+  if (i >= 0) list[i] = source; else list.push(source);
+}
+
 export interface RipExtras {
   version: 1 | 2 | null;
   autoSummary: boolean;
   passiveDefault: boolean;
   passive: Set<string>;
-  redistribute: string[];
+  redistribute: RedistributeSource[];
   networks: string[];
   neighbors: string[];
   distance?: number;
@@ -28,7 +94,7 @@ export interface EigrpProcess {
   routerId?: string;
   networks: string[];
   passive: Set<string>;
-  redistribute: string[];
+  redistribute: RedistributeSource[];
   variance?: number;
   maximumPaths?: number;
   /** `metric maximum-hops <n>` — diamètre au-delà duquel une route est inaccessible. */
@@ -73,7 +139,7 @@ export interface BgpProcess {
   asn: number;
   routerId?: string;
   networks: string[];
-  redistribute: string[];
+  redistribute: RedistributeSource[];
   neighbors: Map<string, BgpNeighbor>;
   /** Les gabarits, tenus à part des voisins pour qu'on ne puisse pas les confondre. */
   peerGroups: Map<string, BgpPeerGroup>;
@@ -112,8 +178,9 @@ export class RoutingConfigRepository {
   }
 
   // ── BGP ─────────────────────────────────────────────────────────
-  ensureBgp(asn: number): BgpProcess {
-    if (!this.bgp || this.bgp.asn !== asn) {
+  ensureBgp(asn: number): BgpProcess | null {
+    if (this.bgp && this.bgp.asn !== asn) return null;
+    if (!this.bgp) {
       this.bgp = { asn, networks: [], redistribute: [],
         neighbors: new Map(), peerGroups: new Map(),
         addressFamilies: [], defaultIpv4Unicast: true };

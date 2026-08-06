@@ -65,8 +65,12 @@ describe('Cisco prefix-lists & route-maps — real config state', () => {
     const out = await r.executeCommand('show route-map RM-PBR');
     expect(out).not.toMatch(/Invalid input/);
     expect(out).toMatch(/route-map RM-PBR, permit sequence 10/);
-    expect(out).toContain('match ip address 10');
-    expect(out).toContain('set ip next-hop 10.0.0.2');
+    // IOS rend l'ARGUMENT sous `Match clauses:`, pas la commande qui
+    // l'a porte — la clause gardait la ligne entiere, qui ressortait
+    // prefixee d'un second `match`.
+    expect(out).toContain('    ip address 10');
+    expect(out).toContain('    ip next-hop 10.0.0.2');
+    expect(out).not.toMatch(/match match|set set/);
     expect(out).toMatch(/route-map RM-PBR, deny sequence 20/);
   });
 

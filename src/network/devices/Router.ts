@@ -900,6 +900,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * protocol goes down (docs/PRD-Link-State.md §2.1 P7, §3.1).
    */
   isRouteInterfaceUsable(iface: string): boolean {
+    if (iface === '') return false;
     const port = this.ports.get(iface)
       ?? this.ports.get(iface.includes('.') ? iface.slice(0, iface.indexOf('.')) : iface);
     if (!port) return true;
@@ -950,6 +951,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!this.isRouteTrackUp(route.track)) return false;
     if (route.permanent) return true;
     return this.isRouteInterfaceUsable(route.iface);
+  }
+
+  installedRoutes(): RouteEntry[] {
+    const best = new Map<string, RouteEntry[]>();
+    for (const route of this.routingTable) {
+      if (!this.isRouteUsable(route)) continue;
+      const key = `${route.network}/${route.mask.toCIDR()}`;
+      const tied = best.get(key);
+      if (!tied) { best.set(key, [route]); continue; }
+      const ad = route.ad ?? 1;
+      const bestAd = tied[0].ad ?? 1;
+      if (ad < bestAd) best.set(key, [route]);
+      else if (ad === bestAd) tied.push(route);
+    }
+    return [...best.values()].flat();
   }
 
   private _setupPortMonitoring(): void {
@@ -1360,7 +1376,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const iface = this.findInterfaceForIP(nextHop);
     const ifaceName = opts?.iface ?? (iface ? iface.getName() : '');
 
-    this.routingTable.push({
+    const entry: RouteEntry = {
       network, mask, nextHop,
       iface: ifaceName,
       type: 'static',
@@ -1374,7 +1390,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       vpnInstance: opts?.vpnInstance,
       permanent: opts?.permanent,
       ifaceConfigured: opts?.iface !== undefined ? true : undefined,
-    });
+    };
+
+    const same = this.routingTable.findIndex((r) => r.type === 'static'
+      && r.network.toString() === network.toString()
+      && r.mask.toString() === mask.toString()
+      && r.nextHop?.toString() === nextHop.toString()
+      && r.iface === ifaceName);
+    if (same >= 0) this.routingTable[same] = entry;
+    else this.routingTable.push(entry);
 
     Logger.info(this.id, 'router:route-add',
       `${this.name}: static route ${network}/${mask.toCIDR()} via ${nextHop} metric ${metric}`);

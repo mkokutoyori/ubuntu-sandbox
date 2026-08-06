@@ -81,25 +81,29 @@ export function buildPolicyConfig(
     const sel = ctx.getSelectedRouteMap();
     return sel ? repo.ensureRouteMap(sel.name, 'permit', sel.seq) : null;
   };
-  routeMapTrie.registerGreedy('match', 'Match clause', (args, raw) => {
+  const addClause = (list: string[], args: string[]) => {
+    const value = args.join(' ');
+    if (!list.includes(value)) list.push(value);
+  };
+  routeMapTrie.registerGreedy('match', 'Match clause', (args) => {
     const c = clause();
-    if (c) c.match.push(raw ?? `match ${args.join(' ')}`);
+    if (c) addClause(c.match, args);
     return '';
   });
-  routeMapTrie.registerGreedy('set', 'Set clause', (args, raw) => {
+  routeMapTrie.registerGreedy('set', 'Set clause', (args) => {
     const c = clause();
-    if (c) c.set.push(raw ?? `set ${args.join(' ')}`);
+    if (c) addClause(c.set, args);
     return '';
   });
   routeMapTrie.registerGreedy('no match', 'Remove match clause', (args) => {
     const c = clause(); if (!c) return '';
-    const pattern = 'match ' + args.join(' ').toLowerCase();
+    const pattern = args.join(' ').toLowerCase();
     c.match = c.match.filter(l => !l.toLowerCase().startsWith(pattern));
     return '';
   });
   routeMapTrie.registerGreedy('no set', 'Remove set clause', (args) => {
     const c = clause(); if (!c) return '';
-    const pattern = 'set ' + args.join(' ').toLowerCase();
+    const pattern = args.join(' ').toLowerCase();
     c.set = c.set.filter(l => !l.toLowerCase().startsWith(pattern));
     return '';
   });

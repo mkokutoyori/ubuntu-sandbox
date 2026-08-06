@@ -27,9 +27,18 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
       return '% Invalid OSPF process ID';
     }
     const router = ctx.r();
-    if (!router._getOSPFEngineInternal()) {
-      router._enableOSPF(processId);
+    const running = router._getOSPFEngineInternal();
+    if (running && running.getConfig().processId !== processId) {
+      return `% OSPF process ${running.getConfig().processId} is already running,`
+        + ' only one OSPF process is supported on this platform';
     }
+    if (args.length > 1) {
+      if (args[1].toLowerCase() === 'vrf') {
+        return '% VRF-aware OSPF is not supported on this platform';
+      }
+      throw new CliInvalidInput();
+    }
+    if (!running) router._enableOSPF(processId);
     ctx.setMode('config-router-ospf');
     return '';
   });
@@ -419,7 +428,7 @@ function adresseReseau(ip: string, wildcard: string): string {
   // l'adjacence, pas seulement l'entrée et la sortie de Full).
   trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
     if (args.length > 0 && args[0] !== 'detail') {
-      return "% Invalid input detected at '^' marker.";
+      throw new CliInvalidInput();
     }
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.logAdjacencyChanges = true;
@@ -2281,7 +2290,12 @@ function showIpRouteOspf(router: Router): string {
 
 function showIpRouteSummary(router: Router): string {
   router._ospfAutoConverge();
-  const rt = (router as any).routingTable as any[];
+  const perPrefix = new Map<string, any>();
+  for (const r of router.installedRoutes() as any[]) {
+    const key = `${r.network}/${r.mask.toCIDR()}`;
+    if (!perPrefix.has(key)) perPrefix.set(key, r);
+  }
+  const rt = [...perPrefix.values()];
   const counts: Record<string, { networks: number; subnets: number; replicates: number; overhead: number; memory: number }> = {};
   const order = ['connected', 'static', 'ospf', 'eigrp', 'bgp', 'rip', 'default'];
   for (const k of order) counts[k] = { networks: 0, subnets: 0, replicates: 0, overhead: 0, memory: 0 };
