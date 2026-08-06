@@ -181,14 +181,16 @@ describe('PkiKeyPair passe par ce moteur', () => {
   });
 
   /**
-   * Limite assumée, vérifiée plutôt que supposée : ECDSA n'a pas
-   * d'implémentation ici — ni P-256 ni Ed25519 — et sa clé reste donc
-   * simulée. Le test l'énonce pour que la disparition de cette ligne
-   * signale le jour où quelqu'un l'aura implémenté.
+   * Ce cas affirmait l'inverse — « ECDSA reste simulé, et c'est le
+   * seul » — et il était écrit pour tomber le jour où quelqu'un
+   * l'implémenterait. Ce jour est venu : P-256 est réel
+   * (`unit/crypto/p256.test.ts`, vecteurs RFC 6979). Il reste ici, en
+   * gardien du sens inverse.
    */
-  it('ECDSA reste simulé, et c\'est le seul', () => {
+  it('ECDSA n\'est plus simulé', () => {
     const kp = PkiKeyPair.generate('ecdsa');
-    expect(kp.publicKey.material.startsWith('pub:')).toBe(true);
+    expect(kp.publicKey.material.startsWith('ec-pub:')).toBe(true);
+    expect(PkiKeyPair.sign(kp.privateKey, 'x').startsWith('ecdsa:')).toBe(true);
     expect(PkiKeyPair.verify(kp.publicKey, 'x', PkiKeyPair.sign(kp.privateKey, 'x'))).toBe(true);
   });
 });
