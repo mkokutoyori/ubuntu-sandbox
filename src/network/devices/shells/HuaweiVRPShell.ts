@@ -94,6 +94,7 @@ import {
   buildHuaweiNqaSystemCommands, buildHuaweiNqaTestView,
   registerHuaweiNqaDisplayCommands, resolveVrpTrack,
 } from './huawei/HuaweiNqaCommands';
+import { describeHuaweiArguments } from './huawei/huaweiArgumentHelp';
 import {
   AR2220_HARDWARE_PROFILE,
   renderHealth, renderTemperature, renderFans, renderPower, renderEnvironment,
@@ -303,6 +304,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     buildTrafficPolicyView(this.trafficPolicyTrie, this);
     buildHuaweiNqaTestView(this.nqaTestTrie, this);
     buildHuaweiNqaSystemCommands(this.systemTrie, this);
+    describeHuaweiArguments({
+      system: this.systemTrie,
+      iface: this.interfaceTrie,
+      ospf: this.ospfTrie,
+      vty: this.uiTrie,
+    });
     for (const t of [
       this.userTrie, this.systemTrie, this.interfaceTrie, this.dhcpPoolTrie,
       this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ospfv3AreaTrie, this.ripTrie,

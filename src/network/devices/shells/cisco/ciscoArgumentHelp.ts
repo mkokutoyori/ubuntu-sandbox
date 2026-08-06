@@ -131,6 +131,9 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configIf.describeArgs('standby', [
     INT('group', [0, 255], 'Group number'),
   ]);
+  tries.configIf.describeArgs('vrrp', [
+    INT('group', [1, 255], 'Group number'),
+  ]);
   tries.configIf.describeArgs('description', [
     { name: 'text', type: 'STRING', description: 'Up to 240 characters describing this interface' },
   ]);
@@ -246,6 +249,12 @@ export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): vo
   ]);
   tries.configIf.describeArgs('channel-group', [
     INT('group', [1, 64], 'Channel group number'),
+  ]);
+  tries.configIf.describeArgs('spanning-tree cost', [
+    INT('cost', [1, 200000000], 'Change an interface path cost'),
+  ]);
+  tries.configIf.describeArgs('spanning-tree port-priority', [
+    INT('priority', [0, 240], 'Change an interface priority'),
   ]);
   tries.configIf.describeArgs('description', [
     LINE('text', 'Up to 240 characters describing this interface'),

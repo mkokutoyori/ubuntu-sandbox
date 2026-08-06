@@ -570,6 +570,48 @@ de bord, et vérifie en outre qu'une valeur hors plage est **refusée, pas
 levée** — un `Error:` remontant d'un gestionnaire est un plantage, pas
 un message d'IOS.
 
+### 2.14 Les restes annoncés sont levés
+
+Les trois points laissés ouverts au lot précédent, et dits alors plutôt
+que tus, sont traités.
+
+**Les plages qu'aucun gestionnaire n'appliquait s'appliquent.** J'avais
+RETIRÉ ces déclarations plutôt que d'annoncer une règle que la commande
+ignore ; le vrai correctif était de la faire appliquer. `spanning-tree
+cost` refuse maintenant hors `<1-200000000>`, `spanning-tree
+port-priority` hors `<0-240>` **et hors des pas de 16** — avec les mots
+d'IOS, `% Bridge Port priority must be in increments of 16.` — et le
+groupe `vrrp` hors `<1-255>`, borne du protocole (RFC 5798 : un VRID
+tient sur un octet et 0 n'en est pas un), non d'une plateforme. Les
+déclarations reviennent, cette fois adossées à ce qui refuse.
+
+Reste non fait, et pour la raison déjà écrite : `switchport
+port-security maximum` n'a toujours pas de borne haute, parce que je ne
+sais pas laquelle est celle du châssis modélisé. Annoncer un nombre que
+je ne peux pas vérifier serait le défaut de la section 2.13.
+
+**La couche B atteint VRP.** `HuaweiVRPShell` ne déclarait aucun argument
+— zéro `describeArgs` dans tout le fichier — si bien qu'un `?` derrière
+une valeur ne pouvait rien annoncer. `huawei/huaweiArgumentHelp.ts` en
+donne un premier jeu (`ip address`, `description`, `sysname`,
+`ip route-static`, `ospf`, `router-id`, `idle-timeout`), et la plage
+`ospf` est éprouvée aux quatre bords contre le gestionnaire, comme le
+reste. Le rendu passait jusque-là par un repli : un nœud greedy sans
+résultat annonce `WORD` suivi de sa propre description, ce qui donnait
+`WORD  Configure IP address` là où VRP annonce `A.B.C.D`.
+
+**Dix-huit mots-clés VRP sortaient sans description** (`display`,
+`reset`, `terminal`, `arp-proxy`, `gre`, `jumboframe`, `voice-vlan`…),
+sur les trois vues et les deux plateformes Huawei ; ils sont nommés,
+comme l'avaient été ceux de Cisco. Le test de « aucun mot-clé muet »
+existe désormais des deux côtés.
+
+**Ce qui reste ouvert, et pourquoi.** Le suffixe ` on vty0 (10.0.0.5)`
+de `%SYS-5-CONFIG_I` demande le numéro de ligne, qui vit dans
+`SshSessionRegistry`, de l'autre côté du contrat de session SSH/telnet.
+L'omettre reste préférable à l'inventer : une ligne fausse serait fausse
+dès la deuxième session.
+
 ---
 
 ## 3. Phases
