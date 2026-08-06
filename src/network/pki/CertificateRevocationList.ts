@@ -45,6 +45,19 @@ export class CertificateRevocationList implements CrlFields {
     });
   }
 
+  /**
+   * Reconstruit une CRL LUE quelque part, avec la signature qu'elle
+   * porte.
+   *
+   * `sign()` ne convient pas pour cela : il en fabriquerait une nouvelle,
+   * signée par la clé de qui la relit — donc valide pour tout le monde,
+   * ce qui viderait `isValidSignature` de son sens. Une CRL venue d'un
+   * fichier garde sa signature, bonne ou mauvaise.
+   */
+  static fromParsed(fields: CrlFields, signature: string): CertificateRevocationList {
+    return new CertificateRevocationList(fields, signature);
+  }
+
   static sign(fields: CrlFields, signerKey: { algorithm: 'rsa' | 'ecdsa'; material: string }): CertificateRevocationList {
     const sig = PkiKeyPair.sign(signerKey, CertificateRevocationList.tbs(fields));
     return new CertificateRevocationList(fields, sig);

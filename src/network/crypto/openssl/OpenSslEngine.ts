@@ -23,6 +23,7 @@ import {
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
 } from '@/network/pki/pem';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
+import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import { MANDATORY_CIPHER_SUITES } from '@/network/tls/cipherSuites';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
@@ -481,12 +482,24 @@ function signCsr(
  * l'émetteur. Si le certificat est son propre émetteur, c'est un
  * auto-signé non approuvé (18) ; sinon il manque le maillon (20).
  */
-function codeOpenssl(raison: VerificationReason, cert: X509Certificate): { n: number; texte: string } {
+function codeOpenssl(
+  raison: VerificationReason,
+  cert: X509Certificate,
+  listes: readonly CertificateRevocationList[],
+): { n: number; texte: string } {
   switch (raison) {
     case 'expired': return { n: 10, texte: 'certificate has expired' };
     case 'not-yet-valid': return { n: 9, texte: 'certificate is not yet valid' };
     case 'bad-signature': return { n: 7, texte: 'certificate signature failure' };
     case 'revoked': return { n: 23, texte: 'certificate revoked' };
+    case 'crl-untrusted': return { n: 8, texte: 'CRL signature failure' };
+    case 'crl-stale':
+      // Le vérificateur confond deux situations qu'openssl sépare, faute
+      // d'une raison distincte : aucune CRL pour cet émetteur, ou une CRL
+      // périmée. La liste est ici, on peut donc trancher.
+      return listes.some((l) => l.issuer === cert.issuer)
+        ? { n: 12, texte: 'CRL has expired' }
+        : { n: 3, texte: 'unable to get certificate CRL' };
     default:
       return cert.subject === cert.issuer
         ? { n: 18, texte: 'self signed certificate' }
@@ -506,11 +519,26 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     ancres.push(...pemToCertChain(t));
   }
 
+  // `-crl_check` sans `-CRLfile` n'a rien à consulter : openssl refuse
+  // alors la chaîne plutôt que de laisser passer, et c'est le mode
+  // `crl-strict` du vérificateur — une révocation qu'on ne peut pas
+  // vérifier n'est pas une absence de révocation.
+  const listes: CertificateRevocationList[] = [];
+  const crlFile = opts.get('-CRLfile');
+  if (typeof crlFile === 'string') {
+    const t = host.readFile(crlFile);
+    if (t === null) return fail(`Can't open "${crlFile}" for reading, No such file or directory`);
+    const l = pemToCrl(t);
+    if (l) listes.push(l);
+  }
+
   // Le même objet que `curl --cacert` : deux avis divergents sur les
   // mêmes deux fichiers seraient pires que deux avis faux.
   const verificateur = new CertificateVerifier({
     trustAnchors: ancres,
     clock: () => host.now(),
+    crls: listes,
+    revocationCheck: opts.has('-crl_check') ? 'crl-strict' : 'none',
   });
 
   const lignes: string[] = [];
@@ -524,7 +552,7 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const verdict = verificateur.verify(cert);
     if (verdict.ok) { lignes.push(`${cible}: OK`); continue; }
 
-    const { n, texte } = codeOpenssl(verdict.reason, cert);
+    const { n, texte } = codeOpenssl(verdict.reason, cert, listes);
     lignes.push(cert.subject);
     lignes.push(`error ${n} at 0 depth lookup: ${texte}`);
     lignes.push(`error ${cible}: verification failed`);
@@ -655,6 +683,22 @@ function ecrireIndex(host: OpenSslHost, entrees: readonly CaIndexEntry[]): boole
 }
 
 /** `YYMMDDHHMMSSZ` — le format de date de l'index et des CRL. */
+/**
+ * L'inverse de `dateIndex`. L'index d'openssl est le seul endroit où la
+ * date de révocation est conservée, et une CRL la porte en date, pas en
+ * chaîne : il faut donc savoir relire le format `YYMMDDHHMMSSZ`.
+ *
+ * Le siècle suit la règle des deux chiffres de la RFC 5280 §4.1.2.5.1 —
+ * en deçà de 50, le XXIᵉ siècle.
+ */
+function dateDepuisIndex(texte: string): number {
+  const m = /^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(texte.trim());
+  if (!m) return 0;
+  const [, aa, mm, jj, hh, mi, ss] = m.map(Number) as unknown as number[];
+  const annee = aa < 50 ? 2000 + aa : 1900 + aa;
+  return Date.UTC(annee, mm - 1, jj, hh, mi, ss);
+}
+
 function dateIndex(ms: number): string {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -696,13 +740,20 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   // ── publication de la CRL ──
   if (opts.has('-gencrl')) {
-    const crl = {
+    // La CRL est SIGNÉE par la clé de la CA — la même qui a signé les
+    // certificats qu'elle révoque. Sans cela elle n'était opposable à
+    // personne : n'importe qui pouvait en écrire une, et rien ne pouvait
+    // la distinguer de celle de l'autorité. C'est ce qui manquait pour
+    // que `verify -crl_check` puisse exister.
+    const crl = CertificateRevocationList.sign({
+      version: 2,
       issuer: ca.subject,
       thisUpdate: host.now(),
       nextUpdate: host.now() + 30 * 24 * 3600 * 1000,
+      signatureAlgorithm: 'sha256WithRSAEncryption',
       revoked: index.filter((e) => e.etat === 'R')
-        .map((e) => ({ serialNumber: e.serie, revocationDate: e.revocation })),
-    };
+        .map((e) => ({ serialNumber: e.serie, revocationDate: dateDepuisIndex(e.revocation) })),
+    }, cleCa);
     const pem = crlToPem(crl);
     const out = opts.get('-out');
     if (typeof out === 'string') {
@@ -761,20 +812,13 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   return { output: pem, stderr: trace, exitCode: 0 };
 }
 
-interface CrlContenu {
-  issuer: string;
-  thisUpdate: number;
-  nextUpdate: number;
-  revoked: Array<{ serialNumber: string; revocationDate: string }>;
-}
-
 function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('crl', argv);
   const chemin = opts.get('-in');
   if (typeof chemin !== 'string') return fail('openssl: crl: -in is required');
   const texte = host.readFile(chemin);
   if (texte === null) return fail(`Can't open "${chemin}" for reading, No such file or directory`);
-  const crl = pemToCrl(texte) as CrlContenu | null;
+  const crl = pemToCrl(texte);
   if (!crl) return fail('unable to load CRL');
 
   const lignes: string[] = [];
@@ -793,7 +837,10 @@ function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       lignes.push('Revoked Certificates:');
       for (const r of crl.revoked) {
         lignes.push(`    Serial Number: ${r.serialNumber}`);
-        lignes.push(`        Revocation Date: ${r.revocationDate}`);
+        // La date de révocation s'affiche comme toutes les autres dates
+        // d'openssl. Elle sortait jusqu'ici au format de l'index
+        // (`260806083012Z`), qui n'apparaît nulle part ailleurs.
+        lignes.push(`        Revocation Date: ${opensslDate(r.revocationDate)}`);
       }
     }
   }
