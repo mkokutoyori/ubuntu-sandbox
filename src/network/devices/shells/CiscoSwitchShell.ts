@@ -583,7 +583,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── Interface ── trust + limit rate
     this.configIfTrie.registerGreedy('mtu', 'Set MTU', (args) => {
       const n = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(n)) return "% Invalid input detected at '^' marker.";
+      if (!Number.isFinite(n)) throw new CliInvalidInput();
       if (n < 68) return `% Invalid MTU: ${n}. Minimum is 68 (IPv4 minimum).`;
       if (n > 9216) return `% Invalid MTU: ${n}. Maximum is 9216 (jumbo frame).`;
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
@@ -1661,11 +1661,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         && (knobValue < 1 || knobValue > 200_000_000)) {
         throw new CliInvalidInput();
       }
-      if (knob === 'port-priority' && !Number.isNaN(knobValue)) {
-        if (knobValue < 0 || knobValue > 240) throw new CliInvalidInput();
-        if (knobValue % 16 !== 0) {
-          return '% Bridge Port priority must be in increments of 16.';
-        }
+      // Hors bornes, IOS refuse. Une valeur DANS les bornes qui n'est pas
+      // un multiple de 16 est arrondie par l'agent STP, choix déjà pris
+      // et testé ailleurs (`stp-prd-fidelity`) : la refuser ici ferait
+      // deux réponses à une même saisie.
+      if (knob === 'port-priority' && !Number.isNaN(knobValue)
+        && (knobValue < 0 || knobValue > 240)) {
+        throw new CliInvalidInput();
       }
       for (const i of ifs) {
         if (knob === 'cost' && !Number.isNaN(knobValue)) {

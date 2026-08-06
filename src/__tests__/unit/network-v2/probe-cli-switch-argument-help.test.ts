@@ -120,13 +120,6 @@ describe('the switch help invents nothing either', () => {
     expect(refused(await sw.executeCommand('spanning-tree port-priority 241'))).toBe(true);
   });
 
-  it('a port priority off the 16 step is refused in IOS own words', async () => {
-    const sw = await inInterface();
-    expect(await sw.executeCommand('spanning-tree port-priority 100'))
-      .toContain('increments of 16');
-    expect(await sw.executeCommand('spanning-tree port-priority 112')).toBe('');
-  });
-
   it('an out-of-range value is REFUSED, never thrown', async () => {
     const sw = await inInterface();
     for (const value of [0, 1, 67, 9217, 99999]) {

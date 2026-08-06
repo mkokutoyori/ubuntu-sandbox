@@ -45,8 +45,10 @@ export function describeHuaweiArguments(tries: HuaweiArgumentHelpTries): void {
     IP('prefix', 'Destination IP address'),
     { ...MASK('Mask or mask-length'), optional: true },
   ]);
+  // `ospf` seul entre dans le processus 1 sur VRP : l'identifiant est
+  // donc OPTIONNEL, et le déclarer obligatoire refusait la forme nue.
   tries.system.describeArgs('ospf', [
-    INT('process-id', [1, 65535], 'Process ID'),
+    { ...INT('process-id', [1, 65535], 'Process ID'), optional: true },
   ]);
 
   tries.ospf.describeArgs('router-id', [
