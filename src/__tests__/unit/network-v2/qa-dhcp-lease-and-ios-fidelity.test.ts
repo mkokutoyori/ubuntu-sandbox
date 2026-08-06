@@ -206,7 +206,9 @@ describe('running-config and console messages', () => {
     }
     await settle();
 
-    const console = term.lines.map((l) => l.text).filter((t) => t.startsWith('%')).join('\n');
+    // La configuration d'usine horodate : la ligne ne COMMENCE plus par
+    // `%`, elle le contient après sa date.
+    const console = term.lines.map((l) => l.text).filter((t) => t.includes('%')).join('\n');
     expect(
       console,
       'an operator shutdown is %LINK-5-CHANGED administratively down, not a carrier loss',

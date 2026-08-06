@@ -43,7 +43,7 @@ import {
 } from './cisco/CiscoCommonShow';
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
-import { LoggingConfig, defaultTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
+import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
@@ -1727,7 +1727,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (reste.length > 0 && !this.horodatageOptionsValides(reste)) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
-      for (const c of canaux) this.logging.setTimestampSpec(c, defaultTimestampSpec());
+      for (const c of canaux) this.logging.setTimestampSpec(c, disabledTimestampSpec());
       return '';
     }
 
@@ -1748,8 +1748,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * would store a flag nothing can read.
    */
   private parseHorodatage(mots: string[]): TimestampSpec | null {
-    const spec = defaultTimestampSpec();
-    spec.enabled = true;
+    const spec = bareTimestampSpec();
     if (mots.length === 0) return spec;
     if (mots[0] !== 'uptime' && mots[0] !== 'datetime') return null;
     spec.format = mots[0];
