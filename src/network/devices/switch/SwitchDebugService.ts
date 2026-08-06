@@ -1,5 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
-import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
 export type SwitchDebugCategory =
   | 'arp' | 'mac' | 'link' | 'stp.events' | 'stp.bpdu'
@@ -104,6 +104,8 @@ export class SwitchDebugService implements TerminalDebugSource {
   subscribe(listener: DebugLineListener): () => void {
     return this.broadcast.subscribe(listener);
   }
+
+  setJournal(journal: DebugLineJournal | null): void { this.broadcast.setJournal(journal); }
 
   private active(category: SwitchDebugCategory): boolean {
     return this.all || this.flags.has(category);

@@ -490,3 +490,56 @@ qu'un point d'émission et change **toutes** les sorties.
   l'affichage serait un second mensonge par-dessus le premier.
 - **La conformité au matériel réel des quatre messages du §1.11** ne peut
   pas être tranchée ici ; le PRD demande la vérification, pas un pari.
+
+
+---
+
+## 10. D1 — Livré
+
+**La règle est tenue par la construction, pas par la discipline.** Le
+journal de l'équipement est devenu un **port** (`DebugLineJournal`,
+`network/devices/diag/DebugBroadcast.ts`) : il rend la ligne — estampe
+comprise, selon `service timestamps debug` — la range, et la
+**retourne**. `DebugBroadcast.fan()` diffuse ce qu'il a retourné. Il
+n'existe donc plus d'endroit d'où une ligne non estampée puisse partir :
+`RouterDebugService.emit()` n'écrit plus dans deux puits, il en écrit un.
+
+`LoggingConfig.appendDebugLine(text): void` est devenu
+`recordDebugLine(text): string`. C'est le seul changement dans ce
+fichier, et le seul appelant était `Router.ts`.
+
+**Le switch est réparé par le même changement**, sans attendre le
+chantier E : les deux moteurs ne partagent que `DebugBroadcast`, et
+c'est précisément là que le port a été posé. `Switch.attachLoggingBus`
+câble le journal comme le routeur.
+
+**Deux décisions de détail, chacune mesurée plutôt que supposée.**
+
+1. **Le rendu précède la limitation de débit.** Une ligne que la console
+   perd est quand même rangée dans le tampon — c'est la raison d'être du
+   tampon, et c'était déjà le comportement (le puits syslog était appelé
+   hors de `fan`). Le lot ne change donc rien là-dessus, et un cas le
+   pin.
+2. **`no logging on` coupe aussi l'enregistrement.** Le garde-barrière
+   de sortie est consulté avant le journal, ce qui reproduit le
+   `if (!this.enabled) return;` que `appendDebugLine` portait.
+
+**Tests.** `cisco-debug-one-line-one-rendering.test.ts` (7 cas) ne
+compare jamais à une chaîne écrite à la main : il compare **les deux
+vues entre elles** pour chaque réglage de l'option — `datetime msec`,
+`uptime`, `no service timestamps debug` — et vérifie que changer le
+format ne réécrit pas ce qui est déjà dans le tampon. Discrimination par
+`git stash` : 5 des 7 tombent avant le correctif.
+
+**Onze suites encodaient la ligne nue**, et disent maintenant la même
+chose que le correctif. Elles vérifient CE QUE la ligne dit, pas quand :
+elles passent par `_helpers/debugLines.ts` (`collecteDebug`), qui retire
+l'estampe à la collecte. Séparer les deux questions est ce qui évitera
+qu'un futur changement de format casse cinquante assertions qui ne
+parlent pas de format. Les deux assertions de `debug-severity7-gated`
+qui comparaient la ligne entière ont été **renforcées** plutôt
+qu'affaiblies : elles exigent maintenant l'estampe ET le contenu.
+
+**Mesures.** 99 suites connexes vertes (3263 cas), typecheck au baseline
+du projet (167 erreurs préexistantes sous `tsconfig.app.json`, aucune
+ajoutée), lint identique.

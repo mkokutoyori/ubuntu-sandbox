@@ -23,6 +23,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { collecteDebug } from './_helpers/debugLines';
 
 beforeEach(() => {
   resetCounters();
@@ -68,7 +69,7 @@ async function lab(): Promise<Lab> {
   await distant.executeCommand('sudo ip route add default via 10.0.1.1');
 
   const lignes: string[] = [];
-  routeur.getDebugService().subscribe((l) => lignes.push(l));
+  collecteDebug(routeur.getDebugService(), lignes);
   return { routeur, poste, distant, gIn: g0, gOut: g1, lignes, run: (c) => routeur.executeCommand(c) };
 }
 
@@ -316,7 +317,7 @@ describe('Scénario 11 — debug ip ospf events isole le plan de contrôle', () 
     }
 
     const lignes: string[] = [];
-    routeurA.getDebugService().subscribe((l) => lignes.push(l));
+    collecteDebug(routeurA.getDebugService(), lignes);
     await routeurA.executeCommand('debug ip ospf events');
     // L'adjacence est déjà formée : il faut la perturber pour produire des
     // événements, sinon le drapeau n'a rien à tracer.

@@ -29,6 +29,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { TerminalManager } from '@/terminal/sessions/TerminalManager';
 import type { KeyEvent, TerminalSession } from '@/terminal/sessions/TerminalSession';
+import { collecteDebug } from './_helpers/debugLines';
 
 beforeEach(() => {
   resetCounters();
@@ -60,7 +61,7 @@ async function lab() {
     'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'end',
   ]) await r.executeCommand(c);
   const lignes: string[] = [];
-  r.getDebugService().subscribe((l) => lignes.push(l));
+  collecteDebug(r.getDebugService(), lignes);
   return { r, pc, g0, lignes, run: (c: string) => r.executeCommand(c) };
 }
 

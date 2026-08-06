@@ -693,18 +693,23 @@ export class LoggingConfig {
     return this.seqCounter % 1000000;
   }
 
-  appendDebugLine(text: string): void {
-    if (!this.enabled) return;
+  /**
+   * La ligne est fabriquée UNE fois : celle que la console reçoit et
+   * celle que le tampon garde sont la même chaîne, numéro de séquence
+   * compris. Le numéro est consommé même quand la journalisation est
+   * éteinte, parce que le message a bien été produit — c'est ce que
+   * compte le compteur d'IOS.
+   */
+  recordDebugLine(text: string): string {
     const ts = this.clock?.epochMs() ?? Date.now();
-    // Même fabrication de ligne que `append` : le tampon garde le rendu,
-    // et deux façons de le construire finiraient par se contredire sur
-    // l'horodatage.
     const rendu = this.formatEntry(
       'debugging', 'debug', text, ts, undefined, this.uptimeNow(), this.nextSequence());
+    if (!this.enabled) return rendu;
     this.messages.push({ ts, severity: 'debugging', tag: 'debug', text, rendu });
     this.logged.buffer++;
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
+    return rendu;
   }
 
   /**
