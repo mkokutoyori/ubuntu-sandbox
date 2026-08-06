@@ -22,6 +22,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { getDefaultEventBus } from '@/events/EventBus';
 import {
@@ -87,21 +88,35 @@ describe('BGP — voisin configuré et injoignable', () => {
     expect(socketCount(r)).toBeLessThan(20);
   }, 30_000);
 
-  it("n'ouvre pas de session depuis la moitié passive du plan de contrôle", async () => {
-    const r = new CiscoRouter('router-cisco', 'R1', 100, 100);
-    r.powerOn?.();
-    for (const c of CONFIG) await r.executeCommand(c);
+  it("le trafic EIGRP ne compose aucune session BGP", async () => {
+    // R1 parle EIGRP à un voisin réellement câblé, et porte en plus un
+    // voisin BGP injoignable. Le va-et-vient EIGRP met à jour la RIB
+    // d'EIGRP ; il n'a aucune raison de faire rejouer la décision de
+    // meilleur chemin BGP, encore moins de composer le voisin absent.
+    const r1 = new CiscoRouter('router-cisco', 'R1', 100, 100);
+    const r2 = new CiscoRouter('router-cisco', 'R2', 300, 100);
+    r1.powerOn?.(); r2.powerOn?.();
+    for (const c of CONFIG) await r1.executeCommand(c);
+    for (const c of CONFIG.filter((x) => !x.startsWith('neighbor')
+      && !x.startsWith('router bgp') && !x.startsWith('bgp router-id'))) {
+      await r2.executeCommand(c === 'ip address 10.0.12.1 255.255.255.0'
+        ? 'ip address 10.0.12.2 255.255.255.0' : c);
+    }
+    new Cable('lan').connect(
+      r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
 
-    const dyn = (r as unknown as {
-      dynamicRouting: { refresh(): void };
-    }).dynamicRouting;
+    for (const r of [r1, r2]) {
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('router eigrp 100');
+      await r.executeCommand('network 10.0.12.0 0.0.0.255');
+      await r.executeCommand('end');
+    }
 
-    // `refresh()` recalcule et installe ce que les moteurs savent déjà.
-    // Il ne compose personne — c'est le travail de `converge()`.
-    const before = socketCount(r);
-    for (let i = 0; i < 200; i++) dyn.refresh();
-    expect(socketCount(r)).toBe(before);
-  }, 30_000);
+    const before = socketCount(r1);
+    // Du trafic EIGRP réel traverse le câble dans les deux sens.
+    for (let i = 0; i < 20; i++) await r2.executeCommand('show ip eigrp neighbors');
+    expect(socketCount(r1)).toBe(before);
+  }, 60_000);
 
   it('reste joignable en ligne de commande après la tempête évitée', async () => {
     const r = new CiscoRouter('router-cisco', 'R1', 100, 100);

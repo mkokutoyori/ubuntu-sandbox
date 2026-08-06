@@ -184,14 +184,23 @@ export class RouterDynamicRouting {
     this.eigrp.processPacket(
       inPort, ipPkt.sourceIP.toString(), payload,
       ipPkt.destinationIP.toString() === EIGRP_MULTICAST_IP);
-    // An Update that changed the topology table has to reach the RIB, and
-    // this is the moment it does — the control-plane event, not the next
-    // forwarding decision. BGP already had this path (`setOnRibChange`
-    // fires on every UPDATE); EIGRP had none, so its learned routes only
-    // materialised because the data path re-converged behind every
-    // packet. `processPacket` above stores what the neighbour advertised;
-    // `refresh()` turns it into routes and installs them.
-    this.refresh();
+    this.eigrpRibUpdate();
+  }
+
+  /**
+   * The RIB update an EIGRP packet earns: `processPacket` stored what the
+   * neighbour advertised, DUAL recomputes from it, and the result is
+   * installed. Nothing goes back on the wire from this alone.
+   *
+   * Scoped to EIGRP on purpose. BGP has the same path of its own
+   * (`setOnRibChange`, fired by every UPDATE it accepts), and an EIGRP
+   * packet does not make a router redo its BGP best-path decision.
+   * `reflectRib()` still reads BGP's contributed routes, but takes them
+   * as BGP last computed them rather than recomputing them here.
+   */
+  private eigrpRibUpdate(): void {
+    this.eigrp.refreshFromCache();
+    this.reflectRib();
   }
 
   private connected(): ConnectedNetwork[] {
@@ -216,35 +225,20 @@ export class RouterDynamicRouting {
 
   /**
    * A full convergence round: pump Hellos, open sessions, recompute,
-   * install. This is the *active* half of the control plane, and it runs
-   * on the events that genuinely change routing — a configuration
-   * command, an interface going up or down. Never from the data path.
+   * install. This is the control plane's *active* path, and it runs on
+   * the events that genuinely change routing — a configuration command,
+   * an interface going up or down. Never from the data path: a
+   * convergence emits packets, and forwarding a packet must not emit
+   * anything.
+   *
+   * Its passive counterpart is per-protocol, as on real hardware:
+   * {@link eigrpRibUpdate} when an EIGRP packet lands, and BGP's own
+   * `setOnRibChange` when an UPDATE does.
    */
   converge(): void {
     this.eigrp.converge();
     if (this.bgp.isEnabled()) this.ensureBgpListener();
     this.bgp.converge();
-    this.reflectRib();
-  }
-
-  /**
-   * The passive half: recompute from what the engines already know and
-   * install the result, WITHOUT emitting a single frame or opening a
-   * session. This is the RIB update a real router performs when a
-   * protocol packet lands — the neighbour told it something, so it runs
-   * the algorithm and reprograms forwarding, without that in itself
-   * putting anything back on the wire.
-   *
-   * It used to be called before every forwarding decision instead, which
-   * is what a real router precisely does not do: the linecard reads a
-   * FIB, it does not run DUAL or dial BGP peers.
-   */
-  refresh(): void {
-    this.eigrp.refreshFromCache();
-    if (this.bgp.isEnabled()) this.ensureBgpListener();
-    // Cache-only for BGP too — this used to call `bgp.converge()`, which
-    // dials every configured neighbour, on every forwarding decision.
-    this.bgp.refreshFromCache();
     this.reflectRib();
   }
 

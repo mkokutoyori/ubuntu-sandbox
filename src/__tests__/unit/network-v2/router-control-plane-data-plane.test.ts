@@ -7,7 +7,7 @@
  * Ce que le routeur commute est ce que la RIB contenait à l'instant où
  * le plan de contrôle l'a écrite.
  *
- * `Router.lookupRoute()` appelait `dynamicRouting.refresh()` avant
+ * `Router.lookupRoute()` faisait reconverger les moteurs avant
  * chaque décision de commutation. Une convergence émet des paquets, et
  * un paquet redéclenchait une convergence — c'est ce qui permettait à
  * un voisin BGP injoignable de faire exploser le routeur (voir
@@ -66,24 +66,25 @@ describe('le plan de données ne fait pas converger le routage', () => {
     await eigrp(r2);
 
     const dyn = (r1 as unknown as {
-      dynamicRouting: { converge(): void; refresh(): void };
+      dynamicRouting: { converge(): void; eigrpRibUpdate(): void };
     }).dynamicRouting;
 
     let converges = 0;
-    let refreshes = 0;
+    let ribUpdates = 0;
     const realConverge = dyn.converge.bind(dyn);
-    const realRefresh = dyn.refresh.bind(dyn);
+    const realRibUpdate = dyn.eigrpRibUpdate.bind(dyn);
     dyn.converge = () => { converges++; realConverge(); };
-    dyn.refresh = () => { refreshes++; realRefresh(); };
+    dyn.eigrpRibUpdate = () => { ribUpdates++; realRibUpdate(); };
 
     // Une rafale de trafic à travers le routeur.
     for (let i = 0; i < 25; i++) await r1.executeCommand('ping 10.0.0.2');
 
-    // Aucune convergence déclenchée par le trafic lui-même. Les
-    // `refresh()` éventuels ne peuvent venir que de paquets EIGRP
-    // reçus, jamais d'une décision de commutation.
+    // Aucune convergence déclenchée par le trafic lui-même, et aucune
+    // mise à jour de RIB : un ping ne fait pas tourner DUAL. Ce qui
+    // déclenche l'une ou l'autre, c'est la configuration, un évènement
+    // de lien, ou un paquet protocolaire — jamais une commutation.
     expect(converges).toBe(0);
-    expect(refreshes).toBeLessThanOrEqual(2);
+    expect(ribUpdates).toBe(0);
   }, 60_000);
 });
 

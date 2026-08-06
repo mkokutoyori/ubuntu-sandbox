@@ -1448,12 +1448,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Pure data plane: it reads the RIB and nothing else. Forwarding a
    * packet never runs protocol code, exactly as on real hardware, where
    * the linecard consults a FIB that the control plane downloaded to it.
-   * This used to call `dynamicRouting.refresh()` first, which made every
-   * forwarding decision a convergence — and a convergence emits packets,
-   * so a packet could beget a convergence that begat more packets.
-   * Keeping the RIB current is the control plane's job, and it does it
-   * on the events that actually change routing: configuration, interface
-   * up/down, and protocol packets arriving from the wire.
+   * This used to re-converge the dynamic routing engines first, which
+   * made every forwarding decision a convergence — and a convergence
+   * emits packets, so a packet could beget a convergence that begat more
+   * packets. Keeping the RIB current is the control plane's job, and it
+   * does it on the events that actually change routing: configuration,
+   * interface up/down, and protocol packets arriving from the wire.
    */
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
     // ECMP: collect every route genuinely tied for best (same prefix
