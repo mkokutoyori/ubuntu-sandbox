@@ -7,6 +7,7 @@
  */
 
 import React, { useRef, useEffect, useCallback, useReducer } from 'react';
+import { scrollCaretIntoView } from './caretScroll';
 import { VimEngine, type VimVariant } from '@/network/devices/linux/editors/VimEngine';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 
@@ -93,6 +94,9 @@ export const VimEditor: React.FC<VimEditorProps> = ({
       textareaRef.current?.focus();
       const pos = flatOffset(engine.lines, engine.cursorLine, engine.cursorCol);
       textareaRef.current?.setSelectionRange(pos, pos);
+      if (textareaRef.current) {
+        scrollCaretIntoView(textareaRef.current, engine.cursorLine, engine.lines.length);
+      }
     }
   });
 
