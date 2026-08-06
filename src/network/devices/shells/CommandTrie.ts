@@ -968,7 +968,11 @@ export class CommandTrie {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const hint of node.hintSuggestions) {
         if (!seen.has(hint.keyword.toLowerCase())) {
-          results.push(hint);
+          // Un hint déclaré sous sa forme courte (`['count']`) naît sans
+          // description ; la table canonique en a une.
+          results.push(hint.description
+            ? hint
+            : { keyword: hint.keyword, description: descriptionForKeyword(hint.keyword) });
           seen.add(hint.keyword.toLowerCase());
         }
       }

@@ -145,17 +145,28 @@ const PERMIT_ALL = [
   'permit ip any any',
 ];
 
+/**
+ * Le compteur d'une ACE dans `show access-lists`.
+ *
+ * IOS n'écrit `(N matches)` QUE s'il a compté quelque chose : une ACE
+ * jamais empruntée s'affiche toute seule. Une ligne présente sans
+ * suffixe vaut donc zéro, et il n'y a que l'ABSENCE de la ligne qui soit
+ * une anomalie — d'où le `-1`, qui reste distinct du zéro.
+ */
+function compteurAce(showOut: string, aceText: string, echapper: boolean): number {
+  const motif = echapper ? aceText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : aceText;
+  const ligne = showOut.match(new RegExp(`^.*${motif}.*$`, 'm'));
+  if (!ligne) return -1;
+  const compte = ligne[0].match(/\((\d+)\s*match/);
+  return compte ? parseInt(compte[1], 10) : 0;
+}
+
 function counterOf(showOut: string, aceText: string): number {
-  const escaped = aceText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`${escaped}\\s*\\((\\d+)\\s*match`);
-  const m = showOut.match(re);
-  return m ? parseInt(m[1], 10) : -1;
+  return compteurAce(showOut, aceText, true);
 }
 
 function counterFromIfacesShow(showOut: string, protoWords: string): number {
-  const re = new RegExp(`${protoWords}\\s*\\((\\d+)\\s*match`);
-  const m = showOut.match(re);
-  return m ? parseInt(m[1], 10) : -1;
+  return compteurAce(showOut, protoWords, false);
 }
 
 beforeEach(() => {
