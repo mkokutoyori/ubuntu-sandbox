@@ -241,13 +241,31 @@ export class GetHelpCmdlet implements ICmdlet {
   }
 }
 
-function extractCommentHelp(source: string): Record<string, string> {
+/**
+ * Un chemin que le fournisseur de fichiers peut juger.
+ *
+ * `C:` est un lecteur de fichiers ; `TestDrive:`, `HKLM:`, `Env:` sont
+ * des lecteurs PowerShell d'un AUTRE fournisseur, dont le systeme de
+ * fichiers ne sait rien — lui demander si le chemin existe reviendrait a
+ * refuser un `Set-Location HKLM:` parfaitement valide. Une lettre unique
+ * suivie de `:` est un lecteur de fichiers ; un nom plus long ne l'est
+ * pas.
+ */
+function isFileSystemPath(path: string): boolean {
+  const qualifier = /^([A-Za-z]+):/.exec(path);
+  return qualifier === null || qualifier[1].length === 1;
+}
+
+export function extractCommentHelp(source: string): Record<string, string> {
   const blockRe = /<#([\s\S]*?)#>/;
   const block = blockRe.exec(source);
   if (!block) return {};
   const body = block[1];
   const result: Record<string, string> = {};
-  const sectionRe = /^\s*\.([A-Z][A-Z]+)\s*$([\s\S]*?)(?=^\s*\.[A-Z][A-Z]+\s*$|\Z)/gm;
+  // `\Z` n'est pas une ancre en JavaScript — c'est un `Z` litteral. La
+  // derniere section d'un bloc d'aide n'etait donc capturee que si elle
+  // contenait la lettre Z ; la fin d'entree s'ecrit `(?![\s\S])`.
+  const sectionRe = /^\s*\.([A-Z][A-Z]+)\s*$([\s\S]*?)(?=^\s*\.[A-Z][A-Z]+\s*$|(?![\s\S]))/gm;
   let m: RegExpExecArray | null;
   while ((m = sectionRe.exec(body)) !== null) {
     result[m[1].toLowerCase()] = m[2].trim();
@@ -563,6 +581,14 @@ export class SetLocationCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const fs = ctx.providers.filesystem;
+    // Se placer dans un répertoire qui n'existe pas est refusé, comme
+    // par PowerShell : le curseur suivait n'importe quel chemin, si bien
+    // que `$PWD` désignait un dossier absent et que tout ce qui suivait
+    // travaillait dans le vide.
+    if (fs && path && isFileSystemPath(path) && !fs.exists(path)) {
+      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
     if (fs && path) fs.setCwd(path);
     if (path) {
       ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);
@@ -582,6 +608,10 @@ export class PushLocationCmdlet implements ICmdlet {
     stack.push((fs ? fs.getCwd() : 'C:\\') as PSValue);
     ctx.runtime.setVariable('__locationStack__', stack as unknown as PSValue);
     const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (fs && path && isFileSystemPath(path) && !fs.exists(path)) {
+      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
     if (fs && path) fs.setCwd(path);
     if (path) {
       ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);
