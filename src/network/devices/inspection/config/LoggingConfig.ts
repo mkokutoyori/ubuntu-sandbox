@@ -1,4 +1,5 @@
 import { getDefaultEventBus } from '@/events/EventBus';
+import { isValidIPv4 } from '@/network/core/ip';
 
 /**
  * LoggingConfig — config-driven syslog/logging state (Lot C).
@@ -12,11 +13,141 @@ const SEVERITIES = [
 ] as const;
 type Severity = typeof SEVERITIES[number];
 
+/**
+ * Une sévérité par son nom, son ABRÉGÉ ou son numéro.
+ *
+ * L'abrégé n'est pas une facilité : c'est la règle de toute la CLI d'IOS,
+ * où un préfixe non ambigu vaut le mot entier. Sans lui, `logging
+ * buffered 1000000 debug` — que tout le monde tape — était refusé alors
+ * qu'un vrai équipement l'accepte. `e` reste refusé, puisqu'il désigne
+ * aussi bien `emergencies` que `errors`.
+ */
 function normSeverity(tok: string): Severity | null {
   const t = tok.toLowerCase();
   if ((SEVERITIES as readonly string[]).includes(t)) return t as Severity;
-  const n = parseInt(t, 10);
-  return Number.isNaN(n) || n < 0 || n > 7 ? null : SEVERITIES[n];
+  if (/^\d+$/.test(t)) {
+    const n = parseInt(t, 10);
+    return n >= 0 && n <= 7 ? SEVERITIES[n] : null;
+  }
+  const candidats = SEVERITIES.filter(s => s.startsWith(t));
+  return t.length > 0 && candidats.length === 1 ? candidats[0] : null;
+}
+
+export const SEVERITY_NAMES: readonly Severity[] = SEVERITIES;
+
+/**
+ * Les facilités qu'IOS accepte derrière `logging facility`. C'est la
+ * table du transport syslog lui-même : un nom absent d'ici n'a pas de
+ * code RFC 3164 à écrire dans le paquet, donc l'accepter reviendrait à
+ * en émettre un autre en silence.
+ */
+export const FACILITY_NAMES: readonly string[] = [
+  'auth', 'authpriv', 'cron', 'daemon', 'ftp', 'kern', 'local0', 'local1',
+  'local2', 'local3', 'local4', 'local5', 'local6', 'local7', 'lpr', 'mail',
+  'news', 'syslog', 'user', 'uucp',
+];
+
+export const BUFFERED_SIZE_MIN = 4096;
+export const BUFFERED_SIZE_MAX = 2147483647;
+export const HISTORY_SIZE_MIN = 1;
+export const HISTORY_SIZE_MAX = 500;
+export const RATE_LIMIT_MIN = 1;
+export const RATE_LIMIT_MAX = 10000;
+
+/**
+ * Un collecteur syslog, avec ce qui le distingue d'un autre : son
+ * transport et son port. `logging host 10.0.0.1 transport tcp port 1470`
+ * ne désigne pas la même destination que `logging host 10.0.0.1`.
+ */
+export interface SyslogHostConfig {
+  ip: string;
+  transport: 'udp' | 'tcp';
+  port: number;
+  logged: number;
+  /** `logging host <ip> discriminator <name>` — un filtre par collecteur. */
+  discriminator: string | null;
+  droppedByMd: number;
+}
+
+export type OriginIdMode = 'hostname' | 'ip' | 'ipv6' | 'string';
+
+export interface OriginIdConfig {
+  mode: OriginIdMode;
+  text?: string;
+}
+
+/**
+ * Ce qu'une commande `logging` refusée doit dire, et sur quel mot poser
+ * le curseur. Le rendu du message appartient à la coquille, qui seule
+ * connaît la ligne brute ; ici on nomme la faute.
+ */
+export interface LoggingCommandError {
+  kind: 'invalid' | 'incomplete';
+  token?: string;
+}
+
+/**
+ * Un discriminateur de messages (MD).
+ *
+ * `drops` laisse passer ce qui NE correspond PAS, `includes` ne laisse
+ * passer que ce qui correspond. Les clauses posées sont toutes exigées
+ * ensemble : un message doit satisfaire chacune pour survivre au filtre.
+ */
+export type MdMode = 'drops' | 'includes';
+
+export interface MdRegexClause { mode: MdMode; pattern: string; }
+export interface MdSeverityClause { mode: MdMode; levels: number[] }
+
+export interface LogDiscriminator {
+  name: string;
+  severity?: MdSeverityClause;
+  facility?: MdRegexClause;
+  mnemonics?: MdRegexClause;
+  msgBody?: MdRegexClause;
+  /** `rate-limit <n>` : messages par seconde acceptés par CE filtre. */
+  rateLimit?: number;
+  windowStart: number;
+  windowCount: number;
+}
+
+export type LoggingDestination = 'console' | 'monitor' | 'buffered';
+
+/**
+ * `logging persistent` : le journal écrit sur le système de fichiers de
+ * l'équipement, celui-là même que `dir flash:` énumère.
+ */
+export interface PersistentLoggingConfig {
+  enabled: boolean;
+  url: string;
+  size: number;
+  filesize: number;
+  immediate: boolean;
+  threshold: number;
+}
+
+export const PERSISTENT_URL_DEFAUT = 'flash:/syslog';
+export const PERSISTENT_SIZE_DEFAUT = 16384;
+export const PERSISTENT_FILESIZE_DEFAUT = 8192;
+
+/**
+ * Ce qu'un journal persistant a besoin de savoir écrire. Port étroit
+ * plutôt qu'une référence à l'équipement : `LoggingConfig` sert le
+ * routeur ET le commutateur, et seul celui qui a un `flash:` en fournit
+ * un.
+ */
+export interface LoggingFileStore {
+  write(name: string, content: string): void;
+  read(name: string): string | null;
+  remove(name: string): boolean;
+  list(prefix: string): string[];
+}
+
+interface HistoryEntry {
+  severity: Severity;
+  tag: string;
+  mnemonic: string;
+  text: string;
+  ts: number;
 }
 
 export type SyslogLineListener = (line: string) => void;
@@ -144,6 +275,15 @@ export class LoggingConfig {
   /** `logging rate-limit N` — null means the platform default applies. */
   rateLimit: number | null = null;
   /**
+   * Sans mot-clé, IOS ne borne QUE la console — c'est le débit vers un
+   * écran qu'il protège. `all` étend la borne à toutes les destinations,
+   * tampon et relais syslog compris, ce qui n'est pas la même décision :
+   * l'une préserve la lisibilité, l'autre sacrifie la trace.
+   */
+  rateLimitScope: 'console' | 'all' = 'console';
+  /** `except <severity>` — cette sévérité et au-dessus ne sont pas bornées. */
+  rateLimitExcept: Severity | null = null;
+  /**
    * Le seau du limiteur : la seconde en cours et ce qu'on y a déjà servi.
    *
    * `rateLimit` était stocké et lu par personne — la commande promettait
@@ -198,12 +338,76 @@ export class LoggingConfig {
   facility = 'local7';
   sourceInterface: string | null = null;
   sequenceNumbers = false;
+  /** `logging count` — IOS tallies per mnemonic once it is on. */
+  countEnabled = false;
+  /** `logging exception <size>` — the crash-dump flush limit. */
+  exceptionSize = BUFFERED_SIZE_MIN;
+  /** `logging origin-id …` — what a collector sees in front of the message. */
+  originId: OriginIdConfig | null = null;
+  historySeverity: Severity = 'warnings';
+  historySize = 1;
+  private readonly historyEntries: HistoryEntry[] = [];
+  private historyIgnored = 0;
+  private historyFlushed = 0;
+  /**
+   * Ce que `show logging` lit en premier : une destination qui reçoit,
+   * et une qui ne reçoit rien, ne se distinguent que par ce compteur.
+   */
+  private readonly logged = { console: 0, monitor: 0, buffer: 0, trap: 0 };
+  private rateLimitedTotal = 0;
+  private droppedTotal = 0;
+  /** Les filtres définis, actifs ou non. */
+  readonly discriminators = new Map<string, LogDiscriminator>();
+  /** Le filtre attaché à chaque destination, s'il y en a un. */
+  readonly attachedMd: Record<LoggingDestination, string | null> = {
+    console: null, monitor: null, buffered: null,
+  };
+  private readonly droppedByMd: Record<LoggingDestination, number> = {
+    console: 0, monitor: 0, buffered: 0,
+  };
+  persistent: PersistentLoggingConfig = {
+    enabled: false,
+    url: PERSISTENT_URL_DEFAUT,
+    size: PERSISTENT_SIZE_DEFAUT,
+    filesize: PERSISTENT_FILESIZE_DEFAUT,
+    immediate: false,
+    threshold: 0,
+  };
+  private fileStore: LoggingFileStore | null = null;
+  /**
+   * `logging snmp-trap <severity>` — le niveau à partir duquel un
+   * message syslog produit une notification SNMP. C'est ce réglage que
+   * la dernière ligne de `show logging history` annonce.
+   */
+  snmpTrapSeverity: Severity | null = null;
+  /** `logging userinfo` — journalise qui passe en mode privilégié. */
+  userInfo = false;
+  /** `logging server-arp` — ARP vers le collecteur avant le premier message. */
+  serverArp = false;
+  /** `logging queue-limit [esm|trap] <n>` — la file du processus de journalisation. */
+  queueLimit: { scope: 'default' | 'esm' | 'trap'; size: number } | null = null;
+  /** `logging message-counter {log|debug|syslog}` — les classes comptées. */
+  readonly messageCounters = new Set<'log' | 'debug' | 'syslog'>(['log']);
+  /** `logging delimiter tcp` — délimiteur ajouté aux messages en TCP. */
+  delimiterTcp = false;
+  /** `logging reload [<severity>] [message-limit <n>]`. */
+  reloadSeverity: Severity | null = null;
+  reloadMessageLimit: number | null = null;
+  /**
+   * Le numéro de séquence compte les messages produits depuis le
+   * démarrage, pas ceux que le tampon garde : `clear logging` ne le
+   * remet pas à zéro, sans quoi deux lignes porteraient le même numéro.
+   */
+  private seqCounter = 0;
   private readonly horodatage: Record<TimestampChannel, TimestampSpec> = {
     debug: defaultTimestampSpec(),
     log: defaultTimestampSpec(),
   };
   private clock: LoggingClockSource | null = null;
-  readonly hosts: string[] = [];
+  readonly hostConfigs: SyslogHostConfig[] = [];
+
+  /** Les adresses seules, pour qui n'a que faire du transport. */
+  get hosts(): string[] { return this.hostConfigs.map(h => h.ip); }
   /**
    * `rendu` is the line as it was written, stamp included, because that is
    * what the buffer holds on a real router. Formatting at render time
@@ -268,12 +472,15 @@ export class LoggingConfig {
 
   private formatEntry(
     severity: Severity, tag: string, text: string,
-    ts: number, mnemonic?: string, uptimeMs?: number,
+    ts: number, mnemonic?: string, uptimeMs?: number, seq?: number,
   ): string {
     const spec = this.horodatage[severity === 'debugging' ? 'debug' : 'log'];
-    const prefix = spec.enabled
+    // Le numéro précède l'horodatage : c'est l'ordre d'IOS, et celui qui
+    // permet de trier un journal dont les dates sont douteuses.
+    const numero = seq === undefined ? '' : `${String(seq).padStart(6, '0')}: `;
+    const prefix = numero + (spec.enabled
       ? `${this.formatTimestamp(spec, ts, uptimeMs ?? this.uptimeNow())}: `
-      : '';
+      : '');
     if (severity === 'debugging' && !mnemonic) return `${prefix}${text}`;
     const sevNum = this.SEVERITY_ORDER[severity];
     const mnem = (mnemonic ?? severity).toUpperCase();
@@ -364,14 +571,164 @@ export class LoggingConfig {
    * which have no `log`-topic equivalent) keep the default `true` so
    * `device.syslog.entry` remains their only forwarding path.
    */
+  attachFileStore(store: LoggingFileStore): void { this.fileStore = store; }
+
+  /**
+   * Le préfixe des fichiers du journal persistant, dérivé de l'URL
+   * configurée. IOS écrit une suite de fichiers numérotés sous ce
+   * chemin, et en ouvre un nouveau quand le courant atteint `filesize`.
+   */
+  private persistentPrefix(): string {
+    const base = this.persistent.url.replace(/^[a-z]+:\/?/i, '').replace(/\/+$/, '');
+    return `${base || 'syslog'}_`;
+  }
+
+  /**
+   * Écrit la ligne sur le système de fichiers.
+   *
+   * Sans cela, `logging persistent` aurait été exactement le défaut que
+   * ce lot corrige partout ailleurs : une commande acceptée, rendue dans
+   * la configuration, et dont aucun `dir flash:` n'aurait jamais montré
+   * la trace. `size` borne le journal entier, `filesize` chaque fichier
+   * — les deux sont des bornes distinctes sur un vrai équipement, et
+   * confondre l'une avec l'autre ferait tourner le journal au mauvais
+   * moment.
+   */
+  private persistLine(rendu: string): void {
+    if (!this.persistent.enabled || !this.fileStore) return;
+    const prefix = this.persistentPrefix();
+    const fichiers = this.fileStore.list(prefix).sort();
+    let courant = fichiers[fichiers.length - 1];
+    let contenu = courant ? (this.fileStore.read(courant) ?? '') : '';
+    if (!courant || contenu.length + rendu.length + 1 > this.persistent.filesize) {
+      courant = `${prefix}${String(fichiers.length + 1).padStart(5, '0')}`;
+      contenu = '';
+      fichiers.push(courant);
+    }
+    this.fileStore.write(courant, contenu ? `${contenu}\n${rendu}` : rendu);
+    // `size` borne le journal ENTIER : le fichier le plus ancien part
+    // quand le total le dépasse, sinon la borne ne bornerait rien.
+    let total = fichiers.reduce((n, f) => n + (this.fileStore!.read(f)?.length ?? 0), 0);
+    for (const f of fichiers) {
+      if (total <= this.persistent.size) break;
+      total -= this.fileStore.read(f)?.length ?? 0;
+      this.fileStore.remove(f);
+    }
+  }
+
+  /** `show logging persistent` — ce que les fichiers contiennent vraiment. */
+  renderPersistent(): string {
+    if (!this.persistent.enabled) return 'Persistent logging is disabled';
+    const prefix = this.persistentPrefix();
+    const fichiers = this.fileStore?.list(prefix).sort() ?? [];
+    const lignes = [
+      `Persistent logging url: ${this.persistent.url}`,
+      `Persistent logging size: ${this.persistent.size} bytes`,
+      `Persistent logging filesize: ${this.persistent.filesize} bytes`,
+      `Persistent logging files: ${fichiers.length}`,
+      '',
+    ];
+    for (const f of fichiers) {
+      const c = this.fileStore?.read(f);
+      if (c) lignes.push(c);
+    }
+    return lignes.join('\n');
+  }
+
+  /** `clear logging persistent` — les fichiers partent pour de bon. */
+  clearPersistent(): void {
+    const prefix = this.persistentPrefix();
+    for (const f of this.fileStore?.list(prefix) ?? []) this.fileStore?.remove(f);
+  }
+
+  /**
+   * Un discriminateur laisse-t-il passer ce message ?
+   *
+   * `includes` exige la correspondance, `drops` l'interdit, et toutes
+   * les clauses posées comptent ensemble. Un filtre sans clause ne
+   * filtre rien — ce qui est bien ce qu'un `logging discriminator MD1`
+   * nu demande.
+   */
+  private mdAllows(md: LogDiscriminator, severity: Severity, tag: string,
+                   mnemonic: string, text: string, nowMs: number): boolean {
+    const clause = (c: MdRegexClause | undefined, valeur: string): boolean => {
+      if (!c) return true;
+      let correspond: boolean;
+      try { correspond = new RegExp(c.pattern, 'i').test(valeur); }
+      catch { correspond = valeur.toLowerCase().includes(c.pattern.toLowerCase()); }
+      return c.mode === 'includes' ? correspond : !correspond;
+    };
+    if (md.severity) {
+      const dedans = md.severity.levels.includes(this.SEVERITY_ORDER[severity]);
+      if (md.severity.mode === 'includes' ? !dedans : dedans) return false;
+    }
+    if (!clause(md.facility, tag.toUpperCase())) return false;
+    if (!clause(md.mnemonics, mnemonic.toUpperCase())) return false;
+    if (!clause(md.msgBody, text)) return false;
+    if (md.rateLimit !== undefined) {
+      const seconde = Math.floor(nowMs / 1000);
+      if (seconde !== md.windowStart) { md.windowStart = seconde; md.windowCount = 0; }
+      if (md.windowCount >= md.rateLimit) return false;
+      md.windowCount++;
+    }
+    return true;
+  }
+
+  /** Le filtre d'une destination laisse-t-il passer ce message ? */
+  private destinationAllows(dest: LoggingDestination, severity: Severity, tag: string,
+                            mnemonic: string, text: string, nowMs: number): boolean {
+    const nom = this.attachedMd[dest];
+    if (!nom) return true;
+    const md = this.discriminators.get(nom);
+    if (!md) return true;
+    if (this.mdAllows(md, severity, tag, mnemonic, text, nowMs)) return true;
+    this.droppedByMd[dest]++;
+    return false;
+  }
+
+  /** Le numéro que portera la prochaine ligne, ou rien si l'option est éteinte. */
+  private nextSequence(): number | undefined {
+    if (!this.sequenceNumbers) return undefined;
+    this.seqCounter++;
+    return this.seqCounter % 1000000;
+  }
+
+  /**
+   * La ligne est fabriquée UNE fois : celle que la console reçoit et
+   * celle que le tampon garde sont la même chaîne, numéro de séquence
+   * compris. Le numéro est consommé même quand la journalisation est
+   * éteinte, parce que le message a bien été produit — c'est ce que
+   * compte le compteur d'IOS.
+   */
   recordDebugLine(text: string): string {
     const ts = this.clock?.epochMs() ?? Date.now();
-    const rendu = this.formatEntry('debugging', 'debug', text, ts, undefined, this.uptimeNow());
+    const rendu = this.formatEntry(
+      'debugging', 'debug', text, ts, undefined, this.uptimeNow(), this.nextSequence());
     if (!this.enabled) return rendu;
     this.messages.push({ ts, severity: 'debugging', tag: 'debug', text, rendu });
+    this.logged.buffer++;
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
     return rendu;
+  }
+
+  /**
+   * La table d'historique n'est pas le tampon : elle ne garde que ce qui
+   * atteint `logging history`, elle est bien plus courte, et c'est elle
+   * que le SNMP relève.
+   */
+  private recordHistory(
+    severity: Severity, tag: string, mnemonic: string, text: string, ts: number,
+  ): void {
+    if (this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.historySeverity]) {
+      this.historyIgnored++;
+      return;
+    }
+    this.historyEntries.push({ severity, tag, mnemonic, text, ts });
+    while (this.historyEntries.length > this.historySize) {
+      this.historyEntries.shift();
+      this.historyFlushed++;
+    }
   }
 
   append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
@@ -380,27 +737,52 @@ export class LoggingConfig {
     // The device's own clock, not the host's: a router whose operator ran
     // `clock set` must date its messages with the date it was given.
     const ts = this.clock?.epochMs() ?? Date.now();
-    const rendu = this.formatEntry(severity, tag, text, ts, mnemonic, this.uptimeNow());
+    const rendu = this.formatEntry(
+      severity, tag, text, ts, mnemonic, this.uptimeNow(), this.nextSequence());
+    const mnem = (mnemonic ?? severity).toUpperCase();
+    const passeMd = (d: LoggingDestination): boolean =>
+      this.destinationAllows(d, severity, tag, mnem, text, ts);
     const wantsMonitor = this.monitorEnabled
-      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity];
+      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]
+      && passeMd('monitor');
     const wantsConsole = this.consoleEnabled
-      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.consoleSeverity];
-    if (wantsMonitor || wantsConsole) {
-      if (this.rateLimitAllows(ts)) {
-        const notice = this.takeSuppressedNotice();
-        if (notice) {
-          if (wantsMonitor) this.fanMonitor(notice);
-          if (wantsConsole) this.fanConsole(notice);
+      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.consoleSeverity]
+      && passeMd('console');
+    const tousBornes = this.rateLimitScope === 'all';
+    const exempte = this.rateLimitExcept !== null
+      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.rateLimitExcept];
+    const borne = this.rateLimit !== null && !exempte && (tousBornes || wantsConsole);
+    const passe = !borne || this.rateLimitAllows(ts);
+    if (!passe) this.rateLimitedTotal++;
+    if (passe || !tousBornes) {
+      this.recordHistory(severity, tag, (mnemonic ?? severity).toUpperCase(), text, ts);
+      if (this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.trapSeverity]) {
+        this.logged.trap++;
+        for (const h of this.hostConfigs) {
+          const md = h.discriminator ? this.discriminators.get(h.discriminator) : undefined;
+          if (md && !this.mdAllows(md, severity, tag, mnem, text, ts)) h.droppedByMd++;
+          else h.logged++;
         }
-        if (wantsMonitor) this.fanMonitor(rendu);
-        if (wantsConsole) this.fanConsole(rendu);
       }
     }
+    if (passe && (wantsMonitor || wantsConsole)) {
+      const notice = this.takeSuppressedNotice();
+      if (notice) {
+        if (wantsMonitor) this.fanMonitor(notice);
+        if (wantsConsole) this.fanConsole(notice);
+      }
+      if (wantsMonitor) { this.fanMonitor(rendu); this.logged.monitor++; }
+      if (wantsConsole) { this.fanConsole(rendu); this.logged.console++; }
+    }
+    if (tousBornes && !passe) return;
     if (this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.bufferedSeverity]) return;
+    if (!passeMd('buffered')) return;
     this.messages.push({ ts, severity, tag, text, mnemonic, rendu });
+    this.logged.buffer++;
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
     this.nextSeq++;
+    this.persistLine(rendu);
     if (republish && this.attachedBus && this.attachedDeviceId) {
       this.attachedBus.publish({
         topic: 'device.syslog.entry',
@@ -997,74 +1379,485 @@ export class LoggingConfig {
 
   /** Apply `logging …` (negate=false) or `no logging …` (negate=true). */
   apply(args: string[], negate: boolean): void {
-    const head = (args[0] ?? '').toLowerCase();
-    switch (head) {
-      case '':
-      case 'on':
-        this.enabled = !negate;
-        return;
-      case 'rate-limit': {
-        // IOS bounds console/monitor output so a debug under load cannot
-        // starve the CPU. `no logging rate-limit` restores the default.
-        if (negate) { this.rateLimit = null; return; }
-        const n = args.slice(1).find((a) => /^\d+$/.test(a));
-        this.rateLimit = n ? Math.max(1, parseInt(n, 10)) : null;
-        return;
+    this.applyLogging(args, negate);
+  }
+
+  private static readonly INVALID = (token?: string): LoggingCommandError =>
+    ({ kind: 'invalid', token });
+
+  private static readonly INCOMPLETE: LoggingCommandError = { kind: 'incomplete' };
+
+  private parseSeverity(tok: string | undefined): Severity | null {
+    return tok === undefined ? null : normSeverity(tok);
+  }
+
+  /**
+   * Un entier ET ses bornes. IOS refuse une valeur hors plage plutôt que
+   * de la ramener au plus proche : une configuration qui vaut autre chose
+   * que ce qu'on a tapé est pire qu'une commande refusée.
+   */
+  private parseBounded(tok: string | undefined, min: number, max: number): number | null {
+    if (tok === undefined || !/^\d+$/.test(tok)) return null;
+    const n = parseInt(tok, 10);
+    return n >= min && n <= max ? n : null;
+  }
+
+  private removeHost(ip: string): void {
+    const i = this.hostConfigs.findIndex(h => h.ip === ip);
+    if (i >= 0) this.hostConfigs.splice(i, 1);
+  }
+
+  /**
+   * `logging host <ip> [transport {udp|tcp} [port <n>]]`.
+   *
+   * Le transport et le port sont LA raison de taper cette forme : un
+   * collecteur en TCP/1470 n'est pas un collecteur en UDP/514.
+   */
+  private applyHost(ip: string, rest: string[], negate: boolean): LoggingCommandError | null {
+    if (negate) { this.removeHost(ip); return null; }
+    let transport: 'udp' | 'tcp' = 'udp';
+    let port = 514;
+    let discriminator: string | null = null;
+    for (let i = 0; i < rest.length; i++) {
+      const kw = rest[i].toLowerCase();
+      if (kw === 'discriminator') {
+        const nom = rest[++i];
+        if (nom === undefined) return LoggingConfig.INCOMPLETE;
+        if (!this.discriminators.has(nom)) return LoggingConfig.INVALID(nom);
+        discriminator = nom;
+        continue;
       }
-      case 'buffered': {
-        this.buffered = !negate;
-        for (const a of args.slice(1)) {
-          if (/^\d+$/.test(a)) this.bufferedSize = parseInt(a, 10);
-          else { const s = normSeverity(a); if (s) this.bufferedSeverity = s; }
+      if (kw === 'transport') {
+        const t = (rest[++i] ?? '').toLowerCase();
+        if (t === '') return LoggingConfig.INCOMPLETE;
+        if (t !== 'udp' && t !== 'tcp') return LoggingConfig.INVALID(rest[i]);
+        transport = t;
+        if ((rest[i + 1] ?? '').toLowerCase() === 'port') {
+          i++;
+          const p = this.parseBounded(rest[++i], 1, 65535);
+          if (rest[i] === undefined) return LoggingConfig.INCOMPLETE;
+          if (p === null) return LoggingConfig.INVALID(rest[i]);
+          port = p;
         }
-        return;
+      } else {
+        return LoggingConfig.INVALID(rest[i]);
       }
-      case 'console': {
-        this.consoleEnabled = !negate;
-        const s = normSeverity(args[1] ?? '');
-        if (s) this.consoleSeverity = s;
-        return;
+    }
+    const existing = this.hostConfigs.find(h => h.ip === ip);
+    if (existing) {
+      existing.transport = transport;
+      existing.port = port;
+      if (discriminator) existing.discriminator = discriminator;
+    } else {
+      this.hostConfigs.push({ ip, transport, port, logged: 0, discriminator, droppedByMd: 0 });
+    }
+    return null;
+  }
+
+  /**
+   * `logging buffered [<size>] [<severity>]`, dont l'argument numérique
+   * est AMBIGU par conception et résolu par sa valeur : `0-7` est une
+   * sévérité, `4096-2147483647` une taille. Un `logging buffered 6` règle
+   * donc le niveau, jamais un tampon de six octets — qui ne pourrait
+   * contenir aucun message.
+   */
+  private applyBuffered(rest: string[], negate: boolean): LoggingCommandError | null {
+    if ((rest[0] ?? '').toLowerCase() === 'discriminator') {
+      if (negate) { this.attachedMd.buffered = null; return null; }
+      if (!rest[1]) return LoggingConfig.INCOMPLETE;
+      if (!this.discriminators.has(rest[1])) return LoggingConfig.INVALID(rest[1]);
+      this.attachedMd.buffered = rest[1];
+      this.buffered = true;
+      return this.applyBufferedValues(rest.slice(2));
+    }
+    if (negate) {
+      this.buffered = false;
+      this.bufferedSize = BUFFERED_SIZE_DEFAUT;
+      this.bufferedSeverity = BUFFERED_SEVERITE_DEFAUT;
+      return null;
+    }
+    this.buffered = true;
+    return this.applyBufferedValues(rest);
+  }
+
+  private applyBufferedValues(rest: string[]): LoggingCommandError | null {
+    let size: number | null = null;
+    let severity: Severity | null = null;
+    for (const tok of rest) {
+      if (/^\d+$/.test(tok)) {
+        const n = parseInt(tok, 10);
+        if (n >= 0 && n <= 7) severity = SEVERITIES[n];
+        else if (n >= BUFFERED_SIZE_MIN && n <= BUFFERED_SIZE_MAX) size = n;
+        else return LoggingConfig.INVALID(tok);
+      } else {
+        const s = normSeverity(tok);
+        if (!s) return LoggingConfig.INVALID(tok);
+        severity = s;
       }
-      case 'monitor': {
-        this.monitorEnabled = !negate;
-        const s = normSeverity(args[1] ?? '');
-        if (s) this.monitorSeverity = s;
-        return;
+    }
+    if (size !== null) this.bufferedSize = size;
+    if (severity !== null) this.bufferedSeverity = severity;
+    return null;
+  }
+
+  private applyOriginId(rest: string[], negate: boolean): LoggingCommandError | null {
+    if (negate) { this.originId = null; return null; }
+    const mode = (rest[0] ?? '').toLowerCase();
+    if (mode === '') return LoggingConfig.INCOMPLETE;
+    if (mode === 'hostname' || mode === 'ip' || mode === 'ipv6') {
+      this.originId = { mode };
+      return null;
+    }
+    if (mode === 'string') {
+      const text = rest.slice(1).join(' ');
+      if (!text) return LoggingConfig.INCOMPLETE;
+      this.originId = { mode: 'string', text };
+      return null;
+    }
+    return LoggingConfig.INVALID(rest[0]);
+  }
+
+  private applyHistory(rest: string[], negate: boolean): LoggingCommandError | null {
+    if ((rest[0] ?? '').toLowerCase() === 'size') {
+      if (negate) { this.historySize = 1; return null; }
+      const n = this.parseBounded(rest[1], HISTORY_SIZE_MIN, HISTORY_SIZE_MAX);
+      if (rest[1] === undefined) return LoggingConfig.INCOMPLETE;
+      if (n === null) return LoggingConfig.INVALID(rest[1]);
+      this.historySize = n;
+      while (this.historyEntries.length > this.historySize) {
+        this.historyEntries.shift();
+        this.historyFlushed++;
       }
-      case 'trap': {
-        const s = normSeverity(args[1] ?? '');
-        if (s) this.trapSeverity = s;
-        return;
+      return null;
+    }
+    if (negate) { this.historySeverity = 'warnings'; return null; }
+    if (rest.length === 0) return LoggingConfig.INCOMPLETE;
+    const s = this.parseSeverity(rest[0]);
+    if (!s) return LoggingConfig.INVALID(rest[0]);
+    this.historySeverity = s;
+    return null;
+  }
+
+  /**
+   * `logging rate-limit [console|all] <1-10000> [except <severity>]`.
+   */
+  private applyRateLimit(rest: string[], negate: boolean): LoggingCommandError | null {
+    if (negate) {
+      this.rateLimit = null;
+      this.rateLimitScope = 'console';
+      this.rateLimitExcept = null;
+      return null;
+    }
+    let i = 0;
+    const mot = (rest[0] ?? '').toLowerCase();
+    const scope: 'console' | 'all' = mot === 'all' ? 'all' : 'console';
+    if (mot === 'console' || mot === 'all') i = 1;
+    const n = this.parseBounded(rest[i], RATE_LIMIT_MIN, RATE_LIMIT_MAX);
+    if (rest[i] === undefined) return LoggingConfig.INCOMPLETE;
+    if (n === null) return LoggingConfig.INVALID(rest[i]);
+    i++;
+    let except: Severity | null = null;
+    if (i < rest.length) {
+      if (rest[i].toLowerCase() !== 'except') return LoggingConfig.INVALID(rest[i]);
+      if (rest[i + 1] === undefined) return LoggingConfig.INCOMPLETE;
+      except = this.parseSeverity(rest[i + 1]);
+      if (!except) return LoggingConfig.INVALID(rest[i + 1]);
+      i += 2;
+      if (i < rest.length) return LoggingConfig.INVALID(rest[i]);
+    }
+    this.rateLimit = n;
+    this.rateLimitScope = scope;
+    this.rateLimitExcept = except;
+    return null;
+  }
+
+  /**
+   * `logging discriminator <name> [severity {drops|includes} <list>]
+   * [facility {drops|includes} <regex>] [mnemonics {drops|includes} <regex>]
+   * [msg-body {drops|includes} <regex>] [rate-limit <n>]`
+   *
+   * Chaque appel COMPLÈTE le filtre existant plutôt que de le remplacer,
+   * comme sur IOS : on pose les clauses l'une après l'autre.
+   */
+  private applyDiscriminator(rest: string[], negate: boolean): LoggingCommandError | null {
+    const nom = rest[0];
+    if (!nom) return LoggingConfig.INCOMPLETE;
+    if (negate) { this.discriminators.delete(nom); return null; }
+    const md: LogDiscriminator = this.discriminators.get(nom)
+      ?? { name: nom, windowStart: 0, windowCount: 0 };
+    for (let i = 1; i < rest.length; i++) {
+      const clause = rest[i].toLowerCase();
+      if (clause === 'rate-limit') {
+        const n = this.parseBounded(rest[i + 1], 1, RATE_LIMIT_MAX);
+        if (rest[i + 1] === undefined) return LoggingConfig.INCOMPLETE;
+        if (n === null) return LoggingConfig.INVALID(rest[i + 1]);
+        md.rateLimit = n;
+        i++;
+        continue;
       }
-      case 'facility':
-        if (args[1]) this.facility = args[1];
-        return;
-      case 'source-interface':
-        this.sourceInterface = negate ? null : (args[1] ?? null);
-        return;
-      case 'host': {
-        const ip = args[1];
-        if (!ip) return;
-        if (negate) {
-          const i = this.hosts.indexOf(ip);
-          if (i >= 0) this.hosts.splice(i, 1);
-        } else if (!this.hosts.includes(ip)) {
-          this.hosts.push(ip);
-        }
-        return;
+      if (!['severity', 'facility', 'mnemonics', 'msg-body'].includes(clause)) {
+        return LoggingConfig.INVALID(rest[i]);
       }
-      default:
-        // `logging <ip>` — bare host form.
-        if (/^\d+\.\d+\.\d+\.\d+$/.test(head)) {
-          if (negate) {
-            const i = this.hosts.indexOf(head);
-            if (i >= 0) this.hosts.splice(i, 1);
-          } else if (!this.hosts.includes(head)) {
-            this.hosts.push(head);
+      const mode = (rest[i + 1] ?? '').toLowerCase();
+      if (mode === '') return LoggingConfig.INCOMPLETE;
+      if (mode !== 'drops' && mode !== 'includes') return LoggingConfig.INVALID(rest[i + 1]);
+      const valeur = rest[i + 2];
+      if (valeur === undefined) return LoggingConfig.INCOMPLETE;
+      if (clause === 'severity') {
+        const niveaux: number[] = [];
+        for (const part of valeur.split(',')) {
+          const plage = part.match(/^(\d)-(\d)$/);
+          if (plage) {
+            for (let n = Number(plage[1]); n <= Number(plage[2]); n++) niveaux.push(n);
+          } else {
+            const s = normSeverity(part);
+            if (!s) return LoggingConfig.INVALID(valeur);
+            niveaux.push(this.SEVERITY_ORDER[s]);
           }
         }
-        // Other knobs (rate-limit, queue-limit, count…) are accepted
-        // and intentionally not modelled as state.
+        md.severity = { mode, levels: niveaux };
+      } else if (clause === 'facility') {
+        md.facility = { mode, pattern: valeur };
+      } else if (clause === 'mnemonics') {
+        md.mnemonics = { mode, pattern: valeur };
+      } else {
+        // `msg-body` porte sur le TEXTE, donc il prend tout ce qui reste :
+        // un motif peut contenir des espaces, et le couper au premier en
+        // ferait un autre motif.
+        md.msgBody = { mode, pattern: rest.slice(i + 2).join(' ') };
+        i = rest.length;
+        break;
+      }
+      i += 2;
+    }
+    this.discriminators.set(nom, md);
+    return null;
+  }
+
+  /**
+   * `logging persistent [url <url>] [size <n>] [filesize <n>]
+   * [immediate | batch <n>] [threshold <pct>]`.
+   */
+  private applyPersistent(rest: string[], negate: boolean): LoggingCommandError | null {
+    if (negate) { this.persistent.enabled = false; return null; }
+    const p: PersistentLoggingConfig = { ...this.persistent, enabled: true };
+    for (let i = 0; i < rest.length; i++) {
+      const kw = rest[i].toLowerCase();
+      const suivant = rest[i + 1];
+      if (kw === 'immediate') { p.immediate = true; continue; }
+      if (kw === 'batch') {
+        const n = this.parseBounded(suivant, 1, BUFFERED_SIZE_MAX);
+        if (suivant === undefined) return LoggingConfig.INCOMPLETE;
+        if (n === null) return LoggingConfig.INVALID(suivant);
+        p.immediate = false;
+        i++;
+        continue;
+      }
+      if (suivant === undefined) return LoggingConfig.INCOMPLETE;
+      if (kw === 'url') { p.url = suivant; i++; continue; }
+      if (kw === 'size' || kw === 'filesize') {
+        const n = this.parseBounded(suivant, 1024, BUFFERED_SIZE_MAX);
+        if (n === null) return LoggingConfig.INVALID(suivant);
+        if (kw === 'size') p.size = n; else p.filesize = n;
+        i++;
+        continue;
+      }
+      if (kw === 'threshold') {
+        const n = this.parseBounded(suivant, 1, 99);
+        if (n === null) return LoggingConfig.INVALID(suivant);
+        p.threshold = n;
+        i++;
+        continue;
+      }
+      return LoggingConfig.INVALID(rest[i]);
+    }
+    // Un fichier plus grand que le journal entier ne pourrait jamais
+    // être écrit en entier : la borne serait contradictoire.
+    if (p.filesize > p.size) return LoggingConfig.INVALID(String(p.filesize));
+    this.persistent = p;
+    return null;
+  }
+
+  private applyQueueLimit(rest: string[], negate: boolean): LoggingCommandError | null {
+    if (negate) { this.queueLimit = null; return null; }
+    let i = 0;
+    const mot = (rest[0] ?? '').toLowerCase();
+    const scope: 'default' | 'esm' | 'trap' = mot === 'esm' ? 'esm' : mot === 'trap' ? 'trap' : 'default';
+    if (mot === 'esm' || mot === 'trap') i = 1;
+    if (rest[i] === undefined) return LoggingConfig.INCOMPLETE;
+    const n = this.parseBounded(rest[i], 1, 2147483647);
+    if (n === null) return LoggingConfig.INVALID(rest[i]);
+    if (rest[i + 1] !== undefined) return LoggingConfig.INVALID(rest[i + 1]);
+    this.queueLimit = { scope, size: n };
+    return null;
+  }
+
+  private applyReload(rest: string[], negate: boolean): LoggingCommandError | null {
+    if (negate) { this.reloadSeverity = null; this.reloadMessageLimit = null; return null; }
+    let severity: Severity | null = null;
+    let limit: number | null = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i].toLowerCase() === 'message-limit') {
+        const n = this.parseBounded(rest[i + 1], 1, 4294967295);
+        if (rest[i + 1] === undefined) return LoggingConfig.INCOMPLETE;
+        if (n === null) return LoggingConfig.INVALID(rest[i + 1]);
+        limit = n;
+        i++;
+        continue;
+      }
+      const s = this.parseSeverity(rest[i]);
+      if (!s) return LoggingConfig.INVALID(rest[i]);
+      severity = s;
+    }
+    this.reloadSeverity = severity ?? 'notifications';
+    this.reloadMessageLimit = limit;
+    return null;
+  }
+
+  /**
+   * Apply `logging …` / `no logging …`, naming the faulty token rather
+   * than swallowing it.
+   *
+   * Le `default` muet d'avant était la racine de tout : un mot-clé
+   * inconnu ne changeait rien et ne disait rien, donc l'opérateur croyait
+   * avoir agi. Ici tout ce qui n'est pas reconnu est refusé.
+   */
+  applyLogging(args: string[], negate: boolean): LoggingCommandError | null {
+    const head = (args[0] ?? '').toLowerCase();
+    const rest = args.slice(1);
+    switch (head) {
+      case '':
+        // `logging` seul ne désigne aucune destination : IOS ne propose
+        // pas `<cr>` derrière et refuse la ligne.
+        return LoggingConfig.INCOMPLETE;
+      case 'on':
+        if (rest.length) return LoggingConfig.INVALID(rest[0]);
+        this.enabled = !negate;
+        return null;
+      case 'rate-limit':
+        return this.applyRateLimit(rest, negate);
+      case 'buffered':
+        return this.applyBuffered(rest, negate);
+      case 'console':
+      case 'monitor':
+      case 'trap': {
+        const cible = head as 'console' | 'monitor' | 'trap';
+        // `logging {console|monitor} discriminator <name>` attache un
+        // filtre à la destination sans toucher à sa sévérité.
+        if ((rest[0] ?? '').toLowerCase() === 'discriminator' && cible !== 'trap') {
+          if (negate) { this.attachedMd[cible] = null; return null; }
+          if (!rest[1]) return LoggingConfig.INCOMPLETE;
+          if (!this.discriminators.has(rest[1])) return LoggingConfig.INVALID(rest[1]);
+          this.attachedMd[cible] = rest[1];
+          return null;
+        }
+        if (negate) {
+          if (cible === 'console') this.consoleEnabled = false;
+          else if (cible === 'monitor') this.monitorEnabled = false;
+          else this.trapSeverity = 'informational';
+          return null;
+        }
+        if (rest.length > 1) return LoggingConfig.INVALID(rest[1]);
+        if (rest.length === 1) {
+          const s = this.parseSeverity(rest[0]);
+          if (!s) return LoggingConfig.INVALID(rest[0]);
+          if (cible === 'console') this.consoleSeverity = s;
+          else if (cible === 'monitor') this.monitorSeverity = s;
+          else this.trapSeverity = s;
+        } else if (cible === 'trap') {
+          this.trapSeverity = 'informational';
+        }
+        if (cible === 'console') this.consoleEnabled = true;
+        else if (cible === 'monitor') this.monitorEnabled = true;
+        return null;
+      }
+      case 'facility': {
+        if (negate) { this.facility = 'local7'; return null; }
+        if (rest.length === 0) return LoggingConfig.INCOMPLETE;
+        const f = rest[0].toLowerCase();
+        // Même règle d'abréviation que partout ailleurs dans IOS, et
+        // `auth` l'emporte sur `authpriv` parce qu'il est exact.
+        const exact = FACILITY_NAMES.includes(f);
+        const candidats = FACILITY_NAMES.filter(n => n.startsWith(f));
+        if (!exact && candidats.length !== 1) return LoggingConfig.INVALID(rest[0]);
+        this.facility = exact ? f : candidats[0];
+        return null;
+      }
+      case 'source-interface':
+        if (negate) { this.sourceInterface = null; return null; }
+        if (rest.length === 0) return LoggingConfig.INCOMPLETE;
+        this.sourceInterface = rest.join(' ');
+        return null;
+      case 'host': {
+        if (rest.length === 0) return LoggingConfig.INCOMPLETE;
+        if (!isValidIPv4(rest[0])) return LoggingConfig.INVALID(rest[0]);
+        return this.applyHost(rest[0], rest.slice(1), negate);
+      }
+      case 'origin-id':
+        return this.applyOriginId(rest, negate);
+      case 'count':
+        if (rest.length) return LoggingConfig.INVALID(rest[0]);
+        this.countEnabled = !negate;
+        return null;
+      case 'history':
+        return this.applyHistory(rest, negate);
+      case 'discriminator':
+        return this.applyDiscriminator(rest, negate);
+      case 'persistent':
+        return this.applyPersistent(rest, negate);
+      case 'queue-limit':
+        return this.applyQueueLimit(rest, negate);
+      case 'reload':
+        return this.applyReload(rest, negate);
+      case 'snmp-trap': {
+        if (negate) { this.snmpTrapSeverity = null; return null; }
+        if (rest.length === 0) { this.snmpTrapSeverity = 'informational'; return null; }
+        const s = this.parseSeverity(rest[0]);
+        if (!s) return LoggingConfig.INVALID(rest[0]);
+        if (rest.length > 1) return LoggingConfig.INVALID(rest[1]);
+        this.snmpTrapSeverity = s;
+        return null;
+      }
+      case 'userinfo':
+        if (rest.length) return LoggingConfig.INVALID(rest[0]);
+        this.userInfo = !negate;
+        return null;
+      case 'server-arp':
+        if (rest.length) return LoggingConfig.INVALID(rest[0]);
+        this.serverArp = !negate;
+        return null;
+      case 'delimiter': {
+        const kw = (rest[0] ?? '').toLowerCase();
+        if (kw === '') return LoggingConfig.INCOMPLETE;
+        if (kw !== 'tcp') return LoggingConfig.INVALID(rest[0]);
+        this.delimiterTcp = !negate;
+        return null;
+      }
+      case 'message-counter': {
+        const kw = (rest[0] ?? '').toLowerCase();
+        if (kw === '') return LoggingConfig.INCOMPLETE;
+        if (kw !== 'log' && kw !== 'debug' && kw !== 'syslog') return LoggingConfig.INVALID(rest[0]);
+        if (rest.length > 1) return LoggingConfig.INVALID(rest[1]);
+        if (negate) this.messageCounters.delete(kw);
+        else this.messageCounters.add(kw);
+        return null;
+      }
+      case 'exception': {
+        if (negate) { this.exceptionSize = BUFFERED_SIZE_MIN; return null; }
+        const n = this.parseBounded(rest[0], BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX);
+        if (rest[0] === undefined) return LoggingConfig.INCOMPLETE;
+        if (n === null) return LoggingConfig.INVALID(rest[0]);
+        this.exceptionSize = n;
+        return null;
+      }
+      default:
+        // `logging <ip>` — la forme héritée, qu'IOS normalise lui-même en
+        // `logging host <ip>` dans la configuration.
+        if (/^\d+\.\d+\.\d+\.\d+$/.test(head)) {
+          if (!isValidIPv4(head)) return LoggingConfig.INVALID(args[0]);
+          return this.applyHost(head, rest, negate);
+        }
+        return LoggingConfig.INVALID(args[0]);
     }
   }
 
@@ -1093,35 +1886,139 @@ export class LoggingConfig {
     return lines.join('\n');
   }
 
+  /**
+   * `show logging` au format d'IOS 15.
+   *
+   * Ce qu'on lit en premier sur un vrai équipement, ce n'est pas le
+   * niveau — c'est le NOMBRE de messages effectivement journalisés par
+   * destination : une destination configurée qui ne reçoit rien ne se
+   * distingue d'une destination qui travaille que par ce chiffre.
+   *
+   * `xml disabled, filtering disabled` sont des constantes : ce
+   * simulateur n'a ni sortie XML ni modules de filtrage ESM. C'est la
+   * valeur d'un équipement ordinaire, et l'afficher est plus fidèle que
+   * de la taire.
+   */
   render(): string {
-    const lvl = (s: Severity) => `level ${s}`;
+    // IOS aligne les niveaux entre eux : « Buffer » est plus court que
+    // « Console » et « Monitor », donc son deux-points est suivi de deux
+    // espaces.
+    const dest = (nom: string, actif: boolean, sev: Severity, compte: number): string[] => {
+      const etiquette = `${nom} logging:`.padEnd(16);
+      if (!actif) return [`    ${etiquette} disabled`];
+      return [
+        `    ${etiquette} level ${sev}, ${compte} messages logged, xml disabled,`,
+        '                     filtering disabled',
+      ];
+    };
     const lines = [
       `Syslog logging: ${this.enabled ? 'enabled' : 'disabled'}` +
-        ' (0 messages dropped, 0 flushes, 0 overruns)',
-      `    Console logging: ${this.consoleEnabled ? lvl(this.consoleSeverity) : 'disabled'}`,
-      `    Monitor logging: ${this.monitorEnabled ? lvl(this.monitorSeverity) : 'disabled'}`,
-      `    Buffer logging: ${this.buffered
-        ? `${lvl(this.bufferedSeverity)}, ${this.bufferedSize} bytes`
-        : 'disabled'}`,
-      `    Trap logging: ${lvl(this.trapSeverity)}`,
-      `    Facility: ${this.facility}`,
+        ` (0 messages dropped, ${this.rateLimitedTotal} messages rate-limited,` +
+        ' 0 flushes, 0 overruns, xml disabled, filtering disabled)',
+      '',
+      ...this.renderDiscriminatorSections(),
+      ...dest('Console', this.consoleEnabled, this.consoleSeverity, this.logged.console),
+      ...dest('Monitor', this.monitorEnabled, this.monitorSeverity, this.logged.monitor),
+      ...dest('Buffer', this.buffered, this.bufferedSeverity, this.logged.buffer),
+      `    Exception Logging: size (${this.exceptionSize} bytes)`,
+      `    Count and timestamp logging messages: ${this.countEnabled ? 'enabled' : 'disabled'}`,
+      this.persistent.enabled
+        ? `    Persistent logging: enabled, url ${this.persistent.url}, `
+          + `size ${this.persistent.size}, filesize ${this.persistent.filesize}`
+        : '    Persistent logging: disabled',
       `    Timestamp logging: ${this.horodatageResume()}`,
       `    Sequence numbers: ${this.sequenceNumbers ? 'enabled' : 'disabled'}`,
+      `    Facility: ${this.facility}`,
     ];
+    if (this.originId) {
+      lines.push(`    Origin ID: ${this.originId.mode}${this.originId.text ? ` ${this.originId.text}` : ''}`);
+    }
     if (this.sourceInterface) {
       lines.push(`    Source interface: ${this.sourceInterface}`);
     }
-    if (this.hosts.length) {
-      for (const h of this.hosts) lines.push(`    Logging to ${h}`);
+    lines.push('');
+    lines.push(`    Trap logging: level ${this.trapSeverity}, ${this.logged.trap} message lines logged`);
+    if (this.hostConfigs.length) {
+      for (const h of this.hostConfigs) {
+        lines.push(`        Logging to ${h.ip}  (${h.transport} port ${h.port}, audit disabled,`);
+        lines.push('              link up),');
+        lines.push(`              ${h.logged} message lines logged, 0 message lines rate-limited,`);
+        lines.push(`              ${h.droppedByMd} message lines dropped-by-MD, xml disabled,`);
+        lines.push(`              sequence number ${this.sequenceNumbers ? 'enabled' : 'disabled'}`);
+      }
     } else {
-      lines.push('    No active syslog hosts');
+      lines.push('        No active syslog hosts');
     }
-    if (this.buffered && this.messages.length > 0) {
+    if (this.buffered) {
+      // La taille du tampon ne figure QUE sur cette ligne — c'est là
+      // qu'IOS la met, et la taire quand le tampon est vide reviendrait
+      // à ne jamais pouvoir vérifier ce que `logging buffered` a réglé.
       lines.push('');
       lines.push('Log Buffer (' + this.bufferedSize + ' bytes):');
       lines.push('');
       for (const m of this.messages) lines.push(m.rendu);
     }
+    return lines.join('\n');
+  }
+
+  /**
+   * Un discriminateur est ACTIF quand une destination l'utilise, INACTIF
+   * quand il est défini et attaché à rien. La distinction est réelle et
+   * c'est la première chose qu'on vérifie quand un filtre « ne marche
+   * pas » : le plus souvent il n'a jamais été attaché.
+   */
+  private renderDiscriminatorSections(): string[] {
+    const attaches = new Set(Object.values(this.attachedMd).filter((n): n is string => n !== null));
+    const decrire = (md: LogDiscriminator): string[] => {
+      const parts: string[] = [];
+      if (md.severity) {
+        parts.push(`severity ${md.severity.mode} ${md.severity.levels.join(',')}`);
+      }
+      if (md.facility) parts.push(`facility ${md.facility.mode} ${md.facility.pattern}`);
+      if (md.mnemonics) parts.push(`mnemonics ${md.mnemonics.mode} ${md.mnemonics.pattern}`);
+      if (md.msgBody) parts.push(`msg-body ${md.msgBody.mode} ${md.msgBody.pattern}`);
+      if (md.rateLimit !== undefined) parts.push(`rate-limit ${md.rateLimit}`);
+      if (parts.length === 0) return [`${md.name.padEnd(20)}(no filter clause)`];
+      return parts.map((p, i) => `${(i === 0 ? md.name : '').padEnd(20)}${p}`);
+    };
+    const actifs = [...this.discriminators.values()].filter(m => attaches.has(m.name));
+    const inactifs = [...this.discriminators.values()].filter(m => !attaches.has(m.name));
+    const lignes: string[] = [];
+    if (actifs.length === 0) lignes.push('No Active Message Discriminator.', '');
+    else {
+      lignes.push('Active Message Discriminator:');
+      for (const m of actifs) lignes.push(...decrire(m));
+      lignes.push('');
+    }
+    if (inactifs.length > 0) {
+      lignes.push('Inactive Message Discriminator:');
+      for (const m of inactifs) lignes.push(...decrire(m));
+      lignes.push('');
+    }
+    return lignes;
+  }
+
+  /**
+   * `show logging history` — une table à PART, celle qu'alimente
+   * `logging history` et que le SNMP relève. La rendre identique à
+   * `show logging` faisait croire à une seule vue là où IOS en a deux.
+   */
+  renderHistory(): string {
+    const n = this.historySize;
+    const lines = [
+      `Syslog History Table:${n} maximum table ${n === 1 ? 'entry' : 'entries'},`,
+      `  saving level ${this.historySeverity} or higher`,
+      `  ${this.historyIgnored} messages ignored, 0 dropped, 0 recursive dropped`,
+      `  ${this.historyFlushed} table entries flushed`,
+      this.snmpTrapSeverity
+        ? `  SNMP notifications enabled, severity ${this.snmpTrapSeverity} or higher`
+        : '  SNMP notifications not enabled',
+    ];
+    this.historyEntries.forEach((e, i) => {
+      lines.push(` entry number ${i + 1} : ${e.tag.toUpperCase()}-${this.SEVERITY_ORDER[e.severity]}-${e.mnemonic}`);
+      lines.push(`  ${e.text}`);
+      lines.push(` timestamp: ${Math.floor(e.ts / 1000)}`);
+    });
     return lines.join('\n');
   }
 
@@ -1133,8 +2030,10 @@ export class LoggingConfig {
     // apparaître une commande que personne n'a tapée.
     const tamponParDefaut = this.bufferedSize === BUFFERED_SIZE_DEFAUT
       && this.bufferedSeverity === BUFFERED_SEVERITE_DEFAUT;
+    // Un tampon avec discriminateur est rendu plus bas, avec son filtre :
+    // écrire les deux lignes referait le réglage deux fois à l'import.
     if (!this.buffered) lines.push('no logging buffered');
-    else if (!tamponParDefaut) {
+    else if (!tamponParDefaut && !this.attachedMd.buffered) {
       lines.push(`logging buffered ${this.bufferedSize} ${this.bufferedSeverity}`);
     }
     if (!this.consoleEnabled) lines.push('no logging console');
@@ -1151,8 +2050,71 @@ export class LoggingConfig {
       if (l) lines.push(l);
     }
     if (this.sequenceNumbers) lines.push('service sequence-numbers');
+    // Les discriminateurs d'abord : une destination ne peut pas
+    // référencer un filtre qui n'existe pas encore, et une
+    // running-config est REJOUÉE telle quelle à l'import.
+    for (const md of this.discriminators.values()) {
+      const parts = [`logging discriminator ${md.name}`];
+      if (md.severity) parts.push(`severity ${md.severity.mode} ${md.severity.levels.join(',')}`);
+      if (md.facility) parts.push(`facility ${md.facility.mode} ${md.facility.pattern}`);
+      if (md.mnemonics) parts.push(`mnemonics ${md.mnemonics.mode} ${md.mnemonics.pattern}`);
+      if (md.rateLimit !== undefined) parts.push(`rate-limit ${md.rateLimit}`);
+      // `msg-body` en dernier : son motif prend tout ce qui suit.
+      if (md.msgBody) parts.push(`msg-body ${md.msgBody.mode} ${md.msgBody.pattern}`);
+      lines.push(parts.join(' '));
+    }
+    if (this.attachedMd.console) lines.push(`logging console discriminator ${this.attachedMd.console}`);
+    if (this.attachedMd.monitor) lines.push(`logging monitor discriminator ${this.attachedMd.monitor}`);
+    if (this.attachedMd.buffered) {
+      lines.push(`logging buffered discriminator ${this.attachedMd.buffered} `
+        + `${this.bufferedSize} ${this.bufferedSeverity}`);
+    }
+    if (this.persistent.enabled) {
+      lines.push(`logging persistent url ${this.persistent.url} `
+        + `size ${this.persistent.size} filesize ${this.persistent.filesize}`
+        + (this.persistent.immediate ? ' immediate' : '')
+        + (this.persistent.threshold ? ` threshold ${this.persistent.threshold}` : ''));
+    }
+    if (this.snmpTrapSeverity) lines.push(`logging snmp-trap ${this.snmpTrapSeverity}`);
+    if (this.userInfo) lines.push('logging userinfo');
+    if (this.serverArp) lines.push('logging server-arp');
+    if (this.delimiterTcp) lines.push('logging delimiter tcp');
+    if (this.queueLimit) {
+      const portee = this.queueLimit.scope === 'default' ? '' : `${this.queueLimit.scope} `;
+      lines.push(`logging queue-limit ${portee}${this.queueLimit.size}`);
+    }
+    for (const c of ['log', 'debug', 'syslog'] as const) {
+      const defaut = c === 'log';
+      if (this.messageCounters.has(c) !== defaut) {
+        lines.push(`${this.messageCounters.has(c) ? '' : 'no '}logging message-counter ${c}`);
+      }
+    }
+    if (this.reloadSeverity) {
+      lines.push(`logging reload ${this.reloadSeverity}`
+        + (this.reloadMessageLimit ? ` message-limit ${this.reloadMessageLimit}` : ''));
+    }
+    if (this.countEnabled) lines.push('logging count');
+    if (this.exceptionSize !== BUFFERED_SIZE_MIN) lines.push(`logging exception ${this.exceptionSize}`);
+    if (this.rateLimit !== null) {
+      const portee = this.rateLimitScope === 'all' ? 'all ' : '';
+      const sauf = this.rateLimitExcept ? ` except ${this.rateLimitExcept}` : '';
+      lines.push(`logging rate-limit ${portee}${this.rateLimit}${sauf}`);
+    }
+    if (this.originId) {
+      lines.push(`logging origin-id ${this.originId.mode}${this.originId.text ? ` ${this.originId.text}` : ''}`);
+    }
+    if (this.historySeverity !== 'warnings') lines.push(`logging history ${this.historySeverity}`);
+    if (this.historySize !== 1) lines.push(`logging history size ${this.historySize}`);
     if (this.sourceInterface) lines.push(`logging source-interface ${this.sourceInterface}`);
-    for (const h of this.hosts) lines.push(`logging host ${h}`);
+    // Le transport et le port sont rendus parce qu'une configuration
+    // relue à l'import REFAIT le collecteur : les perdre remettrait le
+    // routeur en UDP/514 sans le dire.
+    for (const h of this.hostConfigs) {
+      const suffix = h.transport === 'udp' && h.port === 514
+        ? '' : ` transport ${h.transport} port ${h.port}`;
+      const md = h.discriminator ? ` discriminator ${h.discriminator}` : '';
+      lines.push(`logging host ${h.ip}${md}${suffix}`);
+    }
     return lines;
   }
 
@@ -1213,9 +2175,37 @@ export class LoggingConfig {
   reset(): void {
     this.enabled = true;
     this.buffered = false;
-    this.hosts.length = 0;
+    this.hostConfigs.length = 0;
     this.sourceInterface = null;
     this.sequenceNumbers = false;
+    this.countEnabled = false;
+    this.originId = null;
+    this.exceptionSize = BUFFERED_SIZE_MIN;
+    this.historySeverity = 'warnings';
+    this.historySize = 1;
+    this.historyEntries.length = 0;
+    this.historyIgnored = 0;
+    this.historyFlushed = 0;
+    this.rateLimit = null;
+    this.rateLimitScope = 'console';
+    this.rateLimitExcept = null;
+    this.discriminators.clear();
+    this.attachedMd.console = null;
+    this.attachedMd.monitor = null;
+    this.attachedMd.buffered = null;
+    this.persistent = {
+      enabled: false, url: PERSISTENT_URL_DEFAUT, size: PERSISTENT_SIZE_DEFAUT,
+      filesize: PERSISTENT_FILESIZE_DEFAUT, immediate: false, threshold: 0,
+    };
+    this.snmpTrapSeverity = null;
+    this.userInfo = false;
+    this.serverArp = false;
+    this.queueLimit = null;
+    this.messageCounters.clear();
+    this.messageCounters.add('log');
+    this.delimiterTcp = false;
+    this.reloadSeverity = null;
+    this.reloadMessageLimit = null;
     this.horodatage.debug = defaultTimestampSpec();
     this.horodatage.log = defaultTimestampSpec();
   }

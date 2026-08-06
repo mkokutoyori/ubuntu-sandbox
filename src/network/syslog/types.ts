@@ -62,6 +62,11 @@ export interface SyslogPacket extends NetworkPdu {
 
 export interface SyslogServer {
   ip: string;
+  /**
+   * `logging host <ip> transport udp port <n>` : un collecteur qui
+   * ecoute ailleurs que sur 514 ne recoit rien si on lui ecrit sur 514.
+   */
+  port: number;
   facility: SyslogFacilityName;
   severityThreshold: SyslogSeverityName;
   count: number;
@@ -91,8 +96,9 @@ export function createDefaultSyslogConfig(): SyslogConfig {
 
 export function defaultServer(ip: string,
                               facility: SyslogFacilityName = 'local7',
-                              severityThreshold: SyslogSeverityName = 'informational'): SyslogServer {
-  return { ip, facility, severityThreshold, count: 0, lastSentMs: 0 };
+                              severityThreshold: SyslogSeverityName = 'informational',
+                              port: number = UDP_PORT_SYSLOG): SyslogServer {
+  return { ip, port, facility, severityThreshold, count: 0, lastSentMs: 0 };
 }
 
 export function priValue(facility: number, severity: number): number {

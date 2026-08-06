@@ -176,6 +176,8 @@ export class CiscoRouter extends Router {
       resolveRoute: (ip: string) => this.resolveRouteForHost(ip),
       sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
+      sendArpRequestFor: (iface: string, target: IPAddress) =>
+        this.sendArpRequestFor(iface, target),
     };
     this.cdpAgent = new CdpAgent(hostBase, () => this.getBus());
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());

@@ -24,7 +24,11 @@ describe('LoggingConfig (unit)', () => {
     l.apply(['host', '10.0.0.5'], false);
     l.apply(['trap', 'warnings'], false);
     const out = l.render();
-    expect(out).toMatch(/Buffer logging: level informational, 64000 bytes/);
+    // IOS 15 ne met PAS la taille sur cette ligne : elle porte le niveau
+    // et le nombre de messages journalisés. La taille est sur
+    // `Log Buffer (N bytes):`, et c'est le seul endroit où elle figure.
+    expect(out).toMatch(/Buffer logging: {2}level informational, \d+ messages logged/);
+    expect(out).toContain('Log Buffer (64000 bytes):');
     expect(out).toContain('Logging to 10.0.0.5');
     expect(out).toMatch(/Trap logging: level warnings/);
     l.apply(['host', '10.0.0.5'], true);
@@ -44,7 +48,9 @@ describe('LoggingConfig (unit)', () => {
 
   it('drops entries below the buffered severity threshold', () => {
     const l = new LoggingConfig();
-    l.apply(['buffered', '4000', 'warnings'], false);
+    // 4096 et non 4000 : la borne basse d'IOS est 4096, et une taille
+    // hors bornes est maintenant refusée au lieu d'être appliquée.
+    l.apply(['buffered', '4096', 'warnings'], false);
     l.append('debugging', 'sys', 'noise');
     l.append('warnings', 'sys', 'kept');
     expect(l.render()).toContain('kept');
@@ -73,7 +79,7 @@ describe('Cisco router logging / tech-support — real state', () => {
     expect(out).not.toMatch(/Invalid input/);
     expect(out).toContain('Logging to 10.0.0.5');
     expect(out).toContain('Logging to 10.0.0.6');
-    expect(out).toMatch(/Buffer logging: level informational/);
+    expect(out).toMatch(/Buffer logging: {2}level informational/);
     expect(out).toMatch(/Trap logging: level notifications/);
     expect(out).toMatch(/Facility: local6/);
 

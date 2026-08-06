@@ -77,7 +77,10 @@ describe('a buffer the machine claims is a buffer its configuration declares', (
     // `show logging` doit dire. Mais une running-config ne rend pas les
     // défauts : annoncer la ligne ferait apparaître une commande que
     // personne n'a tapée.
-    expect(shown).toContain('Buffer logging: level debugging, 4096 bytes');
+    // IOS 15 porte le NIVEAU et le nombre de messages sur cette ligne ;
+    // la taille est sur `Log Buffer (N bytes):`, son seul emplacement.
+    expect(shown).toContain('Buffer logging:  level debugging');
+    expect(shown).toContain('Log Buffer (4096 bytes):');
     expect(cfg).not.toContain('logging buffered');
   });
 
@@ -87,7 +90,7 @@ describe('a buffer the machine claims is a buffer its configuration declares', (
       'logging buffered 16384 informational', 'end']);
 
     expect(String(await r.executeCommand('show logging')))
-      .toContain('Buffer logging: level informational, 16384 bytes');
+      .toContain('Buffer logging:  level informational');
     expect(String(await r.executeCommand('show running-config')))
       .toContain('logging buffered 16384 informational');
   });

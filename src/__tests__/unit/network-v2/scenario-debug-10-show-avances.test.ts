@@ -114,11 +114,11 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
       expect(out).toMatch(/Syslog logging: enabled/);
       expect(out).toMatch(/Console logging: level/);
       expect(out).toMatch(/Monitor logging: level/);
-      expect(out).toMatch(/Buffer logging: level/);
+      expect(out).toMatch(/Buffer logging: {2}level/);
     });
 
     it('`logging buffered 1000000 debug` devrait redimensionner le buffer annoncé', async () => {
-      expect(await run('show logging')).toMatch(/Buffer logging: level debugging, 1000000 bytes/);
+      expect(await run('show logging')).toMatch(/Log Buffer \(1000000 bytes\):/);
     });
 
     it('`service timestamps log datetime msec` devrait horodater le buffer à la milliseconde', async () => {
