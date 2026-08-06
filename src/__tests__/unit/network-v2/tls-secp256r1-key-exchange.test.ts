@@ -7,9 +7,11 @@
  * P-256 existant maintenant pour les signatures, l'ECDH qui va avec ne
  * coûtait plus qu'une multiplication scalaire.
  *
- * Ce qui reste simulé, et c'est désormais le seul chemin : un groupe que
- * ni P-256 ni X25519 ne servent (`secp384r1`, `ffdhe2048`, …), faute
- * d'implémentation des deux côtés.
+ * Suite : `tls-implemented-groups-only.test.ts`. Le dernier chemin
+ * simulé — un groupe que ni P-256 ni X25519 ne servent — a été retiré,
+ * et non pas implémenté : un groupe qu'on ne sait pas calculer ne se
+ * négocie plus du tout. C'est ce qui a fait tomber le troisième
+ * argument de `sharedSecret`, qui n'existait que pour le nourrir.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -44,8 +46,8 @@ describe('le secret partagé de secp256r1', () => {
   it('est le même des deux côtés', () => {
     const client = generateKeyExchange(P256_GROUP);
     const serveur = generateKeyExchange(P256_GROUP);
-    const a = sharedSecret(client, serveur.share, 'inutilisé');
-    const b = sharedSecret(serveur, client.share, 'inutilisé');
+    const a = sharedSecret(client, serveur.share);
+    const b = sharedSecret(serveur, client.share);
     expect(a).not.toBeNull();
     expect(a).toBe(b);
   });
@@ -53,7 +55,7 @@ describe('le secret partagé de secp256r1', () => {
   it('n\'est aucune des deux parts publiques', () => {
     const client = generateKeyExchange(P256_GROUP);
     const serveur = generateKeyExchange(P256_GROUP);
-    const partage = sharedSecret(client, serveur.share, 'inutilisé')!;
+    const partage = sharedSecret(client, serveur.share)!;
     expect(client.share).not.toContain(partage);
     expect(serveur.share).not.toContain(partage);
   });
@@ -63,14 +65,15 @@ describe('le secret partagé de secp256r1', () => {
     const s1 = generateKeyExchange(P256_GROUP);
     const c2 = generateKeyExchange(P256_GROUP);
     const s2 = generateKeyExchange(P256_GROUP);
-    expect(sharedSecret(c1, s1.share, 'x')).not.toBe(sharedSecret(c2, s2.share, 'x'));
+    expect(sharedSecret(c1, s1.share)).not.toBe(sharedSecret(c2, s2.share));
   });
 
-  it('un groupe encore simulé le reste, et il est seul', () => {
+  it('un groupe sans implémentation ne rend plus rien du tout', () => {
+    // Ce cas épinglait le défaut : il exigeait une valeur NON nulle pour
+    // un groupe simulé, c'est-à-dire un secret fabriqué. Il exige
+    // maintenant l'inverse, ce qui est la seule réponse défendable.
     const inconnu = generateKeyExchange('secp384r1');
-    // Pas `null` : ce chemin ne refuse pas, il simule — et le dire est
-    // plus honnête que de laisser croire que tout est réel.
-    expect(sharedSecret(inconnu, 'secp384r1:peu-importe', 'contexte')).not.toBeNull();
+    expect(sharedSecret(inconnu, 'secp384r1:peu-importe')).toBeNull();
   });
 });
 

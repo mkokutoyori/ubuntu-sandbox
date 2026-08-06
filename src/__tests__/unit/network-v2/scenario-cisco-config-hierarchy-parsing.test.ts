@@ -239,7 +239,16 @@ describe('Scénario 6 — Parsing hiérarchique de show running-config', () => {
       expect(t2).toEqual(t1);
 
       // ! de séparation présents dans la sortie du simulateur.
-      expect(run.split('\n').filter((l) => l === '!').length).toBeGreaterThanOrEqual(t1.length - 1);
+      //
+      // Un `!` par bloc de PREMIER NIVEAU était l'ancienne règle, et elle
+      // était fausse : IOS ne sépare pas deux `ip route` consécutifs par
+      // un `!`, il groupe les commandes globales d'une même famille sous
+      // un seul. Ce qui reste vrai, et qui est le sujet de ce test, c'est
+      // qu'un bloc À ENFANTS — une `interface`, un `router` — est bien
+      // fermé par le sien.
+      const blocsAEnfants = t1.filter((n) => n.children.length > 0).length;
+      expect(run.split('\n').filter((l) => l === '!').length)
+        .toBeGreaterThanOrEqual(blocsAEnfants);
 
       // Aucune tabulation, aucune indentation ≥ 2 espaces.
       expect(run).not.toMatch(/^\t/m);

@@ -77,9 +77,20 @@ export function orderCiscoConfigBlocks(body: readonly string[]): string[] {
   ranked.sort((a, b) => a.rank - b.rank || a.index - b.index);
 
   const out: string[] = [];
-  for (const entry of ranked) {
+  for (let i = 0; i < ranked.length; i++) {
+    const entry = ranked[i];
     out.push(...entry.block.lines);
-    out.push('!');
+    // Un `!` par BLOC mettait un séparateur après chaque `ip route`, alors
+    // qu'IOS groupe les commandes globales d'une même famille sous un seul.
+    // Ce n'était pas qu'un défaut d'affichage : `| section ip route`
+    // recopiait fidèlement ces `!`, et on les lui a reprochés à tort.
+    // Un bloc à plusieurs lignes (un `interface`, un `router`) garde le
+    // sien, puisque c'est lui qui ferme le bloc.
+    const next = ranked[i + 1];
+    const singleLine = entry.block.lines.length === 1;
+    const runContinues = singleLine && next
+      && next.rank === entry.rank && next.block.lines.length === 1;
+    if (!runContinues) out.push('!');
   }
   return out;
 }
