@@ -277,12 +277,18 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       return '% Please define a domain-name first.';
     }
     let modulus = 1024;
-    let label = 'default';
-    let general = false;
+    // Sans `label`, IOS nomme la paire d'après l'identité pleinement
+    // qualifiée du routeur — c'est pour cela qu'il exige un nom de
+    // domaine avant de la générer.
+    const hote = (ctx.r() as unknown as { getHostname?: () => string }).getHostname?.() ?? 'Router';
+    let label = `${hote}.${domain}`;
+    // `crypto key generate rsa` produit une paire à usage GÉNÉRAL ; ce
+    // sont `usage-keys` qui en produisent deux, dont une de signature.
+    let general = true;
     for (let i = 0; i < args.length; i++) {
       if (args[i] === 'modulus' && args[i + 1]) modulus = parseInt(args[i + 1], 10);
       if (args[i] === 'label' && args[i + 1]) label = args[i + 1];
-      if (args[i] === 'general-keys') general = true;
+      if (args[i] === 'usage-keys') general = false;
     }
     const generatedAtMs = Date.now();
     sec().cryptoKeys.push({ label, modulus, general, generatedAtMs });
@@ -1021,7 +1027,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     const s = sec();
     if (s.cryptoKeys.length === 0) return '% No RSA key generated.';
     return s.cryptoKeys.map(k => [
-      `% Key pair was generated at: ${new Date(k.generatedAtMs).toISOString().replace('T', ' ').slice(0, 19)}`,
+      `% Key pair was generated at: ${formatIosKeyDate(k.generatedAtMs)}`,
       `Key name: ${k.label}`,
       ` Storage Device: not specified`,
       ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
@@ -1173,6 +1179,16 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
 
 function secondsSince(ms: number): number {
   return Math.max(0, Math.floor((Date.now() - ms) / 1000));
+}
+
+/** `10:04:36 UTC Aug 6 2026` — la date telle qu'IOS l'écrit ici. */
+function formatIosKeyDate(ms: number): string {
+  const d = new Date(ms);
+  const mois = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
+  const deux = (n: number) => String(n).padStart(2, '0');
+  return `${deux(d.getUTCHours())}:${deux(d.getUTCMinutes())}:${deux(d.getUTCSeconds())} UTC `
+    + `${mois} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
 }
 
 function rsaPublicKeyMaterial(label: string, modulus: number, generatedAtMs: number): string {

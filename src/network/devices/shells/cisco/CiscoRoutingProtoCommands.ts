@@ -711,12 +711,51 @@ export function registerRoutingProtoShow(
         out.push(`  Distance: ${repo.rip.distance}`);
       }
     }
+    if (ctx.r().isOSPFEnabled()) {
+      const moteur = ctx.r()._getOSPFEngineInternal();
+      const cfg = moteur.getConfig();
+      const aires = [...cfg.areas.values()];
+      const normales = aires.filter(a => !a.isStub && !a.isNSSA).length;
+      const stub = aires.filter(a => a.isStub && !a.isNSSA).length;
+      const nssa = aires.filter(a => a.isNSSA).length;
+      out.push(`Routing Protocol is "ospf ${cfg.processId}"`);
+      out.push('  Outgoing update filter list for all interfaces is not set');
+      out.push('  Incoming update filter list for all interfaces is not set');
+      out.push(`  Router ID ${cfg.routerId}`);
+      out.push(`  Number of areas in this router is ${aires.length}.`
+        + ` ${normales} normal ${stub} stub ${nssa} nssa`);
+      out.push('  Maximum path: 4');
+      out.push('  Routing for Networks:');
+      for (const n of cfg.networks) out.push(`    ${n.network} ${n.wildcard} area ${n.areaId}`);
+      out.push('  Routing Information Sources:');
+      out.push('    Gateway         Distance      Last Update');
+      for (const v of moteur.getNeighbors()) {
+        out.push(`    ${String(v.routerId).padEnd(16)}110`);
+      }
+      out.push('  Distance: (default is 110)');
+    }
     for (const p of repo.allEigrp()) {
       out.push(`Routing Protocol is "eigrp ${p.asn}"`);
-      if (p.routerId) out.push(`  Router-ID: ${p.routerId}`);
+      out.push('  Outgoing update filter list for all interfaces is not set');
+      out.push('  Incoming update filter list for all interfaces is not set');
+      out.push(`  EIGRP-IPv4 Protocol for AS(${p.asn})`);
+      out.push('    Metric weight K1=1, K2=0, K3=1, K4=0, K5=0');
+      if (p.routerId) out.push(`    Router-ID: ${p.routerId}`);
+      out.push('    Topology : 0 (base)');
+      out.push('      Active Timer: 3 min');
+      out.push('      Distance: internal 90 external 170');
+      out.push('      Maximum path: 4');
+      out.push('      Maximum hopcount 100');
+      out.push(`      Maximum metric variance ${ctx.r().getEIGRPVariance?.() ?? 1}`);
+      out.push('');
+      out.push('  Automatic Summarization: disabled');
+      out.push('  Maximum path: 4');
       out.push('  Routing for Networks:');
       for (const n of p.networks) out.push(`    ${n}`);
       for (const r of p.redistribute) out.push(`  ${r}`);
+      out.push('  Routing Information Sources:');
+      out.push('    Gateway         Distance      Last Update');
+      out.push('  Distance: internal 90 external 170');
     }
     const b = repo.getBgp();
     if (b) {

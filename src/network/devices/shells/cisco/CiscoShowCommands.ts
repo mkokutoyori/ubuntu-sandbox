@@ -828,7 +828,9 @@ export function showRunningConfigInterface(router: Router, ifName: string): stri
   const lines = [
     'Building configuration...',
     '',
-    `Current configuration : interface ${ifName}`,
+    // Remplacé une fois le corps connu : l'en-tête annonce une TAILLE,
+    // pas le nom de ce qu'on affiche.
+    '',
     '!',
     `interface ${ifName}`,
   ];
@@ -849,6 +851,8 @@ export function showRunningConfigInterface(router: Router, ifName: string): stri
     lines.push(` ip helper-address ${h}`);
   }
   lines.push('end');
+  const corps = lines.slice(3).join('\n') + '\n';
+  lines[2] = `Current configuration : ${new TextEncoder().encode(corps).length} bytes`;
   return lines.join('\n');
 }
 

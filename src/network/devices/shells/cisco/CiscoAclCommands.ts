@@ -540,7 +540,11 @@ export function showAccessLists(router: Router, ref?: string): string {
     lines.push(`${typeStr} IP access list ${label}`);
     for (const entry of acl.entries) {
       const seq = entry.sequence !== undefined ? `${entry.sequence} ` : '';
-      lines.push(`    ${seq}${formatACLEntry(acl.type, entry)} (${entry.matchCount} match${entry.matchCount !== 1 ? 'es' : ''})`);
+      // IOS n'écrit le compteur que s'il a compté quelque chose.
+      const matches = entry.matchCount > 0
+        ? ` (${entry.matchCount} match${entry.matchCount !== 1 ? 'es' : ''})`
+        : '';
+      lines.push(`    ${seq}${formatACLEntry(acl.type, entry, true)}${matches}`);
     }
   }
   return lines.join('\n');
@@ -555,13 +559,20 @@ function formatPortSpec(spec: import('../../router/ACLEngine').PortSpec | undefi
   return '';
 }
 
-function formatACLEntry(aclType: 'standard' | 'extended', entry: import('../../Router').ACLEntry): string {
+function formatACLEntry(
+  aclType: 'standard' | 'extended',
+  entry: import('../../Router').ACLEntry,
+  pourAffichage = false,
+): string {
   if (entry.remark) return `remark ${entry.remark}`;
   if (entry.evaluate) return `evaluate ${entry.evaluate}`;
   const action = entry.action;
   if (aclType === 'standard') {
     const tail = formatTrailing(entry);
-    return `${action} ${formatSrcAddr(entry.srcIP, entry.srcWildcard)}${tail}`;
+    const addr = pourAffichage
+      ? formatStandardAddr(entry.srcIP, entry.srcWildcard)
+      : formatSrcAddr(entry.srcIP, entry.srcWildcard);
+    return `${action} ${addr}${tail}`;
   }
   const proto = entry.protocol || 'ip';
   const src = formatSrcAddr(entry.srcIP, entry.srcWildcard);
@@ -606,6 +617,18 @@ function formatSrcAddr(ip: IPAddress, wildcard: SubnetMask): string {
   return `${ip} ${wStr}`;
 }
 
+/**
+ * Une liste STANDARD s'affiche autrement qu'elle ne s'écrit : IOS y
+ * nomme le masque générique (`, wildcard bits 0.0.0.255`) là où la
+ * configuration le juxtapose. La configuration garde donc `formatSrcAddr`.
+ */
+function formatStandardAddr(ip: IPAddress, wildcard: SubnetMask): string {
+  const wStr = wildcard.toString();
+  if (wStr === '255.255.255.255') return 'any';
+  if (wStr === '0.0.0.0') return `host ${ip}`;
+  return `${ip}, wildcard bits ${wStr}`;
+}
+
 // ─── Show ACL entries in running-config ───────────────────────────────
 
 export function runningConfigACL(router: Router): string[] {
@@ -622,12 +645,16 @@ export function runningConfigACL(router: Router): string[] {
     }
   }
 
-  // Named ACLs — entries carry their sequence number, as IOS renders them.
+  // Named ACLs. IOS ne rend le numéro de séquence que si l'opérateur
+  // l'a ÉCRIT : celui qu'il attribue lui-même reste implicite, et le
+  // faire apparaître ferait revenir une configuration que personne n'a
+  // tapée.
   for (const acl of acls) {
     if (acl.name) {
       lines.push(`ip access-list ${acl.type} ${acl.name}`);
       for (const entry of acl.entries) {
-        const seq = entry.sequence !== undefined ? `${entry.sequence} ` : '';
+        const seq = entry.sequenceConfigured && entry.sequence !== undefined
+          ? `${entry.sequence} ` : '';
         lines.push(` ${seq}${formatACLEntry(acl.type, entry).replace(/ \(\d+ match(es)?\)/, '')}`);
       }
     }

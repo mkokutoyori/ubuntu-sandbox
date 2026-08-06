@@ -131,7 +131,7 @@ describe('Scénario 8 (Cisco) — dépannage NAT : outils de diagnostic', () => 
       await pc1.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
 
       const out = await router.executeCommand('show ip access-lists ACL-LAN-INTERNE');
-      expect(out).toMatch(/10 permit 192\.168\.10\.0 0\.0\.0\.255 \(\d+ match/);
+      expect(out).toMatch(/10 permit 192\.168\.10\.0, wildcard bits 0\.0\.0\.255 \(\d+ match/);
     });
   });
 

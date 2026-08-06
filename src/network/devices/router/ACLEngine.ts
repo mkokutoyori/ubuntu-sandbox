@@ -50,6 +50,8 @@ export interface PortSpec {
 
 export interface ACLEntry {
   sequence?: number;
+  /** L'opérateur a-t-il ÉCRIT ce numéro ? IOS ne le rend en configuration que dans ce cas. */
+  sequenceConfigured?: boolean;
   action: 'permit' | 'deny';
   protocol?: string;
   srcIP: IPAddress;
@@ -81,6 +83,8 @@ export interface ACLEntry {
 
 export interface ACLEntryOptions {
   sequence?: number;
+  /** L'opérateur a-t-il ÉCRIT ce numéro ? IOS ne le rend en configuration que dans ce cas. */
+  sequenceConfigured?: boolean;
   protocol?: string;
   srcIP: IPAddress;
   srcWildcard: SubnetMask;
@@ -151,7 +155,10 @@ export class ACLEngine {
       this.accessLists.push(acl);
     }
     const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
-    acl.entries.push({ action, ...opts, sequence: seq, matchCount: 0 });
+    acl.entries.push({
+      action, ...opts, sequence: seq, sequenceConfigured: opts.sequence !== undefined,
+      matchCount: 0,
+    });
     ACLEngine.sortBySequence(acl);
   }
 
@@ -167,7 +174,10 @@ export class ACLEngine {
       this.accessLists.push(acl);
     }
     const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
-    acl.entries.push({ action, ...opts, sequence: seq, matchCount: 0 });
+    acl.entries.push({
+      action, ...opts, sequence: seq, sequenceConfigured: opts.sequence !== undefined,
+      matchCount: 0,
+    });
     ACLEngine.sortBySequence(acl);
   }
 

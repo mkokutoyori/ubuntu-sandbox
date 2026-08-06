@@ -601,23 +601,28 @@ function formatNtpReferenceTime(ms: number): string {
 
 export function showNtpAssociations(dev?: ShowStateDevice): string {
   const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
-  const header = [
-    '  address         ref clock     st  when poll reach delay offset disp',
-    ' * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured',
-  ];
+  const header = '  address         ref clock     st  when poll reach delay offset disp';
+  // IOS met sa légende APRÈS le tableau, et le marqueur tient sur DEUX
+  // caractères : l'état de sélection puis `~` pour « configurée ». Les
+  // coller (`*~`, ` ~`) décalait la colonne d'adresse d'un cran.
+  const legende = ' * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured';
   if (!ntp || ntp.getConfig().associations.size === 0) {
-    return [...header, 'No NTP associations configured.'].join('\n');
+    return [header, 'No NTP associations configured.', legende].join('\n');
   }
   const rows: string[] = [];
   for (const [, a] of ntp.getConfig().associations) {
-    const marker = a.preferred ? '*' : a.prefer ? '+' : ' ';
+    // `+` désigne une association CANDIDATE, ce qu'une association qui n'a
+    // jamais répondu ne peut pas être : sans joignabilité, elle reste
+    // simplement configurée.
+    const joignable = a.reach !== 0;
+    const marker = a.preferred && joignable ? '*' : a.prefer && joignable ? '+' : ' ';
     const since = a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 999;
     rows.push(
       `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? a.serverIp : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
       `${a.delayMs.toFixed(1).padStart(5)} ${a.offsetMs.toFixed(1).padStart(6)} ${a.dispersionMs.toFixed(1).padStart(5)}`,
     );
   }
-  return [...header, ...rows].join('\n');
+  return [header, ...rows, legende].join('\n');
 }
 
 function formatLineTimeout(minutes: number | null, seconds: number | null): string {
@@ -649,13 +654,19 @@ export function showLine(dev: ShowStateDevice, args: string[] = []): string {
     }
     return rows.join('\n');
   }
+  // `AccO` est un O, pas un zéro : la colonne nomme la classe d'accès
+  // SORTANTE (Out), face à `AccI` pour l'entrante. Et un routeur numérote
+  // CTY 0, AUX 1, puis les VTY à partir de 2 — l'AUX manquait, donc les
+  // VTY commençaient une ligne trop tôt.
+  const ligne = (tty: number, line: number, type: string, actuelle: boolean): string =>
+    `${actuelle ? '*' : ' '} ${String(tty).padStart(4)}${String(line).padStart(5)} ${type.padEnd(7)}`
+    + '           -    -    -    -      0     0   0/0       -';
   const rows = [
-    '   Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int',
-    `*    0    0 CTY               -    -    -    -      0     0   0/0       -`,
+    '   Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int',
+    ligne(0, 0, 'CTY', true),
+    ligne(1, 1, 'AUX', false),
   ];
-  for (let i = 1; i <= 5; i++) {
-    rows.push(`     ${i}    ${i} VTY               -    -    -    -      0     0   0/0       -`);
-  }
+  for (let i = 0; i < 5; i++) rows.push(ligne(2 + i, 2 + i, 'VTY', false));
   return rows.join('\n');
 }
 

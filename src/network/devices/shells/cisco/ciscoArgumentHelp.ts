@@ -169,6 +169,41 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     { name: 'when', type: 'STRING', description: 'Reload reason', optional: true,
       literal: 'LINE' },
   ]);
+  tries.privileged.addCompletionKeywords('reload', [
+    { keyword: 'at', description: 'Reload at a specific time/date' },
+    { keyword: 'cancel', description: 'Cancel pending reload' },
+    { keyword: 'in', description: 'Reload after a time interval' },
+  ]);
+
+  for (const trie of [tries.configStdNacl, tries.configExtNacl]) {
+    for (const verbe of ['permit', 'deny']) {
+      trie.addCompletionKeywords(verbe, [
+        { keyword: 'any', description: 'Any source host' },
+        { keyword: 'host', description: 'A single host address' },
+      ]);
+    }
+  }
+  for (const verbe of ['permit', 'deny']) {
+    for (const proto of ['ip', 'tcp', 'udp', 'icmp']) {
+      tries.configExtNacl.describeArgs(`${verbe} ${proto}`, [
+        ENUM('source', 'Source address', [
+          ['A.B.C.D', 'Source address'],
+          ['any', 'Any source host'],
+          ['host', 'A single source host'],
+          ['object-group', 'Source object group'],
+        ]),
+      ]);
+    }
+    tries.configExtNacl.describeArgs(`${verbe} tcp any any eq`, [
+      ENUM('port', 'Port number or name', [
+        ['<0-65535>', 'Port number'],
+        ['domain', 'Domain Name Server (53)'],
+        ['ftp', 'File Transfer Protocol (21)'],
+        ['telnet', 'Telnet (23)'],
+        ['www', 'World Wide Web (HTTP, 80)'],
+      ]),
+    ]);
+  }
 
   for (const trie of [tries.configStdNacl, tries.configExtNacl]) {
     trie.describeArgs('permit', [
