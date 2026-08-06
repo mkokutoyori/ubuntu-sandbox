@@ -667,6 +667,20 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, mac, start);
     }
 
+    // Un jeton qui COMMENCE par des chiffres et poursuit sur ':' n'est
+    // pas un nombre : c'est un mot nu. `fe80::1` passait déjà parce qu'il
+    // commence par une lettre, mais `2001:db8::1` partait ici et
+    // ressortait en trois jetons — l'adresse arrivait tronquée à `2001`
+    // dans la commande. Même traitement que les littéraux IPv4 et MAC
+    // juste au-dessus : un seul WORD. Le `:` doit coller aux chiffres,
+    // ce qui laisse intact l'opérateur ternaire de PowerShell 7
+    // (`$c ? 1 : 2`), qui porte des espaces.
+    if (!this.eof() && this.ch() === ':') {
+      let word = value;
+      while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
+      return psToken(PSTokenType.WORD, word, start);
+    }
+
     // Decimal part
     if (!this.eof() && this.ch() === '.' && this.peek1() !== '.') {
       value += '.'; this.advance();

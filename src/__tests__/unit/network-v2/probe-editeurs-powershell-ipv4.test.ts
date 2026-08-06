@@ -4,6 +4,8 @@ import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { PSLexer } from '@/powershell/lexer/PSLexer';
+import { extractCommentHelp } from '@/powershell/cmdlets/core/MiscCmdlets';
 
 beforeEach(() => {
   resetCounters();
@@ -43,6 +45,20 @@ describe('a directory that does not exist is not a place one can go', () => {
     await run('New-Item -ItemType Directory -Path C:\\travail');
     expect(await run('cd C:\\travail')).not.toContain('Cannot find path');
     expect(await run('Get-Location')).toContain('C:\\travail');
+  });
+
+  it('a PSDrive is not judged by the filesystem provider', async () => {
+    // `HKLM:` appartient a un AUTRE fournisseur : demander au systeme de
+    // fichiers s'il existe reviendrait a refuser un chemin valide.
+    const run = shell(new WindowsPC('windows-pc', 'W1', 0, 0));
+    expect(await run('Set-Location HKLM:')).not.toContain('Cannot find path');
+  });
+
+  it('the system directories a Windows machine always has are reachable', async () => {
+    const run = shell(new WindowsPC('windows-pc', 'W1', 0, 0));
+    for (const dir of ['C:\\Windows', 'C:\\Users']) {
+      expect(await run(`cd ${dir}`), dir).not.toContain('Cannot find path');
+    }
   });
 
   it('Test-Path and Set-Location agree about the same path', async () => {
@@ -98,5 +114,62 @@ describe('an IPv4 address with an octet over 255 is not an address', () => {
       'New-NetIPAddress -InterfaceAlias Ethernet0 -IPAddress 300.1.1.1 -PrefixLength 24');
     expect(viaNetsh).toMatch(/Invalid|not a valid/i);
     expect(viaPs).toMatch(/Invalid|not a valid/i);
+  });
+});
+
+describe('a token that starts with digits and carries a colon is a bare word', () => {
+  const lex = (src: string) => new PSLexer().tokenize(src)
+    .filter(t => t.type !== 'EOF').map(t => t.value);
+
+  it('an IPv6 address survives unquoted, whatever it starts with', () => {
+    expect(lex('Write-Output 2001:db8::1')).toEqual(['Write-Output', '2001:db8::1']);
+    expect(lex('Write-Output fe80::1')).toEqual(['Write-Output', 'fe80::1']);
+  });
+
+  it('and it reaches the cmdlet intact', async () => {
+    const run = shell(new WindowsPC('windows-pc', 'W1', 0, 0));
+    expect(await run(
+      'New-NetIPAddress -InterfaceAlias Ethernet0 -IPAddress 2001:db8::1 -PrefixLength 64'))
+      .not.toContain('"2001"');
+  });
+
+  it('a time-looking argument survives too', () => {
+    expect(lex('Write-Output 10:30')).toEqual(['Write-Output', '10:30']);
+  });
+
+  it('what was already whole stays whole', () => {
+    expect(lex('Write-Output C:\\Users')).toEqual(['Write-Output', 'C:\\Users']);
+    expect(lex('Get-ChildItem -Path C:\\')).toEqual(['Get-ChildItem', 'path', 'C:\\']);
+    expect(lex('Write-Output $global:x')).toEqual(['Write-Output', 'global:x']);
+  });
+
+  it('a plain number is still a number', () => {
+    expect(lex('Write-Output 2001')).toEqual(['Write-Output', '2001']);
+    expect(lex('Write-Output 1.5')).toEqual(['Write-Output', '1.5']);
+    expect(lex('Write-Output 127.0.0.1')).toEqual(['Write-Output', '127.0.0.1']);
+  });
+});
+
+describe('the last section of a comment-based help block is not lost', () => {
+  const src = (tail: string) => [
+    'function T {', '<#', '.SYNOPSIS', 'Fait un truc',
+    '.DESCRIPTION', tail, '#>', '}',
+  ].join('\n');
+
+  it('a final section with no Z in it is captured whole', () => {
+    // `\Z` n'est pas une ancre en JavaScript : c'est un Z litteral. La
+    // derniere section n'etait donc gardee que si elle contenait cette
+    // lettre — et tronquee dessus quand elle l'avait.
+    expect(extractCommentHelp(src('Description finale sans la lettre interdite')))
+      .toEqual({ synopsis: 'Fait un truc', description: 'Description finale sans la lettre interdite' });
+  });
+
+  it('a final section containing a Z is no longer cut at it', () => {
+    expect(extractCommentHelp(src('Avant un Z et apres')).description)
+      .toBe('Avant un Z et apres');
+  });
+
+  it('a middle section is unaffected', () => {
+    expect(extractCommentHelp(src('peu importe')).synopsis).toBe('Fait un truc');
   });
 });
