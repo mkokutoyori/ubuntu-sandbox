@@ -9,6 +9,7 @@
  */
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { classfulMask } from './CiscoConfigCommands';
