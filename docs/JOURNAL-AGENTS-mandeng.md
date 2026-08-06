@@ -57,7 +57,13 @@ Si l'agent logging a besoin de l'ancien nom, le dire ici : la méthode
 peut redevenir `appendDebugLine` avec une valeur de retour, c'est le
 même corps.
 
-### Logging Cisco — l'arbre `logging`, ses refus et ses vues
+*(voir « Livré » plus bas pour le lot logging, désormais poussé.)*
+
+---
+
+## Livré
+
+### Logging Cisco — l'arbre `logging`, ses refus et ses vues — **POUSSÉ**
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md`).
 **PRD** : `docs/PRD-Logging-Cisco.md`, §2.1 à §2.7.
@@ -107,13 +113,29 @@ ici, et `formatEntry` ne gagne qu'un paramètre optionnel en fin de liste.
 Huawei, `HuaweiVRPShell`'s `display logbuffer` (qui lit `renderHuawei`,
 non touché), et tout ce que le PRD debug réclame.
 
----
+**Ce qui a changé de comportement pour les autres**, à savoir pour tout
+ce qui lit `show logging` ou la running-config :
 
-## Livré
+* `show logging` est au format d'IOS 15. En particulier **la taille du
+  tampon a quitté la ligne `Buffer logging:`** (où elle n'est pas sur un
+  vrai équipement) pour `Log Buffer (N bytes):`, et l'alignement met
+  DEUX espaces après `Buffer logging:`. Sept assertions existantes ont
+  été corrigées ; toute nouvelle assertion doit viser le nouveau format.
+* Une commande `logging` erronée est maintenant **refusée** : les labos
+  qui écrivaient `logging buffered 4000` (sous la borne 4096 d'IOS) ou
+  `logging console 9` ne configurent plus rien et reçoivent le curseur.
+* Un **abrégé non ambigu** vaut le mot entier (`debug` → `debugging`),
+  ce qui n'était pas le cas et faisait refuser `logging buffered
+  1000000 debug`.
+* `service sequence-numbers` **numérote** : les lignes du tampon
+  commencent alors par `NNNNNN: `. Une assertion qui ancre en début de
+  ligne (`/^\*Aug/`) casse si le labo active l'option.
+* `SyslogServer` porte un champ `port` (nouveau, défaut 514), et
+  `Router.sendArpRequestFor(iface, ip)` est public.
 
-*(rien encore sur ce journal — les lots antérieurs sont décrits dans
-leurs PRD respectifs : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
-§11 (R3), et `PRD-CLI-Fidelite-IOS-Iteration3.md`.)*
+*(les lots antérieurs sont décrits dans leurs PRD respectifs :
+`PRD-Routage-Fidelite.md` §9 (R4), §10 (R2), §11 (R3), et
+`PRD-CLI-Fidelite-IOS-Iteration3.md`.)*
 
 ---
 
@@ -122,6 +144,7 @@ leurs PRD respectifs : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Sujet | PRD | État |
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
+| Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | D1 en cours ; D2–D6 ouverts |
 
