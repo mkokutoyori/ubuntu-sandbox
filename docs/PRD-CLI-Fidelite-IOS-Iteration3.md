@@ -722,6 +722,25 @@ complète des mots-clés effectivement atteignables, mesurée par
 l'invariant §8.3. C'est un travail de saisie, pas de conception ; il se
 parallélise et se vérifie mécaniquement.
 
+**Livré, et la mesure a précédé la saisie.** Une marche de l'arbre à
+profondeur 3, sur les neuf modes du routeur et les trois du switch, a
+compté **3 212 entrées d'aide sans description, pour 219 mots-clés
+distincts** — la liste exacte à écrire, plutôt qu'une estimation. La
+table les porte tous ; il en reste **zéro**.
+
+Un défaut est apparu au dernier mot-clé. `show logging count` restait
+muet alors que `count` figurait désormais dans la table : un hint déclaré
+sous sa forme courte (`registerGreedy(…, ['count'])`) naît avec une
+description VIDE, et le rendu la poussait telle quelle sans jamais
+consulter la table canonique. Les enfants et les mots-clés auto-extraits
+la consultaient, les hints non — trois chemins vers l'aide, deux
+seulement décrits. Le troisième retombe maintenant sur la table comme les
+autres.
+
+L'invariant vaut sur l'arbre entier, mode par mode, et non plus sur six
+commandes choisies : douze cas, un par mode, plus un treizième qui refuse
+qu'une entrée se décrive par son propre mot-clé.
+
 ### 3.3 Ce que ce chantier corrige à lui seul
 
 §2.1 intégralement, §2.2 intégralement, §1.13 a/b/c/d, et la moitié de la
