@@ -128,6 +128,7 @@ import {
   buildNATConfigCommands, buildNATInterfaceCommands,
   registerNATPrivilegedCommands, registerNATShowCommands,
 } from './cisco/CiscoNATCommands';
+import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
@@ -957,11 +958,19 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const r = getRouter() as any;
       const m = r._ciscoIfacePolicyRouteMap as Map<string, string> | undefined;
       const local = r._ciscoLocalPolicyRouteMap;
+      // Une colonne alignée sur l'en-tête, et le nom abrégé qu'IOS emploie
+      // ici : les lignes commençaient par une espace et débordaient de la
+      // colonne annoncée, donc rien ne s'alignait sur l'en-tête.
+      const COL = 15;
+      const head = `${'Interface'.padEnd(COL)}Route map`;
       const rows: string[] = [];
-      if (local) rows.push(` Local            ${local}`);
-      if (m) for (const [iface, rm] of m) rows.push(` ${iface.padEnd(16)} ${rm}`);
-      if (rows.length === 0) return 'Interface        Route map';
-      return ['Interface        Route map', ...rows].join('\n');
+      if (local) rows.push(`${'Local'.padEnd(COL)}${local}`);
+      if (m) {
+        for (const [iface, rm] of m) {
+          rows.push(`${iosShortInterfaceName(iface).padEnd(COL)}${rm}`);
+        }
+      }
+      return [head, ...rows].join('\n');
     });
     trie.register('show ip static route', 'Display static routes', () => Show.showIpRoute(getRouter()));
     trie.registerGreedy('show interfaces accounting', 'Display interface accounting', () => {
@@ -983,7 +992,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     };
     trie.register('show startup-config', 'Display saved configuration', startupConfig);
     trie.register('show configuration', 'Display saved configuration', startupConfig);
-    trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
+    trie.register('show ip rip database', 'Display RIP database',
+      () => Show.showIpRipDatabase(getRouter(), this.routingCfg.rip.autoSummary));
     // BGP/EIGRP/RIP-extras + show ip protocols come from the
     // RoutingConfigRepository (registerRoutingProtoShow), so they
     // project the real configured process state.

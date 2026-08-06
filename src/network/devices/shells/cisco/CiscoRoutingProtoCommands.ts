@@ -549,14 +549,43 @@ export function registerRoutingProtoShow(
     }
     return rows.join('\n');
   });
-  trie.registerGreedy('show ip bgp neighbors', 'Display BGP neighbors', () => {
+  const BGP_TABLE_HEAD = '     Network          Next Hop            Metric LocPrf Weight Path';
+  const bgpTableRows = (rows: ReturnType<ReturnType<typeof bgpE>['getBgpTable']>): string[] =>
+    rows.map((r) => {
+      const prefix = `${r.network}/${r.mask.toCIDR()}`;
+      const nextHop = String(r.nextHop ?? '0.0.0.0');
+      const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
+      return `*>   ${prefix.padEnd(17)}${nextHop.padEnd(20)}`
+        + `0         ${String(r.weight).padStart(5)} ${path}`;
+    });
+
+  trie.registerGreedy('show ip bgp neighbors', 'Display BGP neighbors', (a) => {
     const e = bgpE();
     if (!e.isEnabled()) return '% BGP not active';
     live();
     const repoB = repo.getBgp();
     const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
+    // `show ip bgp neighbors <ip> [advertised-routes|routes]` : les
+    // arguments étaient ignorés, donc la commande rendait le détail de
+    // TOUS les voisins quoi qu'on demande.
+    const wanted = a[0] && isValidIPv4(a[0]) ? a[0] : null;
+    const sub = (wanted ? a[1] : a[0])?.toLowerCase();
+    if (wanted && !e.getConfig().neighbors.has(wanted)) {
+      return `% No such neighbor or address family`;
+    }
+    if (sub === 'advertised-routes' || sub === 'routes') {
+      if (!wanted) return '% Incomplete command.';
+      const rows = sub === 'advertised-routes'
+        ? e.getAdvertisedRoutes(wanted)
+        : e.getBgpTable().filter((r) => String(r.nextHop ?? '') === wanted);
+      const head = `Total number of prefixes ${rows.length}`;
+      return rows.length
+        ? [BGP_TABLE_HEAD, ...bgpTableRows(rows), head].join('\n')
+        : head;
+    }
     const out: string[] = [];
     for (const [ip, cfg] of e.getConfig().neighbors) {
+      if (wanted && ip !== wanted) continue;
       const v = byId.get(ip);
       const desc = repoB?.neighbors.get(ip)?.description ?? '(none)';
       out.push(`BGP neighbor is ${ip}, remote AS ${cfg.remoteAs ?? 'unset'}`);
@@ -566,22 +595,23 @@ export function registerRoutingProtoShow(
     }
     return out.length ? out.join('\n') : 'No bgp neighbors configured';
   });
-  trie.registerGreedy('show ip bgp', 'Display BGP table', () => {
+  trie.registerGreedy('show ip bgp', 'Display BGP table', (a) => {
     const e = bgpE();
     if (!e.isEnabled()) return '% BGP not active';
     live();
     const c = e.getConfig();
+    let table = e.getBgpTable();
+    // `show ip bgp <préfixe>` rejouait la table ENTIÈRE : l'argument
+    // n'était pas lu. IOS répond sur ce préfixe-là, ou dit qu'il n'y est pas.
+    if (a[0] && isValidIPv4(a[0])) {
+      table = table.filter((r) => String(r.network) === a[0]);
+      if (table.length === 0) return '% Network not in table';
+    }
     const rows = [
       `BGP table version is 1, local router ID is ${c.routerId ?? '0.0.0.0'}`,
-      '     Network          Next Hop            Metric LocPrf Weight Path',
+      BGP_TABLE_HEAD,
+      ...bgpTableRows(table),
     ];
-    for (const r of e.getBgpTable()) {
-      const prefix = `${r.network}/${r.mask.toCIDR()}`;
-      const nextHop = String(r.nextHop ?? '0.0.0.0');
-      const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
-      rows.push(`*>   ${prefix.padEnd(17)}${nextHop.padEnd(20)}` +
-        `0         ${String(r.weight).padStart(5)} ${path}`);
-    }
     return rows.join('\n');
   });
   trie.registerGreedy('show bgp', 'Display BGP', () => {

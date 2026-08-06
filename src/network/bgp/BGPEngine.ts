@@ -628,6 +628,32 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     })).sort((a, b) => String(a.network).localeCompare(String(b.network)));
   }
 
+  /**
+   * Ce que nous avons RÉELLEMENT annoncé à ce voisin — son Adj-RIB-Out,
+   * pas la Loc-RIB. Les deux diffèrent dès qu'un filtre ou le split
+   * horizon iBGP s'applique, et `show ip bgp neighbors <ip>
+   * advertised-routes` demande la première.
+   */
+  getAdvertisedRoutes(neighborIp: string): BgpTableRow[] {
+    const ps = this.peers.get(neighborIp);
+    if (!ps) return [];
+    const rows: BgpTableRow[] = [];
+    for (const { nlri, serial } of ps.adjRibOut.values()) {
+      let attrs: BgpPathAttributes | null = null;
+      try { attrs = JSON.parse(serial) as BgpPathAttributes; } catch { attrs = null; }
+      rows.push({
+        network: new IPAddress(nlri.network),
+        mask: SubnetMask.fromCIDR(nlri.prefixLength),
+        nextHop: attrs?.nextHop ? new IPAddress(String(attrs.nextHop)) : null,
+        asPath: attrs?.asPath ?? [],
+        weight: 0,
+        localPref: attrs?.localPref ?? BGP_DEFAULT_LOCAL_PREF,
+        origin: 'i' as const,
+      });
+    }
+    return rows.sort((a, b) => String(a.network).localeCompare(String(b.network)));
+  }
+
   private publishNeighborState(
     ip: string, oldState: string | undefined, newState: string, remoteAs?: number,
   ): void {

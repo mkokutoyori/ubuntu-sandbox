@@ -11,6 +11,7 @@ import { FhrpRepository, hsrpVirtualMac, type HsrpGroup }
   from '../../inspection/config/FhrpRepository';
 import { hsrpMaxGroup, HSRP_V1_MAX_GROUP } from '../../../hsrp/types';
 import { getHsrpAgent } from '../../../equipment/RouterServiceCapabilities';
+import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 interface HsrpCtx {
   r(): Router;
@@ -73,7 +74,9 @@ function renderBrief(router: Router, groups: HsrpGroup[]): string {
   for (const g of groups) {
     const state = groupState(router, g);
     rows.push(
-      `${g.iface.slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
+      // IOS abrège le nom (`Gi0/0`) dans cette vue ; le tronquer donnait
+      // `GigabitEthe`, qui ne désigne aucune interface et ne se retape pas.
+      `${iosShortInterfaceName(g.iface).slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
       `${String(g.priority).padEnd(4)}${g.preempt ? 'P' : ' '} ` +
       `${state.padEnd(8)} ${activeRouterLabel(router, g).padEnd(15)} ` +
       `${standbyRouterLabel(router, g).padEnd(15)} ${g.vip ?? 'unknown'}`);
