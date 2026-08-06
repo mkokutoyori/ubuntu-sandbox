@@ -1179,19 +1179,38 @@ export class DHCPServer implements IProtocolEngine {
     const leaseDays = Math.floor(pool.leaseDuration / 86400);
     const leaseStr = leaseDays >= 1 ? `${leaseDays} days` : this.formatLeaseTime(pool.leaseDuration);
 
+    const total = this.countTotalAddresses(pool);
+    const loues = this.countBindingsForPool(pool.name);
+    const exclus = this.countExcludedForPool(pool);
+
     const lines = [
       `Pool ${pool.name} :`,
+      ` Utilization mark (high/low)    : ${pool.highUtilizationMark ?? 100} / ${pool.lowUtilizationMark ?? 0}`,
+      ` Subnet size (first/next)       : 0 / 0`,
+      ` Total addresses                : ${total}`,
+      ` Leased addresses               : ${loues}`,
+      ` Excluded addresses             : ${exclus}`,
+      ` Pending event                  : none`,
+    ];
+    // Le tableau par sous-réseau : c'est là qu'IOS met la plage et la
+    // répartition, et c'est ce qui distinguait sa sortie de la nôtre.
+    if (pool.network && pool.mask) {
+      const debut = this.numberToIP(this.ipToNumber(pool.network) + 1);
+      const fin = this.numberToIP(this.ipToNumber(pool.network) + total);
+      lines.push(' 1 subnet is currently in the pool :');
+      lines.push(' Current index        IP address range                    Leased/Excluded/Total');
+      lines.push(` ${debut.padEnd(20)} ${debut.padEnd(16)} - ${fin.padEnd(16)} `
+        + `${String(loues).padEnd(5)}/${String(exclus).padEnd(9)}/${total}`);
+    }
+    const details = [
       `  Network          : ${pool.network || 'not configured'}/${cidr}`,
       `  Default Router   : ${pool.defaultRouter || 'not configured'}`,
       `  DNS Server(s)    : ${pool.dnsServers.length > 0 ? pool.dnsServers.join(', ') : 'not configured'}`,
       `  Domain Name      : ${pool.domainName || 'not configured'}`,
       `  Lease Time       : ${pool.leaseInfinite ? 'infinite' : leaseStr}`,
-      `  Total addresses  : ${this.countTotalAddresses(pool)}`,
-      `  Leased addresses : ${this.countBindingsForPool(pool.name)}`,
-      `  Excluded addresses : ${this.countExcludedForPool(pool)}`,
-      `  Pending event    : none`,
-      `  Current Bindings : ${this.countBindingsForPool(pool.name)}`,
+      `  Current Bindings : ${loues}`,
     ];
+    lines.push(...details);
     if (pool.nextServer) lines.push(`  Next Server      : ${pool.nextServer}`);
     if (pool.bootfile) lines.push(`  Bootfile         : ${pool.bootfile}`);
     if (pool.netbiosServers?.length) {

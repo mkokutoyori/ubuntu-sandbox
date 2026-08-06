@@ -1175,6 +1175,46 @@ qui est **repris du rapport sans re-vérification**. Les lignes ❌ doivent
 être mesurées avant d'être traitées — c'est la règle de méthode du §0, et
 elle vaut aussi pour ce document.
 
+### 7.3 Livré, et ce que la mesure a corrigé dans ce tableau
+
+Les huit lignes ❌ ont été relevées en session avant d'être traitées.
+Sept étaient exactes. **Une était fausse et n'a pas été « corrigée » :**
+le rapport reproche à `show ip dhcp pool` d'annoncer « 254 adresses malgré
+10 exclusions ». C'est ce qu'IOS affiche — `Total addresses` est la taille
+utilisable du sous-réseau, et les exclusions se comptent à côté, dans leur
+propre champ et dans la colonne `Leased/Excluded/Total`. Seul le FORMAT
+manquait ; le chiffre était juste.
+
+Deux constats se sont révélés plus profonds que leur énoncé.
+
+**Le nombre d'interfaces.** La bannière comptait les ports réels : elle
+disait vrai sur un châssis qui, lui, mentait. Corriger la bannière seule
+aurait été le défaut que ce document combat. Le compte devient une
+propriété du profil (`CiscoRouter` → 3, `Router` → 4), et la mesure a
+tranché le déploiement : la fidélité seule cassait **160 tests** quand 20
+fichiers seulement nomment `Gi0/3`. C'est un changement de ligne de base,
+traité par le levier du §4.5 — production fidèle, compte historique rendu
+aux suites héritées en une ligne de `setupGlobalState`.
+
+**Le numéro de séquence d'une ACL nommée.** Le rapport le formule comme un
+défaut d'affichage. C'en est un de configuration : IOS ne rend un numéro
+que si l'opérateur l'a écrit, et rendre celui qu'il attribue lui-même
+ferait revenir à l'import une configuration que personne n'a tapée — même
+famille que le `ifaceConfigured` des routes statiques. `sequenceConfigured`
+porte la distinction ; `show access-lists`, lui, numérote toujours.
+
+Un défaut non signalé, trouvé en écrivant l'aide des ACL : un même mot-clé
+pouvait être listé **deux fois**, `describeArgs('permit tcp any any eq',
+…)` créant des nœuds intermédiaires que l'énumération du nœud proposait
+déjà. L'aide déduplique désormais.
+
+Deux lignes restent hors périmètre et le disent : la **MAC hors OUI
+Cisco** — le générateur est global et sert aussi les hôtes Linux et
+Windows, à qui une OUI Cisco ne conviendrait pas ; lui donner une OUI par
+constructeur touche les tables ARP, CDP et STP de tout le parc, et se
+mesure avant de se décider. Et le **chrome applicatif** qui fuit dans le
+flux terminal, qui est un défaut d'UI React.
+
 ---
 
 ## 8. Tests de non-régression : les invariants

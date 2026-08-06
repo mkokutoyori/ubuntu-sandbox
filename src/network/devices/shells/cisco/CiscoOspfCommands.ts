@@ -15,6 +15,7 @@ import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { CiscoShellContext } from './CiscoConfigCommands';
+import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────
 
@@ -1592,6 +1593,9 @@ function showIpOspfInterfaceBrief(router: Router): string {
 
   router._ospfAutoConverge();
 
+  // La colonne `Interface` fait douze caractères, ce qui n'entre que si
+  // le nom est abrégé comme IOS l'abrège — `Gi0/0`. En entier,
+  // `GigabitEthernet0/0` débordait et décalait toute la ligne.
   const lines: string[] = [
     'Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C',
   ];
@@ -1605,7 +1609,8 @@ function showIpOspfInterfaceBrief(router: Router): string {
     const fullCount = countFullNeighbors(iface);
     const totalCount = iface.neighbors.size;
     lines.push(
-      `${name.padEnd(21)}${String(pid).padEnd(6)}${area.padEnd(16)}${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(6)}${totalCount}/${fullCount}`
+      `${iosShortInterfaceName(name).padEnd(13)}${String(pid).padEnd(6)}${area.padEnd(16)}`
+      + `${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(5)}${totalCount}/${fullCount}`
     );
   }
 
