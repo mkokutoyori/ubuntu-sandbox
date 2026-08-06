@@ -332,6 +332,15 @@ export class Port {
 
     const addrWithScope = address.isLinkLocal() ? address.withScopeId(this.name) : address;
 
+    // Une interface n'a qu'UNE adresse de lien : celle qu'un opérateur
+    // configure explicitement remplace celle dérivée de la MAC, elle ne
+    // s'y ajoute pas. Les deux coexistaient, si bien que la même
+    // interface annonçait deux fe80:: — dont une que personne n'avait
+    // demandée et qui restait le next-hop annoncé aux voisins.
+    if (address.isLinkLocal()) {
+      this.ipv6Addresses = this.ipv6Addresses.filter((e) => !e.address.isLinkLocal());
+    }
+
     this.ipv6Addresses.push({
       address: addrWithScope,
       prefixLength,

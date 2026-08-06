@@ -15,6 +15,7 @@ import { CommandTrie, formatInvalidInput } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { parseRateLimitRule } from '../../router/qos/CarPolicer';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -315,7 +316,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     if (slashIdx === -1) return '% Invalid prefix format';
     const prefix = prefixStr.substring(0, slashIdx);
     const prefixLen = parseInt(prefixStr.substring(slashIdx + 1), 10);
-    if (isNaN(prefixLen)) return '% Invalid prefix length';
+    if (isNaN(prefixLen)) throw new CliInvalidInput();
     try {
       const prefixAddr = new IPv6Address(prefix);
       const nextHop = new IPv6Address(nextHopStr);
@@ -934,12 +935,34 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const addrStr = args[0];
     // Handle eui-64 suffix
     const isEUI64 = args.length > 1 && args[1].toLowerCase() === 'eui-64';
+
+    // `ipv6 address <addr> link-local` : le mot-clé EXCLUT la longueur de
+    // préfixe, une adresse fe80:: étant par construction sur le lien. La
+    // forme était refusée parce que l'absence de `/` menait à l'erreur
+    // « addr/prefix attendu » — le contrôle rejetait précisément la
+    // syntaxe qu'il aurait dû reconnaître.
+    if (args.length > 1 && args[1].toLowerCase() === 'link-local') {
+      try {
+        const lla = new IPv6Address(addrStr);
+        if (!lla.isLinkLocal()) {
+          // IOS refuse une adresse qui n'est pas dans fe80::/10 ici.
+          return '% Invalid link-local address';
+        }
+        ctx.r().configureIPv6Interface(ctx.getSelectedInterface()!, lla, 64);
+        return '';
+      } catch {
+        throw new CliInvalidInput();
+      }
+    }
+
     // Parse address/prefix
     const slashIdx = addrStr.indexOf('/');
-    if (slashIdx === -1) return '% Invalid IPv6 address format (expected addr/prefix)';
+    // IOS répond au caret sur une saisie malformée ; le message inventé
+    // ne se trouve dans aucune de ses sorties.
+    if (slashIdx === -1) throw new CliInvalidInput();
     const addr = addrStr.substring(0, slashIdx);
     const prefixLen = parseInt(addrStr.substring(slashIdx + 1), 10);
-    if (isNaN(prefixLen)) return '% Invalid prefix length';
+    if (isNaN(prefixLen)) throw new CliInvalidInput();
     try {
       const ipv6Addr = new IPv6Address(addr);
       ctx.r().configureIPv6Interface(ctx.getSelectedInterface()!, ipv6Addr, prefixLen);
