@@ -108,3 +108,49 @@ describe('show ip route <protocole>', () => {
       .toContain('Network not in table');
   }, 30_000);
 });
+
+/**
+ * Revue §3.5 — les deux voisins de la même famille : la table IPv6
+ * filtrée par protocole, et un process-id OSPF qui n'existe pas.
+ */
+describe('show ipv6 route <protocole>', () => {
+  async function v6Lab(): Promise<CiscoRouter> {
+    const r = new CiscoRouter('R6');
+    r.powerOn?.();
+    for (const c of ['enable', 'configure terminal', 'ipv6 unicast-routing',
+      'interface GigabitEthernet0/0', 'ipv6 address 2001:db8::1/64', 'no shutdown', 'exit',
+      'ipv6 route 2001:db8:50::/64 2001:db8::2', 'end']) {
+      await r.executeCommand(c);
+    }
+    return r;
+  }
+
+  it('`static` filtre la table, il ne désigne pas une destination', async () => {
+    const r = await v6Lab();
+    const out = await r.executeCommand('show ipv6 route static');
+    // Le rendu cherchait une destination NOMMÉE « static ».
+    expect(out).not.toContain('% Route to static');
+    expect(out).toMatch(/S\s+2001:db8:50::\/64/);
+  }, 30_000);
+
+  it('une vraie destination absente garde son message', async () => {
+    const r = await v6Lab();
+    expect(await r.executeCommand('show ipv6 route 2001:db8:99::/64'))
+      .toContain('% Route to');
+  }, 30_000);
+});
+
+describe('show ip ospf <process-id>', () => {
+  it("ne répond rien pour un processus qui n'existe pas", async () => {
+    const r = new CiscoRouter('R7');
+    r.powerOn?.();
+    for (const c of ['enable', 'configure terminal', 'router ospf 1',
+      'network 10.0.0.0 0.0.0.255 area 0', 'exit', 'end']) {
+      await r.executeCommand(c);
+    }
+    // Montrer le processus VOISIN laisse croire que le 99 existe.
+    expect((await r.executeCommand('show ip ospf 99')).trim()).toBe('');
+    expect(await r.executeCommand('show ip ospf 1')).toContain('Routing Process "ospf 1"');
+    expect(await r.executeCommand('show ip ospf')).toContain('Routing Process "ospf 1"');
+  }, 30_000);
+});

@@ -1220,6 +1220,10 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.registerGreedy('show ip ospf', 'Display OSPF information', (args) => {
     if (args.length === 0) return showIpOspf(getRouter());
     const pidParsed = parseInt(args[0], 10);
+    // Un process-id explicite qui ne correspond à aucun processus : IOS
+    // ne répond rien. Montrer le processus VOISIN, comme avant, laisse
+    // croire que celui qu'on a nommé existe.
+    if (!isNaN(pidParsed) && !ospfProcessExists(getRouter(), pidParsed)) return '';
     const subArgs = !isNaN(pidParsed) ? args.slice(1) : args;
     const sub = subArgs[0]?.toLowerCase();
     if (!sub || sub === 'process') return showIpOspf(getRouter());
@@ -1289,12 +1293,31 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     return showIpv6Ospf(getRouter());
   });
   trie.registerGreedy('show ipv6 route', 'Display IPv6 routing table', (args) => {
-    if (args.length > 0) return showIpv6RouteSpecific(getRouter(), args[0]);
+    if (args.length > 0) {
+      // Même règle qu'en IPv4 : un nom de protocole filtre la table, il
+      // ne désigne pas un préfixe. `show ipv6 route static` répondait
+      // `% Route to static`, en cherchant une destination nommée
+      // « static ».
+      const codes = ROUTE_FILTER_CODES[args[0].toLowerCase()];
+      if (codes) return filterRouteTableByCode(showIpv6Route(getRouter()), codes);
+      return showIpv6RouteSpecific(getRouter(), args[0]);
+    }
     return showIpv6Route(getRouter());
   });
 }
 
 // ─── Show Command Implementations ───────────────────────────────────
+
+/**
+ * `show ip ospf <process-id>` pour un processus qui n'existe pas. IOS ne
+ * répond rien plutôt que de montrer un AUTRE processus : la sortie
+ * précédente affichait `Routing Process "ospf 1"` en réponse à une
+ * question sur le 99, ce qui donne à croire que le 99 existe.
+ */
+function ospfProcessExists(router: Router, processId: number): boolean {
+  const ospf = router._getOSPFEngineInternal();
+  return !!ospf && ospf.getProcessId() === processId;
+}
 
 function showIpOspf(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
