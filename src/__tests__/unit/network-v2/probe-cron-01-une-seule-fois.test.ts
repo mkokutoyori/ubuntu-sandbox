@@ -44,7 +44,16 @@ function lab(): { pc: LinuxPC; tick: (minute: number) => void } {
     hostTimers: { clear(id: symbol): void };
   };
   if (machine.cronTimer) { machine.hostTimers.clear(machine.cronTimer); machine.cronTimer = null; }
-  const base = Date.now();
+  // The clock is FIXED rather than `Date.now()`, and that is the whole
+  // point. The machine ships Debian's own `/etc/crontab`, whose hourly
+  // entry `17 * * * * root cd / && run-parts --report /etc/cron.hourly`
+  // is genuinely due one minute per hour — so a probe started at :16
+  // counted two CRON lines in syslog and failed, measuring the time of
+  // day instead of cron. The second line was correct behaviour; the real
+  // clock was the defect. 09:00 is a quiet minute: none of the four
+  // seeded entries (17 hourly, 25 6, 47 6 sunday, 52 6 on the 1st) falls
+  // within the three ticks these cases drive.
+  const base = new Date(2026, 0, 1, 9, 0, 0).getTime();
   return { pc, tick: (minute) => machine.cronTick(new Date(base + minute * 60_000)) };
 }
 
