@@ -15,6 +15,7 @@
  */
 import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
+import { generateKeyExchange, sharedSecret, type KeyExchangeKeyPair } from './keyExchange';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -90,6 +91,7 @@ export class TlsClientSession {
   private readonly pskInput: string;
   private clientRandom = '';
   private clientKeyShare = '';
+  private keyExchange: KeyExchangeKeyPair | null = null;
   private resumptionMasterSecret: string | null = null;
   private readonly transcript: Uint8Array[] = [];
 
@@ -108,7 +110,8 @@ export class TlsClientSession {
   }
 
   private sendClientHello(group: string): readonly TlsRecord[] {
-    this.clientKeyShare = `${group}:${randomNonce('ks-cli')}`;
+    this.keyExchange = generateKeyExchange(group);
+    this.clientKeyShare = this.keyExchange.share;
     const ticket = this.config.resumptionTicket;
     const clientHello: ClientHello = {
       kind: 'client_hello', legacyVersion: '1.2', random: this.clientRandom,
@@ -190,9 +193,18 @@ export class TlsClientSession {
     this.negotiatedAlpnProtocol = encryptedExtensions.extensions.alpn ?? null;
     this.earlyDataAccepted = encryptedExtensions.extensions.earlyData ?? false;
 
-    const dheSharedSecret = simulatedDigest(
+    // Étage 3 : un vrai X25519 sur la part du serveur, avec le scalaire
+    // privé que ce client n'a jamais transmis. Un témoin de la poignée de
+    // main ne peut plus le recalculer, ce qui était le cas quand ce secret
+    // n'était qu'un condensé des quatre valeurs publiques.
+    const dheSharedSecret = this.keyExchange === null ? null : sharedSecret(
+      this.keyExchange,
+      serverHello.extensions.keyShare ?? '',
       [this.clientRandom, serverHello.random, this.clientKeyShare, serverHello.extensions.keyShare ?? ''].join('|'),
     );
+    // §7.4.2 : un secret partagé tout à zéro fait abandonner la poignée de
+    // main, parce que l'attaquant le connaîtrait d'avance.
+    if (dheSharedSecret === null) return this.fail('illegal_parameter');
     // RFC 8446 §4.2.11 — the server only actually uses the offered PSK if
     // it echoes acceptance in ServerHello; otherwise it fell back to a full
     // handshake and both sides must derive keys from DHE alone, or Finished

@@ -19,7 +19,11 @@ function runHandshake(server: EapTlsServerSession, peer: EapTlsPeerSession): { s
   let rounds = 0;
   while (server.result === null) {
     rounds++;
-    if (rounds > 80) throw new Error('handshake did not converge');
+    // Garde-fou contre une boucle infinie, pas une spécification. Il
+    // valait 80 et le cas à MTU 40 en demande 84 depuis que la part de
+    // clé est un vrai point X25519 de 32 octets au lieu d'un nonce
+    // court : plus d'octets à faire passer, donc plus de fragments.
+    if (rounds > 200) throw new Error('handshake did not converge');
     const resp = peer.handle(req);
     req = server.handle(resp);
   }
