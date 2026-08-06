@@ -1220,6 +1220,10 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.registerGreedy('show ip ospf', 'Display OSPF information', (args) => {
     if (args.length === 0) return showIpOspf(getRouter());
     const pidParsed = parseInt(args[0], 10);
+    // Un process-id explicite qui ne correspond à aucun processus : IOS
+    // ne répond rien. Montrer le processus VOISIN, comme avant, laisse
+    // croire que celui qu'on a nommé existe.
+    if (!isNaN(pidParsed) && !ospfProcessExists(getRouter(), pidParsed)) return '';
     const subArgs = !isNaN(pidParsed) ? args.slice(1) : args;
     const sub = subArgs[0]?.toLowerCase();
     if (!sub || sub === 'process') return showIpOspf(getRouter());
@@ -1264,8 +1268,8 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     }
     if (first === 'ospf') return showIpRouteOspf(getRouter());
     if (first === 'summary') return showIpRouteSummary(getRouter());
-    if (first === 'connected') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('C') || l.startsWith('Codes') || l === '').join('\n');
-    if (first === 'static') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('S') || l.startsWith('Codes') || l === '').join('\n');
+    const codes = ROUTE_FILTER_CODES[first];
+    if (codes) return filterRouteTableByCode(showIpRouteAll(getRouter()), codes);
     return showIpRouteSpecific(getRouter(), args[0]);
   });
 
@@ -1289,12 +1293,31 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     return showIpv6Ospf(getRouter());
   });
   trie.registerGreedy('show ipv6 route', 'Display IPv6 routing table', (args) => {
-    if (args.length > 0) return showIpv6RouteSpecific(getRouter(), args[0]);
+    if (args.length > 0) {
+      // Même règle qu'en IPv4 : un nom de protocole filtre la table, il
+      // ne désigne pas un préfixe. `show ipv6 route static` répondait
+      // `% Route to static`, en cherchant une destination nommée
+      // « static ».
+      const codes = ROUTE_FILTER_CODES[args[0].toLowerCase()];
+      if (codes) return filterRouteTableByCode(showIpv6Route(getRouter()), codes);
+      return showIpv6RouteSpecific(getRouter(), args[0]);
+    }
     return showIpv6Route(getRouter());
   });
 }
 
 // ─── Show Command Implementations ───────────────────────────────────
+
+/**
+ * `show ip ospf <process-id>` pour un processus qui n'existe pas. IOS ne
+ * répond rien plutôt que de montrer un AUTRE processus : la sortie
+ * précédente affichait `Routing Process "ospf 1"` en réponse à une
+ * question sur le 99, ce qui donne à croire que le 99 existe.
+ */
+function ospfProcessExists(router: Router, processId: number): boolean {
+  const ospf = router._getOSPFEngineInternal();
+  return !!ospf && ospf.getProcessId() === processId;
+}
 
 function showIpOspf(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
@@ -2313,6 +2336,55 @@ function bestRoutesPerPrefix(routes: any[]): any[] {
     if (ad === existingAd && (r.metric ?? 0) < (existing.metric ?? 0)) { best.set(key, r); }
   }
   return order.map(k => best.get(k));
+}
+
+
+/**
+ * `show ip route <protocole>` — la table complète, filtrée sur les codes
+ * du protocole demandé.
+ *
+ * Trois défauts tenaient dans l'ancienne écriture. Elle ne gardait que
+ * les lignes commençant par `Codes`, donc la légende ressortait tronquée
+ * à sa première ligne, suivie de lignes vides. Elle ne connaissait que
+ * `connected` et `static`, si bien que `local`, `eigrp` ou `rip`
+ * tombaient sur `showIpRouteSpecific` et répondaient
+ * `% Network not in table` — le message qui dit qu'un PRÉFIXE est absent,
+ * là où la bonne réponse à « aucune route de ce protocole » est une table
+ * vide. Et elle jetait les en-têtes `is subnetted` qui structurent la
+ * sortie d'IOS.
+ */
+const ROUTE_FILTER_CODES: Readonly<Record<string, readonly string[]>> = {
+  connected: ['C'],
+  local: ['L'],
+  static: ['S'],
+  rip: ['R'],
+  eigrp: ['D'],
+  bgp: ['B'],
+  isis: ['i'],
+};
+
+function filterRouteTableByCode(all: string, codes: readonly string[]): string {
+  const lines = all.split('\n');
+  // L'en-tête va jusqu'à la passerelle de dernier recours incluse.
+  const gw = lines.findIndex((l) => l.startsWith('Gateway of last resort'));
+  const headEnd = gw >= 0 ? gw + 1 : lines.findIndex((l) => l.trim() === '');
+  const head = lines.slice(0, Math.max(headEnd, 0) + 1);
+  const body = lines.slice(Math.max(headEnd, 0) + 1);
+
+  const matches = (l: string): boolean => {
+    const code = l.trimStart().split(/\s/)[0];
+    return codes.some((c) => code === c || code.startsWith(c));
+  };
+  const out: string[] = [];
+  let pendingSubnetHeader: string | null = null;
+  for (const l of body) {
+    if (l.trim() === '') continue;
+    if (/is subnetted|is variably subnetted/.test(l)) { pendingSubnetHeader = l; continue; }
+    if (!matches(l)) continue;
+    if (pendingSubnetHeader) { out.push(pendingSubnetHeader); pendingSubnetHeader = null; }
+    out.push(l);
+  }
+  return [...head, ...out].join('\n');
 }
 
 function showIpRouteAll(router: Router): string {
