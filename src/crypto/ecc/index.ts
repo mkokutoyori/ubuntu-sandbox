@@ -4,7 +4,7 @@ export {
   X25519_BASE, X25519_KEY_LEN,
 } from './x25519';
 export {
-  p256Sign, p256Verify, p256PublicKey, isOnCurve, rfc6979Nonce,
+  p256Sign, p256Verify, p256PublicKey, isOnCurve, rfc6979Nonce, p256Ecdh,
   p256PublicToMaterial, p256PrivateToMaterial, p256PublicPartOf,
   materialToP256Public, materialToP256Private,
   signatureToHex, hexToSignature, generateP256PrivateScalar,

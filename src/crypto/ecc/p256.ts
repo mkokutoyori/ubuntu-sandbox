@@ -263,6 +263,21 @@ export function hexToSignature(hex: string): P256Signature | null {
   } catch { return null; }
 }
 
+/**
+ * ECDH sur P-256 : le secret partagé est l'abscisse de d·Q, comme le
+ * demande la RFC 8446 §7.4.2 (« la coordonnée x du point calculé, sans
+ * les octets de tête »).
+ *
+ * `null` si le point reçu n'est pas sur la courbe, ou si le produit tombe
+ * à l'infini : accepter l'un ou l'autre donnerait un secret que
+ * l'attaquant choisit.
+ */
+export function p256Ecdh(privateScalar: bigint, peer: P256Point): Uint8Array | null {
+  if (!isOnCurve(peer)) return null;
+  const point = toAffine(multiply(mod(privateScalar, P256_ORDER), [peer.x, peer.y, 1n]));
+  return point === null ? null : bigToBytes(point.x);
+}
+
 /** Un scalaire privé tiré au hasard dans [1, n-1]. */
 export function generateP256PrivateScalar(random: (n: number) => Uint8Array): bigint {
   for (;;) {

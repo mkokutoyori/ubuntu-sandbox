@@ -11,12 +11,12 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  p256Sign, p256Verify, p256PublicKey, isOnCurve, signatureToHex,
+  p256Sign, p256Verify, p256PublicKey, isOnCurve, signatureToHex, p256Ecdh,
   materialToP256Public, materialToP256Private, p256PublicPartOf,
   p256PrivateToMaterial, p256PublicToMaterial, P256_ORDER,
 } from '@/crypto/ecc';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
-import { utf8ToBytes } from '@/crypto/encoding';
+import { utf8ToBytes, bytesToHex } from '@/crypto/encoding';
 
 /** La clé privée de l'annexe A.2.5. */
 const D = 0xc9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721n;
@@ -144,5 +144,44 @@ describe('PkiKeyPair passe par ce moteur', () => {
   it('deux clés ECDSA tirées de suite sont différentes', () => {
     expect(PkiKeyPair.generate('ecdsa').publicKey.material)
       .not.toBe(PkiKeyPair.generate('ecdsa').publicKey.material);
+  });
+});
+
+describe('ECDH sur P-256 — le groupe secp256r1 de TLS', () => {
+  const da = 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdefn % P256_ORDER;
+  const db = 0x0fedcba098765432100fedcba098765432100fedcba09876543210fedcba09876n % P256_ORDER;
+
+  it('les deux bouts arrivent au même secret', () => {
+    const sa = p256Ecdh(da, p256PublicKey(db));
+    const sb = p256Ecdh(db, p256PublicKey(da));
+    expect(sa).not.toBeNull();
+    expect(bytesToHex(sa!)).toBe(bytesToHex(sb!));
+  });
+
+  /**
+   * Ce que le condensé qu'il remplace ne pouvait pas offrir : ce condensé
+   * n'était QUE la fonction des valeurs publiques, si bien qu'un témoin
+   * de la poignée de main l'obtenait aussi. Le test ne prouve évidemment
+   * pas la difficulté du problème ; il pose que le secret n'est aucune
+   * des deux abscisses publiques, ce qui suffit à distinguer les deux
+   * situations.
+   */
+  it('le secret n\'est aucune des deux valeurs publiques', () => {
+    const qa = p256PublicKey(da);
+    const qb = p256PublicKey(db);
+    const partage = bytesToHex(p256Ecdh(da, qb)!);
+    expect(partage).not.toBe(qa.x.toString(16).padStart(64, '0'));
+    expect(partage).not.toBe(qb.x.toString(16).padStart(64, '0'));
+  });
+
+  it('et deux paires différentes ne partagent pas le même secret', () => {
+    const dc = 0x00aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899n % P256_ORDER;
+    expect(bytesToHex(p256Ecdh(da, p256PublicKey(db))!))
+      .not.toBe(bytesToHex(p256Ecdh(da, p256PublicKey(dc))!));
+  });
+
+  it('refuse un point qui n\'est pas sur la courbe', () => {
+    const q = p256PublicKey(D);
+    expect(p256Ecdh(D, { x: q.x, y: q.y + 1n })).toBeNull();
   });
 });
