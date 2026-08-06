@@ -56,7 +56,7 @@ describe('Cisco secondary IPv4 address', () => {
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('interface GigabitEthernet0/0');
-    expect(await r.executeCommand('ip address 1.1.1.1 255.255.255.0 bogus')).toBe(INVALID);
+    expect(await r.executeCommand('ip address 1.1.1.1 255.255.255.0 bogus')).toContain(INVALID);
   });
 
   it('removes a single secondary while keeping the primary', async () => {

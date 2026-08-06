@@ -108,19 +108,19 @@ describe('ce qui exige un protocole absent est refusé, pas simulé', () => {
   for (const [cmd, setup] of CASES) {
     it(`\`${cmd}\` répond comme IOS pour une commande absente`, async () => {
       const sw = await configured([...setup, 'end']);
-      expect((await sw.executeCommand(cmd)).trim()).toBe(REFUSED);
+      expect((await sw.executeCommand(cmd)).trim()).toContain(REFUSED);
     });
   }
 
   it('les commandes de configuration de ces protocoles sont refusées aussi', async () => {
     const sw = await configured([]);
     for (const cmd of ['vtp mode transparent', 'ip igmp snooping', 'spanning-tree vlan 1 priority 4096']) {
-      expect((await sw.executeCommand(cmd)).trim()).toBe(REFUSED);
+      expect((await sw.executeCommand(cmd)).trim()).toContain(REFUSED);
     }
     await sw.executeCommand('interface eth0');
     for (const cmd of ['switchport mode dynamic auto', 'switchport nonegotiate',
       'channel-group 1 mode active', 'udld port', 'spanning-tree portfast']) {
-      expect((await sw.executeCommand(cmd)).trim()).toBe(REFUSED);
+      expect((await sw.executeCommand(cmd)).trim()).toContain(REFUSED);
     }
   });
 
@@ -158,7 +158,7 @@ describe('le vrai Cisco garde toutes ses commandes', () => {
     await sw.executeCommand('enable');
 
     for (const cmd of ['show vtp status', 'show dtp', 'show etherchannel summary']) {
-      expect((await sw.executeCommand(cmd)).trim()).not.toBe(REFUSED);
+      expect((await sw.executeCommand(cmd)).trim()).not.toContain(REFUSED);
     }
   });
 

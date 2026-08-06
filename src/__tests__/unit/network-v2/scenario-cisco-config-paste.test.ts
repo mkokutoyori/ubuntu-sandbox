@@ -143,7 +143,7 @@ describe('Scénario 4 — Copy-paste d\'une configuration avec !', () => {
       // L'admin n'a pas fini de coller : la ligne config suivante arrive
       // en mode EXEC privilégié → erreur.
       const out = await r.executeCommand('ip domain-name mandeng.lan');
-      expect(out).toContain("% Invalid input detected at '^' marker.");
+      expect(out).toContain('% Unknown command or computer name, or unable to find computer address');
       expect(r.getPrompt()).toBe('R-PASTE#');
     });
   });

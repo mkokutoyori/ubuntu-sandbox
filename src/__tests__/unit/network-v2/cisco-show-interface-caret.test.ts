@@ -18,7 +18,7 @@ describe('Scénario — Cisco "show interface <bad-name>" : caret sous le nom in
     // le terminal l'a déjà affichée, prompt compris — d'où le décalage.
     const prompt = 'R1#'.length;
     expect(lines[0]).toBe(`${' '.repeat(prompt + 'show interface '.length)}^`);
-    expect(lines[1]).toBe('% Invalid input detected at \'^\' marker.');
+    expect(lines[1]).toContain('% Invalid input detected at \'^\' marker.');
     expect(lines[0]).not.toBe(`${' '.repeat(5)}^`);
   });
 
@@ -29,6 +29,6 @@ describe('Scénario — Cisco "show interface <bad-name>" : caret sous le nom in
     const lines = out.split('\n');
     const prompt = 'R1#'.length;
     expect(lines[0]).toBe(`${' '.repeat(prompt + 'show interface '.length)}^`);
-    expect(lines[1]).toBe('% Invalid input detected at \'^\' marker.');
+    expect(lines[1]).toContain('% Invalid input detected at \'^\' marker.');
   });
 });

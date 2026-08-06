@@ -56,6 +56,10 @@ import type {
   CommandInteractionPlan,
   InteractionPlanContext,
 } from '@/shell/interaction/CommandInteraction';
+import {
+  CliInvalidInput, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
+  tokenSpans, INVALID_INPUT_MESSAGE,
+} from './cli/CliDiagnostic';
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
@@ -1210,22 +1214,55 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
 
+    const keywordCount = result.matchedKeywords.length;
+
     switch (result.status) {
-      case 'ok':
-        return result.node?.action ? result.node.action(result.args, cmdPart) : '';
+      case 'ok': {
+        if (!result.node?.action) return '';
+        let output: string;
+        try {
+          output = result.node.action(result.args, cmdPart);
+        } catch (err) {
+          if (!(err instanceof CliInvalidInput)) throw err;
+          return renderCliDiagnostic('invalid', {
+            line: cmdPart,
+            tokenOffset: offsetForInvalidInput(cmdPart, keywordCount, err),
+          });
+        }
+        return this.attachCaretIfBare(output, cmdPart, keywordCount);
+      }
       case 'ambiguous':
-        return result.error || CISCO_ERRORS.AMBIGUOUS(cmdPart);
+        return renderCliDiagnostic('ambiguous', { line: cmdPart });
       case 'incomplete':
-        return result.error || CISCO_ERRORS.INCOMPLETE;
+        return renderCliDiagnostic('incomplete', { line: cmdPart });
       case 'invalid': {
         const nav = this.tryGlobalConfigNavigation(cmdPart);
-        return nav !== null ? nav : (result.error || CISCO_ERRORS.INVALID_INPUT);
+        if (nav !== null) return nav;
+        const unknownExec = this.unknownExecCommand(cmdPart, result.errorPos);
+        return unknownExec ?? (result.error || CISCO_ERRORS.INVALID_INPUT);
       }
       default: {
         const nav = this.tryGlobalConfigNavigation(cmdPart);
         return nav !== null ? nav : CISCO_ERRORS.INVALID_INPUT;
       }
     }
+  }
+
+  private attachCaretIfBare(output: string, line: string, keywordCount: number): string {
+    if (output !== INVALID_INPUT_MESSAGE) return output;
+    return renderCliDiagnostic('invalid', {
+      line,
+      tokenOffset: argumentOffset(line, keywordCount),
+    });
+  }
+
+  private unknownExecCommand(line: string, errorPos: number | undefined): string | null {
+    if (this.mode !== 'user' && this.mode !== 'privileged') return null;
+    const spans = tokenSpans(line);
+    const first = spans[0];
+    if (!first || errorPos !== first.offset) return null;
+    if (this.privilegedTrie.getCompletions(first.text).length > 0) return null;
+    return renderCliDiagnostic('unknown-exec', { line, token: first.text });
   }
 
   // ─── FSM Transitions ───────────────────────────────────────────

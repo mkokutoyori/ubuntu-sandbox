@@ -535,6 +535,13 @@ export class CommandTrie {
     return !!node.action && suppliedArgs >= this.requiredArity(node);
   }
 
+  private isContinuationKeyword(node: CommandNode, token: string): boolean {
+    const key = token.toLowerCase();
+    if (node.children.has(key)) return true;
+    if (node.hintSuggestions?.some(h => h.keyword.toLowerCase() === key)) return true;
+    return this.autoContinuations(node).some(a => a.keyword.toLowerCase() === key);
+  }
+
   private descendantShortfall(node: CommandNode, args: readonly string[]): boolean {
     let target = node;
     let consumed = 0;
@@ -554,7 +561,9 @@ export class CommandTrie {
     matchedKeywords: string[],
     input: string,
   ): MatchResult {
-    if (this.isExecutableAt(node, args.length) && !this.descendantShortfall(node, args)) {
+    const keywordForm = args.length > 0 && this.isContinuationKeyword(node, args[0]);
+    const arityMet = keywordForm || this.isExecutableAt(node, args.length);
+    if (arityMet && !!node.action && !this.descendantShortfall(node, args)) {
       return { status: 'ok', node, args, matchedKeywords };
     }
     return {

@@ -54,7 +54,8 @@ describe('Cisco alias subsystem (router & switch, real)', () => {
     await r.executeCommand('configure terminal');
     await r.executeCommand('no alias exec sib');
     await r.executeCommand('end');
-    expect(await r.executeCommand('sib')).toMatch(/Invalid input|Incomplete|Unrecognized/);
+    expect(await r.executeCommand('sib'))
+      .toMatch(/Invalid input|Incomplete|Unrecognized|Unknown command or computer name/);
   });
 
   it('router: IOS default exec alias s expands to show', async () => {

@@ -335,7 +335,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       const output = await r.executeCommand('z?');
       // IOS n'émet jamais « % Unrecognized command » : un `?` sans
       // correspondance rend le refus habituel.
-      expect(output.trim()).toBe('% Invalid input detected at \'^\' marker.');
+      expect(output.trim()).toContain('% Invalid input detected at \'^\' marker.');
     });
 
     it('38. should list command sub-arguments dynamically ("show ip route ?")', async () => {
@@ -721,23 +721,27 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
   // ─── Block 5: Error Handlers & Syntax Validation (Tests 86-100) ──
 
   describe('Block 5: Syntax Errors, Ambiguity Diagnostics & Caret (^) Marker Positioners', () => {
-    it('86. should return "% Invalid input detected" error on random invalid inputs ("invalid_cmd")', async () => {
+    it('86. an unknown first word in EXEC is resolved as a host name, IOS-style', async () => {
       const r = setupRouter();
       const output = await r.executeCommand('invalid_cmd');
-      expect(output).toContain('% Invalid input detected');
+      expect(output).toContain('Translating "invalid_cmd"...domain server');
+      expect(output).toContain('% Unknown command or computer name, or unable to find computer address');
     });
 
     it('87. should return carets positioner pointing to invalid command prefix', async () => {
       const r = setupRouter();
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
       const output = await r.executeCommand('invalid_cmd');
-      expect(output).toContain('^'); // Caret points to start of invalid token
+      expect(output).toContain('% Invalid input detected');
+      expect(output).toContain('^');
     });
 
     it('88. should return ambiguous command error on ambiguous input ("c" in Privileged EXEC)', async () => {
       const r = setupRouter();
       await r.executeCommand('enable');
       const output = await r.executeCommand('c');
-      expect(output).toContain('% Ambiguous command: "c"');
+      expect(output).toContain('% Ambiguous command:  "c"');
     });
 
     it('89. should return incomplete command error on incomplete input ("configure")', async () => {
@@ -796,7 +800,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('95. should reject config mode commands executed inside User EXEC mode', async () => {
       const r = setupRouter();
       const output = await r.executeCommand('hostname CORE_R1');
-      expect(output).toContain('% Invalid input detected');
+      expect(output).toContain('% Unknown command or computer name, or unable to find computer address');
     });
 
     it('96. should reject write memory command executed inside Global Config mode', async () => {
@@ -826,7 +830,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('99. should reject "do" prefix if executed inside User EXEC mode', async () => {
       const r = setupRouter();
       const output = await r.executeCommand('do show version');
-      expect(output).toContain('% Invalid input detected');
+      expect(output).toContain('% Unknown command or computer name, or unable to find computer address');
     });
 
     it('100. should execute successfully and return status 0 on default help commands validations', async () => {

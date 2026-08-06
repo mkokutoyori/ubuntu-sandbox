@@ -193,8 +193,11 @@ describe('Scénario 3 — `clock set` corrige vraiment l\'heure', () => {
     const privilegie = await r.executeCommand('clock set 99:99:99 3 June 2026');
     await r.executeCommand('configure terminal');
     const config = await r.executeCommand('clock set 99:99:99 3 June 2026');
-    expect(config).toBe(privilegie);
+    const message = (out: string): string => out.split('\n').pop() ?? '';
+    const colonne = (out: string): number => out.split('\n')[0].indexOf('^');
+    expect(message(config)).toBe(message(privilegie));
     expect(config).toContain('Invalid input');
+    expect(colonne(config)).toBeGreaterThan(colonne(privilegie));
   });
 });
 

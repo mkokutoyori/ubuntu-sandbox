@@ -24,7 +24,7 @@ describe('Cisco logging host — shared validation (router + switch)', () => {
       await d.executeCommand('enable');
       await d.executeCommand('configure terminal');
       expect(await d.executeCommand('logging host')).toBe(INCOMPLETE);
-      expect(await d.executeCommand('logging host 999.1.1.1')).toBe(INVALID);
+      expect(await d.executeCommand('logging host 999.1.1.1')).toContain(INVALID);
       expect(await d.executeCommand('logging host 10.0.0.99')).toBe('');
       await d.executeCommand('end');
     }
@@ -62,7 +62,7 @@ describe('Cisco ip name-server / ip domain-name — argument validation', () => 
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     expect(await r.executeCommand('ip name-server')).toBe(INCOMPLETE);
-    expect(await r.executeCommand('ip name-server 999.1.1.1')).toBe(INVALID);
+    expect(await r.executeCommand('ip name-server 999.1.1.1')).toContain(INVALID);
     expect(await r.executeCommand('ip name-server 8.8.8.8')).toBe('');
     expect(await r.executeCommand('ip domain-name')).toBe(INCOMPLETE);
     expect(await r.executeCommand('ip domain-name example.com')).toBe('');
