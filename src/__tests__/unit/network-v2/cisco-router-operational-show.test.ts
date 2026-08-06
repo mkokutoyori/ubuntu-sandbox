@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -20,6 +21,13 @@ beforeEach(() => {
 describe('Cisco router operational show (real state)', () => {
   it('show ip cef projects the real routing table', async () => {
     const r = new CiscoRouter('R1');
+    const peer = new CiscoRouter('R2');
+    new Cable('c1').connect(r.getPorts()[0], peer.getPorts()[0]);
+    await peer.executeCommand('enable');
+    await peer.executeCommand('configure terminal');
+    await peer.executeCommand('interface GigabitEthernet0/0');
+    await peer.executeCommand('no shutdown');
+    await peer.executeCommand('end');
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('interface GigabitEthernet0/0');

@@ -2281,7 +2281,12 @@ function showIpRouteOspf(router: Router): string {
 
 function showIpRouteSummary(router: Router): string {
   router._ospfAutoConverge();
-  const rt = (router as any).routingTable as any[];
+  const perPrefix = new Map<string, any>();
+  for (const r of router.installedRoutes() as any[]) {
+    const key = `${r.network}/${r.mask.toCIDR()}`;
+    if (!perPrefix.has(key)) perPrefix.set(key, r);
+  }
+  const rt = [...perPrefix.values()];
   const counts: Record<string, { networks: number; subnets: number; replicates: number; overhead: number; memory: number }> = {};
   const order = ['connected', 'static', 'ospf', 'eigrp', 'bgp', 'rip', 'default'];
   for (const k of order) counts[k] = { networks: 0, subnets: 0, replicates: 0, overhead: 0, memory: 0 };

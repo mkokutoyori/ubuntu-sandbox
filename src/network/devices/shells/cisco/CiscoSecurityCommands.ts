@@ -1110,17 +1110,21 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   trie.register('show ip traffic', 'IP traffic statistics', () =>
     showIpTraffic(getRouter()._getPortsInternal().values()));
 
-  trie.registerGreedy('show ip cef', 'Display CEF FIB', () => {
+  trie.registerGreedy('show ip cef', 'Display CEF FIB', (args) => {
     if (!sec().ipCef) return 'IP CEF is not enabled';
     const router = getRouter();
-    const table = router._getRoutingTableInternal();
+    const installed = router.installedRoutes();
+    const prefixe = args.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a));
     const lines = ['Prefix               Next Hop             Interface'];
-    lines.push('0.0.0.0/0            no route');
-    for (const r of table) {
+    if (!installed.some((r) => `${r.network}/${r.mask.toCIDR()}` === '0.0.0.0/0')) {
+      lines.push('0.0.0.0/0            no route');
+    }
+    for (const r of installed) {
       const dst = `${r.network}/${r.mask.toCIDR()}`;
-      const next = r.nextHop ? r.nextHop.toString() : 'attached';
-      const iface = r.iface ?? '';
-      lines.push(`${dst.padEnd(21)}${next.padEnd(21)}${iface}`);
+      if (prefixe && !dst.startsWith(`${prefixe}/`) && r.network.toString() !== prefixe) continue;
+      const attachee = !r.nextHop || String(r.nextHop) === '0.0.0.0';
+      const next = attachee ? 'attached' : r.nextHop!.toString();
+      lines.push(`${dst.padEnd(21)}${next.padEnd(21)}${r.iface ?? ''}`);
     }
     return lines.join('\n');
   });
