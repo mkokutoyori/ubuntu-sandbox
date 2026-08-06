@@ -314,6 +314,7 @@ export class IgmpAgent {
     const now = this.nowMs();
     for (const rt of this.config.interfaces.values()) {
       if (!rt.enabled) continue;
+      if (!this.ifaceOperUp(rt)) continue;
       if (rt.state === 'non-querier') continue;
       const periodSec = rt.state === 'startup'
         ? startupQueryIntervalSec(rt)
@@ -331,11 +332,16 @@ export class IgmpAgent {
       if (rt.startupQueriesSent >= rt.startupQueryCount) {
         const oldState = rt.state;
         rt.state = 'querier';
+        // We ARE the querier: the address is this interface's own. Left
+        // null, the log read `Querier on Gi0/0 is ?` — a rendered `?` is
+        // a value nobody resolved, not a fact.
+        rt.querierIp = this.host.getPort(rt.iface)?.getIPAddress()?.toString() ?? null;
         this.publishQuerier(rt, oldState);
       }
     } else if (rt.state === 'non-querier') {
       const oldState = rt.state;
       rt.state = 'querier';
+      rt.querierIp = this.host.getPort(rt.iface)?.getIPAddress()?.toString() ?? null;
       this.publishQuerier(rt, oldState);
     }
   }
@@ -349,6 +355,20 @@ export class IgmpAgent {
     for (let i = 0; i < rt.lastMemberQueryCount; i++) {
       this.sendQuery(rt, group, group, rt.lastMemberQueryIntervalDs);
     }
+  }
+
+  /**
+   * The one predicate saying an interface can carry IGMP at all. The send
+   * sites already used it; the periodic tick did not, so the querier
+   * state machine kept advancing on a dead link — after
+   * `startupQueryCount` silent ticks it elected ITSELF and announced
+   * `Querier on <iface> is …`, tens of seconds after the operator's last
+   * command, on an interface reading down/down everywhere else. No
+   * periodic work on an interface that is not up.
+   */
+  private ifaceOperUp(rt: IgmpInterfaceRuntime): boolean {
+    const port = this.host.getPort(rt.iface);
+    return !!port && port.getIsUp() && port.isConnected();
   }
 
   private sendQuery(rt: IgmpInterfaceRuntime, group: string, destIp: string, maxRespDs: number): void {
@@ -418,6 +438,7 @@ export class IgmpAgent {
       if (!rt.enabled) continue;
       // `querierIp` — not `lastQuerierMs > 0` — is what says another querier
       // was heard: the Query that demoted us can legitimately land at t = 0.
+      if (!this.ifaceOperUp(rt)) continue;
       if (rt.state === 'non-querier' && rt.querierIp !== null) {
         if (now - rt.lastQuerierMs > rt.otherQuerierPresentSec * 1000) {
           const oldState = rt.state;
