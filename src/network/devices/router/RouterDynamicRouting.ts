@@ -238,6 +238,7 @@ export class RouterDynamicRouting {
   /** Release protocol timers — the router is going away. */
   shutdownTimers(): void {
     this.eigrp.shutdownTimers();
+    this.bgp.shutdownTimers();
   }
 
   /**

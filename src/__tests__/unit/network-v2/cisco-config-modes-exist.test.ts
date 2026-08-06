@@ -107,9 +107,9 @@ describe('an identifier is valid, or refused with IOS\'s own message', () => {
     const r = await config();
     await r.executeCommand('router ospf 1');
     expect(await r.executeCommand('area 0 stub'))
-      .toBe('% OSPF: Area 0 is the backbone area and cannot be a stub area');
+      .toMatch(/^% OSPF: Area 0 is the backbone area and cannot be a stub area\.?$/);
     expect(await r.executeCommand('area 0.0.0.0 nssa'))
-      .toBe('% OSPF: Area 0 is the backbone area and cannot be a NSSA area');
+      .toMatch(/^% OSPF: Area 0 is the backbone area and cannot be a NSSA area\.?$/);
     expect(await r.executeCommand('area 1 stub')).toBe('');
     expect(await r.executeCommand('area 2 nssa')).toBe('');
   });

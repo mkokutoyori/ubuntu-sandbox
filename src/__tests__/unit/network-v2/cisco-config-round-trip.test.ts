@@ -159,6 +159,95 @@ describe('a rendered configuration can be typed back', () => {
   });
 });
 
+/**
+ * Revue itération 2, §2.2 / §2.3 / §2.4 — une sous-commande que le
+ * dépôt ne modélise pas était rangée dans le bucket typé le plus
+ * proche, qui la re-rendait déformée ou pas du tout.
+ */
+const SOUS_COMMANDES = [
+  'router rip',
+  'version 2',
+  'network 10.0.0.0',
+  'redistribute ospf 1 metric 5',
+  'offset-list 0 out 2 GigabitEthernet0/0',
+  'end',
+  'router bgp 65001',
+  'bgp router-id 1.1.1.1',
+  'bgp log-neighbor-changes',
+  'no synchronization',
+  'neighbor 10.0.12.2 remote-as 65002',
+  'neighbor 10.0.12.2 description PEER-ISP1',
+  'neighbor 10.0.12.2 update-source Loopback0',
+  'neighbor 10.0.12.2 next-hop-self',
+  'neighbor 10.0.12.2 route-reflector-client',
+  'neighbor 10.0.12.2 ebgp-multihop 2',
+  'neighbor 10.0.12.2 password CiscoBGP',
+  'neighbor 10.0.12.2 prefix-list PL1 out',
+  'neighbor 10.0.12.2 soft-reconfiguration inbound',
+  'neighbor 10.0.12.2 maximum-prefix 1000 80',
+  'network 172.16.1.0 mask 255.255.255.0',
+  'aggregate-address 172.16.0.0 255.255.0.0 summary-only',
+  'timers bgp 30 90',
+  'end',
+];
+
+describe('sous-commandes de processus : rendues telles quelles', () => {
+  it('aucune ligne ne ressort déformée par le bucket qui la stockait', async () => {
+    const source = await freshRouter();
+    await configure(source, SOUS_COMMANDES);
+    const config = await source.executeCommand('show running-config');
+    // `offset-list` rangé parmi les redistribute ressortait ` redistribute`.
+    expect(config).not.toMatch(/^ redistribute\s*$/m);
+    expect(config).toContain(' offset-list 0 out 2 GigabitEthernet0/0');
+    // `aggregate-address` rangé parmi les networks ressortait
+    // ` network aggregate-address …`.
+    expect(config).not.toContain('network aggregate-address');
+    expect(config).toContain(' aggregate-address 172.16.0.0 255.255.0.0 summary-only');
+  });
+
+  it("aucune sous-commande de voisin BGP n'est perdue", async () => {
+    const source = await freshRouter();
+    await configure(source, SOUS_COMMANDES);
+    const config = await source.executeCommand('show running-config');
+    for (const attendu of [
+      ' neighbor 10.0.12.2 update-source Loopback0',
+      ' neighbor 10.0.12.2 next-hop-self',
+      ' neighbor 10.0.12.2 route-reflector-client',
+      ' neighbor 10.0.12.2 ebgp-multihop 2',
+      ' neighbor 10.0.12.2 password CiscoBGP',
+      ' neighbor 10.0.12.2 prefix-list PL1 out',
+      ' neighbor 10.0.12.2 soft-reconfiguration inbound',
+      ' neighbor 10.0.12.2 maximum-prefix 1000 80',
+      ' bgp log-neighbor-changes',
+      ' no synchronization',
+      ' timers bgp 30 90',
+    ]) {
+      expect(config, attendu).toContain(attendu);
+    }
+  });
+
+  it('et le tout se rejoue à l\'identique', async () => {
+    const { first, second } = await roundTrip(SOUS_COMMANDES);
+    expect(second).toEqual(first);
+  });
+});
+
+/** Revue itération 2, §3.2 — la dorsale n'est ni stub ni NSSA. */
+describe('area 0 ne peut pas être stub', () => {
+  it('refuse `area 0 stub` dans les mots d\'IOS', async () => {
+    const r = await freshRouter();
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('router ospf 1');
+    for (const forme of ['area 0 stub', 'area 0.0.0.0 stub']) {
+      expect(await r.executeCommand(forme), forme)
+        .toContain('cannot be a stub area');
+    }
+    expect(await r.executeCommand('area 0 nssa')).toContain('cannot be a NSSA area');
+    // Une aire ordinaire reste acceptée.
+    expect(await r.executeCommand('area 1 stub')).toBe('');
+  });
+});
+
 describe('a routing process is identified by its number', () => {
   it('a non-numeric EIGRP identifier is refused, not turned into process 0', async () => {
     const r = await freshRouter();

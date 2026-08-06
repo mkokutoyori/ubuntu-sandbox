@@ -11,11 +11,26 @@
 
 import type { Router } from '../../Router';
 import { renderIpRouteTable } from './CiscoShowCommands';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { CiscoShellContext } from './CiscoConfigCommands';
-import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
+import { iosShortInterfaceName, iosInterfaceStatus }
+  from '@/network/devices/inspection/InterfaceStatusView';
+
+/**
+ * The backbone, however it was spelled. IOS accepts an area id as a
+ * decimal or in dotted-quad form, so `area 0`, `area 0.0.0.0` and
+ * `area 00` all name the same area — a check on the literal text would
+ * be defeated by the second spelling.
+ */
+function isBackboneArea(areaId: string): boolean {
+  const t = areaId.trim();
+  if (/^\d+$/.test(t)) return Number(t) === 0;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(t)) return t.split('.').every((o) => Number(o) === 0);
+  return false;
+}
 
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────
 
@@ -36,7 +51,7 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
       if (args[1].toLowerCase() === 'vrf') {
         return '% VRF-aware OSPF is not supported on this platform';
       }
-      return "% Invalid input detected at '^' marker.";
+      throw new CliInvalidInput();
     }
     if (!running) router._enableOSPF(processId);
     ctx.setMode('config-router-ospf');
@@ -226,14 +241,19 @@ function adresseReseau(ip: string, wildcard: string): string {
     const subCmd = args[1].toLowerCase();
 
     if (subCmd === 'stub' || subCmd === 'nssa') {
-      if (areaId === '0' || areaId === '0.0.0.0') {
-        return `% OSPF: Area 0 is the backbone area and cannot be a ${subCmd === 'stub' ? 'stub' : 'NSSA'} area`;
+      // Area 0 carries the inter-area LSAs a stub/NSSA area exists to
+      // suppress, so the backbone can be neither (RFC 2328 §3.6). IOS
+      // refuses in these exact words rather than storing a contradiction.
+      if (isBackboneArea(areaId)) {
+        return `% OSPF: Area 0 is the backbone area and cannot be a ${
+          subCmd === 'stub' ? 'stub' : 'NSSA'} area.`;
       }
-      if (subCmd === 'stub') {
-        ospf.setAreaType(areaId, args[2]?.toLowerCase() === 'no-summary' ? 'totally-stubby' : 'stub');
-      } else {
-        ospf.setAreaType(areaId, 'nssa');
-      }
+    }
+    if (subCmd === 'stub') {
+      ospf.setAreaType(areaId, args[2]?.toLowerCase() === 'no-summary' ? 'totally-stubby' : 'stub');
+      return '';
+    } else if (subCmd === 'nssa') {
+      ospf.setAreaType(areaId, 'nssa');
       return '';
     } else if (subCmd === 'range') {
       // area <id> range <network> <mask> [not-advertise]
@@ -432,7 +452,7 @@ function adresseReseau(ip: string, wildcard: string): string {
   // l'adjacence, pas seulement l'entrée et la sortie de Full).
   trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
     if (args.length > 0 && args[0] !== 'detail') {
-      return "% Invalid input detected at '^' marker.";
+      throw new CliInvalidInput();
     }
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.logAdjacencyChanges = true;
@@ -579,6 +599,10 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     const v3e = ctx.r()._getOSPFv3EngineInternal()!;
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
+    if (subCmd === 'stub' && isBackboneArea(areaId)) {
+      // Same rule as OSPFv2 — the backbone is not a stub area.
+      return '% OSPF: Area 0 is the backbone area and cannot be a stub area.';
+    }
     if (subCmd === 'stub') {
       v3e.addArea(areaId, 'stub');
       v3e.setAreaType(areaId, 'stub');
@@ -1196,6 +1220,10 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.registerGreedy('show ip ospf', 'Display OSPF information', (args) => {
     if (args.length === 0) return showIpOspf(getRouter());
     const pidParsed = parseInt(args[0], 10);
+    // Un process-id explicite qui ne correspond à aucun processus : IOS
+    // ne répond rien. Montrer le processus VOISIN, comme avant, laisse
+    // croire que celui qu'on a nommé existe.
+    if (!isNaN(pidParsed) && !ospfProcessExists(getRouter(), pidParsed)) return '';
     const subArgs = !isNaN(pidParsed) ? args.slice(1) : args;
     const sub = subArgs[0]?.toLowerCase();
     if (!sub || sub === 'process') return showIpOspf(getRouter());
@@ -1240,8 +1268,8 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     }
     if (first === 'ospf') return showIpRouteOspf(getRouter());
     if (first === 'summary') return showIpRouteSummary(getRouter());
-    if (first === 'connected') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('C') || l.startsWith('Codes') || l === '').join('\n');
-    if (first === 'static') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('S') || l.startsWith('Codes') || l === '').join('\n');
+    const codes = ROUTE_FILTER_CODES[first];
+    if (codes) return filterRouteTableByCode(showIpRouteAll(getRouter()), codes);
     return showIpRouteSpecific(getRouter(), args[0]);
   });
 
@@ -1265,12 +1293,31 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     return showIpv6Ospf(getRouter());
   });
   trie.registerGreedy('show ipv6 route', 'Display IPv6 routing table', (args) => {
-    if (args.length > 0) return showIpv6RouteSpecific(getRouter(), args[0]);
+    if (args.length > 0) {
+      // Même règle qu'en IPv4 : un nom de protocole filtre la table, il
+      // ne désigne pas un préfixe. `show ipv6 route static` répondait
+      // `% Route to static`, en cherchant une destination nommée
+      // « static ».
+      const codes = ROUTE_FILTER_CODES[args[0].toLowerCase()];
+      if (codes) return filterRouteTableByCode(showIpv6Route(getRouter()), codes);
+      return showIpv6RouteSpecific(getRouter(), args[0]);
+    }
     return showIpv6Route(getRouter());
   });
 }
 
 // ─── Show Command Implementations ───────────────────────────────────
+
+/**
+ * `show ip ospf <process-id>` pour un processus qui n'existe pas. IOS ne
+ * répond rien plutôt que de montrer un AUTRE processus : la sortie
+ * précédente affichait `Routing Process "ospf 1"` en réponse à une
+ * question sur le 99, ce qui donne à croire que le 99 existe.
+ */
+function ospfProcessExists(router: Router, processId: number): boolean {
+  const ospf = router._getOSPFEngineInternal();
+  return !!ospf && ospf.getProcessId() === processId;
+}
 
 function showIpOspf(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
@@ -1562,6 +1609,32 @@ function resolveOSPFIfName(ifName: string): string {
   return ifName;
 }
 
+
+/**
+ * The interface's operational state, read from the one place every other
+ * view reads it. `show ip ospf interface` used to print a hardcoded
+ * `is up, line protocol is up`, so the same interface at the same instant
+ * read up/up here and down/down in `show ip interface brief`,
+ * `show interfaces` and `show ip igmp interface`. A view that answers
+ * from its own imagination is worse than a missing view: it is the one an
+ * operator believes.
+ */
+function ospfIfaceStatusLine(router: Router, name: string): string {
+  const ports = router._getPortsInternal();
+  const port = ports.get(name);
+  if (!port) return `${name} is up, line protocol is up`;   // virtual, no bearer
+  const st = iosInterfaceStatus(port, name, ports);
+  return `${name} is ${st.status}, line protocol is ${st.protocol}`;
+}
+
+/** True when the bearer is genuinely usable — no DR on a dead link. */
+function ospfIfaceOperUp(router: Router, name: string): boolean {
+  const ports = router._getPortsInternal();
+  const port = ports.get(name);
+  if (!port) return true;
+  return iosInterfaceStatus(port, name, ports).protocol === 'up';
+}
+
 function showIpOspfInterface(router: Router, ifName?: string): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '% OSPF is not configured';
@@ -1577,10 +1650,12 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
   for (const [name, iface] of ifaces) {
     if (resolvedIfName && name !== resolvedIfName) continue;
 
-    lines.push(`${name} is up, line protocol is up`);
+    const operUp = ospfIfaceOperUp(router, name);
+    lines.push(ospfIfaceStatusLine(router, name));
     lines.push(`  Internet address is ${iface.ipAddress}/${maskToCIDR(iface.mask)}, Area ${iface.areaId}`);
     lines.push(`  Process ID ${ospf.getProcessId()}, Router ID ${ospf.getRouterId()}, Network Type ${iface.networkType.toUpperCase()}, Cost: ${iface.cost}`);
-    lines.push(`  Transmit Delay is ${iface.transmitDelay} sec, State ${iface.state}, Priority ${iface.priority}`);
+    // A dead link elects nobody: IOS reports State DOWN there, never DR.
+    lines.push(`  Transmit Delay is ${iface.transmitDelay} sec, State ${operUp ? iface.state : 'DOWN'}, Priority ${iface.priority}`);
     lines.push(`  DR: ${iface.dr}`);
     lines.push(`  BDR: ${iface.bdr}`);
     lines.push(`  Timer intervals configured, Hello ${iface.helloInterval}, Dead ${iface.deadInterval}, Wait ${iface.deadInterval}, Retransmit ${iface.retransmitInterval}`);
@@ -2263,6 +2338,55 @@ function bestRoutesPerPrefix(routes: any[]): any[] {
   return order.map(k => best.get(k));
 }
 
+
+/**
+ * `show ip route <protocole>` — la table complète, filtrée sur les codes
+ * du protocole demandé.
+ *
+ * Trois défauts tenaient dans l'ancienne écriture. Elle ne gardait que
+ * les lignes commençant par `Codes`, donc la légende ressortait tronquée
+ * à sa première ligne, suivie de lignes vides. Elle ne connaissait que
+ * `connected` et `static`, si bien que `local`, `eigrp` ou `rip`
+ * tombaient sur `showIpRouteSpecific` et répondaient
+ * `% Network not in table` — le message qui dit qu'un PRÉFIXE est absent,
+ * là où la bonne réponse à « aucune route de ce protocole » est une table
+ * vide. Et elle jetait les en-têtes `is subnetted` qui structurent la
+ * sortie d'IOS.
+ */
+const ROUTE_FILTER_CODES: Readonly<Record<string, readonly string[]>> = {
+  connected: ['C'],
+  local: ['L'],
+  static: ['S'],
+  rip: ['R'],
+  eigrp: ['D'],
+  bgp: ['B'],
+  isis: ['i'],
+};
+
+function filterRouteTableByCode(all: string, codes: readonly string[]): string {
+  const lines = all.split('\n');
+  // L'en-tête va jusqu'à la passerelle de dernier recours incluse.
+  const gw = lines.findIndex((l) => l.startsWith('Gateway of last resort'));
+  const headEnd = gw >= 0 ? gw + 1 : lines.findIndex((l) => l.trim() === '');
+  const head = lines.slice(0, Math.max(headEnd, 0) + 1);
+  const body = lines.slice(Math.max(headEnd, 0) + 1);
+
+  const matches = (l: string): boolean => {
+    const code = l.trimStart().split(/\s/)[0];
+    return codes.some((c) => code === c || code.startsWith(c));
+  };
+  const out: string[] = [];
+  let pendingSubnetHeader: string | null = null;
+  for (const l of body) {
+    if (l.trim() === '') continue;
+    if (/is subnetted|is variably subnetted/.test(l)) { pendingSubnetHeader = l; continue; }
+    if (!matches(l)) continue;
+    if (pendingSubnetHeader) { out.push(pendingSubnetHeader); pendingSubnetHeader = null; }
+    out.push(l);
+  }
+  return [...head, ...out].join('\n');
+}
+
 function showIpRouteAll(router: Router): string {
   router._ospfAutoConverge();
   router.convergeDynamicRouting();
@@ -2515,7 +2639,7 @@ function showIpv6OspfInterface(router: Router, ifName?: string): string {
   for (const [name, iface] of v3.getInterfaces()) {
     if (resolvedIfName && name !== resolvedIfName) continue;
     const ntStr = iface.networkType === 'point-to-point' ? 'Point-to-point' : 'Broadcast';
-    lines.push(`${name} is up, line protocol is up`);
+    lines.push(ospfIfaceStatusLine(router, name));
     lines.push(`  Network Type ${ntStr}, Cost: ${iface.cost}, Priority: ${iface.priority}`);
     // For DR/BDR display, resolve router-id to IPv6 address of the neighbor
     const drAddr = resolveV3DRBDR(router, iface, iface.dr);

@@ -17,11 +17,13 @@ import {
 } from '@/crypto/encoding';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
+import { materialToP256Public } from '@/crypto/ecc';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
 import {
   certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
+  encryptedPrivateKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem,
 } from '@/network/pki/pem';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
@@ -874,18 +876,48 @@ function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 // ─── §P6 : le reste de la PKI ───────────────────────────────────────
 
 /**
- * `ec` / `ecparam` — ECDSA existe dans `PkiKeyPair`, donc la courbe est
- * une vraie option et non un décor. Ce qui reste simulé est la
- * signature, comme pour RSA (§3.2).
+ * `ec` / `ecparam`.
+ *
+ * La signature ECDSA est RÉELLE depuis l'étage 4 (P-256, RFC 6979) — ce
+ * commentaire disait le contraire. Et c'est précisément ce qui a rendu un
+ * défaut visible : tant que la courbe n'était qu'une étiquette,
+ * `-name secp384r1 -genkey` pouvait rendre n'importe quoi ; maintenant
+ * qu'une clé EC porte un vrai point sur une vraie courbe, rendre une clé
+ * P-256 à qui demande P-384 est un mensonge de la machine sur elle-même.
+ * Seule P-256 est implémentée ici, et `-genkey` le dit.
  */
+/**
+ * Les courbes qu'`ecparam` sait NOMMER — décrire n'est pas fabriquer.
+ *
+ * Le nom NIST est une TABLE et non une découpe du nom OpenSSL : le
+ * calcul précédent (`P-${courbe.slice(5, 8)}`) rendait `P-84r` pour
+ * `secp384r1` et `P-21r` pour `secp521r1`. Personne ne l'avait vu parce
+ * que rien ne lisait ces deux lignes.
+ */
+const COURBES_CONNUES: Readonly<Record<string, string>> = {
+  prime256v1: 'P-256',
+  secp384r1: 'P-384',
+  secp521r1: 'P-521',
+};
+/** Celle qu'il sait fabriquer. */
+const COURBE_IMPLEMENTEE = 'prime256v1';
 function runEcparam(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('ecparam', argv);
   const courbe = typeof opts.get('-name') === 'string' ? String(opts.get('-name')) : 'prime256v1';
-  if (!['prime256v1', 'secp384r1', 'secp521r1'].includes(courbe)) {
+  const nomNist = COURBES_CONNUES[courbe];
+  if (!nomNist) {
     return fail(`unknown curve name (${courbe})`);
   }
   if (!opts.has('-genkey')) {
-    return ok(`ASN1 OID: ${courbe}\nNIST CURVE: P-${courbe === 'prime256v1' ? '256' : courbe.slice(5, 8)}`);
+    // Décrire une courbe nommée est un fait sur la courbe, pas une
+    // prétention à savoir en fabriquer une clé.
+    return ok(`ASN1 OID: ${courbe}\nNIST CURVE: ${nomNist}`);
+  }
+  if (courbe !== COURBE_IMPLEMENTEE) {
+    // Refuser plutôt que rendre une clé d'une AUTRE courbe que celle
+    // demandée. Le message est celui de la troisième famille du §5 P4 :
+    // openssl connaît cette courbe, ce build ne l'implémente pas.
+    return fail(`openssl: ecparam -name ${courbe}: is not implemented in this simulator`);
   }
   const paire = PkiKeyPair.generate('ecdsa');
   const pem = privateKeyToPem(paire.privateKey, true);
@@ -908,8 +940,12 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const lignes: string[] = ['read EC key'];
   if (opts.has('-text')) {
+    // Lu SUR la clé, pas récité : c'est la même exigence que pour
+    // `rsa -text`, dont la taille est mesurée sur le module.
+    const q = materialToP256Public(cle.material);
+    if (!q) return fail('unable to load Key');
     lignes.push('Private-Key: (256 bit)');
-    lignes.push('ASN1 OID: prime256v1');
+    lignes.push(`ASN1 OID: ${COURBE_IMPLEMENTEE}`);
     lignes.push('NIST CURVE: P-256');
   }
   if (!opts.has('-noout')) {
@@ -926,17 +962,53 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
  * contenu : la clé sort identique, seule son armure change — et c'est
  * exactement ce que fait le vrai outil.
  */
+/** `pass:secret` — la seule source de phrase de passe non interactive. */
+function phraseDePasse(valeur: string | true | undefined): string | null {
+  if (typeof valeur !== 'string') return null;
+  return valeur.startsWith('pass:') ? valeur.slice(5) : null;
+}
+
+/**
+ * `pkcs8` convertit la FORME d'une clé, et `-topk8` la chiffre — c'est
+ * `-nocrypt` qui demande le clair, pas l'inverse.
+ *
+ * Ce qui était faux : `-topk8` rendait toujours une clé en clair,
+ * `-nocrypt` n'était même pas lu. Un TP y apprenait donc le contraire de
+ * ce que la commande enseigne, et l'étiquette `ENCRYPTED PRIVATE KEY`,
+ * présente dans `PemLabel`, n'était jamais écrite par personne.
+ */
 function runPkcs8(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('pkcs8', argv);
   const chemin = opts.get('-in');
   if (typeof chemin !== 'string') return fail('openssl: pkcs8: -in is required');
   const texte = host.readFile(chemin);
   if (texte === null) return fail(`Can't open "${chemin}" for reading, No such file or directory`);
-  const cle = pemToPrivateKey(texte);
+
+  const passin = phraseDePasse(opts.get('-passin'));
+  let cle = pemToPrivateKey(texte);
+  if (!cle && isEncryptedPrivateKeyPem(texte)) {
+    if (passin === null) {
+      // Sans terminal, un vrai openssl ne peut pas demander la phrase et
+      // échoue ici plutôt que de rendre une clé.
+      return fail('unable to load key\nopenssl: pkcs8: an encrypted key needs -passin pass:...');
+    }
+    cle = pemToEncryptedPrivateKey(texte, passin);
+    if (!cle) return fail('unable to load key\nbad decrypt');
+  }
   if (!cle) return fail('unable to load key');
 
-  // `-topk8` demande la forme PKCS#8 ; sans lui, openssl fait l'inverse.
-  const pem = privateKeyToPem(cle, !opts.has('-topk8'));
+  let pem: string;
+  if (opts.has('-topk8') && !opts.has('-nocrypt')) {
+    const passout = phraseDePasse(opts.get('-passout'));
+    if (passout === null) {
+      return fail('unable to write key\nopenssl: pkcs8 -topk8: use -nocrypt, or -passout pass:...');
+    }
+    pem = encryptedPrivateKeyToPem(cle, passout, (n) => host.randomBytes(n));
+  } else {
+    // `-topk8` demande la forme PKCS#8 ; sans lui, openssl fait l'inverse.
+    pem = privateKeyToPem(cle, !opts.has('-topk8'));
+  }
+
   const out = opts.get('-out');
   if (typeof out === 'string') {
     return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);

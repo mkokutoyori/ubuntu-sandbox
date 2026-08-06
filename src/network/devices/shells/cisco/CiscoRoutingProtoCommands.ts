@@ -9,6 +9,8 @@
  */
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { classfulMask } from './CiscoConfigCommands';
@@ -42,7 +44,7 @@ export function buildRoutingProtoConfig(
 
   configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
-    if (!/^\d+$/.test(a[0])) return "% Invalid input detected at '^' marker.";
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
     const asn = parseInt(a[0], 10);
     if (asn < 1 || asn > 65535) return '% Invalid AS number';
     repo.ensureEigrp(asn);
@@ -60,7 +62,7 @@ export function buildRoutingProtoConfig(
   });
   configTrie.registerGreedy('router bgp', 'Enter BGP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
-    if (!/^\d+$/.test(a[0])) return "% Invalid input detected at '^' marker.";
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
     const asn = parseInt(a[0], 10);
     if (asn < 1 || asn > 4294967295) return '% Invalid AS number';
     const existing = repo.getBgp();
@@ -192,7 +194,7 @@ export function buildRoutingProtoConfig(
     if (!a[0]) return '% Incomplete command.';
     if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return "% Invalid input detected at '^' marker.";
     const parsed = parseRedistribute(a);
-    if (!parsed) return "% Invalid input detected at '^' marker.";
+    if (!parsed) throw new CliInvalidInput();
     const p = curProto(ctx).proto;
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);
@@ -261,7 +263,12 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('timers', 'Adjust timers', (a, raw) => {
-    if (curProto(ctx).proto === 'rip') repo.rip.timersBasic = raw ?? a.join(' ');
+    const line = raw ?? `timers ${a.join(' ')}`.trim();
+    const p = curProto(ctx).proto;
+    if (p === 'rip') { repo.rip.timersBasic = raw ?? a.join(' '); return ''; }
+    // `timers bgp <keepalive> <hold>` was accepted and rendered nowhere.
+    if (p === 'bgp') { const b = bgp(); if (b) pushOnce(b.extras, line); }
+    else if (p === 'eigrp') pushOnce(eigrp().extras, line);
     return '';
   });
   routerTrie.registerGreedy('maximum-paths', 'Max parallel routes', (a) => {
@@ -281,6 +288,16 @@ export function buildRoutingProtoConfig(
     if (proto === 'rip') {
       if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
       repo.rip.neighbors.push(a[0]); return '';
+    }
+    if (proto === 'eigrp') {
+      // EIGRP's own form is `neighbor <ip> <interface>` (a unicast
+      // neighbour on a non-broadcast link). `remote-as` is a BGP keyword
+      // and does not exist here — it used to fall through every branch
+      // below and be accepted in silence, which reads as "configured".
+      if (!isValidIPv4(a[0])) throw new CliInvalidInput();
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
+      if (!ctx.r().getPort(a[1])) throw new CliInvalidInput();
+      return '';
     }
     if (proto === 'bgp') {
       const b = bgp();
@@ -452,17 +469,23 @@ export function buildRoutingProtoConfig(
       if (Number.isNaN(lp) || lp < 0) return '% Invalid local-preference';
       bgpEng().getConfig().defaultLocalPref = lp;
       converge();
+    } else {
+      // Every other `bgp <option>` — `log-neighbor-changes` and friends —
+      // was accepted and rendered nowhere. Keep the line as typed.
+      const b = bgp();
+      if (b) pushOnce(b.extras, `bgp ${a.join(' ')}`.trim());
     }
     return '';
   });
   routerTrie.registerGreedy('aggregate-address', 'BGP aggregate', (a, raw) => {
-    bgp()?.networks.push(raw ?? `aggregate-address ${a.join(' ')}`);
+    // Verbatim, NOT in `networks`: rendered from there it came back as
+    // ` network aggregate-address …`, a line IOS rejects on reload.
+    bgp()?.extras.push(raw ?? `aggregate-address ${a.join(' ')}`);
     return '';
   });
   routerTrie.registerGreedy('address-family', 'Enter address-family', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
     const p = curProto(ctx).proto;
-    if (p !== 'bgp') return "% Invalid input detected at '^' marker.";
+    if (p !== 'bgp') throw new CliInvalidInput();
     const af = a.join(' ');
     const proc = bgp();
     if (proc && !proc.addressFamilies.includes(af)) proc.addressFamilies.push(af);
@@ -484,20 +507,25 @@ export function buildRoutingProtoConfig(
   for (const { kw, protos } of PROTO_EXTRAS) {
     routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args) => {
       const p = curProto(ctx).proto;
-      if (!protos.includes(p)) return "% Invalid input detected at '^' marker.";
+      if (!protos.includes(p)) throw new CliInvalidInput();
       const line = `${kw}${args.length ? ' ' + args.join(' ') : ''}`;
       if (p === 'rip') pushOnce(repo.rip.extras, line);
       else pushOnce(eigrp().extras, line);
       return '';
     });
   }
+  routerTrie.requireArgs('address-family', 1);
+  routerTrie.requireArgs('no neighbor', 1);
   for (const kw of ['synchronization', 'no synchronization']) {
     routerTrie.register(kw, `BGP ${kw}`, () => {
-      return curProto(ctx).proto === 'bgp' ? '' : "% Invalid input detected at '^' marker.";
+      const proc = bgp();
+      if (curProto(ctx).proto !== 'bgp' || !proc) throw new CliInvalidInput();
+      proc.extras = proc.extras.filter((l) => l !== 'synchronization' && l !== 'no synchronization');
+      proc.extras.push(kw);
+      return '';
     });
   }
   routerTrie.registerGreedy('no neighbor', 'Remove a neighbor', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
     const proc = bgp();
     if (curProto(ctx).proto === 'bgp' && proc) {
       if (a.length === 1) {
@@ -516,7 +544,7 @@ export function buildRoutingProtoConfig(
       repo.rip.neighbors = repo.rip.neighbors.filter((n) => n !== a[0]);
       return '';
     }
-    return "% Invalid input detected at '^' marker.";
+    throw new CliInvalidInput();
   });
 }
 

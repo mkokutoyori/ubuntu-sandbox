@@ -168,9 +168,18 @@ export function routingProcessConfigLines(
       }
       if (neighbor.peerGroup) lines.push(` neighbor ${ip} peer-group ${neighbor.peerGroup}`);
       if (neighbor.description) lines.push(` neighbor ${ip} description ${neighbor.description}`);
+      if (neighbor.updateSource) {
+        lines.push(` neighbor ${ip} update-source ${neighbor.updateSource}`);
+      }
+      // Everything else the operator set on this neighbour, as typed.
+      // These were collected into `attrs` and then rendered by nobody, so
+      // next-hop-self, password, prefix-list, soft-reconfiguration and the
+      // rest vanished from the configuration that had just accepted them.
+      for (const attr of neighbor.attrs) lines.push(` ${attr}`);
     }
     for (const network of bgp.networks) lines.push(` network ${network}`);
     for (const source of bgp.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
+    for (const extra of bgp.extras) lines.push(` ${extra}`);
     lines.push('!');
   }
 

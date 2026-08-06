@@ -1203,6 +1203,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ?? null;
   }
 
+  /**
+   * True for an exception a CALLER handles by name — a control-flow
+   * signal, not a bug. Those must keep travelling: swallowing them here
+   * would defeat the point of them being a named type (see
+   * `CiscoSwitchShell`'s `UnsupportedOnThisSwitchError`, which is what
+   * lets a generic switch refuse a command it cannot honestly answer).
+   */
+  protected isControlFlowError(_err: unknown): boolean { return false; }
+
+  /** A handler threw something unforeseen: keep the trace for a developer. */
+  private reportHandlerCrash(cmdPart: string, err: unknown): void {
+    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    console.error(`[CLI] handler crashed on "${cmdPart}":`, detail);
+  }
+
   protected executeOnTrie(cmdPart: string): string {
     const asNoDebug = CiscoShellBase.undebugAsNoDebug(cmdPart);
     if (asNoDebug !== null) cmdPart = asNoDebug;
@@ -1224,10 +1239,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         try {
           output = result.node.action(result.args, cmdPart);
         } catch (err) {
-          if (!(err instanceof CliInvalidInput)) throw err;
+          if (this.isControlFlowError(err)) throw err;
+          if (err instanceof CliInvalidInput) {
+            return renderCliDiagnostic('invalid', {
+              line: cmdPart,
+              tokenOffset: offsetForInvalidInput(cmdPart, keywordCount, err),
+            });
+          }
+          // Anything else is a bug in a handler, and it must not reach the
+          // terminal: an exception surfacing as `% Error: ReferenceError…`
+          // also aborts the command mid-way, so the shell stays in whatever
+          // mode the handler was leaving — the next pasted lines are then
+          // interpreted in the wrong mode and the whole paste derails. IOS
+          // answers an unusable command with the caret; do that, and leave
+          // the trace where a developer looks for it.
+          this.reportHandlerCrash(cmdPart, err);
           return renderCliDiagnostic('invalid', {
             line: cmdPart,
-            tokenOffset: offsetForInvalidInput(cmdPart, keywordCount, err),
+            tokenOffset: offsetForInvalidInput(cmdPart, keywordCount),
           });
         }
         return this.attachCaretIfBare(output, cmdPart, keywordCount);

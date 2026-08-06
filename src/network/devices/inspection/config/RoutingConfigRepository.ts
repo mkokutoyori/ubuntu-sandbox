@@ -82,12 +82,24 @@ export interface RipExtras {
   redistribute: RedistributeSource[];
   networks: string[];
   neighbors: string[];
-  extras: string[];
   distance?: number;
   defaultMetric?: number;
   defaultInfoOriginate: boolean;
   maximumPaths?: number;
   timersBasic?: string;
+  /**
+   * Lignes acceptées telles quelles, restituées verbatim.
+   *
+   * Une sous-commande que le dépôt ne modélise pas ne doit pas être
+   * rangée dans le bucket typé le plus proche : `offset-list` poussé
+   * parmi les `redistribute` ressortait en ` redistribute` sans le
+   * moindre argument, et `aggregate-address` poussé parmi les
+   * `networks` ressortait en ` network aggregate-address …`. Dans les
+   * deux cas la configuration rendue n'était plus réinjectable, ce qui
+   * compte au-delà de l'affichage puisque c'est elle qu'on rejoue à
+   * l'import d'une topologie.
+   */
+  extras: string[];
 }
 
 export interface EigrpProcess {
@@ -96,7 +108,6 @@ export interface EigrpProcess {
   networks: string[];
   passive: Set<string>;
   redistribute: RedistributeSource[];
-  extras: string[];
   variance?: number;
   maximumPaths?: number;
   /** `metric maximum-hops <n>` — diamètre au-delà duquel une route est inaccessible. */
@@ -105,6 +116,8 @@ export interface EigrpProcess {
   stub?: string;
   named?: boolean;
   addressFamilies: string[];
+  /** @see RipExtras.extras */
+  extras: string[];
 }
 
 export interface BgpNeighbor {
@@ -153,13 +166,15 @@ export interface BgpProcess {
    * ligne de toute configuration MP-BGP.
    */
   defaultIpv4Unicast: boolean;
+  /** @see RipExtras.extras */
+  extras: string[];
 }
 
 export class RoutingConfigRepository {
   readonly rip: RipExtras = {
     version: null, autoSummary: true, passiveDefault: false,
     passive: new Set(), redistribute: [], networks: [], neighbors: [],
-    extras: [], defaultInfoOriginate: false,
+    defaultInfoOriginate: false, extras: [],
   };
   private readonly eigrp = new Map<number, EigrpProcess>();
   private bgp: BgpProcess | null = null;
@@ -169,7 +184,7 @@ export class RoutingConfigRepository {
     let p = this.eigrp.get(asn);
     if (!p) {
       p = { asn, networks: [], passive: new Set(), redistribute: [],
-        extras: [], autoSummary: true, named, addressFamilies: [] };
+        autoSummary: true, named, addressFamilies: [], extras: [] };
       this.eigrp.set(asn, p);
     }
     return p;
@@ -185,7 +200,7 @@ export class RoutingConfigRepository {
     if (!this.bgp) {
       this.bgp = { asn, networks: [], redistribute: [],
         neighbors: new Map(), peerGroups: new Map(),
-        addressFamilies: [], defaultIpv4Unicast: true };
+        addressFamilies: [], defaultIpv4Unicast: true, extras: [] };
     }
     return this.bgp;
   }

@@ -705,3 +705,23 @@ fourre-tout. Le compte d'erreurs de ce projet passe de 170 à 168.
 
 **Tests.** `cisco-config-modes-exist.test.ts` (8 cas), discriminé par
 `git stash` : 7 tombent avant le correctif.
+
+**Deux arbitrages avec la session concurrente**, qui travaillait le même
+fichier et avait trouvé la même cause racine (`extras`) de son côté.
+1. `% OSPF: Area 0 … stub area` **avec ou sans point final** : ni l'une
+   ni l'autre ne peut le vérifier sur un vrai IOS d'ici. Leur version,
+   déjà sur la branche, garde le point ; le test ne fixe donc pas ce
+   caractère plutôt que de prétendre le savoir.
+2. **`no synchronization`** : je l'acceptais sans le stocker (obsolète
+   depuis IOS 12.2SB), elle le rendait verbatim. Leur règle gagne, et
+   c'est l'invariant du §2.1 qui tranche : ce que l'opérateur a tapé
+   doit se retrouver dans la configuration. Un jugement sur ce qu'IOS
+   affiche par défaut ne vaut pas contre un aller-retour vérifiable.
+
+Le fusionnement a aussi produit **deux défauts qu'aucun conflit ne
+signalait** : les `extras` d'EIGRP étaient rendus deux fois (nos deux
+boucles ajoutées au même bloc), et `isBackboneArea` était défini dans la
+portée de la fonction OSPFv2 alors que l'appel OSPFv3 est dans une
+autre. Les deux sont corrigés ici. Les refus ajoutés passent par
+`CliInvalidInput` et `requireArgs`, pas par des littéraux : le cliquet
+de `cisco-cli-diagnostic-single-exit.test.ts` les avait attrapés.

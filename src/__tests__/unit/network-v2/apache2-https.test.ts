@@ -27,7 +27,7 @@ function machine(name = 'AT'): LinuxServer {
 async function makeCertificate(srv: LinuxServer): Promise<void> {
   await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
   await srv.executeCommand(
-    'openssl req -x509 -newkey rsa:2048 -keyout /etc/ssl/private/lab.key '
+    'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/lab.key '
     + '-out /etc/ssl/certs/lab.crt -days 365 -nodes -subj "/CN=lab.local"');
 }
 

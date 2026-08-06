@@ -21,6 +21,14 @@ export const BGP_VERSION = 4;
 export const BGP_DEFAULT_HOLD_SEC = 90;
 /** Default KEEPALIVE interval — Hold Time / 3 (RFC 4271 §4.4). */
 export const BGP_DEFAULT_KEEPALIVE_SEC = 30;
+/**
+ * Default ConnectRetryTime, seconds (RFC 4271 §8.2.2 / §10). It is the
+ * FSM's own retry clock: while it runs, a peer whose transport
+ * connection failed sits in Active and is NOT re-dialled. Nothing else
+ * paces those attempts — which is why dialling from anywhere but this
+ * timer turns an unreachable neighbour into a flood.
+ */
+export const BGP_DEFAULT_CONNECT_RETRY_SEC = 120;
 
 export type BgpMessageType = 'open' | 'update' | 'keepalive' | 'notification';
 
