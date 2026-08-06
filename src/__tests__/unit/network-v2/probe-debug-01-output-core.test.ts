@@ -263,6 +263,9 @@ describe('Scénario 10 — horodatage à la milliseconde', () => {
     const { run, gIn } = await lab();
     for (const c of [
       'configure terminal',
+      // La configuration d'usine horodate les deux canaux : on éteint
+      // `log` pour que ce qui reste ne puisse venir que de `debug`.
+      'no service timestamps log',
       'service timestamps debug datetime msec',
       'logging buffered 64000 debugging',
       'end',
@@ -278,17 +281,21 @@ describe('Scénario 10 — horodatage à la milliseconde', () => {
     expect(lignes.at(-1), 'le canal debug ne couvre pas le canal log').toMatch(/^%[A-Z]/);
   }, LONG);
 
-  it('sans l\'option, aucun préfixe d\'horodatage', async () => {
+  it('`no service timestamps` retire le préfixe que l\'usine posait', async () => {
     const { run, gIn } = await lab();
     await run('configure terminal');
+    await run('no service timestamps');
     await run('logging buffered 64000 debugging');
     for (const c of ['configure terminal', `interface ${gIn}`, 'shutdown', 'no shutdown', 'end']) {
       await run(c);
     }
 
-    const ligne = (await run('show logging')).split('\n').find((l) => l.includes('%LINK'));
-    expect(ligne).toBeDefined();
-    expect(ligne!.trimStart().startsWith('%')).toBe(true);
+    // La dernière, pas la première : le labo a journalisé ses propres
+    // messages AVANT l'extinction, et changer le format ne réécrit pas ce
+    // qui est déjà écrit.
+    const lignes = (await run('show logging')).split('\n').filter((l) => l.includes('%LINK'));
+    expect(lignes.length).toBeGreaterThan(0);
+    expect(lignes.at(-1)!.trimStart().startsWith('%')).toBe(true);
   }, LONG);
 });
 

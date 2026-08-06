@@ -51,9 +51,35 @@ export interface TimestampSpec {
   year: boolean;
 }
 
+/**
+ * La configuration d'usine d'IOS porte `service timestamps debug datetime
+ * msec` et `service timestamps log datetime msec`. C'est ce que rend cette
+ * fonction, et rien d'autre : elle décrit un routeur qui sort de sa boîte.
+ */
 export function defaultTimestampSpec(): TimestampSpec {
   return {
+    enabled: true, format: 'datetime', msec: true,
+    localtime: false, showTimezone: false, year: false,
+  };
+}
+
+/** Ce que `no service timestamps` laisse derrière lui. */
+export function disabledTimestampSpec(): TimestampSpec {
+  return {
     enabled: false, format: 'uptime', msec: false,
+    localtime: false, showTimezone: false, year: false,
+  };
+}
+
+/**
+ * La base de la GRAMMAIRE : `service timestamps [debug|log]` sans format
+ * vaut `uptime`. C'est une question différente du défaut d'usine, et les
+ * confondre faisait rendre `datetime msec` à une commande qui dit
+ * `uptime`.
+ */
+export function bareTimestampSpec(): TimestampSpec {
+  return {
+    enabled: true, format: 'uptime', msec: false,
     localtime: false, showTimezone: false, year: false,
   };
 }
@@ -1092,7 +1118,17 @@ export class LoggingConfig {
   private horodatageResume(): string {
     const actifs = (['debug', 'log'] as const).filter(c => this.horodatage[c].enabled);
     if (actifs.length === 0) return 'disabled';
-    return actifs.map(c => `${c} ${this.horodatage[c].format}`).join(', ');
+    return actifs.map(c => {
+      const s = this.horodatage[c];
+      const options = [
+        s.format,
+        ...(s.msec ? ['msec'] : []),
+        ...(s.localtime ? ['localtime'] : []),
+        ...(s.showTimezone ? ['show-timezone'] : []),
+        ...(s.year ? ['year'] : []),
+      ];
+      return `${c} ${options.join(' ')}`;
+    }).join(', ');
   }
 
   renderHuawei(): string {

@@ -230,6 +230,9 @@ describe('service timestamps — la ligne écrite', () => {
 
   it('le canal `debug` ne couvre pas le canal `log`', async () => {
     const r = await routeur();
+    // La configuration d'usine horodate les DEUX canaux ; on éteint le
+    // canal `log` pour que ce qu'il reste ne puisse venir que de `debug`.
+    await r.executeCommand('no service timestamps log');
     await r.executeCommand('service timestamps debug datetime msec');
     expect(await messageDeLien(r)).toMatch(/^%[A-Z]/);
   });

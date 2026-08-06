@@ -1111,6 +1111,38 @@ plusieurs lecteurs, aucun lecteur avec sa propre copie.
 | `%SYS-5-CONFIG_I` en rafale | Aucun correctif — effet de bord légitime du découpage de la batterie ; l'horodatage les rend lisibles | — |
 | `%LINK` / `%LINEPROTO` | Aucun correctif propre — sortent du chantier 2 | — |
 
+**Livré, et la cause du second point n'était pas celle qu'on croyait.**
+Le buffer n'était pas « antérieur à sa configuration » : il était
+**absent de toute configuration**. `LoggingConfig.asRunningConfigLines()`
+n'avait aucun appelant atteignable — la running-config lit
+`device._loggingConfig`, que seule l'exécution d'une commande `logging`
+posait. Un routeur qui n'en avait jamais tapé affichait donc
+`Buffer logging: level debugging, 4096 bytes` dans `show logging` et pas
+une ligne à ce sujet dans sa configuration : un fait affiché que rien ne
+déclarait, et toute la configuration de journalisation (`logging host`,
+`logging trap`, `no logging console`, `service timestamps`) perdue au
+passage par une exportation de topologie. Le rattachement se fait
+désormais à la construction, dans `attachLoggingBus`, et les deux vues
+s'accordent.
+
+**Une régression introduite puis corrigée, du même genre que celles que
+ce document traque.** `defaultTimestampSpec()` portait **trois** sens à
+la fois : le défaut d'usine, ce que `no service timestamps` laisse
+derrière lui, et la base de la grammaire (`service timestamps` nu vaut
+`uptime`). Changer le premier changeait les trois, et la forme nue s'est
+mise à rendre `datetime msec`. Les trois sont séparés
+(`defaultTimestampSpec` / `disabledTimestampSpec` / `bareTimestampSpec`).
+
+Corrigé au passage : `show logging` résumait `debug datetime` là où la
+configuration déclarait `debug datetime msec` — deux lectures d'un même
+fait, la seconde tronquée.
+
+Coût mesuré : **16 tests sur 1 344**, tous des suites d'horodatage et de
+console, et tous parce qu'ils prenaient « aucun horodatage » comme base de
+départ pour prouver autre chose. Ils posent désormais cette base
+explicitement (`no service timestamps`), ce qui les rend plus lisibles
+qu'avant.
+
 ### 7.2 Lot de finition (§4 du rapport)
 
 À traiter **après** les chantiers 1 et 3, qui rendent enfin ces tests
