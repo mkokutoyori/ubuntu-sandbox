@@ -16,7 +16,6 @@ import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { CiscoShellContext } from './CiscoConfigCommands';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────

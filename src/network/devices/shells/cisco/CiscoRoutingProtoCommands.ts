@@ -10,6 +10,7 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { classfulMask } from './CiscoConfigCommands';
@@ -17,7 +18,6 @@ import type { RoutingConfigRepository }
   from '../../inspection/config/RoutingConfigRepository';
 import { parseRedistribute, upsertRedistribute }
   from '../../inspection/config/RoutingConfigRepository';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { showIpProtocols } from './CiscoShowCommands';
 
 type Proto = 'rip' | 'eigrp' | 'bgp';
@@ -294,9 +294,9 @@ export function buildRoutingProtoConfig(
       // neighbour on a non-broadcast link). `remote-as` is a BGP keyword
       // and does not exist here — it used to fall through every branch
       // below and be accepted in silence, which reads as "configured".
-      if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
-      if (!a[1]) return '% Incomplete command.';
-      if (!ctx.r().getPort(a[1])) return "% Invalid input detected at '^' marker.";
+      if (!isValidIPv4(a[0])) throw new CliInvalidInput();
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
+      if (!ctx.r().getPort(a[1])) throw new CliInvalidInput();
       return '';
     }
     if (proto === 'bgp') {
