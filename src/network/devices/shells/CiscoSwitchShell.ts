@@ -36,6 +36,7 @@ import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../.
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
+import { CliInvalidInput } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 
 /** CLI Mode (FSM State) */
@@ -1658,10 +1659,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       // se pose par pas de 16, ce qu'il dit avec ses propres mots.
       if (knob === 'cost' && !Number.isNaN(knobValue)
         && (knobValue < 1 || knobValue > 200_000_000)) {
-        return "% Invalid input detected at '^' marker.";
+        throw new CliInvalidInput();
       }
       if (knob === 'port-priority' && !Number.isNaN(knobValue)) {
-        if (knobValue < 0 || knobValue > 240) return "% Invalid input detected at '^' marker.";
+        if (knobValue < 0 || knobValue > 240) throw new CliInvalidInput();
         if (knobValue % 16 !== 0) {
           return '% Bridge Port priority must be in increments of 16.';
         }
