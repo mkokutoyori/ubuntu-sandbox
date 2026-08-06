@@ -816,8 +816,8 @@ export class TcpStack {
 
   private flushPendingSends(socket: TcpSocket): void {
     // `closeAfterFlush` must be honored even with nothing queued — a
-    // `.close()` during `onAccept`/`onOpen` (still 'syn-received'/'syn-sent',
-    // no data ever written) used to return here before reaching the check
+    // `.close()` during `onAccept` (still 'syn-received', no data ever
+    // written) used to return here before reaching the check
     // below, silently losing the close forever: the socket just stayed
     // open. That is exactly what a bidirectional relay's error path does
     // (closing the accepted side the instant the far side's connect is
@@ -845,7 +845,22 @@ export class TcpStack {
 
   _initiateClose(socket: TcpSocket): void {
     if (socket.closed) return;
-    if (socket.state === 'syn-sent' || socket.state === 'syn-received') {
+    // RFC 9293 §3.10.4, CLOSE Call / SYN-SENT STATE: "Delete the TCB and
+    // return 'error: closing' responses to any queued SENDs, or RECEIVEs."
+    // There is no connection to shut down gracefully — the handshake never
+    // completed — so deferring the close until a flush that will never
+    // happen just strands the socket, and its ephemeral port with it. A
+    // caller that dials an unreachable peer and closes on failure (BGP's
+    // `bgpConnect` does exactly that, on every convergence) used to leak
+    // one port per attempt until the pool ran dry.
+    if (socket.state === 'syn-sent') {
+      this._teardown(socket, 'shutdown');
+      return;
+    }
+    // 'syn-received' keeps the deferred close: the handshake is genuinely
+    // in flight, and a `.close()` from inside `onAccept` must take effect
+    // once it completes (see flushPendingSends).
+    if (socket.state === 'syn-received') {
       socket.closeAfterFlush = true;
       return;
     }

@@ -1,0 +1,401 @@
+terminal length 0
+enable
+show ip route
+show ip protocols
+show ip cef
+configure terminal
+hostname R-ROUTE
+ip routing
+ip cef
+interface Loopback0
+ip address 1.1.1.1 255.255.255.255
+end
+configure terminal
+interface Loopback1
+ip address 172.16.1.1 255.255.255.0
+end
+configure terminal
+interface Loopback2
+ip address 172.16.2.1 255.255.255.0
+end
+configure terminal
+interface GigabitEthernet0/0
+ip address 10.0.12.1 255.255.255.0
+no shutdown
+end
+configure terminal
+interface GigabitEthernet0/1
+ip address 10.0.13.1 255.255.255.0
+no shutdown
+end
+configure terminal
+interface GigabitEthernet0/2
+ip address 192.168.100.1 255.255.255.0
+no shutdown
+end
+show ip interface brief
+show ip route connected
+show ip route local
+configure terminal
+ip route ?
+ip route 192.168.50.0 255.255.255.0 10.0.12.2
+ip route 192.168.51.0 255.255.255.0 GigabitEthernet0/0 10.0.12.2
+ip route 192.168.52.0 255.255.255.0 10.0.12.2 ?
+ip route 192.168.52.0 255.255.255.0 10.0.12.2 200
+ip route 192.168.53.0 255.255.255.0 Null0
+ip route 8.8.8.8 255.255.255.255 10.0.12.2
+ip route 0.0.0.0 0.0.0.0 10.0.12.2
+ip route 0.0.0.0 0.0.0.0 10.0.13.2 250
+ip route 192.168.60.0 255.255.255.0 10.0.99.99
+end
+show ip route
+show ip route static
+show ip route 192.168.50.0
+show ip route 192.168.52.0 255.255.255.0
+show ip route 0.0.0.0
+show ip cef 192.168.50.0
+show ip route summary
+configure terminal
+router rip
+version 2
+network 172.16.0.0
+network 10.0.0.0
+no auto-summary
+passive-interface GigabitEthernet0/2
+timers basic 30 180 180 240
+end
+show ip protocols
+show ip rip database
+configure terminal
+router eigrp ?
+router eigrp 100
+network 10.0.12.0 0.0.0.255
+network 172.16.1.0 0.0.0.255
+no auto-summary
+eigrp router-id 1.1.1.1
+variance 2
+passive-interface GigabitEthernet0/2
+metric weights 0 1 0 1 0 0
+end
+configure terminal
+interface GigabitEthernet0/0
+ip summary-address eigrp 100 172.16.0.0 255.255.0.0
+ip hello-interval eigrp 100 5
+ip hold-time eigrp 100 15
+end
+configure terminal
+key chain EIGRP-KEYS
+key 1
+key-string CiscoEIGRP
+end
+configure terminal
+interface GigabitEthernet0/0
+ip authentication mode eigrp 100 md5
+ip authentication key-chain eigrp 100 EIGRP-KEYS
+end
+show ip eigrp neighbors
+show ip eigrp topology
+show ip eigrp interfaces
+show ip eigrp traffic
+show key chain
+configure terminal
+router eigrp NAMED-AS
+address-family ipv4 unicast autonomous-system 200
+af-interface GigabitEthernet0/1
+hello-interval 5
+hold-time 15
+end
+configure terminal
+router ospf 1
+router-id 1.1.1.1
+network 10.0.12.0 0.0.0.255 area 0
+network 10.0.13.0 0.0.0.255 area 0
+network 172.16.1.0 0.0.0.255 area 1
+network 172.16.2.0 0.0.0.255 area 2
+passive-interface GigabitEthernet0/2
+auto-cost reference-bandwidth 10000
+log-adjacency-changes detail
+timers throttle spf 5 100 5000
+maximum-paths 4
+area 1 stub
+area 2 nssa
+area 1 range 172.16.0.0 255.255.0.0
+area 0 authentication message-digest
+end
+configure terminal
+interface GigabitEthernet0/0
+ip ospf cost 10
+ip ospf priority 255
+ip ospf hello-interval 5
+ip ospf dead-interval 20
+ip ospf network point-to-point
+ip ospf message-digest-key 1 md5 CiscoOSPF
+ip ospf authentication message-digest
+end
+show ip ospf
+show ip ospf interface brief
+show ip ospf interface GigabitEthernet0/0
+show ip ospf neighbor
+show ip ospf database
+show ip ospf database router
+show ip ospf border-routers
+show ip ospf statistics
+configure terminal
+ip prefix-list PL-LAN seq 5 permit 172.16.0.0/16 le 24
+ip prefix-list PL-LAN seq 10 deny 0.0.0.0/0 le 32
+ip prefix-list PL-DEFAULT seq 5 permit 0.0.0.0/0
+ip access-list standard ACL-RFC1918
+permit 10.0.0.0 0.255.255.255
+permit 172.16.0.0 0.15.255.255
+permit 192.168.0.0 0.0.255.255
+end
+configure terminal
+route-map RM-REDIST permit 10
+match ip address prefix-list PL-LAN
+set metric 100
+set metric-type type-1
+set tag 999
+end
+configure terminal
+route-map RM-REDIST deny 20
+end
+configure terminal
+router ospf 1
+redistribute static subnets route-map RM-REDIST
+redistribute eigrp 100 metric 50 subnets
+default-information originate always metric 10 metric-type 1
+distance ospf external 150
+end
+configure terminal
+router eigrp 100
+redistribute ospf 1 metric 10000 100 255 1 1500
+redistribute static metric 10000 100 255 1 1500
+distribute-list prefix PL-LAN out GigabitEthernet0/1
+end
+configure terminal
+router rip
+redistribute ospf 1 metric 5
+distribute-list ACL-RFC1918 in
+offset-list 0 out 2 GigabitEthernet0/0
+end
+show ip protocols
+show ip route ospf
+show ip route eigrp
+show ip route rip
+show ip prefix-list
+show ip prefix-list detail PL-LAN
+show route-map
+configure terminal
+router bgp ?
+router bgp 65001
+bgp router-id 1.1.1.1
+bgp log-neighbor-changes
+no synchronization
+neighbor 10.0.12.2 remote-as 65002
+neighbor 10.0.12.2 description PEER-ISP1
+neighbor 10.0.13.2 remote-as 65001
+neighbor 10.0.13.2 update-source Loopback0
+neighbor 10.0.13.2 next-hop-self
+neighbor 10.0.13.2 route-reflector-client
+neighbor 10.0.12.2 ebgp-multihop 2
+neighbor 10.0.12.2 password CiscoBGP
+neighbor 10.0.12.2 prefix-list PL-LAN out
+neighbor 10.0.12.2 route-map RM-REDIST in
+neighbor 10.0.12.2 soft-reconfiguration inbound
+neighbor 10.0.12.2 maximum-prefix 1000 80
+network 172.16.1.0 mask 255.255.255.0
+network 172.16.2.0 mask 255.255.255.0
+aggregate-address 172.16.0.0 255.255.0.0 summary-only
+redistribute static route-map RM-REDIST
+timers bgp 30 90
+end
+configure terminal
+ip as-path access-list 1 permit ^65002$
+ip as-path access-list 1 deny .*
+ip community-list standard CL-NOEXPORT permit 65001:100
+route-map RM-BGP-OUT permit 10
+match as-path 1
+set local-preference 200
+set community 65001:100
+set as-path prepend 65001 65001
+end
+show ip bgp
+show ip bgp summary
+show ip bgp neighbors
+show ip bgp neighbors 10.0.12.2 advertised-routes
+show ip bgp 172.16.1.0
+show ip as-path-access-list
+show ip community-list
+clear ip bgp * soft
+configure terminal
+route-map PBR-VOICE permit 10
+match ip address ACL-RFC1918
+set ip next-hop 10.0.12.2
+set ip precedence critical
+end
+configure terminal
+route-map PBR-VOICE permit 20
+set interface Null0
+end
+configure terminal
+interface GigabitEthernet0/2
+ip policy route-map PBR-VOICE
+end
+configure terminal
+ip local policy route-map PBR-VOICE
+end
+show ip policy
+show route-map PBR-VOICE
+configure terminal
+ip vrf CLIENT-A
+rd 65001:100
+route-target export 65001:100
+route-target import 65001:100
+end
+configure terminal
+ip vrf CLIENT-B
+rd 65001:200
+end
+configure terminal
+interface GigabitEthernet0/2
+ip vrf forwarding CLIENT-A
+ip address 192.168.100.1 255.255.255.0
+end
+configure terminal
+ip route vrf CLIENT-A 0.0.0.0 0.0.0.0 192.168.100.254
+end
+configure terminal
+router ospf 10 vrf CLIENT-A
+router-id 10.10.10.10
+network 192.168.100.0 0.0.0.255 area 0
+end
+show ip vrf
+show ip vrf detail
+show ip vrf interfaces
+show ip route vrf CLIENT-A
+show ip protocols vrf CLIENT-A
+configure terminal
+ip sla 10
+icmp-echo 10.0.12.2 source-interface GigabitEthernet0/0
+frequency 5
+timeout 2000
+threshold 1000
+tag TRACK-ISP1
+end
+configure terminal
+ip sla schedule 10 life forever start-time now
+track 1 ip sla 10 reachability
+delay down 10 up 20
+end
+configure terminal
+track 2 interface GigabitEthernet0/0 line-protocol
+end
+configure terminal
+track 3 list boolean and
+object 1
+object 2
+end
+configure terminal
+ip route 192.168.70.0 255.255.255.0 10.0.12.2 track 1
+ip route 192.168.70.0 255.255.255.0 10.0.13.2 200
+end
+show ip sla configuration 10
+show ip sla statistics 10
+show track
+show track brief
+configure terminal
+interface GigabitEthernet0/0
+standby version 2
+standby 1 ip 10.0.12.254
+standby 1 priority 110
+standby 1 preempt delay minimum 30
+standby 1 timers 1 3
+standby 1 authentication md5 key-string CiscoHSRP
+standby 1 track 1 decrement 20
+end
+configure terminal
+interface GigabitEthernet0/1
+vrrp 1 ip 10.0.13.254
+vrrp 1 priority 120
+vrrp 1 preempt
+end
+show standby
+show standby brief
+show vrrp
+show vrrp brief
+configure terminal
+ipv6 unicast-routing
+ipv6 cef
+interface GigabitEthernet0/0
+ipv6 address 2001:DB8:12::1/64
+ipv6 address FE80::1 link-local
+ipv6 ospf 1 area 0
+ipv6 eigrp 100
+end
+configure terminal
+ipv6 route 2001:DB8:50::/64 2001:DB8:12::2
+ipv6 route ::/0 2001:DB8:12::2
+ipv6 router ospf 1
+router-id 1.1.1.1
+end
+configure terminal
+ipv6 router eigrp 100
+eigrp router-id 1.1.1.1
+no shutdown
+end
+show ipv6 route
+show ipv6 route static
+show ipv6 protocols
+show ipv6 ospf
+show ipv6 ospf neighbor
+show ipv6 eigrp neighbors
+show ipv6 interface brief
+configure terminal
+ip multicast-routing
+interface GigabitEthernet0/0
+ip pim sparse-mode
+ip igmp version 2
+end
+configure terminal
+ip pim rp-address 1.1.1.1
+ip pim send-rp-announce Loopback0 scope 10
+end
+show ip pim interface
+show ip pim neighbor
+show ip pim rp mapping
+show ip mroute
+show ip igmp interface
+show ip cef
+show ip cef 8.8.8.8 detail
+show adjacency
+show ip route repair-paths
+show ip route track-table
+show ip route profile
+show ip traffic
+configure terminal
+ip route 10.0.0.0 255.0.0.0
+ip route 300.1.1.1 255.255.255.0 10.0.12.2
+ip route 192.168.80.0 255.255.255.0 10.0.12.2 300
+router ospf 1
+network 172.16.3.0 0.0.0.255 area
+network 172.16.3.0 255.255.255.0 area 0
+area 1 stub no-summary
+area 0 stub
+end
+configure terminal
+router bgp 65002
+router eigrp 100
+neighbor 10.0.12.2 remote-as
+end
+show ip route 999.999.999.999
+show ip bgp 172.16.99.0
+show ip ospf 99
+clear ip route *
+show ip route
+write memory
+show running-config | section router
+show running-config | section ip route
+show running-config | include ^ip route
+show running-config | section route-map
+show running-config | begin router bgp
+show startup-config | section router ospf

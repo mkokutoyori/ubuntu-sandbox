@@ -123,6 +123,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   private readonly attempted = new Set<string>();
   /** Re-entrancy guard for the synchronous triggered-update cascade. */
   private propagating = false;
+  /** True while {@link refreshFromCache} runs: recompute, never dial. */
+  private cacheOnly = false;
 
   protected defaultConfig(): BGPConfig {
     return {
@@ -429,9 +431,34 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     }
   }
 
+  /**
+   * Recompute contributed routes from the Adj-RIB-In WITHOUT opening
+   * sessions or re-advertising — the per-forwarding-decision path, and
+   * the counterpart of EIGRPEngine's `refreshFromCache()`.
+   *
+   * Dialling belongs to a real convergence round (config/show time).
+   * Doing it from the data path is what made an unreachable neighbour
+   * explode: `manageSessions()` dials it, the SYN dies waiting for ARP,
+   * two seconds later the router builds an ICMP unreachable for its own
+   * SYN, and routing that ICMP calls straight back in here — one fresh
+   * dial per configured neighbour, doubling at every ARP timeout, until
+   * the ephemeral pool is drained and every further attempt logs
+   * `%TCP-4-WARNINGS: Segment dropped (no-ephemeral)`. A few seconds of
+   * that is hundreds of thousands of terminal lines, and a wedged tab.
+   */
+  refreshFromCache(): void {
+    if (this.cacheOnly) return;
+    this.cacheOnly = true;
+    try {
+      super.converge();
+    } finally {
+      this.cacheOnly = false;
+    }
+  }
+
   // ── Template-method hooks ──────────────────────────────────────────
   protected computeNeighbors(_peers: RoutingPeer[]): void {
-    if (this.isEnabled()) {
+    if (this.isEnabled() && !this.cacheOnly) {
       this.manageSessions();
       // Re-advertise to every Established peer so a local config change
       // (a new/removed `network`, redistribution) reaches peers that came

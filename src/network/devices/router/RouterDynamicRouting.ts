@@ -224,7 +224,9 @@ export class RouterDynamicRouting {
   refresh(): void {
     this.eigrp.refreshFromCache();
     if (this.bgp.isEnabled()) this.ensureBgpListener();
-    this.bgp.converge();
+    // Cache-only for BGP too — this used to call `bgp.converge()`, which
+    // dials every configured neighbour, on every forwarding decision.
+    this.bgp.refreshFromCache();
     this.reflectRib();
   }
 
