@@ -17,7 +17,7 @@ de fidélité se tranche contre cette machine-là, pas contre « un Cisco ».
 | 3 | Invariant aide ⇔ exécution (§3) | ✅ fait |
 | 4 | Typage des arguments d'aide (§4) | ✅ fait |
 | 5 | Complétude des menus (§5) | ✅ fait |
-| 6 | Finition des données (§6) | ⬜ à faire |
+| 6 | Finition des données (§6) | ✅ fait |
 
 ---
 
@@ -299,7 +299,50 @@ git-stash : les 17 échouent avant correction.
 
 ## Chantier 6 — Finition
 
-Horloges divergentes d'une heure, ping sur 127.0.0.1 en échec,
-`show ip route summary` annonçant 32 chemins au lieu de 4,
-`show version | exclude` laissant une ligne vide, ordre de la légende
-`show ntp`, `aaa new-model` sans effet, format d'uptime.
+Sept constats, dont **cinq confirmés, un requalifié et un réfuté** — la
+mesure a tranché chacun avant qu'une ligne soit écrite.
+
+**Confirmés et corrigés.**
+
+- **Les horloges divergeaient parce qu'il y en avait deux.**
+  `show calendar` lisait l'heure de la machine HÔTE, donc ni
+  `clock set` ni `clock timezone` ne l'atteignaient : le même
+  équipement répondait deux dates différentes à deux questions sur
+  l'heure, et l'écart d'une heure après un `clock timezone` trahissait
+  la fuite. Il lit maintenant la même horloge, avec la seule
+  différence qui soit réelle : le calendrier ne porte jamais le `*`
+  d'IOS, qui signale une horloge système non autoritative.
+- **`ping 127.0.0.1` échouait à 100 %** sur une machine parfaitement
+  saine, parce que la boucle locale n'était ni configurée sur une
+  interface ni routable. 127.0.0.0/8 est toujours local (RFC 1122
+  §3.2.1.3) : le premier réflexe de diagnostic d'un apprenant marche.
+- **`show ip route summary` annonçait 32 chemins.** 32 est le maximum
+  *configurable*, 4 la valeur par défaut d'IOS.
+- **Le format d'uptime.** Ce point contredisait une décision antérieure
+  du dépôt, prise et pinnée par test (« never says 0 minutes on a
+  freshly booted router »). Le rapport a raison : le constructeur
+  d'uptime d'IOS ne connaît que semaines, jours, heures et minutes — la
+  seconde n'est pas une unité de cette ligne. Un routeur démarré depuis
+  vingt secondes écrit `0 minutes`, ce qui a l'air étrange et qui est ce
+  qu'il écrit. Le test a été retourné, avec sa raison.
+
+**Requalifié.** L'ordre de la légende `show ntp` était correct : IOS met
+bien sa légende après le tableau. Le vrai défaut était la phrase
+`No NTP associations configured.`, qui n'existe dans aucune version
+d'IOS — elle était inventée, et c'est elle qui plaçait la légende après
+un texte plutôt qu'après un tableau vide. Elle est retirée.
+
+**Réfuté, mesure à l'appui.** `aaa new-model` **a un effet**, et le test
+le fige : sans lui, `aaa authentication login default group radius` est
+ignorée et la base locale authentifie ; avec lui, la liste de méthodes
+tourne vraiment et le groupe RADIUS est consulté. C'est exactement le
+comportement d'IOS. Le constat du rapport était faux.
+
+**Non reproduit.** `show version | exclude` ne laisse pas de ligne vide
+parasite : les lignes vides observées sont celles que `show version`
+contient réellement et qui ne correspondent pas au motif — un vrai IOS
+les garde aussi.
+
+`probe-cli-donnees-affichees.test.ts` (8 cas) est discriminé par
+git-stash : 6 échouent avant correction, et les 2 qui passent des deux
+côtés sont précisément les deux points qui étaient déjà justes.

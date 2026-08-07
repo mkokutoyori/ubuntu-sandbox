@@ -204,9 +204,10 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
  * minute entière.
  */
 export function formatIosUptime(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  if (totalSec < 60) return `${totalSec} second${totalSec === 1 ? '' : 's'}`;
-  const totalMin = Math.floor(totalSec / 60);
+  // IOS compte l'uptime en MINUTES : il n'écrit jamais « 0 seconds »,
+  // il écrit « 0 minutes ». La seconde n'est pas une unité de cette
+  // ligne, et l'afficher trahissait un compteur interne.
+  const totalMin = Math.floor(Math.max(0, ms) / 60000);
   const units: ReadonlyArray<readonly [number, string]> = [
     [Math.floor(totalMin / 10080), 'week'],
     [Math.floor((totalMin % 10080) / 1440), 'day'],
@@ -658,8 +659,12 @@ export function showNtpAssociations(dev?: ShowStateDevice): string {
   // caractères : l'état de sélection puis `~` pour « configurée ». Les
   // coller (`*~`, ` ~`) décalait la colonne d'adresse d'un cran.
   const legende = ' * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured';
+  // Sans association, IOS rend l'en-tête et la légende — et rien entre
+  // les deux. La phrase « No NTP associations configured. » n'existe
+  // dans aucune version d'IOS : elle était inventée, et elle plaçait la
+  // légende après un texte plutôt qu'après un tableau vide.
   if (!ntp || ntp.getConfig().associations.size === 0) {
-    return [header, 'No NTP associations configured.', legende].join('\n');
+    return [header, legende].join('\n');
   }
   const rows: string[] = [];
   for (const [, a] of ntp.getConfig().associations) {
@@ -868,13 +873,21 @@ export function showFileSystems(fs: FileSystemUsage, startupConfigSize: number):
 }
 
 /** `show calendar` — the device's real hardware clock (system time). */
-export function showCalendar(now: Date = new Date()): string {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const mons = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
-    'Sep', 'Oct', 'Nov', 'Dec'];
-  const t = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
-  return `${t} UTC ${days[now.getDay()]} ${mons[now.getMonth()]} ` +
-    `${now.getDate()} ${now.getFullYear()}`;
+/**
+ * `show calendar` lit LA MÊME horloge que `show clock`.
+ *
+ * Il lisait l'heure de la machine hôte, donc `clock set` et
+ * `clock timezone` n'avaient aucun effet dessus : le même équipement
+ * répondait deux dates différentes à deux questions sur l'heure, et
+ * l'écart d'une heure après un `clock timezone` trahissait la fuite.
+ *
+ * Une seule différence de rendu subsiste, et elle est réelle : le
+ * calendrier ne porte jamais le `*` d'IOS, qui signale une horloge
+ * système non autoritative — un composant matériel ne se déclare pas
+ * incertain.
+ */
+export function showCalendar(arg: Date | ShowStateDevice = new Date()): string {
+  return showClock(arg).replace(/^[*.]/, '').replace(/(\d{2}:\d{2}:\d{2})\.\d+/, '$1');
 }
 
 /** `show terminal` — the active session's real defaults. */
