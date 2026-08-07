@@ -992,13 +992,13 @@ function appendManagementConfig(lines: string[], router: Router): void {
       lines.push(`clock daylight-saving-time ${clock.summerTimezone} repeating ${clock.daylightStart} ${clock.daylightEnd}`);
     }
   }
-  const info = mgmt.getInfoCenter();
-  if (info.enabled && (info.sources.length > 0 || info.loghosts.length > 0)) {
+  // La configuration est REJOUÉE à l'import : elle rend maintenant ce
+  // qui a été tapé, transport, port, précision d'horodatage et type
+  // d'enregistrement compris. Ce qui vaut l'usine n'est pas rendu.
+  const infoLines = mgmt.getInfoCenter().toRunningConfig();
+  if (infoLines.length > 0) {
     lines.push('#');
-    lines.push(`info-center enable`);
-    if (info.timestamp !== 'date') lines.push(`info-center timestamp ${info.timestamp}`);
-    for (const s of info.sources) lines.push(`info-center source ${s.source} channel ${s.channel} level ${s.severity}`);
-    for (const h of info.loghosts) lines.push(`info-center loghost ${h.ip} channel ${h.channel} facility ${h.facility}`);
+    lines.push(...infoLines);
   }
   const sflow = mgmt.getSflow();
   if (sflow.enabled) {
@@ -1470,9 +1470,14 @@ export function registerDisplayCommands(
     const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
     const ic = mgmt?.getInfoCenter();
     if (!ic) return 'Info-center: Disabled';
+    const t = ic.timestamps;
     return [
       `Info-center: ${ic.enabled ? 'Enabled' : 'Disabled'}`,
-      `Timestamp format: ${ic.timestamp}`,
+      `Log host: ${ic.loghosts.length ? ic.loghosts.map(h => h.ip).join(', ') : '(none)'}`,
+      `Log host source interface: ${ic.loghostSource ?? '(none)'}`,
+      `Log buffer size: ${ic.logbufferSize}`,
+      `Trap buffer size: ${ic.trapbufferSize}`,
+      `Timestamp: log ${t.log.format}, trap ${t.trap.format}, debug ${t.debug.format}`,
       `Configured sources: ${ic.sources.length}`,
       `Configured loghosts: ${ic.loghosts.length}`,
     ].join('\n');
@@ -1717,7 +1722,15 @@ export function registerDisplayCommands(
   trie.register('display logbuffer', 'Display log buffer', () =>
     getState().renderLogbuffer?.() ?? commonDisplayLogbuffer(),
   );
-  trie.register('display trapbuffer', 'Display trap buffer', () => commonDisplayTrapbuffer());
+  trie.register('display trapbuffer', 'Display trap buffer', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const ic = mgmt?.getInfoCenter();
+    if (!ic) return commonDisplayTrapbuffer();
+    const canal = ic.destinationChannel.trapbuffer;
+    return commonDisplayTrapbuffer({
+      size: ic.trapbufferSize, channel: canal, channelName: ic.channelNames[canal],
+    });
+  });
   trie.register('display patch-information', 'Display patch information', () =>
     commonDisplayPatchInformation());
   trie.register('display diagnostic-information', 'Collect diagnostic information', () =>
