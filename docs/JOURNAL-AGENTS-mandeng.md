@@ -134,6 +134,71 @@ reste `probe-cli-contextual-help.test.ts`.
 
 ## Livré
 
+### Routage — lot R5 (OSPF et IGMP sur la vue d'interface commune) — LIVRÉ
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Routage-Fidelite.md` §4.2, chantier C / lot R5, détail
+en §12.
+
+**Fichiers touchés** : `shells/cisco/CiscoIgmpCommands.ts`,
+`shells/cisco/CiscoOspfCommands.ts`. **Aucun contact avec l'agent
+« logging »** : rien de `LoggingConfig.ts` ni des modules `logging`.
+
+**Ce qui est corrigé** : `show ip igmp interface` calculait son propre
+état (`getIsUp() && isConnected()`), donc un lien coupé à l'AUTRE bout se
+lisait `up` dans cette vue et `down` dans les quatre autres ;
+`administratively down` y était aplati en `down` ; et une interface
+virtuelle, jamais câblée, y aurait été rapportée morte. Elle lit
+maintenant `iosInterfaceStatus`, comme tout le reste.
+`show ip ospf interface` appliquait son garde-fou `ospfIfaceOperUp()` à
+une ligne sur les trois qu'il gouverne : l'état passait à `DOWN` et les
+deux suivantes annonçaient `DR: 10.0.12.1` — le routeur se déclarait
+routeur désigné d'un lien mort. Et `show ip ospf interface brief` ne
+consultait pas ce garde-fou du tout, si bien que les deux vues d'un même
+protocole se contredisaient sur la même interface au même instant.
+
+`cisco-interface-state-one-truth.test.ts` (13 cas), 10 tombent par
+`git stash`. 69 suites connexes vertes (863 cas). Typecheck à 164,
+inchangé ; lint identique au baseline.
+
+**Restent ouverts sur ce PRD** : R6 (chantier D, le reste), R7
+(commandes manquantes §1.11).
+
+**Signalé à l'agent « logging/CLI », pas touché** : après fusion,
+`probe-cli-aide-contextuelle.test.ts` › « mtu ? et bandwidth ? annoncent
+leurs plages » est rouge. Vérifié à VOTRE propre commit (`6de0ac42`),
+avant ma fusion : il tombe pareil, donc ce n'est pas une victime de la
+fusion. Le cas attend `<64-1500>` et l'aide rend `<68-9216>  MTU size in
+bytes` — qui est la plage d'une interface de routeur sur un vrai IOS
+(`<64-1500>` est celle de `system mtu` sur un Catalyst). C'est votre
+fichier et votre chantier en cours, donc je le laisse : à vous de dire
+lequel des deux a raison. Le reste de vos deux nouvelles suites est vert
+(24/25 et 25/25).
+
+**Second rouge, signalé et pas touché non plus** : une campagne complète
+sur `unit/network-v2` (19 281 cas) rend **un** échec, et il n'est pas de
+moi — `nat-pat-other.test.ts` › « 137. should support overload on VLAN
+SVI interface ». Bissection : **vert** à `9a978fc3` (D4), `1c7d908c`,
+`d2d94c97` ; **rouge** dès `51b16571` (« la plateforme et sa licence
+disent la même chose », chantier 2) et à tous les commits suivants. Ce
+commit retire `{ keyword: 'Vlan', description: 'Catalyst VLANs' }` et
+l'entrée `'vlan': 'Vlan'` de la table des noms d'interface du routeur, si
+bien que `interface Vlan10` y est désormais refusé.
+
+La cascade que le test voit n'est PAS un défaut supplémentaire, vérifié
+plutôt que supposé : le refus laisse la session en mode `config`, donc le
+`exit` suivant la ramène en EXEC et toutes les lignes d'après y sont
+relues — `access-list …` répond « Translating "access-list"...domain
+server ». C'est exactement ce que ferait un vrai IOS dans la même
+situation. **Tout se ramène donc à une seule question, qui est la
+vôtre** : un routeur de ce simulateur a-t-il le droit à `interface
+Vlan10` ? Un ISR nu n'en a pas (il faut un module EtherSwitch), donc
+votre refus est défendable et c'est peut-être le test qui est périmé —
+c'est la même forme que le rouge `debug vxlan`/`port-security` que j'ai
+hérité en D6 et corrigé côté test. Je ne tranche pas à votre place.
+
+---
+
 ### Debug Cisco — lot D6 (un seul moteur) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
@@ -687,7 +752,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
-| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
+| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R5 livrés ; R6, R7 ouverts |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`

@@ -499,7 +499,7 @@ triviaux et partent tout de suite (marqués ⚡).
 | **R2** | Chantier A : magasin typé, clé de processus, aller-retour | — |
 | **R3** | Chantier B : refus des identifiants et des sous-modes absents | R2 |
 | **R4** | Chantier C : RIB, FIB, Null0, passerelle, résumé | — |
-| **R5** | Chantier C : OSPF et IGMP sur la vue commune | R4 |
+| **R5** | Chantier C : OSPF et IGMP sur la vue commune (**livré, §12**) | R4 |
 | **R6** | Chantier D, le reste | R2, R4 |
 | **R7** | Commandes manquantes (§1.11), au cas par cas | R3 |
 
@@ -732,3 +732,98 @@ minimum dépend de laquelle de deux formes positionnelles a été tapée.
 Le signal `% Incomplete command.` n'existait pas — seul `CliInvalidInput`
 l'était — donc le gestionnaire n'avait pas d'autre choix que d'écrire le
 message. Il existe maintenant, et c'est le cliquet qui l'a fait écrire.
+
+---
+
+## 12. R5 — Livré
+
+**La règle**, §4.2 : une route connectée, une entrée de FIB, une
+adjacence OSPF et une interface IGMP existent si et seulement si
+`iosInterfaceStatus(port).protocol === 'up'`. R4 a posé la RIB et la
+FIB ; R5 pose OSPF et IGMP.
+
+**Ce qui était mesuré.** Un lien coupé à l'AUTRE bout — le cas le plus
+fréquent en salle de TP, et celui qu'aucune des trois vues ne traitait
+pareil :
+
+| Vue | Ce qu'elle disait |
+|---|---|
+| `show ip interface brief` | `down / down` |
+| `show ip ospf interface` | `down / down`, **mais `DR: 10.0.12.1`** |
+| `show ip igmp interface` | **`up, line protocol is up`** |
+
+**IGMP calculait son propre état** : `port.getIsUp() && port.isConnected()`.
+Ce prédicat maison se trompe de trois façons distinctes, et chacune est
+mesurée plutôt que supposée :
+
+1. **Perte de porteuse à distance** — le câble est branché
+   (`isConnected()` vrai) et le port local n'est pas tombé, donc IGMP
+   voyait `up` là où tout le reste voyait `down`. C'est la ligne du
+   tableau ci-dessus.
+2. **`administratively down` aplati en `down`** — le prédicat ne rend
+   qu'un booléen, donc il ne pouvait pas dire les trois états d'IOS. Or
+   la distinction est **toute l'information** : `administratively down`
+   dit que personne n'a débranché quoi que ce soit, c'est l'opérateur
+   qui a tapé `shutdown`.
+3. **Une interface virtuelle** (Loopback, Vlan, Tunnel) n'est jamais
+   `isConnected()`. Une Loopback avec IGMP activé aurait donc été
+   rapportée morte par cette vue et vivante par les quatre autres.
+
+Le cas **câble débranché** était juste — par coïncidence, `isConnected()`
+devenant faux — et c'est justement ce qui rendait le défaut difficile à
+voir : le premier test qu'on écrit est celui-là.
+
+**Un lien mort n'élit personne.** `ospfIfaceOperUp()` existait déjà, avec
+son commentaire au-dessus de la ligne — « A dead link elects nobody: IOS
+reports State DOWN there, never DR » — et n'était appliqué qu'à **une
+ligne sur les trois qu'il gouverne** : l'état passait bien à `DOWN`, et
+les deux lignes suivantes annonçaient `DR: 10.0.12.1`. Le routeur se
+déclarait routeur désigné d'un lien mort. `DR`/`BDR` rendent `0.0.0.0`
+quand la porteuse est tombée, ce que le commentaire disait déjà.
+
+**Les deux vues OSPF ne s'accordaient pas entre elles non plus.**
+`show ip ospf interface brief` lit `iface.state` brut, sans passer par le
+même garde-fou : la même interface, au même instant, était `DOWN` dans la
+vue détaillée et `DR` dans la vue brève. Deux vues d'un même protocole
+qui se contredisent sont pires qu'une vue fausse, parce que l'opérateur
+qui croise les deux conclut que l'une est en retard.
+
+**IGMP ne se déclare plus routeur interrogateur** sur une interface qui
+n'est pas opérationnelle : un interrogateur est élu par des requêtes
+échangées sur un lien vivant, exactement comme un DR.
+
+**Vérifié plutôt que supposé** : `show ip pim interface` rend déjà `none`
+dans sa colonne `DR` sur un lien tombé — le runtime efface le DR avec le
+voisin — donc rien à corriger là, et cette vue ne porte pas de ligne
+d'état, donc elle n'ajoutait pas de quatrième vérité. Mesuré avant de
+toucher, pas déduit.
+
+**Laissé en place et signalé** :
+
+- `Hello due in 00:00:10` s'affiche encore sur une interface en état
+  `DOWN`, alors qu'aucun Hello n'y est programmé. Je ne trouve pas de
+  confirmation de ce qu'IOS imprime exactement là, et §0 interdit de
+  faire reposer une correction sur un point non confirmé seul.
+- L'**ordre** des interfaces dans `show ip ospf interface` change quand
+  l'une tombe (la morte passe en fin de liste), parce que le moteur
+  reconstruit sa `Map`. C'est de la mécanique du moteur, pas de la vue,
+  et hors du périmètre de R5.
+
+**Tests.** `cisco-interface-state-one-truth.test.ts` (13 cas) compare les
+vues **entre elles**, jamais à une chaîne écrite à la main, et balaie les
+**trois** façons de tomber plutôt qu'une. Discrimination par `git stash` :
+**10 des 13 tombent** avant. Les 3 qui passent des deux côtés sont des
+gardes de non-régression, et l'une d'elles — le câble débranché — est
+précisément le cas qui était juste par coïncidence.
+
+Trois assertions passaient d'abord **à vide**, et les corriger a fait
+gagner trois cas de discrimination : `/DR: 0\.0\.0\.0/` **filtre à
+l'intérieur de `BDR: 0.0.0.0`**, donc elle réussissait sur un routeur qui
+annonçait `DR: 10.0.12.1` juste au-dessus. Ancrées en début de ligne.
+C'est la même famille de piège que le `/0% packet loss/` qui filtrait
+dans `100% packet loss` (`CLAUDE.md`, ordre NAT/ACL).
+
+**Mesures.** 69 suites connexes vertes (863 cas) : OSPF, IGMP, PIM,
+multicast, vues d'interface, `show ip route`, RIB/FIB. Typecheck
+`tsc -p tsconfig.app.json` à 164, inchangé. Lint identique au baseline
+sur les deux fichiers touchés (58 problèmes avant, 58 après).
