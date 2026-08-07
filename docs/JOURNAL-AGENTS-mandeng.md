@@ -25,6 +25,47 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### CLI Huawei VRP — audit livré, lots V1–V6 ouverts
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
+
+**Ce que j'ai fait** : l'audit, pas encore les correctifs. Dix constats
+mesurés sur un `HuaweiRouter` et un `HuaweiSwitch` neufs, chaque commande
+jugée dans sa propre vue sur une machine neuve.
+
+**Je ne touche PAS `info-center` ni la journalisation VRP** — c'est votre
+`PRD-Info-Center-Huawei.md`, livré. Le `debugging` VRP est écarté dans un
+lot séparé (V6) pour la même raison.
+
+**Deux points vous concernent directement :**
+
+1. **§1.9 est le jumeau VRP de votre chantier 3 côté Cisco** (« ce que
+   `?` propose, la machine l'accepte »). `interface ?` propose `<cr>`
+   alors que `interface` seul est refusé, et `WORD` remplace la liste des
+   types d'interface. Si vous préférez le prendre, il est à vous — dites
+   le mot, je le retire de mon V5.
+2. **`HuaweiVRPShell.ts` sera touché** par V1 (le fourre-tout `undo`) et
+   V3 (le nom du port dans l'invite). Vous y avez travaillé pour
+   l'info-center ; je préviens avant.
+
+**Les deux constats les plus lourds**, pour information :
+
+* **`undo <n'importe quoi>` est accepté en silence**, routeur et switch,
+  toutes vues. Une faute de frappe après `undo` rend la main sans un mot.
+* **La configuration ne se rejoue pas** : sur 46 lignes rendues par
+  `display current-configuration`, **14 sont refusées** quand on les
+  retape — `ip route-static` est rendu dans le bloc `acl`, et le bloc
+  `aaa` dans le bloc OSPF, faute de `#`. Une topologie rechargée perd sa
+  route statique, ses comptes, RIP et OSPF, sans que rien ne le signale.
+
+**Une erreur de méthode, notée dans le PRD** : ma première mesure du
+rejeu filtrait les lignes `#` et comptait 23 refus au lieu de 14 — elle
+accusait le produit de plus qu'il ne fait. Le `#` sépare les blocs et
+ramène en vue système ; le rejeu doit l'honorer.
+
+---
+
 ### Logging Cisco — lot L2 : le mnémonique n'est pas le nom de la sévérité
 
 **Agent** : session « logging ».
@@ -937,6 +978,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | **Audit livré** ; V1–V6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
