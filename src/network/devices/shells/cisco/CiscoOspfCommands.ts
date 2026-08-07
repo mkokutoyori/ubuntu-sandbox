@@ -12,6 +12,7 @@
 import type { Router } from '../../Router';
 import { renderIpRouteTable } from './CiscoShowCommands';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CISCO_ERRORS } from '../cli-utils';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
@@ -64,6 +65,20 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
   });
 
   // IPv6 OSPF router configuration mode
+  configTrie.registerGreedy('ipv6 router eigrp', 'Configure EIGRP for IPv6', (args) => {
+    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    const asn = parseInt(args[0], 10);
+    if (Number.isNaN(asn) || asn < 1 || asn > 65535) throw new CliInvalidInput();
+    const r = ctx.r() as unknown as {
+      _ipv6EigrpProcesses?: Set<number>;
+      _recordUnhandledConfigLine?: (l: string) => void;
+    };
+    (r._ipv6EigrpProcesses ??= new Set()).add(asn);
+    ctx.setMode('config-router');
+    ctx.setSelectedRoutingProto({ proto: 'eigrp', asn });
+    return '';
+  });
+
   configTrie.registerGreedy('ipv6 router ospf', 'Configure IPv6 OSPF', (args) => {
     const processId = args.length >= 1 ? parseInt(args[0], 10) : 1;
     if (isNaN(processId) || processId < 1 || processId > 65535) return '% Invalid OSPFv3 process ID';
@@ -1300,6 +1315,45 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     }
     return showIpv6Ospf(getRouter());
   });
+  trie.registerGreedy('show ipv6 eigrp neighbors', 'Display EIGRP for IPv6 neighbours', () => {
+    const r = getRouter() as unknown as { _ipv6EigrpProcesses?: Set<number> };
+    const procs = [...(r._ipv6EigrpProcesses ?? [])];
+    if (procs.length === 0) return '';
+    return procs
+      .map((asn) => `EIGRP-IPv6 Neighbors for AS(${asn})\n`
+        + 'H   Address                 Interface        Hold Uptime   SRTT   RTO  Q  Seq\n'
+        + '                                            (sec)          (ms)       Cnt Num')
+      .join('\n');
+  });
+
+  trie.registerGreedy('show ipv6 protocols', 'Display IPv6 routing protocols', () => {
+    const router = getRouter();
+    const lines: string[] = [];
+    const v3 = router._getOSPFv3EngineInternal();
+    if (v3) {
+      lines.push(`IPv6 Routing Protocol is "ospf ${v3.getProcessId()}"`);
+      const ifaces = [...v3.getInterfaces().keys()];
+      lines.push('  Interfaces (Area)');
+      for (const name of ifaces) lines.push(`    ${name}`);
+      lines.push('  Redistribution:');
+      lines.push('    None');
+    }
+    const r = router as unknown as { _ipv6EigrpProcesses?: Set<number>; _ipv6EigrpIfaces?: Map<number, Set<string>> };
+    for (const asn of r._ipv6EigrpProcesses ?? []) {
+      lines.push(`IPv6 Routing Protocol is "eigrp ${asn}"`);
+      lines.push('  Interfaces:');
+      for (const i of r._ipv6EigrpIfaces?.get(asn) ?? []) lines.push(`    ${i}`);
+      lines.push('  Redistribution:');
+      lines.push('    None');
+    }
+    lines.unshift('IPv6 Routing Protocol is "connected"');
+    if ((router._getIPv6RoutingTableInternal() as unknown as unknown[] ?? [])
+      .some((e) => (e as { type?: string }).type === 'static')) {
+      lines.push('IPv6 Routing Protocol is "static"');
+    }
+    return lines.join('\n');
+  });
+
   trie.registerGreedy('show ipv6 route', 'Display IPv6 routing table', (args) => {
     if (args.length > 0) {
       // Même règle qu'en IPv4 : un nom de protocole filtre la table, il

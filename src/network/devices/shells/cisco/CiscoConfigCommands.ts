@@ -16,6 +16,7 @@ import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CISCO_ERRORS } from '../cli-utils';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -925,6 +926,20 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!isNaN(portNum)) {
       ctx.r()._getDHCPServerInternal().addForwardProtocol(portNum);
     }
+    return '';
+  });
+
+  trie.registerGreedy('ipv6 eigrp', 'Enable EIGRP for IPv6 on this interface', (args) => {
+    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    const asn = parseInt(args[0], 10);
+    if (Number.isNaN(asn) || asn < 1 || asn > 65535) throw new CliInvalidInput();
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    const r = ctx.r() as unknown as { _ipv6EigrpIfaces?: Map<number, Set<string>> };
+    const store = (r._ipv6EigrpIfaces ??= new Map());
+    const set = store.get(asn) ?? new Set<string>();
+    set.add(ifName);
+    store.set(asn, set);
     return '';
   });
 

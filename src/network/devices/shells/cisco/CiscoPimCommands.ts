@@ -3,6 +3,7 @@ import type { Router } from '../../Router';
 import type { PimAgent } from '../../../pim/PimAgent';
 import type { PimMode } from '../../../pim/types';
 import { hms } from '@/lib/format';
+import { CISCO_ERRORS } from '../cli-utils';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -127,6 +128,40 @@ export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): v
       return `% Invalid input detected at '^' marker.`;
     }
     a.setRpCandidate(ip, priority);
+    return '';
+  });
+
+  trie.registerGreedy('ip pim send-rp-announce', 'Announce this router as an Auto-RP candidate RP', (args, raw) => {
+    const a = agent(ctx.r());
+    const r = ctx.r();
+    if (!a) return '';
+    const iface = args[0];
+    if (!iface) return CISCO_ERRORS.INCOMPLETE;
+    const ip = r.getPort(iface)?.getIPAddress()?.toString();
+    if (!ip) return `% Interface ${iface} has no IP address`;
+    const scopeIdx = args.findIndex((x) => x.toLowerCase() === 'scope');
+    if (scopeIdx === -1) return CISCO_ERRORS.INCOMPLETE;
+    const scope = parseInt(args[scopeIdx + 1] ?? '', 10);
+    if (Number.isNaN(scope) || scope < 1 || scope > 255) {
+      return `% Invalid input detected at '^' marker.`;
+    }
+    a.setRpCandidate(ip, 0);
+    (r as unknown as { _recordUnhandledConfigLine?: (l: string) => void })
+      ._recordUnhandledConfigLine?.(raw ?? `ip pim send-rp-announce ${args.join(' ')}`);
+    return '';
+  });
+
+  trie.registerGreedy('ip pim send-rp-discovery', 'Act as the Auto-RP mapping agent', (args, raw) => {
+    const r = ctx.r();
+    if (!agent(r)) return '';
+    const scopeIdx = args.findIndex((x) => x.toLowerCase() === 'scope');
+    if (scopeIdx === -1) return CISCO_ERRORS.INCOMPLETE;
+    const scope = parseInt(args[scopeIdx + 1] ?? '', 10);
+    if (Number.isNaN(scope) || scope < 1 || scope > 255) {
+      return `% Invalid input detected at '^' marker.`;
+    }
+    (r as unknown as { _recordUnhandledConfigLine?: (l: string) => void })
+      ._recordUnhandledConfigLine?.(raw ?? `ip pim send-rp-discovery ${args.join(' ')}`);
     return '';
   });
 

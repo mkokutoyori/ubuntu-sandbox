@@ -496,7 +496,7 @@ export function buildRoutingProtoConfig(
   // handler above (RIP default-metric / EIGRP `metric weights`).
   for (const kw of ['exit-address-family', 'exit-af-interface',
     'exit-af-topology', 'af-interface', 'topology',
-    'offset-list', 'output-delay', 'flash-update-threshold',
+    'offset-list', 'output-delay', 'flash-update-threshold', 'distribute-list',
     'validate-update-source', 'synchronization', 'no synchronization',
     'compatible', 'log-adjacency-changes',
     'no neighbor', 'traffic-share']) {
@@ -574,7 +574,7 @@ export function registerRoutingProtoShow(
       return `% No such neighbor or address family`;
     }
     if (sub === 'advertised-routes' || sub === 'routes') {
-      if (!wanted) return '% Incomplete command.';
+      if (!wanted) return CISCO_ERRORS.INCOMPLETE;
       const rows = sub === 'advertised-routes'
         ? e.getAdvertisedRoutes(wanted)
         : e.getBgpTable().filter((r) => String(r.nextHop ?? '') === wanted);
@@ -765,6 +765,12 @@ export function registerRoutingProtoShow(
       : '% EIGRP not running (no autonomous-system configured)';
   });
 
+  trie.registerGreedy('show ip protocols vrf', 'Display routing protocols in a VRF', (a) => {
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+    const vrfs = (ctx.r() as unknown as { _vrfs?: Map<string, unknown> })._vrfs;
+    if (!vrfs?.has(a[0])) return `% VRF ${a[0]} does not exist`;
+    return `Routing Protocol is "connected"\n  VRF ${a[0]}`;
+  });
   trie.register('show ip protocols', 'Display routing protocol state', () => {
     const out: string[] = [];
     // `showIpProtocols` rend DÉJÀ les blocs OSPF et RIP. L'appeler sous
