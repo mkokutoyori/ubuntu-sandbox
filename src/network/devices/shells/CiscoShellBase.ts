@@ -1631,17 +1631,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * proposé (ni l'inverse).
    */
   protected universalCommands(): Array<{ keyword: string; description: string }> {
+    // `end` n'existe QUE dans les modes de configuration : il n'y a rien
+    // à terminer depuis un EXEC, et IOS ne le propose pas là.
     const out = [
-      { keyword: 'end', description: 'Exit from configure mode' },
       { keyword: 'exit', description: 'Exit from the EXEC' },
       { keyword: 'help', description: 'Description of the interactive help system' },
     ];
     if (this.isConfigMode()) {
+      out.push({ keyword: 'end', description: 'Exit from configure mode' });
       out.push({ keyword: 'default', description: 'Set a command to its defaults' });
       out.push({ keyword: 'do', description: 'To run exec commands in config mode' });
+      out[0].description = this.mode === 'config'
+        ? 'Exit from configure mode' : 'Exit from this submode';
     }
-    if (this.mode === 'config') out[1].description = 'Exit from configure mode';
-    else if (this.isConfigMode()) out[1].description = 'Exit from this submode';
     return out.sort((a, b) => a.keyword.localeCompare(b.keyword));
   }
 

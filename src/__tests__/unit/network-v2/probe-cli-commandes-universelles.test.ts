@@ -28,7 +28,9 @@ function motsCles(help: string): string[] {
 }
 
 const MODES: Array<[string, string[], string[]]> = [
-  ['privileged EXEC', [], ['end', 'exit', 'help']],
+  // `end` n'appartient qu'aux modes de configuration : il n'y a rien à
+  // terminer depuis un EXEC, et IOS ne le propose pas là.
+  ['privileged EXEC', [], ['exit', 'help']],
   ['global config', ['configure terminal'], ['default', 'do', 'end', 'exit', 'help']],
   ['config-if', ['configure terminal', 'interface GigabitEthernet0/0'],
     ['default', 'do', 'end', 'exit', 'help']],
