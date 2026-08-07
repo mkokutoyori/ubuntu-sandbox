@@ -85,7 +85,7 @@ import {
   registerKeyChainShowCommands,
 } from './cisco/CiscoKeyChainCommands';
 import {
-  buildRoutingProtoConfig, registerRoutingProtoShow,
+  buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
 } from './cisco/CiscoRoutingProtoCommands';
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
@@ -806,6 +806,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerKeyChainShowCommands(this.privilegedTrie, this);
     registerKeyChainShowCommands(this.userTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
+    this.configRouterTrie.setCompletionFilter((path, keyword) =>
+      routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,
+        this.selectedRoutingProto?.proto ?? 'rip'));
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);
     buildIPv6ACLGlobalCommands(this.configTrie, this);
@@ -1009,9 +1012,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const sub = (args[0] || '').toLowerCase();
       if (args.length === 0) return Show.showInterfacesAll(getRouter());
       if (sub === 'description') return Show.showInterfacesDescription(getRouter());
-      if (sub === 'status') return formatInvalidInput('show interfaces '.length);
       if (sub === 'summary') return Show.showInterfacesSummary(getRouter());
-      if (sub === 'trunk' || sub === 'switchport') return formatInvalidInput('show interfaces '.length);
+      // Sans interface nommée, IOS rend la vue pour TOUTES : proposer le
+      // mot-clé et refuser sa forme nue serait une aide qui ment.
+      if (args.length === 1 && (sub === 'stats' || sub === 'accounting' || sub === 'rate-limit')) {
+        const vue = sub === 'stats' ? Show.showInterfaceStats
+          : sub === 'accounting' ? Show.showInterfaceAccounting
+            : Show.showInterfaceRateLimit;
+        return [...getRouter()._getPortsInternal().keys()]
+          .map((n) => vue(getRouter(), n)).join('\n');
+      }
       const last = args[args.length - 1]?.toLowerCase();
       const isViewModifier = last === 'accounting' || last === 'stats' || last === 'rate-limit';
       const ifPart = isViewModifier ? args.slice(0, -1).join(' ') : args.join(' ');

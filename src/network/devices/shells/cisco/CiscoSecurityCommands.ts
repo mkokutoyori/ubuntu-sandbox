@@ -10,12 +10,31 @@ import {
   type AaaPhase,
 } from '../../router/security/CiscoSecurityConfig';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
 import { getOrCreateCA } from '../../../pki/PkiCaRegistry';
 import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
+
+/**
+ * Ce que `aaa ?` peut légitimement proposer, et ce que le gestionnaire
+ * accepte : une seule liste, donc l'aide et l'exécution ne peuvent pas
+ * se contredire. Auparavant le gestionnaire finissait par `return ''`,
+ * si bien que n'importe quelle forme était acceptée en silence.
+ */
+export const AAA_TOP_KEYWORDS: readonly string[] = [
+  'new-model', 'authentication', 'authorization', 'accounting',
+  'group', 'session-id', 'local',
+];
+
+export const AAA_SERVICES: Record<AaaPhase, readonly string[]> = {
+  authentication: ['login', 'enable', 'ppp', 'dot1x'],
+  authorization: ['exec', 'commands', 'network', 'config-commands', 'reverse-access'],
+  accounting: ['exec', 'commands', 'network', 'system', 'connection'],
+};
 
 /**
  * Accepts any Cisco device (router or switch) — the config is stashed
@@ -59,6 +78,10 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   const sec = () => getSecurityConfig(ctx.r());
 
   trie.registerGreedy('aaa', 'AAA configuration', (args) => {
+    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    if (!AAA_TOP_KEYWORDS.includes((args[0] ?? '').toLowerCase())) {
+      throw new CliInvalidInput({ token: args[0] });
+    }
     if (args[0] === 'new-model') { sec().aaaNewModel = true; return ''; }
     if (args[0] === 'session-id' && args[1]) { sec().aaaSessionId = args[1]; return ''; }
     if (args[0] === 'local' && args[1] === 'authentication' && args[2] === 'attempts' && args[3] === 'max-fail' && args[4]) {
@@ -494,7 +517,12 @@ function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
 }
 
 function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[]): string {
-  if (args.length < 2) return '';
+  // `aaa authentication` seul était ACCEPTÉ en silence : rien n'était
+  // enregistré, rien n'apparaissait dans la running-config, et
+  // l'opérateur croyait avoir configuré une méthode.
+  if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+  if (!AAA_SERVICES[phase].includes(args[0].toLowerCase())) throw new CliInvalidInput({ token: args[0] });
+  if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
   const service = args[0] as AaaServiceKind;
   let i = 1;
   let privilegeLevel: number | undefined;

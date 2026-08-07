@@ -14,7 +14,7 @@ de fidélité se tranche contre cette machine-là, pas contre « un Cisco ».
 |---|---|---|
 | 1 | Purge des fuites de substrat (§1) | ✅ fait |
 | 2 | Alignement licence / plateforme (§2) | ✅ fait |
-| 3 | Invariant aide ⇔ exécution (§3) | ⬜ à faire |
+| 3 | Invariant aide ⇔ exécution (§3) | ✅ fait |
 | 4 | Typage des arguments d'aide (§4) | ⬜ à faire |
 | 5 | Complétude des menus (§5) | ⬜ à faire |
 | 6 | Finition des données (§6) | ⬜ à faire |
@@ -151,11 +151,50 @@ Trois assertions à faire tourner sur tous les nœuds :
 3. toute commande à effet persistant apparaît dans
    `show running-config`.
 
-Défauts connus à couvrir : `show interfaces status|switchport|stats|rate-limit`
-(annoncés, rejetés), `show aaa local` et huit autres branches sans niveau
-suivant, le dispatch de `aaa authentication|authorization|accounting ?`
-qui retombe sur la racine, `vrf definition` qui n'entre pas en sous-mode,
-et les modificateurs `| redirect|append|tee` qui n'écrivent aucun fichier.
+**Mesure d'abord.** `probe-cli-aide-egale-execution.test.ts` parcourt
+l'arbre sur trois niveaux dans six modes et exécute chaque mot-clé que
+`?` propose. Premier passage : **83 mots-clés annoncés puis refusés**,
+et zéro faute sur `<cr>`. Le chiffre a décidé de l'ordre du travail.
+
+**La cause dominante était une seule.** Un gestionnaire `registerGreedy`
+voit ses mots-clés extraits de son propre code source pour alimenter
+l'aide ; tant qu'aucun ARGUMENT n'est déclaré sur le nœud, ces mots-clés
+remontent d'un niveau et sont proposés à la place de l'argument. D'où
+`neighbor ?` offrant `remote-as` et `weight` avant l'adresse du voisin,
+`transport ?` offrant `ssh`/`telnet` avant la direction, `logging host ?`
+offrant `transport` avant le serveur. Déclarer l'argument
+(`describeArgs`) supprime la classe entière — et donne au passage à
+l'aide le TYPE qu'IOS affiche, ce qui est l'objet du chantier 4.
+
+Deux mécanismes ont dû être ajoutés au `CommandTrie` :
+
+- **`setCompletionFilter`** — `config-router` est un seul arbre pour
+  RIP, EIGRP et BGP. Les gestionnaires refusaient déjà ce qui n'est pas
+  du protocole courant, mais l'aide ne le savait pas, si bien que
+  `router rip` proposait des commandes BGP. `ROUTER_MODE_OWNERS`
+  (`CiscoRoutingProtoCommands.ts`) est désormais la source unique : les
+  gestionnaires la lisent pour refuser, l'aide pour ne pas proposer.
+- **la continuation déclarée vient après l'argument obligatoire** — un
+  `continuations:` ne s'affiche plus tant qu'un paramètre non optionnel
+  est en attente.
+
+Défauts nommément corrigés : `show interfaces status|switchport|trunk`
+(annoncés, rejetés — retirés), `show interfaces stats|accounting|rate-limit`
+(annoncés, rejetés — la forme nue rend désormais la vue de TOUTES les
+interfaces, comme IOS), `show aaa local` (rendait la ligne des sessions
+comme si le mot-clé n'existait pas), `aaa authentication|authorization|
+accounting ?` (retombait sur les mots-clés de la racine `aaa`, et
+`aaa authentication` seul était ACCEPTÉ EN SILENCE — rien enregistré,
+rien dans la running-config, l'opérateur croyant avoir configuré),
+`vrf definition` (n'entrait pas dans le sous-mode alors que `ip vrf`,
+la même commande sous son autre orthographe, y entrait), `privilege`
+et `privilege exec level` (caret au lieu de commande incomplète),
+`rate-limit` en interface, `encapsulation isl|native`, `ipv6 address
+eui-64|link-local`, `redistribute rip` en mode RIP.
+
+Reste ouvert et renvoyé au chantier 5 : `| ?` n'est pas un nœud de
+l'arbre, donc `show running-config | ?` répond au caret, et
+`| redirect|append|tee` n'écrit aucun fichier.
 
 ---
 
