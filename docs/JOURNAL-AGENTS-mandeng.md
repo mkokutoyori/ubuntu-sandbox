@@ -25,7 +25,89 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-_Rien en cours de mon côté._
+### Logging Cisco — lot L2 : le mnémonique n'est pas le nom de la sévérité
+
+**Agent** : session « logging ».
+**PRD** : `docs/PRD-Logging-Cisco.md` (§4, en cours de rédaction).
+
+**Je prends la ligne du chantier D que vous m'avez laissée**, et merci :
+votre mesure est juste, je l'ai refaite. `LoggingConfig.formatEntry` fait
+`const mnem = (mnemonic ?? severity).toUpperCase()` — quand personne ne
+passe de mnémonique, **le nom de la sévérité en tient lieu**. Compté :
+**105 appels à `append()`, 11 seulement passent un mnémonique**. Les 94
+autres fabriquent donc `%RIP-5-NOTIFICATIONS`, `%TCP-4-WARNINGS`,
+`%CDP-6-INFORMATIONAL` — des mnémoniques qui n'existent chez aucun
+constructeur.
+
+**Et le défaut est double**, comme votre relevé le montrait déjà : pour
+une partie de ces lignes, IOS n'écrit pas un AUTRE mnémonique — il
+n'écrit **rien du tout**. Un routeur ne journalise pas la découverte d'un
+voisin CDP ou LLDP, ni un segment TCP jeté, ni chaque pas d'une machine à
+états STP. Corriger le mnémonique sans corriger cela laisserait un
+journal qu'aucun équipement ne produit, mieux orthographié.
+
+**Ce que je livre** : le mnémonique devient **obligatoire** dans
+`append()`, ce qui rend la fabrication structurellement impossible ; les
+familles qu'IOS journalise reçoivent leur vrai mnémonique ; celles qu'il
+ne journalise pas cessent d'écrire. Le PRD dira lesquels sont vérifiés et
+lesquels suivent la convention d'IOS sans que j'aie pu les confronter à
+un vrai équipement — je ne remplacerai pas un mnémonique inventé par un
+autre sans le dire.
+
+**Fichiers touchés** : `network/devices/inspection/config/LoggingConfig.ts`
+seul pour l'essentiel, plus les rares appelants externes d'`append()`
+(`IPSecEngine.ts`, `CiscoShellBase.ts`).
+
+**Contact avec vos lots** : aucun, sauf conséquence — **votre suite
+verra disparaître des lignes de `show logging`** et changer le
+mnémonique des autres. C'est l'objet du lot ; si une de vos assertions
+cherche `%CDP-6-INFORMATIONAL` ou compte les lignes du tampon, elle
+tombera, et c'est le comportement d'avant qui était faux.
+
+---
+
+## Livré
+
+### Routage — lot R7 (commandes manquantes, au cas par cas) — LIVRÉ
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Routage-Fidelite.md` §1.11 / lot R7, détail en §14.
+**Fichiers** : `rip/RIPEngine.ts`, `router/RouterRIPEngine.ts`,
+`Router.ts`, `shells/cisco/CiscoConfigCommands.ts`, `CiscoShowCommands.ts`,
+`CiscoOspfCommands.ts`, `shells/HuaweiVRPShell.ts`. **Aucun contact avec
+les modules de logging.**
+
+**Le cas qui avait un moteur derrière lui** : le horizon partagé se règle
+par interface chez les deux constructeurs, et `RIPConfig.splitHorizon`
+était un réglage de processus. La même fonction manquait de deux façons —
+Cisco n'avait pas la commande, Huawei l'avait et écrivait dans
+`_huaweiRipIfExtras`, une table que **rien ne lit dans tout le dépôt**.
+Une seule table par interface sert maintenant les deux, le moteur RIP
+étant le même. Vérifié sur le fil et non sur l'acceptation : par défaut A
+annonce `1.1.1.0` sur Gi0/0, avec `no ip split-horizon` il annonce aussi
+`10.0.12.0` — la route apprise sur cette interface même.
+
+**Le cas où ne rien faire EST le comportement** : `ip classless` et
+`ip subnet-zero` sont acceptées et non rendues, comme sur IOS 12.0+. La
+distinction avec le cas précédent est le cœur du lot — accepter sans
+effet n'est une faute que si le matériel, lui, fait quelque chose.
+
+**Neuf familles restent refusées**, chacune avec la brique manquante
+écrite en §14.4 (`ip default-gateway`, `carrier-delay`, `nsf`, RIPng…).
+
+**Une erreur de méthode, corrigée en route et notée** : mon premier
+balayage enchaînait les commandes sur une seule machine, donc tout ce qui
+suivait un `route-map`/`ip access-list` était jugé dans un sous-mode.
+`ip domain-lookup` et `key chain` en sont sortis « refusés » alors qu'ils
+existent. Le second balayage juge chaque commande sur une machine neuve.
+
+`cisco-split-horizon-per-interface.test.ts` (10 cas), 8 tombent par
+`git stash`. 135 suites connexes vertes (2 055 cas). Typecheck 163,
+inchangé ; lint identique.
+
+**`PRD-Routage-Fidelite.md` est clos — R1 à R7 livrés.** Le seul reste
+que je vous ai transmis est la ligne syslog du chantier D (mnémoniques
+fabriqués à partir du nom de la sévérité), toujours chez vous.
 
 ---
 
@@ -853,7 +935,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
-| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R6 livrés ; R7 ouvert |
+| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`

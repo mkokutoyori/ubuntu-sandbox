@@ -500,6 +500,11 @@ export function showRunningConfig(router: Router): string {
     }
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
     lines.push(...runningConfigInterfaceIPv6(port));
+    // IOS ne rend que l'ecart au defaut du processus : `no ip
+    // split-horizon` se voit, l'etat par defaut non.
+    if (router.isRIPEnabled() && !router.ripSplitHorizonOn(name)) {
+      lines.push(' no ip split-horizon');
+    }
     if (!port.getIsUp()) lines.push(` shutdown`);
     if (!port.isNegotiationAuto?.()) {
       const sp = port.getSpeed?.();

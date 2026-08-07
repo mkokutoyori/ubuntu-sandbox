@@ -921,6 +921,24 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
 
+  // Le horizon partage se regle par interface, et le moteur RIP lisait
+  // le seul reglage du processus. Cote Huawei la commande existait et
+  // ecrivait dans une table (`_huaweiRipIfExtras`) que personne ne
+  // lisait ; ici elle n'existait pas du tout. Meme fonction, deux
+  // facons de ne rien faire.
+  trie.register('ip split-horizon', 'Enable RIP split horizon on this interface', () => {
+    const iface = ctx.getSelectedInterface();
+    if (!iface) return '% No interface selected';
+    ctx.r().ripSetInterfaceSplitHorizon(iface, true);
+    return '';
+  });
+  trie.register('no ip split-horizon', 'Disable RIP split horizon on this interface', () => {
+    const iface = ctx.getSelectedInterface();
+    if (!iface) return '% No interface selected';
+    ctx.r().ripSetInterfaceSplitHorizon(iface, false);
+    return '';
+  });
+
   trie.registerGreedy('ip helper-address', 'Set DHCP relay agent address', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     if (!ctx.getSelectedInterface()) return '% No interface selected';

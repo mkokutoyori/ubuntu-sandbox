@@ -93,6 +93,14 @@ export class RouterRIPEngine {
     this.engine.setPassiveInterface(iface);
   }
 
+  setInterfaceSplitHorizon(iface: string, on: boolean | null): void {
+    this.engine.setInterfaceSplitHorizon(iface, on);
+  }
+
+  splitHorizonOn(iface: string): boolean {
+    return this.engine.splitHorizonOn(iface);
+  }
+
   removePassiveInterface(iface: string): void {
     this.engine.removePassiveInterface(iface);
   }
