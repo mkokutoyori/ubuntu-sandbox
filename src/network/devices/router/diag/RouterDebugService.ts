@@ -39,10 +39,15 @@ export type DebugCategory =
   | 'ip.pim'
   | 'vxlan'
   | 'port-security'
-  | 'ipv6.packet';
+  | 'ipv6.packet'
+  | 'mac'
+  | 'link'
+  | 'stp.events'
+  | 'stp.bpdu';
 
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
 
 const OSPF_TYPE_NAMES: Readonly<Record<number, string>> = {
   1: 'Hello', 2: 'Data Description', 3: 'LS Request', 4: 'LS Update', 5: 'LS Ack',
@@ -92,7 +97,63 @@ export interface DebugPacketFacts {
   dstPort?: number;
 }
 
+const DEBUG_CATEGORIES: ReadonlySet<string> = new Set<string>([
+  'crypto.isakmp', 'crypto.ipsec',
+  'ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
+  'ip.ospf.packet', 'ip.ospf.lsa-generation',
+  'ip.rip', 'ip.eigrp', 'ip.bgp', 'ip.routing', 'ip.icmp', 'ip.packet',
+  'ip.tcp', 'ip.udp', 'ip.nat', 'ip.arp', 'interface', 'ip.dhcp.server',
+  'ip.ssh', 'ip.nhrp', 'standby', 'vrrp', 'glbp', 'track',
+  'ip.sla.trace', 'ip.sla.error',
+  'aaa.authentication', 'aaa.authorization', 'aaa.accounting',
+  'radius', 'tacacs', 'ntp.events', 'ntp.packets',
+  'lldp.packets', 'cdp.packets', 'ip.pim', 'vxlan', 'port-security',
+  'ipv6.packet', 'mac', 'link', 'stp.events', 'stp.bpdu',
+]);
+
+const ALIAS: ReadonlyArray<readonly [RegExp, DebugCategory]> = [
+  [/^(ip\.)?arp$/, 'ip.arp'],
+  [/^cdp(\.|\s|$)/, 'cdp.packets'],
+  [/^lldp(\.|\s|$)/, 'lldp.packets'],
+  [/^port[-_ ]security$/, 'port-security'],
+  [/^(ip[. ])?dhcp/, 'ip.dhcp.server'],
+  [/^vxlan$/, 'vxlan'],
+  [/^mac([- ]address-table)?$/, 'mac'],
+  [/^link([- ]state)?$/, 'link'],
+  [/^spanning[- ]tree\s*bpdu/, 'stp.bpdu'],
+  [/^spanning[- ]tree\s*event/, 'stp.events'],
+  [/^bpdu$/, 'stp.bpdu'],
+  [/^events?$/, 'stp.events'],
+];
+
+export type DebugPlatform = 'router' | 'switch';
+
+const SWITCH_ONLY: ReadonlySet<string> = new Set(['mac', 'link', 'stp.events', 'stp.bpdu']);
+
+const SWITCH_CATEGORIES: ReadonlySet<string> = new Set<string>([
+  'mac', 'link', 'stp.events', 'stp.bpdu',
+  'ip.arp', 'cdp.packets', 'lldp.packets', 'port-security',
+  'ip.dhcp.server', 'vxlan', 'interface',
+]);
+
+export function categoryOnPlatform(category: string, platform: DebugPlatform): boolean {
+  return platform === 'switch'
+    ? SWITCH_CATEGORIES.has(category)
+    : !SWITCH_ONLY.has(category);
+}
+
+export function debugCategoriesFor(arg: string): DebugCategory[] | null {
+  const w = arg.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!w) return null;
+  if (/^spanning[- ]tree( all)?$/.test(w)) return ['stp.events', 'stp.bpdu'];
+  for (const [re, cat] of ALIAS) if (re.test(w)) return [cat];
+  if (DEBUG_CATEGORIES.has(w as DebugCategory)) return [w as DebugCategory];
+  return null;
+}
+
 export class RouterDebugService implements TerminalDebugSource {
+  constructor(private readonly platform: DebugPlatform = 'router') {}
+
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
   private readonly broadcast = new DebugBroadcast();
 
@@ -105,15 +166,54 @@ export class RouterDebugService implements TerminalDebugSource {
       + `${portee}${flag.detail ? ' (detailed)' : ''}`;
   }
 
+  knows(category: DebugCategory): boolean {
+    return categoryOnPlatform(category, this.platform);
+  }
+
+  private requirePlatform(category: DebugCategory): void {
+    if (!this.knows(category)) throw new CliInvalidInput();
+  }
+
   enable(category: DebugCategory, scope?: string, detail = false): string {
+    this.requirePlatform(category);
     const flag = { category, enabledAtMs: Date.now(), scope, detail };
     this.flags.set(category, flag);
     return RouterDebugService.flagLabel(flag);
   }
 
   disable(category: DebugCategory): string {
+    this.requirePlatform(category);
     this.flags.delete(category);
     return `${RouterDebugService.label(category)} debugging is off`;
+  }
+
+  recognizes(arg: string): boolean {
+    const cats = debugCategoriesFor(arg);
+    return cats !== null && cats.every((c) => categoryOnPlatform(c, this.platform));
+  }
+
+  enableScope(arg: string): string {
+    const cats = debugCategoriesFor(arg);
+    if (!cats || !this.recognizes(arg)) {
+      throw new CliInvalidInput({ token: arg.trim().split(/\s+/)[0] });
+    }
+    let out = '';
+    for (const c of cats) out = this.enable(c);
+    return cats.length > 1 ? `${RouterDebugService.label(cats[0])} debugging is on` : out;
+  }
+
+  disableScope(arg: string): string {
+    const cats = debugCategoriesFor(arg);
+    if (!cats || !this.recognizes(arg)) {
+      throw new CliInvalidInput({ token: arg.trim().split(/\s+/)[0] });
+    }
+    let out = '';
+    for (const c of cats) out = this.disable(c);
+    return cats.length > 1 ? `${RouterDebugService.label(cats[0])} debugging is off` : out;
+  }
+
+  isStpEnabled(): boolean {
+    return this.flags.has('stp.events') || this.flags.has('stp.bpdu');
   }
 
   isEnabled(category: DebugCategory): boolean { return this.flags.has(category); }
@@ -135,16 +235,18 @@ export class RouterDebugService implements TerminalDebugSource {
 
   enableAll(): string {
     const now = Date.now();
-    for (const c of RouterDebugService.ALL) {
+    const tout = this.platform === 'switch'
+      ? [...SWITCH_CATEGORIES] as DebugCategory[]
+      : RouterDebugService.ALL.filter((c) => categoryOnPlatform(c, this.platform));
+    for (const c of tout) {
       if (!this.flags.has(c)) this.flags.set(c, { category: c, enabledAtMs: now });
     }
     return 'All possible debugging has been turned on';
   }
 
   disableAll(): string {
-    const n = this.flags.size;
     this.flags.clear();
-    return n === 0 ? 'All possible debugging has been turned off' : `${n} debug flag${n === 1 ? '' : 's'} have been turned off`;
+    return 'All possible debugging has been turned off';
   }
 
   subscribe(listener: DebugLineListener): () => void {
@@ -484,12 +586,14 @@ export class RouterDebugService implements TerminalDebugSource {
       if (!mine(e.payload)) return;
       const p = e.payload as { portName?: string };
       this.emit('interface', `${p.portName ?? '?'} came back up`);
+      this.emit('link', `LINK: Interface ${p.portName ?? '?'}, changed state to up`);
     }));
     this.broadcast.track(bus.subscribe('port.link.down', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as { portName?: string };
       this.emit('interface', `${p.portName ?? '?'} went down`);
       this.emit('interface', `${p.portName ?? '?'} keepalive timer expired`);
+      this.emit('link', `LINK: Interface ${p.portName ?? '?'}, changed state to down`);
     }));
     // `ip.sla.trace`/`track` étaient déclarées comme catégories et
     // émises par personne : `debug ip sla trace` retombait sur le
@@ -687,6 +791,66 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('tacacs', `TAC+: accounting complete for user ${p.username ?? '?'}`);
     }));
 
+    this.broadcast.track(bus.subscribe('stp.role.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: ${p.port} role change ${p.oldRole} -> ${p.newRole}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.port-state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: ${p.port} VLAN ${p.vlan} state change ${p.oldState ?? 'none'} -> ${p.newState}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.root.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: New root ${p.newRootMac} (priority ${p.newRootPriority}), root port ${p.rootPort ?? 'none'}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.topology.change', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: Topology change (${p.origin})${p.port ? ` on ${p.port}` : ''}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.bpdu.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.bpdu', `STP: Tx BPDU on ${p.port} Root Bridge ID ${p.rootMac} cost ${p.pathCost}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.bpdu.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { port?: string; senderMac?: string; rootMac?: string; pathCost?: number };
+      this.emit('stp.bpdu',
+        `STP: Rx BPDU on ${p.port ?? '?'} Bridge ID ${p.senderMac ?? '?'} `
+        + `Root Bridge ID ${p.rootMac ?? '?'} cost ${p.pathCost ?? 0}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.bpdu-guard.violation', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: BPDU guard violation on ${p.port} (sender ${p.senderMac})`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.learned', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('mac', `MAC: Learned ${p.mac} vlan ${p.vlan} on ${p.port} (dynamic)`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.moved', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('mac', `MAC: Moved ${p.mac} vlan ${p.vlan} from ${p.fromPort} to ${p.port}`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.aged', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('mac', `MAC: Aged out ${p.mac} vlan ${p.vlan} on ${p.port}`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.cleared', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('mac', `MAC: Cleared dynamic entries from address table`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.flushed', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('mac', `MAC: Flushed address table`);
+    }));
     this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as { frame: unknown; portName?: string };
@@ -724,7 +888,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.nat': return 'IP NAT';
       case 'ip.arp': return 'ARP packet';
       case 'interface': return 'Interface';
-      case 'ip.dhcp.server': return 'IP DHCP server';
+      case 'ip.dhcp.server': return 'DHCP server';
       case 'ip.ssh': return 'SSH';
       case 'ip.nhrp': return 'NHRP';
       case 'standby': return 'HSRP';
@@ -746,6 +910,10 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'vxlan': return 'VXLAN';
       case 'port-security': return 'Port security';
       case 'ipv6.packet': return 'IPv6 packet';
+      case 'mac': return 'MAC address table';
+      case 'link': return 'Link state';
+      case 'stp.events': return 'Spanning Tree event';
+      case 'stp.bpdu': return 'Spanning Tree BPDU';
     }
   }
 
@@ -797,6 +965,8 @@ export class RouterDebugService implements TerminalDebugSource {
     ['NTP', ['ntp.events', 'ntp.packets']],
     ['Neighbour discovery', ['cdp.packets', 'lldp.packets']],
     ['Crypto Subsystem', ['crypto.isakmp', 'crypto.ipsec']],
+    ['Spanning Tree', ['stp.events', 'stp.bpdu']],
+    ['Switching', ['mac', 'link']],
     ['Interface', ['interface', 'port-security']],
     ['VXLAN', ['vxlan']],
   ];

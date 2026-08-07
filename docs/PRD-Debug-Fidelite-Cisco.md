@@ -856,3 +856,97 @@ juste qu'avant.
 
 **Mesures.** 89 suites connexes vertes (2329 cas), typecheck au baseline
 (167), lint inchangé.
+
+---
+
+## §15 — Lot D6 livré : un seul moteur
+
+**Ce qui était mesuré.** Une machine Cisco avait **deux** sous-systèmes
+de debug : `RouterDebugService` (45 catégories, le travail des lots D1 à
+D5) et `SwitchDebugService`, une seconde classe de 5 catégories avec sa
+propre table de libellés, ses propres rubriques, sa propre traduction du
+mot tapé par l'opérateur, et ses propres abonnements au bus. Deux
+implémentations d'une même question finissent toujours par ne pas y
+répondre pareil, et celles-ci ne le faisaient déjà plus : le switch
+répondait `2 debug flags have been turned off` à `undebug all` là où le
+routeur répondait `All possible debugging has been turned off`, et rien
+dans le produit ne pouvait rendre ces deux phrases cohérentes puisque
+rien ne les écrivait au même endroit.
+
+**Ce qui est fait.** `SwitchDebugService.ts` est **supprimé**.
+`CiscoSwitch.getDebugService()` construit `new RouterDebugService('switch')`,
+et la plateforme est le seul paramètre qui distingue les deux machines :
+
+- `categoryOnPlatform(cat, plat)` est la règle unique. `SWITCH_ONLY`
+  (`mac`, `link`, `stp.events`, `stp.bpdu`) est ce qu'un routeur ne sait
+  pas faire ; `SWITCH_CATEGORIES` est ce qu'un switch sait faire.
+- `debugCategoriesFor(mot)` remplace les deux tables de traduction. Un
+  alias (`mac address-table`, `link-state`, `spanning-tree`) y est écrit
+  une fois, donc `debug mac` et `debug mac address-table` ne peuvent plus
+  diverger. `spanning-tree` rend une **famille** de deux catégories, ce
+  qui est ce que la commande veut dire.
+- `enable()`/`disable()` **portent la garde eux-mêmes** plutôt que chaque
+  enregistrement CLI. C'est ce qui rend la règle inviolable : une
+  commande ajoutée demain dans `CiscoShellBase` — dont le switch hérite —
+  ne peut pas armer une catégorie que sa plateforme ignore, parce qu'il
+  n'y a rien à penser à faire.
+- `enableAll()` n'arme que le jeu de sa plateforme.
+
+**Trois défauts que la fusion a rendus visibles**, et qu'aucun test
+n'aurait pu voir tant que les deux moteurs vivaient séparément :
+
+1. **`debug ip dhcp server` portait deux libellés.** Le service disait
+   `IP DHCP server debugging is on`, l'enregistrement routeur écrivait
+   `DHCP server debugging is on` en dur. Même drapeau, deux phrases, une
+   par plateforme. Le libellé du service devient `DHCP server`.
+2. **`debug interface` rendait `Interface  debugging is on`** — deux
+   espaces, parce que l'enregistrement recomposait la phrase avec un nom
+   d'interface vide au lieu de rendre celle du service. C'est exactement
+   la faute que D1 avait corrigée pour les lignes de sortie, restée en
+   place pour la ligne d'accusé.
+3. **`CiscoSwitchShell` hérite de `CiscoShellBase`**, donc toutes les
+   commandes de debug du routeur y étaient enregistrées : un switch
+   acceptait `debug ip bgp`, `debug standby`, `debug ip packet` et armait
+   des drapeaux que rien sur cette machine n'alimente. La garde dans
+   `enable()` les refuse maintenant, avec le mot d'IOS pour un mot-clé que
+   la plateforme ne connaît pas.
+
+**Un manque de migration, trouvé par le rayon d'action.** La catégorie
+`link` avait perdu son émetteur en route : `SwitchDebugService`
+s'abonnait à `port.link.up`/`down`, `RouterDebugService` s'y abonnait
+aussi mais pour émettre `interface`. `debug link-state` armait donc un
+drapeau muet — précisément ce que `cisco-debug-no-empty-promise.test.ts`
+interdit, et c'est cette suite qui l'a dit. Les deux lignes coexistent
+maintenant sur le même abonnement : `debug interface` et `debug
+link-state` sont deux commandes différentes sur un Catalyst, chacune
+avec sa formulation.
+
+**Un rouge antérieur, hérité et corrigé.**
+`debug-severity7-gated.test.ts` exigeait `debug vxlan` et `debug
+port-security` **sur un routeur nu** ; ces deux commandes sont gardées
+par `hasVxlanHardware()`/`hasSwitchingHardware()`, ce qui est le
+comportement juste (un ISR sans module de commutation n'a pas de
+port-security). Les deux cas étaient rouges avant D6 — vérifié par
+`git stash` sur HEAD — et le défaut était dans le choix de machine du
+test, pas dans le produit : ils s'exécutent maintenant sur un switch,
+qui accepte les deux. L'intention du test — « chaque famille de
+sévérité 7 est joignable » — est conservée, pas affaiblie.
+
+**Tests.** `cisco-debug-one-engine.test.ts` (15 cas) vérifie des
+propriétés, pas des listes : une seule classe pour les deux plateformes,
+le fichier du second moteur absent, un balayage qui exige **mot pour
+mot** la même réponse des deux côtés pour toute commande partagée, un
+balayage symétrique de refus dans les deux sens, `debug all` dont chaque
+drapeau armé est validé par `categoryOnPlatform`, et la table d'alias
+lue une fois. Discrimination par `git stash` : **7 des 15 tombent**
+avant. Les 8 qui passent des deux côtés sont des gardes de
+non-régression, et l'un d'eux — la comparaison d'`undebug all` — passait
+d'abord **à vide** (il comparait le second appel, sur un registre déjà
+vide, où le bogue ne s'exprime pas) : il compare maintenant l'appel
+chargé.
+
+**Mesures.** 123 suites connexes vertes (1374 cas, 4 ignorés) :
+debug, switch, STP, DHCP, MAC, port-security. Typecheck
+`tsc -p tsconfig.app.json` à **164** contre 167 au baseline — les trois
+erreurs en moins sont celles du fichier supprimé, aucune nouvelle. Lint
+inchangé.

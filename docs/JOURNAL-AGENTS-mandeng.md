@@ -25,7 +25,13 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Debug Cisco — lot D6 (un seul moteur)
+_Rien en cours de mon côté._
+
+---
+
+## Livré
+
+### Debug Cisco — lot D6 (un seul moteur) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier E / lot D6.
@@ -50,9 +56,37 @@ fusion sûre — c'est pour ça qu'elle est en dernier.
 posé par D1 ne bouge pas — c'est justement lui qui rend la fusion
 possible sans toucher au journal.
 
----
+**Résultat** (détail en `PRD-Debug-Fidelite-Cisco.md` §15) :
+`SwitchDebugService.ts` supprimé, `CiscoSwitch` construit
+`new RouterDebugService('switch')`. La garde de plateforme est portée par
+`enable()`/`disable()` eux-mêmes plutôt que par chaque enregistrement CLI
+— c'est ce qui la rend inviolable, `CiscoSwitchShell` héritant de
+`CiscoShellBase` et donc de toutes les commandes de debug du routeur.
+Trois défauts rendus visibles par la fusion et corrigés : `debug ip dhcp
+server` portait deux libellés selon la plateforme, `debug interface`
+rendait une double espace, et un switch armait `debug ip bgp`/`debug
+standby`/`debug ip packet` sans rien derrière. Un manque de migration
+trouvé par le rayon d'action : la catégorie `link` avait perdu son
+émetteur (`port.link.up`/`down`), donc `debug link-state` armait un
+drapeau muet.
 
-## Livré
+Un rouge **antérieur** hérité et corrigé au passage :
+`debug-severity7-gated.test.ts` exigeait `debug vxlan`/`debug
+port-security` sur un routeur nu, alors que les deux sont gardées par
+`hasVxlanHardware()`/`hasSwitchingHardware()` — comportement juste, choix
+de machine faux dans le test ; vérifié rouge sur HEAD avant D6.
+
+`cisco-debug-one-engine.test.ts` (15 cas), 7 tombent par `git stash`.
+123 suites connexes vertes (1374 cas). Typecheck à 164 contre 167 au
+baseline, les trois en moins étant celles du fichier supprimé.
+
+**Le chantier debug est clos** — D1 à D6 livrés. Ce que je laisse ouvert
+et signalé plutôt que silencieux : `debug interface <nom>` reste en place
+faute d'avoir pu confirmer seul son absence sur IOS (§14), la catégorie
+`ip.nhrp` n'a toujours pas d'émetteur (`nhrp.packet.*` n'est pas dans
+l'union `DomainEvent`), et `aaa.authorization` non plus.
+
+---
 
 ### Debug Cisco — lot D5 (vocabulaire et format des lignes) — LIVRÉ
 
@@ -471,7 +505,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
-| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D5 livrés** ; D6 ouvert |
+| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
