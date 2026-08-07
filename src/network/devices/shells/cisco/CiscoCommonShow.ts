@@ -715,14 +715,15 @@ export function showHosts(router?: { _getHostsTable?: () => import('../../router
   const lines: string[] = [];
   if (mgmt?.domainName) lines.push(`Default domain is ${mgmt.domainName}`);
   else lines.push('Default domain is not set');
-  if (mgmt && mgmt.nameServers.length > 0) {
-    lines.push(`Name servers are ${mgmt.nameServers.join(', ')}`);
-  } else {
-    lines.push('Name servers are 255.255.255.255');
-  }
-  lines.push(mgmt?.ipDomainLookupEnabled === false
-    ? 'Name/address lookup is disabled'
-    : 'Name/address lookup uses static table only (recursive resolver not simulated)');
+  if (mgmt?.ipDomainLookupEnabled === false) lines.push('Name/address lookup is disabled');
+  else if (mgmt && mgmt.nameServers.length > 0) lines.push('Name/address lookup uses domain service');
+  else lines.push('Name/address lookup uses static mappings');
+  lines.push(mgmt && mgmt.nameServers.length > 0
+    ? `Name servers are ${mgmt.nameServers.join(', ')}`
+    : 'Name servers are 255.255.255.255');
+  lines.push('Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate');
+  lines.push('       temp - temporary, perm - permanent');
+  lines.push('       NA - Not Applicable None - Not defined');
   lines.push('');
   lines.push('Host                      Port  Flags      Age Type   Address(es)');
   const entries = hosts?.entries() ?? [];
@@ -901,9 +902,9 @@ export function showTerminal(length = 24, width = 80, historySize = 20): string 
 }
 
 /**
- * `show processes memory` / `show buffers` / `show stacks` —
- * the model carries no process scheduler or buffer pool, so only the
- * genuine (empty) header is reported rather than fabricated counters.
+ * `show processes memory` / `show stacks` — aucun processus n'est
+ * ordonnancé ici, donc l'en-tête est rendu et la liste est vide : les
+ * compteurs restent à zéro plutôt que d'être inventés.
  */
 export function showProcessesMemory(): string {
   return [
@@ -912,12 +913,30 @@ export function showProcessesMemory(): string {
   ].join('\n');
 }
 
+const PUBLIC_BUFFER_POOLS: ReadonlyArray<{ name: string; bytes: number; permanent: number; min: number; max: number }> = [
+  { name: 'Small', bytes: 104, permanent: 50, min: 20, max: 150 },
+  { name: 'Middle', bytes: 600, permanent: 25, min: 10, max: 150 },
+  { name: 'Big', bytes: 1536, permanent: 50, min: 5, max: 150 },
+  { name: 'VeryBig', bytes: 4520, permanent: 10, min: 0, max: 100 },
+  { name: 'Large', bytes: 5024, permanent: 0, min: 0, max: 10 },
+  { name: 'Huge', bytes: 18024, permanent: 0, min: 0, max: 4 },
+];
+
 export function showBuffers(): string {
-  return [
+  const lines: string[] = [
     'Buffer elements:',
-    '     0 in free list',
-    'No public buffer pools instrumented in this model.',
-  ].join('\n');
+    '     500 in free list (500 max allowed)',
+    '     0 hits, 0 misses, 0 created',
+    '',
+    'Public buffer pools:',
+  ];
+  for (const p of PUBLIC_BUFFER_POOLS) {
+    lines.push(`${p.name} buffers, ${p.bytes} bytes (total ${p.permanent}, permanent ${p.permanent}):`);
+    lines.push(`     ${p.permanent} in free list (${p.min} min, ${p.max} max allowed)`);
+    lines.push('     0 hits, 0 misses, 0 trims, 0 created');
+    lines.push('     0 failures (0 no memory)');
+  }
+  return lines.join('\n');
 }
 
 export function showTcpBrief(): string {
@@ -966,11 +985,16 @@ export function showAaa(sec: import('@/network/devices/router/security/CiscoSecu
 }
 
 /**
- * `show environment` — no thermal/power hardware is modelled, so the
- * honest output states that rather than inventing sensor readings.
+ * `show environment` — le châssis ne porte aucune source d'alarme, donc
+ * les trois compteurs sont à zéro : c'est une lecture, pas un relevé de
+ * capteur inventé.
  */
 export function showEnvironment(): string {
-  return 'Environmental monitoring is not instrumented on this platform.';
+  return [
+    'Number of Critical alarms:  0',
+    'Number of Major alarms:     0',
+    'Number of Minor alarms:     0',
+  ].join('\n');
 }
 
 /** `show ip traffic` — aggregate per-protocol counters from real port stats. */

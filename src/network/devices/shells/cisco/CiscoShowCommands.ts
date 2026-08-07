@@ -982,13 +982,8 @@ export function showInterfaceSwitchport(router: Router, ifName: string): string 
   void router;
   return [
     `Name: ${ifName}`,
-    `Switchport: Disabled (router interface)`,
+    `Switchport: Disabled`,
   ].join('\n');
-}
-
-export function showInterfacesTrunk(router: Router): string {
-  void router;
-  return 'Port        Mode             Encapsulation  Status        Native vlan\n(none — this is a router, no L2 trunks)';
 }
 
 export function showVlansRouter(router: Router): string {

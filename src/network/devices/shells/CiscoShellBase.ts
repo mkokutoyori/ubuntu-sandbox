@@ -1618,14 +1618,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.register('show license', 'Display licenses', () => 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority\n1     ipbasek9                 Lifetime       0              Permanent       Active, In Use   N/A              Medium');
     trie.register('show license udi', 'Display Unique Device Identifier', () => {
-      const hostname = this.d().getHostname();
       const profile = this.getChassisProfile();
       const sn = profile === 'router-isr2911' ? 'FTX1234567A' : 'FOC1234X56Y';
       const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
-      return `Device# PID                   SN                              UDI\n*0    ${pid}      ${sn}                  ${pid}:${sn}\n  (hostname: ${hostname})`;
+      return `Device#   PID                   SN\n*0        ${pid.padEnd(22)}${sn}`;
     });
-    trie.register('show diag', 'Display chassis diagnostics', () => 'Slot 0:  Built-in PID (real)\n  Power: OK\n  Temperature: nominal');
-    trie.register('show idprom backplane', 'Display IDPROM backplane', () => 'IDPROM for backplane: serial number, PID match show inventory');
+    trie.register('show diag', 'Display chassis diagnostics', () => {
+      const profile = this.getChassisProfile();
+      const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
+      const sn = profile === 'router-isr2911' ? 'FTX1234567A' : 'FOC1234X56Y';
+      return [
+        'Slot 0:',
+        `        ${pid} Motherboard Port adapter, 3 ports`,
+        '        Port adapter is analyzed',
+        '        Port adapter insertion time unknown',
+        `        Hardware Revision        : 1.0`,
+        `        Part Number              : ${pid}`,
+        `        Board Revision           : 1.0`,
+        `        PCB Serial Number        : ${sn}`,
+      ].join('\n');
+    });
     trie.registerGreedy('show mac address-table', 'Display MAC address table', () => {
       const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
       const table = dev.getMacTable?.();
@@ -1956,7 +1968,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonPrivilegedCommands(): void {
-    this.privilegedTrie.register('enable', 'Enter privileged EXEC mode (already in)', () => '');
+    this.privilegedTrie.register('enable', 'Turn on privileged commands', () => '');
 
     this.privilegedTrie.register('configure terminal', 'Enter configuration mode', () => {
       this.mode = 'config';
@@ -3067,7 +3079,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // date.
     this.configTrie.registerGreedy('clock set', 'Set system clock',
       (args) => this.applyClockSet(args));
-    this.configTrie.registerGreedy('clock', 'Clock configuration (unhandled)', (args, raw) => {
+    this.configTrie.registerGreedy('clock', 'Configure time-of-day clock', (args, raw) => {
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `clock ${args.join(' ')}`);
       return '';
@@ -3210,7 +3222,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._upsertCiscoUsername(name, kv);
       return '';
     });
-    this.configTrie.registerGreedy('crypto', 'Crypto configuration (unhandled keywords)', (args, raw) => {
+    this.configTrie.registerGreedy('crypto', 'Encryption module', (args, raw) => {
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
       return '';

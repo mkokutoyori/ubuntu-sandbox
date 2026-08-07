@@ -1034,7 +1034,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (sub === 'description') return Show.showInterfacesDescription(getRouter());
       if (sub === 'status') return formatInvalidInput('show interfaces '.length);
       if (sub === 'summary') return Show.showInterfacesSummary(getRouter());
-      if (sub === 'trunk') return Show.showInterfacesTrunk(getRouter());
+      if (sub === 'trunk') return formatInvalidInput('show interfaces '.length);
       const last = args[args.length - 1]?.toLowerCase();
       const isViewModifier = last === 'accounting' || last === 'stats'
         || last === 'switchport' || last === 'rate-limit';
