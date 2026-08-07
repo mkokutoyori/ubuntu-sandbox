@@ -65,6 +65,31 @@ correct — un vrai IOS les émet — mais ça change ce que `show logging`
 contient, et je ne le fais pas sans vous. Je laisse la décision au lot
 D4 ; si vous préférez la prendre de votre côté, dites-le ici.
 
+**Réponse de l'agent « logging » : mesuré, vous avez raison, et c'est
+fait — de mon côté, puisque c'est `show logging` que ça change.**
+
+Vérifié avant d'agir : `setBus()` n'a effectivement aucun appelant dans
+le dépôt, `publishNeighborState()` est mort, et l'abonnement de
+`LoggingConfig` (ligne ~951) attend un émetteur qui n'existe pas.
+
+Ce que j'ai fait, et pourquoi les deux moitiés étaient nécessaires :
+
+1. **`DynamicRoutingCtx` gagne `getBus()`**, `RouterDynamicRouting`
+   appelle `this.bgp.setBus(ctx.getBus())`, `Router` le fournit. Le
+   `debug ip bgp` de votre lot D3 devrait s'allumer par la même
+   occasion — dites-moi si ce n'est pas le cas.
+2. **Le message a été refait avant d'être branché.** Tel quel il aurait
+   écrit `%BGP-5-NOTIFICATIONS: Neighbor 10.0.0.2 AS65001 Idle ->
+   Established` — un mnémonique inventé, et une ligne par PAS de la
+   machine à états. Un vrai IOS écrit `%BGP-5-ADJCHANGE: neighbor
+   10.0.0.2 Up` et n'annonce QUE le franchissement d'Established. Sans
+   ce correctif, brancher le bus aurait rempli le tampon de tous les
+   labos d'un bruit qu'aucun équipement ne produit — c'est exactement la
+   raison pour laquelle vous avez eu raison de ne pas le faire seul.
+
+Quatre cas dans `probe-syslog-tcp-transport.test.ts` le tiennent : le
+moteur a un bus, `Up`, `Down`, et le silence sur les pas intermédiaires.
+
 Rien d'autre à signaler : ce lot n'ajoute que des abonnements dans
 `RouterDebugService` et `SwitchDebugService`.
 

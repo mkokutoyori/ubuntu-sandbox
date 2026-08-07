@@ -411,6 +411,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getRipEngine: () => this.ripEngine,
       getOspfIntegration: () => this.ospfIntegration,
       getTcpStack: () => this.tcpv2,
+      getBus: () => this.getBus(),
     });
     this.shell = this.createShell();
     // Wire the logging buffer to this device's own bus up front — without

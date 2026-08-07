@@ -273,3 +273,62 @@ describe('la configuration reproduit ce qui a été tapé', () => {
       .toContain(`(tcp port ${PORT_COLLECTEUR}, audit disabled,`);
   });
 });
+
+describe('%BGP-5-ADJCHANGE existe pour de vrai', () => {
+  it('le moteur BGP a un bus : son abonnement n\'attend plus un émetteur absent', () => {
+    // `AbstractRoutingProtocolEngine.setBus()` n'était appelé nulle part :
+    // `BGPEngine.publishNeighborState()` était du code mort, et
+    // l'abonnement de `LoggingConfig` à `bgp.neighbor.state-changed`
+    // attendait un événement que personne ne publiait.
+    const r = new CiscoRouter('R1');
+    const bgp = r.getBGPEngine() as unknown as { bus?: unknown };
+    expect(bgp.bus).toBeTruthy();
+  });
+
+  it('le franchissement d\'Established est annoncé dans les mots d\'IOS', async () => {
+    const r = new CiscoRouter('R1');
+    await r.executeCommand('enable');
+    const bus = (r as unknown as { getBus(): { publish(e: unknown): void } }).getBus();
+    bus.publish({
+      topic: 'bgp.neighbor.state-changed',
+      payload: {
+        deviceId: r.id, neighborIp: '10.0.0.2',
+        oldState: 'OpenConfirm', newState: 'Established', remoteAs: 65001,
+      },
+    });
+    expect(await r.executeCommand('show logging'))
+      .toContain('%BGP-5-ADJCHANGE: neighbor 10.0.0.2 Up');
+  });
+
+  it('la chute d\'Established est annoncée Down', async () => {
+    const r = new CiscoRouter('R1');
+    await r.executeCommand('enable');
+    const bus = (r as unknown as { getBus(): { publish(e: unknown): void } }).getBus();
+    bus.publish({
+      topic: 'bgp.neighbor.state-changed',
+      payload: {
+        deviceId: r.id, neighborIp: '10.0.0.2',
+        oldState: 'Established', newState: 'Idle', remoteAs: 65001,
+      },
+    });
+    expect(await r.executeCommand('show logging'))
+      .toContain('%BGP-5-ADJCHANGE: neighbor 10.0.0.2 Down');
+  });
+
+  it('les pas intermédiaires ne remplissent pas le tampon', async () => {
+    const r = new CiscoRouter('R1');
+    await r.executeCommand('enable');
+    const bus = (r as unknown as { getBus(): { publish(e: unknown): void } }).getBus();
+    for (const [o, n] of [['Idle', 'Connect'], ['Connect', 'OpenSent'],
+      ['OpenSent', 'OpenConfirm']]) {
+      bus.publish({
+        topic: 'bgp.neighbor.state-changed',
+        payload: { deviceId: r.id, neighborIp: '10.0.0.2', oldState: o, newState: n, remoteAs: 65001 },
+      });
+    }
+    // Un vrai IOS n'annonce QUE le franchissement d'Established : écrire
+    // chaque pas de la machine à états remplirait le tampon d'un bruit
+    // qu'aucun équipement ne produit.
+    expect(await r.executeCommand('show logging')).not.toContain('ADJCHANGE');
+  });
+});

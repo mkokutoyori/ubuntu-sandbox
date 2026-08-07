@@ -11,6 +11,7 @@
  * TCP/179 migration is a separate, documented work item).
  */
 import type { Port } from '../../hardware/Port';
+import type { IEventBus } from '@/events/EventBus';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ETHERTYPE_IPV4, IP_PROTO_EIGRP, createIPv4Packet,
@@ -51,6 +52,13 @@ export interface DynamicRoutingCtx {
   getOspfIntegration(): RouterOSPFIntegration;
   /** The router's TCP stack — BGP peers over real TCP/179 sessions. */
   getTcpStack(): TcpStack;
+  /**
+   * Le bus de l'équipement. `BGPEngine.setBus()` existait et n'était
+   * appelé nulle part : `publishNeighborState()` était donc du code
+   * mort, et l'abonnement de `LoggingConfig` à
+   * `bgp.neighbor.state-changed` un abonnement sans émetteur.
+   */
+  getBus(): IEventBus;
 }
 
 function networkOf(ip: IPAddress, mask: SubnetMask): IPAddress {
@@ -69,6 +77,7 @@ export class RouterDynamicRouting {
   constructor(private readonly ctx: DynamicRoutingCtx) {
     this.eigrp = new EIGRPEngine(ctx.id);
     this.bgp = new BGPEngine(ctx.id);
+    this.bgp.setBus(ctx.getBus());
     this.rip = new RipEngineAdapter(ctx.getRipEngine());
     this.ospf = new OspfEngineAdapter(() => ctx.getOspfIntegration());
     const deviceContext = {
