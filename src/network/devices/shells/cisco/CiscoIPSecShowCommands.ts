@@ -180,18 +180,10 @@ export function registerIPSecShowCommands(
   });
 
   const debugSvc = () => getRouter().getDebugService();
-  trie.registerGreedy('debug crypto pki', 'Enable PKI debug', (args) => {
-    const scope = args.join(' ').toLowerCase();
-    if (scope.startsWith('transactions')) return debugSvc().enable('crypto.pki.transactions');
-    if (scope.startsWith('messages')) return debugSvc().enable('crypto.pki.messages');
-    return debugSvc().enable('crypto.pki');
-  });
-  trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', (args) => {
-    const scope = args.join(' ').toLowerCase();
-    if (scope.startsWith('transactions')) return debugSvc().disable('crypto.pki.transactions');
-    if (scope.startsWith('messages')) return debugSvc().disable('crypto.pki.messages');
-    return debugSvc().disable('crypto.pki');
-  });
+  const PKI_REFUS = '% Crypto PKI has no trace point on this platform:'
+    + ' the certificate engine publishes no enrolment or validation event';
+  trie.registerGreedy('debug crypto pki', 'Enable PKI debug', () => PKI_REFUS);
+  trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => PKI_REFUS);
   trie.register('show debugging', 'Display active debug flags', () => debugSvc().format());
   trie.register('show debug condition', 'Display standing debug conditions',
     () => debugSvc().formatConditions());

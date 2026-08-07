@@ -1,10 +1,6 @@
 export type DebugCategory =
   | 'crypto.isakmp'
   | 'crypto.ipsec'
-  | 'crypto.ikev2'
-  | 'crypto.pki'
-  | 'crypto.pki.transactions'
-  | 'crypto.pki.messages'
   | 'ip.ospf.adj'
   | 'ip.ospf.events'
   | 'ip.ospf.spf'
@@ -560,6 +556,116 @@ export class RouterDebugService implements TerminalDebugSource {
         `PSECURE: Aged out ${toCiscoMac(String(p.mac ?? ''))} on ${p.portName ?? '?'}`);
     }));
 
+    this.broadcast.track(bus.subscribe('eigrp.neighbor.state-changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { neighborId?: string; iface?: string; oldState?: string; newState?: string };
+      this.emit('ip.eigrp',
+        `EIGRP: Neighbor ${p.neighborId ?? '?'} (${shortIface(p.iface ?? '?')}) is `
+        + `${p.newState === 'up' ? 'up' : 'down'}: ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('eigrp.neighbor.k-value-mismatch', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { neighborId?: string; iface?: string };
+      this.emit('ip.eigrp',
+        `EIGRP: Neighbor ${p.neighborId ?? '?'} (${shortIface(p.iface ?? '?')}) K-value mismatch`);
+    }));
+
+    this.broadcast.track(bus.subscribe('router.ssh.session.opened', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { user?: string; peerIp?: string };
+      this.emit('ip.ssh',
+        `SSH: Session opened for user '${p.user ?? '?'}' from ${p.peerIp ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('router.ssh.session.closed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { user?: string; peerIp?: string; reason?: string };
+      this.emit('ip.ssh',
+        `SSH: Session closed for user '${p.user ?? '?'}' from ${p.peerIp ?? '?'}`
+        + `${p.reason ? ` (${p.reason})` : ''}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('vrrp.state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('vrrp',
+        `VRRP: ${shortIface(p.iface)} Grp ${p.vrid} state ${p.oldState} -> ${p.newState}`);
+    }));
+    this.broadcast.track(bus.subscribe('vrrp.master.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { iface?: string; vrid?: number; masterIp?: string | null };
+      this.emit('vrrp',
+        `VRRP: ${shortIface(p.iface ?? '?')} Grp ${p.vrid ?? 0} master is ${p.masterIp ?? 'unknown'}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('glbp.avg.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('glbp',
+        `GLBP: ${shortIface(p.iface)} Grp ${p.group} AVG state ${p.oldState} -> ${p.newState}`);
+    }));
+    this.broadcast.track(bus.subscribe('glbp.avf.state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { iface?: string; group?: number; forwarder?: number; newState?: string };
+      this.emit('glbp',
+        `GLBP: ${shortIface(p.iface ?? '?')} Grp ${p.group ?? 0} Fwd ${p.forwarder ?? 0} `
+        + `state ${p.newState ?? '?'}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('ntp.synced', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ntp.events',
+        `NTP: system clock synchronised to ${p.serverIp}, stratum ${p.newStratum}, `
+        + `offset ${p.offsetMs} ms`);
+    }));
+    this.broadcast.track(bus.subscribe('ntp.unsynced', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('ntp.events', 'NTP: system clock has lost synchronisation');
+    }));
+    this.broadcast.track(bus.subscribe('ntp.packet.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { destIp?: string; mode?: string };
+      this.emit('ntp.packets', `NTP: xmit packet to ${p.destIp ?? '?'}, mode ${p.mode ?? 'client'}`);
+    }));
+    this.broadcast.track(bus.subscribe('ntp.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { srcIp?: string; mode?: string };
+      this.emit('ntp.packets', `NTP: rcv packet from ${p.srcIp ?? '?'}, mode ${p.mode ?? 'server'}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('radius.auth.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { username?: string; serverIp?: string };
+      this.emit('radius',
+        `RADIUS: Received Access-Accept for user ${p.username ?? '?'} from ${p.serverIp ?? '?'}`);
+      this.emit('aaa.authentication',
+        `AAA/AUTHEN: status = PASS for user '${p.username ?? '?'}'`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.auth.rejected', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { username?: string; serverIp?: string };
+      this.emit('radius',
+        `RADIUS: Received Access-Reject for user ${p.username ?? '?'} from ${p.serverIp ?? '?'}`);
+      this.emit('aaa.authentication',
+        `AAA/AUTHEN: status = FAIL for user '${p.username ?? '?'}'`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.server.dead', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { serverIp?: string };
+      this.emit('radius', `RADIUS: Marking server ${p.serverIp ?? '?'} as DEAD`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.accounting.record', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { username?: string; type?: string };
+      this.emit('aaa.accounting',
+        `AAA/ACCT: ${p.type ?? 'record'} for user '${p.username ?? '?'}'`);
+    }));
+    this.broadcast.track(bus.subscribe('tacacs.acct.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { username?: string };
+      this.emit('tacacs', `TAC+: accounting complete for user ${p.username ?? '?'}`);
+    }));
+
     this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as { frame: unknown; portName?: string };
@@ -580,10 +686,6 @@ export class RouterDebugService implements TerminalDebugSource {
     switch (category) {
       case 'crypto.isakmp': return 'Crypto ISAKMP';
       case 'crypto.ipsec': return 'Crypto IPSEC';
-      case 'crypto.ikev2': return 'IKEv2';
-      case 'crypto.pki': return 'Crypto PKI';
-      case 'crypto.pki.transactions': return 'PKI Transactions';
-      case 'crypto.pki.messages': return 'PKI Messages';
       case 'ip.ospf.adj': return 'OSPF adjacency';
       case 'ip.ospf.events': return 'OSPF events';
       case 'ip.ospf.spf': return 'OSPF SPF';
@@ -659,7 +761,6 @@ export class RouterDebugService implements TerminalDebugSource {
   private static groupe(category: DebugCategory): string {
     const c = String(category);
     if (c.startsWith('ip.ospf')) return 'OSPF';
-    if (c.startsWith('crypto.pki')) return 'Crypto PKI';
     if (c.startsWith('crypto')) return 'Crypto';
     if (c === 'ip.arp') return 'ARP';
     if (c === 'ip.routing') return 'IP routing';

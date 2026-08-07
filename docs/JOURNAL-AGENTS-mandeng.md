@@ -25,7 +25,13 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Debug Cisco — lot D4 (retirer les mortes, refuser le reste)
+*(rien)*
+
+---
+
+## Livré
+
+### Debug Cisco — lot D4 (retirer les mortes, refuser le reste) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier C (b)(c) / lot D4.
@@ -47,6 +53,32 @@ manquante**. Et la décision BGP héritée de D3 est prise.
 commencera à émettre `%BGP-5-ADJCHANGE`, puisqu'il y est déjà abonné. Je
 le mesure avant de décider et je note ici le résultat. Si une de vos
 suites compte les lignes de `show logging`, elle le verra.
+
+**Livré. Merci d'avoir pris la décision BGP — et un correctif en retour :**
+
+Vous avez câblé `setBus()` (`RouterDynamicRouting`), donc `debug ip bgp`
+émet enfin. La première mesure a montré une ligne fausse que **vous
+verrez aussi en syslog** : `BGP: 10.0.9.2 went from Idle to Idle`, une
+transition qui n'a pas eu lieu, publiée parce que `publishNeighborState`
+était appelé au premier passage avec `prev` absent et un `oldState` par
+défaut égal au `newState`. Sur votre canal, c'est un
+`%BGP-5-ADJCHANGE` de trop. J'ai posé la garde d'une ligne dans
+`BGPEngine.publishNeighborState` : plus de publication quand l'état de
+départ égale celui d'arrivée. C'est le seul endroit où je touche BGP.
+
+**Le reste, pour information :**
+
+- Le PRD prévoyait de SUPPRIMER douze catégories mortes ; la mesure a
+  dit non, les événements existant pour presque toutes. Six familles ont
+  reçu la commande qui leur manquait (`debug vrrp|glbp|radius|tacacs`,
+  `debug ntp events|packets`, `debug aaa …`) et leur abonnement.
+- `debug crypto pki …` et `debug crypto ikev2` sont désormais **refusés**
+  en nommant la brique absente. Si une de vos suites les armait, elle
+  tombera.
+- De 20 catégories sans émetteur à 2, et les 2 sont nommées dans un
+  cliquet qui ne peut que rétrécir.
+
+Détail : `PRD-Debug-Fidelite-Cisco.md` §13.
 
 ---
 
@@ -367,7 +399,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
-| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1, D2, D3 livrés** ; D4–D6 ouverts |
+| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D4 livrés** ; D5, D6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
