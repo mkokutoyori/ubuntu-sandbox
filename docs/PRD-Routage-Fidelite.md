@@ -501,7 +501,7 @@ triviaux et partent tout de suite (marqués ⚡).
 | **R4** | Chantier C : RIB, FIB, Null0, passerelle, résumé | — |
 | **R5** | Chantier C : OSPF et IGMP sur la vue commune (**livré, §12**) | R4 |
 | **R6** | Chantier D, le reste (**livré, §13**) | R2, R4 |
-| **R7** | Commandes manquantes (§1.11), au cas par cas | R3 |
+| **R7** | Commandes manquantes (§1.11), au cas par cas (**livré, §14**) | R3 |
 
 R1, R2 et R4 sont indépendants. R1 part en premier parce qu'il répare ce
 que j'ai cassé.
@@ -972,3 +972,105 @@ sérialisation, Linux et Windows — ces deux derniers parce que le
 changement d'`origin` dans `Port.ts` est lu par `ip addr`, `LinkState` et
 `ipconfig`. Typecheck `tsc -p tsconfig.app.json` à 164, inchangé ; lint
 identique au baseline (120 problèmes avant, 120 après).
+
+---
+
+## 14. R7 — Livré
+
+« Au cas par cas » : ce PRD compte quatorze commandes manquantes sans les
+énumérer, alors le lot commence par un balayage.
+
+### 14.1 Le balayage, et une erreur de méthode corrigée en route
+
+Le premier balayage enchaînait les commandes sur une seule machine. Il
+était **faux** : `route-map RM permit 10` et `ip access-list standard STD`
+entrent dans un sous-mode, donc tout ce qui suivait était jugé ailleurs
+qu'où il se tape, et `ip domain-lookup` ou `key chain` — qui existent
+pourtant, `CiscoShellBase.ts:3001` et `CiscoKeyChainCommands.ts` — sont
+sortis « refusés ». Le second balayage juge **chaque commande sur une
+machine neuve, dans son propre contexte**. La liste des refus est passée
+de 21 à 20, mais ce ne sont plus les mêmes, et surtout plus les bonnes.
+
+### 14.2 Le cas qui avait un moteur derrière lui
+
+**Le horizon partagé se règle par interface, et le moteur n'en savait
+rien.** `RIPConfig.splitHorizon` est un réglage de PROCESSUS, lu à deux
+endroits (`sendUpdate`, la mise à jour déclenchée), alors que la commande
+est per-interface chez les deux constructeurs. Résultat, **la même
+fonction manquait de deux façons différentes** :
+
+- Cisco : `ip split-horizon` / `no ip split-horizon` n'existaient pas.
+- Huawei : `rip split-horizon` existait, écrivait dans
+  `_huaweiRipIfExtras` — une table que **rien ne lit dans tout le dépôt**
+  — et n'avait donc aucun effet non plus. `undo rip split-horizon`
+  n'existait pas du tout.
+
+`RIPConfig.splitHorizonByInterface` porte les interfaces où l'opérateur a
+dit autre chose que le processus, sur le modèle de `passiveInterfaces`
+déjà là ; `splitHorizonOn(iface)` est le prédicat unique que les deux
+points d'émission consultent. Une seule table sert les deux
+constructeurs : le moteur RIP est le même, et deux réglages pour un seul
+comportement finiraient par se contredire.
+
+**Vérifié sur le fil, pas sur l'acceptation.** Une commande acceptée qui
+ne fait rien est exactement le défaut d'avant ; le test capture donc ce
+que le routeur ÉMET, à la couture d'émission du moteur, en avançant une
+horloge virtuelle de 31 s pour déclencher la mise à jour périodique :
+
+| Réglage sur Gi0/0 | A annonce sur Gi0/0 |
+|---|---|
+| par défaut | `1.1.1.0` |
+| `no ip split-horizon` | `10.0.12.0`, `1.1.1.0` |
+
+`10.0.12.0` est la route apprise SUR Gi0/0 : c'est précisément celle que
+le horizon partagé retient, donc la seule dont la présence distingue les
+deux réglages. Le rendu `no ip split-horizon` dans la configuration suit,
+sans quoi le réglage ne survivrait pas à un enregistrement — et seul
+l'écart au défaut est rendu, comme le fait IOS.
+
+### 14.3 Le cas où ne rien faire EST le comportement
+
+`ip classless` et `ip subnet-zero` sont acceptées. Elles décrivent le
+comportement par défaut d'IOS depuis la 12.0 : un vrai routeur les prend
+et ne fait rien, et ne les rend pas dans sa configuration puisqu'elles ne
+s'en écartent pas. Les refuser cassait le rejeu d'une configuration
+ancienne, où elles figurent presque toujours. **La distinction avec le
+défaut du §14.2 est le cœur du lot** : là, la commande fait quelque chose
+sur le matériel et ne faisait rien ici ; ici, elle ne fait rien nulle
+part. Accepter sans effet n'est une faute que dans le premier cas.
+
+### 14.4 Refusé, et pourquoi — la liste
+
+Chacune de ces commandes est réelle sur IOS et reste refusée, parce
+qu'aucun moteur ne pourrait en lire le réglage. Les accepter les rangerait
+dans la catégorie du §14.2, pas du §14.3.
+
+| Commande | Brique manquante |
+|---|---|
+| `ip default-gateway` | n'a de sens qu'avec `no ip routing`, qui ne coupe pas le transfert ici |
+| `ip forward-protocol nd` | le relais UDP n'a pas de liste de ports à filtrer |
+| `ip tcp synwait-time` | la pile TCP n'a pas de temporisation de connexion réglable |
+| `ip scp server enable` | SCP existe mais n'est gardé par rien ; poser la porte suppose de décider ce qu'elle ferme |
+| `carrier-delay`, `keepalive` | aucun délai n'existe entre l'état du câble et celui du protocole de ligne |
+| `ip route-cache`, `no ip mroute-cache` | il n'y a pas de cache de commutation à vider |
+| `input-queue`, `traffic-share` | pas de file d'attente ni de répartition par métrique |
+| `nsf ietf|cisco helper` | OSPF n'a pas de redémarrage gracieux |
+| `ipv6 rip … enable` | RIPng n'existe pas |
+
+### 14.5 Tests et mesures
+
+`cisco-split-horizon-per-interface.test.ts` (10 cas) : ce que A annonce
+sur le fil dans les deux réglages et au retour, le fait que le réglage
+soit propre à l'interface et non au processus, sa survie à un
+enregistrement et à un rejeu, l'équivalence VRP — y compris que le
+réglage soit rangé **sous le nom de port que le moteur parcourt**, un
+piège réel puisque les ports Huawei sont nommés `GE0/0/0` alors que la
+commande se tape sur `GigabitEthernet0/0/0` — et l'acceptation sans rendu
+du §14.3. Discrimination par `git stash` : **8 des 10 tombent** avant.
+
+**Mesures.** 135 suites connexes vertes (2 055 cas) : RIP, routage,
+OSPF, Huawei, sérialisation, vues d'interface. Typecheck
+`tsc -p tsconfig.app.json` à 163, inchangé ; lint identique au baseline
+(192 problèmes avant, 192 après).
+
+**Le PRD est clos** : R1 à R7 livrés.

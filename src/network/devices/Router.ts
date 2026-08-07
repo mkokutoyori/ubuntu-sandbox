@@ -1623,6 +1623,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
   ripSetPassiveInterface(iface: string) { this.ripEngine.setPassiveInterface(iface); }
   ripRemovePassiveInterface(iface: string) { this.ripEngine.removePassiveInterface(iface); }
+  ripSetInterfaceSplitHorizon(iface: string, on: boolean | null) { this.ripEngine.setInterfaceSplitHorizon(iface, on); }
+  ripSplitHorizonOn(iface: string) { return this.ripEngine.splitHorizonOn(iface); }
   ripSetRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg, metric?: number, routePolicy?: string) { this.ripEngine.setRedistribution(source, metric, routePolicy); }
   ripRemoveRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg) { this.ripEngine.removeRedistribution(source); }
   ripSetDefaultMetric(metric: number | null) { this.ripEngine.setDefaultMetric(metric); }

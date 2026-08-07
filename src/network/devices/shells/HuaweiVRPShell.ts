@@ -2083,7 +2083,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('rip authentication-mode', 'RIP authentication mode', ripIf('auth'));
     t.registerGreedy('rip metricin', 'Add incoming RIP metric', ripIf('metricIn'));
     t.registerGreedy('rip metricout', 'Add outgoing RIP metric', ripIf('metricOut'));
-    t.register('rip split-horizon', 'Enable split horizon', () => { ripIf('splitHorizon')(['on']); return ''; });
+    // `rip split-horizon` ecrivait dans `_huaweiRipIfExtras`, que rien
+    // ne lit : la commande etait acceptee et n'avait aucun effet. Elle
+    // passe par le meme reglage que la forme Cisco, le moteur RIP etant
+    // le meme des deux cotes.
+    const splitHorizonIf = (on: boolean) => () => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      (this.r() as unknown as {
+        ripSetInterfaceSplitHorizon?: (i: string, v: boolean | null) => void;
+      }).ripSetInterfaceSplitHorizon?.(ifName, on);
+      return '';
+    };
+    t.register('rip split-horizon', 'Enable split horizon', splitHorizonIf(true));
+    t.register('undo rip split-horizon', 'Disable split horizon', splitHorizonIf(false));
     t.register('rip poison-reverse', 'Enable poison reverse', () => { ripIf('poisonReverse')(['on']); return ''; });
     t.registerGreedy('rip summary-address', 'RIP summary address', ripIf('summaryAddress'));
 
