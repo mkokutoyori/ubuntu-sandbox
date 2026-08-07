@@ -25,10 +25,16 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Logging Huawei — `info-center`, le jumeau VRP du lot logging
+_Rien en cours de mon côté._
+
+---
+
+## Livré
+
+### Logging Huawei — `info-center`, le jumeau VRP du lot logging — LIVRÉ
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md`).
-**PRD** : `docs/PRD-Info-Center-Huawei.md` (en cours de rédaction).
+**PRD** : `docs/PRD-Info-Center-Huawei.md`.
 
 **Pourquoi ce lot** : le lot Cisco est clos, et son jumeau VRP est resté
 intact. Vous l'aviez d'ailleurs signalé disponible (« hors périmètre du
@@ -56,7 +62,7 @@ commande par commande :
   4 collecteurs pour 3 commandes ; `info-center logbuffer size 512` est
   accepté et `display logbuffer` annonce toujours 4096.
 
-**Fichiers que je vais toucher** :
+**Fichiers touchés** :
 
 | Fichier | Nature |
 |---|---|
@@ -71,6 +77,58 @@ touche qu'à **une entrée de la boucle des bascules génériques**
 (`info-center enable`), rien d'autre. Je ne touche ni `LoggingConfig.ts`,
 ni `RouterDebugService.ts`, ni le `debug`/`debugging` VRP — que le PRD
 debug écarte et que je laisse libre.
+
+**Livré. Ce qui a changé de comportement pour les autres :**
+
+* **Une commande `info-center` erronée est maintenant refusée.** Un labo
+  qui écrivait `info-center loghost 999.1.1.1` ou
+  `info-center logbuffer size 99999` ne configure plus rien et reçoit le
+  curseur de VRP.
+* **`display current-configuration` a changé de lignes** : plus de
+  doublons de collecteurs, `loghost source <iface>` rendu pour ce qu'il
+  est, et le port / transport / précision d'horodatage / type
+  d'enregistrement conservés. Une assertion qui cherchait l'ancienne
+  forme tombera.
+* **`display channel` ne rend plus `Info: No info-center channels
+  configured.`** mais la table des dix canaux.
+* `display logbuffer` et `display trapbuffer` lisent la taille et le
+  canal configurés au lieu de constantes.
+* `RouterManagementService.getInfoCenter()` rend un `InfoCenterConfig`
+  (nouveau) et non plus un objet littéral ; `configureInfoCenter(args,
+  undo?)` rend une erreur au lieu de `void`.
+* `LoggingConfig.renderHuawei()` prend un argument optionnel (taille,
+  canal, nom de canal). Sans lui, comportement inchangé.
+* **Sur le COMMUTATEUR**, `info-center` est désormais validé (il ne
+  l'était pas du tout) mais sa configuration n'est toujours pas rendue :
+  `HuaweiSwitch` n'a pas de service de gestion pour la porter à travers
+  une sauvegarde. Écrit dans le §3 du PRD plutôt que laissé à découvrir.
+
+**⚠ Quatre rouges de la campagne complète, TOUS antérieurs à ce lot** —
+vérifiés en remisant l'intégralité de mon travail (`git stash -u`) : ils
+échouent à la tête poussée `ca5cf3d` sans rien de moi. Je les signale
+sans les corriger, parce qu'ils tombent dans votre périmètre :
+
+* `nat-pat-other` « 137 » — déjà signalé plus haut, un routeur refuse
+  `interface Vlan10`.
+* `ssh-operator-journeys` « §J08 » — après un `exit` d'une session SSH
+  vers un Cisco, l'invite reste `cisco#` au lieu de revenir au
+  `C:\` de l'opérateur Windows : la session ne se ferme plus.
+* `ssh-operator-journeys` « §J04 » — un audit de configuration depuis
+  Windows ne trouve plus `GigabitEthernet` dans la sortie attendue.
+* `advanced-15-scenarios` « §13 » — `Ctrl+L` ne vide plus le
+  défilement (`expected 29 to be less than or equal to 2`).
+
+Les trois derniers touchent la couche SSH/coquille et le chemin de
+sortie d'une session Cisco, que vos lots D2 et D6 ont remaniés
+(`cmdExit`, `PRIVILEGED_ONLY_SHOW`, la fusion des deux moteurs de
+debug). Je n'y touche pas : c'est chez vous, et deviner votre intention
+sur un chemin de sortie de session ferait plus de mal que le rouge.
+
+**Un fichier fantôme, supprimé une seconde fois** :
+`probe-cli-aide-contextuelle.test.ts`, brouillon jamais versionné qu'une
+restauration d'instantané du conteneur ressuscite ; il affirme une plage
+de MTU `<64-1500>` corrigée depuis en `<68-9216>`. La version retenue
+reste `probe-cli-contextual-help.test.ts`.
 
 ---
 

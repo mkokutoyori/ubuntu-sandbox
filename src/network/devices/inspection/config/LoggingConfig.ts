@@ -2259,13 +2259,25 @@ export class LoggingConfig {
     }).join(', ');
   }
 
-  renderHuawei(): string {
+  /**
+   * `display logbuffer`.
+   *
+   * La taille et le canal viennent d'`info-center`, quand la machine en
+   * a un : `info-center logbuffer size 512` était accepté et cette vue
+   * continuait d'annoncer la taille du tampon d'IOS, qui n'a rien à voir.
+   * Le numéro de canal était écrit en dur, donc juste par coïncidence —
+   * un `info-center logbuffer channel 6` ne le changeait pas.
+   */
+  renderHuawei(vrp?: { size: number; channel: number; channelName: string }): string {
     const pad2 = (n: number) => String(n).padStart(2, '0');
+    const taille = vrp?.size ?? this.bufferedSize;
+    const canal = vrp?.channel ?? 4;
+    const nomCanal = vrp?.channelName ?? 'logbuffer';
     const lines = [
       `Logging buffer configuration and contents: ${this.enabled ? 'enabled' : 'disabled'}`,
-      `Allowed max buffer size : ${this.bufferedSize}`,
-      `Actual buffer size : ${this.bufferedSize}`,
-      'Channel number : 4 , Channel name : logbuffer',
+      `Allowed max buffer size : ${taille}`,
+      `Actual buffer size : ${taille}`,
+      `Channel number : ${canal} , Channel name : ${nomCanal}`,
       'Dropped messages : 0',
       'Overwritten messages : 0',
       `Current messages : ${this.messages.length}`,

@@ -121,13 +121,20 @@ export function displayLogbuffer(now: Date = new Date()): string {
   ].join('\n');
 }
 
-/** `display trapbuffer` — informational trap ring buffer. */
-export function displayTrapbuffer(): string {
+/**
+ * `display trapbuffer`.
+ *
+ * La taille et le canal viennent d'`info-center` quand la machine en a
+ * un : `info-center trapbuffer size <n>` était accepté et cette vue
+ * annonçait toujours 256.
+ */
+export function displayTrapbuffer(vrp?: { size: number; channel: number; channelName: string }): string {
+  const taille = vrp?.size ?? 256;
   return [
     'Trapping buffer configuration and contents: enabled',
-    'Allowed max buffer size : 256',
-    'Actual buffer size : 256',
-    'Channel number : 3 , Channel name : trapbuffer',
+    `Allowed max buffer size : ${taille}`,
+    `Actual buffer size : ${taille}`,
+    `Channel number : ${vrp?.channel ?? 3} , Channel name : ${vrp?.channelName ?? 'trapbuffer'}`,
     'Dropped messages : 0',
     'Current messages : 0',
   ].join('\n');
