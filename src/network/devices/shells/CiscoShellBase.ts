@@ -24,7 +24,7 @@ import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
-import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter } from './cli-utils';
+import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter, PIPE_WRITERS, PIPE_MODIFIERS, type PipeFilter } from './cli-utils';
 import { isValidIPv4 } from '../../core/ip';
 import {
   registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
@@ -66,6 +66,28 @@ import {
   CliInvalidInput, CliIncomplete, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
   tokenSpans, INVALID_INPUT_MESSAGE,
 } from './cli/CliDiagnostic';
+
+/**
+ * Ce qu'IOS affiche pendant qu'il écrit : un `!` par tranche envoyée.
+ * `tee` affiche EN PLUS la sortie, `redirect` et `append` seulement
+ * ceci — c'est ce qui distingue les trois.
+ */
+const PIPE_WRITE_BANNER = '!!';
+
+/** Le texte que `help` imprime sur IOS, mot pour mot. */
+const HELP_SYSTEM_TEXT = [
+  'Help may be requested at any point in a command by entering',
+  'a question mark \'?\'.  If nothing matches, the help list will',
+  'be empty and you must backup until entering a \'?\' shows the',
+  'available options.',
+  'Two styles of help are provided:',
+  '1. Full help is available when you are ready to enter a',
+  '   command argument (e.g. \'show ?\') and describes each possible',
+  '   argument.',
+  '2. Partial help is provided when an abbreviated argument is entered',
+  '   and you want to know what arguments match the input',
+  '   (e.g. \'show pr?\'.)',
+].join('\n');
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
@@ -318,6 +340,46 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected configLineTrie = new CommandTrie();
   /** Currently-selected VTY range under `line vty <first> [last]`. */
   protected selectedVtyRange: { first: number; last: number } | null = null;
+
+  /**
+   * Une ligne console/aux est un PORT SÉRIE, une vty est une session
+   * réseau : les deux ne portent pas les mêmes réglages. Un seul arbre
+   * les servait, donc `speed 9600` était accepté sur une vty (qui n'a
+   * pas de débit) et `access-class` sur la console (qui n'a pas
+   * d'adresse d'où filtrer). `databits`, `parity` et `flowcontrol`
+   * manquaient entièrement, alors qu'ils existent là où ils ont un sens.
+   *
+   * Table unique : le gestionnaire la lit pour refuser, l'aide pour ne
+   * pas proposer.
+   */
+  private static readonly LINE_KEYWORD_OWNERS:
+    ReadonlyMap<string, ReadonlyArray<'console' | 'vty' | 'aux'>> = new Map([
+      ['speed', ['console', 'aux']],
+      ['databits', ['console', 'aux']],
+      ['stopbits', ['console', 'aux']],
+      ['parity', ['console', 'aux']],
+      ['flowcontrol', ['console', 'aux']],
+      ['access-class', ['vty']],
+      ['rotary', ['vty', 'aux']],
+    ]);
+
+  protected currentLineKind(): 'console' | 'vty' | 'aux' | null {
+    if (this.selectedVtyRange) return 'vty';
+    if (this.selectedAuxLine != null) return 'aux';
+    if (this.selectedConsoleLine != null) return 'console';
+    return null;
+  }
+
+  protected lineKeywordAllowed(keyword: string): boolean {
+    const owners = CiscoShellBase.LINE_KEYWORD_OWNERS.get(keyword.toLowerCase());
+    if (!owners) return true;
+    const kind = this.currentLineKind();
+    return kind === null || owners.includes(kind);
+  }
+
+  private requireLineKind(keyword: string): void {
+    if (!this.lineKeywordAllowed(keyword)) throw new CliInvalidInput();
+  }
 
   // ─── Abstract hooks (Template Method) ───────────────────────────
 
@@ -1065,6 +1127,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const parsed = parsePipeFilter(trimmed);
     let cmdPart = parsed.cmd;
     const pipeFilter = parsed.filter;
+    if (pipeFilter && PIPE_WRITERS.has(pipeFilter.type)) {
+      return this.runPipeWriter(cmdPart, pipeFilter, device);
+    }
 
     // Context-sensitive help
     if (cmdPart.endsWith('?')) {
@@ -1096,6 +1161,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
     if (lower === 'end' || cmdPart === '\x03' || cmdPart === '\x1a') return this.cmdEnd();
+    // `help` n'existait pas : en EXEC il partait vers la résolution de
+    // noms (« Translating "help"… »), en configuration il répondait au
+    // caret. C'est le texte d'IOS, mot pour mot.
+    if (lower === 'help') return HELP_SYSTEM_TEXT;
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
     if (lower === 'disable' && this.mode === 'privileged') {
       this.mode = 'user';
@@ -1106,7 +1175,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Bind device reference for command closures
     this.deviceRef = device;
 
+    // `default <commande>` remet une commande à sa valeur d'usine. IOS
+    // l'implémente comme la négation SUIVIE de la valeur par défaut ;
+    // ici, la seule valeur par défaut connue d'une commande est son
+    // absence, donc `default X` est exécuté comme `no X` — ce qui est
+    // exact pour tout ce que ce simulateur configure, et honnête : la
+    // commande n'est plus refusée au caret alors qu'IOS l'accepte.
+    if (this.isConfigMode() && (lower === 'default' || lower.startsWith('default '))) {
+      const reste = cmdPart.slice('default'.length).trim();
+      if (!reste) return CISCO_ERRORS.INCOMPLETE;
+      this.deviceRef = device;
+      return applyPipeFilter(this.executeOnTrie(`no ${reste}`), pipeFilter);
+    }
+
     // 'do' prefix in config modes — delegate to privileged trie
+    if (this.isConfigMode() && lower === 'do') return CISCO_ERRORS.INCOMPLETE;
     if (this.isConfigMode() && lower.startsWith('do ')) {
       const subCmd = cmdPart.slice(3).trim();
       const savedMode = this.mode;
@@ -1523,13 +1606,90 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Help / Tab-Complete ────────────────────────────────────────
 
+  /**
+   * `exit`, `end`, `help`, `do` et `default` ne sont enregistrés dans
+   * AUCUN arbre : ils sont traités par le shell, avant l'arbre, parce
+   * qu'ils existent dans tous les modes. C'est précisément pour cela
+   * qu'aucun `?` ne les listait — l'aide ne lit que l'arbre.
+   *
+   * Cette liste est le point unique : le répartiteur l'applique, l'aide
+   * la rend, et un mot-clé ne peut donc plus être exécutable sans être
+   * proposé (ni l'inverse).
+   */
+  protected universalCommands(): Array<{ keyword: string; description: string }> {
+    const out = [
+      { keyword: 'end', description: 'Exit from configure mode' },
+      { keyword: 'exit', description: 'Exit from the EXEC' },
+      { keyword: 'help', description: 'Description of the interactive help system' },
+    ];
+    if (this.isConfigMode()) {
+      out.push({ keyword: 'default', description: 'Set a command to its defaults' });
+      out.push({ keyword: 'do', description: 'To run exec commands in config mode' });
+    }
+    if (this.mode === 'config') out[1].description = 'Exit from configure mode';
+    else if (this.isConfigMode()) out[1].description = 'Exit from this submode';
+    return out.sort((a, b) => a.keyword.localeCompare(b.keyword));
+  }
+
+  /**
+   * `| redirect`, `| append` et `| tee` ÉCRIVENT. Ils étaient acceptés
+   * et ne créaient aucun fichier : la sortie partait au terminal comme
+   * si le modificateur n'avait pas été tapé, et `dir flash:` ne montrait
+   * rien de nouveau. Une commande qui promet d'écrire doit écrire.
+   *
+   * L'écriture est faite ICI et pas dans `applyPipeFilter`, parce que
+   * seul le shell tient le système de fichiers de l'équipement — le
+   * même objet que `dir` et `more` lisent, pas une copie.
+   */
+  private runPipeWriter(cmdPart: string, filter: PipeFilter, device: TDevice): string {
+    const cible = filter.pattern.trim();
+    if (!cible) return CISCO_ERRORS.INCOMPLETE;
+    const fs = this.fs();
+    const nom = cible.replace(/^[a-z]+:\/?/i, '');
+    if (!nom) return `%Error opening ${cible} (No such file or directory)`;
+
+    this.deviceRef = device;
+    const sortie = this.executeOnTrie(cmdPart);
+    this.deviceRef = null;
+
+    const ancien = filter.type === 'append' ? (fs.get(nom)?.content ?? '') : '';
+    const contenu = ancien ? `${ancien}\n${sortie}` : sortie;
+    if (contenu.length - ancien.length > fs.freeBytes()) {
+      return `%Error opening ${cible} (No space left on device)`;
+    }
+    fs.write(nom, contenu);
+    return filter.type === 'tee' ? `${sortie}\n${PIPE_WRITE_BANNER}` : PIPE_WRITE_BANNER;
+  }
+
   getHelp(input: string, device?: TDevice): string {
+    // `show running-config | ?` n'était le nœud d'aucun arbre : le `|`
+    // est retiré de la ligne avant l'analyse, donc l'aide répondait au
+    // caret là où IOS liste ses modificateurs. Le cas est traité ici et
+    // pas dans le répartiteur, pour que le terminal et `cliHelp` — les
+    // deux portes de l'aide — ne puissent pas répondre différemment.
+    const barre = input.lastIndexOf('|');
+    if (barre >= 0) {
+      const partiel = input.slice(barre + 1).trim().toLowerCase();
+      const offerts = PIPE_MODIFIERS.filter((m) => m.keyword.startsWith(partiel));
+      if (offerts.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
+      const large = Math.max(...offerts.map((m) => m.keyword.length));
+      return offerts.map((m) => `  ${m.keyword.padEnd(large + 2)}${m.description}`).join('\n');
+    }
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(device ? new EquipmentParamResolver(device) : null);
     try {
       const completions = trie.getCompletions(input);
       if (completions.length === 0) {
         return CISCO_ERRORS.UNRECOGNIZED_HELP;
+      }
+      // Seul le menu RACINE d'un mode porte les commandes universelles :
+      // elles ne sont pas des continuations de `show` ou de `ip`.
+      if (input.trim() === '') {
+        const deja = new Set(completions.map((c) => c.keyword.toLowerCase()));
+        for (const u of this.universalCommands()) {
+          if (!deja.has(u.keyword)) completions.push(u);
+        }
+        completions.sort((a, b) => a.keyword.localeCompare(b.keyword));
       }
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -2248,7 +2408,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         enable(c: string, scope?: string): string;
         disable(c: string): string;
         addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
-        removeCondition(kind: 'interface' | 'vrf', value: string): string;
+        removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
         clearConditions(): void;
       };
     }).getDebugService?.();
@@ -3366,10 +3526,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     for (const kw of ['login', 'password',
-      'logging', 'privilege', 'no', 'speed', 'stopbits',
-      'session-timeout', 'history', 'length', 'width', 'authorization',
+      'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
+      'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',
       'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
+        this.requireLineKind(kw);
         const range = this.selectedVtyRange;
         if (!range) {
           if (this.selectedAuxLine != null) {
@@ -3480,6 +3641,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
+    this.configLineTrie.setCompletionFilter((path, keyword) =>
+      this.lineKeywordAllowed(path.length > 0 ? path[0] : keyword));
     this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
       if (args.length === 0) return '% Incomplete command.';
       if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
@@ -3503,6 +3666,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     // `access-class <acl> {in|out}` — VTY ACL gate (§21).
     this.configLineTrie.registerGreedy('access-class', 'Apply ACL to VTY', (args) => {
+      this.requireLineKind('access-class');
       const range = this.selectedVtyRange;
       if (!range) return '';
       if (!args[0] || !args[1]) return '% Incomplete command.';

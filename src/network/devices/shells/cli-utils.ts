@@ -45,7 +45,30 @@ export interface PipeFilter {
   pattern: string;
 }
 
-const PIPE_FILTER_RE = /^(include|exclude|begin|grep|findstr|section|count)(?:\s+(.+))?$/i;
+const PIPE_FILTER_RE = /^(include|exclude|begin|grep|findstr|section|count|redirect|append|tee)(?:\s+(.+))?$/i;
+
+/**
+ * Les trois modificateurs qui ÉCRIVENT au lieu de filtrer. Ils étaient
+ * absents de l'expression ci-dessus, donc `parsePipeFilter` ne les
+ * reconnaissait pas : la sortie partait au terminal sans qu'aucun
+ * fichier soit créé, et `dir flash:` ne montrait rien de nouveau.
+ *
+ * `redirect` et `append` n'affichent RIEN — c'est ce qui les distingue
+ * de `tee`, qui écrit et affiche.
+ */
+export const PIPE_WRITERS: ReadonlySet<string> = new Set(['redirect', 'append', 'tee']);
+
+/** Ce que `| ?` propose sur IOS. */
+export const PIPE_MODIFIERS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'append', description: 'Append redirected output to URL (URLs supporting append operation only)' },
+  { keyword: 'begin', description: 'Begin with the line that matches' },
+  { keyword: 'count', description: 'Count number of lines which match regexp' },
+  { keyword: 'exclude', description: 'Exclude lines that match' },
+  { keyword: 'include', description: 'Include lines that match' },
+  { keyword: 'redirect', description: 'Redirect output to URL' },
+  { keyword: 'section', description: 'Filter a section of output' },
+  { keyword: 'tee', description: 'Copy output to URL' },
+];
 
 /**
  * Resolve a Huawei VRP global-navigation abbreviation.
@@ -115,6 +138,11 @@ export function applyPipeFilter(output: string, filter: PipeFilter | null): stri
   }
   if (filter.type === 'section') {
     return extractSections(lines, pattern).join('\n');
+  }
+  // L'écriture appartient au shell, qui seul tient le système de
+  // fichiers ; ici on ne décide que de ce qui reste à l'écran.
+  if (PIPE_WRITERS.has(filter.type)) {
+    return filter.type === 'tee' ? output : '';
   }
   if (filter.type === 'count') {
     if (!pattern) return String(lines.length);
