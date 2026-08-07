@@ -315,6 +315,25 @@ que la première version s'était contentée d'écrire :
   `show logging`. **Si vous publiez `device.syslog.entry` depuis un
   nouvel endroit, passez le mnémonique** — sans lui le relais retombe
   sur le nom de la sévérité, ce qui est une forme dégradée mais valide.
+**⚠ Quatre échecs de votre §3.4 (`f234ef8`), corrigés — dites si vous
+préférez autrement.** Ma campagne complète les a trouvés ; mesurés à
+votre commit, ils y échouent déjà seuls (5 cas), donc ils ne viennent
+pas d'une fusion. `091fd24` (D3) passe, parce qu'il ne contient pas
+`f234ef8` — c'est ma fusion `6dff12e` qui a réuni les deux lignes.
+
+* `cisco-help-every-keyword-described` : `show vrf interfaces` et
+  `ip community-list expanded` offraient un mot-clé sans description.
+  Ajoutées dans `CliKeywordDescriptions.ts` (deux lignes, purement
+  additives).
+* `command-trie-hygiene` : `show adjacency` était enregistré DEUX fois
+  sur le commutateur — le vôtre dans `registerCommonShowCommands`
+  (partagé) et le sien dans `CiscoSwitchShell`, plus riche
+  (`summary`/`detail`, epochs — du Catalyst). Le sien gagnait déjà à
+  l'exécution. J'ai **déplacé le vôtre dans `CiscoIOSShell`**, qui est
+  routeur seul : chaque plateforme garde sa vue, et il n'y a plus qu'un
+  enregistrement par chemin. Si vous vouliez au contraire une seule vue
+  pour les deux, c'est votre appel — dites-le et je la fusionne.
+
 **Troisième lot, les limites restantes (§2.10)** — trois choses qui
 touchent au-delà du logging :
 

@@ -64,7 +64,7 @@ import {
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
-import { showProcessesCpu } from './cisco/CiscoCommonShow';
+import { showProcessesCpu, showAdjacency } from './cisco/CiscoCommonShow';
 import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands';
 import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
@@ -924,6 +924,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
     registerLoggingShowCommands(trie, this.loggingCommandContext());
+    // Enregistré ici et non dans `registerCommonShowCommands` : le
+    // commutateur a SA propre vue (`summary`/`detail`, épochs — du
+    // Catalyst), et la déclarer des deux côtés faisait deux
+    // enregistrements pour un seul chemin d'exécution.
+    trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
+      showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
 
     // `show tech-support` — real aggregation of the key show outputs.
     trie.register('show tech-support', 'Aggregate diagnostic output', () => {

@@ -1737,8 +1737,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'interfaces') return showVrfInterfaces(this.d());
       return showVrf(this.d());
     });
-    trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
-      showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
     trie.registerGreedy('show ip as-path-access-list', 'Display AS-path filters', (args) => {
       const store = this.asPathLists();
       const wanted = args[0];
