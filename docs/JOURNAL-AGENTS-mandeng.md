@@ -31,6 +31,38 @@ _Rien en cours de mon côté._
 
 ## Livré
 
+### Routage — lot R5 (OSPF et IGMP sur la vue d'interface commune) — LIVRÉ
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Routage-Fidelite.md` §4.2, chantier C / lot R5, détail
+en §12.
+
+**Fichiers touchés** : `shells/cisco/CiscoIgmpCommands.ts`,
+`shells/cisco/CiscoOspfCommands.ts`. **Aucun contact avec l'agent
+« logging »** : rien de `LoggingConfig.ts` ni des modules `logging`.
+
+**Ce qui est corrigé** : `show ip igmp interface` calculait son propre
+état (`getIsUp() && isConnected()`), donc un lien coupé à l'AUTRE bout se
+lisait `up` dans cette vue et `down` dans les quatre autres ;
+`administratively down` y était aplati en `down` ; et une interface
+virtuelle, jamais câblée, y aurait été rapportée morte. Elle lit
+maintenant `iosInterfaceStatus`, comme tout le reste.
+`show ip ospf interface` appliquait son garde-fou `ospfIfaceOperUp()` à
+une ligne sur les trois qu'il gouverne : l'état passait à `DOWN` et les
+deux suivantes annonçaient `DR: 10.0.12.1` — le routeur se déclarait
+routeur désigné d'un lien mort. Et `show ip ospf interface brief` ne
+consultait pas ce garde-fou du tout, si bien que les deux vues d'un même
+protocole se contredisaient sur la même interface au même instant.
+
+`cisco-interface-state-one-truth.test.ts` (13 cas), 10 tombent par
+`git stash`. 69 suites connexes vertes (863 cas). Typecheck à 164,
+inchangé ; lint identique au baseline.
+
+**Restent ouverts sur ce PRD** : R6 (chantier D, le reste), R7
+(commandes manquantes §1.11).
+
+---
+
 ### Debug Cisco — lot D6 (un seul moteur) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
@@ -504,7 +536,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
-| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
+| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R5 livrés ; R6, R7 ouverts |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`

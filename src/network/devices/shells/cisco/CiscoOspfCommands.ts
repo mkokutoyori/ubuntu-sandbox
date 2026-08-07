@@ -1712,8 +1712,8 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
     lines.push(`  Process ID ${ospf.getProcessId()}, Router ID ${ospf.getRouterId()}, Network Type ${iface.networkType.toUpperCase()}, Cost: ${iface.cost}`);
     // A dead link elects nobody: IOS reports State DOWN there, never DR.
     lines.push(`  Transmit Delay is ${iface.transmitDelay} sec, State ${operUp ? iface.state : 'DOWN'}, Priority ${iface.priority}`);
-    lines.push(`  DR: ${iface.dr}`);
-    lines.push(`  BDR: ${iface.bdr}`);
+    lines.push(`  DR: ${operUp ? iface.dr : '0.0.0.0'}`);
+    lines.push(`  BDR: ${operUp ? iface.bdr : '0.0.0.0'}`);
     lines.push(`  Timer intervals configured, Hello ${iface.helloInterval}, Dead ${iface.deadInterval}, Wait ${iface.deadInterval}, Retransmit ${iface.retransmitInterval}`);
     lines.push(`  Hello due in 00:00:${String(iface.helloInterval).padStart(2, '0')}`);
     lines.push(`  Neighbor Count is ${iface.neighbors.size}, Adjacent neighbor count is ${countFullNeighbors(iface)}`);
@@ -1749,7 +1749,7 @@ function showIpOspfInterfaceBrief(router: Router): string {
     const area = iface.areaId;
     const ipMask = `${iface.ipAddress}/${maskToCIDR(iface.mask)}`;
     const cost = iface.cost;
-    const state = ospfIfStateAbbr(iface.state);
+    const state = ospfIfStateAbbr(ospfIfaceOperUp(router, name) ? iface.state : 'Down');
     const fullCount = countFullNeighbors(iface);
     const totalCount = iface.neighbors.size;
     lines.push(
