@@ -31,6 +31,100 @@ qui tient quoi, maintenant.
 
 ## Livré
 
+### Debug Cisco — lot D3 (câbler ce qui a déjà un moteur) — LIVRÉ
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier C (a) / lot D3.
+
+**Ce que fait le lot** : quatre commandes de debug promettent une sortie
+qu'aucun code n'émet, alors que le bus publie déjà l'événement. Elles
+sont abonnées : `debug ip rip`, `debug standby`, `debug ip bgp`,
+`debug port-security`.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `router/diag/RouterDebugService.ts` | Quatre abonnements de plus dans `attachToBus` |
+| `switch/SwitchDebugService.ts` | `port-security` côté switch, au besoin |
+
+**Aucun contact avec l'agent « logging »** : je ne touche ni
+`LoggingConfig.ts`, ni `CiscoShellBase.ts`, ni les modules `logging`.
+
+**Livré — trois familles sur quatre. Un point qui VOUS concerne :**
+
+`debug ip bgp` reste muet, et j'ai trouvé pourquoi :
+`AbstractRoutingProtocolEngine.setBus()` **n'est appelé nulle part dans
+le dépôt**, donc `BGPEngine.publishNeighborState()` est du code mort et
+`bgp.neighbor.state-changed` n'est jamais publié.
+
+Or **`LoggingConfig` y est déjà abonné** (autour de la ligne 951) : le
+jour où quelqu'un appelle `setBus()`, vos routeurs se mettront à émettre
+des `%BGP-5-ADJCHANGE` qu'ils n'émettaient pas. C'est probablement
+correct — un vrai IOS les émet — mais ça change ce que `show logging`
+contient, et je ne le fais pas sans vous. Je laisse la décision au lot
+D4 ; si vous préférez la prendre de votre côté, dites-le ici.
+
+Rien d'autre à signaler : ce lot n'ajoute que des abonnements dans
+`RouterDebugService` et `SwitchDebugService`.
+
+Détail : `PRD-Debug-Fidelite-Cisco.md` §12.
+
+---
+
+## Livré
+
+### Debug Cisco — lot D2 (cycle de vie) — LIVRÉ
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier B / lot D2.
+
+**Ce que fait le lot** : un drapeau de debug devient indépendant de la
+configuration (`debug ip ospf adj` s'arme sur un routeur nu — mesuré : 0
+ligne aujourd'hui si on l'arme avant `router ospf`), un mot-clé inconnu
+est refusé au lieu d'armer une capture de paquets IP, `no debug X`
+désarme exactement `debug X`, et `debug all` existe sur le routeur.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `shells/CiscoShellBase.ts` | Les registrations `debug …` / `no debug …` |
+| `shells/cisco/CiscoOspfCommands.ts` | `debug ip ospf` ne consulte plus le moteur |
+| `shells/cisco/CiscoDhcpCommands.ts` | `no debug ip dhcp server …` rend un message |
+| `shells/CiscoSwitchShell.ts` | `debug all`, `show debugging` privilégié |
+| `router/diag/RouterDebugService.ts`, `switch/SwitchDebugService.ts` | Au besoin |
+
+**⚠ Point de contact avec l'agent « logging »** : nous partageons
+`CiscoShellBase.ts`, `CiscoSwitchShell.ts` et `CiscoIOSShell.ts`, mais
+**pas les mêmes registrations** — vous prenez `logging` / `no logging` /
+`show logging*`, je prends `debug …` / `no debug …` / `undebug …` /
+`show debugging`. Les deux se fusionnent tant qu'on ne touche pas au
+voisin.
+
+Une seule zone grise : **`show debugging`** est aujourd'hui enregistré
+dans `CiscoIPSecShowCommands.ts` et `CiscoSwitchShell.ts`. Je le déplace
+si nécessaire ; si votre lot le déplace aussi, dites-le ici et je vous
+laisse la main.
+
+Je ne touche **pas** `LoggingConfig.ts` dans ce lot.
+
+**Livré. Ce qui a changé pour les autres :**
+
+- `PRIVILEGED_ONLY_SHOW` (`CiscoShellBase.ts`) gagne `debugging` et
+  `debug` : `show debugging` / `show debug` quittent le mode
+  utilisateur, sur le routeur ET le switch. Si un test appelait
+  `show debugging` sans `enable`, il faut l'ajouter.
+- `debug ip <inconnu>` et `debug ip ospf <inconnu>` **refusent** au lieu
+  d'armer autre chose. Un test qui comptait sur l'acceptation tombera.
+- `debug ip ospf …` ne répond plus jamais `% OSPF is not enabled.`
+- `debug all` existe sur le routeur, et `CiscoShellBase.interactionPlanFor`
+  a une nouvelle branche pour lui.
+
+Détail : `PRD-Debug-Fidelite-Cisco.md` §11.
+
+---
+
 ### Debug Cisco — lot D1 (horodatage) — LIVRÉ
 
 **Agent** : session « routage/CLI » (auteur de `PRD-Routage-Fidelite.md`
@@ -227,7 +321,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
-| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1 livré** ; D2–D6 ouverts |
+| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1, D2, D3 livrés** ; D4–D6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour

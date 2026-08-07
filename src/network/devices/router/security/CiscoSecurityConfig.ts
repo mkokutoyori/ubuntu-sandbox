@@ -321,6 +321,8 @@ export class CiscoSecurityConfig {
   login: LoginControl = {};
   ipCef = true;
   ipCefDistributed = false;
+  ipv6Cef = false;
+  ipMulticastRouting = false;
 
   classMaps: Map<string, ClassMap> = new Map();
   policyMaps: Map<string, PolicyMap> = new Map();
@@ -411,6 +413,8 @@ export class CiscoSecurityConfig {
     if (this.login.onFailureLog) lines.push('login on-failure log');
     if (this.login.onSuccessLog) lines.push('login on-success log');
     if (!this.ipCef) lines.push('no ip cef');
+    if (this.ipv6Cef) lines.push('ipv6 cef');
+    if (this.ipMulticastRouting) lines.push('ip multicast-routing');
     if (this.ssh.version !== 1) lines.push(`ip ssh version ${this.ssh.version}`);
     if (this.ssh.timeoutSec !== 120) lines.push(`ip ssh time-out ${this.ssh.timeoutSec}`);
     if (this.ssh.authRetries !== 3) lines.push(`ip ssh authentication-retries ${this.ssh.authRetries}`);

@@ -48,6 +48,22 @@ export type DebugCategory =
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
+function maskToCidr(mask: string): number {
+  if (/^\d+$/.test(mask)) return Number(mask);
+  return mask.split('.').reduce((n, o) => n + (Number(o).toString(2).match(/1/g)?.length ?? 0), 0);
+}
+
+function shortIface(name: string): string {
+  const m = /^([A-Za-z]+)(\d.*)$/.exec(name);
+  if (!m) return name;
+  const prefix = m[1].startsWith('Gigabit') ? 'Gi'
+    : m[1].startsWith('FastEther') ? 'Fa'
+    : m[1].startsWith('TenGigabit') ? 'Te'
+    : m[1].startsWith('Ether') ? 'Et'
+    : m[1].slice(0, 2);
+  return `${prefix}${m[2]}`;
+}
+
 export function toCiscoMac(mac: string): string {
   const hex = mac.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
   if (hex.length !== 12) return mac;
@@ -102,6 +118,23 @@ export class RouterDebugService implements TerminalDebugSource {
 
   list(): readonly DebugFlag[] {
     return [...this.flags.values()].sort((a, b) => a.category.localeCompare(b.category));
+  }
+
+  private static readonly ALL: ReadonlyArray<DebugCategory> = [
+    'ip.packet', 'ip.icmp', 'ip.arp', 'ip.routing', 'ip.nat', 'ip.tcp', 'ip.udp',
+    'ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
+    'ip.ospf.packet', 'ip.ospf.lsa-generation', 'ip.dhcp.server',
+    'ip.sla.trace', 'ip.sla.error', 'track', 'interface', 'ipv6.packet',
+    'cdp.packets', 'lldp.packets', 'ip.pim', 'vxlan',
+    'crypto.isakmp', 'crypto.ipsec',
+  ];
+
+  enableAll(): string {
+    const now = Date.now();
+    for (const c of RouterDebugService.ALL) {
+      if (!this.flags.has(c)) this.flags.set(c, { category: c, enabledAtMs: now });
+    }
+    return 'All possible debugging has been turned on';
   }
 
   disableAll(): string {
@@ -468,6 +501,65 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('track',
         `Track ${p.objectId} ${p.description} ${p.oldState} -> ${p.newState}`);
     }));
+    this.broadcast.track(bus.subscribe('rip.update.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.rip',
+        `RIP: sending v2 update to ${p.destIp} via ${p.iface}`
+        + `${p.triggered ? ' (triggered)' : ''}`);
+      this.emit('ip.rip', `RIP: build update entries, ${p.routeCount} routes`);
+    }));
+    this.broadcast.track(bus.subscribe('rip.update.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.rip',
+        `RIP: received v2 update from ${p.fromIp} on ${p.iface}, ${p.routeCount} entries`);
+    }));
+    this.broadcast.track(bus.subscribe('rip.route.added', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.rip',
+        `RIP: ${p.network}/${maskToCidr(p.mask)} via ${p.nextHop} in ${p.metric} hops`);
+    }));
+    this.broadcast.track(bus.subscribe('rip.route.timed-out', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.rip', `RIP: ${p.network}/${maskToCidr(p.mask)} timed out, marked unreachable`);
+    }));
+
+    this.broadcast.track(bus.subscribe('hsrp.state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('standby',
+        `HSRP: ${shortIface(p.iface)} Grp ${p.group} State ${p.oldState} -> ${p.newState}`);
+    }));
+    this.broadcast.track(bus.subscribe('hsrp.active.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('standby', `HSRP: ${shortIface(p.iface)} Grp ${p.group} Active router is `
+        + `${p.activeIp ?? 'unknown'}, priority ${p.activePriority}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('bgp.neighbor.state-changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.bgp', `BGP: ${p.neighborIp} went from ${p.oldState} to ${p.newState}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('port.security.violation', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { portName?: string; mac?: { toString(): string }; action?: string };
+      this.emit('port-security',
+        `PSECURE: Violation on ${p.portName ?? '?'}, `
+        + `MAC ${toCiscoMac(String(p.mac ?? ''))}, action ${p.action ?? 'shutdown'}`);
+    }));
+    this.broadcast.track(bus.subscribe('port.security.mac-aged', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { portName?: string; mac?: { toString(): string } };
+      this.emit('port-security',
+        `PSECURE: Aged out ${toCiscoMac(String(p.mac ?? ''))} on ${p.portName ?? '?'}`);
+    }));
+
     this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as { frame: unknown; portName?: string };

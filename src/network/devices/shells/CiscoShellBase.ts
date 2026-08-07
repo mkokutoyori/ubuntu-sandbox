@@ -36,6 +36,7 @@ import {
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
   showNtpStatus, showNtpAssociations,
   showLine, showIpSsh, showSshSessions, showHosts, showVrf,
+  showVrfDetail, showVrfInterfaces, showAdjacency,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
@@ -68,6 +69,7 @@ import {
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
+  'debugging', 'debug',
 ]);
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -429,6 +431,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (path === 'reload' && m.args.length === 0) {
       return this.reloadInteractionPlan();
     }
+    if (path === 'debug all') {
+      return {
+        steps: [
+          {
+            kind: 'confirmation',
+            prompt: 'This may severely impact network performance. Continue? (yes/[no]):',
+            defaultAnswer: 'no',
+            storeAs: 'debug_all_confirmed',
+          },
+          {
+            kind: 'run',
+            run: async (rt) => {
+              const answer = (rt.values.get('debug_all_confirmed') ?? 'no').toLowerCase();
+              if (answer.startsWith('y')) rt.output(await rt.exec('debug all'));
+            },
+          },
+        ],
+      };
+    }
     if (path === 'clear ip ospf' && m.args[0]?.toLowerCase() === 'process') {
       return {
         steps: [
@@ -709,6 +730,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Device as the real-state surface the shared show helpers read. */
   protected cs(): ShowStateDevice {
     return this.d() as unknown as ShowStateDevice;
+  }
+
+  protected asPathLists(): Map<string, string[]> {
+    const r = this.d() as unknown as { _ciscoAsPathLists?: Map<string, string[]> };
+    return (r._ciscoAsPathLists ??= new Map());
+  }
+
+  protected communityLists(): Map<string, string[]> {
+    const r = this.d() as unknown as { _ciscoCommunityLists?: Map<string, string[]> };
+    return (r._ciscoCommunityLists ??= new Map());
   }
 
   /** Hand the device's CDP agent (if any) to `fn`. No-op on non-Cisco. */
@@ -1677,8 +1708,48 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
       showSshSessions());
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
-    trie.register('show ip vrf', 'Display VRFs', () => showVrf(this.d()));
-    trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf(this.d()));
+    trie.registerGreedy('show ip vrf', 'Display VRFs', (args) => {
+      const sub = args[0]?.toLowerCase();
+      if (sub === 'detail') return showVrfDetail(this.d(), args[1]);
+      if (sub === 'interfaces') return showVrfInterfaces(this.d());
+      return showVrf(this.d());
+    }, [
+      { keyword: 'detail', description: 'Detailed VRF information' },
+      { keyword: 'interfaces', description: 'Interfaces bound to a VRF' },
+    ]);
+    trie.registerGreedy('show vrf', 'Display VRFs', (args) => {
+      const sub = args[0]?.toLowerCase();
+      if (sub === 'detail') return showVrfDetail(this.d(), args[1]);
+      if (sub === 'interfaces') return showVrfInterfaces(this.d());
+      return showVrf(this.d());
+    });
+    trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
+      showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
+    trie.registerGreedy('show ip as-path-access-list', 'Display AS-path filters', (args) => {
+      const store = this.asPathLists();
+      const wanted = args[0];
+      const keys = wanted ? [wanted] : [...store.keys()];
+      const out: string[] = [];
+      for (const k of keys) {
+        const rules = store.get(k);
+        if (!rules) continue;
+        out.push(`AS path access list ${k}`);
+        for (const rule of rules) out.push(`    ${rule}`);
+      }
+      return out.join('\n');
+    });
+    trie.registerGreedy('show ip community-list', 'Display BGP community lists', (args) => {
+      const store = this.communityLists();
+      const wanted = args[0];
+      const out: string[] = [];
+      for (const [key, rules] of store) {
+        const [kind, name] = key.split(' ');
+        if (wanted && wanted !== name) continue;
+        out.push(`Community ${kind} list ${name}`);
+        for (const rule of rules) out.push(`    ${rule}`);
+      }
+      return out.join('\n');
+    });
     trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
       showRedundancy());
     trie.registerGreedy('show file', 'Display file systems', () =>
@@ -2083,35 +2154,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'nat') return svc.enable('ip.nat');
       if (sub === 'arp') return svc.enable('ip.arp');
       if (sub === 'routing') return svc.enable('ip.routing');
-      if (sub === 'dhcp server' || sub === 'dhcp server events') return svc.enable('ip.dhcp.server');
+      if (sub.startsWith('dhcp server')) return svc.enable('ip.dhcp.server');
       if (sub === 'ssh') return svc.enable('ip.ssh');
       if (sub === 'rip') return svc.enable('ip.rip');
       if (sub === 'eigrp') return svc.enable('ip.eigrp');
       if (sub === 'bgp') return svc.enable('ip.bgp');
       if (sub === 'nhrp') return svc.enable('ip.nhrp');
       if (sub === 'pim') return svc.enable('ip.pim');
-      return svc.enable('ip.packet', sub);
+      throw new CliInvalidInput({ token: args[0] });
     });
     this.privilegedTrie.registerGreedy('no debug ip', 'Disable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
       const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim') => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is off';
-      if (sub === 'packet') return svc.disable('ip.packet');
+      if (sub === 'packet' || sub.startsWith('packet ')) return svc.disable('ip.packet');
       if (sub === 'icmp') return svc.disable('ip.icmp');
-      if (sub === 'tcp') return svc.disable('ip.tcp');
-      if (sub === 'udp') return svc.disable('ip.udp');
+      if (sub === 'tcp' || sub.startsWith('tcp ')) return svc.disable('ip.tcp');
+      if (sub === 'udp' || sub.startsWith('udp ')) return svc.disable('ip.udp');
       if (sub === 'nat') return svc.disable('ip.nat');
       if (sub === 'arp') return svc.disable('ip.arp');
       if (sub === 'routing') return svc.disable('ip.routing');
-      if (sub === 'dhcp server' || sub === 'dhcp server events') return svc.disable('ip.dhcp.server');
+      if (sub.startsWith('dhcp server')) return svc.disable('ip.dhcp.server');
       if (sub === 'ssh') return svc.disable('ip.ssh');
       if (sub === 'rip') return svc.disable('ip.rip');
       if (sub === 'eigrp') return svc.disable('ip.eigrp');
       if (sub === 'bgp') return svc.disable('ip.bgp');
       if (sub === 'nhrp') return svc.disable('ip.nhrp');
       if (sub === 'pim') return svc.disable('ip.pim');
-      return svc.disable('ip.packet');
+      throw new CliInvalidInput({ token: args[0] });
     });
     const debugSvc = () => {
       const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string; disable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string } };
@@ -2717,11 +2788,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
+      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+      const kind = args[0].toLowerCase();
+      const named = kind === 'standard' || kind === 'expanded';
+      const name = named ? args[1] : args[0];
+      const rule = (named ? args.slice(2) : args.slice(1)).join(' ');
+      const store = this.communityLists();
+      const key = `${named ? kind : 'standard'} ${name}`;
+      const list = store.get(key) ?? [];
+      list.push(rule);
+      store.set(key, list);
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `ip community-list ${args.join(' ')}`);
       return '';
     });
     this.configTrie.registerGreedy('ip as-path access-list', 'Define BGP AS-path filter', (args, raw) => {
+      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+      const store = this.asPathLists();
+      const list = store.get(args[0]) ?? [];
+      list.push(args.slice(1).join(' '));
+      store.set(args[0], list);
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `ip as-path access-list ${args.join(' ')}`);
       return '';

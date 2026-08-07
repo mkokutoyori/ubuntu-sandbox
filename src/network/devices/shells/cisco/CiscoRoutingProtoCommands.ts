@@ -503,6 +503,7 @@ export function buildRoutingProtoConfig(
     { kw: 'validate-update-source', protos: ['rip'] },
     { kw: 'no validate-update-source', protos: ['rip'] },
     { kw: 'traffic-share', protos: ['eigrp'] },
+    { kw: 'distribute-list', protos: ['rip', 'eigrp'] },
   ];
   for (const { kw, protos } of PROTO_EXTRAS) {
     routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args) => {
@@ -796,6 +797,12 @@ export function registerRoutingProtoShow(
       : '% EIGRP not running (no autonomous-system configured)';
   });
 
+  trie.registerGreedy('show ip protocols vrf', 'Display routing protocols in a VRF', (a) => {
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+    const vrfs = (ctx.r() as unknown as { _vrfs?: Map<string, unknown> })._vrfs;
+    if (!vrfs?.has(a[0])) return `% VRF ${a[0]} does not exist`;
+    return `Routing Protocol is "connected"\n  VRF ${a[0]}`;
+  });
   trie.register('show ip protocols', 'Display routing protocol state', () => {
     const out: string[] = [];
     // `showIpProtocols` rend DÉJÀ les blocs OSPF et RIP. L'appeler sous

@@ -543,3 +543,126 @@ qu'affaiblies : elles exigent maintenant l'estampe ET le contenu.
 **Mesures.** 99 suites connexes vertes (3263 cas), typecheck au baseline
 du projet (167 erreurs préexistantes sous `tsconfig.app.json`, aucune
 ajoutée), lint identique.
+
+
+---
+
+## 11. D2 — Livré
+
+**Un drapeau de debug ne consulte plus la configuration.**
+`debug ip ospf <forme>` s'arme sur un routeur nu ; mesuré avant/après sur
+le même laboratoire : armé AVANT `router ospf 1`, l'adjacence produisait
+**0 ligne**, elle en produit maintenant. Le laboratoire OSPF le plus
+courant se fait enfin dans le bon ordre. Le moteur n'est consulté que
+pour poser `logAdjacencyChanges`, quand il existe.
+
+**Un mot-clé inconnu est refusé.** Le fourre-tout `debug ip <inconnu>`,
+qui armait une capture de paquets IP filtrée par une ACL nommée d'après
+le texte tapé, est supprimé : `debug ip rip events`, `debug ip bgp
+updates` et `debug ip zzz` répondent le message d'entrée invalide, par
+`CliInvalidInput` — donc sans ajouter de littéral au cliquet.
+`debug ip ospf zzz` diagnostique le mot-clé, plus une absence de
+processus.
+
+**`no debug X` désarme exactement `debug X`.** Les quatre asymétries du
+§1.7 sont tombées, et deux étaient de vrais pièges : `no debug ip tcp
+transactions` éteignait `ip.packet`, `no debug crypto pki transactions`
+éteignait `crypto.pki`. Les deux formes DHCP rendent maintenant un
+message au lieu de la chaîne vide, et ne coupent la catégorie que
+lorsque son jumeau est déjà éteint — `packet` et `events` partagent une
+catégorie, en éteindre un ne doit pas taire l'autre.
+
+**`debug all` existe sur le routeur**, avec les deux formes que ce dépôt
+emploie déjà pour `erase`/`reload` : la commande arme et rend le
+transcript pour le chemin scripté, et un **plan d'interaction** pose la
+question d'IOS pour le chemin terminal — `This may severely impact
+network performance. Continue? (yes/[no]):`, réponse par défaut **non**,
+et la commande n'est exécutée que si l'opérateur dit oui. Le plan vit
+dans `CiscoShellBase`, donc le switch pose la même question.
+
+**`show debugging` est privilégié** sur les deux plateformes, par une
+entrée dans `PRIVILEGED_ONLY_SHOW` — un seul endroit, qui couvre aussi
+`show debug`.
+
+**Tests.** `cisco-debug-lifecycle.test.ts` (10 cas) : deux balayages
+— *toute famille s'arme sans son protocole*, *tout `no` ne laisse rien
+derrière* — sur les trente formes que le routeur accepte, plutôt qu'une
+liste de cas particuliers. Discrimination par `git stash` : **les 10
+tombent** avant le correctif.
+
+**Une suite encodait le défaut, et le disait dans son titre.**
+`scenario-debug-04-ip-ospf.test.ts` avait un cas nommé « sur un routeur
+sans OSPF, la commande est explicitement refusée » — exactement ce que
+§1.3 identifie comme faux. Il affirme maintenant le contraire, et
+vérifie que le drapeau paraît dans `show debugging`.
+
+**Mesures.** 97 suites connexes vertes (2952 cas), typecheck au baseline
+(167), lint à **96 contre 97** — un `any` de moins qu'avant, l'accesseur
+du moteur IPSec ayant été typé plutôt que recopié.
+
+**Ce que D2 ne fait pas, et pourquoi.** Le switch garde ses libellés
+(`ip.packet debugging is on`, `(disabled)`, `show debugging` qui ne liste
+rien) : c'est le vocabulaire, donc D5, et l'unification du moteur, donc
+D6. Les huit commandes qui ne peuvent rien émettre s'arment toujours
+sans rien dire — c'est D3/D4, et l'ordre est voulu : il fallait d'abord
+que les drapeaux s'arment librement.
+
+
+---
+
+## 12. D3 — Livré, et un blocage mesuré un cran plus bas
+
+**Trois des cinq familles visées émettent pour de bon**, et chaque cas de
+test fait TOURNER le protocole plutôt que d'observer un drapeau.
+
+| Commande | Ce qu'elle imprime maintenant | Comment c'est prouvé |
+|---|---|---|
+| `debug ip rip` | `RIP: sending v2 update to 224.0.0.9 via Gi0/0`, `RIP: received v2 update from …`, les routes apprises et celles qui expirent | RIP réellement actif entre deux routeurs, minuteur avancé de 35 s |
+| `debug standby` | `HSRP: Gi0/0 Grp 1 State speak -> active`, `Active router is …` | HSRP réellement configuré des deux côtés |
+| `debug port-security` | `PORT_SECURITY: Violation on Fa0/1, MAC …, action …`, et la mise en err-disable | Deux MAC sur un port `maximum 1` |
+
+Le nom d'interface est **abrégé comme IOS l'abrège** (`Gi0/0`, pas
+`GigabitEthernet0/0`) dans les lignes HSRP, et un cas le pin — c'est la
+forme que prennent les lignes de ce protocole sur un vrai routeur.
+
+**`debug port-security` a demandé deux abonnements, pas un.** Le switch
+a son propre moteur (`SwitchDebugService`), et c'est lui que la commande
+atteint sur un switch : l'abonnement posé sur `RouterDebugService`
+n'aurait jamais rien produit là où la fonction existe. Les deux sont
+câblés ; c'est exactement la dette que le chantier E doit solder.
+
+### 12.1 `debug ip bgp` est bloqué par une absence de câblage, pas par un manque d'événement
+
+**Mesuré, et la chaîne est complète :**
+
+1. `BGPEngine.publishNeighborState()` existe et publie
+   `bgp.neighbor.state-changed` sur `this.bus`.
+2. `this.bus` vient de `AbstractRoutingProtocolEngine`, qui l'initialise
+   à `null` et expose `setBus()`.
+3. **`setBus()` n'est appelé nulle part dans le dépôt.**
+
+Donc `this.bus` est définitivement `null`, `publishNeighborState` est du
+code mort, et l'événement n'est jamais publié — alors même que la
+session atteint `Established` et que `show ip bgp summary` l'affiche.
+L'abonnement de `debug ip bgp` est écrit et correct ; il ne peut pas
+tirer.
+
+**Pourquoi ce n'est pas corrigé ici, et ce que ça coûterait.** Appeler
+`setBus()` ferait plus que réveiller `debug ip bgp` :
+`LoggingConfig` est **déjà** abonné à `bgp.neighbor.state-changed`, donc
+le routeur se mettrait à émettre des notifications syslog
+`%BGP-5-ADJCHANGE` qu'il n'a jamais émises. C'est probablement le bon
+comportement — un vrai IOS les émet — mais c'est un changement de
+comportement au-delà du câblage d'un debug, et il touche le canal
+syslog, qui appartient à un autre lot en cours. La décision revient à
+**D4**, avec le reste de « câbler ou refuser ».
+
+`setBus()` étant sur la base abstraite, la même mesure vaut
+potentiellement pour tous les moteurs qui en dérivent : à vérifier au
+moment de D4 plutôt qu'à supposer maintenant.
+
+**Mesures.** 111 suites connexes vertes (2553 cas) plus les 31 suites
+RIP/HSRP/BGP (307 cas), typecheck au baseline (167), lint inchangé.
+Discrimination par `git stash` : 4 des 5 cas tombent avant le correctif
+(le cinquième vérifie qu'un debug désarmé reste muet, ce qui était déjà
+vrai — pour cause de silence total).

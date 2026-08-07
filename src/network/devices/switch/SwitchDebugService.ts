@@ -178,6 +178,19 @@ export class SwitchDebugService implements TerminalDebugSource {
       this.emit('arp',
         `IP ARP INSPECTION: Learned ${p.ip ?? '?'} ${p.mac ?? '?'} on ${p.portName ?? '?'}`);
     }));
+    this.broadcast.track(bus.subscribe('port.security.violation', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { portName?: string; mac?: { toString(): string }; action?: string };
+      this.emit('port-security',
+        `PORT_SECURITY: Violation on ${p.portName ?? '?'}, `
+        + `MAC ${String(p.mac ?? '?').toLowerCase()}, action ${p.action ?? 'shutdown'}`);
+    }));
+    this.broadcast.track(bus.subscribe('port.security.errdisable.set', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { portName?: string };
+      this.emit('port-security',
+        `PORT_SECURITY: ${p.portName ?? '?'} put into err-disabled state`);
+    }));
     this.broadcast.track(bus.subscribe('port.security.mac-aged', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as unknown as { portName?: string; mac?: string };
