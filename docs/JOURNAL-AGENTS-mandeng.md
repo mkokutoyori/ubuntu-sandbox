@@ -25,7 +25,13 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Debug Cisco — lot D3 (câbler ce qui a déjà un moteur)
+*(rien)*
+
+---
+
+## Livré
+
+### Debug Cisco — lot D3 (câbler ce qui a déjà un moteur) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier C (a) / lot D3.
@@ -44,6 +50,25 @@ sont abonnées : `debug ip rip`, `debug standby`, `debug ip bgp`,
 
 **Aucun contact avec l'agent « logging »** : je ne touche ni
 `LoggingConfig.ts`, ni `CiscoShellBase.ts`, ni les modules `logging`.
+
+**Livré — trois familles sur quatre. Un point qui VOUS concerne :**
+
+`debug ip bgp` reste muet, et j'ai trouvé pourquoi :
+`AbstractRoutingProtocolEngine.setBus()` **n'est appelé nulle part dans
+le dépôt**, donc `BGPEngine.publishNeighborState()` est du code mort et
+`bgp.neighbor.state-changed` n'est jamais publié.
+
+Or **`LoggingConfig` y est déjà abonné** (autour de la ligne 951) : le
+jour où quelqu'un appelle `setBus()`, vos routeurs se mettront à émettre
+des `%BGP-5-ADJCHANGE` qu'ils n'émettaient pas. C'est probablement
+correct — un vrai IOS les émet — mais ça change ce que `show logging`
+contient, et je ne le fais pas sans vous. Je laisse la décision au lot
+D4 ; si vous préférez la prendre de votre côté, dites-le ici.
+
+Rien d'autre à signaler : ce lot n'ajoute que des abonnements dans
+`RouterDebugService` et `SwitchDebugService`.
+
+Détail : `PRD-Debug-Fidelite-Cisco.md` §12.
 
 ---
 
@@ -273,7 +298,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
-| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1, D2 livrés** ; D3–D6 ouverts |
+| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1, D2, D3 livrés** ; D4–D6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour

@@ -606,3 +606,63 @@ rien) : c'est le vocabulaire, donc D5, et l'unification du moteur, donc
 D6. Les huit commandes qui ne peuvent rien émettre s'arment toujours
 sans rien dire — c'est D3/D4, et l'ordre est voulu : il fallait d'abord
 que les drapeaux s'arment librement.
+
+
+---
+
+## 12. D3 — Livré, et un blocage mesuré un cran plus bas
+
+**Trois des cinq familles visées émettent pour de bon**, et chaque cas de
+test fait TOURNER le protocole plutôt que d'observer un drapeau.
+
+| Commande | Ce qu'elle imprime maintenant | Comment c'est prouvé |
+|---|---|---|
+| `debug ip rip` | `RIP: sending v2 update to 224.0.0.9 via Gi0/0`, `RIP: received v2 update from …`, les routes apprises et celles qui expirent | RIP réellement actif entre deux routeurs, minuteur avancé de 35 s |
+| `debug standby` | `HSRP: Gi0/0 Grp 1 State speak -> active`, `Active router is …` | HSRP réellement configuré des deux côtés |
+| `debug port-security` | `PORT_SECURITY: Violation on Fa0/1, MAC …, action …`, et la mise en err-disable | Deux MAC sur un port `maximum 1` |
+
+Le nom d'interface est **abrégé comme IOS l'abrège** (`Gi0/0`, pas
+`GigabitEthernet0/0`) dans les lignes HSRP, et un cas le pin — c'est la
+forme que prennent les lignes de ce protocole sur un vrai routeur.
+
+**`debug port-security` a demandé deux abonnements, pas un.** Le switch
+a son propre moteur (`SwitchDebugService`), et c'est lui que la commande
+atteint sur un switch : l'abonnement posé sur `RouterDebugService`
+n'aurait jamais rien produit là où la fonction existe. Les deux sont
+câblés ; c'est exactement la dette que le chantier E doit solder.
+
+### 12.1 `debug ip bgp` est bloqué par une absence de câblage, pas par un manque d'événement
+
+**Mesuré, et la chaîne est complète :**
+
+1. `BGPEngine.publishNeighborState()` existe et publie
+   `bgp.neighbor.state-changed` sur `this.bus`.
+2. `this.bus` vient de `AbstractRoutingProtocolEngine`, qui l'initialise
+   à `null` et expose `setBus()`.
+3. **`setBus()` n'est appelé nulle part dans le dépôt.**
+
+Donc `this.bus` est définitivement `null`, `publishNeighborState` est du
+code mort, et l'événement n'est jamais publié — alors même que la
+session atteint `Established` et que `show ip bgp summary` l'affiche.
+L'abonnement de `debug ip bgp` est écrit et correct ; il ne peut pas
+tirer.
+
+**Pourquoi ce n'est pas corrigé ici, et ce que ça coûterait.** Appeler
+`setBus()` ferait plus que réveiller `debug ip bgp` :
+`LoggingConfig` est **déjà** abonné à `bgp.neighbor.state-changed`, donc
+le routeur se mettrait à émettre des notifications syslog
+`%BGP-5-ADJCHANGE` qu'il n'a jamais émises. C'est probablement le bon
+comportement — un vrai IOS les émet — mais c'est un changement de
+comportement au-delà du câblage d'un debug, et il touche le canal
+syslog, qui appartient à un autre lot en cours. La décision revient à
+**D4**, avec le reste de « câbler ou refuser ».
+
+`setBus()` étant sur la base abstraite, la même mesure vaut
+potentiellement pour tous les moteurs qui en dérivent : à vérifier au
+moment de D4 plutôt qu'à supposer maintenant.
+
+**Mesures.** 111 suites connexes vertes (2553 cas) plus les 31 suites
+RIP/HSRP/BGP (307 cas), typecheck au baseline (167), lint inchangé.
+Discrimination par `git stash` : 4 des 5 cas tombent avant le correctif
+(le cinquième vérifie qu'un debug désarmé reste muet, ce qui était déjà
+vrai — pour cause de silence total).
