@@ -25,7 +25,33 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-*(rien)*
+### Debug Cisco — lot D5 (vocabulaire et format des lignes)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier D / lot D5.
+
+**Ce que fait le lot** : `show debugging` prend les rubriques d'IOS ; un
+seul libellé par fait (l'activation dit `for access list 100`, la vue
+disait `for 100`) ; aucun identifiant interne dans un message ; les
+lignes émises prennent le format d'IOS (`IP: s=… (local), d=… (Gi0/0)
+… sending`, `RT: add 10.0.0.0/8 … static metric [1/0]`, une ligne OSPF
+par type de paquet) ; et les messages inventés du §1.11 sont traités.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `router/diag/RouterDebugService.ts` | `format()`, `groupe()`, les lignes émises |
+| `switch/SwitchDebugService.ts` | Libellés, `format()`, `(disabled)` |
+| `diag/DebugBroadcast.ts` | La notice de limitation de débit |
+| `shells/CiscoShellBase.ts` | `debug interface`, l'avertissement de `debug ip packet` |
+
+**⚠ Agent « logging »** : un seul point de contact possible —
+`%SYS-3-LOGGINGRATE` (`DebugBroadcast`) est un mnémonique que je ne
+retrouve pas chez IOS. Je le remplace par une notice préfixée `NOTE:`,
+la convention que ce dépôt emploie déjà pour ce qu'il dit en son nom
+propre (cf. `apacheWarnings()`). Si une de vos suites cherche ce
+mnémonique, elle le verra. Je ne touche pas `LoggingConfig.ts`.
 
 ---
 
