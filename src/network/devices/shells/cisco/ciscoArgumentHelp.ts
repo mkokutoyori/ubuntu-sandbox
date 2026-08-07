@@ -18,6 +18,11 @@ const ENUM = (
   values: values.map(([keyword, d]) => ({ keyword, description: d })),
 });
 
+const IFACE = (description: string): ParamSpec =>
+  ({ name: 'interface', type: 'INTERFACE', description });
+const MAC = (description: string): ParamSpec =>
+  ({ name: 'mac', type: 'MAC_ADDR', description });
+
 export interface ArgumentHelpTries {
   config: CommandTrie;
   configIf: CommandTrie;
@@ -28,6 +33,423 @@ export interface ArgumentHelpTries {
   configStdNacl: CommandTrie;
   configExtNacl: CommandTrie;
   privileged: CommandTrie;
+  configRouteMap: CommandTrie;
+  configTimeRange: CommandTrie;
+  configTrack: CommandTrie;
+}
+
+/**
+ * IOS ne nomme pas ses arguments, il les TYPE. Un nœud greedy sans
+ * spécification retombait sur un `WORD` de dernier recours PORTANT LA
+ * DESCRIPTION DU PARENT — `cdp timer ?` répondait
+ * `WORD  Advertisement period (sec)` là où IOS répond `<5-254>  Rate at
+ * which CDP packets are sent (in sec)`. La différence n'est pas
+ * cosmétique : le premier n'apprend pas les bornes, et laisse croire
+ * qu'un nom conviendrait.
+ *
+ * Trois traitements, un par situation :
+ *
+ * 1. la commande prend un argument ⇒ il est TYPÉ et décrit
+ *    (`describeArgs`) ;
+ * 2. la commande n'en prend aucun ⇒ le `WORD` disparaît
+ *    (`takesNoArgument`), et `?` n'offre plus que `<cr>` ;
+ * 3. l'argument EST un nom libre ⇒ il reste `WORD`, mais avec sa
+ *    propre description au lieu de celle du parent.
+ */
+function describeArgumentTypes(tries: ArgumentHelpTries): void {
+  // ── Commandes sans argument : le `WORD` était une invention ──
+  for (const path of [
+    'cdp run', 'ip cef', 'ipv6 cef', 'ip multicast-routing', 'ip source-route',
+    'lldp run', 'service password-encryption', 'sntp unicast',
+  ]) tries.config.takesNoArgument(path);
+  for (const path of ['fair-queue']) tries.configIf.takesNoArgument(path);
+
+  // ── EXEC privilégié ──
+  tries.privileged.describeArgs('clear counters', [
+    { ...IFACE('Clear counters on this interface'), optional: true },
+  ]);
+  tries.privileged.describeArgs('clock set', [
+    { name: 'time', type: 'WORD', description: 'Current time', literal: 'hh:mm:ss' },
+  ]);
+  tries.privileged.describeArgs('delete', [WORD('file', 'File to be deleted')]);
+  tries.privileged.describeArgs('dir', [
+    { ...WORD('filesystem', 'Filesystem or directory to list'), optional: true },
+  ]);
+  tries.privileged.describeArgs('more', [WORD('file', 'File to display')]);
+  tries.privileged.describeArgs('verify', [WORD('file', 'File to verify')]);
+  tries.privileged.describeArgs('disconnect', [
+    { ...INT('connection', [1, 16], 'Connection number'), optional: true },
+  ]);
+  tries.privileged.describeArgs('resume', [
+    { ...INT('connection', [1, 16], 'Connection number'), optional: true },
+  ]);
+  for (const cmd of ['ping', 'traceroute']) {
+    tries.privileged.describeArgs(cmd, [
+      { name: 'destination', type: 'WORD', description: 'Destination address or hostname',
+        literal: 'A.B.C.D', optional: true },
+    ]);
+  }
+  for (const cmd of ['ssh', 'telnet']) {
+    tries.privileged.describeArgs(cmd, [
+      { name: 'host', type: 'WORD', description: 'IP address or hostname of a remote system',
+        literal: 'A.B.C.D' },
+    ]);
+  }
+  for (const [cmd, description] of [
+    ['show access-lists', 'Access list name or number'],
+    ['show class-map', 'Class map name'],
+    ['show route-map', 'Route map name'],
+    ['show time-range', 'Time range name'],
+  ] as const) {
+    tries.privileged.describeArgs(cmd, [{ ...WORD('name', description), optional: true }]);
+  }
+  tries.privileged.describeArgs('show arp', [
+    { ...IP('address', 'ARP entry address'), optional: true },
+  ]);
+  tries.privileged.describeArgs('show adjacency', [
+    { ...IFACE('Adjacencies on this interface'), optional: true },
+  ]);
+  tries.privileged.describeArgs('show line', [
+    { ...INT('line', [0, 16], 'Line number'), optional: true },
+  ]);
+  tries.privileged.describeArgs('show controllers', [
+    { ...IFACE('Controller of this interface'), optional: true },
+  ]);
+  for (const path of [
+    'show boot', 'show buffers', 'show environment', 'show hosts', 'show memory',
+    'show reload', 'show sockets', 'show ssh', 'show stacks', 'show terminal',
+    'show bgp', 'show flash:',
+  ]) tries.privileged.takesNoArgument(path);
+  for (const [famille, description] of [
+    ['debug cdp', 'CDP event to debug'],
+    ['debug eigrp', 'EIGRP event to debug'],
+    ['debug glbp', 'GLBP event to debug'],
+    ['debug lldp', 'LLDP event to debug'],
+    ['debug radius', 'RADIUS event to debug'],
+    ['debug standby', 'HSRP event to debug'],
+    ['debug tacacs', 'TACACS+ event to debug'],
+    ['debug vrrp', 'VRRP event to debug'],
+  ] as const) {
+    tries.privileged.describeArgs(famille, [{ ...WORD('event', description), optional: true }]);
+  }
+  tries.privileged.describeArgs('debug interface', [
+    { ...IFACE('Interface to debug'), optional: true },
+  ]);
+
+  // ── Configuration globale ──
+  tries.config.describeArgs('alias', [
+    ENUM('mode', 'Command mode of the alias', [
+      ['configure', 'Global configuration mode'],
+      ['exec', 'Exec mode'],
+      ['interface', 'Interface configuration mode'],
+      ['router', 'Router configuration mode'],
+    ]),
+    WORD('alias', 'Alias name'),
+    LINE('command', 'Command the alias stands for'),
+  ]);
+  for (const mode of ['configure', 'exec', 'interface', 'router']) {
+    tries.config.describeArgs(`alias ${mode}`, [
+      WORD('alias', 'Alias name'),
+      LINE('command', 'Command the alias stands for'),
+    ]);
+  }
+  tries.config.describeArgs('clock set', [
+    { name: 'time', type: 'WORD', description: 'Current time', literal: 'hh:mm:ss' },
+  ]);
+  tries.configIf.describeArgs('interface', [IFACE('Interface to configure')]);
+  tries.config.describeArgs('no alias', [
+    ENUM('mode', 'Command mode of the alias', [
+      ['configure', 'Global configuration mode'],
+      ['exec', 'Exec mode'],
+      ['interface', 'Interface configuration mode'],
+      ['router', 'Router configuration mode'],
+    ]),
+  ]);
+  tries.config.describeArgs('arp', [IP('address', 'IP address of ARP entry'), MAC('48-bit hardware address')]);
+  tries.config.describeArgs('no arp', [IP('address', 'IP address of ARP entry')]);
+  tries.config.describeArgs('boot system', [WORD('image', 'System image file name')]);
+  tries.config.describeArgs('cdp holdtime', [
+    INT('seconds', [10, 255], 'Length of time receiver must keep this packet'),
+  ]);
+  tries.config.describeArgs('cdp timer', [
+    INT('seconds', [5, 254], 'Rate at which CDP packets are sent'),
+  ]);
+  tries.config.describeArgs('lldp holdtime', [
+    INT('seconds', [0, 65535], 'Length of time receiver must keep this packet'),
+  ]);
+  tries.config.describeArgs('lldp timer', [
+    INT('seconds', [5, 65534], 'Rate at which LLDP packets are sent'),
+  ]);
+  tries.config.describeArgs('lldp reinit', [
+    INT('seconds', [2, 5], 'Delay before re-initialisation'),
+  ]);
+  tries.config.describeArgs('lldp holdtime-multiplier', [
+    INT('multiplier', [2, 10], 'TTL multiplier applied to the timer'),
+  ]);
+  tries.config.describeArgs('clock timezone', [
+    WORD('zone', 'Name of time zone'),
+    INT('offset', [-23, 23], 'Hours offset from UTC'),
+  ]);
+  tries.config.describeArgs('config-register', [
+    { name: 'value', type: 'WORD', description: 'Configuration register value', literal: '0x0-0xFFFF' },
+  ]);
+  tries.config.describeArgs('ip default-network', [IP('network', 'Default network number')]);
+  tries.config.describeArgs('ip host', [WORD('name', 'Name of host'), IP('address', 'Host IP address')]);
+  tries.config.describeArgs('login delay', [
+    INT('seconds', [1, 65535], 'Delay between successive login attempts'),
+  ]);
+  tries.config.describeArgs('no access-list', [
+    INT('number', [1, 2699], 'Access list number'),
+  ]);
+  tries.config.describeArgs('no interface', [IFACE('Interface to remove')]);
+  tries.config.describeArgs('logging source-interface', [
+    IFACE('Interface used as the source address of syslog messages'),
+  ]);
+  tries.config.describeArgs('ipv6 route', [
+    { name: 'prefix', type: 'WORD', description: 'IPv6 prefix', literal: 'X:X:X:X::X/<0-128>' },
+  ]);
+  // La forme nue est acceptée sur IOS et vaut `debug uptime` : le canal
+  // est donc OPTIONNEL, sans quoi une commande valide serait refusée.
+  tries.config.describeArgs('service timestamps', [
+    { name: 'channel', type: 'ENUM', description: 'Message class to timestamp', optional: true,
+      values: [
+        { keyword: 'debug', description: 'Timestamp debug messages' },
+        { keyword: 'log', description: 'Timestamp log messages' },
+      ] },
+  ]);
+  // Les NOMS restent des `WORD`, mais avec leur propre description.
+  for (const [path, description] of [
+    ['crypto dynamic-map', 'Name of the dynamic crypto map'],
+    ['crypto keyring', 'Name of the ISAKMP keyring'],
+    ['flow exporter', 'Name of the Flexible NetFlow exporter'],
+    ['flow monitor', 'Name of the Flexible NetFlow monitor'],
+    ['flow record', 'Name of the Flexible NetFlow record'],
+    ['ip prefix-list', 'Name of a prefix list'],
+    ['ip vrf', 'VRF name'],
+    ['vrf definition', 'VRF name'],
+    ['ipv6 access-list', 'Name of the IPv6 access list'],
+    ['ipv6 prefix-list', 'Name of an IPv6 prefix list'],
+    ['key chain', 'Name of the key chain'],
+    ['time-range', 'Name of the time range'],
+    ['zone security', 'Name of the security zone'],
+    ['no route-map', 'Name of the route map'],
+    ['no username', 'Name of the local user'],
+  ] as const) {
+    tries.config.describeArgs(path, [WORD('name', description)]);
+  }
+  tries.config.describeArgs('router bgp', [
+    INT('as-number', [1, 65535], 'Autonomous system number'),
+  ]);
+  tries.config.describeArgs('track', [
+    INT('object', [1, 1000], 'Tracked object number'),
+  ]);
+  tries.config.describeArgs('no track', [
+    INT('object', [1, 1000], 'Tracked object number'),
+  ]);
+  for (const [path, description] of [
+    ['priority-list', 'Priority list number'],
+    ['queue-list', 'Custom queue list number'],
+  ] as const) {
+    tries.config.describeArgs(path, [INT('list', [1, 16], description)]);
+  }
+
+  // ── Configuration d'interface ──
+  tries.configIf.describeArgs('arp timeout', [
+    INT('seconds', [0, 2147483], 'Seconds an ARP cache entry stays valid'),
+  ]);
+  tries.configIf.describeArgs('delay', [
+    INT('tens-of-microseconds', [1, 16777215], 'Throughput delay, in tens of microseconds'),
+  ]);
+  tries.configIf.describeArgs('keepalive', [
+    INT('seconds', [0, 32767], 'Keepalive period'),
+  ]);
+  tries.configIf.describeArgs('load-interval', [
+    INT('seconds', [30, 600], 'Load calculation interval, in multiples of 30'),
+  ]);
+  tries.configIf.describeArgs('ip mtu', [INT('bytes', [68, 9216], 'IP MTU, in bytes')]);
+  tries.configIf.describeArgs('ipv6 mtu', [INT('bytes', [1280, 9216], 'IPv6 MTU, in bytes')]);
+  tries.configIf.describeArgs('max-reserved-bandwidth', [
+    INT('percent', [1, 100], 'Percent of interface bandwidth reservable'),
+  ]);
+  tries.configIf.describeArgs('tx-ring-limit', [
+    INT('packets', [1, 32767], 'Transmit ring size, in packets'),
+  ]);
+  tries.configIf.describeArgs('tunnel key', [
+    INT('key', [0, 4294967295], 'Tunnel identification key'),
+  ]);
+  tries.configIf.describeArgs('tunnel destination', [IP('address', 'Destination address of the tunnel')]);
+  tries.configIf.describeArgs('tunnel source', [IFACE('Interface used as the tunnel source')]);
+  tries.configIf.describeArgs('ip unnumbered', [IFACE('Interface whose address is borrowed')]);
+  tries.configIf.describeArgs('tunnel mode', [
+    ENUM('mode', 'Tunnel encapsulation mode', [
+      ['gre', 'Generic Route Encapsulation'],
+      ['ipip', 'IP over IP encapsulation'],
+      ['ipsec', 'IPSec tunnel encapsulation'],
+    ]),
+  ]);
+  tries.configIf.describeArgs('tunnel vrf', [WORD('name', 'VRF used to reach the tunnel destination')]);
+  tries.configIf.describeArgs('crypto map', [WORD('name', 'Name of the crypto map')]);
+  tries.configIf.describeArgs('zone-member security', [WORD('zone', 'Name of the security zone')]);
+  tries.configIf.describeArgs('custom-queue-list', [INT('list', [1, 16], 'Custom queue list number')]);
+  tries.configIf.describeArgs('priority-group', [INT('group', [1, 16], 'Priority group number')]);
+  tries.configIf.describeArgs('bfd interval', [
+    INT('milliseconds', [50, 9999], 'Transmit interval, in milliseconds'),
+  ]);
+  tries.configIf.describeArgs('bfd neighbor', [IP('address', 'Address of the BFD neighbor')]);
+  tries.configIf.describeArgs('ipv6 eigrp', [INT('as-number', [1, 65535], 'Autonomous system number')]);
+  for (const [path, kind] of [
+    ['glbp', 'GLBP'], ['no glbp', 'GLBP'],
+    ['no standby', 'HSRP'], ['no vrrp', 'VRRP'],
+  ] as const) {
+    tries.configIf.describeArgs(path, [INT('group', [0, 255], `${kind} group number`)]);
+  }
+  tries.configIf.takesNoArgument('no rate-limit');
+
+  // ── route-map, time-range, track : la priorité pédagogique ──
+  tries.configRouteMap.describeArgs('description', [
+    LINE('text', 'Up to 100 characters describing this route-map'),
+  ]);
+  for (const path of ['match', 'no match']) {
+    tries.configRouteMap.describeArgs(path, [
+      ENUM('criterion', 'Match values from routing table', [
+        ['as-path', 'Match BGP AS path list'],
+        ['community', 'Match BGP community list'],
+        ['interface', 'Match first hop interface of route'],
+        ['ip', 'IP specific information'],
+        ['length', 'Packet length'],
+        ['metric', 'Match metric of route'],
+        ['tag', 'Match tag of route'],
+      ]),
+    ]);
+  }
+  for (const path of ['set', 'no set']) {
+    tries.configRouteMap.describeArgs(path, [
+      ENUM('action', 'Set values in destination routing protocol', [
+        ['as-path', 'Prepend string for a BGP AS-path attribute'],
+        ['community', 'BGP community attribute'],
+        ['interface', 'Output interface'],
+        ['ip', 'IP specific information'],
+        ['local-preference', 'BGP local preference path attribute'],
+        ['metric', 'Metric value for destination routing protocol'],
+        ['metric-type', 'Type of metric for destination routing protocol'],
+        ['origin', 'BGP origin code'],
+        ['tag', 'Tag value for destination routing protocol'],
+        ['weight', 'BGP weight for routing table'],
+      ]),
+    ]);
+  }
+  tries.configTimeRange.describeArgs('absolute', [
+    ENUM('bound', 'Bound of the absolute range', [
+      ['end', 'Ending time and date'],
+      ['start', 'Starting time and date'],
+    ]),
+  ]);
+  tries.configTrack.describeArgs('track', [INT('object', [1, 1000], 'Tracked object number')]);
+  tries.configTrack.describeArgs('no delay', [
+    ENUM('transition', 'State transition whose delay is removed', [
+      ['down', 'Delay before reporting the object down'],
+      ['up', 'Delay before reporting the object up'],
+    ]),
+  ]);
+  tries.configTrack.describeArgs('no object', [
+    INT('object', [1, 1000], 'Object number to remove from the list'),
+  ]);
+
+  // ── DHCP ──
+  tries.configDhcp.describeArgs('bootfile', [WORD('file', 'Boot file name')]);
+  tries.configDhcp.describeArgs('class', [WORD('name', 'Name of the DHCP class')]);
+  tries.configDhcp.describeArgs('client-name', [WORD('name', 'Client name, without the domain')]);
+  tries.configDhcp.describeArgs('domain-name', [WORD('domain', 'Domain name given to clients')]);
+  tries.configDhcp.describeArgs('hardware-address', [MAC('Client hardware address')]);
+  tries.configDhcp.describeArgs('host', [IP('address', 'Client IP address'), { ...MASK('Client subnet mask'), optional: true }]);
+  tries.configDhcp.describeArgs('next-server', [IP('address', 'Boot server IP address')]);
+  tries.configDhcp.describeArgs('netbios-name-server', [IP('address', 'NetBIOS name server IP address')]);
+  tries.configDhcp.describeArgs('client-identifier deny', [
+    WORD('identifier', 'Client identifier to deny'),
+  ]);
+  tries.configDhcp.describeArgs('netbios-node-type', [
+    ENUM('type', 'NetBIOS node type', [
+      ['b-node', 'Broadcast node'],
+      ['h-node', 'Hybrid node'],
+      ['m-node', 'Mixed node'],
+      ['p-node', 'Peer-to-peer node'],
+    ]),
+  ]);
+
+  // ── Listes d'accès nommées ──
+  for (const trie of [tries.configStdNacl, tries.configExtNacl]) {
+    trie.describeArgs('remark', [LINE('text', 'Comment up to 100 characters')]);
+    trie.describeArgs('no', [INT('sequence', [1, 2147483647], 'Sequence number of the entry to remove')]);
+  }
+  tries.configExtNacl.describeArgs('evaluate', [WORD('name', 'Name of the reflexive access list')]);
+
+  // ── Modes routeur ──
+  tries.configRouter.describeArgs('timers', [
+    ENUM('family', 'Timer family to adjust', [
+      ['basic', 'Basic routing timers'],
+      ['bgp', 'BGP timers'],
+    ]),
+  ]);
+  tries.configRouter.describeArgs('router-id', [IP('router-id', 'Router identifier in IP address format')]);
+  tries.configRouter.describeArgs('aggregate-address', [
+    IP('address', 'Aggregate prefix'),
+    MASK('Aggregate mask'),
+  ]);
+  tries.configRouter.describeArgs('address-family', [
+    ENUM('family', 'Address family', [
+      ['ipv4', 'Address family IPv4'],
+      ['ipv6', 'Address family IPv6'],
+      ['vpnv4', 'Address family VPNv4'],
+    ]),
+  ]);
+  for (const path of ['default-information', 'no default-information']) {
+    tries.configRouter.describeArgs(path, [
+      ENUM('control', 'Default route control', [
+        ['originate', 'Distribute a default route'],
+      ]),
+    ]);
+  }
+  tries.configRouter.describeArgs('offset-list', [
+    INT('access-list', [0, 99], 'Access list of networks to apply the offset to'),
+  ]);
+  tries.configRouter.describeArgs('output-delay', [
+    INT('milliseconds', [8, 50], 'Interpacket delay for RIP updates'),
+  ]);
+  tries.configRouter.describeArgs('flash-update-threshold', [
+    INT('seconds', [0, 30], 'Suppress a flash update within this many seconds of a regular update'),
+  ]);
+  for (const path of ['validate-update-source', 'no validate-update-source']) {
+    tries.configRouter.takesNoArgument(path);
+  }
+  tries.configRouter.describeArgs('distribute-list', [
+    ENUM('filter', 'Filter to apply', [
+      ['gateway', 'Filtering incoming updates based on gateway'],
+      ['prefix', 'Filter prefixes in routing updates'],
+    ]),
+  ]);
+  tries.configRouterOspf.describeArgs('default-metric', [
+    INT('metric', [1, 16777214], 'Default metric of redistributed routes'),
+  ]);
+  tries.configRouterOspf.describeArgs('maximum-paths', [
+    INT('paths', [1, 32], 'Number of equal-cost paths installed'),
+  ]);
+  tries.configRouterOspf.describeArgs('max-lsa', [
+    INT('lsas', [1, 4294967294], 'Maximum number of non self-generated LSAs'),
+  ]);
+  tries.configRouterOspf.describeArgs('summary-address', [
+    IP('address', 'Summary address'), MASK('Summary mask'),
+  ]);
+  tries.configRouterOspf.describeArgs('no passive-interface', [
+    IFACE('Interface on which updates are re-enabled'),
+  ]);
+  for (const path of ['distribute-list', 'no distribute-list']) {
+    tries.configRouterOspf.describeArgs(path, [
+      ENUM('filter', 'Filter to apply', [
+        ['gateway', 'Filtering incoming updates based on gateway'],
+        ['prefix', 'Filter prefixes in routing updates'],
+      ]),
+    ]);
+  }
 }
 
 export function describeCiscoArguments(tries: ArgumentHelpTries): void {
@@ -71,6 +493,11 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   ]);
   tries.config.describeArgs('snmp-server community', [
     WORD('community', 'SNMP community string'),
+    { name: 'access', type: 'ENUM', description: 'Access privileges', optional: true,
+      values: [
+        { keyword: 'ro', description: 'Read-only access with this community string' },
+        { keyword: 'rw', description: 'Read-write access with this community string' },
+      ] },
   ]);
   tries.config.describeArgs('ip dhcp excluded-address', [
     IP('low', 'Low IP address'),
@@ -339,6 +766,8 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     trie.requireArgs('permit', 1);
     trie.requireArgs('deny', 1);
   }
+
+  describeArgumentTypes(tries);
 
   tries.config.requireArgs('interface', 1);
   tries.config.requireArgs('ip dhcp pool', 1);

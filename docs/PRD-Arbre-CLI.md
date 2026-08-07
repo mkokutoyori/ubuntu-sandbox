@@ -15,7 +15,7 @@ de fidélité se tranche contre cette machine-là, pas contre « un Cisco ».
 | 1 | Purge des fuites de substrat (§1) | ✅ fait |
 | 2 | Alignement licence / plateforme (§2) | ✅ fait |
 | 3 | Invariant aide ⇔ exécution (§3) | ✅ fait |
-| 4 | Typage des arguments d'aide (§4) | ⬜ à faire |
+| 4 | Typage des arguments d'aide (§4) | ✅ fait |
 | 5 | Complétude des menus (§5) | ⬜ à faire |
 | 6 | Finition des données (§6) | ⬜ à faire |
 
@@ -200,9 +200,52 @@ l'arbre, donc `show running-config | ?` répond au caret, et
 
 ## Chantier 4 — Typage des arguments
 
-Trente-trois nœuds annoncent `WORD` avec la description du parent
-recopiée. Priorité pédagogique d'abord : `match`/`set` en route-map,
-`time-range`, `track`, `privilege` ; les nœuds de diagnostic ensuite.
+**Le rapport comptait trente-trois nœuds ; la mesure en trouve 174** —
+il n'avait parcouru que quelques modes. Le balayage sur treize modes,
+trois niveaux de profondeur, donne le vrai chiffre, et c'est lui qui a
+dicté la méthode : 174 corrections à la main n'auraient tenu que
+jusqu'au prochain nœud ajouté.
+
+**D'où vient le `WORD`.** Un nœud greedy sans spécification retombe sur
+un repli de dernier recours qui invente `WORD` et lui **recopie la
+description du parent**. `cdp timer ?` répondait donc
+`WORD  Advertisement period (sec)` là où IOS répond
+`<5-254>  Rate at which CDP packets are sent (in sec)`. La différence
+n'est pas cosmétique : le premier n'apprend pas les bornes et laisse
+croire qu'un nom conviendrait.
+
+**Trois traitements, un par situation**, dans une seule table
+déclarative (`describeArgumentTypes`, `ciscoArgumentHelp.ts`) :
+
+1. la commande prend un argument ⇒ il est **typé** et décrit —
+   `<5-254>`, `A.B.C.D`, `hh:mm:ss`, `X:X:X:X::X/<0-128>`, ou une
+   énumération quand IOS énumère ;
+2. la commande n'en prend **aucun** ⇒ le `WORD` disparaît. `cdp run`,
+   `ip cef`, `ipv6 cef`, `ip multicast-routing`, `lldp run`,
+   `service password-encryption`, `fair-queue`, `no rate-limit` et
+   `validate-update-source` n'en prennent pas : `?` n'offre plus que
+   `<cr>`. Nouvelle primitive `CommandTrie.takesNoArgument()`, parce
+   que le repli ne pouvait pas deviner la différence entre « argument
+   non décrit » et « pas d'argument » ;
+3. l'argument **est** un nom libre ⇒ il reste `WORD`, mais avec sa
+   propre description.
+
+Priorité pédagogique traitée d'abord, comme prévu : `match`/`set` en
+route-map énumèrent leurs dix clauses au lieu d'un `WORD`, `time-range`,
+`track` et `privilege` (celui-ci déjà repris au chantier 3).
+
+**Un piège mesuré plutôt que supposé.** Déclarer un argument obligatoire
+élève l'arité requise : la forme nue devient `% Incomplete command.`
+C'est juste pour presque tout (`arp`, `ip host`, `key chain`…), mais
+**faux pour `service timestamps`**, dont la forme nue est valide sur IOS
+et vaut `debug uptime`. Le balayage des 90 formes nues l'a trouvé, son
+canal est déclaré optionnel, et le test de la fonctionnalité le pinne.
+
+Résultat : **174 → 1**, et cette dernière est conforme —
+`snmp-server community ?` répond bien `WORD  SNMP community string` sur
+un vrai IOS, où le mot-clé parent porte la même phrase.
+`probe-cli-arguments-types.test.ts` (18 cas) est discriminé par
+git-stash : 15 échouent authentiquement avant correction.
 
 ---
 

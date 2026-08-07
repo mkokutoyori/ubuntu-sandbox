@@ -316,6 +316,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       configStdNacl: this.configStdNaclTrie,
       configExtNacl: this.configExtNaclTrie,
       privileged: this.privilegedTrie,
+      configRouteMap: this.configRouteMapTrie,
+      configTimeRange: this.configTimeRangeTrie,
+      configTrack: this.configTrackTrie,
     });
   }
 
