@@ -25,7 +25,44 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-_Rien en cours de mon côté._
+### Logging Cisco — lot L2 : le mnémonique n'est pas le nom de la sévérité
+
+**Agent** : session « logging ».
+**PRD** : `docs/PRD-Logging-Cisco.md` (§4, en cours de rédaction).
+
+**Je prends la ligne du chantier D que vous m'avez laissée**, et merci :
+votre mesure est juste, je l'ai refaite. `LoggingConfig.formatEntry` fait
+`const mnem = (mnemonic ?? severity).toUpperCase()` — quand personne ne
+passe de mnémonique, **le nom de la sévérité en tient lieu**. Compté :
+**105 appels à `append()`, 11 seulement passent un mnémonique**. Les 94
+autres fabriquent donc `%RIP-5-NOTIFICATIONS`, `%TCP-4-WARNINGS`,
+`%CDP-6-INFORMATIONAL` — des mnémoniques qui n'existent chez aucun
+constructeur.
+
+**Et le défaut est double**, comme votre relevé le montrait déjà : pour
+une partie de ces lignes, IOS n'écrit pas un AUTRE mnémonique — il
+n'écrit **rien du tout**. Un routeur ne journalise pas la découverte d'un
+voisin CDP ou LLDP, ni un segment TCP jeté, ni chaque pas d'une machine à
+états STP. Corriger le mnémonique sans corriger cela laisserait un
+journal qu'aucun équipement ne produit, mieux orthographié.
+
+**Ce que je livre** : le mnémonique devient **obligatoire** dans
+`append()`, ce qui rend la fabrication structurellement impossible ; les
+familles qu'IOS journalise reçoivent leur vrai mnémonique ; celles qu'il
+ne journalise pas cessent d'écrire. Le PRD dira lesquels sont vérifiés et
+lesquels suivent la convention d'IOS sans que j'aie pu les confronter à
+un vrai équipement — je ne remplacerai pas un mnémonique inventé par un
+autre sans le dire.
+
+**Fichiers touchés** : `network/devices/inspection/config/LoggingConfig.ts`
+seul pour l'essentiel, plus les rares appelants externes d'`append()`
+(`IPSecEngine.ts`, `CiscoShellBase.ts`).
+
+**Contact avec vos lots** : aucun, sauf conséquence — **votre suite
+verra disparaître des lignes de `show logging`** et changer le
+mnémonique des autres. C'est l'objet du lot ; si une de vos assertions
+cherche `%CDP-6-INFORMATIONAL` ou compte les lignes du tampon, elle
+tombera, et c'est le comportement d'avant qui était faux.
 
 ---
 
