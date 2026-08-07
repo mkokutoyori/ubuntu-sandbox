@@ -136,13 +136,13 @@ export function routingProcessConfigLines(
     for (const network of process.networks) lines.push(` network ${network}`);
     for (const iface of [...process.passive].sort()) lines.push(` passive-interface ${iface}`);
     for (const source of process.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
+    for (const extra of process.extras) lines.push(` ${extra}`);
     if (process.variance !== undefined) lines.push(` variance ${process.variance}`);
     if (process.maximumPaths !== undefined) lines.push(` maximum-paths ${process.maximumPaths}`);
     if (process.maximumHops !== undefined) {
       lines.push(` metric maximum-hops ${process.maximumHops}`);
     }
     if (process.stub) lines.push(` eigrp stub ${process.stub}`);
-    for (const extra of process.extras) lines.push(` ${extra}`);
 
     if (!process.autoSummary) lines.push(' no auto-summary');
     lines.push('!');

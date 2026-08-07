@@ -46,7 +46,7 @@ export type DebugCategory =
   | 'ipv6.packet';
 
 import type { IEventBus } from '@/events/EventBus';
-import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
 export function toCiscoMac(mac: string): string {
   const hex = mac.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
@@ -102,6 +102,23 @@ export class RouterDebugService implements TerminalDebugSource {
 
   list(): readonly DebugFlag[] {
     return [...this.flags.values()].sort((a, b) => a.category.localeCompare(b.category));
+  }
+
+  private static readonly ALL: ReadonlyArray<DebugCategory> = [
+    'ip.packet', 'ip.icmp', 'ip.arp', 'ip.routing', 'ip.nat', 'ip.tcp', 'ip.udp',
+    'ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
+    'ip.ospf.packet', 'ip.ospf.lsa-generation', 'ip.dhcp.server',
+    'ip.sla.trace', 'ip.sla.error', 'track', 'interface', 'ipv6.packet',
+    'cdp.packets', 'lldp.packets', 'ip.pim', 'vxlan',
+    'crypto.isakmp', 'crypto.ipsec',
+  ];
+
+  enableAll(): string {
+    const now = Date.now();
+    for (const c of RouterDebugService.ALL) {
+      if (!this.flags.has(c)) this.flags.set(c, { category: c, enabledAtMs: now });
+    }
+    return 'All possible debugging has been turned on';
   }
 
   disableAll(): string {
@@ -185,9 +202,7 @@ export class RouterDebugService implements TerminalDebugSource {
     this.aclMatchFn = fn;
   }
 
-  private tamponSyslog?: (line: string) => void;
-
-  setSyslogSink(fn: (line: string) => void): void { this.tamponSyslog = fn; }
+  setJournal(journal: DebugLineJournal | null): void { this.broadcast.setJournal(journal); }
 
   private emit(category: DebugCategory, line: string, faits?: DebugPacketFacts): void {
     const flag = this.flags.get(category);
@@ -196,7 +211,6 @@ export class RouterDebugService implements TerminalDebugSource {
     if (!this.passesConditions(line)) return;
     if (flag.scope && this.aclMatchFn && !this.aclMatchFn(flag.scope, line, faits)) return;
     this.broadcast.fan(line);
-    this.tamponSyslog?.(line);
   }
 
   private static faitsDe(ip: { src: string; dst: string; proto: number; transport?: unknown }): DebugPacketFacts {

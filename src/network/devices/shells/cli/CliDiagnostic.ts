@@ -20,6 +20,19 @@ export class CliInvalidInput extends Error {
   }
 }
 
+/**
+ * Le pendant de `CliInvalidInput` pour l'arite. Un gestionnaire qui ne
+ * peut pas exprimer son minimum par `requireArgs` — parce qu'il depend
+ * de laquelle de deux formes positionnelles a ete tapee — le signale
+ * plutot que d'ecrire le message lui-meme.
+ */
+export class CliIncomplete extends Error {
+  constructor() {
+    super('% Incomplete command.');
+    this.name = 'CliIncomplete';
+  }
+}
+
 export const INVALID_INPUT_MESSAGE = "% Invalid input detected at '^' marker.";
 export const INCOMPLETE_MESSAGE = '% Incomplete command.';
 

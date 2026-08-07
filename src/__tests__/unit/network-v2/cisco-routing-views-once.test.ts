@@ -59,7 +59,7 @@ describe('the configuration writes what differs from the factory, not the factor
     const r = await router();
 
     expect(String(await r.executeCommand('show logging')))
-      .toContain('Buffer logging: level debugging, 4096 bytes');
+      .toContain('Buffer logging:  level debugging');
     expect(String(await r.executeCommand('show running-config')))
       .not.toContain('logging buffered');
   });

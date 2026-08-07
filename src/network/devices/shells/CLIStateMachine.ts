@@ -110,6 +110,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-line':               { parent: 'config' },
   'config-dhcp':               { parent: 'config', clearOnExit: ['selectedDHCPPool'] },
   'config-router':             { parent: 'config', clearOnExit: ['selectedRoutingProto'] },
+  'config-router-af':          { parent: 'config-router' },
   'config-vrf':                { parent: 'config', clearOnExit: ['selectedVRF'] },
   'config-vlan':               { parent: 'config', clearOnExit: ['selectedVLAN'] },
   'config-track':              { parent: 'config', clearOnExit: ['selectedTrack'] },

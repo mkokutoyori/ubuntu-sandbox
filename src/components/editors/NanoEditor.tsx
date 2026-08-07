@@ -7,6 +7,7 @@
  */
 
 import React, { useRef, useEffect, useCallback, useReducer } from 'react';
+import { scrollCaretIntoView } from './caretScroll';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 
@@ -176,6 +177,9 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
       textareaRef.current?.focus();
       const pos = engine.displayCursorOffset;
       textareaRef.current?.setSelectionRange(pos, pos);
+      if (textareaRef.current) {
+        scrollCaretIntoView(textareaRef.current, engine.cursorLine, engine.lines.length);
+      }
     }
   });
 

@@ -5,6 +5,7 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
+import { collecteDebug } from './_helpers/debugLines';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
@@ -42,7 +43,7 @@ async function lab(): Promise<Lab> {
   await run(srv, 'ip route add default via 192.168.20.254');
 
   const vues: string[] = [];
-  r.getDebugService().subscribe((l: string) => vues.push(l));
+  collecteDebug(r.getDebugService(), vues);
   return { r, pc, srv, vues };
 }
 

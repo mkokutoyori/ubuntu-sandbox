@@ -184,7 +184,8 @@ describe('Scénario 14 — enregistrement dans le tampon mémoire', () => {
     ]) await r.executeCommand(c);
 
     const journal = await r.executeCommand('show logging');
-    expect(journal).toContain('Buffer logging: level debugging, 64000 bytes');
+    expect(journal).toContain('Buffer logging:  level debugging');
+    expect(journal).toContain('Log Buffer (64000 bytes):');
 
     const evenements = journal.split('\n').filter((l) => /%LINK|%LINEPROTO/.test(l));
     expect(evenements.length, 'les transitions doivent être mémorisées').toBeGreaterThan(1);

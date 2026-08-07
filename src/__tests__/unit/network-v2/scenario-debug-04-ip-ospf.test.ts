@@ -70,12 +70,14 @@ describe('Scénario 4 (debug) — debug ip ospf', () => {
       expect(out).not.toContain('Invalid input');
     });
 
-    it('sur un routeur sans OSPF, la commande est explicitement refusée', async () => {
+    it("sur un routeur sans OSPF, le drapeau s'arme quand meme", async () => {
       const vierge = new CiscoRouter('RTR-VIERGE');
       vierge.powerOn();
       await vierge.executeCommand('enable');
       expect(await vierge.executeCommand('debug ip ospf events'))
-        .toContain('OSPF is not enabled');
+        .toBe('OSPF events debugging is on');
+      expect(await vierge.executeCommand('show debugging'))
+        .toContain('OSPF events debugging is on');
     });
   });
 

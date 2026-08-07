@@ -641,3 +641,94 @@ correctif : `cisco-policy.test.ts` attendait le `match` en double,
 `area 0 stub`, `no shutdown` en configuration globale) — R3 ; ce sont
 des sous-modes, pas des identifiants. Le `vrf` d'OSPF est refusé plutôt
 qu'implémenté, comme §8 le prévoit.
+
+---
+
+## 11. R3 — Livré
+
+Les deux formulations du §3.2, chacune écrite comme une règle et non
+comme une liste.
+
+**Un mode existe, ou la commande qui prétend y entrer est refusée.**
+
+- `address-family` sous BGP entre dans un VRAI sous-mode
+  (`config-router-af`, prompt `R1(config-router-af)#`), dont
+  `exit-address-family` sort. C'est la seule des quatre familles à avoir
+  un état derrière elle (`BgpNeighbor.activated`, `addressFamilies`) et
+  une configuration courante qui l'exige (`neighbor … activate`). Le
+  sous-mode partage la table de commandes de `config-router` plutôt que
+  d'en dupliquer une : quelques commandes y sont donc acceptées qu'IOS
+  refuserait, ce qui est une inexactitude plus petite que « le sous-mode
+  n'existe pas ».
+- Le **mode nommé d'EIGRP** est refusé en bloc — `address-family`,
+  `af-interface`, `topology`, `exit-af-interface`, `exit-af-topology` —
+  comme §8 le prévoit : le moteur est sans minuteur, les sous-commandes
+  ne peuvent rien régler.
+- **`no shutdown` en configuration globale** n'existe plus. Il était
+  enregistré explicitement comme un no-op, et son jumeau `shutdown`
+  était déjà refusé : la paire se contredisait.
+
+**Un identifiant est valide, ou refusé avec le message d'IOS.**
+
+- `area 0 stub` et `area 0 nssa` sont refusés (`% OSPF: Area 0 is the
+  backbone area and cannot be a stub area`), les autres aires non.
+
+**Le fourre-tout de quatorze mots-clés, et le vrai correctif.** Ces
+mots-clés étaient acceptés puis **versés dans la liste `redistribute` de
+RIP** — c'est l'origine exacte du `redistribute offset-list …` du
+rapport, que §1.1 avait bien nommée mais que R2 n'avait pas fermée. Un
+premier jet les refusait tous ; mesuré, c'était le mauvais appel :
+`offset-list`, `output-delay`, `flash-update-threshold`,
+`validate-update-source` et `traffic-share` sont de VRAIES commandes du
+protocole concerné, et les refuser aurait fait rejeter au simulateur une
+configuration RIP valide. Elles ont désormais leur propre rangement
+(`extras`), se rendent telles quelles dans la configuration, et sont
+refusées chez un protocole qui ne les connaît pas — ce qui vaut mieux
+que l'acceptation universelle qu'elles avaient. `synchronization` est
+accepté sans rien stocker, ce qui est fidèle : il est obsolète depuis
+IOS 12.2SB et sans effet sur un vrai routeur non plus.
+
+**`no neighbor` retire vraiment le voisin.** Il faisait partie du même
+fourre-tout, donc ne retirait rien : on ne pouvait pas défaire un
+`neighbor`.
+
+**`ip route … track 1` garde son `track`** dans la configuration rendue.
+Le correctif de `PRD-IP-SLA.md` avait traité la route par défaut ; la
+forme ordinaire perdait toujours le mot-clé, donc l'objet suivi
+disparaissait au rechargement d'une topologie.
+
+**Deux erreurs de typage introduites par R2 sont corrigées ici**, et
+elles enseignent quelque chose sur la mesure : `npx tsc --noEmit` seul
+ne les voyait pas, `tsc -p tsconfig.app.json` si. Ce sont les deux
+`push` d'une chaîne dans `RedistributeSource[]` qu'avait laissés le
+fourre-tout. Le compte d'erreurs de ce projet passe de 170 à 168.
+
+**Tests.** `cisco-config-modes-exist.test.ts` (8 cas), discriminé par
+`git stash` : 7 tombent avant le correctif.
+
+**Deux arbitrages avec la session concurrente**, qui travaillait le même
+fichier et avait trouvé la même cause racine (`extras`) de son côté.
+1. `% OSPF: Area 0 … stub area` **avec ou sans point final** : ni l'une
+   ni l'autre ne peut le vérifier sur un vrai IOS d'ici. Leur version,
+   déjà sur la branche, garde le point ; le test ne fixe donc pas ce
+   caractère plutôt que de prétendre le savoir.
+2. **`no synchronization`** : je l'acceptais sans le stocker (obsolète
+   depuis IOS 12.2SB), elle le rendait verbatim. Leur règle gagne, et
+   c'est l'invariant du §2.1 qui tranche : ce que l'opérateur a tapé
+   doit se retrouver dans la configuration. Un jugement sur ce qu'IOS
+   affiche par défaut ne vaut pas contre un aller-retour vérifiable.
+
+Le fusionnement a aussi produit **deux défauts qu'aucun conflit ne
+signalait** : les `extras` d'EIGRP étaient rendus deux fois (nos deux
+boucles ajoutées au même bloc), et `isBackboneArea` était défini dans la
+portée de la fonction OSPFv2 alors que l'appel OSPFv3 est dans une
+autre. Les deux sont corrigés ici. Les refus ajoutés passent par
+`CliInvalidInput` et `requireArgs`, pas par des littéraux : le cliquet
+de `cisco-cli-diagnostic-single-exit.test.ts` les avait attrapés.
+
+**`CliIncomplete` est né de ce cliquet.** Un dernier littéral, venu de la
+session concurrente, ne pouvait pas passer par `requireArgs` : son
+minimum dépend de laquelle de deux formes positionnelles a été tapée.
+Le signal `% Incomplete command.` n'existait pas — seul `CliInvalidInput`
+l'était — donc le gestionnaire n'avait pas d'autre choix que d'écrire le
+message. Il existe maintenant, et c'est le cliquet qui l'a fait écrire.

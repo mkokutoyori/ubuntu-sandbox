@@ -9,7 +9,7 @@
  */
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
@@ -412,14 +412,12 @@ export function buildRoutingProtoConfig(
     converge();
     return '';
   });
-  routerTrie.registerGreedy('metric', 'Metric options', (a, raw) => {
+  routerTrie.registerGreedy('metric', 'Metric options', (a) => {
     const { proto } = curProto(ctx);
     if (proto === 'rip') {
       // `default-metric`-style RIP knob recorded as remembered config.
       const n = parseInt(a[a.length - 1] ?? '', 10);
       if (!isNaN(n)) repo.rip.defaultMetric = n;
-      const line = raw ?? `metric ${a.join(' ')}`.trim();
-      if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
       return '';
     }
     if (proto === 'eigrp') {
@@ -487,34 +485,68 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('address-family', 'Enter address-family', (a) => {
     const p = curProto(ctx).proto;
+    if (p !== 'bgp') throw new CliInvalidInput();
     const af = a.join(' ');
-    if (p === 'bgp') bgp()?.addressFamilies.push(af);
-    else if (p === 'eigrp') eigrp().addressFamilies.push(af);
+    const proc = bgp();
+    if (proc && !proc.addressFamilies.includes(af)) proc.addressFamilies.push(af);
+    ctx.setMode('config-router-af');
     return '';
   });
-  // NOTE: `metric` is NOT in this catch-all list — it has a dedicated
-  // handler above (RIP default-metric / EIGRP `metric weights`).
-  for (const kw of ['exit-address-family', 'exit-af-interface',
-    'exit-af-topology', 'af-interface', 'topology',
-    'offset-list', 'output-delay', 'flash-update-threshold', 'distribute-list',
-    'validate-update-source', 'synchronization', 'no synchronization',
-    'compatible', 'log-adjacency-changes',
-    'no neighbor', 'traffic-share']) {
-    routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args, raw) => {
-      const sp = ctx.getSelectedRoutingProto();
-      const proto = sp?.proto;
-      const line = raw ?? `${kw} ${args.join(' ')}`.trim();
-      // The line is kept as typed. Filing it under `redistribute` — the
-      // nearest typed bucket — lost every argument on the way out
-      // (` redistribute` alone), because a raw string is not a
-      // RedistributeSource.
-      const bucket = proto === 'rip' ? repo.rip.extras
-        : proto === 'eigrp' ? eigrp().extras
-          : proto === 'bgp' ? (bgp()?.extras ?? null) : null;
-      if (bucket && !bucket.includes(line)) bucket.push(line);
+  routerTrie.register('exit-address-family', 'Leave address-family', () => {
+    ctx.setMode('config-router');
+    return '';
+  });
+  const PROTO_EXTRAS: ReadonlyArray<{ kw: string; protos: readonly Proto[] }> = [
+    { kw: 'offset-list', protos: ['rip', 'eigrp'] },
+    { kw: 'output-delay', protos: ['rip'] },
+    { kw: 'flash-update-threshold', protos: ['rip'] },
+    { kw: 'validate-update-source', protos: ['rip'] },
+    { kw: 'no validate-update-source', protos: ['rip'] },
+    { kw: 'traffic-share', protos: ['eigrp'] },
+    { kw: 'distribute-list', protos: ['rip', 'eigrp'] },
+  ];
+  for (const { kw, protos } of PROTO_EXTRAS) {
+    routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args) => {
+      const p = curProto(ctx).proto;
+      if (!protos.includes(p)) throw new CliInvalidInput();
+      const line = `${kw}${args.length ? ' ' + args.join(' ') : ''}`;
+      if (p === 'rip') pushOnce(repo.rip.extras, line);
+      else pushOnce(eigrp().extras, line);
       return '';
     });
   }
+  routerTrie.requireArgs('address-family', 1);
+  routerTrie.requireArgs('no neighbor', 1);
+  for (const kw of ['synchronization', 'no synchronization']) {
+    routerTrie.register(kw, `BGP ${kw}`, () => {
+      const proc = bgp();
+      if (curProto(ctx).proto !== 'bgp' || !proc) throw new CliInvalidInput();
+      proc.extras = proc.extras.filter((l) => l !== 'synchronization' && l !== 'no synchronization');
+      proc.extras.push(kw);
+      return '';
+    });
+  }
+  routerTrie.registerGreedy('no neighbor', 'Remove a neighbor', (a) => {
+    const proc = bgp();
+    if (curProto(ctx).proto === 'bgp' && proc) {
+      if (a.length === 1) {
+        proc.neighbors.delete(a[0]);
+        proc.peerGroups.delete(a[0]);
+        bgpEng().getConfig().neighbors.delete(a[0]);
+      } else {
+        const n = proc.neighbors.get(a[0]);
+        if (n && a[1] === 'activate') n.activated = false;
+        if (n && a[1] === 'peer-group') n.peerGroup = undefined;
+      }
+      converge();
+      return '';
+    }
+    if (curProto(ctx).proto === 'rip') {
+      repo.rip.neighbors = repo.rip.neighbors.filter((n) => n !== a[0]);
+      return '';
+    }
+    throw new CliInvalidInput();
+  });
 }
 
 // ── show family ──────────────────────────────────────────────────
@@ -574,7 +606,7 @@ export function registerRoutingProtoShow(
       return `% No such neighbor or address family`;
     }
     if (sub === 'advertised-routes' || sub === 'routes') {
-      if (!wanted) return CISCO_ERRORS.INCOMPLETE;
+      if (!wanted) throw new CliIncomplete();
       const rows = sub === 'advertised-routes'
         ? e.getAdvertisedRoutes(wanted)
         : e.getBgpTable().filter((r) => String(r.nextHop ?? '') === wanted);

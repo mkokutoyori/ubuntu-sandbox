@@ -186,7 +186,12 @@ export function registerIPSecShowCommands(
     if (scope.startsWith('messages')) return debugSvc().enable('crypto.pki.messages');
     return debugSvc().enable('crypto.pki');
   });
-  trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => debugSvc().disable('crypto.pki'));
+  trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', (args) => {
+    const scope = args.join(' ').toLowerCase();
+    if (scope.startsWith('transactions')) return debugSvc().disable('crypto.pki.transactions');
+    if (scope.startsWith('messages')) return debugSvc().disable('crypto.pki.messages');
+    return debugSvc().disable('crypto.pki');
+  });
   trie.register('show debugging', 'Display active debug flags', () => debugSvc().format());
   trie.register('show debug condition', 'Display standing debug conditions',
     () => debugSvc().formatConditions());

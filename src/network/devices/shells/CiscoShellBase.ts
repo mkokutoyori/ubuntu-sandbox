@@ -49,6 +49,11 @@ import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/CiscoArchiveCommands';
+import {
+  registerLoggingConfigCommands, registerLoggingShowCommands,
+  registerSequenceNumbersCommand, registerLoggingClearCommands,
+} from './cisco/CiscoLoggingCommands';
+import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
 import {
   getManagementService, getSnmpService, getSnmpAgent, getNtpAgent,
@@ -58,12 +63,13 @@ import type {
   InteractionPlanContext,
 } from '@/shell/interaction/CommandInteraction';
 import {
-  CliInvalidInput, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
+  CliInvalidInput, CliIncomplete, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
   tokenSpans, INVALID_INPUT_MESSAGE,
 } from './cli/CliDiagnostic';
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
+  'debugging', 'debug',
 ]);
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -155,6 +161,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   getLoggingConfig(): LoggingConfig {
     return this.logging;
+  }
+
+  /**
+   * Ce dont les commandes `logging` ont besoin de la coquille, et rien de
+   * plus : la configuration, son rattachement à l'horloge de la machine,
+   * et le reprovisionnement de l'agent syslog. Le même contexte sert au
+   * routeur et au commutateur, qui ne peuvent donc pas diverger sur ce
+   * que la même commande fait.
+   */
+  protected loggingCommandContext(): LoggingCommandContext {
+    return {
+      config: () => this.logging,
+      beforeApply: () => {
+        this.attachLoggingToDevice(this.d());
+        // Le journal persistant écrit dans le `flash:` de l'équipement —
+        // le MÊME objet que `dir` et `more` lisent, pas une copie, sinon
+        // `logging persistent` produirait des fichiers que nul ne voit.
+        this.logging.attachFileStore({
+          write: (name, content) => { this.fs().write(name, content); },
+          read: (name) => this.fs().get(name)?.content ?? null,
+          remove: (name) => this.fs().remove(name),
+          list: (prefix) => this.fs().list()
+            .map(f => f.name).filter(n => n.startsWith(prefix)),
+        });
+      },
+      afterApply: () => { this.syncSyslogAgent(); },
+    };
   }
 
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
@@ -397,6 +430,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (path === 'reload' && m.args.length === 0) {
       return this.reloadInteractionPlan();
+    }
+    if (path === 'debug all') {
+      return {
+        steps: [
+          {
+            kind: 'confirmation',
+            prompt: 'This may severely impact network performance. Continue? (yes/[no]):',
+            defaultAnswer: 'no',
+            storeAs: 'debug_all_confirmed',
+          },
+          {
+            kind: 'run',
+            run: async (rt) => {
+              const answer = (rt.values.get('debug_all_confirmed') ?? 'no').toLowerCase();
+              if (answer.startsWith('y')) rt.output(await rt.exec('debug all'));
+            },
+          },
+        ],
+      };
     }
     if (path === 'clear ip ospf' && m.args[0]?.toLowerCase() === 'process') {
       return {
@@ -721,9 +773,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const s of agent.listServers()) {
       if (!desired.has(s.ip)) agent.removeServer(s.ip);
     }
-    for (const h of c.hosts) {
-      agent.addServer(h, { facility: fac, severityThreshold: mapSev(c.trapSeverity) });
+    for (const h of c.hostConfigs) {
+      agent.addServer(h.ip,
+        { facility: fac, severityThreshold: mapSev(c.trapSeverity), port: h.port });
     }
+    // `logging server-arp` : la résolution a lieu MAINTENANT, pas au
+    // premier message. Sans le mot-clé le chemin ordinaire résout aussi,
+    // mais seulement quand un datagramme attend déjà de partir.
+    if (c.serverArp) agent.arpForServers();
   }
 
   protected syncSnmpAgent(): void {
@@ -1085,6 +1142,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     'config-subif': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-line': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-router-af': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router-ospf': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router-ospfv3': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-vlan': CiscoShellBase.COMMON_GLOBAL_NAV,
@@ -1255,6 +1313,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
               line: cmdPart,
               tokenOffset: offsetForInvalidInput(cmdPart, keywordCount, err),
             });
+          }
+          if (err instanceof CliIncomplete) {
+            return renderCliDiagnostic('incomplete', { line: cmdPart });
           }
           // Anything else is a bug in a handler, and it must not reach the
           // terminal: an exception surfacing as `% Error: ReferenceError…`
@@ -1868,6 +1929,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // here too, which is correct: nothing could have prompted them.
       this.currentPrivilegeLevel = lvl;
       this.mode = lvl === 15 ? 'privileged' : 'user';
+      // `logging userinfo` : c'est ICI que la commande a un sens, et
+      // c'est le seul endroit où elle peut en avoir. Une console sans
+      // authentification n'a pas d'utilisateur à nommer, et IOS écrit
+      // alors `unknown` plutôt que d'en inventer un.
+      if (this.logging.userInfo) {
+        this.attachLoggingToDevice(this.d());
+        const console = this.configSessionLabel === 'console';
+        this.logging.append('notifications', 'sys',
+          `Privilege level set to ${lvl} by ${console ? 'unknown' : this.configSessionLabel}`
+          + ` on ${console ? 'console' : 'vty'}`,
+          true, 'PRIV_AUTH_PASS');
+      }
       return '';
     });
 
@@ -2075,35 +2148,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'nat') return svc.enable('ip.nat');
       if (sub === 'arp') return svc.enable('ip.arp');
       if (sub === 'routing') return svc.enable('ip.routing');
-      if (sub === 'dhcp server' || sub === 'dhcp server events') return svc.enable('ip.dhcp.server');
+      if (sub.startsWith('dhcp server')) return svc.enable('ip.dhcp.server');
       if (sub === 'ssh') return svc.enable('ip.ssh');
       if (sub === 'rip') return svc.enable('ip.rip');
       if (sub === 'eigrp') return svc.enable('ip.eigrp');
       if (sub === 'bgp') return svc.enable('ip.bgp');
       if (sub === 'nhrp') return svc.enable('ip.nhrp');
       if (sub === 'pim') return svc.enable('ip.pim');
-      return svc.enable('ip.packet', sub);
+      throw new CliInvalidInput({ token: args[0] });
     });
     this.privilegedTrie.registerGreedy('no debug ip', 'Disable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
       const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim') => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is off';
-      if (sub === 'packet') return svc.disable('ip.packet');
+      if (sub === 'packet' || sub.startsWith('packet ')) return svc.disable('ip.packet');
       if (sub === 'icmp') return svc.disable('ip.icmp');
-      if (sub === 'tcp') return svc.disable('ip.tcp');
-      if (sub === 'udp') return svc.disable('ip.udp');
+      if (sub === 'tcp' || sub.startsWith('tcp ')) return svc.disable('ip.tcp');
+      if (sub === 'udp' || sub.startsWith('udp ')) return svc.disable('ip.udp');
       if (sub === 'nat') return svc.disable('ip.nat');
       if (sub === 'arp') return svc.disable('ip.arp');
       if (sub === 'routing') return svc.disable('ip.routing');
-      if (sub === 'dhcp server' || sub === 'dhcp server events') return svc.disable('ip.dhcp.server');
+      if (sub.startsWith('dhcp server')) return svc.disable('ip.dhcp.server');
       if (sub === 'ssh') return svc.disable('ip.ssh');
       if (sub === 'rip') return svc.disable('ip.rip');
       if (sub === 'eigrp') return svc.disable('ip.eigrp');
       if (sub === 'bgp') return svc.disable('ip.bgp');
       if (sub === 'nhrp') return svc.disable('ip.nhrp');
       if (sub === 'pim') return svc.disable('ip.pim');
-      return svc.disable('ip.packet');
+      throw new CliInvalidInput({ token: args[0] });
     });
     const debugSvc = () => {
       const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string; disable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string } };
@@ -2197,6 +2270,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
       return '';
     });
+    registerLoggingClearCommands(this.privilegedTrie, this.loggingCommandContext());
     this.privilegedTrie.registerGreedy('clear counters', 'Clear interface counters', (args) => {
       const ports = this.d()._getPortsInternal();
       const target = args[0] && !/^\s*$/.test(args[0]) ? args.join(' ') : null;
@@ -2856,24 +2930,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (which === 'incoming') dev._setIncomingBanner?.('');
       return '';
     });
-    this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
-      const head = (args[0] ?? '').toLowerCase();
-      if (head === 'host') {
-        if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
-        if (!isValidIPv4(args[1])) return CISCO_ERRORS.INVALID_INPUT;
-      } else if (/^\d+\.\d+\.\d+\.\d+$/.test(head) && !isValidIPv4(head)) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      this.attachLoggingToDevice(this.d());
-      this.logging.apply(args, false);
-      this.syncSyslogAgent();
-      return '';
-    });
-    this.configTrie.registerGreedy('no logging', 'Disable logging', (args) => {
-      this.logging.apply(args, true);
-      this.syncSyslogAgent();
-      return '';
-    });
+    registerLoggingConfigCommands(this.configTrie, this.loggingCommandContext());
+    registerSequenceNumbersCommand(this.configTrie, this.loggingCommandContext());
     this.configTrie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
       this.applyServiceTimestamps(args, false));
     this.configTrie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>

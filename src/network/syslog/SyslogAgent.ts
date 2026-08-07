@@ -22,6 +22,8 @@ export interface SyslogHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
   sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  /** `logging server-arp` : resoudre le collecteur des sa configuration. */
+  sendArpRequestFor?(ifaceName: string, targetIP: IPAddress): boolean;
 }
 
 export class SyslogAgent {
@@ -62,19 +64,37 @@ export class SyslogAgent {
     }
   }
 
+  /**
+   * `logging server-arp` — ARP vers chaque collecteur MAINTENANT, sans
+   * attendre le premier message. Sans le mot-cle, la resolution a bien
+   * lieu, mais seulement quand un datagramme est deja pret a partir.
+   */
+  arpForServers(): number {
+    if (!this.host.sendArpRequestFor) return 0;
+    let envoyees = 0;
+    for (const s of this.config.servers.values()) {
+      const egress = this.resolveEgress(s.ip);
+      if (!egress) continue;
+      if (this.host.sendArpRequestFor(egress.name, new IPAddress(s.ip))) envoyees++;
+    }
+    return envoyees;
+  }
+
   setSourceInterface(iface: string | null): void {
     this.config.sourceInterface = iface;
   }
 
-  addServer(ip: string, opts: { facility?: SyslogFacilityName; severityThreshold?: SyslogSeverityName } = {}): void {
+  addServer(ip: string, opts: { facility?: SyslogFacilityName; severityThreshold?: SyslogSeverityName; port?: number } = {}): void {
     if (this.config.servers.has(ip)) {
       const s = this.config.servers.get(ip)!;
       if (opts.facility) s.facility = opts.facility;
       if (opts.severityThreshold) s.severityThreshold = opts.severityThreshold;
+      if (opts.port !== undefined) s.port = opts.port;
       return;
     }
     const s = defaultServer(ip, opts.facility ?? this.config.defaultFacility,
-                                opts.severityThreshold ?? this.config.defaultSeverityThreshold);
+                                opts.severityThreshold ?? this.config.defaultSeverityThreshold,
+                                opts.port);
     this.config.servers.set(ip, s);
     this.getBus().publish({
       topic: 'syslog.server.changed',
@@ -202,7 +222,7 @@ export class SyslogAgent {
     const udp: UDPPacket = {
       type: 'udp',
       sourcePort: 49152 + ((s.count + 1) & 0x3fff),
-      destinationPort: UDP_PORT_SYSLOG,
+      destinationPort: s.port,
       length: 8 + payload.message.length + payload.tag.length + 32,
       checksum: 0, payload,
     };

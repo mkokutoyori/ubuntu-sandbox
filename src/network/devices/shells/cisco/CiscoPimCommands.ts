@@ -4,6 +4,7 @@ import type { PimAgent } from '../../../pim/PimAgent';
 import type { PimMode } from '../../../pim/types';
 import { hms } from '@/lib/format';
 import { CISCO_ERRORS } from '../cli-utils';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -142,9 +143,7 @@ export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): v
     const scopeIdx = args.findIndex((x) => x.toLowerCase() === 'scope');
     if (scopeIdx === -1) return CISCO_ERRORS.INCOMPLETE;
     const scope = parseInt(args[scopeIdx + 1] ?? '', 10);
-    if (Number.isNaN(scope) || scope < 1 || scope > 255) {
-      return `% Invalid input detected at '^' marker.`;
-    }
+    if (Number.isNaN(scope) || scope < 1 || scope > 255) throw new CliInvalidInput();
     a.setRpCandidate(ip, 0);
     (r as unknown as { _recordUnhandledConfigLine?: (l: string) => void })
       ._recordUnhandledConfigLine?.(raw ?? `ip pim send-rp-announce ${args.join(' ')}`);
@@ -157,9 +156,7 @@ export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): v
     const scopeIdx = args.findIndex((x) => x.toLowerCase() === 'scope');
     if (scopeIdx === -1) return CISCO_ERRORS.INCOMPLETE;
     const scope = parseInt(args[scopeIdx + 1] ?? '', 10);
-    if (Number.isNaN(scope) || scope < 1 || scope > 255) {
-      return `% Invalid input detected at '^' marker.`;
-    }
+    if (Number.isNaN(scope) || scope < 1 || scope > 255) throw new CliInvalidInput();
     (r as unknown as { _recordUnhandledConfigLine?: (l: string) => void })
       ._recordUnhandledConfigLine?.(raw ?? `ip pim send-rp-discovery ${args.join(' ')}`);
     return '';

@@ -58,6 +58,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-line':               '{host}(config-line)#',
   'config-dhcp':               '{host}(dhcp-config)#',
   'config-router':             '{host}(config-router)#',
+  'config-router-af':          '{host}(config-router-af)#',
   'config-vrf':                '{host}(config-vrf)#',
   'config-vlan':               '{host}(config-vlan)#',
   'config-track':              '{host}(config-track)#',

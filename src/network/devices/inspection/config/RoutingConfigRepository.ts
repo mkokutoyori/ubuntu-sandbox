@@ -261,7 +261,7 @@ export class RoutingConfigRepository {
     Object.assign(this.rip, {
       version: null, autoSummary: true, passiveDefault: false,
       passive: new Set<string>(), redistribute: [], networks: [],
-      neighbors: [], defaultInfoOriginate: false,
+      neighbors: [], extras: [], defaultInfoOriginate: false,
       distance: undefined, defaultMetric: undefined,
       maximumPaths: undefined, timersBasic: undefined,
     });

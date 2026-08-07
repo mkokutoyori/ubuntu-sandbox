@@ -25,6 +25,7 @@ import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider
 import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
 import { toDisplayName, toPortName, formatLinkSpeedMbps } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
+import { isValidIPv4 } from '@/network/core/ip';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
@@ -1510,6 +1511,15 @@ class WindowsNetworkAdapter implements INetworkProvider {
   // ─ IP add / remove ──────────────────────────────────────────────────────
 
   addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void {
+    // Une adresse dont un octet dépasse 255 n'en est pas une. Elle
+    // entrait ici sans contrôle et ressortait dans `Get-NetIPAddress` :
+    // la machine croyait porter `999.1.1.1`, que `netsh` refusait au
+    // même instant sur la même interface.
+    if (!ip.includes(':') && !isValidIPv4(ip)) {
+      throw new Error(
+        `Cannot validate argument on parameter 'IPAddress'. `
+        + `The argument "${ip}" is not a valid IPv4 address.`);
+    }
     const key = ip.toLowerCase();
     if (this.state.extraIPs.has(key)) {
       throw new Error(`IP address ${ip} already exists.`);

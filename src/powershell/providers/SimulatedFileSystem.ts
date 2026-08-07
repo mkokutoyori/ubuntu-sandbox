@@ -23,6 +23,15 @@ export class SimulatedFileSystem implements IFileSystemProvider {
     this.files.set('fake\\path\\item.txt', 'item');
     this.dirs.add('fake\\path');
     this.dirs.add('fake');
+    // Les repertoires qu'une machine Windows a toujours. `Set-Location`
+    // verifie desormais l'existence du chemin ; un bouchon en forme de
+    // Windows doit donc porter les dossiers d'un Windows, sans quoi il
+    // refuserait un `cd C:\\Windows` qui reussit sur toute machine reelle.
+    this.dirs.add('c:');
+    for (const d of ['windows', 'windows\\system32', 'program files',
+      'program files (x86)', 'users', 'users\\user', 'temp']) {
+      this.dirs.add(`c:\\${d}`);
+    }
   }
 
   private norm(path: string): string {

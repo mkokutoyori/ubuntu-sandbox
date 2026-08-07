@@ -28,6 +28,8 @@ import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import { showInterface } from './cisco/CiscoShowCommands';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
+import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
+import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
@@ -2034,9 +2036,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showDHCPSnoopingBinding(this.d());
     });
 
-    this.userTrie.register('show logging', 'Display syslog messages', () => {
-      return this.showLogging(this.d());
-    });
+    registerLoggingShowCommands(this.userTrie, this.loggingCommandContext());
 
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
   }
@@ -2362,9 +2362,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showDHCPSnoopingBinding(this.d());
     });
 
-    this.privilegedTrie.register('show logging', 'Display syslog messages', () => {
-      return this.showLogging(this.d());
-    });
+    registerLoggingShowCommands(this.privilegedTrie, this.loggingCommandContext());
   }
 
   /**
@@ -3945,11 +3943,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
-  private showLogging(sw: CiscoSwitch): string {
-    this.attachLoggingToBus(sw.getBus(), sw.id);
-    const base = this.logging.render();
-    const snoop = sw._getSnoopingLog();
-    return snoop.length > 0 ? `${base}\n\n${snoop.join('\n')}` : base;
+  protected loggingCommandContext(): LoggingCommandContext {
+    const base = super.loggingCommandContext();
+    return {
+      ...base,
+      beforeApply: () => {
+        base.beforeApply?.();
+        this.attachLoggingToBus(this.d().getBus(), this.d().id);
+      },
+      showSuffix: () => this.d()._getSnoopingLog().join('\n'),
+    };
   }
 
   // ─── DAI Display ──────────────────────────────────────────────────
