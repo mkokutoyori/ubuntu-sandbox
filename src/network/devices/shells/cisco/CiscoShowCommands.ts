@@ -12,7 +12,7 @@ import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRu
 import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
-import { CISCO_HARDWARE_PROFILES, formatIosUptime, type CiscoChassisProfile } from './CiscoCommonShow';
+import { CISCO_HARDWARE_PROFILES, formatIosUptime, licenseTable, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -30,6 +30,8 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
     '',
     `${router._getHostnameInternal()} uptime is ${formatIosUptime(uptimeMs)}`,
     `System image file is "flash:${hw.flashImage}"`,
+    '',
+    ...licenseTable(),
     '',
     `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
     `Processor board ID ${hw.serialNumber}`,
@@ -976,14 +978,6 @@ export function showInterfaceRateLimit(router: Router, ifName: string): string {
     lines.push(`      last packet: ${depuis}, current burst: ${Math.round(r.tokens)} bytes`);
   }
   return lines.join('\n');
-}
-
-export function showInterfaceSwitchport(router: Router, ifName: string): string {
-  void router;
-  return [
-    `Name: ${ifName}`,
-    `Switchport: Disabled`,
-  ].join('\n');
 }
 
 export function showVlansRouter(router: Router): string {

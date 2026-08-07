@@ -114,6 +114,32 @@ export interface CiscoHardwareProfile {
   extraFlashFiles: Array<{ index: number; name: string; size: number }>;
 }
 
+/**
+ * Le tableau de licences d'IOS, rendu d'un seul endroit. La bannière de
+ * démarrage et `show version` décrivent la MÊME machine : deux copies
+ * finiraient par se contredire, et un opérateur qui lit `securityk9` au
+ * boot et rien du tout dans `show version` ne sait plus laquelle croire.
+ *
+ * `securityk9` est déclarée parce que l'arbre l'expose vraiment — zones,
+ * class-map inspect, crypto isakmp/ipsec/ikev2, PKI — et que ces moteurs
+ * sont réels. Une bannière qui annoncerait `None` décrirait un autre
+ * équipement que celui qui répond aux commandes.
+ */
+export function licenseTable(module = 'c2900'): string[] {
+  return [
+    `Technology Package License Information for Module:'${module}'`,
+    '',
+    '-----------------------------------------------------------------',
+    'Technology    Technology-package           Technology-package',
+    '              Current       Type           Next reboot',
+    '-----------------------------------------------------------------',
+    'ipbase        ipbasek9      Permanent      ipbasek9',
+    'security      securityk9    Permanent      securityk9',
+    'uc            None          None           None',
+    'data          None          None           None',
+  ];
+}
+
 export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareProfile> = {
   'router-isr2911': {
     pid: 'CISCO2911/K9',
