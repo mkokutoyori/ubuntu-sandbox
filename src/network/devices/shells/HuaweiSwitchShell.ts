@@ -20,7 +20,7 @@ import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteract
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -704,9 +704,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // undo <subcommand>
-    this.systemTrie.registerGreedy('undo', 'Undo configuration', (args) => {
+    this.systemTrie.registerGreedy('undo', 'Undo configuration', (args, raw) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
-      return this.cmdUndo(args);
+      return refuseUnknownUndo(this.systemTrie, args, raw) ?? this.cmdUndo(args);
     });
 
     // port-group {group-member <a> [to <b>] | <name>} → bulk-config view
@@ -1014,10 +1014,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // Generic `undo <…>` fallback (specific undo forms below still win).
-    this.interfaceTrie.registerGreedy('undo', 'Undo configuration', (args) =>
-      this.cmdUndo(args));
-    this.vlanTrie.registerGreedy('undo', 'Undo configuration', (args) =>
-      this.cmdUndo(args));
+    this.interfaceTrie.registerGreedy('undo', 'Undo configuration', (args, raw) =>
+      refuseUnknownUndo(this.interfaceTrie, args, raw) ?? this.cmdUndo(args));
+    this.vlanTrie.registerGreedy('undo', 'Undo configuration', (args, raw) =>
+      refuseUnknownUndo(this.vlanTrie, args, raw) ?? this.cmdUndo(args));
 
     // undo shutdown
     this.interfaceTrie.register('undo shutdown', 'Bring up interface', () => {

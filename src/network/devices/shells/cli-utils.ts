@@ -38,6 +38,34 @@ export const HUAWEI_ERRORS = {
   UNRECOGNIZED: (input: string, pos?: number) => formatVrpPositionalError('Unrecognized command', input, pos),
 } as const;
 
+/**
+ * `undo X` existe si et seulement si `X` se configure dans cette vue :
+ * c'est la regle de VRP, et le trie de la vue sait deja y repondre. Le
+ * fourre-tout `undo` rendait la main en silence sur n'importe quel mot,
+ * si bien qu'une faute de frappe passait pour un succes — or le silence
+ * est la seule confirmation que VRP donne quand tout va bien.
+ *
+ * La question posee ici est « ce mot existe-t-il », et elle porte sur le
+ * PREMIER mot seulement. Interroger la forme entiere reviendrait a faire
+ * dependre le refus de l'arite du positif : `ip pool` est enregistre
+ * sans argument, donc `undo ip pool P1` serait refuse alors qu'il est
+ * legitime. Un mot en trop derriere une tete valide est une autre erreur
+ * (`Too many parameters`), traitee ailleurs.
+ *
+ * Rend `null` quand l'appelant peut continuer, le message de refus sinon.
+ */
+export function refuseUnknownUndo(
+  trie: { match(input: string): { status: string } },
+  args: readonly string[],
+  rawLine?: string,
+): string | null {
+  const ligne = rawLine && rawLine.trim() ? rawLine.trim() : `undo ${args.join(' ')}`.trim();
+  if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE(ligne);
+  if (trie.match(args[0]).status !== 'invalid') return null;
+  const pos = ligne.toLowerCase().indexOf(args[0].toLowerCase());
+  return HUAWEI_ERRORS.UNRECOGNIZED(ligne, pos < 0 ? ligne.length : pos);
+}
+
 // ─── Pipe Filter ───────────────────────────────────────────────────
 
 export interface PipeFilter {
