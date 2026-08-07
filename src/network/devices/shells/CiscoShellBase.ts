@@ -1978,7 +1978,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'systems', description: 'File system information' },
     ]);
     trie.register('show calendar', 'Display hardware calendar', () =>
-      showCalendar());
+      showCalendar(this.cs()));
     trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
       `${showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize)}\n`
       + `Monitor parameter: ${this.terminalMonitor ? 'enabled' : 'disabled'}`);

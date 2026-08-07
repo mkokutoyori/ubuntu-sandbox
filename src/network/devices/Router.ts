@@ -3971,10 +3971,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       shouldStop?: () => boolean;
     },
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
+    // 127.0.0.0/8 est TOUJOURS local (RFC 1122 §3.2.1.3) : il n'a pas
+    // besoin d'être configuré sur une interface pour répondre, et il
+    // n'a pas de route. Sans ce cas, `ping 127.0.0.1` — le premier
+    // réflexe pour vérifier qu'une pile IP est vivante — échouait à
+    // 100 % sur une machine parfaitement saine.
+    const boucleLocale = targetIP.toString().startsWith('127.');
     // Self-ping: check all interface IPs
     for (const [, port] of this.ports) {
       const myIP = port.getIPAddress();
-      if (myIP && myIP.equals(targetIP)) {
+      if (boucleLocale || (myIP && myIP.equals(targetIP))) {
         const results = [];
         for (let seq = 1; seq <= count; seq++) {
           if (hooks?.shouldStop?.()) break;

@@ -2491,9 +2491,14 @@ function showIpRouteSummary(router: Router): string {
     counts[t].overhead += 152;
     counts[t].memory += 360;
   }
+  // 4 est la valeur par défaut d'IOS ; 32 est le MAXIMUM configurable,
+  // pas ce que la table applique. Aucun `maximum-paths` de RIB n'existe
+  // ici (le réglage est par protocole), donc la constante est celle
+  // d'un routeur non configuré — et le dire vaut mieux que lire un
+  // accesseur que personne n'implémente.
   const lines = [
     'IP routing table name is Default-IP-Routing-Table(0)',
-    'IP routing table maximum-paths is 32',
+    'IP routing table maximum-paths is 4',
     'Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)',
   ];
   let totN = 0, totS = 0, totR = 0, totO = 0, totM = 0;
