@@ -195,22 +195,24 @@ describe('a switch console behaves the same way', () => {
 
 describe('every severity-7 family is reachable and unprefixed', () => {
   it.each([
-    ['debug lldp', 'LLDP packets debugging is on'],
-    ['debug vxlan', 'VXLAN debugging is on'],
-    ['debug port-security', 'Port security debugging is on'],
-    ['debug ip pim', 'PIM debugging is on'],
-  ])('`%s` is a real flag that `undebug all` clears', async (cmd, expected) => {
+    ['debug lldp', 'LLDP packets debugging is on', 'router'],
+    ['debug vxlan', 'VXLAN debugging is on', 'switch'],
+    ['debug port-security', 'Port security debugging is on', 'switch'],
+    ['debug ip pim', 'PIM debugging is on', 'router'],
+  ] as const)('`%s` is a real flag that `undebug all` clears', async (cmd, expected, plateforme) => {
     const bus = new EventBus();
     __setDefaultEventBus(bus);
     EquipmentRegistry.getInstance().setEventBus(bus);
-    const router = new CiscoRouter('R1', 0, 0);
-    router.setEventBus(bus);
-    router.powerOn();
-    await router.executeCommand('enable');
+    const dev = plateforme === 'router'
+      ? new CiscoRouter('R1', 0, 0)
+      : new CiscoSwitch('switch-cisco', 'SW1', 8);
+    dev.setEventBus(bus);
+    dev.powerOn();
+    await dev.executeCommand('enable');
 
-    expect(await router.executeCommand(cmd)).toBe(expected);
-    expect(await router.executeCommand('show debugging')).toContain(expected);
-    await router.executeCommand('undebug all');
-    expect(await router.executeCommand('show debugging')).toBe('No debug flags are enabled');
+    expect(await dev.executeCommand(cmd)).toBe(expected);
+    expect(await dev.executeCommand('show debugging')).toContain(expected);
+    await dev.executeCommand('undebug all');
+    expect(await dev.executeCommand('show debugging')).toBe('No debug flags are enabled');
   }, 30000);
 });

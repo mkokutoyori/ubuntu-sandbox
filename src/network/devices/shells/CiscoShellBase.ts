@@ -2255,9 +2255,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('debug interface', 'Debug interface state changes', (args) => {
       const svc = genericDebug();
       const iface = args.join(' ').trim();
-      if (!svc) return `Interface ${iface} debugging is on`;
-      svc.enable('interface', iface || undefined);
-      return `Interface ${iface} debugging is on`;
+      if (!svc) return 'Interface debugging is on';
+      return svc.enable('interface', iface || undefined);
     });
     this.privilegedTrie.registerGreedy('no debug interface', 'Disable interface debug', () =>
       genericDebug()?.disable('interface') ?? '');
