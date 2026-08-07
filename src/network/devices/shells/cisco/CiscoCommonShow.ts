@@ -997,6 +997,17 @@ export function showAaa(sec: import('@/network/devices/router/security/CiscoSecu
     for (const t of sec.tacacsServers.values()) lines.push(`TACACS+: ${t.name} (${t.address ?? 'unconfigured'})`);
     return lines.join('\n');
   }
+  // `show aaa local` seul rendait la ligne des sessions, comme si le
+  // mot-clé n'avait pas été tapé. IOS attend `user lockout` derrière.
+  if (lower.startsWith('local')) {
+    const rest = lower.slice('local'.length).trim();
+    if (rest === '') return '% Incomplete command.';
+    if (rest !== 'user lockout') return "% Invalid input detected at '^' marker.";
+    return [
+      'Local-user            Lock time            Unlock time',
+      '-------------------------------------------------------------',
+    ].join('\n');
+  }
   if (lower.includes('group')) {
     if (sec.aaaGroups.size === 0) return 'No AAA server groups configured';
     const lines: string[] = [];

@@ -200,6 +200,7 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['split-horizon', 'Split horizon'],
   ['standard', 'Standard access list'],
   ['expanded', 'Add an expanded community-list entry'],
+  ['packets', 'NTP packets'],
   ['statistics', 'Statistics'],
   ['stats', 'Statistics'],
   ['status', 'Status'],

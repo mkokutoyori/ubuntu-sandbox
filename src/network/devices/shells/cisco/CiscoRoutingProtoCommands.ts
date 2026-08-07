@@ -26,6 +26,48 @@ function curProto(ctx: CiscoShellContext): { proto: Proto; asn?: number } {
   return ctx.getSelectedRoutingProto() ?? { proto: 'rip' };
 }
 
+/**
+ * `config-router` est un seul arbre pour trois protocoles, et c'est la
+ * source unique qui dit à qui appartient chaque mot-clé. Les
+ * gestionnaires la lisent pour refuser, l'aide la lit pour ne pas
+ * proposer : le refus et la proposition ne peuvent donc pas diverger,
+ * ce qui était exactement le défaut — `router rip` offrait
+ * `neighbor … remote-as`, que la même machine refusait ensuite.
+ *
+ * Un mot-clé absent de la table appartient aux trois.
+ */
+export const ROUTER_MODE_OWNERS: ReadonlyMap<string, readonly Proto[]> = new Map([
+  ['version', ['rip']],
+  ['auto-summary', ['rip', 'eigrp']],
+  ['passive-interface', ['rip', 'eigrp']],
+  ['offset-list', ['rip', 'eigrp']],
+  ['output-delay', ['rip']],
+  ['flash-update-threshold', ['rip']],
+  ['validate-update-source', ['rip']],
+  ['distribute-list', ['rip', 'eigrp']],
+  ['traffic-share', ['eigrp']],
+  ['variance', ['eigrp']],
+  ['metric', ['eigrp']],
+  ['eigrp', ['eigrp']],
+  ['router-id', ['eigrp', 'bgp']],
+  ['bgp', ['bgp']],
+  ['aggregate-address', ['bgp']],
+  ['address-family', ['bgp']],
+  ['exit-address-family', ['bgp']],
+  ['synchronization', ['bgp']],
+] as ReadonlyArray<[string, readonly Proto[]]>);
+
+export function routerKeywordBelongsTo(keyword: string, proto: Proto): boolean {
+  const bare = keyword.toLowerCase().replace(/^no\s+/, '');
+  const owners = ROUTER_MODE_OWNERS.get(bare);
+  return !owners || owners.includes(proto);
+}
+
+/** Refuse au caret un mot-clé qui n'appartient pas au protocole courant. */
+function requireProto(ctx: CiscoShellContext, keyword: string): void {
+  if (!routerKeywordBelongsTo(keyword, curProto(ctx).proto)) throw new CliInvalidInput();
+}
+
 function pushOnce(list: string[], value: string): boolean {
   if (list.includes(value)) return false;
   list.push(value);
@@ -496,19 +538,15 @@ export function buildRoutingProtoConfig(
     ctx.setMode('config-router');
     return '';
   });
-  const PROTO_EXTRAS: ReadonlyArray<{ kw: string; protos: readonly Proto[] }> = [
-    { kw: 'offset-list', protos: ['rip', 'eigrp'] },
-    { kw: 'output-delay', protos: ['rip'] },
-    { kw: 'flash-update-threshold', protos: ['rip'] },
-    { kw: 'validate-update-source', protos: ['rip'] },
-    { kw: 'no validate-update-source', protos: ['rip'] },
-    { kw: 'traffic-share', protos: ['eigrp'] },
-    { kw: 'distribute-list', protos: ['rip', 'eigrp'] },
+  const PROTO_EXTRAS = [
+    'offset-list', 'output-delay', 'flash-update-threshold',
+    'validate-update-source', 'no validate-update-source',
+    'traffic-share', 'distribute-list',
   ];
-  for (const { kw, protos } of PROTO_EXTRAS) {
+  for (const kw of PROTO_EXTRAS) {
     routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args) => {
+      requireProto(ctx, kw);
       const p = curProto(ctx).proto;
-      if (!protos.includes(p)) throw new CliInvalidInput();
       const line = `${kw}${args.length ? ' ' + args.join(' ') : ''}`;
       if (p === 'rip') pushOnce(repo.rip.extras, line);
       else pushOnce(eigrp().extras, line);
@@ -837,7 +875,7 @@ export function registerRoutingProtoShow(
       out.push('      Distance: internal 90 external 170');
       out.push('      Maximum path: 4');
       out.push('      Maximum hopcount 100');
-      out.push(`      Maximum metric variance ${ctx.r().getEIGRPVariance?.() ?? 1}`);
+      out.push(`      Maximum metric variance ${eigrpE().getConfig().variance}`);
       out.push('');
       out.push('  Automatic Summarization: disabled');
       out.push('  Maximum path: 4');

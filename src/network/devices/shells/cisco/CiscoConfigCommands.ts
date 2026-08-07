@@ -789,6 +789,12 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     // ligne brute était empilée sur le port et lue par personne : la
     // commande était acceptée, absente de la running-config, sans vue,
     // et surtout sans effet sur un seul paquet.
+    // `rate-limit input` seul est une commande COMMENCÉE, pas une
+    // commande fausse : IOS réclame le débit, il ne pointe pas le caret.
+    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const dir = args[0].toLowerCase();
+    if (dir !== 'input' && dir !== 'output') throw new CliInvalidInput({ token: args[0] });
+    if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
     const regle = parseRateLimitRule(args, raw ?? `rate-limit ${args.join(' ')}`);
     if (!regle) return "% Invalid input detected at '^' marker.";
     ctx.r().getCarPolicer(ifName, true)!.add(regle);

@@ -2879,9 +2879,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       r._recordUnhandledConfigLine?.(raw ?? `vrf ${args.join(' ')}`);
       return '';
     });
-    this.configTrie.registerGreedy('vrf definition', 'Define a VRF', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `vrf definition ${args.join(' ')}`);
+    // `vrf definition NAME` est la forme moderne de `ip vrf NAME` : elle
+    // entre dans le MÊME sous-mode et crée la MÊME instance, sans quoi
+    // deux orthographes d'une seule commande donnaient deux résultats
+    // — l'une entrait en config-vrf, l'autre notait une ligne et rendait
+    // la main en configuration globale.
+    this.configTrie.registerGreedy('vrf definition', 'Configure a VRF', (args) => {
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+      const name = args[0];
+      const dev = this.d() as unknown as {
+        _vrfs?: Map<string, { name: string; rd?: string; rts: { import: string[]; export: string[] }; interfaces: Set<string> }>;
+      };
+      const vrfs = dev._vrfs ??= new Map();
+      if (!vrfs.has(name)) vrfs.set(name, { name, rts: { import: [], export: [] }, interfaces: new Set() });
+      (this as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
+      this.mode = 'config-vrf';
       return '';
     });
     this.configTrie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
@@ -2920,11 +2932,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
+      if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
       const mode = args[0]?.toLowerCase();
       if (!['exec', 'configure', 'interface', 'line'].includes(mode ?? '')) {
         return "% Invalid input detected at '^' marker.";
       }
       if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
+      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const lvl = parseInt(args[2] ?? '', 10);
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
         return "% Invalid input detected at '^' marker.";
@@ -3510,6 +3524,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         _getVtyLineConfig?: () => { upsert: (p: object) => void };
       };
       const dir = args[0]?.toLowerCase();
+      if (!dir) return CISCO_ERRORS.INCOMPLETE;
+      // `preferred` existe sur IOS et ne s'applique qu'aux connexions
+      // sortantes d'un serveur de terminaux : il est accepté et
+      // n'entraîne rien ici, mais il est refusé plutôt que stocké
+      // inerte, faute de quoi l'aide promettrait un réglage sans effet.
       if (dir !== 'input' && dir !== 'output') return "% Invalid input detected at '^' marker.";
       const proto = (args[1] ?? '').toLowerCase();
       if (!proto) return '% Incomplete command.';

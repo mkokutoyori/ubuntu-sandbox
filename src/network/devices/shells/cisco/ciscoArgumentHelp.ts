@@ -108,6 +108,40 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configRouter.describeArgs('network', [
     IP('network', 'Network number'),
   ]);
+  // `neighbor ?` proposait `activate`, `remote-as`, `weight`… avant
+  // l'adresse, parce qu'aucun argument n'était déclaré : les mots-clés
+  // extraits du gestionnaire remontaient d'un niveau. Ils sont bien de
+  // cette commande, mais ils viennent APRÈS le voisin.
+  tries.configRouter.describeArgs('neighbor', [
+    IP('address', 'Neighbor address'),
+  ]);
+  tries.configRouter.describeArgs('default-metric', [
+    INT('metric', [1, 16], 'Default metric'),
+  ]);
+  tries.configRouter.describeArgs('distance', [
+    INT('distance', [1, 255], 'Administrative distance'),
+  ]);
+  tries.configRouter.describeArgs('maximum-paths', [
+    INT('paths', [1, 32], 'Number of paths'),
+  ]);
+  tries.configRouter.describeArgs('redistribute', [
+    ENUM('protocol', 'Source protocol to redistribute', [
+      ['bgp', 'Border Gateway Protocol (BGP)'],
+      ['connected', 'Connected'],
+      ['eigrp', 'Enhanced Interior Gateway Routing Protocol (EIGRP)'],
+      ['ospf', 'Open Shortest Path First (OSPF)'],
+      ['static', 'Static routes'],
+    ]),
+  ]);
+  tries.configRouterOspf.describeArgs('redistribute', [
+    ENUM('protocol', 'Source protocol to redistribute', [
+      ['bgp', 'Border Gateway Protocol (BGP)'],
+      ['connected', 'Connected'],
+      ['eigrp', 'Enhanced Interior Gateway Routing Protocol (EIGRP)'],
+      ['rip', 'Routing Information Protocol (RIP)'],
+      ['static', 'Static routes'],
+    ]),
+  ]);
   tries.configRouterOspf.describeArgs('network', [
     IP('network', 'Network number'),
     { ...IP('wildcard', 'OSPF wild card bits'), optional: true },
@@ -137,6 +171,23 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configIf.describeArgs('description', [
     { name: 'text', type: 'STRING', description: 'Up to 240 characters describing this interface' },
   ]);
+  // `encapsulation ?` offrait `isl` (absent d'un ISR G2) et `native`
+  // (un mot-clé de `dot1q`, pas un encapsulage).
+  tries.configIf.describeArgs('encapsulation', [
+    ENUM('type', 'Encapsulation type', [
+      ['dot1q', 'IEEE 802.1Q Virtual LAN'],
+    ]),
+  ]);
+  // `eui-64` et `link-local` suivent le préfixe, ils ne le remplacent pas.
+  tries.configIf.describeArgs('ipv6 address', [
+    { name: 'prefix', type: 'WORD', description: 'IPv6 prefix', literal: 'X:X:X:X::X/<0-128>' },
+  ]);
+  tries.configIf.describeArgs('rate-limit', [
+    ENUM('direction', 'Direction to rate limit', [
+      ['input', 'Rate limit incoming traffic'],
+      ['output', 'Rate limit outgoing traffic'],
+    ]),
+  ]);
 
   tries.config.describeArgs('ip domain-name', [
     { name: 'name', type: 'WORD', description: 'Default domain name', literal: 'WORD' },
@@ -155,6 +206,58 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     { keyword: 'on', description: 'Enable logging to all supported destinations' },
     { keyword: 'trap', description: 'Set syslog server logging level' },
   ]);
+  // `privilege ?` n'offrait que `level`, un mot-clé qui vient après le
+  // mode : `privilege level` seul n'existe pas, IOS demande d'abord de
+  // quel mode on parle.
+  tries.config.describeArgs('privilege', [
+    ENUM('mode', 'Command mode', [
+      ['configure', 'Global configuration mode'],
+      ['exec', 'Exec mode'],
+      ['interface', 'Interface configuration mode'],
+      ['line', 'Line configuration mode'],
+    ]),
+  ]);
+  // `aaa authentication ?` retombait sur les mots-clés de la RACINE
+  // `aaa` (il proposait `new-model`, `attempts`, `session-id`…), parce
+  // que rien ne décrivait ce qui vient après. Chaque niveau porte
+  // maintenant ses propres valeurs.
+  tries.config.describeArgs('aaa', [
+    ENUM('function', 'AAA function', [
+      ['accounting', 'Accounting configurations parameters'],
+      ['authentication', 'Authentication configurations parameters'],
+      ['authorization', 'Authorization configurations parameters'],
+      ['group', 'AAA server-group definitions'],
+      ['local', 'AAA local authentication parameters'],
+      ['new-model', 'Enable NEW access control commands and functions'],
+      ['session-id', 'AAA Session ID'],
+    ]),
+  ]);
+  tries.config.describeArgs('aaa authentication', [
+    ENUM('service', 'Service to authenticate', [
+      ['dot1x', 'Set authentication lists for IEEE 802.1x'],
+      ['enable', 'Set authentication list for enable'],
+      ['login', 'Set authentication lists for logins'],
+      ['ppp', 'Set authentication lists for ppp'],
+    ]),
+  ]);
+  tries.config.describeArgs('aaa authorization', [
+    ENUM('service', 'Service to authorize', [
+      ['commands', 'For exec (shell) commands'],
+      ['config-commands', 'For configuration mode commands'],
+      ['exec', 'For starting an exec (shell)'],
+      ['network', 'For network services (PPP, SLIP, ARAP)'],
+      ['reverse-access', 'For reverse access connections'],
+    ]),
+  ]);
+  tries.config.describeArgs('aaa accounting', [
+    ENUM('service', 'Service to account for', [
+      ['commands', 'For exec (shell) commands'],
+      ['connection', 'For outbound connections'],
+      ['exec', 'For starting an exec (shell)'],
+      ['network', 'For network services (PPP, SLIP, ARAP)'],
+      ['system', 'For system events'],
+    ]),
+  ]);
   tries.config.describeArgs('banner motd', [
     { name: 'delimiter', type: 'STRING', description: 'Message text, delimited by a chosen character' },
   ]);
@@ -167,6 +270,24 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configLine.describeArgs('password', [
     { name: 'password', type: 'STRING', description: 'The UNENCRYPTED (cleartext) line password' },
   ]);
+  // `transport ?` listait `all`/`none`/`ssh`/`telnet` : ce sont les
+  // MÉTHODES, un niveau trop haut. IOS n'offre ici que la direction.
+  tries.configLine.describeArgs('transport', [
+    ENUM('direction', 'Transport direction', [
+      ['input', 'Define which protocols to use when connecting to the terminal server'],
+      ['output', 'Define which protocols to use for outgoing connections'],
+    ]),
+  ]);
+  for (const dir of ['input', 'output']) {
+    tries.configLine.describeArgs(`transport ${dir}`, [
+      ENUM('protocol', 'Transport protocol', [
+        ['all', 'All protocols'],
+        ['none', 'No protocols'],
+        ['ssh', 'TCP/IP SSH protocol'],
+        ['telnet', 'TCP/IP Telnet protocol'],
+      ]),
+    ]);
+  }
 
   tries.privileged.describeArgs('reload', [
     { name: 'when', type: 'STRING', description: 'Reload reason', optional: true,
