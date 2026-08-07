@@ -666,3 +666,101 @@ RIP/HSRP/BGP (307 cas), typecheck au baseline (167), lint inchangé.
 Discrimination par `git stash` : 4 des 5 cas tombent avant le correctif
 (le cinquième vérifie qu'un debug désarmé reste muet, ce qui était déjà
 vrai — pour cause de silence total).
+
+
+---
+
+## 13. D4 — Livré, et le §4.2 (b) est réfuté par la mesure
+
+**Le PRD disait « retirer les douze catégories mortes ». La mesure dit
+non.** Avant d'en supprimer une seule, j'ai cherché si le bus publiait
+quelque chose pour elle — et il publie, pour presque toutes :
+`vrrp.state.changed`, `glbp.avg.changed`, `ntp.synced`,
+`radius.auth.completed`, `tacacs.acct.completed`,
+`eigrp.neighbor.state-changed`, `router.ssh.session.opened`… Retirer une
+catégorie dont l'événement existe aurait jeté de la fidélité
+atteignable. **Ce qui manquait n'était pas la matière, c'était la porte
+ET le fil.**
+
+D4 pose donc les deux, et le compte le dit : **45 catégories déclarées
+dont 20 sans émetteur avant, 41 dont 2 après.**
+
+**Câblées** (abonnement dans `attachToBus`) : EIGRP (changement de
+voisin, désaccord de K-values), SSH (session ouverte/fermée), VRRP
+(état, maître), GLBP (AVG, AVF), NTP (synchronisation, paquets), RADIUS
+(Access-Accept/Reject, serveur mort), TACACS+, et l'AAA
+authentification/comptabilité, dérivée des mêmes événements RADIUS.
+
+**Six familles ont reçu la commande qui leur manquait** : `debug vrrp`,
+`debug glbp`, `debug radius`, `debug tacacs`, `debug ntp
+events|packets`, `debug aaa authentication|authorization|accounting`.
+Un sous-mot-clé inconnu y est refusé comme partout ailleurs.
+
+**Deux familles seulement sont refusées, et chacune nomme sa brique.**
+Ce sont les seules dont aucun événement n'existe :
+
+```
+debug crypto pki transactions
+  => % Crypto PKI has no trace point on this platform: the certificate
+     engine publishes no enrolment or validation event
+debug crypto ikev2
+  => % IKEv2 has no trace point on this platform: the IPSec engine emits
+     its exchange on the ISAKMP channel
+```
+
+Le second mérite son explication : `debug crypto ikev2` armait une
+catégorie `crypto.ikev2` que le moteur ne pouvait pas alimenter, son
+émetteur ne connaissant que deux genres (`isakmp`, `ipsec`). L'échange
+IKEv2 SORT bien — étiqueté ISAKMP. Le refus dit où regarder plutôt que
+d'accepter un drapeau muet. Les quatre catégories correspondantes
+quittent le type.
+
+### 13.1 BGP : la décision a été prise par l'autre agent, et j'ai corrigé ce qu'elle a révélé
+
+D3 avait mesuré que `AbstractRoutingProtocolEngine.setBus()` n'était
+appelé nulle part, et laissé la décision ouverte parce qu'elle touchait
+le canal syslog. **L'agent logging l'a prise** (`RouterDynamicRouting`
+appelle désormais `setBus(ctx.getBus())`), et `debug ip bgp` émet.
+
+La première mesure après ce câblage a montré une ligne fausse :
+
+```
+BGP: 10.0.9.2 went from Idle to Idle
+```
+
+`publishNeighborState` était appelé au premier passage avec `prev`
+absent, donc un `oldState` par défaut égal au `newState` : une
+transition qui n'a pas eu lieu, annoncée sur le canal debug **et** sur
+syslog en `%BGP-5-ADJCHANGE`. Une garde d'une ligne l'écarte, et un cas
+de test refuse toute ligne dont l'état de départ égale celui d'arrivée.
+
+### 13.2 Ce qui reste, nommé plutôt que caché
+
+Deux catégories restent sans émetteur, et la suite les liste **une par
+une** dans un cliquet qui ne peut que rétrécir :
+
+- **`ip.nhrp`** — NHRP publie bien `nhrp.packet.sent`/`received`, mais
+  ces sujets ne figurent pas dans l'union `DomainEvent` : l'abonnement
+  ne compile pas. Les y ajouter est une modification de types, pas de
+  câblage.
+- **`aaa.authorization`** — aucun événement ne distingue l'autorisation
+  de l'authentification. La commande existe (IOS l'a), le fil n'a rien à
+  porter.
+
+**Tests.** `cisco-debug-no-empty-promise.test.ts` (8 cas). Le premier
+est une **règle lue dans le code** — toute catégorie déclarée a un
+émetteur, exceptions nommées — sur le modèle du cliquet des littéraux
+d'erreur. Discrimination par `git stash` : 5 des 8 tombent avant.
+
+**Une suite à moi encodait l'état d'avant** : `cisco-debug-lifecycle`
+listait `debug crypto pki transactions` parmi les familles armables. Ce
+n'en est plus une ; la règle « toute famille armable s'arme » ne change
+pas, sa liste si.
+
+**Mesures.** 224 suites connexes vertes (4369 cas), typecheck au
+baseline (167), lint identique (26 problèmes avant comme après).
+Signalé plutôt que tu : un passage du lot a vu `openssl-prd-p0-p3`
+échouer une fois puis passer au suivant, la suite étant verte seule et
+sur `HEAD` — c'est la pollution inter-fichiers connue du registre PKI
+(`resetPkiCaRegistry`, à la charge de chaque fichier), révélée par un
+décalage d'ordonnancement, pas par ce lot.

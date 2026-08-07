@@ -2299,6 +2299,52 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         : value;
       return svc.removeCondition(kind, resolved);
     });
+    const SIMPLE_DEBUG: ReadonlyArray<readonly [string, string, string]> = [
+      ['debug vrrp', 'vrrp', 'Debug VRRP'],
+      ['debug glbp', 'glbp', 'Debug GLBP'],
+      ['debug radius', 'radius', 'Debug RADIUS'],
+      ['debug tacacs', 'tacacs', 'Debug TACACS+'],
+    ];
+    for (const [path, category, description] of SIMPLE_DEBUG) {
+      this.privilegedTrie.registerGreedy(path, description, () =>
+        genericDebug()?.enable(category) ?? '');
+      this.privilegedTrie.registerGreedy(`no ${path}`, `Disable ${description}`, () =>
+        genericDebug()?.disable(category) ?? '');
+    }
+    this.privilegedTrie.registerGreedy('debug ntp', 'Debug NTP', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const sub = (args[0] ?? 'events').toLowerCase();
+      if ('events'.startsWith(sub)) return svc.enable('ntp.events');
+      if ('packets'.startsWith(sub)) return svc.enable('ntp.packets');
+      throw new CliInvalidInput({ token: args[0] });
+    });
+    this.privilegedTrie.registerGreedy('no debug ntp', 'Disable NTP debug', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const sub = (args[0] ?? 'events').toLowerCase();
+      if ('events'.startsWith(sub)) return svc.disable('ntp.events');
+      if ('packets'.startsWith(sub)) return svc.disable('ntp.packets');
+      throw new CliInvalidInput({ token: args[0] });
+    });
+    this.privilegedTrie.registerGreedy('debug aaa', 'Debug AAA', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const sub = (args[0] ?? '').toLowerCase();
+      if (sub && 'authentication'.startsWith(sub)) return svc.enable('aaa.authentication');
+      if (sub && 'authorization'.startsWith(sub)) return svc.enable('aaa.authorization');
+      if (sub && 'accounting'.startsWith(sub)) return svc.enable('aaa.accounting');
+      throw new CliInvalidInput({ token: args[0] });
+    });
+    this.privilegedTrie.registerGreedy('no debug aaa', 'Disable AAA debug', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const sub = (args[0] ?? '').toLowerCase();
+      if (sub && 'authentication'.startsWith(sub)) return svc.disable('aaa.authentication');
+      if (sub && 'authorization'.startsWith(sub)) return svc.disable('aaa.authorization');
+      if (sub && 'accounting'.startsWith(sub)) return svc.disable('aaa.accounting');
+      throw new CliInvalidInput({ token: args[0] });
+    });
     if (this.hasVxlanHardware()) {
       this.privilegedTrie.registerGreedy('debug vxlan', 'Debug VXLAN', () => genericDebug()?.enable('vxlan') ?? 'VXLAN debugging is on');
       this.privilegedTrie.registerGreedy('no debug vxlan', 'Disable VXLAN debug', () => genericDebug()?.disable('vxlan') ?? '');

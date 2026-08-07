@@ -657,6 +657,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   private publishNeighborState(
     ip: string, oldState: string | undefined, newState: string, remoteAs?: number,
   ): void {
+    if ((oldState ?? 'Idle') === newState) return;
     this.bus?.publish({
       topic: 'bgp.neighbor.state-changed',
       payload: {

@@ -38,8 +38,7 @@ const ARMABLES = [
   'debug ip rip', 'debug ip eigrp', 'debug ip bgp', 'debug ip ssh',
   'debug ip nhrp', 'debug ip pim', 'debug ip dhcp server',
   'debug ipv6 packet', 'debug standby', 'debug lldp', 'debug cdp',
-  'debug crypto isakmp',
-  'debug crypto ipsec', 'debug crypto pki transactions',
+  'debug crypto isakmp', 'debug crypto ipsec',
 ];
 
 describe('a debug flag arms without the protocol it watches', () => {
@@ -102,7 +101,6 @@ describe('`no debug X` disarms exactly `debug X`', () => {
     const r = await bareRouter();
     for (const [on, off] of [
       ['debug ip tcp transactions', 'no debug ip tcp transactions'],
-      ['debug crypto pki transactions', 'no debug crypto pki transactions'],
       ['debug ip dhcp server events', 'no debug ip dhcp server events'],
       ['debug ip dhcp server packet', 'no debug ip dhcp server packet'],
     ] as const) {

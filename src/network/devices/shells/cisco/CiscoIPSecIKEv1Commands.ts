@@ -744,10 +744,13 @@ export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellC
   const debugSvc = () => ctx.r().getDebugService();
   const engineFor = () => (ctx.r() as any)._getOrCreateIPSecEngine();
 
+  const IKEV2_REFUS = '% IKEv2 has no trace point on this platform:'
+    + ' the IPSec engine emits its exchange on the ISAKMP channel';
+  trie.registerGreedy('debug crypto ikev2', 'Enable IKEv2 debug output', () => IKEV2_REFUS);
+  trie.registerGreedy('no debug crypto ikev2', 'Disable IKEv2 debug output', () => IKEV2_REFUS);
   for (const [verb, kind, category] of [
     ['isakmp', 'isakmp', 'crypto.isakmp'],
     ['ipsec', 'ipsec', 'crypto.ipsec'],
-    ['ikev2', 'ikev2', 'crypto.ikev2'],
   ] as const) {
     trie.registerGreedy(`debug crypto ${verb}`, `Enable ${verb.toUpperCase()} debug output`, (args) => {
       const detail = /^detail$/i.test(args.join(' ').trim());

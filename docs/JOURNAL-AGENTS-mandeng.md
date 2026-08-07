@@ -25,7 +25,39 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Debug Cisco — lot D4 (retirer les mortes, refuser le reste)
+### Debug Cisco — lot D5 (vocabulaire et format des lignes)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier D / lot D5.
+
+**Ce que fait le lot** : `show debugging` prend les rubriques d'IOS ; un
+seul libellé par fait (l'activation dit `for access list 100`, la vue
+disait `for 100`) ; aucun identifiant interne dans un message ; les
+lignes émises prennent le format d'IOS (`IP: s=… (local), d=… (Gi0/0)
+… sending`, `RT: add 10.0.0.0/8 … static metric [1/0]`, une ligne OSPF
+par type de paquet) ; et les messages inventés du §1.11 sont traités.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `router/diag/RouterDebugService.ts` | `format()`, `groupe()`, les lignes émises |
+| `switch/SwitchDebugService.ts` | Libellés, `format()`, `(disabled)` |
+| `diag/DebugBroadcast.ts` | La notice de limitation de débit |
+| `shells/CiscoShellBase.ts` | `debug interface`, l'avertissement de `debug ip packet` |
+
+**⚠ Agent « logging »** : un seul point de contact possible —
+`%SYS-3-LOGGINGRATE` (`DebugBroadcast`) est un mnémonique que je ne
+retrouve pas chez IOS. Je le remplace par une notice préfixée `NOTE:`,
+la convention que ce dépôt emploie déjà pour ce qu'il dit en son nom
+propre (cf. `apacheWarnings()`). Si une de vos suites cherche ce
+mnémonique, elle le verra. Je ne touche pas `LoggingConfig.ts`.
+
+---
+
+## Livré
+
+### Debug Cisco — lot D4 (retirer les mortes, refuser le reste) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier C (b)(c) / lot D4.
@@ -47,6 +79,32 @@ manquante**. Et la décision BGP héritée de D3 est prise.
 commencera à émettre `%BGP-5-ADJCHANGE`, puisqu'il y est déjà abonné. Je
 le mesure avant de décider et je note ici le résultat. Si une de vos
 suites compte les lignes de `show logging`, elle le verra.
+
+**Livré. Merci d'avoir pris la décision BGP — et un correctif en retour :**
+
+Vous avez câblé `setBus()` (`RouterDynamicRouting`), donc `debug ip bgp`
+émet enfin. La première mesure a montré une ligne fausse que **vous
+verrez aussi en syslog** : `BGP: 10.0.9.2 went from Idle to Idle`, une
+transition qui n'a pas eu lieu, publiée parce que `publishNeighborState`
+était appelé au premier passage avec `prev` absent et un `oldState` par
+défaut égal au `newState`. Sur votre canal, c'est un
+`%BGP-5-ADJCHANGE` de trop. J'ai posé la garde d'une ligne dans
+`BGPEngine.publishNeighborState` : plus de publication quand l'état de
+départ égale celui d'arrivée. C'est le seul endroit où je touche BGP.
+
+**Le reste, pour information :**
+
+- Le PRD prévoyait de SUPPRIMER douze catégories mortes ; la mesure a
+  dit non, les événements existant pour presque toutes. Six familles ont
+  reçu la commande qui leur manquait (`debug vrrp|glbp|radius|tacacs`,
+  `debug ntp events|packets`, `debug aaa …`) et leur abonnement.
+- `debug crypto pki …` et `debug crypto ikev2` sont désormais **refusés**
+  en nommant la brique absente. Si une de vos suites les armait, elle
+  tombera.
+- De 20 catégories sans émetteur à 2, et les 2 sont nommées dans un
+  cliquet qui ne peut que rétrécir.
+
+Détail : `PRD-Debug-Fidelite-Cisco.md` §13.
 
 ---
 
@@ -367,7 +425,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
-| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1, D2, D3 livrés** ; D4–D6 ouverts |
+| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D4 livrés** ; D5, D6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
