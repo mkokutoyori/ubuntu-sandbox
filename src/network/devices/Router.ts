@@ -332,7 +332,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getDhcpv6RelayDestinations(iface: string): string[] { return this.dhcpv6RelayDestinations.get(iface) ?? []; }
 
   // ── OSPF Integration (RFC 2328 / RFC 5340) — delegated to RouterOSPFIntegration ──
-  private ospfIntegration!: RouterOSPFIntegration;
+  // `protected` et non `private` : `CiscoRouter` comme `HuaweiRouter`
+  // l'appellent depuis leur abonnement `bfd.session.changed`, ce que le
+  // typage refusait des deux côtés.
+  protected ospfIntegration!: RouterOSPFIntegration;
   private dynamicRouting!: RouterDynamicRouting;
 
   // ── IPSec Engine ─────────────────────────────────────────────
