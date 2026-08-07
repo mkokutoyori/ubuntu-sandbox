@@ -199,6 +199,7 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['source-interface', 'Source interface for packets'],
   ['split-horizon', 'Split horizon'],
   ['standard', 'Standard access list'],
+  ['expanded', 'Add an expanded community-list entry'],
   ['statistics', 'Statistics'],
   ['stats', 'Statistics'],
   ['status', 'Status'],

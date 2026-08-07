@@ -13,7 +13,7 @@ de fidélité se tranche contre cette machine-là, pas contre « un Cisco ».
 | Chantier | Sujet | État |
 |---|---|---|
 | 1 | Purge des fuites de substrat (§1) | ✅ fait |
-| 2 | Alignement licence / plateforme (§2) | ⬜ à faire |
+| 2 | Alignement licence / plateforme (§2) | ✅ fait |
 | 3 | Invariant aide ⇔ exécution (§3) | ⬜ à faire |
 | 4 | Typage des arguments d'aide (§4) | ⬜ à faire |
 | 5 | Complétude des menus (§5) | ⬜ à faire |
@@ -96,6 +96,46 @@ absent de tout ISR G2 :
 - VXLAN/NVE : `member vni`, `peer-ip`, `source-interface`, `debug vxlan`
 - `TenGigabitEthernet` dans `interface ?`
 - `show idprom`, `show redundancy`
+
+**Ce qui a été fait.**
+
+La licence est désormais rendue **d'un seul endroit** (`licenseTable()`,
+`CiscoCommonShow.ts`). C'était le défaut derrière le défaut : la
+bannière de démarrage portait un tableau de licences et `show version`
+n'en portait aucun, alors que les deux décrivent la même machine. Un
+opérateur qui lit `securityk9` au boot et rien du tout dans
+`show version` ne sait plus laquelle croire ; deux copies auraient de
+toute façon fini par diverger. `show license` lit la même décision et
+liste les deux paquets sur un routeur.
+
+Le partage plateforme passe par deux prédicats, un seul endroit chacun,
+plutôt que par des `if` disséminés :
+
+- `hasSwitchingHardware()` — faux pour `router-isr2911`. Retire
+  `show mac address-table`, `show redundancy`, `debug port-security`, le
+  modificateur `switchport` de `show interfaces`, le mode `config-vlan`
+  et la commande globale `vlan <n>`, le type `Vlan` de `interface` (dans
+  la liste d'aide comme dans le résolveur de noms) et
+  `TenGigabitEthernet` de `interface ?`.
+- `hasVxlanHardware()` — faux partout aujourd'hui. Aucun ISR G2 ni
+  Catalyst 3560 n'est un VTEP, quelle que soit la licence.
+
+Le cas VXLAN méritait d'être tranché plutôt que subi : `VxlanAgent`
+(286 lignes, suite de tests propre) est un moteur réel, mais sa suite
+pilote l'agent directement et jamais le CLI, donc rien ne se casse en
+fermant la porte. Elle est fermée par un prédicat et non par une
+suppression : le premier profil de châssis qui porterait vraiment le
+VXLAN la rouvre en changeant un booléen. Fermer la porte était le bon
+choix parce que la maintenir ouverte revenait à enseigner qu'un 2911
+encapsule du VXLAN — ce qu'aucune licence ne rend vrai.
+
+Quatre tests encodaient la prémisse inverse (`vlan 10` faisait entrer un
+ROUTEUR en `config-vlan`) et ont été retournés plutôt que contournés.
+Trois échecs préexistants, apparus au passage, ont été corrigés dans la
+foulée : `show vrf interfaces` sans description, `ip community-list
+expanded` sans description, et le doublon `show adjacency` du switch —
+ce dernier étant une surcharge base/appareil délibérée, il rejoint la
+liste blanche prévue pour ce motif.
 
 ---
 

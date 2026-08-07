@@ -614,6 +614,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /**
+   * Un ISR 2911 sans module EtherSwitch ne porte aucun ASIC de
+   * commutation : table MAC, VLAN, `switchport` et VXLAN ne sont pas
+   * « non implémentés », ils n'existent pas sur cette plateforme. Les
+   * nœuds correspondants ne sont donc pas enregistrés du tout, et le
+   * parseur répond au caret comme pour n'importe quelle saisie inconnue.
+   */
+  protected hasSwitchingHardware(): boolean {
+    return this.getChassisProfile() !== 'router-isr2911';
+  }
+
+  /**
+   * Aucun ISR G2 ni aucun Catalyst 3560 n'encapsule du VXLAN, quelle que
+   * soit la licence : le VTEP est une fonction de plateforme, pas une
+   * option. `VxlanAgent` reste entier et testé — c'est la porte CLI qui
+   * n'a pas de châssis où s'ouvrir, et ce prédicat est l'endroit unique
+   * où le premier profil qui la porterait la rouvrirait.
+   */
+  protected hasVxlanHardware(): boolean {
+    return false;
+  }
+
+  /**
    * Le système de fichiers de l'équipement, semé au premier accès depuis
    * le profil châssis. Un seul par shell : `dir`, `delete` et
    * `show flash:` doivent voir le même `flash:`, sinon supprimer un
@@ -1616,7 +1638,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ? 'Cisco ISR 2911\n  PID: CISCO2911/K9\n  S/N: FTX1234567A'
         : 'Cisco Catalyst 2960\n  PID: WS-C2960-24TT-L\n  S/N: FOC1234X56Y';
     });
-    trie.register('show license', 'Display licenses', () => 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority\n1     ipbasek9                 Lifetime       0              Permanent       Active, In Use   N/A              Medium');
+    trie.register('show license', 'Display licenses', () => {
+      const head = 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority';
+      const row = (i: number, feat: string) =>
+        `${i}     ${feat.padEnd(25)}Lifetime       0              Permanent       Active, In Use   N/A              Medium`;
+      if (this.getChassisProfile() !== 'router-isr2911') return `${head}\n${row(1, 'ipbasek9')}`;
+      return [head, row(1, 'ipbasek9'), row(2, 'securityk9')].join('\n');
+    });
     trie.register('show license udi', 'Display Unique Device Identifier', () => {
       const profile = this.getChassisProfile();
       const sn = profile === 'router-isr2911' ? 'FTX1234567A' : 'FOC1234X56Y';
@@ -1638,14 +1666,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         `        PCB Serial Number        : ${sn}`,
       ].join('\n');
     });
-    trie.registerGreedy('show mac address-table', 'Display MAC address table', () => {
-      const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
-      const table = dev.getMacTable?.();
-      if (!table || table.size === 0) return 'Mac Address Table\n--------------------------------\nNo entries';
-      const lines = ['Mac Address Table', '--------------------------------', 'Vlan    Mac Address       Type        Ports'];
-      for (const e of table.values()) lines.push(`${String(e.vlan ?? 1).padEnd(8)}${e.mac.padEnd(18)}${(e.type ?? 'DYNAMIC').padEnd(12)}${e.ifName}`);
-      return lines.join('\n');
-    });
+    if (this.hasSwitchingHardware()) {
+      trie.registerGreedy('show mac address-table', 'Display MAC address table', () => {
+        const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
+        const table = dev.getMacTable?.();
+        if (!table || table.size === 0) return 'Mac Address Table\n--------------------------------\nNo entries';
+        const lines = ['Mac Address Table', '--------------------------------', 'Vlan    Mac Address       Type        Ports'];
+        for (const e of table.values()) lines.push(`${String(e.vlan ?? 1).padEnd(8)}${e.mac.padEnd(18)}${(e.type ?? 'DYNAMIC').padEnd(12)}${e.ifName}`);
+        return lines.join('\n');
+      });
+    }
     // `_getRunningConfigText` n'est défini sur AUCUN appareil : il n'est
     // que lu, ici et à deux autres endroits. Mesuré avant correction,
     // `show running-config all` rendait donc « Building configuration... »
@@ -1734,7 +1764,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'detail') return showVrfDetail(this.d(), args[1]);
       if (sub === 'interfaces') return showVrfInterfaces(this.d());
       return showVrf(this.d());
-    });
+    }, [
+      { keyword: 'detail', description: 'Detailed VRF information' },
+      { keyword: 'interfaces', description: 'Interfaces bound to a VRF' },
+    ]);
     trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
       showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
     trie.registerGreedy('show ip as-path-access-list', 'Display AS-path filters', (args) => {
@@ -1762,8 +1795,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return out.join('\n');
     });
-    trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
-      showRedundancy());
+    if (this.hasSwitchingHardware()) {
+      trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
+        showRedundancy());
+    }
     trie.registerGreedy('show file', 'Display file systems', () =>
       showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0), [
       { keyword: 'systems', description: 'File system information' },
@@ -2264,10 +2299,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         : value;
       return svc.removeCondition(kind, resolved);
     });
-    this.privilegedTrie.registerGreedy('debug vxlan', 'Debug VXLAN', () => genericDebug()?.enable('vxlan') ?? 'VXLAN debugging is on');
-    this.privilegedTrie.registerGreedy('no debug vxlan', 'Disable VXLAN debug', () => genericDebug()?.disable('vxlan') ?? '');
-    this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');
-    this.privilegedTrie.registerGreedy('no debug port-security', 'Disable port-security debug', () => genericDebug()?.disable('port-security') ?? '');
+    if (this.hasVxlanHardware()) {
+      this.privilegedTrie.registerGreedy('debug vxlan', 'Debug VXLAN', () => genericDebug()?.enable('vxlan') ?? 'VXLAN debugging is on');
+      this.privilegedTrie.registerGreedy('no debug vxlan', 'Disable VXLAN debug', () => genericDebug()?.disable('vxlan') ?? '');
+    }
+    if (this.hasSwitchingHardware()) {
+      this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');
+      this.privilegedTrie.registerGreedy('no debug port-security', 'Disable port-security debug', () => genericDebug()?.disable('port-security') ?? '');
+    }
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
     // `clear ip eigrp neighbors` : la commande promet de rejeter les
     // adjacences, elle doit donc vraiment les rejeter — sinon elle serait

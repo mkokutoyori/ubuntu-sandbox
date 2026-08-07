@@ -94,6 +94,29 @@ describe('aucune sortie CLI ne parle de son propre substrat', () => {
     }
   }, 30_000);
 
+  it('un 2911 sans module EtherSwitch ne commute pas', async () => {
+    const r = await lab();
+    for (const cmd of [
+      'show mac address-table', 'show interfaces switchport', 'show redundancy',
+      'debug port-security', 'debug vxlan',
+    ]) {
+      expect(await r.executeCommand(cmd), cmd).toContain('% Invalid input detected');
+    }
+    await r.executeCommand('configure terminal');
+    for (const cmd of ['vlan 10', 'interface Vlan10', 'interface nve1']) {
+      expect(await r.executeCommand(cmd), cmd).toContain('% Invalid input detected');
+    }
+    expect(await r.executeCommand('interface ?')).not.toContain('TenGigabitEthernet');
+  }, 30_000);
+
+  it('la bannière déclare la licence que l\'arbre expose vraiment', async () => {
+    const r = await lab();
+    const version = await r.executeCommand('show version');
+    expect(version).toContain('security      securityk9    Permanent      securityk9');
+    expect(await r.executeCommand('show license')).toContain('securityk9');
+    expect(await r.executeCommand('show crypto isakmp policy')).not.toContain('% Invalid input detected');
+  }, 30_000);
+
   it('l\'aide contextuelle ne décrit aucun nœud par son état d\'implémentation', async () => {
     const r = await lab();
     const help = [

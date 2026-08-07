@@ -38,7 +38,7 @@ const ARMABLES = [
   'debug ip rip', 'debug ip eigrp', 'debug ip bgp', 'debug ip ssh',
   'debug ip nhrp', 'debug ip pim', 'debug ip dhcp server',
   'debug ipv6 packet', 'debug standby', 'debug lldp', 'debug cdp',
-  'debug vxlan', 'debug port-security', 'debug crypto isakmp',
+  'debug crypto isakmp',
   'debug crypto ipsec', 'debug crypto pki transactions',
 ];
 
