@@ -250,9 +250,16 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     if (!a) return '';
     const requested = args[0] && args[0].toLowerCase() !== 'count' ? args[0] : undefined;
     const ifaces = requested ? [requested] : Array.from(a.getConfig().interfaces.keys());
+    // L'en-tête tient sur deux lignes et les données sur une : les trois
+    // se déduisent des MÊMES largeurs, sinon elles finissent décalées
+    // comme elles l'étaient — `Nbr Count` annoncé une colonne à droite
+    // du compte qu'il surmonte.
+    const COLS = [17, 25, 11, 6, 7, 7] as const;
+    const row = (cells: readonly string[]) =>
+      cells.map((c, i) => (i < COLS.length ? c.padEnd(COLS[i]) : c)).join('').trimEnd();
     const lines: string[] = [
-      'Address          Interface                Ver/Mode   Nbr   Query  DR     DR',
-      '                                                    Count Intvl  Prior  ',
+      row(['Address', 'Interface', 'Ver/Mode', 'Nbr', 'Query', 'DR', 'DR']),
+      row(['', '', '', 'Count', 'Intvl', 'Prior', '']),
     ];
     for (const ifaceName of ifaces) {
       const rt = a.getInterfaceRuntime(ifaceName);
@@ -260,7 +267,8 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       const port = r.getPort(ifaceName);
       const ip = port?.getIPAddress()?.toString() ?? '0.0.0.0';
       const nbrCount = a.listNeighbors(ifaceName).length;
-      lines.push(`${ip.padEnd(17)}${ifaceName.padEnd(25)}v2/${rt.mode.padEnd(7)}${String(nbrCount).padEnd(6)}${String(rt.helloIntervalSec).padEnd(7)}${String(rt.drPriority).padEnd(7)}${rt.designatedRouterIp ?? 'none'}`);
+      lines.push(row([ip, ifaceName, `v2/${rt.mode}`, String(nbrCount),
+        String(rt.helloIntervalSec), String(rt.drPriority), rt.designatedRouterIp ?? 'none']));
     }
     const anyDense = ifaces.some((n) => {
       const rt = a.getInterfaceRuntime(n);

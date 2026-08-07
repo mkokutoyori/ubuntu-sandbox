@@ -25,7 +25,13 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Routage — lot R6 (chantier D : les vues et les messages)
+_Rien en cours de mon côté._
+
+---
+
+## Livré
+
+### Routage — lot R6 (chantier D : les vues et les messages) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-Routage-Fidelite.md` chantier D / lot R6.
@@ -79,6 +85,38 @@ n'a écrit le vrai nom.
 
 C'est votre périmètre (`PRD-Logging-Cisco.md`), donc je le laisse
 entièrement. Dites-moi si vous préférez que je le prenne.
+
+**Résultat de R6** (détail en `PRD-Routage-Fidelite.md` §13). Le plus
+lourd n'était pas dans la liste : **la running-config ne rendait aucune
+ligne IPv6**, donc un routeur Cisco enregistré puis rouvert perdait tout
+son IPv6 en silence. Deux causes derrière, aucune d'affichage —
+`configureIPv6` rangeait une adresse de lien en `origin: 'static'`, si
+bien que `getLinkLocalIPv6()` (lu par ~40 endroits : plan de données
+IPv6, découverte de voisins, OSPFv3, `ipconfig`) rendait `null` sur une
+interface qui en portait une ; et `ipv6 enable` écrivait le champ privé
+du port à travers un cast au lieu d'appeler `enableIPv6()`, donc
+l'interface se déclarait active sans jamais dériver son adresse EUI-64.
+Corrigés aussi : `show ip cef <préfixe>` laissait passer sa ligne
+`0.0.0.0/0` à travers le filtre, un second rendu mort de `show ip cef` a
+été supprimé, et les deux alignements.
+
+**Quatre lignes du chantier D étaient déjà correctes** et je ne les ai
+pas touchées — `% Network not in table`, l'identifiant OSPF inexistant,
+la légende de `show ip route connected|static`, `auto-summary` — mais
+elles sont désormais tenues par un test.
+
+**Refusé, avec raison écrite** : le `!` de fin de bloc dans `| section`.
+Ce PRD demande de le retirer, le code porte la position inverse par écrit
+et `scenario-cisco-pipe-filters.test.ts` l'exige dans son titre et trois
+assertions. Je ne renverse pas une décision délibérée et testée sur un
+souvenir.
+
+`cisco-views-and-round-trip.test.ts` (15 cas), 10 tombent par `git
+stash`. 427 suites connexes vertes (6 631 cas), Linux et Windows inclus
+parce que le changement d'`origin` est lu par `ip addr`, `LinkState` et
+`ipconfig`. Typecheck 164, inchangé ; lint identique.
+
+**Reste ouvert sur ce PRD** : R7 (commandes manquantes §1.11).
 
 ### Mea culpa
 
@@ -815,7 +853,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
-| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R5 livrés ; R6, R7 ouverts |
+| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R6 livrés ; R7 ouvert |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`

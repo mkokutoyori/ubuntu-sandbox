@@ -16,6 +16,7 @@ import { CISCO_HARDWARE_PROFILES, formatIosUptime, licenseTable, type CiscoChass
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
+import { IPv6Address } from '@/network/core/types';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
@@ -498,6 +499,7 @@ export function showRunningConfig(router: Router): string {
       lines.push(' no ip address');
     }
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
+    lines.push(...runningConfigInterfaceIPv6(port));
     if (!port.getIsUp()) lines.push(` shutdown`);
     if (!port.isNegotiationAuto?.()) {
       const sp = port.getSpeed?.();
@@ -993,7 +995,29 @@ export function showVlansRouter(router: Router): string {
  * compilateur ne ment qu'à lui.
  */
 function ipv6AddressStrings(port: import('../../../hardware/Port').Port): string[] {
-  return port.getIPv6Addresses().map(e => `${e.address}/${e.prefixLength}`);
+  return port.getIPv6Addresses().map(e => (e.origin === 'link-local'
+    ? `${e.address.withScopeId(null)}`
+    : `${e.address}/${e.prefixLength}`));
+}
+
+/**
+ * Une adresse de lien DÉRIVÉE de la MAC n'a pas été configurée : IOS ne
+ * la rend pas, il la recalcule. Seule celle qu'un opérateur a posée
+ * lui-même vaut une ligne, et c'est la comparaison avec l'EUI-64 qui
+ * distingue les deux — sans nouvel état à porter.
+ */
+function runningConfigInterfaceIPv6(port: import('../../../hardware/Port').Port): string[] {
+  if (!port.isIPv6Enabled()) return [];
+  const derivee = IPv6Address.fromMAC(port.getMAC()).toString();
+  const lines: string[] = [];
+  for (const e of port.getIPv6Addresses()) {
+    if (e.origin === 'static') lines.push(` ipv6 address ${e.address}/${e.prefixLength}`);
+    else if (e.origin === 'link-local' && `${e.address.withScopeId(null)}` !== derivee) {
+      lines.push(` ipv6 address ${e.address.withScopeId(null)} link-local`);
+    }
+  }
+  if (lines.length === 0) lines.push(' ipv6 enable');
+  return lines;
 }
 
 export function showIpv6InterfaceBrief(router: Router): string {
@@ -1115,19 +1139,6 @@ export function showIpRipDatabase(router: Router, autoSummary = true): string {
       `${info.age}s${info.garbageCollect ? ', possibly down' : ''}`);
   }
   return lines.length ? lines.join('\n') : 'RIP routing database is empty';
-}
-
-/** `show ip cef` — real FIB derived from the routing table. */
-export function showIpCef(router: Router): string {
-  const rt = router.getRoutingTable();
-  const lines = ['Prefix               Next Hop             Interface'];
-  lines.push('0.0.0.0/0            no route');
-  for (const r of rt) {
-    const prefix = `${r.network}/${r.mask.toCIDR()}`;
-    const nh = r.nextHop ? String(r.nextHop) : 'attached';
-    lines.push(`${prefix.padEnd(21)}${nh.padEnd(21)}${r.iface}`);
-  }
-  return lines.join('\n');
 }
 
 /** `show ip bgp …` — honest state: no BGP process configured. */

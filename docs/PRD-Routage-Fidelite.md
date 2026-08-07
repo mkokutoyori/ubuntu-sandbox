@@ -500,7 +500,7 @@ triviaux et partent tout de suite (marqués ⚡).
 | **R3** | Chantier B : refus des identifiants et des sous-modes absents | R2 |
 | **R4** | Chantier C : RIB, FIB, Null0, passerelle, résumé | — |
 | **R5** | Chantier C : OSPF et IGMP sur la vue commune (**livré, §12**) | R4 |
-| **R6** | Chantier D, le reste | R2, R4 |
+| **R6** | Chantier D, le reste (**livré, §13**) | R2, R4 |
 | **R7** | Commandes manquantes (§1.11), au cas par cas | R3 |
 
 R1, R2 et R4 sont indépendants. R1 part en premier parce qu'il répare ce
@@ -827,3 +827,148 @@ dans `100% packet loss` (`CLAUDE.md`, ordre NAT/ACL).
 multicast, vues d'interface, `show ip route`, RIB/FIB. Typecheck
 `tsc -p tsconfig.app.json` à 164, inchangé. Lint identique au baseline
 sur les deux fichiers touchés (58 problèmes avant, 58 après).
+
+---
+
+## 13. R6 — Livré
+
+Le chantier D compte neuf lignes non-⚡. **Mesurer d'abord a changé le
+lot** : quatre étaient déjà correctes, une appartient à un autre agent, et
+la mesure d'une sixième a fait remonter un défaut plus lourd que toute la
+liste.
+
+### 13.1 Ce qui était déjà correct, et n'a pas été touché
+
+Une sonde vaut mieux qu'une supposition, y compris contre ce PRD :
+
+- **`% Network not in table`** n'est émis par **aucune** commande sans
+  préfixe — 17 balayées (`show ip nat translations`, `nat statistics`,
+  `mroute`, `pim neighbor`, `igmp groups`, `protocols`, `rip database`,
+  `ospf neighbor`, `ospf database`, `cef`, `arp`, `route summary`,
+  `policy`, `nhrp`, `sla summary`…). Chacune rend son en-tête ou son
+  message propre.
+- **Un identifiant OSPF inexistant** rend déjà le vide : `show ip ospf
+  99`, `… 99 interface`, `… 99 neighbor`, `… 99 database` répondent tous
+  la chaîne vide là où `show ip ospf 1` rend son bloc.
+- **La légende de `show ip route connected|static`** est déjà celle,
+  entière, de `show ip route`.
+- **`show ip rip database`** lit déjà `auto-summary` : la ligne apparaît
+  par défaut et disparaît après `no auto-summary`.
+
+Les quatre sont désormais **tenues par un test** (§13.5), pour qu'une
+correction future ne les défasse pas en silence.
+
+### 13.2 Le défaut le plus lourd : l'IPv6 ne survivait pas à un enregistrement
+
+En mesurant la ligne « `ipv6 address … link-local` : accepter la forme
+sans préfixe » — qui, elle aussi, s'avère déjà acceptée, `% Invalid
+link-local address` compris — la sonde a montré autre chose : **la
+running-config ne rendait aucune ligne IPv6**. Ni `ipv6 address … link-local`,
+ni `ipv6 address …/64`, ni `ipv6 enable`. Comme c'est ce texte que
+l'import de topologie rejoue, **un routeur Cisco enregistré puis rouvert
+perdait tout son IPv6, en silence.** C'est le test n°1 du §6, et il ne
+portait pas sur IPv6.
+
+En le réparant, deux causes plus profondes sont apparues, et aucune n'est
+d'affichage :
+
+**`configureIPv6` rangeait toute adresse en `origin: 'static'`**, y
+compris une adresse de lien. Or `getLinkLocalIPv6()` cherche
+`origin === 'link-local'` : sur une interface dont l'opérateur avait posé
+`fe80::1`, cet accesseur rendait **`null`** — et il est lu par une
+quarantaine d'endroits, dont tout le plan de données IPv6, la découverte
+de voisins, OSPFv3 et `ipconfig` de Windows. Pire, l'entrée dérivée de la
+MAC était supprimée au passage : l'interface se retrouvait sans adresse
+de lien du tout, du point de vue de tout ce qui la demande par ce nom.
+L'origine dit **ce qu'est** l'adresse, pas qui l'a posée.
+
+**`ipv6 enable` écrivait le champ privé du port à travers un cast**
+(`(port as unknown as { ipv6Enabled?: boolean }).ipv6Enabled = true`) au
+lieu d'appeler `enableIPv6()`. Or dériver l'adresse de lien EUI-64 est
+tout ce que cette commande fait : l'interface se déclarait donc active
+en IPv6, sans adresse, sans événement sur le bus et sans trace. C'est
+exactement le motif que `CLAUDE.md` proscrit — un cast au site d'appel
+plutôt qu'une méthode. `no ipv6 enable` passait par le même chemin ;
+il appelle maintenant `disableIPv6()`, et **seulement** si aucune adresse
+configurée ne reste, une adresse impliquant l'activation sur IOS.
+
+Rendu, enfin : une adresse de lien s'écrit `fe80::1`, sans zone `%iface`
+— qu'IOS n'imprime jamais — et sans longueur de préfixe. Elle sortait
+`fe80::1%GigabitEthernet0/1/64` dans `show ipv6 interface brief` comme
+dans la configuration.
+
+### 13.3 Une vue filtrée ne répond que sur ce qu'on lui demande
+
+`show ip cef <préfixe>` filtrait bien ses entrées, mais poussait
+`0.0.0.0/0            no route` **avant** la boucle : la ligne traversait
+le filtre, donc `show ip cef 172.16.0.0` répondait sur deux préfixes dont
+un que personne n'avait demandé. Cette ligne décrit l'absence de route
+par défaut — un fait de la table entière, pas de l'entrée interrogée.
+
+Trouvée en passant et supprimée : **`showIpCef()` dans
+`CiscoShowCommands.ts`**, un second rendu de la même vue, branché sur
+aucune commande, lisant la table brute (`getRoutingTable()`) là où la
+vue réelle lit `installedRoutes()`. Deux réponses possibles à une même
+question est le défaut que ce dépôt passe son temps à retirer.
+
+### 13.4 Un en-tête surmonte la colonne qu'il nomme
+
+`show ip pim interface` porte un en-tête sur **deux** lignes et ses
+données sur une : les trois se déduisent maintenant des mêmes largeurs.
+`Nbr` / `Count` était annoncé une colonne à droite du compte qu'il
+surmonte. `show ip ospf interface brief` cadrait son état sur 5 caractères
+sous un `State ` de 6, décalant `Nbrs F/C` d'un cran.
+
+### 13.5 Refusé, et pourquoi
+
+**Le `!` de fin de bloc dans `| section`** reste. Ce PRD demande de le
+retirer ; le code porte la position inverse, écrite (« IOS includes the
+block-terminating ! in | section output »), et une suite entière —
+`scenario-cisco-pipe-filters.test.ts` — l'exige dans son titre, son
+en-tête et trois assertions. Ma lecture des sorties documentées par Cisco
+(`show running-config | section line`) va dans le sens du PRD, mais §0
+interdit de faire reposer un chantier sur un point non confirmé seul, et
+renverser une décision délibérée et testée sur un souvenir serait pire
+que la garder. C'est le même arbitrage que pour `debug interface <nom>`
+(`PRD-Debug-Fidelite-Cisco.md` §14). **L'autre moitié de la ligne** —
+« trouver les sections absentes » — est traitée : les sections
+d'interface étaient bel et bien amputées, de leurs lignes IPv6 (§13.2).
+
+**Les messages inventés sur le canal syslog** (`fault`, `rip`, `pim`)
+relèvent de `PRD-Logging-Cisco.md`, tenu par un autre agent. La mesure
+lui a été transmise dans `JOURNAL-AGENTS-mandeng.md` plutôt qu'appliquée :
+le défaut est **générique** et non ligne par ligne — le mnémonique y est
+fabriqué à partir du NOM de la sévérité (`NOTIFICATIONS` pour 5,
+`WARNINGS` pour 4, `INFORMATIONAL` pour 6), là où IOS écrit
+`%PIM-5-DRCHG`, `%PIM-5-NBRCHG`, `%SEC_LOGIN-5-LOGIN_SUCCESS` — et
+n'écrit rien du tout quand CDP découvre un voisin.
+
+**Non traité et signalé** : `show ip pim interface GigabitEthernet9/9`
+rend son en-tête pour une interface inexistante quand `show ip igmp
+interface` sur la même rend le vide — deux commandes sœurs, deux réponses
+à la même situation. Trop mince pour ce lot, assez réel pour être écrit.
+
+### 13.6 Tests et mesures
+
+`cisco-views-and-round-trip.test.ts` (15 cas) vérifie trois propriétés :
+une configuration acceptée se relit (jusqu'à **rejouer** la
+configuration sur un routeur neuf et comparer), une vue filtrée ne répond
+que sur ce qu'on lui demande, et un en-tête surmonte sa colonne — vérifié
+en comparant des **positions**, jamais en figeant une chaîne espace par
+espace, sans quoi le test casserait au premier changement de largeur sans
+rien dire de l'alignement. Les quatre lignes déjà correctes du §13.1 y
+sont tenues comme gardes de non-régression.
+
+Discrimination par `git stash` : **10 des 15 tombent** avant. Des 5 qui
+passent des deux côtés, 4 sont les gardes du §13.1, et la cinquième — le
+rejeu sur un routeur neuf — ne discrimine pas parce que les deux routeurs
+rendaient la même chose fausse ; elle teste l'accord entre deux machines,
+ce qui reste utile, et je le note plutôt que de la présenter comme une
+preuve.
+
+**Mesures.** 427 suites connexes vertes (6 631 cas) : IPv6, NDP, SLAAC,
+DHCPv6, OSPF, PIM, IGMP, CEF, routage, RIP, vues d'interface,
+sérialisation, Linux et Windows — ces deux derniers parce que le
+changement d'`origin` dans `Port.ts` est lu par `ip addr`, `LinkState` et
+`ipconfig`. Typecheck `tsc -p tsconfig.app.json` à 164, inchangé ; lint
+identique au baseline (120 problèmes avant, 120 après).

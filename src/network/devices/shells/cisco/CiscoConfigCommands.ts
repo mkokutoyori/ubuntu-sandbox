@@ -572,16 +572,24 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     else if (args[0].toLowerCase() === 'output') port.setOutputServicePolicy(args[1]);
     return '';
   });
+  // `ipv6 enable` DÉRIVE l'adresse de lien EUI-64 : c'est tout ce que la
+  // commande fait. Elle écrivait le champ privé du port à travers un
+  // cast, donc l'interface se déclarait active sans adresse, sans
+  // événement et sans trace — `enableIPv6()` fait les trois.
   trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {
     if (!ctx.getSelectedInterface()) return '';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) (port as unknown as { ipv6Enabled?: boolean }).ipv6Enabled = true;
+    ctx.r().getPort(ctx.getSelectedInterface()!)?.enableIPv6();
     return '';
   });
+  // Une adresse configurée implique l'activation : sur IOS, `no ipv6
+  // enable` ne l'annule pas et n'efface rien. Ne désactiver qu'une
+  // interface qui ne tenait qu'à cette commande.
   trie.register('no ipv6 enable', 'Disable IPv6 on interface', () => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) (port as unknown as { ipv6Enabled?: boolean }).ipv6Enabled = false;
+    if (port && !port.getIPv6Addresses().some((e) => e.origin === 'static')) {
+      port.disableIPv6();
+    }
     return '';
   });
   trie.registerGreedy('ip mtu', 'Set IP MTU', (args) => {
