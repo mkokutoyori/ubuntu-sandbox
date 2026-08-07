@@ -25,7 +25,30 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-*(rien)*
+### Debug Cisco — lot D6 (un seul moteur)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier E / lot D6.
+
+**Ce que fait le lot** : `SwitchDebugService` disparaît. Une machine
+Cisco a UN sous-système de debug ; le routeur et le switch partagent le
+moteur et ne diffèrent que par les catégories que leur plateforme
+connaît. D5 vient de faire converger leur vocabulaire, ce qui rend la
+fusion sûre — c'est pour ça qu'elle est en dernier.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `router/diag/RouterDebugService.ts` | Catégories du switch, ses abonnements, jeu par plateforme |
+| `switch/SwitchDebugService.ts` | **Supprimé** |
+| `devices/CiscoSwitch.ts`, `devices/Switch.ts` | Rendent le moteur partagé |
+| `shells/CiscoSwitchShell.ts` | Les registrations `debug` du switch |
+
+**Aucun contact avec l'agent « logging »** : je ne touche ni
+`LoggingConfig.ts`, ni les modules `logging`. Le port `DebugLineJournal`
+posé par D1 ne bouge pas — c'est justement lui qui rend la fusion
+possible sans toucher au journal.
 
 ---
 
