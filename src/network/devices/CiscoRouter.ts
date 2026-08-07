@@ -178,6 +178,8 @@ export class CiscoRouter extends Router {
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
       sendArpRequestFor: (iface: string, target: IPAddress) =>
         this.sendArpRequestFor(iface, target),
+      tcpConnect: (ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void }) =>
+        this.getTcpStack().connect(ip, port, opts),
     };
     this.cdpAgent = new CdpAgent(hostBase, () => this.getBus());
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());

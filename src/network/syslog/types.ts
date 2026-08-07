@@ -67,6 +67,14 @@ export interface SyslogServer {
    * ecoute ailleurs que sur 514 ne recoit rien si on lui ecrit sur 514.
    */
   port: number;
+  /**
+   * `transport {udp|tcp}`. En TCP, RFC 6587 : les messages voyagent sur
+   * UNE connexion, a la queue leu leu — d'ou le delimiteur, sans lequel
+   * le collecteur ne sait pas ou l'un finit et l'autre commence.
+   */
+  transport: 'udp' | 'tcp';
+  /** `logging delimiter tcp` : un saut de ligne apres chaque message. */
+  delimiter: boolean;
   facility: SyslogFacilityName;
   severityThreshold: SyslogSeverityName;
   count: number;
@@ -81,6 +89,12 @@ export interface SyslogConfig {
   sourceInterface: string | null;
   sequenceNumbers: boolean;
   globalSequence: number;
+  /**
+   * `logging queue-limit [trap] <n>` : ce que la file de sortie garde en
+   * attendant qu'une connexion s'ouvre. Un collecteur injoignable ne
+   * doit pas faire grossir la memoire sans fin.
+   */
+  queueLimit: number;
 }
 
 export function createDefaultSyslogConfig(): SyslogConfig {
@@ -91,14 +105,17 @@ export function createDefaultSyslogConfig(): SyslogConfig {
     sourceInterface: null,
     sequenceNumbers: false,
     globalSequence: 0,
+    queueLimit: 100,
   };
 }
 
 export function defaultServer(ip: string,
                               facility: SyslogFacilityName = 'local7',
                               severityThreshold: SyslogSeverityName = 'informational',
-                              port: number = UDP_PORT_SYSLOG): SyslogServer {
-  return { ip, port, facility, severityThreshold, count: 0, lastSentMs: 0 };
+                              port: number = UDP_PORT_SYSLOG,
+                              transport: 'udp' | 'tcp' = 'udp',
+                              delimiter: boolean = false): SyslogServer {
+  return { ip, port, transport, delimiter, facility, severityThreshold, count: 0, lastSentMs: 0 };
 }
 
 export function priValue(facility: number, severity: number): number {

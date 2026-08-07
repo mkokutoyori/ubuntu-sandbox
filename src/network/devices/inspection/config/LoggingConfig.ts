@@ -789,7 +789,7 @@ export class LoggingConfig {
         payload: {
           deviceId: this.attachedDeviceId,
           severity, severityNum: this.SEVERITY_ORDER[severity],
-          tag, message: text, ts,
+          tag, mnemonic: mnem, message: text, ts,
         },
       });
     }
@@ -949,10 +949,17 @@ export class LoggingConfig {
           `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarderNumber ?? 0} assigned MAC ${p.vmac ?? '?'}`);
       }),
       bus.subscribeWhere('bgp.neighbor.state-changed', isOurs, (e) => {
-        const p = e.payload as unknown as { neighborIp?: string; oldState?: string; newState?: string; remoteAs?: number | null };
-        const asPart = p.remoteAs ? ` AS${p.remoteAs}` : '';
+        const p = e.payload as unknown as { neighborIp?: string; oldState?: string; newState?: string };
+        // IOS n'annonce QUE le franchissement d'Established, et il
+        // l'annonce `Up`/`Down` — pas chaque pas de la machine à états.
+        // Écrire tous les pas remplirait le tampon d'un bruit qu'aucun
+        // équipement ne produit, et la même règle vaut déjà pour OSPF
+        // juste au-dessus.
+        const vers = String(p.newState ?? '') === 'Established';
+        const depuis = String(p.oldState ?? '') === 'Established';
+        if (!vers && !depuis) return;
         this.append('notifications', 'bgp',
-          `Neighbor ${p.neighborIp ?? '?'}${asPart} ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `neighbor ${p.neighborIp ?? '?'} ${vers ? 'Up' : 'Down'}`, true, 'ADJCHANGE');
       }),
       bus.subscribeWhere('eigrp.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload as unknown as { neighbor?: string; iface?: string; oldState?: string; newState?: string; asn?: number };

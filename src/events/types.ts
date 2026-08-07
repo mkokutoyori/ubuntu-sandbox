@@ -107,6 +107,14 @@ export interface DeviceSyslogEntryPayload {
           | 'warnings' | 'notifications' | 'informational' | 'debugging';
   severityNum: number;
   tag: string;
+  /**
+   * Le mnémonique IOS (`UPDOWN`, `CONFIG_I`), qui complète `tag` et
+   * `severityNum` pour reconstituer le `%TAG-SEV-MNEMONIQUE` qu'un
+   * collecteur syslog attend. Sans lui, le relais devait inventer une
+   * forme, et la ligne partie sur le fil ne ressemblait pas à celle que
+   * la même machine affichait dans `show logging`.
+   */
+  mnemonic?: string;
   message: string;
   ts: number;
 }
