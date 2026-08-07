@@ -25,7 +25,25 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-*(rien)*
+### Debug Cisco — lot D3 (câbler ce qui a déjà un moteur)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier C (a) / lot D3.
+
+**Ce que fait le lot** : quatre commandes de debug promettent une sortie
+qu'aucun code n'émet, alors que le bus publie déjà l'événement. Elles
+sont abonnées : `debug ip rip`, `debug standby`, `debug ip bgp`,
+`debug port-security`.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `router/diag/RouterDebugService.ts` | Quatre abonnements de plus dans `attachToBus` |
+| `switch/SwitchDebugService.ts` | `port-security` côté switch, au besoin |
+
+**Aucun contact avec l'agent « logging »** : je ne touche ni
+`LoggingConfig.ts`, ni `CiscoShellBase.ts`, ni les modules `logging`.
 
 ---
 
@@ -81,8 +99,6 @@ Je ne touche **pas** `LoggingConfig.ts` dans ce lot.
 Détail : `PRD-Debug-Fidelite-Cisco.md` §11.
 
 ---
-
-## Livré
 
 ### Debug Cisco — lot D1 (horodatage) — LIVRÉ
 
