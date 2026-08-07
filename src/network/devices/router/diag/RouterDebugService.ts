@@ -44,6 +44,14 @@ export type DebugCategory =
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
+const OSPF_TYPE_NAMES: Readonly<Record<number, string>> = {
+  1: 'Hello', 2: 'Data Description', 3: 'LS Request', 4: 'LS Update', 5: 'LS Ack',
+};
+
+function ospfTypeName(code: number | undefined): string {
+  return OSPF_TYPE_NAMES[code ?? 0] ?? 'unknown';
+}
+
 function maskToCidr(mask: string): number {
   if (/^\d+$/.test(mask)) return Number(mask);
   return mask.split('.').reduce((n, o) => n + (Number(o).toString(2).match(/1/g)?.length ?? 0), 0);
@@ -88,19 +96,19 @@ export class RouterDebugService implements TerminalDebugSource {
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
   private readonly broadcast = new DebugBroadcast();
 
-  private static readonly VOLUMINEUX: ReadonlySet<string> = new Set([
-    'ip.packet', 'ip.tcp', 'ip.udp', 'all',
-  ]);
-
-  private static avertissement(category: DebugCategory): string {
-    return RouterDebugService.VOLUMINEUX.has(String(category))
-      ? 'MUST NOT be used on production networks; High CPU utilization may occur.\n'
-      : '';
+  static flagLabel(flag: { category: DebugCategory; scope?: string; detail?: boolean }): string {
+    if (flag.category === 'interface' && flag.scope) {
+      return `Interface ${flag.scope} debugging is on`;
+    }
+    const portee = flag.scope ? ` for access list ${flag.scope}` : '';
+    return `${RouterDebugService.label(flag.category)} debugging is on`
+      + `${portee}${flag.detail ? ' (detailed)' : ''}`;
   }
 
   enable(category: DebugCategory, scope?: string, detail = false): string {
-    this.flags.set(category, { category, enabledAtMs: Date.now(), scope, detail });
-    return `${RouterDebugService.avertissement(category)}${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
+    const flag = { category, enabledAtMs: Date.now(), scope, detail };
+    this.flags.set(category, flag);
+    return RouterDebugService.flagLabel(flag);
   }
 
   disable(category: DebugCategory): string {
@@ -320,7 +328,9 @@ export class RouterDebugService implements TerminalDebugSource {
     this.broadcast.track(bus.subscribe('ospf.neighbor.state-changed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
-      this.emit('ip.ospf.adj', `OSPF-5-ADJCHG: Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`);
+      this.emit('ip.ospf.adj',
+        `OSPF: ${p.iface} Nbr ${p.neighborId} state ${p.oldState} -> ${p.newState}, `
+        + `event ${p.event}`);
     }));
     this.broadcast.track(bus.subscribe('ospf.interface.state-changed', (e) => {
       if (!mine(e.payload)) return;
@@ -341,17 +351,26 @@ export class RouterDebugService implements TerminalDebugSource {
     }));
     this.broadcast.track(bus.subscribe('ospf.hello.send-requested', (e) => {
       if (!mine(e.payload)) return;
-      this.emit('ip.ospf.hello', `OSPF: Send hello packet on ${e.payload.iface}`);
+      const p = e.payload as unknown as { iface?: string; areaId?: string; srcIp?: string };
+      this.emit('ip.ospf.hello',
+        `OSPF: Send hello to 224.0.0.5 area ${p.areaId ?? '0'} on ${p.iface ?? '?'}`
+        + `${p.srcIp ? ` from ${p.srcIp}` : ''}`);
     }));
     this.broadcast.track(bus.subscribe('ospf.packet.received', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload;
-      this.emit('ip.ospf.packet', `OSPF: rcv packet from ${p.srcIp} on ${p.iface}`);
+      const p = e.payload as unknown as { srcIp?: string; iface?: string; packet?: { packetType?: number } };
+      const t = p.packet?.packetType;
+      this.emit('ip.ospf.packet',
+        `OSPF: rcv. v:2 t:${t ?? 0} (${ospfTypeName(t)}) `
+        + `from ${p.srcIp ?? '?'} on ${p.iface ?? '?'}`);
     }));
     this.broadcast.track(bus.subscribe('ospf.packet.outgoing', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload;
-      this.emit('ip.ospf.packet', `OSPF: snd packet to ${p.destIp} on ${p.iface}`);
+      const p = e.payload as unknown as { destIp?: string; iface?: string; packet?: { packetType?: number } };
+      const t = p.packet?.packetType;
+      this.emit('ip.ospf.packet',
+        `OSPF: snd. v:2 t:${t ?? 0} (${ospfTypeName(t)}) `
+        + `to ${p.destIp ?? '?'} on ${p.iface ?? '?'}`);
     }));
 
     // Neighbour discovery, multicast, VXLAN and the DHCP client. These used
@@ -436,8 +455,10 @@ export class RouterDebugService implements TerminalDebugSource {
       const ip = decodeIp(frame);
       if (!ip) return;
       const faits = RouterDebugService.faitsDe(ip);
+      const verbe = dir === 'sent' ? 'sending' : 'rcvd 3';
+      const entree = dir === 'sent' ? 'local' : iface;
       this.emit('ip.packet',
-        `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`, faits);
+        `IP: s=${ip.src} (${entree}), d=${ip.dst} (${iface}), len ${ip.len}, ${verbe}`, faits);
       const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
       if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail, faits);
       if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir, faits);
@@ -758,17 +779,35 @@ export class RouterDebugService implements TerminalDebugSource {
     return category !== null && this.isEnabled(category);
   }
 
-  private static groupe(category: DebugCategory): string {
-    const c = String(category);
-    if (c.startsWith('ip.ospf')) return 'OSPF';
-    if (c.startsWith('crypto')) return 'Crypto';
-    if (c === 'ip.arp') return 'ARP';
-    if (c === 'ip.routing') return 'IP routing';
-    if (c === 'ip.packet') return 'IP packet';
-    if (c === 'ip.icmp') return 'ICMP';
-    if (c === 'ip.nat') return 'IP NAT';
-    if (c.startsWith('ip.')) return RouterDebugService.label(category);
-    return RouterDebugService.label(category);
+  private static readonly RUBRIQUES: ReadonlyArray<readonly [string, ReadonlyArray<DebugCategory>]> = [
+    ['Generic IP', ['ip.packet', 'ip.icmp', 'ip.tcp', 'ip.udp', 'ip.arp', 'ip.routing', 'ip.nat']],
+    ['IPv6', ['ipv6.packet']],
+    ['OSPF', ['ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
+      'ip.ospf.packet', 'ip.ospf.lsa-generation']],
+    ['RIP', ['ip.rip']],
+    ['EIGRP', ['ip.eigrp']],
+    ['BGP', ['ip.bgp']],
+    ['PIM', ['ip.pim']],
+    ['NHRP', ['ip.nhrp']],
+    ['DHCP', ['ip.dhcp.server']],
+    ['SSH', ['ip.ssh']],
+    ['First-hop redundancy', ['standby', 'vrrp', 'glbp']],
+    ['IP SLA', ['ip.sla.trace', 'ip.sla.error', 'track']],
+    ['AAA', ['aaa.authentication', 'aaa.authorization', 'aaa.accounting', 'radius', 'tacacs']],
+    ['NTP', ['ntp.events', 'ntp.packets']],
+    ['Neighbour discovery', ['cdp.packets', 'lldp.packets']],
+    ['Crypto Subsystem', ['crypto.isakmp', 'crypto.ipsec']],
+    ['Interface', ['interface', 'port-security']],
+    ['VXLAN', ['vxlan']],
+  ];
+
+  private static rubrique(category: DebugCategory): { nom: string; rang: number; ordre: number } {
+    for (let i = 0; i < RouterDebugService.RUBRIQUES.length; i++) {
+      const [nom, membres] = RouterDebugService.RUBRIQUES[i];
+      const ordre = membres.indexOf(category);
+      if (ordre >= 0) return { nom, rang: i, ordre };
+    }
+    return { nom: 'Other', rang: RouterDebugService.RUBRIQUES.length, ordre: 0 };
   }
 
   formatConditions(): string {
@@ -780,23 +819,19 @@ export class RouterDebugService implements TerminalDebugSource {
 
   format(): string {
     if (this.flags.size === 0) return 'No debug flags are enabled';
-    const parGroupe = new Map<string, string[]>();
-    for (const f of this.list()) {
-      const custom = this.categoryRenderers.get(f.category);
-      const ligne = custom
-        ? custom()
-        : f.category === 'interface' && f.scope
-          ? `Interface ${f.scope} debugging is on`
-          : `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
-      const g = RouterDebugService.groupe(f.category);
-      const dejaLa = parGroupe.get(g);
-      if (dejaLa) dejaLa.push(...ligne.split('\n'));
-      else parGroupe.set(g, ligne.split('\n'));
-    }
+    const rangees = [...this.flags.values()]
+      .map((f) => ({ f, r: RouterDebugService.rubrique(f.category) }))
+      .sort((a, b) => a.r.rang - b.r.rang || a.r.ordre - b.r.ordre);
     const out: string[] = [];
-    for (const [g, lignes] of parGroupe) {
-      out.push(`${g}:`);
-      for (const l of lignes) out.push(`  ${l}`);
+    let rubriqueCourante: string | null = null;
+    for (const { f, r } of rangees) {
+      if (r.nom !== rubriqueCourante) {
+        out.push(`${r.nom}:`);
+        rubriqueCourante = r.nom;
+      }
+      const custom = this.categoryRenderers.get(f.category);
+      const ligne = custom ? custom() : RouterDebugService.flagLabel(f);
+      for (const l of ligne.split('\n')) out.push(`  ${l}`);
     }
     return out.join('\n');
   }

@@ -80,7 +80,9 @@ describe('D5 — show debugging groupe les drapeaux par module', () => {
     const out = await run(r, 'show debugging');
     const lignes = out.split('\n');
 
-    expect(lignes).toContain('ARP:');
+    // Depuis le lot D5, `show debugging` emploie les rubriques d'IOS :
+    // ARP et ICMP vivent sous `Generic IP:`, pas chacun sous la sienne.
+    expect(lignes).toContain('Generic IP:');
     expect(lignes).toContain('OSPF:');
     expect(out).toMatch(/^ {2}ARP packet debugging is on$/m);
     expect(out).toMatch(/^ {2}OSPF events debugging is on$/m);
@@ -122,13 +124,12 @@ describe('D9 — abréviations CLI', () => {
   });
 });
 
-describe('D10 — avertissement sur les debugs volumineux', () => {
-  it('debug ip packet prévient avant de confirmer', async () => {
+describe('D10 — aucun avertissement invente sur les debugs volumineux', () => {
+  it('debug ip packet arme sans phrase qu\'IOS n\'ecrit pas', async () => {
     const r = await priv();
     const out = await run(r, 'debug ip packet');
-    expect(out).toContain('MUST NOT be used on production networks; High CPU utilization may occur.');
-    expect(out).toContain('IP packet debugging is on');
-    expect(out.indexOf('MUST NOT')).toBeLessThan(out.indexOf('IP packet debugging is on'));
+    expect(out).not.toMatch(/MUST NOT be used|High CPU/);
+    expect(out).toBe('IP packet debugging is on');
   });
 
   it('un debug ordinaire ne porte pas l\'avertissement', async () => {

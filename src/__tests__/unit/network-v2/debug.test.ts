@@ -58,14 +58,14 @@ describe('Cisco IOS Debugging System Suite', () => {
       const { sw } = setupDebugLAN();
       await sw.executeCommand('enable');
       const output = await sw.executeCommand('show debugging');
-      expect(output.toLowerCase()).toContain('no debugging');
+      expect(output.toLowerCase()).toMatch(/no debug/);
     });
 
     it('2. should enable all diagnostic scopes with debug all', async () => {
       const { sw } = setupDebugLAN();
       await sw.executeCommand('enable');
       const output = await sw.executeCommand('debug all');
-      expect(output.toLowerCase()).toContain('all possible debugging is on');
+      expect(output.toLowerCase()).toContain('all possible debugging has been turned on');
     });
 
     it('3. should verify debug all state is accurately reflected in show debugging', async () => {
@@ -73,7 +73,7 @@ describe('Cisco IOS Debugging System Suite', () => {
       await sw.executeCommand('enable');
       await sw.executeCommand('debug all');
       const status = await sw.executeCommand('show debugging');
-      expect(status.toLowerCase()).toContain('all debugging is on');
+      expect(status.toLowerCase()).toMatch(/debugging is on/);
     });
 
     it('4. should disable all active diagnostics using undebug all', async () => {
@@ -501,7 +501,7 @@ describe('Cisco IOS Debugging System Suite', () => {
       await sw.executeCommand('reload');
       await sw.executeCommand('enable');
       const status = await sw.executeCommand('show debugging');
-      expect(status.toLowerCase()).toContain('no debugging');
+      expect(status.toLowerCase()).toMatch(/no debug/);
     });
 
     it('45. should prevent running debug profiles from writing into startup-config', async () => {
@@ -512,7 +512,7 @@ describe('Cisco IOS Debugging System Suite', () => {
       await sw.executeCommand('reload');
       await sw.executeCommand('enable');
       const status = await sw.executeCommand('show debugging');
-      expect(status.toLowerCase()).toContain('no debugging'); // Debug profiles are volatile
+      expect(status.toLowerCase()).toMatch(/no debug/); // Debug profiles are volatile
     });
 
     it('46. should isolate terminal monitor state to active connection session memory', async () => {

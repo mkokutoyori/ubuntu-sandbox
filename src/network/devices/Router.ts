@@ -143,6 +143,18 @@ export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslatio
  * A router's IPv4 routing-table entry — the canonical IIPv4Route
  * (network/mask/nextHop/iface/type/ad/metric) plus router-only annotations.
  */
+function routeDebugSource(type: string): string {
+  switch (type) {
+    case 'connected': return 'connected';
+    case 'local': return 'connected';
+    case 'rip': return 'rip';
+    case 'ospf': return 'ospf';
+    case 'eigrp': return 'eigrp';
+    case 'bgp': return 'bgp';
+    default: return 'static';
+  }
+}
+
 export interface RouteEntry extends IIPv4Route {
   preference?: number;
   tag?: number;
@@ -2763,19 +2775,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
     const current = new Map<string, string>();
     for (const [key, r] of best) {
-      current.set(key, r.nextHop ? String(r.nextHop) : r.iface);
+      const via = r.nextHop ? String(r.nextHop) : r.iface;
+      current.set(key, `${via}, ${routeDebugSource(r.type)} metric [${r.ad}/${r.metric}]`);
     }
     const previous = this._routeDebugSnapshot;
     this._routeDebugSnapshot = current;
     if (!previous) return;
-    for (const [key, via] of previous) {
-      if (!current.has(key)) svc.emitLine('ip.routing', `RT: del ${key.split('/')[0]} via ${via}`);
+    for (const [key, queue] of previous) {
+      if (!current.has(key)) svc.emitLine('ip.routing', `RT: del ${key} via ${queue}`);
     }
-    for (const [key, via] of current) {
-      if (!previous.has(key)) svc.emitLine('ip.routing', `RT: add ${key.split('/')[0]} via ${via}`);
-      else if (previous.get(key) !== via) {
-        svc.emitLine('ip.routing', `RT: del ${key.split('/')[0]} via ${previous.get(key)}`);
-        svc.emitLine('ip.routing', `RT: add ${key.split('/')[0]} via ${via}`);
+    for (const [key, queue] of current) {
+      if (!previous.has(key)) svc.emitLine('ip.routing', `RT: add ${key} via ${queue}`);
+      else if (previous.get(key) !== queue) {
+        svc.emitLine('ip.routing', `RT: del ${key} via ${previous.get(key)}`);
+        svc.emitLine('ip.routing', `RT: add ${key} via ${queue}`);
       }
     }
   }

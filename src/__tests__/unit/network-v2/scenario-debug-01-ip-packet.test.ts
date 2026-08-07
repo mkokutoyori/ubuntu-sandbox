@@ -112,8 +112,8 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
       await run('debug ip packet');
       await pc.executeCommand('ping -c 2 192.168.10.254');
 
-      expect(lignes.some((l) => l.includes('rcvd'))).toBe(true);
-      expect(lignes.some((l) => l.includes('sent'))).toBe(true);
+      expect(lignes.some((l) => /, rcvd \d+$/.test(l))).toBe(true);
+      expect(lignes.some((l) => /, sending$/.test(l))).toBe(true);
     }, LONG);
 
     it('aucune ligne n\'est produite tant que le debug n\'est pas activé', async () => {

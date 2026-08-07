@@ -764,3 +764,95 @@ Signalé plutôt que tu : un passage du lot a vu `openssl-prd-p0-p3`
 sur `HEAD` — c'est la pollution inter-fichiers connue du registre PKI
 (`resetPkiCaRegistry`, à la charge de chaque fichier), révélée par un
 décalage d'ordonnancement, pas par ce lot.
+
+
+---
+
+## 14. D5 — Livré
+
+**Un fait, un libellé.** `RouterDebugService.flagLabel()` est la seule
+fonction qui met un drapeau en mots ; `enable()` et `show debugging`
+l'appellent tous deux. L'activation disait `for access list 100` et la
+vue `for 100` : c'est fini par construction, pas par vigilance.
+
+**`show debugging` prend les rubriques d'IOS.** Dix-huit rubriques
+ordonnées (`Generic IP`, `IPv6`, `OSPF`, `RIP`, … `Crypto Subsystem`),
+chaque catégorie appartenant à une seule ; une rubrique n'est écrite que
+si elle a du contenu, et l'ordre est celui de la table, plus celui de la
+clé interne. Une catégorie qu'aucune rubrique ne nomme tombe sous
+`Other`, ce qui se voit.
+
+```
+Generic IP:
+  IP packet debugging is on for access list 100
+  ICMP packet debugging is on
+OSPF:
+  OSPF adjacency debugging is on
+First-hop redundancy:
+  HSRP debugging is on
+```
+
+**Les lignes prennent la forme d'IOS.**
+
+| Avant | Après |
+|---|---|
+| `IP: s=10.0.12.1 (Gi0/0), d=10.0.12.2, len 100, sent (proto 1)` | `IP: s=10.0.12.1 (local), d=10.0.12.2 (Gi0/0), len 100, sending` |
+| `IP: … rcvd (proto 1)` | `IP: … rcvd 3` |
+| `RT: add 192.168.9.0 via 10.0.12.2` | `RT: add 192.168.9.0/24 via 10.0.12.2, static metric [1/0]` |
+| `OSPF: snd packet to 224.0.0.5 on Gi0/0` | `OSPF: snd. v:2 t:1 (Hello) to 224.0.0.5 on Gi0/0` |
+| `OSPF: Send hello packet on Gi0/0` | `OSPF: Send hello to 224.0.0.5 area 0 on Gi0/0` |
+
+L'interface de **sortie** est nommée, ce qu'aucune ligne ne faisait ; le
+protocole quitte la ligne de base pour la ligne `detail`, où IOS le met ;
+et une trace OSPF distingue enfin un Hello d'un DBD — le type se lit sur
+le paquet lui-même (`packet.packetType`), pas sur un champ deviné.
+
+**§1.10 est fermé.** `debug ip ospf adj` imprime ses propres lignes
+(`OSPF: Gi0/0 Nbr 10.0.12.2 state Init -> ExStart, event
+TwoWayReceived`) au lieu de republier `%OSPF-5-ADJCHG` amputé de son
+`%`. Le message syslog continue d'exister, sur son canal, sans
+concurrent.
+
+**Le switch cesse de parler une autre langue.** Plus d'identifiant
+interne dans un message (`ip.packet debugging is on` était le cas le
+plus net), plus de suffixe `(disabled)`, et `show debugging` **liste**
+ce qui est armé, avec les mêmes rubriques que le routeur, au lieu de
+rendre une phrase. Un mot-clé que la plateforme ne connaît pas est
+refusé comme sur le routeur, par `CliInvalidInput`.
+
+**Deux messages inventés du §1.11 sont traités, un est laissé ouvert.**
+
+- L'avertissement `MUST NOT be used on production networks; High CPU
+  utilization may occur.` est **retiré** : je ne le retrouve dans aucune
+  sortie d'IOS, et le garde-fou réel — la question de `debug all` — est
+  arrivé avec D2.
+- `%SYS-3-LOGGINGRATE` devient `NOTE: N debug messages dropped by the
+  console rate limit (N msg/sec)`. Un vrai IOS jette en silence ; taire
+  la perte ferait lire une trace tronquée comme complète, donc
+  l'information reste, mais **sous le préfixe `NOTE:`** — la convention
+  que ce dépôt emploie déjà pour ce qu'il dit en son nom propre plutôt
+  qu'au nom de Cisco (`apacheWarnings()`).
+- **`debug interface <nom>` est laissé en place, et c'est un aveu.** Je
+  ne le retrouve pas sur IOS classique — les transitions y sont
+  rapportées par `%LINK-3-UPDOWN`/`%LINEPROTO-5-UPDOWN`, que ce
+  simulateur émet déjà — mais §0 interdit de faire reposer un chantier
+  sur un point non confirmé seul, et retirer une commande qui marche sur
+  une intuition serait pire que la garder. C'est le seul point du §1.11
+  qui reste ouvert.
+
+**Tests.** `cisco-debug-vocabulary.test.ts` (12 cas) : un fait/un
+libellé, aucun identifiant interne (balayage sur les deux plateformes),
+les rubriques et leur ordre, et le format de chaque famille de lignes.
+Discrimination par `git stash` : **10 des 12 tombent** avant.
+
+**Douze suites encodaient l'ancien vocabulaire**, et chacune est
+corrigée dans son intention plutôt qu'affaiblie. Deux méritent d'être
+citées : `exigences-debug-lot3` **exigeait** l'avertissement inventé —
+elle exige maintenant son absence ; et `cisco-debug-subscription`
+comptait les lignes `ADJCHG` pour prouver que le canal de debug ajoute
+quelque chose — elle compte les lignes d'adjacence propres au debug, ce
+qui est précisément ce que §1.10 vient de séparer, et devient donc plus
+juste qu'avant.
+
+**Mesures.** 89 suites connexes vertes (2329 cas), typecheck au baseline
+(167), lint inchangé.
