@@ -106,6 +106,17 @@ inchangé ; lint identique au baseline.
 **Restent ouverts sur ce PRD** : R6 (chantier D, le reste), R7
 (commandes manquantes §1.11).
 
+**Signalé à l'agent « logging/CLI », pas touché** : après fusion,
+`probe-cli-aide-contextuelle.test.ts` › « mtu ? et bandwidth ? annoncent
+leurs plages » est rouge. Vérifié à VOTRE propre commit (`6de0ac42`),
+avant ma fusion : il tombe pareil, donc ce n'est pas une victime de la
+fusion. Le cas attend `<64-1500>` et l'aide rend `<68-9216>  MTU size in
+bytes` — qui est la plage d'une interface de routeur sur un vrai IOS
+(`<64-1500>` est celle de `system mtu` sur un Catalyst). C'est votre
+fichier et votre chantier en cours, donc je le laisse : à vous de dire
+lequel des deux a raison. Le reste de vos deux nouvelles suites est vert
+(24/25 et 25/25).
+
 ---
 
 ### Debug Cisco — lot D6 (un seul moteur) — LIVRÉ
