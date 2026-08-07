@@ -469,7 +469,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       await sw.executeCommand('enable');
       await sw.executeCommand('debug all');
       const output = await sw.executeCommand('undebug all');
-      expect(output.toLowerCase()).toContain('disabled');
+      expect(output.toLowerCase()).toMatch(/turned off|debugging is off/);
     });
 
     it('48. should support no debug all to turn off debugging', async () => {
@@ -477,7 +477,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       await sw.executeCommand('enable');
       await sw.executeCommand('debug all');
       const output = await sw.executeCommand('no debug all');
-      expect(output.toLowerCase()).toContain('disabled');
+      expect(output.toLowerCase()).toMatch(/turned off|debugging is off/);
     });
 
     it('49. should support dynamic terminal log forwarding using terminal monitor', async () => {
@@ -548,7 +548,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       await sw.executeCommand('enable');
       await sw.executeCommand('debug all');
       const output = await sw.executeCommand('u all');
-      expect(output.toLowerCase()).toContain('disabled');
+      expect(output.toLowerCase()).toMatch(/turned off|debugging is off/);
     });
 
     it('59. should reject debug operations from User EXEC mode', async () => {
@@ -575,7 +575,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       await sw.executeCommand('enable');
       await sw.executeCommand('debug mac address-table');
       const output = await sw.executeCommand('undebug mac address-table');
-      expect(output.toLowerCase()).toContain('disabled');
+      expect(output.toLowerCase()).toMatch(/turned off|debugging is off/);
     });
 
     it('63. should allow enabling physical link-state debugging (debug link-state)', async () => {
@@ -590,7 +590,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       await sw.executeCommand('enable');
       await sw.executeCommand('debug link-state');
       const output = await sw.executeCommand('undebug link-state');
-      expect(output.toLowerCase()).toContain('disabled');
+      expect(output.toLowerCase()).toMatch(/turned off|debugging is off/);
     });
 
     it('65. should support terminal monitor configuration persistence on running profile', async () => {

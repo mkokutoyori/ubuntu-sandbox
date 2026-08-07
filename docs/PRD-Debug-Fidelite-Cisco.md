@@ -666,3 +666,287 @@ RIP/HSRP/BGP (307 cas), typecheck au baseline (167), lint inchangé.
 Discrimination par `git stash` : 4 des 5 cas tombent avant le correctif
 (le cinquième vérifie qu'un debug désarmé reste muet, ce qui était déjà
 vrai — pour cause de silence total).
+
+
+---
+
+## 13. D4 — Livré, et le §4.2 (b) est réfuté par la mesure
+
+**Le PRD disait « retirer les douze catégories mortes ». La mesure dit
+non.** Avant d'en supprimer une seule, j'ai cherché si le bus publiait
+quelque chose pour elle — et il publie, pour presque toutes :
+`vrrp.state.changed`, `glbp.avg.changed`, `ntp.synced`,
+`radius.auth.completed`, `tacacs.acct.completed`,
+`eigrp.neighbor.state-changed`, `router.ssh.session.opened`… Retirer une
+catégorie dont l'événement existe aurait jeté de la fidélité
+atteignable. **Ce qui manquait n'était pas la matière, c'était la porte
+ET le fil.**
+
+D4 pose donc les deux, et le compte le dit : **45 catégories déclarées
+dont 20 sans émetteur avant, 41 dont 2 après.**
+
+**Câblées** (abonnement dans `attachToBus`) : EIGRP (changement de
+voisin, désaccord de K-values), SSH (session ouverte/fermée), VRRP
+(état, maître), GLBP (AVG, AVF), NTP (synchronisation, paquets), RADIUS
+(Access-Accept/Reject, serveur mort), TACACS+, et l'AAA
+authentification/comptabilité, dérivée des mêmes événements RADIUS.
+
+**Six familles ont reçu la commande qui leur manquait** : `debug vrrp`,
+`debug glbp`, `debug radius`, `debug tacacs`, `debug ntp
+events|packets`, `debug aaa authentication|authorization|accounting`.
+Un sous-mot-clé inconnu y est refusé comme partout ailleurs.
+
+**Deux familles seulement sont refusées, et chacune nomme sa brique.**
+Ce sont les seules dont aucun événement n'existe :
+
+```
+debug crypto pki transactions
+  => % Crypto PKI has no trace point on this platform: the certificate
+     engine publishes no enrolment or validation event
+debug crypto ikev2
+  => % IKEv2 has no trace point on this platform: the IPSec engine emits
+     its exchange on the ISAKMP channel
+```
+
+Le second mérite son explication : `debug crypto ikev2` armait une
+catégorie `crypto.ikev2` que le moteur ne pouvait pas alimenter, son
+émetteur ne connaissant que deux genres (`isakmp`, `ipsec`). L'échange
+IKEv2 SORT bien — étiqueté ISAKMP. Le refus dit où regarder plutôt que
+d'accepter un drapeau muet. Les quatre catégories correspondantes
+quittent le type.
+
+### 13.1 BGP : la décision a été prise par l'autre agent, et j'ai corrigé ce qu'elle a révélé
+
+D3 avait mesuré que `AbstractRoutingProtocolEngine.setBus()` n'était
+appelé nulle part, et laissé la décision ouverte parce qu'elle touchait
+le canal syslog. **L'agent logging l'a prise** (`RouterDynamicRouting`
+appelle désormais `setBus(ctx.getBus())`), et `debug ip bgp` émet.
+
+La première mesure après ce câblage a montré une ligne fausse :
+
+```
+BGP: 10.0.9.2 went from Idle to Idle
+```
+
+`publishNeighborState` était appelé au premier passage avec `prev`
+absent, donc un `oldState` par défaut égal au `newState` : une
+transition qui n'a pas eu lieu, annoncée sur le canal debug **et** sur
+syslog en `%BGP-5-ADJCHANGE`. Une garde d'une ligne l'écarte, et un cas
+de test refuse toute ligne dont l'état de départ égale celui d'arrivée.
+
+### 13.2 Ce qui reste, nommé plutôt que caché
+
+Deux catégories restent sans émetteur, et la suite les liste **une par
+une** dans un cliquet qui ne peut que rétrécir :
+
+- **`ip.nhrp`** — NHRP publie bien `nhrp.packet.sent`/`received`, mais
+  ces sujets ne figurent pas dans l'union `DomainEvent` : l'abonnement
+  ne compile pas. Les y ajouter est une modification de types, pas de
+  câblage.
+- **`aaa.authorization`** — aucun événement ne distingue l'autorisation
+  de l'authentification. La commande existe (IOS l'a), le fil n'a rien à
+  porter.
+
+**Tests.** `cisco-debug-no-empty-promise.test.ts` (8 cas). Le premier
+est une **règle lue dans le code** — toute catégorie déclarée a un
+émetteur, exceptions nommées — sur le modèle du cliquet des littéraux
+d'erreur. Discrimination par `git stash` : 5 des 8 tombent avant.
+
+**Une suite à moi encodait l'état d'avant** : `cisco-debug-lifecycle`
+listait `debug crypto pki transactions` parmi les familles armables. Ce
+n'en est plus une ; la règle « toute famille armable s'arme » ne change
+pas, sa liste si.
+
+**Mesures.** 224 suites connexes vertes (4369 cas), typecheck au
+baseline (167), lint identique (26 problèmes avant comme après).
+Signalé plutôt que tu : un passage du lot a vu `openssl-prd-p0-p3`
+échouer une fois puis passer au suivant, la suite étant verte seule et
+sur `HEAD` — c'est la pollution inter-fichiers connue du registre PKI
+(`resetPkiCaRegistry`, à la charge de chaque fichier), révélée par un
+décalage d'ordonnancement, pas par ce lot.
+
+
+---
+
+## 14. D5 — Livré
+
+**Un fait, un libellé.** `RouterDebugService.flagLabel()` est la seule
+fonction qui met un drapeau en mots ; `enable()` et `show debugging`
+l'appellent tous deux. L'activation disait `for access list 100` et la
+vue `for 100` : c'est fini par construction, pas par vigilance.
+
+**`show debugging` prend les rubriques d'IOS.** Dix-huit rubriques
+ordonnées (`Generic IP`, `IPv6`, `OSPF`, `RIP`, … `Crypto Subsystem`),
+chaque catégorie appartenant à une seule ; une rubrique n'est écrite que
+si elle a du contenu, et l'ordre est celui de la table, plus celui de la
+clé interne. Une catégorie qu'aucune rubrique ne nomme tombe sous
+`Other`, ce qui se voit.
+
+```
+Generic IP:
+  IP packet debugging is on for access list 100
+  ICMP packet debugging is on
+OSPF:
+  OSPF adjacency debugging is on
+First-hop redundancy:
+  HSRP debugging is on
+```
+
+**Les lignes prennent la forme d'IOS.**
+
+| Avant | Après |
+|---|---|
+| `IP: s=10.0.12.1 (Gi0/0), d=10.0.12.2, len 100, sent (proto 1)` | `IP: s=10.0.12.1 (local), d=10.0.12.2 (Gi0/0), len 100, sending` |
+| `IP: … rcvd (proto 1)` | `IP: … rcvd 3` |
+| `RT: add 192.168.9.0 via 10.0.12.2` | `RT: add 192.168.9.0/24 via 10.0.12.2, static metric [1/0]` |
+| `OSPF: snd packet to 224.0.0.5 on Gi0/0` | `OSPF: snd. v:2 t:1 (Hello) to 224.0.0.5 on Gi0/0` |
+| `OSPF: Send hello packet on Gi0/0` | `OSPF: Send hello to 224.0.0.5 area 0 on Gi0/0` |
+
+L'interface de **sortie** est nommée, ce qu'aucune ligne ne faisait ; le
+protocole quitte la ligne de base pour la ligne `detail`, où IOS le met ;
+et une trace OSPF distingue enfin un Hello d'un DBD — le type se lit sur
+le paquet lui-même (`packet.packetType`), pas sur un champ deviné.
+
+**§1.10 est fermé.** `debug ip ospf adj` imprime ses propres lignes
+(`OSPF: Gi0/0 Nbr 10.0.12.2 state Init -> ExStart, event
+TwoWayReceived`) au lieu de republier `%OSPF-5-ADJCHG` amputé de son
+`%`. Le message syslog continue d'exister, sur son canal, sans
+concurrent.
+
+**Le switch cesse de parler une autre langue.** Plus d'identifiant
+interne dans un message (`ip.packet debugging is on` était le cas le
+plus net), plus de suffixe `(disabled)`, et `show debugging` **liste**
+ce qui est armé, avec les mêmes rubriques que le routeur, au lieu de
+rendre une phrase. Un mot-clé que la plateforme ne connaît pas est
+refusé comme sur le routeur, par `CliInvalidInput`.
+
+**Deux messages inventés du §1.11 sont traités, un est laissé ouvert.**
+
+- L'avertissement `MUST NOT be used on production networks; High CPU
+  utilization may occur.` est **retiré** : je ne le retrouve dans aucune
+  sortie d'IOS, et le garde-fou réel — la question de `debug all` — est
+  arrivé avec D2.
+- `%SYS-3-LOGGINGRATE` devient `NOTE: N debug messages dropped by the
+  console rate limit (N msg/sec)`. Un vrai IOS jette en silence ; taire
+  la perte ferait lire une trace tronquée comme complète, donc
+  l'information reste, mais **sous le préfixe `NOTE:`** — la convention
+  que ce dépôt emploie déjà pour ce qu'il dit en son nom propre plutôt
+  qu'au nom de Cisco (`apacheWarnings()`).
+- **`debug interface <nom>` est laissé en place, et c'est un aveu.** Je
+  ne le retrouve pas sur IOS classique — les transitions y sont
+  rapportées par `%LINK-3-UPDOWN`/`%LINEPROTO-5-UPDOWN`, que ce
+  simulateur émet déjà — mais §0 interdit de faire reposer un chantier
+  sur un point non confirmé seul, et retirer une commande qui marche sur
+  une intuition serait pire que la garder. C'est le seul point du §1.11
+  qui reste ouvert.
+
+**Tests.** `cisco-debug-vocabulary.test.ts` (12 cas) : un fait/un
+libellé, aucun identifiant interne (balayage sur les deux plateformes),
+les rubriques et leur ordre, et le format de chaque famille de lignes.
+Discrimination par `git stash` : **10 des 12 tombent** avant.
+
+**Douze suites encodaient l'ancien vocabulaire**, et chacune est
+corrigée dans son intention plutôt qu'affaiblie. Deux méritent d'être
+citées : `exigences-debug-lot3` **exigeait** l'avertissement inventé —
+elle exige maintenant son absence ; et `cisco-debug-subscription`
+comptait les lignes `ADJCHG` pour prouver que le canal de debug ajoute
+quelque chose — elle compte les lignes d'adjacence propres au debug, ce
+qui est précisément ce que §1.10 vient de séparer, et devient donc plus
+juste qu'avant.
+
+**Mesures.** 89 suites connexes vertes (2329 cas), typecheck au baseline
+(167), lint inchangé.
+
+---
+
+## §15 — Lot D6 livré : un seul moteur
+
+**Ce qui était mesuré.** Une machine Cisco avait **deux** sous-systèmes
+de debug : `RouterDebugService` (45 catégories, le travail des lots D1 à
+D5) et `SwitchDebugService`, une seconde classe de 5 catégories avec sa
+propre table de libellés, ses propres rubriques, sa propre traduction du
+mot tapé par l'opérateur, et ses propres abonnements au bus. Deux
+implémentations d'une même question finissent toujours par ne pas y
+répondre pareil, et celles-ci ne le faisaient déjà plus : le switch
+répondait `2 debug flags have been turned off` à `undebug all` là où le
+routeur répondait `All possible debugging has been turned off`, et rien
+dans le produit ne pouvait rendre ces deux phrases cohérentes puisque
+rien ne les écrivait au même endroit.
+
+**Ce qui est fait.** `SwitchDebugService.ts` est **supprimé**.
+`CiscoSwitch.getDebugService()` construit `new RouterDebugService('switch')`,
+et la plateforme est le seul paramètre qui distingue les deux machines :
+
+- `categoryOnPlatform(cat, plat)` est la règle unique. `SWITCH_ONLY`
+  (`mac`, `link`, `stp.events`, `stp.bpdu`) est ce qu'un routeur ne sait
+  pas faire ; `SWITCH_CATEGORIES` est ce qu'un switch sait faire.
+- `debugCategoriesFor(mot)` remplace les deux tables de traduction. Un
+  alias (`mac address-table`, `link-state`, `spanning-tree`) y est écrit
+  une fois, donc `debug mac` et `debug mac address-table` ne peuvent plus
+  diverger. `spanning-tree` rend une **famille** de deux catégories, ce
+  qui est ce que la commande veut dire.
+- `enable()`/`disable()` **portent la garde eux-mêmes** plutôt que chaque
+  enregistrement CLI. C'est ce qui rend la règle inviolable : une
+  commande ajoutée demain dans `CiscoShellBase` — dont le switch hérite —
+  ne peut pas armer une catégorie que sa plateforme ignore, parce qu'il
+  n'y a rien à penser à faire.
+- `enableAll()` n'arme que le jeu de sa plateforme.
+
+**Trois défauts que la fusion a rendus visibles**, et qu'aucun test
+n'aurait pu voir tant que les deux moteurs vivaient séparément :
+
+1. **`debug ip dhcp server` portait deux libellés.** Le service disait
+   `IP DHCP server debugging is on`, l'enregistrement routeur écrivait
+   `DHCP server debugging is on` en dur. Même drapeau, deux phrases, une
+   par plateforme. Le libellé du service devient `DHCP server`.
+2. **`debug interface` rendait `Interface  debugging is on`** — deux
+   espaces, parce que l'enregistrement recomposait la phrase avec un nom
+   d'interface vide au lieu de rendre celle du service. C'est exactement
+   la faute que D1 avait corrigée pour les lignes de sortie, restée en
+   place pour la ligne d'accusé.
+3. **`CiscoSwitchShell` hérite de `CiscoShellBase`**, donc toutes les
+   commandes de debug du routeur y étaient enregistrées : un switch
+   acceptait `debug ip bgp`, `debug standby`, `debug ip packet` et armait
+   des drapeaux que rien sur cette machine n'alimente. La garde dans
+   `enable()` les refuse maintenant, avec le mot d'IOS pour un mot-clé que
+   la plateforme ne connaît pas.
+
+**Un manque de migration, trouvé par le rayon d'action.** La catégorie
+`link` avait perdu son émetteur en route : `SwitchDebugService`
+s'abonnait à `port.link.up`/`down`, `RouterDebugService` s'y abonnait
+aussi mais pour émettre `interface`. `debug link-state` armait donc un
+drapeau muet — précisément ce que `cisco-debug-no-empty-promise.test.ts`
+interdit, et c'est cette suite qui l'a dit. Les deux lignes coexistent
+maintenant sur le même abonnement : `debug interface` et `debug
+link-state` sont deux commandes différentes sur un Catalyst, chacune
+avec sa formulation.
+
+**Un rouge antérieur, hérité et corrigé.**
+`debug-severity7-gated.test.ts` exigeait `debug vxlan` et `debug
+port-security` **sur un routeur nu** ; ces deux commandes sont gardées
+par `hasVxlanHardware()`/`hasSwitchingHardware()`, ce qui est le
+comportement juste (un ISR sans module de commutation n'a pas de
+port-security). Les deux cas étaient rouges avant D6 — vérifié par
+`git stash` sur HEAD — et le défaut était dans le choix de machine du
+test, pas dans le produit : ils s'exécutent maintenant sur un switch,
+qui accepte les deux. L'intention du test — « chaque famille de
+sévérité 7 est joignable » — est conservée, pas affaiblie.
+
+**Tests.** `cisco-debug-one-engine.test.ts` (15 cas) vérifie des
+propriétés, pas des listes : une seule classe pour les deux plateformes,
+le fichier du second moteur absent, un balayage qui exige **mot pour
+mot** la même réponse des deux côtés pour toute commande partagée, un
+balayage symétrique de refus dans les deux sens, `debug all` dont chaque
+drapeau armé est validé par `categoryOnPlatform`, et la table d'alias
+lue une fois. Discrimination par `git stash` : **7 des 15 tombent**
+avant. Les 8 qui passent des deux côtés sont des gardes de
+non-régression, et l'un d'eux — la comparaison d'`undebug all` — passait
+d'abord **à vide** (il comparait le second appel, sur un registre déjà
+vide, où le bogue ne s'exprime pas) : il compare maintenant l'appel
+chargé.
+
+**Mesures.** 123 suites connexes vertes (1374 cas, 4 ignorés) :
+debug, switch, STP, DHCP, MAC, port-security. Typecheck
+`tsc -p tsconfig.app.json` à **164** contre 167 au baseline — les trois
+erreurs en moins sont celles du fichier supprimé, aucune nouvelle. Lint
+inchangé.

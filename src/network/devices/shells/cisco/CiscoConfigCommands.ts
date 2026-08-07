@@ -114,7 +114,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     let ifName = ctx.resolveInterfaceName(raw);
     if (!ifName) {
       const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|lo|tunnel|tu|serial|virtual-template|port-channel|po|vlan|nve)([\d/.]+)$/i);
+      const vMatch = combined.match(/^(loopback|lo|tunnel|tu|serial|virtual-template|port-channel|po)([\d/.]+)$/i);
       if (vMatch) {
         const typeMap: Record<string, string> = {
           'loopback': 'Loopback', 'lo': 'Loopback',
@@ -122,8 +122,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
           'serial': 'Serial',
           'virtual-template': 'Virtual-Template',
           'port-channel': 'Port-channel', 'po': 'Port-channel',
-          'vlan': 'Vlan',
-          'nve': 'Nve',
         };
         const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
         ctx.r()._createVirtualInterface(fullName);
@@ -334,11 +332,9 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     { keyword: 'GigabitEthernet',  description: 'GigabitEthernet IEEE 802.3z' },
     { keyword: 'FastEthernet',     description: 'FastEthernet IEEE 802.3u' },
     { keyword: 'Ethernet',         description: 'IEEE 802.3' },
-    { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae' },
     { keyword: 'Loopback',         description: 'Loopback interface' },
     { keyword: 'Serial',           description: 'Serial' },
     { keyword: 'Tunnel',           description: 'Tunnel interface' },
-    { keyword: 'Vlan',             description: 'Catalyst VLANs' },
     { keyword: 'Port-channel',     description: 'Ethernet Channel of interfaces' },
     { keyword: 'BVI',              description: 'Bridge-Group Virtual Interface' },
   ]);
@@ -354,7 +350,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     { keyword: 'ip',        description: 'Negate ip subcommand' },
     { keyword: 'router',    description: 'Disable a routing process' },
     { keyword: 'access-list', description: 'Remove an access list' },
-    { keyword: 'vlan',      description: 'Remove a VLAN' },
     { keyword: 'line',      description: 'Remove line configuration' },
     { keyword: 'banner',    description: 'Remove banner' },
   ]);
@@ -386,9 +381,9 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     let ifName = resolveInterfaceName(ctx.r(), raw);
     if (!ifName) {
       const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|tunnel|serial|nve)([\d/.]+)$/i);
+      const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
       if (vMatch) {
-        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial', 'nve': 'Nve' };
+        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
         const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
         ctx.r()._createVirtualInterface(fullName);
         ifName = fullName;
@@ -794,6 +789,12 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     // ligne brute était empilée sur le port et lue par personne : la
     // commande était acceptée, absente de la running-config, sans vue,
     // et surtout sans effet sur un seul paquet.
+    // `rate-limit input` seul est une commande COMMENCÉE, pas une
+    // commande fausse : IOS réclame le débit, il ne pointe pas le caret.
+    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const dir = args[0].toLowerCase();
+    if (dir !== 'input' && dir !== 'output') throw new CliInvalidInput({ token: args[0] });
+    if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
     const regle = parseRateLimitRule(args, raw ?? `rate-limit ${args.join(' ')}`);
     if (!regle) return "% Invalid input detected at '^' marker.";
     ctx.r().getCarPolicer(ifName, true)!.add(regle);

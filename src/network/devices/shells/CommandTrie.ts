@@ -82,6 +82,14 @@ export interface CommandNode {
   _hintOnly?: boolean;
   _passthrough?: boolean;
   /**
+   * Le nœud est enregistré greedy pour des raisons d'analyse, mais la
+   * commande ne prend AUCUN argument : `cdp run ?` n'offre que `<cr>`
+   * sur IOS, pas un `WORD` qui laisserait croire qu'il manque quelque
+   * chose. Sans ce marqueur, le repli de dernier recours invente ce
+   * `WORD` et lui recopie la description du parent.
+   */
+  _noArgument?: boolean;
+  /**
    * Keywords auto-extracted from the greedy handler's source (lazy,
    * computed once). Undefined = not yet computed.
    */
@@ -588,6 +596,34 @@ export class CommandTrie {
    *   e.g. for user typing "sh?", pass "sh"
    *        for user typing "show ?", pass "show "
    */
+  /**
+   * Un même arbre sert parfois plusieurs contextes — `config-router` est
+   * partagé par RIP, EIGRP et BGP, et leurs gestionnaires refusent déjà
+   * ce qui n'appartient pas au protocole courant. L'aide, elle, ne le
+   * savait pas : `router rip` proposait `neighbor … remote-as`, une
+   * commande BGP que la même machine refuse à l'exécution.
+   *
+   * Le filtre est consulté au rendu, jamais à l'enregistrement : c'est
+   * le contexte du moment qui décide, et il change entre deux `?`.
+   */
+  private completionFilter:
+    ((path: readonly string[], keyword: string) => boolean) | null = null;
+
+  setCompletionFilter(
+    filter: ((path: readonly string[], keyword: string) => boolean) | null,
+  ): void {
+    this.completionFilter = filter;
+  }
+
+  private applyFilter(
+    path: readonly string[],
+    entries: Array<{ keyword: string; description: string }>,
+  ): Array<{ keyword: string; description: string }> {
+    const filter = this.completionFilter;
+    if (!filter) return entries;
+    return entries.filter((e) => e.keyword === '<cr>' || filter(path, e.keyword));
+  }
+
   getCompletions(inputBeforeQuestion: string): Array<{ keyword: string; description: string }> {
     const raw = inputBeforeQuestion;
     const tokens = raw.trim().split(/\s+/).filter(t => t.length > 0);
@@ -595,7 +631,7 @@ export class CommandTrie {
 
     // Empty input or just spaces → show all root commands
     if (tokens.length === 0) {
-      return this.nodeCompletions(this.root);
+      return this.applyFilter([], this.nodeCompletions(this.root));
     }
 
     let node = this.root;
@@ -630,7 +666,7 @@ export class CommandTrie {
             }
           }
         }
-        return listed;
+        return this.applyFilter(path, listed);
       }
 
       const exactRawHelp = node.children.get(token);
@@ -682,7 +718,7 @@ export class CommandTrie {
     }
 
     // Trailing space → show subcommands/children of the last matched node
-    return this.nodeCompletions(node, consumedArgs, firstArg);
+    return this.applyFilter(path, this.nodeCompletions(node, consumedArgs, firstArg));
   }
 
   /**
@@ -856,6 +892,16 @@ export class CommandTrie {
     node.params = [...specs];
   }
 
+  /**
+   * Déclare qu'une commande greedy ne prend pas d'argument. Le chemin
+   * doit exister ; un chemin inconnu est ignoré, comme `describeArgs`,
+   * pour qu'une table d'aide ne dépende pas de l'ordre d'enregistrement.
+   */
+  takesNoArgument(path: string): void {
+    const node = this.nodeAt(path);
+    if (node) node._noArgument = true;
+  }
+
   private hintDescription(node: CommandNode, keyword: string): string {
     const key = keyword.toLowerCase();
     return node.hintSuggestions?.find(h => h.keyword.toLowerCase() === key)?.description ?? '';
@@ -964,7 +1010,15 @@ export class CommandTrie {
       if (!param.optional) break;
     }
 
-    if (!argumentsConsumed && node.hintSuggestions && node.hintSuggestions.length > 0) {
+    // Une continuation déclarée vient APRÈS l'argument obligatoire, pas
+    // à sa place : `logging host ?` offrait `transport` et
+    // `discriminator` avant l'adresse, deux formes que la même machine
+    // refuse ensuite faute de serveur à qui les rattacher.
+    const pending = node.params[consumedArgs];
+    const awaitsMandatory = pending !== undefined && !pending.optional;
+
+    if (!argumentsConsumed && !awaitsMandatory
+        && node.hintSuggestions && node.hintSuggestions.length > 0) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const hint of node.hintSuggestions) {
         if (!seen.has(hint.keyword.toLowerCase())) {
@@ -989,7 +1043,7 @@ export class CommandTrie {
       }
     }
 
-    if (node.greedy && results.length === 0) {
+    if (node.greedy && !node._noArgument && results.length === 0) {
       results.push({ keyword: 'WORD', description: node.description });
     }
 

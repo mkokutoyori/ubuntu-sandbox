@@ -50,7 +50,8 @@ export interface NeighborDTO {
 /**
  * Read-only projection of one device's inspectable state. Methods are
  * added incrementally per migration lot; absence of a method means the
- * renderer emits the honest "not instrumented" line for that family.
+ * renderer has no state to read for that family and emits an empty
+ * section rather than fabricated values.
  */
 export interface DeviceStateView {
   identity(): DeviceIdentityDTO;

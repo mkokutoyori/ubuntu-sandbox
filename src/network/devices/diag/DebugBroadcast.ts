@@ -115,7 +115,7 @@ export class DebugBroadcast {
 
   private emitThrottleNotice(dropped: number): void {
     this.linesThisWindow++;
-    const notice = `%SYS-3-LOGGINGRATE: ${dropped} debug message${dropped === 1 ? '' : 's'} dropped by rate limiting (${this.rateLimit} msg/sec)`;
+    const notice = `NOTE: ${dropped} debug message${dropped === 1 ? '' : 's'} dropped by the console rate limit (${this.rateLimit} msg/sec)`;
     const rendu = this.journal ? this.journal.record(notice) : notice;
     for (const listener of this.listeners) listener(rendu);
   }

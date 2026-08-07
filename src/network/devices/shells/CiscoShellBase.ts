@@ -622,6 +622,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /**
+   * Un ISR 2911 sans module EtherSwitch ne porte aucun ASIC de
+   * commutation : table MAC, VLAN, `switchport` et VXLAN ne sont pas
+   * « non implémentés », ils n'existent pas sur cette plateforme. Les
+   * nœuds correspondants ne sont donc pas enregistrés du tout, et le
+   * parseur répond au caret comme pour n'importe quelle saisie inconnue.
+   */
+  protected hasSwitchingHardware(): boolean {
+    return this.getChassisProfile() !== 'router-isr2911';
+  }
+
+  /**
+   * Aucun ISR G2 ni aucun Catalyst 3560 n'encapsule du VXLAN, quelle que
+   * soit la licence : le VTEP est une fonction de plateforme, pas une
+   * option. `VxlanAgent` reste entier et testé — c'est la porte CLI qui
+   * n'a pas de châssis où s'ouvrir, et ce prédicat est l'endroit unique
+   * où le premier profil qui la porterait la rouvrirait.
+   */
+  protected hasVxlanHardware(): boolean {
+    return false;
+  }
+
+  /**
    * Le système de fichiers de l'équipement, semé au premier accès depuis
    * le profil châssis. Un seul par shell : `dir`, `delete` et
    * `show flash:` doivent voir le même `flash:`, sinon supprimer un
@@ -1630,24 +1652,44 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ? 'Cisco ISR 2911\n  PID: CISCO2911/K9\n  S/N: FTX1234567A'
         : 'Cisco Catalyst 2960\n  PID: WS-C2960-24TT-L\n  S/N: FOC1234X56Y';
     });
-    trie.register('show license', 'Display licenses', () => 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority\n1     ipbasek9                 Lifetime       0              Permanent       Active, In Use   N/A              Medium');
+    trie.register('show license', 'Display licenses', () => {
+      const head = 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority';
+      const row = (i: number, feat: string) =>
+        `${i}     ${feat.padEnd(25)}Lifetime       0              Permanent       Active, In Use   N/A              Medium`;
+      if (this.getChassisProfile() !== 'router-isr2911') return `${head}\n${row(1, 'ipbasek9')}`;
+      return [head, row(1, 'ipbasek9'), row(2, 'securityk9')].join('\n');
+    });
     trie.register('show license udi', 'Display Unique Device Identifier', () => {
-      const hostname = this.d().getHostname();
       const profile = this.getChassisProfile();
       const sn = profile === 'router-isr2911' ? 'FTX1234567A' : 'FOC1234X56Y';
       const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
-      return `Device# PID                   SN                              UDI\n*0    ${pid}      ${sn}                  ${pid}:${sn}\n  (hostname: ${hostname})`;
+      return `Device#   PID                   SN\n*0        ${pid.padEnd(22)}${sn}`;
     });
-    trie.register('show diag', 'Display chassis diagnostics', () => 'Slot 0:  Built-in PID (real)\n  Power: OK\n  Temperature: nominal');
-    trie.register('show idprom backplane', 'Display IDPROM backplane', () => 'IDPROM for backplane: serial number, PID match show inventory');
-    trie.registerGreedy('show mac address-table', 'Display MAC address table', () => {
-      const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
-      const table = dev.getMacTable?.();
-      if (!table || table.size === 0) return 'Mac Address Table\n--------------------------------\nNo entries';
-      const lines = ['Mac Address Table', '--------------------------------', 'Vlan    Mac Address       Type        Ports'];
-      for (const e of table.values()) lines.push(`${String(e.vlan ?? 1).padEnd(8)}${e.mac.padEnd(18)}${(e.type ?? 'DYNAMIC').padEnd(12)}${e.ifName}`);
-      return lines.join('\n');
+    trie.register('show diag', 'Display chassis diagnostics', () => {
+      const profile = this.getChassisProfile();
+      const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
+      const sn = profile === 'router-isr2911' ? 'FTX1234567A' : 'FOC1234X56Y';
+      return [
+        'Slot 0:',
+        `        ${pid} Motherboard Port adapter, 3 ports`,
+        '        Port adapter is analyzed',
+        '        Port adapter insertion time unknown',
+        `        Hardware Revision        : 1.0`,
+        `        Part Number              : ${pid}`,
+        `        Board Revision           : 1.0`,
+        `        PCB Serial Number        : ${sn}`,
+      ].join('\n');
     });
+    if (this.hasSwitchingHardware()) {
+      trie.registerGreedy('show mac address-table', 'Display MAC address table', () => {
+        const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
+        const table = dev.getMacTable?.();
+        if (!table || table.size === 0) return 'Mac Address Table\n--------------------------------\nNo entries';
+        const lines = ['Mac Address Table', '--------------------------------', 'Vlan    Mac Address       Type        Ports'];
+        for (const e of table.values()) lines.push(`${String(e.vlan ?? 1).padEnd(8)}${e.mac.padEnd(18)}${(e.type ?? 'DYNAMIC').padEnd(12)}${e.ifName}`);
+        return lines.join('\n');
+      });
+    }
     // `_getRunningConfigText` n'est défini sur AUCUN appareil : il n'est
     // que lu, ici et à deux autres endroits. Mesuré avant correction,
     // `show running-config all` rendait donc « Building configuration... »
@@ -1736,7 +1778,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'detail') return showVrfDetail(this.d(), args[1]);
       if (sub === 'interfaces') return showVrfInterfaces(this.d());
       return showVrf(this.d());
-    });
+    }, [
+      { keyword: 'detail', description: 'Detailed VRF information' },
+      { keyword: 'interfaces', description: 'Interfaces bound to a VRF' },
+    ]);
+    trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
+      showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
     trie.registerGreedy('show ip as-path-access-list', 'Display AS-path filters', (args) => {
       const store = this.asPathLists();
       const wanted = args[0];
@@ -1762,8 +1809,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return out.join('\n');
     });
-    trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
-      showRedundancy());
+    if (this.hasSwitchingHardware()) {
+      trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
+        showRedundancy());
+    }
     trie.registerGreedy('show file', 'Display file systems', () =>
       showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0), [
       { keyword: 'systems', description: 'File system information' },
@@ -1968,7 +2017,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonPrivilegedCommands(): void {
-    this.privilegedTrie.register('enable', 'Enter privileged EXEC mode (already in)', () => '');
+    this.privilegedTrie.register('enable', 'Turn on privileged commands', () => '');
 
     this.privilegedTrie.register('configure terminal', 'Enter configuration mode', () => {
       this.mode = 'config';
@@ -2220,9 +2269,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('debug interface', 'Debug interface state changes', (args) => {
       const svc = genericDebug();
       const iface = args.join(' ').trim();
-      if (!svc) return `Interface ${iface} debugging is on`;
-      svc.enable('interface', iface || undefined);
-      return `Interface ${iface} debugging is on`;
+      if (!svc) return 'Interface debugging is on';
+      return svc.enable('interface', iface || undefined);
     });
     this.privilegedTrie.registerGreedy('no debug interface', 'Disable interface debug', () =>
       genericDebug()?.disable('interface') ?? '');
@@ -2264,10 +2312,60 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         : value;
       return svc.removeCondition(kind, resolved);
     });
-    this.privilegedTrie.registerGreedy('debug vxlan', 'Debug VXLAN', () => genericDebug()?.enable('vxlan') ?? 'VXLAN debugging is on');
-    this.privilegedTrie.registerGreedy('no debug vxlan', 'Disable VXLAN debug', () => genericDebug()?.disable('vxlan') ?? '');
-    this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');
-    this.privilegedTrie.registerGreedy('no debug port-security', 'Disable port-security debug', () => genericDebug()?.disable('port-security') ?? '');
+    const SIMPLE_DEBUG: ReadonlyArray<readonly [string, string, string]> = [
+      ['debug vrrp', 'vrrp', 'Debug VRRP'],
+      ['debug glbp', 'glbp', 'Debug GLBP'],
+      ['debug radius', 'radius', 'Debug RADIUS'],
+      ['debug tacacs', 'tacacs', 'Debug TACACS+'],
+    ];
+    for (const [path, category, description] of SIMPLE_DEBUG) {
+      this.privilegedTrie.registerGreedy(path, description, () =>
+        genericDebug()?.enable(category) ?? '');
+      this.privilegedTrie.registerGreedy(`no ${path}`, `Disable ${description}`, () =>
+        genericDebug()?.disable(category) ?? '');
+    }
+    this.privilegedTrie.registerGreedy('debug ntp', 'Debug NTP', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const sub = (args[0] ?? 'events').toLowerCase();
+      if ('events'.startsWith(sub)) return svc.enable('ntp.events');
+      if ('packets'.startsWith(sub)) return svc.enable('ntp.packets');
+      throw new CliInvalidInput({ token: args[0] });
+    });
+    this.privilegedTrie.registerGreedy('no debug ntp', 'Disable NTP debug', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const sub = (args[0] ?? 'events').toLowerCase();
+      if ('events'.startsWith(sub)) return svc.disable('ntp.events');
+      if ('packets'.startsWith(sub)) return svc.disable('ntp.packets');
+      throw new CliInvalidInput({ token: args[0] });
+    });
+    this.privilegedTrie.registerGreedy('debug aaa', 'Debug AAA', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const sub = (args[0] ?? '').toLowerCase();
+      if (sub && 'authentication'.startsWith(sub)) return svc.enable('aaa.authentication');
+      if (sub && 'authorization'.startsWith(sub)) return svc.enable('aaa.authorization');
+      if (sub && 'accounting'.startsWith(sub)) return svc.enable('aaa.accounting');
+      throw new CliInvalidInput({ token: args[0] });
+    });
+    this.privilegedTrie.registerGreedy('no debug aaa', 'Disable AAA debug', (args) => {
+      const svc = genericDebug();
+      if (!svc) return '';
+      const sub = (args[0] ?? '').toLowerCase();
+      if (sub && 'authentication'.startsWith(sub)) return svc.disable('aaa.authentication');
+      if (sub && 'authorization'.startsWith(sub)) return svc.disable('aaa.authorization');
+      if (sub && 'accounting'.startsWith(sub)) return svc.disable('aaa.accounting');
+      throw new CliInvalidInput({ token: args[0] });
+    });
+    if (this.hasVxlanHardware()) {
+      this.privilegedTrie.registerGreedy('debug vxlan', 'Debug VXLAN', () => genericDebug()?.enable('vxlan') ?? 'VXLAN debugging is on');
+      this.privilegedTrie.registerGreedy('no debug vxlan', 'Disable VXLAN debug', () => genericDebug()?.disable('vxlan') ?? '');
+    }
+    if (this.hasSwitchingHardware()) {
+      this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');
+      this.privilegedTrie.registerGreedy('no debug port-security', 'Disable port-security debug', () => genericDebug()?.disable('port-security') ?? '');
+    }
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
     // `clear ip eigrp neighbors` : la commande promet de rejeter les
     // adjacences, elle doit donc vraiment les rejeter — sinon elle serait
@@ -2794,9 +2892,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       r._recordUnhandledConfigLine?.(raw ?? `vrf ${args.join(' ')}`);
       return '';
     });
-    this.configTrie.registerGreedy('vrf definition', 'Define a VRF', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `vrf definition ${args.join(' ')}`);
+    // `vrf definition NAME` est la forme moderne de `ip vrf NAME` : elle
+    // entre dans le MÊME sous-mode et crée la MÊME instance, sans quoi
+    // deux orthographes d'une seule commande donnaient deux résultats
+    // — l'une entrait en config-vrf, l'autre notait une ligne et rendait
+    // la main en configuration globale.
+    this.configTrie.registerGreedy('vrf definition', 'Configure a VRF', (args) => {
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+      const name = args[0];
+      const dev = this.d() as unknown as {
+        _vrfs?: Map<string, { name: string; rd?: string; rts: { import: string[]; export: string[] }; interfaces: Set<string> }>;
+      };
+      const vrfs = dev._vrfs ??= new Map();
+      if (!vrfs.has(name)) vrfs.set(name, { name, rts: { import: [], export: [] }, interfaces: new Set() });
+      (this as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
+      this.mode = 'config-vrf';
       return '';
     });
     this.configTrie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
@@ -2835,11 +2945,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
+      if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
       const mode = args[0]?.toLowerCase();
       if (!['exec', 'configure', 'interface', 'line'].includes(mode ?? '')) {
         return "% Invalid input detected at '^' marker.";
       }
       if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
+      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const lvl = parseInt(args[2] ?? '', 10);
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
         return "% Invalid input detected at '^' marker.";
@@ -3033,7 +3145,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // date.
     this.configTrie.registerGreedy('clock set', 'Set system clock',
       (args) => this.applyClockSet(args));
-    this.configTrie.registerGreedy('clock', 'Clock configuration (unhandled)', (args, raw) => {
+    this.configTrie.registerGreedy('clock', 'Configure time-of-day clock', (args, raw) => {
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `clock ${args.join(' ')}`);
       return '';
@@ -3176,7 +3288,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._upsertCiscoUsername(name, kv);
       return '';
     });
-    this.configTrie.registerGreedy('crypto', 'Crypto configuration (unhandled keywords)', (args, raw) => {
+    this.configTrie.registerGreedy('crypto', 'Encryption module', (args, raw) => {
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
       return '';
@@ -3425,6 +3537,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         _getVtyLineConfig?: () => { upsert: (p: object) => void };
       };
       const dir = args[0]?.toLowerCase();
+      if (!dir) return CISCO_ERRORS.INCOMPLETE;
+      // `preferred` existe sur IOS et ne s'applique qu'aux connexions
+      // sortantes d'un serveur de terminaux : il est accepté et
+      // n'entraîne rien ici, mais il est refusé plutôt que stocké
+      // inerte, faute de quoi l'aide promettrait un réglage sans effet.
       if (dir !== 'input' && dir !== 'output') return "% Invalid input detected at '^' marker.";
       const proto = (args[1] ?? '').toLowerCase();
       if (!proto) return '% Incomplete command.';

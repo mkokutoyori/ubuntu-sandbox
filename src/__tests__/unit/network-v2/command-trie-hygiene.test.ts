@@ -38,6 +38,7 @@ const SWITCH_ALLOWED = new Set([
   'no ip routing',              // base configState toggle ← CiscoSwitchShell ack
   'show arp',                   // base ARP renderer ← CiscoSwitchShell SVI view
   'show ip arp',                // base ARP renderer ← CiscoSwitchShell SVI view
+  'show adjacency',             // base CEF renderer ← CiscoSwitchShell L3 view
 ]);
 
 describe('Cisco command tree has no accidental duplicate registrations', () => {

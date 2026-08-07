@@ -325,7 +325,12 @@ describe('rate-limit — la politique CAR police vraiment', () => {
     const { r } = await lab(REGLE);
     expect(await r.executeCommand('show interfaces GigabitEthernet0/0 accounting')).toContain('Pkts In');
     expect(await r.executeCommand('show interfaces GigabitEthernet0/0 stats')).toContain('Switching path');
-    expect(await r.executeCommand('show interfaces GigabitEthernet0/0 switchport')).toContain('Switchport:');
+    // `switchport` a quitté l'arbre du routeur : un ISR 2911 sans module
+    // EtherSwitch ne commute pas (PRD-Arbre-CLI, chantier 2).
+    expect(await r.executeCommand('show interfaces GigabitEthernet0/0 switchport'))
+      .toContain('% Invalid input detected');
+    // Et la forme nue rend la vue de toutes les interfaces, comme IOS.
+    expect(await r.executeCommand('show interfaces stats')).toContain('Switching path');
   }, 30000);
 });
 

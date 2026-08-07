@@ -64,7 +64,7 @@ import {
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
-import { showProcessesCpu, showAdjacency } from './cisco/CiscoCommonShow';
+import { showProcessesCpu } from './cisco/CiscoCommonShow';
 import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands';
 import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
@@ -85,7 +85,7 @@ import {
   registerKeyChainShowCommands,
 } from './cisco/CiscoKeyChainCommands';
 import {
-  buildRoutingProtoConfig, registerRoutingProtoShow,
+  buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
 } from './cisco/CiscoRoutingProtoCommands';
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
@@ -189,7 +189,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configDhcpPoolClassTrie = new CommandTrie();
   private configTrackTrie = new CommandTrie();
   private configVrfTrie = new CommandTrie();
-  private configVlanTrie = new CommandTrie();
   private selectedVRF: string | null = null;
   private selectedVLAN: number | null = null;
   private configIpSlaTrie = new CommandTrie();
@@ -317,6 +316,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       configStdNacl: this.configStdNaclTrie,
       configExtNacl: this.configExtNaclTrie,
       privileged: this.privilegedTrie,
+      configRouteMap: this.configRouteMapTrie,
+      configTimeRange: this.configTimeRangeTrie,
+      configTrack: this.configTrackTrie,
     });
   }
 
@@ -602,7 +604,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-dhcp-pool-class': return this.configDhcpPoolClassTrie;
       case 'config-track': return this.configTrackTrie;
       case 'config-vrf': return this.configVrfTrie;
-      case 'config-vlan': return this.configVlanTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
       case 'config-ipsla-http-raw': return this.configIpSlaHttpRawTrie;
       case 'config-ipsla-echo':
@@ -755,11 +756,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       r: () => this.d(),
     });
     buildPimGlobalConfigCommands(this.configTrie, { r: () => this.d() });
-    buildVxlanInterfaceCommands(this.configIfTrie, {
-      selectedInterface: () => this.getSelectedInterface(),
-      resolveInterfaceName: (s) => this.resolveInterfaceName(s),
-      r: () => this.d(),
-    });
+    if (this.hasVxlanHardware()) {
+      buildVxlanInterfaceCommands(this.configIfTrie, {
+        selectedInterface: () => this.getSelectedInterface(),
+        resolveInterfaceName: (s) => this.resolveInterfaceName(s),
+        r: () => this.d(),
+      });
+    }
     buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
     buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
@@ -806,6 +809,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerKeyChainShowCommands(this.privilegedTrie, this);
     registerKeyChainShowCommands(this.userTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
+    this.configRouterTrie.setCompletionFilter((path, keyword) =>
+      routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,
+        this.selectedRoutingProto?.proto ?? 'rip'));
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);
     buildIPv6ACLGlobalCommands(this.configTrie, this);
@@ -815,29 +821,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerOSPFInterfaceCommands(this.configIfTrie, this);
     buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
     buildConfigRouterOSPFv3Commands(this.configRouterOspfv3Trie, this);
-
-    this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
-      const id = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(id) || id < 1 || id > 4094) return "% Invalid input detected at '^' marker.";
-      this.selectedVLAN = id;
-      const r = this.d() as unknown as { _vlans?: Map<number, { id: number; name?: string }> };
-      const vlans = r._vlans ??= new Map();
-      if (!vlans.has(id)) vlans.set(id, { id });
-      this.mode = 'config-vlan';
-      return '';
-    });
-    this.configVlanTrie.registerGreedy('name', 'VLAN name', (args) => {
-      const r = this.d() as unknown as { _vlans?: Map<number, { id: number; name?: string }> };
-      const name = args.join(' ');
-      if (!name) return '% Incomplete command.';
-      const bareName = name.replace(/^"|"$/g, '');
-      if (bareName.length > 32) return "% Invalid input detected at '^' marker.";
-      if (this.selectedVLAN != null) {
-        const v = r._vlans?.get(this.selectedVLAN);
-        if (v) v.name = bareName;
-      }
-      return '';
-    });
 
     this.configVrfTrie.registerGreedy('rd', 'Route distinguisher', (args) => {
       const rd = args.join(' ').trim();
@@ -916,7 +899,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerBfdShowCommands(trie, { r: () => this.d() });
     registerIgmpShowCommands(trie, { r: () => this.d() });
     registerPimShowCommands(trie, { r: () => this.d() });
-    registerVxlanShowCommands(trie, { r: () => this.d() });
+    if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackShowCommands(trie, this);
     registerIpSlaShowCommands(trie, this);
     registerIpSlaClearCommands(trie, this);
@@ -924,12 +907,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
     registerLoggingShowCommands(trie, this.loggingCommandContext());
-    // Enregistré ici et non dans `registerCommonShowCommands` : le
-    // commutateur a SA propre vue (`summary`/`detail`, épochs — du
-    // Catalyst), et la déclarer des deux côtés faisait deux
-    // enregistrements pour un seul chemin d'exécution.
-    trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
-      showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
+
 
     // `show tech-support` — real aggregation of the key show outputs.
     trie.register('show tech-support', 'Aggregate diagnostic output', () => {
@@ -1038,16 +1016,21 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const sub = (args[0] || '').toLowerCase();
       if (args.length === 0) return Show.showInterfacesAll(getRouter());
       if (sub === 'description') return Show.showInterfacesDescription(getRouter());
-      if (sub === 'status') return formatInvalidInput('show interfaces '.length);
       if (sub === 'summary') return Show.showInterfacesSummary(getRouter());
-      if (sub === 'trunk') return Show.showInterfacesTrunk(getRouter());
+      // Sans interface nommée, IOS rend la vue pour TOUTES : proposer le
+      // mot-clé et refuser sa forme nue serait une aide qui ment.
+      if (args.length === 1 && (sub === 'stats' || sub === 'accounting' || sub === 'rate-limit')) {
+        const vue = sub === 'stats' ? Show.showInterfaceStats
+          : sub === 'accounting' ? Show.showInterfaceAccounting
+            : Show.showInterfaceRateLimit;
+        return [...getRouter()._getPortsInternal().keys()]
+          .map((n) => vue(getRouter(), n)).join('\n');
+      }
       const last = args[args.length - 1]?.toLowerCase();
-      const isViewModifier = last === 'accounting' || last === 'stats'
-        || last === 'switchport' || last === 'rate-limit';
+      const isViewModifier = last === 'accounting' || last === 'stats' || last === 'rate-limit';
       const ifPart = isViewModifier ? args.slice(0, -1).join(' ') : args.join(' ');
       const ifName = resolveInterfaceName(getRouter(), ifPart);
       if (!ifName) {
-        const line = `show interface ${args.join(' ')}`;
         // `ifPart` (the invalid argument) always starts right after the
         // fixed "show interface " prefix, regardless of the view modifier.
         const marker = ' '.repeat('show interface '.length) + '^';
@@ -1055,7 +1038,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       }
       if (last === 'accounting') return Show.showInterfaceAccounting(getRouter(), ifName);
       if (last === 'stats') return Show.showInterfaceStats(getRouter(), ifName);
-      if (last === 'switchport') return Show.showInterfaceSwitchport(getRouter(), ifName);
       if (last === 'rate-limit') return Show.showInterfaceRateLimit(getRouter(), ifName);
       return Show.showInterface(getRouter(), ifName);
     };

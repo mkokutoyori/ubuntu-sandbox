@@ -1,10 +1,6 @@
 export type DebugCategory =
   | 'crypto.isakmp'
   | 'crypto.ipsec'
-  | 'crypto.ikev2'
-  | 'crypto.pki'
-  | 'crypto.pki.transactions'
-  | 'crypto.pki.messages'
   | 'ip.ospf.adj'
   | 'ip.ospf.events'
   | 'ip.ospf.spf'
@@ -43,10 +39,23 @@ export type DebugCategory =
   | 'ip.pim'
   | 'vxlan'
   | 'port-security'
-  | 'ipv6.packet';
+  | 'ipv6.packet'
+  | 'mac'
+  | 'link'
+  | 'stp.events'
+  | 'stp.bpdu';
 
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
+
+const OSPF_TYPE_NAMES: Readonly<Record<number, string>> = {
+  1: 'Hello', 2: 'Data Description', 3: 'LS Request', 4: 'LS Update', 5: 'LS Ack',
+};
+
+function ospfTypeName(code: number | undefined): string {
+  return OSPF_TYPE_NAMES[code ?? 0] ?? 'unknown';
+}
 
 function maskToCidr(mask: string): number {
   if (/^\d+$/.test(mask)) return Number(mask);
@@ -88,28 +97,123 @@ export interface DebugPacketFacts {
   dstPort?: number;
 }
 
+const DEBUG_CATEGORIES: ReadonlySet<string> = new Set<string>([
+  'crypto.isakmp', 'crypto.ipsec',
+  'ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
+  'ip.ospf.packet', 'ip.ospf.lsa-generation',
+  'ip.rip', 'ip.eigrp', 'ip.bgp', 'ip.routing', 'ip.icmp', 'ip.packet',
+  'ip.tcp', 'ip.udp', 'ip.nat', 'ip.arp', 'interface', 'ip.dhcp.server',
+  'ip.ssh', 'ip.nhrp', 'standby', 'vrrp', 'glbp', 'track',
+  'ip.sla.trace', 'ip.sla.error',
+  'aaa.authentication', 'aaa.authorization', 'aaa.accounting',
+  'radius', 'tacacs', 'ntp.events', 'ntp.packets',
+  'lldp.packets', 'cdp.packets', 'ip.pim', 'vxlan', 'port-security',
+  'ipv6.packet', 'mac', 'link', 'stp.events', 'stp.bpdu',
+]);
+
+const ALIAS: ReadonlyArray<readonly [RegExp, DebugCategory]> = [
+  [/^(ip\.)?arp$/, 'ip.arp'],
+  [/^cdp(\.|\s|$)/, 'cdp.packets'],
+  [/^lldp(\.|\s|$)/, 'lldp.packets'],
+  [/^port[-_ ]security$/, 'port-security'],
+  [/^(ip[. ])?dhcp/, 'ip.dhcp.server'],
+  [/^vxlan$/, 'vxlan'],
+  [/^mac([- ]address-table)?$/, 'mac'],
+  [/^link([- ]state)?$/, 'link'],
+  [/^spanning[- ]tree\s*bpdu/, 'stp.bpdu'],
+  [/^spanning[- ]tree\s*event/, 'stp.events'],
+  [/^bpdu$/, 'stp.bpdu'],
+  [/^events?$/, 'stp.events'],
+];
+
+export type DebugPlatform = 'router' | 'switch';
+
+const SWITCH_ONLY: ReadonlySet<string> = new Set(['mac', 'link', 'stp.events', 'stp.bpdu']);
+
+const SWITCH_CATEGORIES: ReadonlySet<string> = new Set<string>([
+  'mac', 'link', 'stp.events', 'stp.bpdu',
+  'ip.arp', 'cdp.packets', 'lldp.packets', 'port-security',
+  'ip.dhcp.server', 'vxlan', 'interface',
+]);
+
+export function categoryOnPlatform(category: string, platform: DebugPlatform): boolean {
+  return platform === 'switch'
+    ? SWITCH_CATEGORIES.has(category)
+    : !SWITCH_ONLY.has(category);
+}
+
+export function debugCategoriesFor(arg: string): DebugCategory[] | null {
+  const w = arg.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!w) return null;
+  if (/^spanning[- ]tree( all)?$/.test(w)) return ['stp.events', 'stp.bpdu'];
+  for (const [re, cat] of ALIAS) if (re.test(w)) return [cat];
+  if (DEBUG_CATEGORIES.has(w as DebugCategory)) return [w as DebugCategory];
+  return null;
+}
+
 export class RouterDebugService implements TerminalDebugSource {
+  constructor(private readonly platform: DebugPlatform = 'router') {}
+
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
   private readonly broadcast = new DebugBroadcast();
 
-  private static readonly VOLUMINEUX: ReadonlySet<string> = new Set([
-    'ip.packet', 'ip.tcp', 'ip.udp', 'all',
-  ]);
+  static flagLabel(flag: { category: DebugCategory; scope?: string; detail?: boolean }): string {
+    if (flag.category === 'interface' && flag.scope) {
+      return `Interface ${flag.scope} debugging is on`;
+    }
+    const portee = flag.scope ? ` for access list ${flag.scope}` : '';
+    return `${RouterDebugService.label(flag.category)} debugging is on`
+      + `${portee}${flag.detail ? ' (detailed)' : ''}`;
+  }
 
-  private static avertissement(category: DebugCategory): string {
-    return RouterDebugService.VOLUMINEUX.has(String(category))
-      ? 'MUST NOT be used on production networks; High CPU utilization may occur.\n'
-      : '';
+  knows(category: DebugCategory): boolean {
+    return categoryOnPlatform(category, this.platform);
+  }
+
+  private requirePlatform(category: DebugCategory): void {
+    if (!this.knows(category)) throw new CliInvalidInput();
   }
 
   enable(category: DebugCategory, scope?: string, detail = false): string {
-    this.flags.set(category, { category, enabledAtMs: Date.now(), scope, detail });
-    return `${RouterDebugService.avertissement(category)}${RouterDebugService.label(category)} debugging is on${scope ? ' for ' + scope : ''}${detail ? ' (detailed)' : ''}`;
+    this.requirePlatform(category);
+    const flag = { category, enabledAtMs: Date.now(), scope, detail };
+    this.flags.set(category, flag);
+    return RouterDebugService.flagLabel(flag);
   }
 
   disable(category: DebugCategory): string {
+    this.requirePlatform(category);
     this.flags.delete(category);
     return `${RouterDebugService.label(category)} debugging is off`;
+  }
+
+  recognizes(arg: string): boolean {
+    const cats = debugCategoriesFor(arg);
+    return cats !== null && cats.every((c) => categoryOnPlatform(c, this.platform));
+  }
+
+  enableScope(arg: string): string {
+    const cats = debugCategoriesFor(arg);
+    if (!cats || !this.recognizes(arg)) {
+      throw new CliInvalidInput({ token: arg.trim().split(/\s+/)[0] });
+    }
+    let out = '';
+    for (const c of cats) out = this.enable(c);
+    return cats.length > 1 ? `${RouterDebugService.label(cats[0])} debugging is on` : out;
+  }
+
+  disableScope(arg: string): string {
+    const cats = debugCategoriesFor(arg);
+    if (!cats || !this.recognizes(arg)) {
+      throw new CliInvalidInput({ token: arg.trim().split(/\s+/)[0] });
+    }
+    let out = '';
+    for (const c of cats) out = this.disable(c);
+    return cats.length > 1 ? `${RouterDebugService.label(cats[0])} debugging is off` : out;
+  }
+
+  isStpEnabled(): boolean {
+    return this.flags.has('stp.events') || this.flags.has('stp.bpdu');
   }
 
   isEnabled(category: DebugCategory): boolean { return this.flags.has(category); }
@@ -131,16 +235,18 @@ export class RouterDebugService implements TerminalDebugSource {
 
   enableAll(): string {
     const now = Date.now();
-    for (const c of RouterDebugService.ALL) {
+    const tout = this.platform === 'switch'
+      ? [...SWITCH_CATEGORIES] as DebugCategory[]
+      : RouterDebugService.ALL.filter((c) => categoryOnPlatform(c, this.platform));
+    for (const c of tout) {
       if (!this.flags.has(c)) this.flags.set(c, { category: c, enabledAtMs: now });
     }
     return 'All possible debugging has been turned on';
   }
 
   disableAll(): string {
-    const n = this.flags.size;
     this.flags.clear();
-    return n === 0 ? 'All possible debugging has been turned off' : `${n} debug flag${n === 1 ? '' : 's'} have been turned off`;
+    return 'All possible debugging has been turned off';
   }
 
   subscribe(listener: DebugLineListener): () => void {
@@ -324,7 +430,9 @@ export class RouterDebugService implements TerminalDebugSource {
     this.broadcast.track(bus.subscribe('ospf.neighbor.state-changed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
-      this.emit('ip.ospf.adj', `OSPF-5-ADJCHG: Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`);
+      this.emit('ip.ospf.adj',
+        `OSPF: ${p.iface} Nbr ${p.neighborId} state ${p.oldState} -> ${p.newState}, `
+        + `event ${p.event}`);
     }));
     this.broadcast.track(bus.subscribe('ospf.interface.state-changed', (e) => {
       if (!mine(e.payload)) return;
@@ -345,17 +453,26 @@ export class RouterDebugService implements TerminalDebugSource {
     }));
     this.broadcast.track(bus.subscribe('ospf.hello.send-requested', (e) => {
       if (!mine(e.payload)) return;
-      this.emit('ip.ospf.hello', `OSPF: Send hello packet on ${e.payload.iface}`);
+      const p = e.payload as unknown as { iface?: string; areaId?: string; srcIp?: string };
+      this.emit('ip.ospf.hello',
+        `OSPF: Send hello to 224.0.0.5 area ${p.areaId ?? '0'} on ${p.iface ?? '?'}`
+        + `${p.srcIp ? ` from ${p.srcIp}` : ''}`);
     }));
     this.broadcast.track(bus.subscribe('ospf.packet.received', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload;
-      this.emit('ip.ospf.packet', `OSPF: rcv packet from ${p.srcIp} on ${p.iface}`);
+      const p = e.payload as unknown as { srcIp?: string; iface?: string; packet?: { packetType?: number } };
+      const t = p.packet?.packetType;
+      this.emit('ip.ospf.packet',
+        `OSPF: rcv. v:2 t:${t ?? 0} (${ospfTypeName(t)}) `
+        + `from ${p.srcIp ?? '?'} on ${p.iface ?? '?'}`);
     }));
     this.broadcast.track(bus.subscribe('ospf.packet.outgoing', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload;
-      this.emit('ip.ospf.packet', `OSPF: snd packet to ${p.destIp} on ${p.iface}`);
+      const p = e.payload as unknown as { destIp?: string; iface?: string; packet?: { packetType?: number } };
+      const t = p.packet?.packetType;
+      this.emit('ip.ospf.packet',
+        `OSPF: snd. v:2 t:${t ?? 0} (${ospfTypeName(t)}) `
+        + `to ${p.destIp ?? '?'} on ${p.iface ?? '?'}`);
     }));
 
     // Neighbour discovery, multicast, VXLAN and the DHCP client. These used
@@ -440,8 +557,10 @@ export class RouterDebugService implements TerminalDebugSource {
       const ip = decodeIp(frame);
       if (!ip) return;
       const faits = RouterDebugService.faitsDe(ip);
+      const verbe = dir === 'sent' ? 'sending' : 'rcvd 3';
+      const entree = dir === 'sent' ? 'local' : iface;
       this.emit('ip.packet',
-        `IP: s=${ip.src} (${iface}), d=${ip.dst}, len ${ip.len}, ${dir} (proto ${ip.proto})`, faits);
+        `IP: s=${ip.src} (${entree}), d=${ip.dst} (${iface}), len ${ip.len}, ${verbe}`, faits);
       const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
       if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail, faits);
       if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir, faits);
@@ -467,12 +586,14 @@ export class RouterDebugService implements TerminalDebugSource {
       if (!mine(e.payload)) return;
       const p = e.payload as { portName?: string };
       this.emit('interface', `${p.portName ?? '?'} came back up`);
+      this.emit('link', `LINK: Interface ${p.portName ?? '?'}, changed state to up`);
     }));
     this.broadcast.track(bus.subscribe('port.link.down', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as { portName?: string };
       this.emit('interface', `${p.portName ?? '?'} went down`);
       this.emit('interface', `${p.portName ?? '?'} keepalive timer expired`);
+      this.emit('link', `LINK: Interface ${p.portName ?? '?'}, changed state to down`);
     }));
     // `ip.sla.trace`/`track` étaient déclarées comme catégories et
     // émises par personne : `debug ip sla trace` retombait sur le
@@ -560,6 +681,176 @@ export class RouterDebugService implements TerminalDebugSource {
         `PSECURE: Aged out ${toCiscoMac(String(p.mac ?? ''))} on ${p.portName ?? '?'}`);
     }));
 
+    this.broadcast.track(bus.subscribe('eigrp.neighbor.state-changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { neighborId?: string; iface?: string; oldState?: string; newState?: string };
+      this.emit('ip.eigrp',
+        `EIGRP: Neighbor ${p.neighborId ?? '?'} (${shortIface(p.iface ?? '?')}) is `
+        + `${p.newState === 'up' ? 'up' : 'down'}: ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('eigrp.neighbor.k-value-mismatch', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { neighborId?: string; iface?: string };
+      this.emit('ip.eigrp',
+        `EIGRP: Neighbor ${p.neighborId ?? '?'} (${shortIface(p.iface ?? '?')}) K-value mismatch`);
+    }));
+
+    this.broadcast.track(bus.subscribe('router.ssh.session.opened', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { user?: string; peerIp?: string };
+      this.emit('ip.ssh',
+        `SSH: Session opened for user '${p.user ?? '?'}' from ${p.peerIp ?? '?'}`);
+    }));
+    this.broadcast.track(bus.subscribe('router.ssh.session.closed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { user?: string; peerIp?: string; reason?: string };
+      this.emit('ip.ssh',
+        `SSH: Session closed for user '${p.user ?? '?'}' from ${p.peerIp ?? '?'}`
+        + `${p.reason ? ` (${p.reason})` : ''}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('vrrp.state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('vrrp',
+        `VRRP: ${shortIface(p.iface)} Grp ${p.vrid} state ${p.oldState} -> ${p.newState}`);
+    }));
+    this.broadcast.track(bus.subscribe('vrrp.master.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { iface?: string; vrid?: number; masterIp?: string | null };
+      this.emit('vrrp',
+        `VRRP: ${shortIface(p.iface ?? '?')} Grp ${p.vrid ?? 0} master is ${p.masterIp ?? 'unknown'}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('glbp.avg.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('glbp',
+        `GLBP: ${shortIface(p.iface)} Grp ${p.group} AVG state ${p.oldState} -> ${p.newState}`);
+    }));
+    this.broadcast.track(bus.subscribe('glbp.avf.state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { iface?: string; group?: number; forwarder?: number; newState?: string };
+      this.emit('glbp',
+        `GLBP: ${shortIface(p.iface ?? '?')} Grp ${p.group ?? 0} Fwd ${p.forwarder ?? 0} `
+        + `state ${p.newState ?? '?'}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('ntp.synced', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ntp.events',
+        `NTP: system clock synchronised to ${p.serverIp}, stratum ${p.newStratum}, `
+        + `offset ${p.offsetMs} ms`);
+    }));
+    this.broadcast.track(bus.subscribe('ntp.unsynced', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('ntp.events', 'NTP: system clock has lost synchronisation');
+    }));
+    this.broadcast.track(bus.subscribe('ntp.packet.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { destIp?: string; mode?: string };
+      this.emit('ntp.packets', `NTP: xmit packet to ${p.destIp ?? '?'}, mode ${p.mode ?? 'client'}`);
+    }));
+    this.broadcast.track(bus.subscribe('ntp.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { srcIp?: string; mode?: string };
+      this.emit('ntp.packets', `NTP: rcv packet from ${p.srcIp ?? '?'}, mode ${p.mode ?? 'server'}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('radius.auth.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { username?: string; serverIp?: string };
+      this.emit('radius',
+        `RADIUS: Received Access-Accept for user ${p.username ?? '?'} from ${p.serverIp ?? '?'}`);
+      this.emit('aaa.authentication',
+        `AAA/AUTHEN: status = PASS for user '${p.username ?? '?'}'`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.auth.rejected', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { username?: string; serverIp?: string };
+      this.emit('radius',
+        `RADIUS: Received Access-Reject for user ${p.username ?? '?'} from ${p.serverIp ?? '?'}`);
+      this.emit('aaa.authentication',
+        `AAA/AUTHEN: status = FAIL for user '${p.username ?? '?'}'`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.server.dead', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { serverIp?: string };
+      this.emit('radius', `RADIUS: Marking server ${p.serverIp ?? '?'} as DEAD`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.accounting.record', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { username?: string; type?: string };
+      this.emit('aaa.accounting',
+        `AAA/ACCT: ${p.type ?? 'record'} for user '${p.username ?? '?'}'`);
+    }));
+    this.broadcast.track(bus.subscribe('tacacs.acct.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { username?: string };
+      this.emit('tacacs', `TAC+: accounting complete for user ${p.username ?? '?'}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('stp.role.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: ${p.port} role change ${p.oldRole} -> ${p.newRole}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.port-state.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: ${p.port} VLAN ${p.vlan} state change ${p.oldState ?? 'none'} -> ${p.newState}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.root.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: New root ${p.newRootMac} (priority ${p.newRootPriority}), root port ${p.rootPort ?? 'none'}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.topology.change', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: Topology change (${p.origin})${p.port ? ` on ${p.port}` : ''}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.bpdu.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.bpdu', `STP: Tx BPDU on ${p.port} Root Bridge ID ${p.rootMac} cost ${p.pathCost}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.bpdu.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as unknown as { port?: string; senderMac?: string; rootMac?: string; pathCost?: number };
+      this.emit('stp.bpdu',
+        `STP: Rx BPDU on ${p.port ?? '?'} Bridge ID ${p.senderMac ?? '?'} `
+        + `Root Bridge ID ${p.rootMac ?? '?'} cost ${p.pathCost ?? 0}`);
+    }));
+    this.broadcast.track(bus.subscribe('stp.bpdu-guard.violation', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('stp.events', `STP: BPDU guard violation on ${p.port} (sender ${p.senderMac})`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.learned', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('mac', `MAC: Learned ${p.mac} vlan ${p.vlan} on ${p.port} (dynamic)`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.moved', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('mac', `MAC: Moved ${p.mac} vlan ${p.vlan} from ${p.fromPort} to ${p.port}`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.aged', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('mac', `MAC: Aged out ${p.mac} vlan ${p.vlan} on ${p.port}`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.cleared', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('mac', `MAC: Cleared dynamic entries from address table`);
+    }));
+    this.broadcast.track(bus.subscribe('switch.mac.flushed', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('mac', `MAC: Flushed address table`);
+    }));
     this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as { frame: unknown; portName?: string };
@@ -580,10 +871,6 @@ export class RouterDebugService implements TerminalDebugSource {
     switch (category) {
       case 'crypto.isakmp': return 'Crypto ISAKMP';
       case 'crypto.ipsec': return 'Crypto IPSEC';
-      case 'crypto.ikev2': return 'IKEv2';
-      case 'crypto.pki': return 'Crypto PKI';
-      case 'crypto.pki.transactions': return 'PKI Transactions';
-      case 'crypto.pki.messages': return 'PKI Messages';
       case 'ip.ospf.adj': return 'OSPF adjacency';
       case 'ip.ospf.events': return 'OSPF events';
       case 'ip.ospf.spf': return 'OSPF SPF';
@@ -601,7 +888,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.nat': return 'IP NAT';
       case 'ip.arp': return 'ARP packet';
       case 'interface': return 'Interface';
-      case 'ip.dhcp.server': return 'IP DHCP server';
+      case 'ip.dhcp.server': return 'DHCP server';
       case 'ip.ssh': return 'SSH';
       case 'ip.nhrp': return 'NHRP';
       case 'standby': return 'HSRP';
@@ -623,6 +910,10 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'vxlan': return 'VXLAN';
       case 'port-security': return 'Port security';
       case 'ipv6.packet': return 'IPv6 packet';
+      case 'mac': return 'MAC address table';
+      case 'link': return 'Link state';
+      case 'stp.events': return 'Spanning Tree event';
+      case 'stp.bpdu': return 'Spanning Tree BPDU';
     }
   }
 
@@ -656,18 +947,37 @@ export class RouterDebugService implements TerminalDebugSource {
     return category !== null && this.isEnabled(category);
   }
 
-  private static groupe(category: DebugCategory): string {
-    const c = String(category);
-    if (c.startsWith('ip.ospf')) return 'OSPF';
-    if (c.startsWith('crypto.pki')) return 'Crypto PKI';
-    if (c.startsWith('crypto')) return 'Crypto';
-    if (c === 'ip.arp') return 'ARP';
-    if (c === 'ip.routing') return 'IP routing';
-    if (c === 'ip.packet') return 'IP packet';
-    if (c === 'ip.icmp') return 'ICMP';
-    if (c === 'ip.nat') return 'IP NAT';
-    if (c.startsWith('ip.')) return RouterDebugService.label(category);
-    return RouterDebugService.label(category);
+  private static readonly RUBRIQUES: ReadonlyArray<readonly [string, ReadonlyArray<DebugCategory>]> = [
+    ['Generic IP', ['ip.packet', 'ip.icmp', 'ip.tcp', 'ip.udp', 'ip.arp', 'ip.routing', 'ip.nat']],
+    ['IPv6', ['ipv6.packet']],
+    ['OSPF', ['ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
+      'ip.ospf.packet', 'ip.ospf.lsa-generation']],
+    ['RIP', ['ip.rip']],
+    ['EIGRP', ['ip.eigrp']],
+    ['BGP', ['ip.bgp']],
+    ['PIM', ['ip.pim']],
+    ['NHRP', ['ip.nhrp']],
+    ['DHCP', ['ip.dhcp.server']],
+    ['SSH', ['ip.ssh']],
+    ['First-hop redundancy', ['standby', 'vrrp', 'glbp']],
+    ['IP SLA', ['ip.sla.trace', 'ip.sla.error', 'track']],
+    ['AAA', ['aaa.authentication', 'aaa.authorization', 'aaa.accounting', 'radius', 'tacacs']],
+    ['NTP', ['ntp.events', 'ntp.packets']],
+    ['Neighbour discovery', ['cdp.packets', 'lldp.packets']],
+    ['Crypto Subsystem', ['crypto.isakmp', 'crypto.ipsec']],
+    ['Spanning Tree', ['stp.events', 'stp.bpdu']],
+    ['Switching', ['mac', 'link']],
+    ['Interface', ['interface', 'port-security']],
+    ['VXLAN', ['vxlan']],
+  ];
+
+  private static rubrique(category: DebugCategory): { nom: string; rang: number; ordre: number } {
+    for (let i = 0; i < RouterDebugService.RUBRIQUES.length; i++) {
+      const [nom, membres] = RouterDebugService.RUBRIQUES[i];
+      const ordre = membres.indexOf(category);
+      if (ordre >= 0) return { nom, rang: i, ordre };
+    }
+    return { nom: 'Other', rang: RouterDebugService.RUBRIQUES.length, ordre: 0 };
   }
 
   formatConditions(): string {
@@ -679,23 +989,19 @@ export class RouterDebugService implements TerminalDebugSource {
 
   format(): string {
     if (this.flags.size === 0) return 'No debug flags are enabled';
-    const parGroupe = new Map<string, string[]>();
-    for (const f of this.list()) {
-      const custom = this.categoryRenderers.get(f.category);
-      const ligne = custom
-        ? custom()
-        : f.category === 'interface' && f.scope
-          ? `Interface ${f.scope} debugging is on`
-          : `${RouterDebugService.label(f.category)} debugging is on${f.scope ? ' for ' + f.scope : ''}${f.detail ? ' (detailed)' : ''}`;
-      const g = RouterDebugService.groupe(f.category);
-      const dejaLa = parGroupe.get(g);
-      if (dejaLa) dejaLa.push(...ligne.split('\n'));
-      else parGroupe.set(g, ligne.split('\n'));
-    }
+    const rangees = [...this.flags.values()]
+      .map((f) => ({ f, r: RouterDebugService.rubrique(f.category) }))
+      .sort((a, b) => a.r.rang - b.r.rang || a.r.ordre - b.r.ordre);
     const out: string[] = [];
-    for (const [g, lignes] of parGroupe) {
-      out.push(`${g}:`);
-      for (const l of lignes) out.push(`  ${l}`);
+    let rubriqueCourante: string | null = null;
+    for (const { f, r } of rangees) {
+      if (r.nom !== rubriqueCourante) {
+        out.push(`${r.nom}:`);
+        rubriqueCourante = r.nom;
+      }
+      const custom = this.categoryRenderers.get(f.category);
+      const ligne = custom ? custom() : RouterDebugService.flagLabel(f);
+      for (const l of ligne.split('\n')) out.push(`  ${l}`);
     }
     return out.join('\n');
   }

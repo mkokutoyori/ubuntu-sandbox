@@ -1887,46 +1887,44 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const guard = (raw: string): boolean => /[A-Z]/.test((raw.trim().split(/\s+/)[0]) ?? '');
 
     p.register('show debugging', 'Display active debugging', () =>
-      this.mode === 'user' ? "% Invalid input detected at '^' marker." : (svc()?.format() ?? 'No debugging is enabled'));
+      this.mode === 'user' ? "% Invalid input detected at '^' marker." : (svc()?.format() ?? 'No debug flags are enabled'));
 
-    p.register('debug all', 'Enable all debugging', () => svc()?.enableAll() ?? 'All possible debugging is on');
+    p.register('debug all', 'Enable all debugging', () => svc()?.enableAll() ?? '');
     p.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
       const what = a.join(' ') || 'all';
-      svc()?.enable('spanning-tree ' + what);
-      return `Spanning Tree ${what} debugging is on`;
+      return svc()?.enableScope('spanning-tree ' + what) ?? '';
     });
-    p.registerGreedy('debug mac address-table', 'Enable MAC table debugging', () => svc()?.enable('mac') ?? '');
-    p.registerGreedy('debug mac-address-table', 'Enable MAC table debugging', () => svc()?.enable('mac') ?? '');
-    p.registerGreedy('debug link-state', 'Enable link-state debugging', () => svc()?.enable('link') ?? '');
+    p.registerGreedy('debug mac address-table', 'Enable MAC table debugging', () => svc()?.enableScope('mac') ?? '');
+    p.registerGreedy('debug mac-address-table', 'Enable MAC table debugging', () => svc()?.enableScope('mac') ?? '');
+    p.registerGreedy('debug link-state', 'Enable link-state debugging', () => svc()?.enableScope('link') ?? '');
     p.registerGreedy('debug', 'Enable debugging', (a, raw) => {
       if (guard(raw ?? '')) return "% Invalid input detected at '^' marker.";
       const arg = a.join(' ');
       const service = svc();
       if (!service || !service.recognizes(arg)) return "% Invalid input detected at '^' marker.";
-      return service.enable(arg);
+      return service.enableScope(arg);
     });
 
     p.register('no debug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
     p.register('undebug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
     p.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
       const what = a.join(' ') || 'all';
-      svc()?.disable('spanning-tree ' + what);
-      return `Spanning Tree ${what} debugging is off`;
+      return svc()?.disableScope('spanning-tree ' + what) ?? '';
     });
-    p.registerGreedy('no debug mac address-table', 'Disable MAC table debugging', () => svc()?.disable('mac') ?? '');
-    p.registerGreedy('no debug link-state', 'Disable link-state debugging', () => svc()?.disable('link') ?? '');
+    p.registerGreedy('no debug mac address-table', 'Disable MAC table debugging', () => svc()?.disableScope('mac') ?? '');
+    p.registerGreedy('no debug link-state', 'Disable link-state debugging', () => svc()?.disableScope('link') ?? '');
     const undebugScope = (arg: string): string => {
       const service = svc();
       if (!service) return '';
       if (arg.trim() === '' || arg.trim() === 'all') return service.disableAll();
       if (!service.recognizes(arg)) return "% Invalid input detected at '^' marker.";
-      return service.disable(arg);
+      return service.disableScope(arg);
     };
     p.registerGreedy('undebug', 'Disable debugging', (a) => undebugScope(a.join(' ')));
   }
 
-  private switchDebug(): import('../switch/SwitchDebugService').SwitchDebugService | undefined {
-    return (this.d() as unknown as { getDebugService?: () => import('../switch/SwitchDebugService').SwitchDebugService }).getDebugService?.();
+  private switchDebug(): import('../router/diag/RouterDebugService').RouterDebugService | undefined {
+    return (this.d() as unknown as { getDebugService?: () => import('../router/diag/RouterDebugService').RouterDebugService }).getDebugService?.();
   }
 
   private showMstConfig(): string {

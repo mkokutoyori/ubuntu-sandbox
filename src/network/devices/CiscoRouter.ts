@@ -63,7 +63,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
 import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
-import { CISCO_HARDWARE_PROFILES } from './shells/cisco/CiscoCommonShow';
+import { CISCO_HARDWARE_PROFILES, licenseTable } from './shells/cisco/CiscoCommonShow';
 import { formatUptime } from './shells/cisco/CiscoTrackCommands';
 
 export class CiscoRouter extends Router {
@@ -600,16 +600,7 @@ export class CiscoRouter extends Router {
       'third-party authority to import, export, distribute or use encryption.',
       '',
       '',
-      'Technology Package License Information for Module:\'c2900\'',
-      '',
-      '-----------------------------------------------------------------',
-      'Technology    Technology-package           Technology-package',
-      '              Current       Type           Next reboot',
-      '-----------------------------------------------------------------',
-      'ipbase        ipbasek9      Permanent      ipbasek9',
-      'security      None          None           None',
-      'uc            None          None           None',
-      'data          None          None           None',
+      ...licenseTable(),
       '',
       `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
       `Processor board ID ${hw.serialNumber}`,

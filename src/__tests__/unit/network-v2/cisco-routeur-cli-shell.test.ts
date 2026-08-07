@@ -228,12 +228,12 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(await r.getPrompt()).toBe('Router>');
     });
 
-    it('25. should support transition to VLAN Configuration mode (if supported on router/switch)', async () => {
+    it('25. refuse le mode VLAN : un ISR 2911 sans module EtherSwitch ne commute pas', async () => {
       const r = setupRouter();
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
-      await r.executeCommand('vlan 10');
-      expect(await r.getPrompt()).toBe('Router(config-vlan)#');
+      expect(await r.executeCommand('vlan 10')).toContain('% Invalid input detected');
+      expect(await r.getPrompt()).toBe('Router(config)#');
     });
   });
 
@@ -2305,14 +2305,14 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(await r.getPrompt()).toBe('Router(config-subif)#');
     });
 
-    it('254. should jump directly from subinterface to VLAN configuration directly', async () => {
+    it('254. le refus de `vlan` en sous-interface laisse le mode intact', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
       await r.executeCommand('interface GigabitEthernet0/0.10');
       expect(await r.getPrompt()).toBe('Router(config-subif)#');
-      await r.executeCommand('vlan 10');
-      expect(await r.getPrompt()).toBe('Router(config-vlan)#');
+      expect(await r.executeCommand('vlan 10')).toContain('% Invalid input detected');
+      expect(await r.getPrompt()).toBe('Router(config-subif)#');
     });
 
     it('255. should list sub-context help screen inside config-router mode ("?")', async () => {
@@ -2425,13 +2425,12 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(await r.getPrompt()).toBe('Router(config-router)#');
     });
 
-    it('266. should maintain exact sub-mode context on invalid command parameters rejection inside config-vlan', async () => {
+    it('266. une commande inconnue ne fait pas quitter la configuration globale', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
-      await r.executeCommand('vlan 10');
       await r.executeCommand('name_typo invalid_name');
-      expect(await r.getPrompt()).toBe('Router(config-vlan)#');
+      expect(await r.getPrompt()).toBe('Router(config)#');
     });
 
     it('267. should show correct sub-interface details inside show interfaces GigabitEthernet0/0.10 SVI description', async () => {
@@ -2445,12 +2444,10 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(output).toContain('GigabitEthernet0/0.10');
     });
 
-    it('268. should jump directly from VLAN SVI to Global config VRF submode directly', async () => {
+    it('268. should jump directly from Global config to VRF submode directly', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
-      await r.executeCommand('vlan 10');
-      expect(await r.getPrompt()).toBe('Router(config-vlan)#');
       await r.executeCommand('ip vrf RED');
       expect(await r.getPrompt()).toBe('Router(config-vrf)#');
     });

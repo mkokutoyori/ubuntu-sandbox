@@ -41,7 +41,7 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import type { TimerHandle } from '@/events/Scheduler';
 import { Logger } from '../core/Logger';
-import { SwitchDebugService } from './switch/SwitchDebugService';
+import { RouterDebugService } from './router/diag/RouterDebugService';
 import { ArchiveService } from './router/archive/ArchiveService';
 
 export class CiscoSwitch extends Switch {
@@ -295,10 +295,10 @@ export class CiscoSwitch extends Switch {
     this._debugService?.attachToBus(this.getBus(), this.id);
   }
 
-  private _debugService: SwitchDebugService | null = null;
+  private _debugService: RouterDebugService | null = null;
 
-  getDebugService(): SwitchDebugService {
-    if (!this._debugService) this._debugService = new SwitchDebugService();
+  getDebugService(): RouterDebugService {
+    if (!this._debugService) this._debugService = new RouterDebugService('switch');
     this._debugService.attachToBus(this.getBus(), this.id);
     return this._debugService;
   }

@@ -77,7 +77,10 @@ async function acl(r: CiscoRouter, nom: string, regles: string[]): Promise<strin
 const pause = () => new Promise((res) => setTimeout(res, 300));
 
 const paquets = (vues: string[]) => vues.filter(l => l.startsWith('IP: '));
-const proto = (vues: string[], n: number) => paquets(vues).filter(l => l.includes(`(proto ${n})`));
+const MARQUEUR_PROTO: Readonly<Record<number, RegExp>> = {
+  1: /^ICMP type=/, 6: /^TCP src=/, 17: /^UDP src=/,
+};
+const proto = (vues: string[], n: number) => vues.filter(l => MARQUEUR_PROTO[n]?.test(l));
 const transport = (vues: string[]) => vues.filter(l => l.startsWith('TCP src=') || l.startsWith('UDP src='));
 
 async function connecter(pc: LinuxPC, srv: LinuxServer, ip: string, port: number): Promise<void> {
@@ -120,7 +123,7 @@ describe('Scénario 7 — filtrage précis, du plus large au plus fin', () => {
   it('niveau 1 — l\'hôte seul laisse passer ICMP, UDP et TCP', async () => {
     const { r, pc, oracle, vues } = await lab();
     await acl(r, 'N1', [`permit ip host ${PC} any`]);
-    await run(r, 'debug ip packet N1');
+    await run(r, 'debug ip packet N1 detail');
 
     await troisProtocoles(pc, oracle);
 
@@ -132,7 +135,7 @@ describe('Scénario 7 — filtrage précis, du plus large au plus fin', () => {
   it('niveau 2 — restreindre au protocole écarte ICMP et UDP', async () => {
     const { r, pc, oracle, vues } = await lab();
     await acl(r, 'N2', [`permit tcp host ${PC} any`]);
-    await run(r, 'debug ip packet N2');
+    await run(r, 'debug ip packet N2 detail');
 
     await troisProtocoles(pc, oracle);
 
@@ -144,7 +147,7 @@ describe('Scénario 7 — filtrage précis, du plus large au plus fin', () => {
   it('niveau 3 — désigner le serveur écarte les autres destinations', async () => {
     const { r, pc, oracle, web, vues } = await lab();
     await acl(r, 'N3', [`permit tcp host ${PC} host ${ORACLE}`]);
-    await run(r, 'debug ip packet N3');
+    await run(r, 'debug ip packet N3 detail');
 
     await connecter(pc, oracle, ORACLE, 1521);
     await connecter(pc, web, WEB, 8080);
@@ -182,7 +185,7 @@ describe('Scénario 7 — filtrage précis, du plus large au plus fin', () => {
   it('le filtre le plus fin ne coupe pas les autres debugs', async () => {
     const { r, pc, oracle, vues } = await lab();
     await acl(r, 'N4', [`permit tcp host ${PC} host ${ORACLE} eq 1521`]);
-    await run(r, 'debug ip packet N4');
+    await run(r, 'debug ip packet N4 detail');
     await run(r, 'debug ip icmp');
 
     await run(pc, `ping -c 1 ${ORACLE}`);
@@ -195,7 +198,7 @@ describe('Scénario 7 — filtrage précis, du plus large au plus fin', () => {
   it('undebug all arrête le filtre le plus fin comme les autres', async () => {
     const { r, pc, oracle, vues } = await lab();
     await acl(r, 'N4', [`permit tcp host ${PC} host ${ORACLE} eq 1521`]);
-    await run(r, 'debug ip packet N4');
+    await run(r, 'debug ip packet N4 detail');
 
     await connecter(pc, oracle, ORACLE, 1521);
     const avant = paquets(vues).length;
