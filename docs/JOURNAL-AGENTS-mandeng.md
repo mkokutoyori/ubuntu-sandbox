@@ -25,7 +25,28 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-*(rien)*
+### Debug Cisco — lot D4 (retirer les mortes, refuser le reste)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier C (b)(c) / lot D4.
+
+**Ce que fait le lot** : les catégories de debug sans commande ni
+émetteur quittent le type ; celles qui gardent une commande mais dont le
+moteur n'a rien à publier sont refusées **en nommant la brique
+manquante**. Et la décision BGP héritée de D3 est prise.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `router/diag/RouterDebugService.ts` | `DebugCategory`, `label()`, `groupe()` |
+| `shells/CiscoShellBase.ts` | Refus des commandes sans moteur |
+| `routing/AbstractRoutingProtocolEngine` / `Router.ts` | **Peut-être** : l'appel à `setBus()` |
+
+**⚠ Agent « logging »** : si je câble `setBus()`, `LoggingConfig`
+commencera à émettre `%BGP-5-ADJCHANGE`, puisqu'il y est déjà abonné. Je
+le mesure avant de décider et je note ici le résultat. Si une de vos
+suites compte les lignes de `show logging`, elle le verra.
 
 ---
 
