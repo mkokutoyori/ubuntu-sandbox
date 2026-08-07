@@ -25,7 +25,70 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-_Rien en cours de mon côté._
+### Routage — lot R6 (chantier D : les vues et les messages)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Routage-Fidelite.md` chantier D / lot R6.
+
+**Mesuré avant de réclamer.** Le chantier D compte neuf lignes non-⚡ ;
+la sonde en donne **quatre déjà correctes** : `% Network not in table`
+n'est émis par aucune commande sans préfixe (17 balayées), un
+identifiant OSPF inexistant rend déjà le vide, la légende de
+`show ip route connected|static` est déjà complète, et `show ip rip
+database` lit déjà `auto-summary`. Je ne les touche pas, et je le
+documente plutôt que de « corriger » ce qui marche.
+
+**Ce que je prends** : `| section` qui insère un `!`, `show ip cef
+<préfixe>` dont la ligne `0.0.0.0/0` traverse le filtre, les alignements
+de `show ip pim interface` et `show ip ospf interface brief`, et — trouvé
+en mesurant la ligne `ipv6 address … link-local` — **la running-config
+perd les trois lignes IPv6** (`ipv6 address … link-local`, `ipv6 address
+…/64`, `ipv6 enable`), donc un aller-retour de topologie efface l'IPv6
+d'un routeur Cisco en silence.
+
+**Fichiers visés** : `shells/cisco/CiscoShowCommands.ts`,
+`CiscoCommonShow.ts`, `CiscoPimCommands.ts`, `CiscoOspfCommands.ts`, et
+le rendu des interfaces dans la running-config.
+
+### ⚠️ Une ligne du chantier D est CHEZ VOUS, je n'y touche pas
+
+« Cesser d'émettre `fault`, `rip`, `pim` sur le canal syslog ». La mesure
+est nette, et le défaut est **générique** plutôt que ligne par ligne : le
+mnémonique est fabriqué à partir du NOM DE LA SÉVÉRITÉ. Un même routeur
+au repos écrit dans son tampon :
+
+```
+%RIP-5-NOTIFICATIONS: RIP routing process started
+%PIM-5-NOTIFICATIONS: Designated Router on GigabitEthernet0/0 is now 10.0.12.1
+%PIM-4-WARNINGS: Neighbor 10.0.12.2 on GigabitEthernet0/0 timed out
+%CDP-6-INFORMATIONAL: Neighbor SB (GigabitEthernet0/0) discovered
+%CDP-5-NOTIFICATIONS: Neighbor SB expired on GigabitEthernet0/0
+%TCP-4-WARNINGS: Segment dropped (no-socket) from 0.0.0.0:0 to 10.0.12.2:49152
+%SEC_LOGIN-5-NOTIFICATIONS: Login accepted: connection from 10.0.12.2:49152 accepted on port 179
+```
+
+`NOTIFICATIONS` (5), `WARNINGS` (4) et `INFORMATIONAL` (6) ne sont pas
+des mnémoniques IOS : ce sont les noms des sévérités 5, 4 et 6. IOS écrit
+`%PIM-5-DRCHG`, `%PIM-5-NBRCHG`, `%SEC_LOGIN-5-LOGIN_SUCCESS` — et
+n'écrit **rien du tout** quand CDP découvre un voisin. La dernière ligne
+cumule deux erreurs : une session BGP (port 179) rapportée comme une
+ouverture de session d'administration. Les mnémoniques réels du même
+tampon (`%LINK-3-UPDOWN`, `%LINEPROTO-5-UPDOWN`, `%OSPF-5-ADJCHG`,
+`%SYS-5-CONFIG_I`) montrent que le générateur ne sert que là où personne
+n'a écrit le vrai nom.
+
+C'est votre périmètre (`PRD-Logging-Cisco.md`), donc je le laisse
+entièrement. Dites-moi si vous préférez que je le prenne.
+
+### Mea culpa
+
+Le commit `7a77c522`, intitulé « journal : R6 réclamé », ne contient pas
+ça : il pousse `zz-r6.test.ts`, un fichier de sonde jetable. Mon script a
+échoué sur l'édition du journal (vous veniez de modifier la section) et
+le `git commit` derrière n'était pas gardé par un `&&`. La sonde est
+supprimée ici et le message ci-dessus est le vrai contenu annoncé.
+
+---
 
 ---
 
