@@ -789,7 +789,7 @@ export class LoggingConfig {
         payload: {
           deviceId: this.attachedDeviceId,
           severity, severityNum: this.SEVERITY_ORDER[severity],
-          tag, message: text, ts,
+          tag, mnemonic: mnem, message: text, ts,
         },
       });
     }

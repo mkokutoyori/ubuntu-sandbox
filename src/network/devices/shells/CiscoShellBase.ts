@@ -742,9 +742,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const s of agent.listServers()) {
       if (!desired.has(s.ip)) agent.removeServer(s.ip);
     }
+    // `logging queue-limit [trap] <n>` borne la file de sortie du relais,
+    // qui est la seule file que cet agent possède : `esm` n'a rien
+    // derrière lui ici et ne change donc rien.
+    if (c.queueLimit && c.queueLimit.scope !== 'esm') agent.setQueueLimit(c.queueLimit.size);
     for (const h of c.hostConfigs) {
-      agent.addServer(h.ip,
-        { facility: fac, severityThreshold: mapSev(c.trapSeverity), port: h.port });
+      agent.addServer(h.ip, {
+        facility: fac, severityThreshold: mapSev(c.trapSeverity),
+        port: h.port, transport: h.transport, delimiter: c.delimiterTcp,
+      });
     }
     // `logging server-arp` : la résolution a lieu MAINTENANT, pas au
     // premier message. Sans le mot-clé le chemin ordinaire résout aussi,

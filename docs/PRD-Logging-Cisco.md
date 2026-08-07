@@ -245,7 +245,9 @@ et les briques existent presque toutes. Ce qui est livré :
 | `logging history [level]` / `logging history size <n>` | alimente la table que `show logging history` rend |
 | `logging count` | le tampon porte déjà facilité, mnémonique et horodatage |
 | `logging exception <size>` | rendu dans `show logging` |
-| `logging queue-limit [esm\|trap] <n>`, `logging message-counter {log\|debug\|syslog}`, `logging delimiter tcp`, `logging reload [level] [message-limit <n>]` | acceptées, bornées, et **reproduites telles quelles** dans la running-config, donc rejouées à l'import |
+| `logging delimiter tcp` | sépare réellement les messages sur la connexion TCP — voir §2.9 |
+| `logging queue-limit [trap] <n>` | borne réellement la file de sortie du relais syslog — voir §2.9 |
+| `logging message-counter {log\|debug\|syslog}`, `logging reload [level] [message-limit <n>]` | acceptées, bornées, et **reproduites telles quelles** dans la running-config, donc rejouées à l'import |
 
 Restent refusées, et uniquement celles-là, parce qu'il leur manque une
 brique entière que rien ici ne peut remplacer : `logging esm config` et
@@ -254,15 +256,16 @@ brique entière que rien ici ne peut remplacer : `logging esm config` et
 (pare-feu par zones — concept absent de tout le dépôt). Le refus prend
 les mots d'IOS pour une commande que la plateforme n'a pas.
 
-**Réserve honnête sur les quatre dernières du tableau** : elles sont
+**Réserve honnête sur les deux dernières du tableau** : elles sont
 analysées, bornées et rejouées, mais ne changent aucun comportement
-observable — la file du processus de journalisation, le compteur par
-classe, le délimiteur TCP et le niveau conservé au redémarrage n'ont
-pas de contrepartie dans ce simulateur (respectivement : aucune file
-asynchrone, aucun compteur par classe rendu, aucun transport TCP
-syslog, aucun redémarrage qui préserve un tampon). Elles ne sont plus
-muettes — elles étaient acceptées et invisibles, elles sont maintenant
-acceptées, validées et visibles — mais c'est tout ce qu'on peut en dire.
+observable — le compteur par classe et le niveau conservé au
+redémarrage n'ont pas de contrepartie dans ce simulateur (aucun
+compteur par classe rendu, aucun redémarrage qui préserve un tampon).
+Elles ne sont plus muettes — elles étaient acceptées et invisibles,
+elles sont maintenant acceptées, validées et visibles — mais c'est tout
+ce qu'on peut en dire. `logging delimiter tcp` et `logging queue-limit`
+étaient de cette liste et n'y sont plus : le §2.9 leur a donné le
+transport dont ils dépendaient.
 
 ### 2.5 bis Un abrégé non ambigu vaut le mot entier
 
@@ -312,6 +315,66 @@ qui a été supprimé est annoncé (`%LOGGING-4-RATELIMIT: N messages
 rate-limited`) plutôt que perdu en silence, et compté dans l'en-tête de
 `show logging`.
 
+### 2.9 `transport tcp` ouvre une vraie connexion (RFC 6587)
+
+Cette section n'était pas au programme : elle lève une limite que la
+première version de ce PRD s'était contentée d'écrire au §3. Le
+transport était stocké, rendu dans la configuration, relu à l'import —
+et le datagramme partait en UDP quand même. Ce qui manquait n'était pas
+le format mais la **connexion**.
+
+`SyslogAgent` ouvre désormais une vraie connexion TCP par collecteur, la
+garde ouverte (RFC 6587 « non-transparent framing », qui est ce que fait
+IOS), et met en attente les messages produits avant qu'elle soit
+établie — sinon le premier message de chaque session, celui qui dit
+précisément ce qui vient d'arriver, serait le seul à manquer. Changer le
+transport d'un collecteur ferme la connexion en cours, qui allait vers
+l'autre protocole. `SyslogHost.tcpConnect` est un port optionnel : un
+équipement sans pile TCP ne retombe pas en UDP en silence, il signale
+`no-tcp`, qui est une cause distincte de `no-route` — le chemin peut
+être parfait, c'est la machine qui ne sait pas ouvrir la connexion.
+
+**`logging delimiter tcp` tient son sens de là**, et de nulle part
+ailleurs : sur une connexion unique les messages se suivent, et sans
+délimiteur le collecteur ne sait pas où l'un finit et l'autre commence.
+Le mot-clé ne pouvait donc rien vouloir dire tant que rien ne partait en
+TCP.
+
+**Le piège de ce transport, écrit ici parce qu'il a été payé** : en TCP,
+**émettre un message produit de l'activité réseau, et cette activité
+produit des messages**. Un collecteur injoignable donnait donc :
+ouvrir la connexion échoue → l'échec produit un `Segment dropped …` →
+ce message tente d'ouvrir la connexion → … Le bus étant asynchrone, ce
+n'était pas une récursion qu'un verrou de réentrance pouvait arrêter :
+c'était un aller-retour sans fin, qui bloquait la machine entière (une
+suite de tests entière ne rendait plus la main). Ce que fait un vrai
+IOS est la réponse : il ne retente pas à chaque message, il retente sur
+minuterie. Ici un lien en panne est marqué comme tel et n'est retenté
+que lorsque l'opérateur touche à la configuration du collecteur — le
+moment où il attend justement qu'on réessaie. Deux épreuves gardent
+cette porte fermée, et elles échouent authentiquement avant correctif
+en… ne se terminant jamais. **Limite assumée qui en découle** : il n'y
+a pas de reconnexion sur minuterie, faute d'ordonnanceur dans cet
+agent ; un collecteur revenu à la vie se rejoint en retapant sa ligne.
+
+La file d'attente d'une connexion en cours d'ouverture est bornée par
+**`logging queue-limit`**, qui trouve là son sens : c'est exactement la
+file que cette commande règle sur un vrai équipement. Elle sort donc,
+elle aussi, de la liste des commandes sans effet observable.
+
+**Défaut trouvé en écrivant l'épreuve, et corrigé ici** : le même agent
+construisait le tag de DEUX façons selon le bus interne qui avait porté
+le message. Le chemin `log` fabriquait un `%SYS-6-RESTART` complet ;
+le chemin `device.syslog.entry` — celui que `LoggingConfig` emprunte,
+c'est-à-dire la quasi-totalité des messages d'un routeur — passait le
+tag NU (`SYS`). Deux messages de la même machine arrivaient donc au
+collecteur sous deux formes, et aucune des deux ne ressemblait à ce que
+`show logging` affichait sur cette même machine. Le mnémonique voyage
+maintenant avec l'événement (`DeviceSyslogEntryPayload.mnemonic`) plutôt
+que d'être deviné à l'arrivée, ce qui préserve la distinction que
+`CHANGED` (arrêt administratif) et `UPDOWN` (perte de porteuse) portent
+pour une même facilité.
+
 ---
 
 ## 3. Limites assumées, écrites plutôt que découvertes
@@ -320,14 +383,14 @@ rate-limited`) plutôt que perdu en silence, et compté dans l'en-tête de
   simulateur n'a ni sortie XML ni modules de filtrage ESM. Les afficher
   est fidèle à un équipement qui n'en a pas ; prétendre les configurer
   ne le serait pas.
-* **`transport tcp`** est stocké, rendu et relu ; le datagramme part
-  malgré tout en UDP. Le syslog sur TCP est un protocole à part
-  (RFC 6587, tramage par comptage d'octets sur une connexion), et
-  `SyslogAgent` ne connaît que le datagramme. Le **port**, lui, est
-  réellement utilisé : un collecteur sur 1470 reçoit sur 1470.
-* **Les quatre commandes de configuration pure** (`queue-limit`,
-  `message-counter`, `delimiter`, `reload`) sont validées et rejouées
-  sans rien changer d'observable — voir la réserve du §2.5.
+* **Les deux commandes de configuration pure** (`message-counter`,
+  `reload`) sont validées et rejouées sans rien changer d'observable —
+  voir la réserve du §2.5. `delimiter` et `queue-limit` en sont
+  sorties : le §2.9 leur donne leur sens.
+* **Pas de reconnexion sur minuterie** vers un collecteur TCP tombé :
+  cet agent n'a pas d'ordonnanceur, et retenter à chaque message est
+  précisément la boucle que le §2.9 décrit. On rejoint un collecteur
+  revenu à la vie en retapant sa ligne.
 * **Le compteur `overruns`** reste à zéro : il compte les débordements
   de la file d'attente du processus de logging, qui n'existe pas ici.
 * **`logging host <ip> ?` propose `transport` un jeton trop tôt.** La

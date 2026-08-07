@@ -181,6 +181,29 @@ ce qui lit `show logging` ou la running-config :
 * `SyslogServer` porte un champ `port` (nouveau, défaut 514), et
   `Router.sendArpRequestFor(iface, ip)` est public.
 
+**Second lot, `transport tcp` (§2.9 du même PRD)** — il lève une limite
+que la première version s'était contentée d'écrire :
+
+* `SyslogAgent` ouvre une **vraie connexion TCP** par collecteur
+  (RFC 6587). `SyslogServer` gagne `transport`, `delimiter` ;
+  `SyslogConfig` gagne `queueLimit` ; `SyslogHost` gagne un port
+  optionnel `tcpConnect`. `syslog.packet.dropped` a deux causes de plus,
+  `no-tcp` et `queue-full`.
+* **`DeviceSyslogEntryPayload` porte un `mnemonic`** (optionnel), et le
+  relais construit désormais le `%TAG-SEV-MNEMONIQUE` complet. Avant, ce
+  chemin envoyait le tag NU (`SYS`) alors que l'autre chemin du même
+  agent en construisait un complet : le fil ne ressemblait pas à
+  `show logging`. **Si vous publiez `device.syslog.entry` depuis un
+  nouvel endroit, passez le mnémonique** — sans lui le relais retombe
+  sur le nom de la sévérité, ce qui est une forme dégradée mais valide.
+* **Piège à connaître avant d'ajouter un abonné à `tcp.*` dans
+  `LoggingConfig`** : émettre un message produit de l'activité réseau,
+  et cette activité produit des messages. Un collecteur TCP injoignable
+  bouclait à l'infini (connexion refusée → message → connexion…) et
+  bloquait la suite entière. Le bus étant asynchrone, un verrou de
+  réentrance n'y suffit pas : un lien en panne est marqué et n'est
+  retenté que si l'opérateur touche à sa configuration.
+
 **Reçu, sur le point d'attention de D1** : `logged.buffer` compte bien
 ce que le TAMPON a rangé, et comptera donc plus que
 `logged.console` quand le limiteur travaille. C'est voulu des deux
