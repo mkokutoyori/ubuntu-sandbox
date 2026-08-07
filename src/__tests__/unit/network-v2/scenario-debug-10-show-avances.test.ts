@@ -156,6 +156,12 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
     });
 
     it('`show logging count` devrait produire un décompte par message', async () => {
+      // `logging count` active la capacité, et la table ne la précède
+      // pas : la demander sans l'avoir activée rend le refus d'IOS.
+      expect(await run('show logging count')).toMatch(/not enabled/);
+      await run('configure terminal');
+      await run('logging count');
+      await run('end');
       const out = await run('show logging count');
       expect(out).toMatch(/Facility\s+Message Name\s+Sev\s+Occur|Total: \d+/i);
     });

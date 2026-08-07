@@ -196,7 +196,8 @@ export class CiscoRouter extends Router {
     this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus());
     this.pimAgent = new PimAgent(hostBase, () => this.getBus());
     this.bindIgmpToPim();
-    this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
+    this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus(),
+      () => this.getRouterScheduler());
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
     this.radiusAccountingClient = new RadiusAccountingClient(hostBase, () => this.getBus());

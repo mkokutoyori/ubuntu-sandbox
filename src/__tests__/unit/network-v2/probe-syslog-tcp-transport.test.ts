@@ -18,6 +18,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 
 beforeEach(() => {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
@@ -330,5 +331,49 @@ describe('%BGP-5-ADJCHANGE existe pour de vrai', () => {
     // chaque pas de la machine à états remplirait le tampon d'un bruit
     // qu'aucun équipement ne produit.
     expect(await r.executeCommand('show logging')).not.toContain('ADJCHANGE');
+  });
+});
+
+describe('un collecteur revenu à la vie se rejoint tout seul', () => {
+  it('la connexion est retentée après la minuterie, pas à chaque message', async () => {
+    const horloge = new VirtualTimeScheduler();
+    __setDefaultScheduler(horloge);
+    try {
+      const r = new CiscoRouter('R1');
+      const pc = new LinuxPC('linux-pc', 'PC', 0, 0);
+      new Cable('lan').connect(r.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r.executeCommand('no shutdown');
+      await r.executeCommand('exit');
+      // La machine est là et REFUSE : rien n'écoute sur ce port, donc la
+      // connexion est rejetée pour de bon — c'est le cas qui met le lien
+      // en panne, à la différence d'une adresse muette où le SYN attend.
+      await pc.executeCommand('sudo ip addr add 10.0.0.50/24 dev eth0');
+      await r.executeCommand(`logging host 10.0.0.50 transport tcp port ${PORT_COLLECTEUR}`);
+      await r.executeCommand('logging trap debugging');
+      await r.executeCommand('end');
+      await provoquerUnMessage(r);
+
+      const recu: string[] = [];
+      pc.getTcpStack().listen(PORT_COLLECTEUR, {
+        onAccept: (socket) => { socket.onData((d) => { recu.push(String(d)); }); },
+      });
+
+      // Avant la minuterie, le lien reste en panne : rien ne repart, et
+      // c'est voulu — retenter à chaque message est la boucle que ce
+      // drapeau empêche.
+      await provoquerUnMessage(r);
+      expect(recu).toHaveLength(0);
+
+      // Après elle, la tentative reprend d'elle-même.
+      horloge.advance(61_000);
+      await provoquerUnMessage(r);
+      expect(recu.join('')).toContain('%LINK-5-CHANGED');
+    } finally {
+      __setDefaultScheduler(null);
+    }
   });
 });

@@ -60,6 +60,7 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['description', 'Description text'],
   ['destination', 'Destination'],
   ['detail', 'Detailed output'],
+  ['expanded', 'Expanded community list, matched by regular expression'],
   ['dh', 'Diffie-Hellman group'],
   ['disable', 'Disable the feature'],
   ['dynamic', 'Dynamically learnt'],

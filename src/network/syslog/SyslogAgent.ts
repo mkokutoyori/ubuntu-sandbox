@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type SyslogConfig, type SyslogServer, type SyslogPacket,
   type SyslogSeverityName, type SyslogFacilityName,
@@ -34,6 +35,13 @@ export interface SyslogHost {
   }): { send(data: unknown): void; close(): void; readonly state: string } | null;
 }
 
+/**
+ * L'intervalle de reconnexion vers un collecteur TCP tombe. C'est celui
+ * d'IOS, et il est long expres : un collecteur qui ne repond pas ne doit
+ * pas couter une tentative par message.
+ */
+const RECONNEXION_MS = 60_000;
+
 /** Une connexion TCP vers un collecteur, et ce qui attend qu'elle s'ouvre. */
 interface TcpLien {
   socket: { send(data: unknown): void; close(): void; readonly state: string } | null;
@@ -53,6 +61,8 @@ interface TcpLien {
    * qu'elle reprenne.
    */
   enPanne: boolean;
+  /** La minuterie de reconnexion, quand une est armee. */
+  retente: TimerHandle | null;
 }
 
 export class SyslogAgent {
@@ -63,6 +73,7 @@ export class SyslogAgent {
   constructor(
     private readonly host: SyslogHost,
     private readonly getBus: () => IEventBus,
+    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {}
 
   start(): void {
@@ -74,6 +85,7 @@ export class SyslogAgent {
   stop(): void {
     if (!this.running) return;
     this.running = false;
+    for (const ip of [...this.liens.keys()]) this.fermerLien(ip);
     for (const u of this.unsubscribers) u();
     this.unsubscribers = [];
   }
@@ -360,10 +372,10 @@ export class SyslogAgent {
     const ligne = this.ligneRfc3164(s, severity, tag, message) + (s.delimiter ? '\n' : '');
     let lien = this.liens.get(s.ip);
     if (!lien) {
-      lien = { socket: null, attente: [], ouverture: false, enPanne: false };
+      lien = { socket: null, attente: [], ouverture: false, enPanne: false, retente: null };
       this.liens.set(s.ip, lien);
     }
-    if (lien.enPanne) { this.dropped(s.ip, 'no-route'); return; }
+    if (lien.enPanne) { this.armerRetente(s.ip); this.dropped(s.ip, 'no-route'); return; }
     if (lien.socket && lien.socket.state === 'established') {
       lien.socket.send(ligne);
       this.compter(s, severity, tag, message);
@@ -388,7 +400,10 @@ export class SyslogAgent {
       },
       onClose: () => {
         const l = this.liens.get(s.ip);
-        if (l) { l.socket = null; l.enPanne = true; l.attente.length = 0; }
+        if (l) {
+          l.socket = null; l.enPanne = true; l.attente.length = 0;
+          this.armerRetente(s.ip);
+        }
       },
     });
     if (!socket) {
@@ -396,6 +411,7 @@ export class SyslogAgent {
       lien.ouverture = false;
       lien.enPanne = true;
       lien.attente.length = 0;
+      this.armerRetente(s.ip);
       this.dropped(s.ip, 'no-route');
       return;
     }
@@ -411,8 +427,31 @@ export class SyslogAgent {
   private fermerLien(ip: string): void {
     const lien = this.liens.get(ip);
     if (!lien) return;
+    if (lien.retente !== null) this.getScheduler().clear(lien.retente);
     lien.socket?.close();
     this.liens.delete(ip);
+  }
+
+  /**
+   * Un collecteur revenu a la vie se rejoint tout seul.
+   *
+   * Retenter a CHAQUE message est la boucle que `enPanne` empeche :
+   * echouer produit un message, qui retenterait, qui echouerait. Un vrai
+   * IOS retente sur minuterie, et c'est ce que fait cette methode — une
+   * seule tentative armee a la fois, annulee des qu'elle aboutit.
+   */
+  private armerRetente(ip: string): void {
+    const lien = this.liens.get(ip);
+    if (!lien || lien.retente !== null) return;
+    lien.retente = this.getScheduler().setTimeout(() => {
+      const l = this.liens.get(ip);
+      if (!l) return;
+      l.retente = null;
+      // On repart de zero : le prochain message rouvrira la connexion.
+      // Rien n'est reemis, car ces messages-la sont dans le tampon et
+      // les rejouer les daterait de maintenant.
+      this.liens.delete(ip);
+    }, RECONNEXION_MS);
   }
 
   private compter(s: SyslogServer, severity: SyslogSeverityName,

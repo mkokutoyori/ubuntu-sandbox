@@ -316,6 +316,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       configStdNacl: this.configStdNaclTrie,
       configExtNacl: this.configExtNaclTrie,
       privileged: this.privilegedTrie,
+      configRouteMap: this.configRouteMapTrie,
+      configTimeRange: this.configTimeRangeTrie,
+      configTrack: this.configTrackTrie,
     });
   }
 
@@ -904,6 +907,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
     registerLoggingShowCommands(trie, this.loggingCommandContext());
+
 
     // `show tech-support` — real aggregation of the key show outputs.
     trie.register('show tech-support', 'Aggregate diagnostic output', () => {

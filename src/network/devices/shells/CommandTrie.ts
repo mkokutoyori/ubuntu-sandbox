@@ -82,6 +82,14 @@ export interface CommandNode {
   _hintOnly?: boolean;
   _passthrough?: boolean;
   /**
+   * Le nœud est enregistré greedy pour des raisons d'analyse, mais la
+   * commande ne prend AUCUN argument : `cdp run ?` n'offre que `<cr>`
+   * sur IOS, pas un `WORD` qui laisserait croire qu'il manque quelque
+   * chose. Sans ce marqueur, le repli de dernier recours invente ce
+   * `WORD` et lui recopie la description du parent.
+   */
+  _noArgument?: boolean;
+  /**
    * Keywords auto-extracted from the greedy handler's source (lazy,
    * computed once). Undefined = not yet computed.
    */
@@ -884,6 +892,16 @@ export class CommandTrie {
     node.params = [...specs];
   }
 
+  /**
+   * Déclare qu'une commande greedy ne prend pas d'argument. Le chemin
+   * doit exister ; un chemin inconnu est ignoré, comme `describeArgs`,
+   * pour qu'une table d'aide ne dépende pas de l'ordre d'enregistrement.
+   */
+  takesNoArgument(path: string): void {
+    const node = this.nodeAt(path);
+    if (node) node._noArgument = true;
+  }
+
   private hintDescription(node: CommandNode, keyword: string): string {
     const key = keyword.toLowerCase();
     return node.hintSuggestions?.find(h => h.keyword.toLowerCase() === key)?.description ?? '';
@@ -1025,7 +1043,7 @@ export class CommandTrie {
       }
     }
 
-    if (node.greedy && results.length === 0) {
+    if (node.greedy && !node._noArgument && results.length === 0) {
       results.push({ keyword: 'WORD', description: node.description });
     }
 
