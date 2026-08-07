@@ -19,6 +19,7 @@
  */
 
 import type { Router } from '../Router';
+import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterCommands';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { CommandTrie } from './CommandTrie';
@@ -501,7 +502,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   isDhcpEnabled(): boolean { return this.dhcpEnabled; }
   isDhcpSnoopingEnabled(): boolean { return this.dhcpSnoopingEnabled; }
-  renderLogbuffer(): string { return this.logging.renderHuawei(); }
+  renderLogbuffer(): string {
+    const ic = this.r().getManagementService?.().getInfoCenter();
+    if (!ic) return this.logging.renderHuawei();
+    const canal = ic.destinationChannel.logbuffer;
+    return this.logging.renderHuawei({
+      size: ic.logbufferSize, channel: canal, channelName: ic.channelNames[canal],
+    });
+  }
 
   // ─── Prompt Generation ─────────────────────────────────────────────
 
@@ -1186,7 +1194,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return [...s.defenses].map(d => ` ${d}: enabled`).join('\n');
     });
     t.register('display logbuffer summary', 'Display logbuffer summary', () => 'Log buffer: 0 messages.');
-    t.register('display channel', 'Display info-center channels', () => 'Info: No info-center channels configured.');
+    // Une phrase en dur — « No info-center channels configured » — sur
+    // une machine qui en a DIX d'usine. La vue lit maintenant la table.
+    registerInfoCenterDisplayCommands(t, {
+      config: () => this.r().getManagementService?.().getInfoCenter(),
+    });
     t.registerGreedy('reset logbuffer', 'Reset logbuffer', () => '');
     t.register('display lldp local', 'Display local LLDP info', () => {
       const cfg = (this.r() as any)._huaweiLldp;
@@ -1947,7 +1959,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     this.registerSecurityDisplayCommands(t);
 
-    for (const kw of ['snmp-agent', 'info-center enable',
+    // `info-center enable` a quitté cette boucle : il appartient à
+    // l'arbre `info-center`, et le traiter comme `telnet server enable`
+    // était ce qui faisait proposer `enable` — décrit `Toggle:
+    // info-center enable` — derrière chacun de ses sous-mots.
+    for (const kw of ['snmp-agent',
       'ntp-service enable', 'telnet server enable', 'http server',
       'icmp ttl-exceeded send', 'icmp host-unreachable send']) {
       t.register(kw, `Toggle: ${kw}`, () => {

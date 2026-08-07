@@ -3,6 +3,7 @@ import type { Router } from '../../Router';
 import type { IgmpAgent } from '../../../igmp/IgmpAgent';
 import type { IgmpGroupRecord, IgmpInterfaceRuntime } from '../../../igmp/types';
 import { isMulticastIpv4, isReservedMulticast, isV1CompatActive, isConfiguredGroup } from '../../../igmp/types';
+import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import { hms } from '@/lib/format';
 
 interface IfCtx {
@@ -152,11 +153,15 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
     for (const ifaceName of ifaces) {
       const rt = a.getInterfaceRuntime(ifaceName);
       if (!rt) continue;
-      const port = r.getPort(ifaceName);
-      const up = port?.getIsUp() && port?.isConnected();
+      const ports = r._getPortsInternal();
+      const port = ports.get(ifaceName) ?? r.getPort(ifaceName);
+      const st = port
+        ? iosInterfaceStatus(port, ifaceName, ports)
+        : { status: 'up' as const, protocol: 'up' as const };
+      const up = st.protocol === 'up';
       const ip = port?.getIPAddress();
       const mask = port?.getSubnetMask();
-      lines.push(`${ifaceName} is ${up ? 'up' : 'down'}, line protocol is ${up ? 'up' : 'down'}`);
+      lines.push(`${ifaceName} is ${st.status}, line protocol is ${st.protocol}`);
       if (ip) lines.push(`  Internet address is ${ip.toString()}/${mask ? mask.toCIDR() : 24}`);
       lines.push(`  IGMP is ${rt.enabled ? 'enabled' : 'disabled'} on interface`);
       lines.push(`  Current IGMP host version is ${rt.version}`);
@@ -170,7 +175,7 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
       const groups = a.groupsFor(ifaceName);
       lines.push(`  IGMP activity: ${groups.length} joins, 0 leaves`);
       const myIp = ip?.toString();
-      if (rt.querierIp) {
+      if (rt.querierIp && up) {
         lines.push(`  IGMP querying router is ${rt.querierIp}${rt.querierIp === myIp ? ' (this system)' : ''}`);
       }
       lines.push('');

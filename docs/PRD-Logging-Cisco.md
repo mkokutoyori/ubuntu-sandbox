@@ -247,7 +247,8 @@ et les briques existent presque toutes. Ce qui est livré :
 | `logging exception <size>` | rendu dans `show logging` |
 | `logging delimiter tcp` | sépare réellement les messages sur la connexion TCP — voir §2.9 |
 | `logging queue-limit [trap] <n>` | borne réellement la file de sortie du relais syslog — voir §2.9 |
-| `logging message-counter {log\|debug\|syslog}`, `logging reload [level] [message-limit <n>]` | acceptées, bornées, et **reproduites telles quelles** dans la running-config, donc rejouées à l'import |
+| `logging message-counter {log\|debug\|syslog}` | choisit les classes que `show logging count` compte — voir §2.10 |
+| `logging reload [level] [message-limit <n>]` | borne ce qui est journalisé pendant un redémarrage — voir §2.10 |
 
 Restent refusées, et uniquement celles-là, parce qu'il leur manque une
 brique entière que rien ici ne peut remplacer : `logging esm config` et
@@ -256,16 +257,11 @@ brique entière que rien ici ne peut remplacer : `logging esm config` et
 (pare-feu par zones — concept absent de tout le dépôt). Le refus prend
 les mots d'IOS pour une commande que la plateforme n'a pas.
 
-**Réserve honnête sur les deux dernières du tableau** : elles sont
-analysées, bornées et rejouées, mais ne changent aucun comportement
-observable — le compteur par classe et le niveau conservé au
-redémarrage n'ont pas de contrepartie dans ce simulateur (aucun
-compteur par classe rendu, aucun redémarrage qui préserve un tampon).
-Elles ne sont plus muettes — elles étaient acceptées et invisibles,
-elles sont maintenant acceptées, validées et visibles — mais c'est tout
-ce qu'on peut en dire. `logging delimiter tcp` et `logging queue-limit`
-étaient de cette liste et n'y sont plus : le §2.9 leur a donné le
-transport dont ils dépendaient.
+**Plus de réserve sur ce tableau** : la première rédaction en laissait
+quatre « acceptées, validées et visibles, mais sans effet observable ».
+Les §2.9 et §2.10 les ont toutes fermées, et c'est bien ce qu'on
+demandait à ce lot — une commande dont on ne peut rien dire d'autre que
+« elle est stockée » reste une commande qui ne fait rien.
 
 ### 2.5 bis Un abrégé non ambigu vaut le mot entier
 
@@ -375,6 +371,47 @@ que d'être deviné à l'arrivée, ce qui préserve la distinction que
 `CHANGED` (arrêt administratif) et `UPDOWN` (perte de porteuse) portent
 pour une même facilité.
 
+### 2.10 Les trois dernières limites, fermées
+
+Ce lot ne livre rien de neuf : il ferme ce que les §2.9 et §3 avaient
+écrit au lieu de corriger. Une limite écrite est honnête ; elle reste
+une limite.
+
+**Un collecteur TCP tombé se rejoint tout seul.** `SyslogAgent` reçoit
+l'ordonnanceur de l'équipement et arme une reconnexion à 60 s — celle
+d'IOS, longue exprès. Une seule tentative armée à la fois, annulée dès
+qu'elle aboutit ; le drapeau `enPanne` du §2.9 reste ce qui empêche de
+retenter à chaque message. Rien n'est réémis à la reconnexion : ces
+messages-là sont dans le tampon, et les rejouer les daterait de
+maintenant.
+
+**`logging reload` borne ce qui est journalisé pendant un redémarrage,
+et le tampon ne survit plus à celui-ci.** Mesuré avant : le tampon
+GRANDISSAIT à travers un `reload` — trois lignes avant, cinq après, les
+trois premières datées d'avant le démarrage. Or il est en mémoire vive.
+Une machine ne peut pas se souvenir de ce qui a précédé sa mise sous
+tension, et diagnostiquer sur cet historique-là est pire que de n'en
+avoir aucun. Le tampon part donc avec le redémarrage, `%SYS-5-RESTART:
+System restarted --` est la première ligne d'après — comme sur un vrai
+équipement, et il manquait — et `logging reload <sévérité>
+[message-limit <n>]` filtre et compte ce qui s'écrit entre les deux.
+**La fenêtre se referme à la commande suivante, pas à la fin de
+`powerOn()`** : les remontées d'interface arrivent par le bus, donc
+après, et la fermer trop tôt laissait la commande ne rien borner du
+tout. Le `%SYS-5-RESTART` traverse la fenêtre sans la consommer : c'est
+la bannière du démarrage, et un `message-limit 1` qui l'effacerait ne
+laisserait aucune trace du redémarrage lui-même.
+
+**`show logging count` obéit aux deux commandes qui le règlent.** Il
+comptait tout, quelle que soit la configuration : ni `logging count`,
+qui active la capacité, ni `logging message-counter`, qui choisit les
+classes comptées, n'étaient lus. Une table qui ignore les deux commandes
+censées la régler n'est pas une mesure. IOS distingue trois classes — les
+messages ordinaires (`log`), ceux que `debug` produit (`debug`), et ceux
+qui partent vers un serveur syslog (`syslog`) ; un message est compté dès
+qu'UNE de ses classes est active, et par défaut seule `log` l'est, ce qui
+tient les lignes de debug hors de la table.
+
 ---
 
 ## 3. Limites assumées, écrites plutôt que découvertes
@@ -383,14 +420,11 @@ pour une même facilité.
   simulateur n'a ni sortie XML ni modules de filtrage ESM. Les afficher
   est fidèle à un équipement qui n'en a pas ; prétendre les configurer
   ne le serait pas.
-* **Les deux commandes de configuration pure** (`message-counter`,
-  `reload`) sont validées et rejouées sans rien changer d'observable —
-  voir la réserve du §2.5. `delimiter` et `queue-limit` en sont
-  sorties : le §2.9 leur donne leur sens.
-* **Pas de reconnexion sur minuterie** vers un collecteur TCP tombé :
-  cet agent n'a pas d'ordonnanceur, et retenter à chaque message est
-  précisément la boucle que le §2.9 décrit. On rejoint un collecteur
-  revenu à la vie en retapant sa ligne.
+* **Le libellé exact d'IOS pour `show logging count` sans comptage
+  activé** n'a pas pu être vérifié contre un vrai équipement depuis cet
+  environnement ; la forme retenue suit sa convention (préfixe `%`, une
+  phrase). Ce qui est sûr, et c'est le point, est qu'une table pleine
+  alors que la capacité est éteinte serait un mensonge.
 * **Le compteur `overruns`** reste à zéro : il compte les débordements
   de la file d'attente du processus de logging, qui n'existe pas ici.
 * **`logging host <ip> ?` propose `transport` un jeton trop tôt.** La

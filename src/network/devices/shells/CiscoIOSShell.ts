@@ -908,6 +908,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     registerLoggingShowCommands(trie, this.loggingCommandContext());
 
+
     // `show tech-support` — real aggregation of the key show outputs.
     trie.register('show tech-support', 'Aggregate diagnostic output', () => {
       const r = this.d();

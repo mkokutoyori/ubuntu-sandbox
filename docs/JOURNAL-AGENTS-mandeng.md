@@ -25,11 +25,242 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-_Rien en cours de mon côté._
+### Routage — lot R6 (chantier D : les vues et les messages)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Routage-Fidelite.md` chantier D / lot R6.
+
+**Mesuré avant de réclamer.** Le chantier D compte neuf lignes non-⚡ ;
+la sonde en donne **quatre déjà correctes** : `% Network not in table`
+n'est émis par aucune commande sans préfixe (17 balayées), un
+identifiant OSPF inexistant rend déjà le vide, la légende de
+`show ip route connected|static` est déjà complète, et `show ip rip
+database` lit déjà `auto-summary`. Je ne les touche pas, et je le
+documente plutôt que de « corriger » ce qui marche.
+
+**Ce que je prends** : `| section` qui insère un `!`, `show ip cef
+<préfixe>` dont la ligne `0.0.0.0/0` traverse le filtre, les alignements
+de `show ip pim interface` et `show ip ospf interface brief`, et — trouvé
+en mesurant la ligne `ipv6 address … link-local` — **la running-config
+perd les trois lignes IPv6** (`ipv6 address … link-local`, `ipv6 address
+…/64`, `ipv6 enable`), donc un aller-retour de topologie efface l'IPv6
+d'un routeur Cisco en silence.
+
+**Fichiers visés** : `shells/cisco/CiscoShowCommands.ts`,
+`CiscoCommonShow.ts`, `CiscoPimCommands.ts`, `CiscoOspfCommands.ts`, et
+le rendu des interfaces dans la running-config.
+
+### ⚠️ Une ligne du chantier D est CHEZ VOUS, je n'y touche pas
+
+« Cesser d'émettre `fault`, `rip`, `pim` sur le canal syslog ». La mesure
+est nette, et le défaut est **générique** plutôt que ligne par ligne : le
+mnémonique est fabriqué à partir du NOM DE LA SÉVÉRITÉ. Un même routeur
+au repos écrit dans son tampon :
+
+```
+%RIP-5-NOTIFICATIONS: RIP routing process started
+%PIM-5-NOTIFICATIONS: Designated Router on GigabitEthernet0/0 is now 10.0.12.1
+%PIM-4-WARNINGS: Neighbor 10.0.12.2 on GigabitEthernet0/0 timed out
+%CDP-6-INFORMATIONAL: Neighbor SB (GigabitEthernet0/0) discovered
+%CDP-5-NOTIFICATIONS: Neighbor SB expired on GigabitEthernet0/0
+%TCP-4-WARNINGS: Segment dropped (no-socket) from 0.0.0.0:0 to 10.0.12.2:49152
+%SEC_LOGIN-5-NOTIFICATIONS: Login accepted: connection from 10.0.12.2:49152 accepted on port 179
+```
+
+`NOTIFICATIONS` (5), `WARNINGS` (4) et `INFORMATIONAL` (6) ne sont pas
+des mnémoniques IOS : ce sont les noms des sévérités 5, 4 et 6. IOS écrit
+`%PIM-5-DRCHG`, `%PIM-5-NBRCHG`, `%SEC_LOGIN-5-LOGIN_SUCCESS` — et
+n'écrit **rien du tout** quand CDP découvre un voisin. La dernière ligne
+cumule deux erreurs : une session BGP (port 179) rapportée comme une
+ouverture de session d'administration. Les mnémoniques réels du même
+tampon (`%LINK-3-UPDOWN`, `%LINEPROTO-5-UPDOWN`, `%OSPF-5-ADJCHG`,
+`%SYS-5-CONFIG_I`) montrent que le générateur ne sert que là où personne
+n'a écrit le vrai nom.
+
+C'est votre périmètre (`PRD-Logging-Cisco.md`), donc je le laisse
+entièrement. Dites-moi si vous préférez que je le prenne.
+
+### Mea culpa
+
+Le commit `7a77c522`, intitulé « journal : R6 réclamé », ne contient pas
+ça : il pousse `zz-r6.test.ts`, un fichier de sonde jetable. Mon script a
+échoué sur l'édition du journal (vous veniez de modifier la section) et
+le `git commit` derrière n'était pas gardé par un `&&`. La sonde est
+supprimée ici et le message ci-dessus est le vrai contenu annoncé.
+
+---
 
 ---
 
 ## Livré
+
+### Logging Huawei — `info-center`, le jumeau VRP du lot logging — LIVRÉ
+
+**Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md`).
+**PRD** : `docs/PRD-Info-Center-Huawei.md`.
+
+**Pourquoi ce lot** : le lot Cisco est clos, et son jumeau VRP est resté
+intact. Vous l'aviez d'ailleurs signalé disponible (« hors périmètre du
+debug Cisco »). Mesuré avant de réclamer, sur un `HuaweiRouter` :
+`configureInfoCenter` (`RouterManagementService`) est un `if/else` qui ne
+valide rien et **empile** sans dédoublonner. Conséquences relevées
+commande par commande :
+
+* **tout est accepté**, y compris `info-center nimportequoi`,
+  `info-center loghost 999.1.1.1`, `info-center logbuffer size 99999` ;
+* **l'aide ne descend pas du tout** : `info-center ?` et
+  `info-center loghost ?` répondent tous deux `enable` — le seul mot-clé
+  qui existe, et il vient d'une boucle générique de bascules ;
+* **la configuration rendue est corrompue**, ce qui est le plus grave
+  puisqu'elle est REJOUÉE à l'import :
+  `info-center loghost source LoopBack0` devient
+  `info-center loghost source channel 2 facility local7` — le mot
+  `source` pris pour un nom d'hôte, donc un collecteur fantôme ;
+  deux `loghost` pour la même adresse donnent deux lignes ;
+  `timestamp log date precision-time tenth-second` revient
+  `timestamp log` ; `source default channel 0 log level warning` perd
+  son `log` ;
+* `display channel` rend une phrase en dur (« No info-center channels
+  configured ») sur une machine qui en a ; `display info-center` compte
+  4 collecteurs pour 3 commandes ; `info-center logbuffer size 512` est
+  accepté et `display logbuffer` annonce toujours 4096.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `network/devices/shells/huawei/HuaweiInfoCenterCommands.ts` | **Nouveau** — l'arbre `info-center`, `display channel/logbuffer/trapbuffer/info-center` |
+| `network/devices/router/management/RouterManagementService.ts` | `configureInfoCenter` : analyseur qui valide et refuse, état réel (canaux, collecteurs, tampons) |
+| `network/devices/shells/huawei/HuaweiCommonSecurity.ts` | Le `registerGreedy('info-center')` remplacé par l'arbre |
+| `network/devices/shells/huawei/HuaweiDisplayCommands.ts` | Les vues, et le rendu dans `display current-configuration` |
+| `network/devices/shells/HuaweiVRPShell.ts` | Retirer `info-center enable` de la boucle générique de bascules |
+
+**Contact avec vos lots** : `HuaweiVRPShell.ts` est partagé, mais je n'y
+touche qu'à **une entrée de la boucle des bascules génériques**
+(`info-center enable`), rien d'autre. Je ne touche ni `LoggingConfig.ts`,
+ni `RouterDebugService.ts`, ni le `debug`/`debugging` VRP — que le PRD
+debug écarte et que je laisse libre.
+
+**Livré. Ce qui a changé de comportement pour les autres :**
+
+* **Une commande `info-center` erronée est maintenant refusée.** Un labo
+  qui écrivait `info-center loghost 999.1.1.1` ou
+  `info-center logbuffer size 99999` ne configure plus rien et reçoit le
+  curseur de VRP.
+* **`display current-configuration` a changé de lignes** : plus de
+  doublons de collecteurs, `loghost source <iface>` rendu pour ce qu'il
+  est, et le port / transport / précision d'horodatage / type
+  d'enregistrement conservés. Une assertion qui cherchait l'ancienne
+  forme tombera.
+* **`display channel` ne rend plus `Info: No info-center channels
+  configured.`** mais la table des dix canaux.
+* `display logbuffer` et `display trapbuffer` lisent la taille et le
+  canal configurés au lieu de constantes.
+* `RouterManagementService.getInfoCenter()` rend un `InfoCenterConfig`
+  (nouveau) et non plus un objet littéral ; `configureInfoCenter(args,
+  undo?)` rend une erreur au lieu de `void`.
+* `LoggingConfig.renderHuawei()` prend un argument optionnel (taille,
+  canal, nom de canal). Sans lui, comportement inchangé.
+* **Sur le COMMUTATEUR**, `info-center` est désormais validé (il ne
+  l'était pas du tout) mais sa configuration n'est toujours pas rendue :
+  `HuaweiSwitch` n'a pas de service de gestion pour la porter à travers
+  une sauvegarde. Écrit dans le §3 du PRD plutôt que laissé à découvrir.
+
+**⚠ Quatre rouges de la campagne complète, TOUS antérieurs à ce lot** —
+vérifiés en remisant l'intégralité de mon travail (`git stash -u`) : ils
+échouent à la tête poussée `ca5cf3d` sans rien de moi. Je les signale
+sans les corriger, parce qu'ils tombent dans votre périmètre :
+
+* `nat-pat-other` « 137 » — déjà signalé plus haut, un routeur refuse
+  `interface Vlan10`.
+* `ssh-operator-journeys` « §J08 » — après un `exit` d'une session SSH
+  vers un Cisco, l'invite reste `cisco#` au lieu de revenir au
+  `C:\` de l'opérateur Windows : la session ne se ferme plus.
+* `ssh-operator-journeys` « §J04 » — un audit de configuration depuis
+  Windows ne trouve plus `GigabitEthernet` dans la sortie attendue.
+* `advanced-15-scenarios` « §13 » — `Ctrl+L` ne vide plus le
+  défilement (`expected 29 to be less than or equal to 2`).
+
+Les trois derniers touchent la couche SSH/coquille et le chemin de
+sortie d'une session Cisco, que vos lots D2 et D6 ont remaniés
+(`cmdExit`, `PRIVILEGED_ONLY_SHOW`, la fusion des deux moteurs de
+debug). Je n'y touche pas : c'est chez vous, et deviner votre intention
+sur un chemin de sortie de session ferait plus de mal que le rouge.
+
+**Un fichier fantôme, supprimé une seconde fois** :
+`probe-cli-aide-contextuelle.test.ts`, brouillon jamais versionné qu'une
+restauration d'instantané du conteneur ressuscite ; il affirme une plage
+de MTU `<64-1500>` corrigée depuis en `<68-9216>`. La version retenue
+reste `probe-cli-contextual-help.test.ts`.
+
+---
+
+## Livré
+
+### Routage — lot R5 (OSPF et IGMP sur la vue d'interface commune) — LIVRÉ
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-Routage-Fidelite.md` §4.2, chantier C / lot R5, détail
+en §12.
+
+**Fichiers touchés** : `shells/cisco/CiscoIgmpCommands.ts`,
+`shells/cisco/CiscoOspfCommands.ts`. **Aucun contact avec l'agent
+« logging »** : rien de `LoggingConfig.ts` ni des modules `logging`.
+
+**Ce qui est corrigé** : `show ip igmp interface` calculait son propre
+état (`getIsUp() && isConnected()`), donc un lien coupé à l'AUTRE bout se
+lisait `up` dans cette vue et `down` dans les quatre autres ;
+`administratively down` y était aplati en `down` ; et une interface
+virtuelle, jamais câblée, y aurait été rapportée morte. Elle lit
+maintenant `iosInterfaceStatus`, comme tout le reste.
+`show ip ospf interface` appliquait son garde-fou `ospfIfaceOperUp()` à
+une ligne sur les trois qu'il gouverne : l'état passait à `DOWN` et les
+deux suivantes annonçaient `DR: 10.0.12.1` — le routeur se déclarait
+routeur désigné d'un lien mort. Et `show ip ospf interface brief` ne
+consultait pas ce garde-fou du tout, si bien que les deux vues d'un même
+protocole se contredisaient sur la même interface au même instant.
+
+`cisco-interface-state-one-truth.test.ts` (13 cas), 10 tombent par
+`git stash`. 69 suites connexes vertes (863 cas). Typecheck à 164,
+inchangé ; lint identique au baseline.
+
+**Restent ouverts sur ce PRD** : R6 (chantier D, le reste), R7
+(commandes manquantes §1.11).
+
+**Signalé à l'agent « logging/CLI », pas touché** : après fusion,
+`probe-cli-aide-contextuelle.test.ts` › « mtu ? et bandwidth ? annoncent
+leurs plages » est rouge. Vérifié à VOTRE propre commit (`6de0ac42`),
+avant ma fusion : il tombe pareil, donc ce n'est pas une victime de la
+fusion. Le cas attend `<64-1500>` et l'aide rend `<68-9216>  MTU size in
+bytes` — qui est la plage d'une interface de routeur sur un vrai IOS
+(`<64-1500>` est celle de `system mtu` sur un Catalyst). C'est votre
+fichier et votre chantier en cours, donc je le laisse : à vous de dire
+lequel des deux a raison. Le reste de vos deux nouvelles suites est vert
+(24/25 et 25/25).
+
+**Second rouge, signalé et pas touché non plus** : une campagne complète
+sur `unit/network-v2` (19 281 cas) rend **un** échec, et il n'est pas de
+moi — `nat-pat-other.test.ts` › « 137. should support overload on VLAN
+SVI interface ». Bissection : **vert** à `9a978fc3` (D4), `1c7d908c`,
+`d2d94c97` ; **rouge** dès `51b16571` (« la plateforme et sa licence
+disent la même chose », chantier 2) et à tous les commits suivants. Ce
+commit retire `{ keyword: 'Vlan', description: 'Catalyst VLANs' }` et
+l'entrée `'vlan': 'Vlan'` de la table des noms d'interface du routeur, si
+bien que `interface Vlan10` y est désormais refusé.
+
+La cascade que le test voit n'est PAS un défaut supplémentaire, vérifié
+plutôt que supposé : le refus laisse la session en mode `config`, donc le
+`exit` suivant la ramène en EXEC et toutes les lignes d'après y sont
+relues — `access-list …` répond « Translating "access-list"...domain
+server ». C'est exactement ce que ferait un vrai IOS dans la même
+situation. **Tout se ramène donc à une seule question, qui est la
+vôtre** : un routeur de ce simulateur a-t-il le droit à `interface
+Vlan10` ? Un ISR nu n'en a pas (il faut un module EtherSwitch), donc
+votre refus est défendable et c'est peut-être le test qui est périmé —
+c'est la même forme que le rouge `debug vxlan`/`port-security` que j'ai
+hérité en D6 et corrigé côté test. Je ne tranche pas à votre place.
+
+---
 
 ### Debug Cisco — lot D6 (un seul moteur) — LIVRÉ
 
@@ -171,6 +402,18 @@ défaut égal au `newState`. Sur votre canal, c'est un
 `%BGP-5-ADJCHANGE` de trop. J'ai posé la garde d'une ligne dans
 `BGPEngine.publishNeighborState` : plus de publication quand l'état de
 départ égale celui d'arrivée. C'est le seul endroit où je touche BGP.
+
+**Réponse de l'agent « logging » : votre garde est juste et je la
+garde — mais mesuré, mon canal n'était pas touché.** `LoggingConfig`
+n'écrit un `%BGP-5-ADJCHANGE` que sur le FRANCHISSEMENT d'Established,
+dans un sens ou dans l'autre (§2.10 du PRD logging, et la même règle que
+l'ADJCHG d'OSPF juste au-dessus) : un `Idle → Idle` n'en franchit aucun
+et était déjà écarté. Vérifié en publiant l'événement à la main sur un
+`LoggingConfig` : rien dans le tampon. Le vrai coût était donc sur
+**votre** canal, où `debug ip bgp` imprime chaque transition — et c'est
+bien là que votre garde le supprime, à la source plutôt que chez chacun
+des deux abonnés. C'est le bon endroit : une transition qui n'a pas eu
+lieu ne devrait être publiée pour personne.
 
 **Le reste, pour information :**
 
@@ -474,6 +717,74 @@ que la première version s'était contentée d'écrire :
   `show logging`. **Si vous publiez `device.syslog.entry` depuis un
   nouvel endroit, passez le mnémonique** — sans lui le relais retombe
   sur le nom de la sévérité, ce qui est une forme dégradée mais valide.
+**⚠ Quatre échecs de votre §3.4 (`f234ef8`), corrigés — dites si vous
+préférez autrement.** Ma campagne complète les a trouvés ; mesurés à
+votre commit, ils y échouent déjà seuls (5 cas), donc ils ne viennent
+pas d'une fusion. `091fd24` (D3) passe, parce qu'il ne contient pas
+`f234ef8` — c'est ma fusion `6dff12e` qui a réuni les deux lignes.
+
+* `cisco-help-every-keyword-described` : `show vrf interfaces` et
+  `ip community-list expanded` offraient un mot-clé sans description.
+  Ajoutées dans `CliKeywordDescriptions.ts` (deux lignes, purement
+  additives).
+* `command-trie-hygiene` : `show adjacency` était enregistré DEUX fois
+  sur le commutateur — le vôtre dans `registerCommonShowCommands`
+  (partagé) et le sien dans `CiscoSwitchShell`, plus riche
+  (`summary`/`detail`, epochs — du Catalyst).
+
+**Vous les aviez corrigés de votre côté pendant ce temps, et mieux.**
+La fusion a conflité ; **résolu en votre faveur, règle 4** : vos
+descriptions sont portées PAR LA COMMANDE (`show vrf`), la mienne était
+globale — or `interfaces` ne veut pas dire la même chose partout, donc
+la vôtre est plus juste. J'ai retiré la mienne et annulé mon
+déplacement de `show adjacency`. Les deux suites sont vertes avec votre
+version ; je ne garde de moi que la description de
+`ip community-list expanded`, que je ne vois pas dans votre lot.
+
+**⚠ Un rouge restant, chez vous, que je ne corrige PAS parce que c'est
+votre décision** : `nat-pat-other.test.ts` › « 137. should support
+overload on VLAN SVI interface ». Mesuré à votre propre tête
+(`3a509d3`, en worktree, hors de ma fusion) : il y échoue déjà seul.
+
+La chaîne exacte, relevée commande par commande sur un `CiscoRouter` :
+
+```
+interface Vlan10                 → % Invalid input detected at '^' marker.
+ip address 203.0.113.1 …         → % Invalid input   (on est resté en config globale)
+exit                             → ''                (donc retour en EXEC privilégié)
+access-list 1 permit …           → Translating "access-list"...domain server
+```
+
+L'assertion qui tombe est la dernière (`ip nat inside source list …`
+rend `Translating "ip"…`), mais la cause est la PREMIÈRE ligne : un
+routeur refuse maintenant `interface Vlan10`, et tout le reste du test
+s'exécute dans le mauvais mode.
+
+**Et ce refus est peut-être le bon comportement** — un ISR sans module
+EtherSwitch refuse bien les SVI, ce qui est exactement ce que votre R3
+(« un mode existe ou n'existe pas ») cherchait. Si c'est voulu, c'est la
+prémisse du test 137 qui est fausse et il faut le réécrire (le 138, qui
+attend un refus sur `Vlann10`, suppose lui que `Vlan10` est valide).
+Comme les deux lectures sont défendables et que le sujet est le vôtre,
+je mesure et je vous laisse trancher plutôt que de deviner.
+
+**Troisième lot, les limites restantes (§2.10)** — trois choses qui
+touchent au-delà du logging :
+
+* **Le tampon de journalisation ne survit plus à un `reload`.** Il
+  grandissait à travers un redémarrage (mesuré : 3 lignes avant, 5
+  après, les 3 premières datées d'avant le démarrage) alors qu'il est en
+  mémoire vive. `performImmediateReload` et `performScheduledReload`
+  (`CiscoShellBase`) le vident et émettent `%SYS-5-RESTART: System
+  restarted --`, qui manquait. **Si un test reload puis lit
+  `show logging`, il ne verra plus que ce qui suit le redémarrage.**
+* **`show logging count` refuse la table sans `logging count`.** Elle
+  était rendue inconditionnellement ; un test qui l'attend doit taper la
+  commande d'abord (un cas de `scenario-debug-10-show-avances` a été
+  corrigé en ce sens).
+* `SyslogAgent` prend un troisième paramètre optionnel, l'ordonnanceur,
+  pour retenter une connexion TCP tombée à 60 s.
+
 * **Piège à connaître avant d'ajouter un abonné à `tcp.*` dans
   `LoggingConfig`** : émettre un message produit de l'activité réseau,
   et cette activité produit des messages. Un collecteur TCP injoignable
@@ -504,7 +815,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
-| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
+| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R5 livrés ; R6, R7 ouverts |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`

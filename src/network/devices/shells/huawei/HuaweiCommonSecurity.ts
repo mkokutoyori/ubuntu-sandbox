@@ -1,3 +1,5 @@
+import { registerInfoCenterCommands } from './HuaweiInfoCenterCommands';
+import { InfoCenterConfig } from '../../router/management/InfoCenterConfig';
 /**
  * HuaweiCommonSecurity — management-plane commands common to the Huawei
  * switch and router CLIs: SSH/Telnet servers, SNMP, NTP, info-center
@@ -79,7 +81,7 @@ export function displayDhcpSnooping(): string {
  * each shell — single source so the list isn't duplicated (DRY).
  */
 export function registerHuaweiCommonSecurity(trie: CommandTrie, getRouter?: () => { getManagementService: () => import('../../router/management/RouterManagementService').RouterManagementService }): void {
-  const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'snmp-agent' | 'ntp-service' | 'clock' | 'info-center' | 'sflow', args: string[]) => {
+  const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'snmp-agent' | 'ntp-service' | 'clock' | 'sflow', args: string[]) => {
     if (!getRouter) return '';
     const mgmt = getRouter().getManagementService();
     switch (feature) {
@@ -98,7 +100,6 @@ export function registerHuaweiCommonSecurity(trie: CommandTrie, getRouter?: () =
       case 'snmp-agent': mgmt.configureSnmp(args); break;
       case 'ntp-service': mgmt.configureNtp(args); break;
       case 'clock': mgmt.configureClock(args); break;
-      case 'info-center': mgmt.configureInfoCenter(args); break;
       case 'sflow': mgmt.configureSflow(args); break;
     }
     return '';
@@ -109,7 +110,20 @@ export function registerHuaweiCommonSecurity(trie: CommandTrie, getRouter?: () =
   trie.registerGreedy('snmp-agent', 'SNMP agent configuration', (args) => dispatch('snmp-agent', args));
   trie.registerGreedy('ntp-service', 'NTP service configuration', (args) => dispatch('ntp-service', args));
   trie.registerGreedy('clock', 'Clock configuration', (args) => dispatch('clock', args));
-  trie.registerGreedy('info-center', 'Information center configuration', (args) => dispatch('info-center', args));
+  // `info-center` a maintenant son propre arbre
+  // (`HuaweiInfoCenterCommands`) : un nœud glouton n'a pas de sous-arbre,
+  // donc son aide ne pouvait rien descendre.
+  //
+  // Le commutateur n'a pas de service de gestion, mais il connaît la
+  // commande : il reçoit son PROPRE état plutôt qu'un accesseur vide,
+  // sans quoi la famille redeviendrait chez lui ce qu'elle était
+  // partout — acceptée et sans effet.
+  const infoCenterDuShell = new InfoCenterConfig();
+  registerInfoCenterCommands(trie, {
+    config: () => getRouter
+      ? getRouter().getManagementService().getInfoCenter()
+      : infoCenterDuShell,
+  });
   trie.registerGreedy('sflow', 'sFlow configuration', (args) => dispatch('sflow', args));
 }
 
