@@ -50,10 +50,19 @@ async function typeRoot(t: TerminalSession, line: string): Promise<void> {
   await flush();
 }
 
+/**
+ * Tape une ligne dans la session distante, puis VIDE LE PAGER — une
+ * sortie plus longue que l'écran fait entrer IOS en `--More--`, et la
+ * touche suivante y est consommée au lieu d'atteindre le shell.
+ */
 async function typeSub(t: TerminalSession, line: string): Promise<void> {
   t.setInputBuf(line);
   t.handleKey(key('Enter'));
   await flush();
+  for (let garde = 0; garde < 50 && t.foreground.currentInputMode.type === 'pager'; garde++) {
+    t.handleKey(key(' '));
+    await flush();
+  }
 }
 
 /**
