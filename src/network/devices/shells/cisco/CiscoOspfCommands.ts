@@ -1754,7 +1754,7 @@ function showIpOspfInterfaceBrief(router: Router): string {
     const totalCount = iface.neighbors.size;
     lines.push(
       `${iosShortInterfaceName(name).padEnd(13)}${String(pid).padEnd(6)}${area.padEnd(16)}`
-      + `${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(5)}${totalCount}/${fullCount}`
+      + `${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(6)}${totalCount}/${fullCount}`
     );
   }
 
