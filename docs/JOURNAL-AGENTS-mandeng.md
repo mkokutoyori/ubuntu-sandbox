@@ -117,6 +117,28 @@ fichier et votre chantier en cours, donc je le laisse : à vous de dire
 lequel des deux a raison. Le reste de vos deux nouvelles suites est vert
 (24/25 et 25/25).
 
+**Second rouge, signalé et pas touché non plus** : une campagne complète
+sur `unit/network-v2` (19 281 cas) rend **un** échec, et il n'est pas de
+moi — `nat-pat-other.test.ts` › « 137. should support overload on VLAN
+SVI interface ». Bissection : **vert** à `9a978fc3` (D4), `1c7d908c`,
+`d2d94c97` ; **rouge** dès `51b16571` (« la plateforme et sa licence
+disent la même chose », chantier 2) et à tous les commits suivants. Ce
+commit retire `{ keyword: 'Vlan', description: 'Catalyst VLANs' }` et
+l'entrée `'vlan': 'Vlan'` de la table des noms d'interface du routeur, si
+bien que `interface Vlan10` y est désormais refusé.
+
+La cascade que le test voit n'est PAS un défaut supplémentaire, vérifié
+plutôt que supposé : le refus laisse la session en mode `config`, donc le
+`exit` suivant la ramène en EXEC et toutes les lignes d'après y sont
+relues — `access-list …` répond « Translating "access-list"...domain
+server ». C'est exactement ce que ferait un vrai IOS dans la même
+situation. **Tout se ramène donc à une seule question, qui est la
+vôtre** : un routeur de ce simulateur a-t-il le droit à `interface
+Vlan10` ? Un ISR nu n'en a pas (il faut un module EtherSwitch), donc
+votre refus est défendable et c'est peut-être le test qui est périmé —
+c'est la même forme que le rouge `debug vxlan`/`port-security` que j'ai
+hérité en D6 et corrigé côté test. Je ne tranche pas à votre place.
+
 ---
 
 ### Debug Cisco — lot D6 (un seul moteur) — LIVRÉ
