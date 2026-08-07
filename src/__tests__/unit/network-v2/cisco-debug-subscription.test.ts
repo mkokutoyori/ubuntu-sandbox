@@ -91,25 +91,27 @@ describe('Cisco debug ip ospf — event subscription streams into the terminal',
     await enableOspf();
     // Deux flux distincts portent l'évènement : le syslog (%OSPF-5-ADJCHG,
     // qui n'est pas du debug et continue quoi qu'il arrive) et la sortie de
-    // `debug ip ospf adj`. Ce test porte sur le second : on compte donc ce
-    // que le debug AJOUTE, pas le total.
+    // `debug ip ospf adj`, qui depuis le lot D5 imprime ses PROPRES lignes
+    // d'adjacence au lieu de repeter le message syslog. On compte donc
+    // celles-la.
     adjChange();
     await flush();
-    const sansDebug = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
+    const ligneDebug = (l: { text: string }) => / Nbr \S+ state /.test(l.text);
+    const sansDebug = session.lines.filter(ligneDebug).length;
 
     await type('debug ip ospf adj');
     adjChange();
     await flush();
-    const avecDebug = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
-    expect(avecDebug - sansDebug).toBeGreaterThan(1);
+    const avecDebug = session.lines.filter(ligneDebug).length;
+    expect(avecDebug).toBeGreaterThan(sansDebug);
 
     await type('no debug ip ospf adj');
     expect(session.hasBackgroundAsyncJobs).toBe(false);
 
     adjChange();
     await flush();
-    const apresNoDebug = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
-    expect(apresNoDebug - avecDebug).toBe(sansDebug);
+    const apresNoDebug = session.lines.filter(ligneDebug).length;
+    expect(apresNoDebug).toBe(avecDebug);
   });
 
   it('sessions are isolated — a second terminal without debug sees nothing', async () => {
@@ -125,9 +127,10 @@ describe('Cisco debug ip ospf — event subscription streams into the terminal',
     // La session sans debug peut recevoir la ligne SYSLOG (elle n'est pas du
     // debug) ; ce qu'elle ne doit pas voir, c'est la sortie du debug de
     // l'autre session — donc strictement moins de lignes.
-    const avec = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
-    const sans = session2.lines.filter((l) => l.text.includes('ADJCHG')).length;
+    const debugLigne = (l: { text: string }) => / Nbr \S+ state /.test(l.text);
+    const avec = session.lines.filter(debugLigne).length;
+    const sans = session2.lines.filter(debugLigne).length;
     expect(avec).toBeGreaterThan(0);
-    expect(sans).toBeLessThan(avec);
+    expect(sans).toBe(0);
   });
 });

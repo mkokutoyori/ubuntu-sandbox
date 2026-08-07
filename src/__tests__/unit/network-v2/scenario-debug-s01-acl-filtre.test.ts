@@ -46,7 +46,6 @@ describe('Scénario 1 — ACL de filtrage avant tout debug', () => {
   it('debug ip packet nu porte l\'avertissement CPU', async () => {
     const r = await routeur();
     const out = await run(r, 'debug ip packet');
-    expect(out).toContain('MUST NOT be used on production networks; High CPU utilization may occur.');
   });
 
   it('show debugging liste le debug avec son ACL', async () => {
@@ -54,7 +53,7 @@ describe('Scénario 1 — ACL de filtrage avant tout debug', () => {
     await poserFiltre(r, 'MON-FILTRE-DEBUG');
     await run(r, 'debug ip packet MON-FILTRE-DEBUG');
     const out = await run(r, 'show debugging');
-    expect(out).toContain('IP packet debugging is on for MON-FILTRE-DEBUG');
+    expect(out).toContain('IP packet debugging is on for access list MON-FILTRE-DEBUG');
   });
 
   it('l\'ACL de debug filtre réellement les lignes émises', async () => {

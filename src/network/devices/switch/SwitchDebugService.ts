@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
 
 export type SwitchDebugCategory =
   | 'arp' | 'mac' | 'link' | 'stp.events' | 'stp.bpdu'
@@ -17,6 +18,16 @@ const LABELS: Record<SwitchDebugCategory, string> = {
   dhcp: 'DHCP',
   vxlan: 'VXLAN',
 };
+
+const RUBRIQUES: ReadonlyArray<readonly [string, ReadonlyArray<SwitchDebugCategory>]> = [
+  ['Generic IP', ['arp']],
+  ['Spanning Tree', ['stp.events', 'stp.bpdu']],
+  ['Switching', ['mac', 'link']],
+  ['DHCP', ['dhcp']],
+  ['Neighbour discovery', ['cdp', 'lldp']],
+  ['Interface', ['port-security']],
+  ['VXLAN', ['vxlan']],
+];
 
 function mapScope(arg: string): SwitchDebugCategory[] | null {
   const w = arg.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -52,27 +63,27 @@ export class SwitchDebugService implements TerminalDebugSource {
 
   enable(arg: string): string {
     const cats = mapScope(arg);
-    if (!cats) return `${arg.trim()} debugging is on`;
+    if (!cats) throw new CliInvalidInput({ token: arg.trim().split(/\s+/)[0] });
     for (const c of cats) this.flags.add(c);
     return `${LABELS[cats[0]]} debugging is on`;
   }
 
   disable(arg: string): string {
     const cats = mapScope(arg);
-    if (!cats) return `${arg.trim()} debugging is off (disabled)`;
+    if (!cats) throw new CliInvalidInput({ token: arg.trim().split(/\s+/)[0] });
     for (const c of cats) this.flags.delete(c);
-    return `${LABELS[cats[0]]} debugging is off (disabled)`;
+    return `${LABELS[cats[0]]} debugging is off`;
   }
 
   enableAll(): string {
     this.all = true;
-    return 'All possible debugging is on';
+    return 'All possible debugging has been turned on';
   }
 
   disableAll(): string {
     this.flags.clear();
     this.all = false;
-    return 'All possible debugging has been turned off (disabled)';
+    return 'All possible debugging has been turned off';
   }
 
   hasAnyFlag(): boolean { return this.all || this.flags.size > 0; }
@@ -96,9 +107,21 @@ export class SwitchDebugService implements TerminalDebugSource {
   }
 
   format(): string {
-    if (this.all) return 'All debugging is on';
-    if (this.flags.size === 0) return 'No debugging is enabled';
-    return this.list().join('\n');
+    const actives = this.all
+      ? (Object.keys(LABELS) as SwitchDebugCategory[])
+      : [...this.flags];
+    if (actives.length === 0) return 'No debug flags are enabled';
+    const rangees = actives
+      .map((c) => ({ c, r: RUBRIQUES.findIndex(([, m]) => m.includes(c)) }))
+      .sort((a, b) => a.r - b.r || LABELS[a.c].localeCompare(LABELS[b.c]));
+    const out: string[] = [];
+    let courante: string | null = null;
+    for (const { c, r } of rangees) {
+      const nom = r >= 0 ? RUBRIQUES[r][0] : 'Other';
+      if (nom !== courante) { out.push(`${nom}:`); courante = nom; }
+      out.push(`  ${LABELS[c]} debugging is on`);
+    }
+    return out.join('\n');
   }
 
   subscribe(listener: DebugLineListener): () => void {

@@ -203,7 +203,7 @@ describe('Scénario 9 — le debug sous charge est bridé, pas mortel', () => {
     expect(
       lignes.join('\n'),
       'une perte silencieuse ferait lire une trace tronquée comme complète',
-    ).toMatch(/dropped by rate limiting/);
+    ).toMatch(/dropped by the console rate limit/);
   }, LONG);
 
   it('sous le seuil, rien n\'est perdu', async () => {

@@ -25,7 +25,13 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### Debug Cisco — lot D5 (vocabulaire et format des lignes)
+*(rien)*
+
+---
+
+## Livré
+
+### Debug Cisco — lot D5 (vocabulaire et format des lignes) — LIVRÉ
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-Debug-Fidelite-Cisco.md`, chantier D / lot D5.
@@ -52,6 +58,23 @@ retrouve pas chez IOS. Je le remplace par une notice préfixée `NOTE:`,
 la convention que ce dépôt emploie déjà pour ce qu'il dit en son nom
 propre (cf. `apacheWarnings()`). Si une de vos suites cherche ce
 mnémonique, elle le verra. Je ne touche pas `LoggingConfig.ts`.
+
+**Livré. Ce qui peut vous toucher :**
+
+- `%SYS-3-LOGGINGRATE` n'existe plus : la notice de limitation de débit
+  est devenue `NOTE: N debug messages dropped by the console rate limit
+  (N msg/sec)`.
+- `show debugging` a changé de forme sur les DEUX plateformes (rubriques
+  d'IOS, une rubrique seulement si elle a du contenu). Le switch liste
+  désormais ses drapeaux au lieu de rendre `All debugging is on`, et dit
+  `No debug flags are enabled` comme le routeur.
+- Les lignes de debug ont changé de format (`IP: s=… (local), d=… (Gi0/0)
+  … sending`, `RT: add …/24 …, static metric [1/0]`, `OSPF: snd. v:2 t:1
+  (Hello) …`). Douze suites y sont passées.
+- `debug ip ospf adj` n'imprime plus `%OSPF-5-ADJCHG` : ce message reste
+  **le vôtre**, sur le canal syslog, sans concurrent sur le canal debug.
+
+Détail : `PRD-Debug-Fidelite-Cisco.md` §14.
 
 ---
 
@@ -425,7 +448,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | R1–R4 livrés ; R5, R6, R7 ouverts |
-| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D4 livrés** ; D5, D6 ouverts |
+| Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D5 livrés** ; D6 ouvert |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
