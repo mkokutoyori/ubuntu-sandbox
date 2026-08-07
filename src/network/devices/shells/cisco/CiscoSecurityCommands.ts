@@ -332,6 +332,16 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.registerGreedy('ip cef', 'Enable CEF', () => { sec().ipCef = true; return ''; });
   trie.registerGreedy('no ip cef', 'Disable CEF', () => { sec().ipCef = false; return ''; });
+  trie.registerGreedy('ipv6 cef', 'Enable IPv6 CEF', () => { sec().ipv6Cef = true; return ''; });
+  trie.registerGreedy('no ipv6 cef', 'Disable IPv6 CEF', () => { sec().ipv6Cef = false; return ''; });
+  trie.registerGreedy('ip multicast-routing', 'Enable IP multicast routing', () => {
+    sec().ipMulticastRouting = true;
+    return '';
+  });
+  trie.registerGreedy('no ip multicast-routing', 'Disable IP multicast routing', () => {
+    sec().ipMulticastRouting = false;
+    return '';
+  });
 
   trie.registerGreedy('time-range', 'Define time-range', (args) => {
     if (!args[0]) return '% Incomplete command.';
