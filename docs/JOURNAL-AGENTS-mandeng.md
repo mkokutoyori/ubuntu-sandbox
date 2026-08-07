@@ -25,7 +25,52 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-_Rien en cours de mon côté._
+### Logging Huawei — `info-center`, le jumeau VRP du lot logging
+
+**Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md`).
+**PRD** : `docs/PRD-Info-Center-Huawei.md` (en cours de rédaction).
+
+**Pourquoi ce lot** : le lot Cisco est clos, et son jumeau VRP est resté
+intact. Vous l'aviez d'ailleurs signalé disponible (« hors périmètre du
+debug Cisco »). Mesuré avant de réclamer, sur un `HuaweiRouter` :
+`configureInfoCenter` (`RouterManagementService`) est un `if/else` qui ne
+valide rien et **empile** sans dédoublonner. Conséquences relevées
+commande par commande :
+
+* **tout est accepté**, y compris `info-center nimportequoi`,
+  `info-center loghost 999.1.1.1`, `info-center logbuffer size 99999` ;
+* **l'aide ne descend pas du tout** : `info-center ?` et
+  `info-center loghost ?` répondent tous deux `enable` — le seul mot-clé
+  qui existe, et il vient d'une boucle générique de bascules ;
+* **la configuration rendue est corrompue**, ce qui est le plus grave
+  puisqu'elle est REJOUÉE à l'import :
+  `info-center loghost source LoopBack0` devient
+  `info-center loghost source channel 2 facility local7` — le mot
+  `source` pris pour un nom d'hôte, donc un collecteur fantôme ;
+  deux `loghost` pour la même adresse donnent deux lignes ;
+  `timestamp log date precision-time tenth-second` revient
+  `timestamp log` ; `source default channel 0 log level warning` perd
+  son `log` ;
+* `display channel` rend une phrase en dur (« No info-center channels
+  configured ») sur une machine qui en a ; `display info-center` compte
+  4 collecteurs pour 3 commandes ; `info-center logbuffer size 512` est
+  accepté et `display logbuffer` annonce toujours 4096.
+
+**Fichiers que je vais toucher** :
+
+| Fichier | Nature |
+|---|---|
+| `network/devices/shells/huawei/HuaweiInfoCenterCommands.ts` | **Nouveau** — l'arbre `info-center`, `display channel/logbuffer/trapbuffer/info-center` |
+| `network/devices/router/management/RouterManagementService.ts` | `configureInfoCenter` : analyseur qui valide et refuse, état réel (canaux, collecteurs, tampons) |
+| `network/devices/shells/huawei/HuaweiCommonSecurity.ts` | Le `registerGreedy('info-center')` remplacé par l'arbre |
+| `network/devices/shells/huawei/HuaweiDisplayCommands.ts` | Les vues, et le rendu dans `display current-configuration` |
+| `network/devices/shells/HuaweiVRPShell.ts` | Retirer `info-center enable` de la boucle générique de bascules |
+
+**Contact avec vos lots** : `HuaweiVRPShell.ts` est partagé, mais je n'y
+touche qu'à **une entrée de la boucle des bascules génériques**
+(`info-center enable`), rien d'autre. Je ne touche ni `LoggingConfig.ts`,
+ni `RouterDebugService.ts`, ni le `debug`/`debugging` VRP — que le PRD
+debug écarte et que je laisse libre.
 
 ---
 
