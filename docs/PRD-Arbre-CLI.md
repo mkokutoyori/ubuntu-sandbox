@@ -16,7 +16,7 @@ de fidélité se tranche contre cette machine-là, pas contre « un Cisco ».
 | 2 | Alignement licence / plateforme (§2) | ✅ fait |
 | 3 | Invariant aide ⇔ exécution (§3) | ✅ fait |
 | 4 | Typage des arguments d'aide (§4) | ✅ fait |
-| 5 | Complétude des menus (§5) | ⬜ à faire |
+| 5 | Complétude des menus (§5) | ✅ fait |
 | 6 | Finition des données (§6) | ⬜ à faire |
 
 ---
@@ -251,11 +251,49 @@ git-stash : 15 échouent authentiquement avant correction.
 
 ## Chantier 5 — Complétude des menus
 
-`|`, `exit`, `end`, `help`, `do`, `default` dans chaque mode, en un point
-unique (notion de commandes universelles). Séparation console/VTY :
-`speed`/`stopbits`/`databits`/`parity`/`flowcontrol` d'un côté,
-`access-class`/`rotary`/`transport input` de l'autre. `no ?` doit offrir
-ce que le mode offre, sans filtrage arbitraire.
+**Mesure d'abord.** Les cinq universelles manquaient de `?` dans
+**dix modes sur dix**. La cause est structurelle et explique pourquoi
+personne ne les avait ajoutées : `exit`, `end`, `help`, `do` et
+`default` ne sont enregistrées dans AUCUN arbre — le shell les traite
+avant l'arbre, parce qu'elles existent partout. Or l'aide ne lit que
+l'arbre. Le point unique n'est donc pas un enregistrement à répéter,
+c'est `universalCommands()` : le répartiteur l'applique, l'aide la rend.
+
+Deux d'entre elles n'existaient pas du tout, et pas seulement dans
+l'aide. **`help`** partait vers la résolution de noms en EXEC
+(`Translating "help"...domain server`) et répondait au caret en
+configuration ; il rend maintenant le texte d'IOS. **`default
+<commande>`** répondait au caret partout : elle est exécutée comme la
+négation, ce qui est exact pour tout ce que ce simulateur configure —
+la seule valeur par défaut qu'il connaisse est l'absence. `do` seul
+répond « commande incomplète » plutôt qu'au caret ; `do <commande>`
+fonctionnait déjà.
+
+**Le `|` n'était le nœud d'aucun arbre**, puisqu'il est retiré de la
+ligne avant l'analyse : `show running-config | ?` répondait au caret.
+Il est traité dans `getHelp()` et pas dans le répartiteur, pour que le
+terminal et `cliHelp` — les deux portes de l'aide — ne puissent pas
+répondre différemment.
+
+**`redirect`, `append` et `tee` n'écrivaient aucun fichier** : absents
+de l'expression qui reconnaît les modificateurs, ils étaient ignorés et
+la sortie partait au terminal comme si rien n'avait été tapé. Ils
+écrivent désormais dans le `flash:` de l'équipement — le même objet que
+`dir` et `more` lisent, pas une copie — et la distinction est réelle :
+`redirect` et `append` n'affichent rien, `tee` écrit ET affiche.
+
+**Console, vty et auxiliaire partageaient un seul arbre.** `speed 9600`
+était accepté sur une vty, qui n'a pas de débit ; `access-class` sur la
+console, qui n'a pas d'adresse d'où filtrer ; et `databits`, `parity`,
+`flowcontrol` manquaient entièrement, alors qu'ils existent là où ils
+ont un sens. `LINE_KEYWORD_OWNERS` est la table unique, sur le modèle du
+chantier 3 : le gestionnaire la lit pour refuser, l'aide pour ne pas
+proposer.
+
+`no ?` était déjà cohérent à la mesure et n'a pas été touché.
+
+`probe-cli-commandes-universelles.test.ts` (17 cas) est discriminé par
+git-stash : les 17 échouent avant correction.
 
 ---
 

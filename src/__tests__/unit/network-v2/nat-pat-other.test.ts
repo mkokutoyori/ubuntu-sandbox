@@ -1629,16 +1629,23 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       expect(stats).toContain('Dynamic translations:');
     });
 
-    it('137. should support overload on VLAN SVI interface', async () => {
+    // Un ISR 2911 sans module EtherSwitch n'a pas de SVI (PRD-Arbre-CLI,
+    // chantier 2) : le PAT s'accroche donc à une interface physique. Le
+    // cas SVI est conservé pour ce qu'il vaut désormais — la preuve que
+    // l'interface ne peut pas naître, donc que la règle ne peut pas s'y
+    // accrocher.
+    it('137. should support overload on a physical outside interface', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
       await topo.r1.executeCommand('configure terminal');
-      await topo.r1.executeCommand('interface Vlan10');
+      expect(await topo.r1.executeCommand('interface Vlan10'))
+        .toContain('% Invalid input detected');
+      await topo.r1.executeCommand('interface GigabitEthernet0/1');
       await topo.r1.executeCommand('ip address 203.0.113.1 255.255.255.0');
       await topo.r1.executeCommand('ip nat outside');
       await topo.r1.executeCommand('exit');
       await topo.r1.executeCommand('access-list 1 permit 192.168.1.0 0.0.0.255');
-      const output = await topo.r1.executeCommand('ip nat inside source list 1 interface Vlan10 overload');
+      const output = await topo.r1.executeCommand('ip nat inside source list 1 interface GigabitEthernet0/1 overload');
       expect(output.trim()).toBe('');
     });
 
