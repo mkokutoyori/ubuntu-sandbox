@@ -293,7 +293,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 
 | Lot | Contenu | Dépend de |
 |---|---|---|
-| **V1** | Chantier B : `undo` refuse l'inconnu | — |
+| **V1** | Chantier B : `undo` refuse l'inconnu (**livré, §9**) | — |
 | **V2** | Chantier A : séparateurs, numéro de règle, pertes sèches, invariant de rejeu | — |
 | **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` | — |
 | **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` | V1 |
@@ -342,3 +342,65 @@ Des propriétés, pas des listes de chaînes :
 - **Les bornes que je n'ai pas pu confirmer** (longueur de `sysname`,
   plage des `LoopBack`) : nommées au §1.8, corrigées seulement si une
   source les fixe.
+
+---
+
+## 9. V1 — Livré
+
+**Le défaut.** `undo <n'importe quoi>` rendait la main en silence, sur les
+deux plateformes et dans toutes les vues. La cause tient en une ligne :
+`cmdUndo()` reconnaît une quinzaine de formes et se termine par
+`return '';` — tout le reste tombe dans ce silence. Les fourre-tout
+`registerGreedy('undo', …)` — deux sur le routeur, trois sur le switch —
+y mènent tous.
+
+**La règle appliquée.** `undo X` existe si et seulement si `X` se
+configure dans cette vue, et **le trie de la vue sait déjà répondre** :
+`refuseUnknownUndo(trie, args, raw)` interroge `trie.match()` et rend le
+message de VRP, ou `null` pour laisser passer. Un seul endroit décide,
+donc le prochain `undo` ajouté ne peut pas rouvrir le trou. Le message
+réutilise `HUAWEI_ERRORS.UNRECOGNIZED`, déjà là, plutôt qu'une seconde
+mise en forme : écho de la ligne et curseur sous le mot fautif.
+
+**La portée a été resserrée après mesure, et c'est le cœur du lot.** La
+première version interrogeait la forme ENTIÈRE (`trie.match('ip pool P1')`),
+ce qui faisait dépendre le refus de l'arité d'enregistrement du positif :
+`ip pool` est enregistré sans argument, donc `undo ip pool P1` — légitime
+— était refusé. La règle ne porte plus que sur le **premier mot**, la
+seule question que ce lot pose. Un mot en trop derrière une tête valide
+est une autre erreur (`Too many parameters`), qui appartient au lot V4 :
+`undo sysname bbb ccc` passe donc encore, et **un test le fixe** pour que
+le jour où V4 le corrige, il le fasse sciemment.
+
+**Deux comportements changent, et le refus est le bon.** `undo arp-proxy
+enable` et `undo sftp` en **vue système** étaient acceptés ; sur VRP,
+`arp-proxy enable` est une commande d'interface et `sftp` une commande de
+vue utilisateur. Ni l'une ni l'autre n'existe là où elle était acceptée.
+Vérifié par comparaison avec l'état antérieur, pour ne pas confondre une
+correction avec une régression.
+
+**Un constat trouvé en écrivant le test, et gardé.** `undo shutdow` est
+ACCEPTÉ, et c'est juste : VRP abrège, donc `shutdow` *est* `shutdown`,
+derrière `undo` comme ailleurs. Mon premier jeu de mots « inconnus »
+contenait cette troncature et accusait le produit à tort. La liste ne
+retient que des transpositions — la faute qu'un opérateur commet
+vraiment — et une assertion sépare désormais les deux : l'abréviation
+doit continuer de fonctionner derrière `undo`.
+
+**Tests.** `huawei-undo-refuse-inconnu.test.ts` (17 cas) vérifie une
+propriété et non une liste : un balayage de mots inconnus dans trois vues
+du routeur et trois du switch, l'écho et la position du curseur, le fait
+que **les deux plateformes refusent avec le même mot**, un balayage
+symétrique de dix-neuf `undo` légitimes qui doivent continuer de passer,
+et qu'un refus ne défait rien — la configuration est comparée à
+elle-même avant et après.
+
+Discrimination par `git stash` : **7 des 17 tombent** avant. Une des
+assertions passait d'abord **à vide** — « les deux plateformes refusent
+avec le même mot » était vraie quand les deux rendaient `""` ; elle
+exige maintenant que ce mot commun soit le refus.
+
+**Mesures.** 156 suites connexes vertes (3 176 cas) — toutes celles qui
+tapent `undo` ou construisent une machine Huawei. Typecheck
+`tsc -p tsconfig.app.json` à 162, inchangé ; lint identique au baseline
+(40 problèmes avant, 40 après).

@@ -15,6 +15,7 @@ import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../core/ty
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
+import { refuseUnknownUndo } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
 
@@ -406,8 +407,8 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     return cmdIpPool(getRouter(), ctx, args[0]);
   });
 
-  trie.registerGreedy('undo', 'Undo configuration', (args) => {
-    return cmdUndo(getRouter(), ctx, args);
+  trie.registerGreedy('undo', 'Undo configuration', (args, raw) => {
+    return refuseUnknownUndo(trie, args, raw) ?? cmdUndo(getRouter(), ctx, args);
   });
 
   trie.registerGreedy('undo ip route-static', 'Remove a static route', (args) => {
@@ -533,8 +534,8 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return '';
   });
 
-  trie.registerGreedy('undo', 'Undo configuration', (args) => {
-    return cmdUndo(getRouter(), ctx, args);
+  trie.registerGreedy('undo', 'Undo configuration', (args, raw) => {
+    return refuseUnknownUndo(trie, args, raw) ?? cmdUndo(getRouter(), ctx, args);
   });
 
   trie.register('dhcp select global', 'Enable DHCP on interface', () => {

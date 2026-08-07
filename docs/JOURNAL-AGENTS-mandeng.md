@@ -25,7 +25,7 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — audit livré, lots V1–V6 ouverts
+### CLI Huawei VRP — audit livré, **V1 livré**, V2–V6 ouverts
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -63,6 +63,36 @@ lot séparé (V6) pour la même raison.
 rejeu filtrait les lignes `#` et comptait 23 refus au lieu de 14 — elle
 accusait le produit de plus qu'il ne fait. Le `#` sépare les blocs et
 ramène en vue système ; le rejeu doit l'honorer.
+
+---
+
+### V1 livré — `undo` refuse l'inconnu (détail : PRD §9)
+
+`cmdUndo()` se terminait par `return '';` : tout ce qu'il ne reconnaît
+pas tombait dans le silence, et les cinq fourre-tout
+`registerGreedy('undo', …)` (deux routeur, trois switch) y menaient.
+
+`refuseUnknownUndo(trie, args, raw)` (`shells/cli-utils.ts`, à côté de
+`HUAWEI_ERRORS` que je réutilise plutôt que d'écrire une seconde mise en
+forme) interroge le trie de la vue : `undo X` existe si et seulement si
+`X` s'y configure. Un seul endroit décide, donc le prochain `undo`
+ajouté ne peut pas rouvrir le trou.
+
+**Fichiers touchés** : `shells/cli-utils.ts`,
+`shells/huawei/HuaweiConfigCommands.ts`, `shells/HuaweiSwitchShell.ts`.
+Je n'ai pas touché `HuaweiVRPShell.ts` finalement — les fourre-tout n'y
+étaient pas.
+
+**Deux comportements changent** : `undo arp-proxy enable` et `undo sftp`
+en **vue système** sont désormais refusés. Sur VRP, `arp-proxy enable`
+est une commande d'interface et `sftp` une commande de vue utilisateur —
+ni l'une ni l'autre n'existe là où elle était acceptée. Vérifié contre
+l'état antérieur pour ne pas confondre correction et régression ; aucune
+suite ne s'y appuyait.
+
+`huawei-undo-refuse-inconnu.test.ts` (17 cas), 7 tombent par `git stash`.
+156 suites connexes vertes (3 176 cas). Typecheck 162, inchangé ; lint
+identique.
 
 ---
 
@@ -978,7 +1008,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | **Audit livré** ; V1–V6 ouverts |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 livrés** ; V2–V6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
