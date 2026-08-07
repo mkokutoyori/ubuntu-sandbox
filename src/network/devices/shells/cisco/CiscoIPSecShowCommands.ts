@@ -124,10 +124,15 @@ export function registerIPSecShowCommands(
     let ipsecCount = 0;
     if (sessions) for (const arr of sessions.ipsecSADB.values()) ipsecCount += arr.length;
     return [
-      'Hardware Encryption Layer: not available (software-only sim)',
-      'Cryptographic API library: software (Node crypto fallback)',
-      `Active IKE/IKEv2 SAs: ${ikeCount}`,
-      `Active IPSec SAs: ${ipsecCount}`,
+      'Hardware Encryption Layer : ACTIVE',
+      '',
+      'Number of crypto engines = 1.',
+      '',
+      'CryptoEngine Onboard VPN details: state = Active',
+      ' Capability     : IPPCP, DES, 3DES, AES, RSA',
+      `  IKE Sessions   : ${ikeCount} active, 100 max`,
+      `  IPSec Sessions : ${ipsecCount} active, 200 max`,
+      '  DH Groups      : 1, 2, 5, 14, 19, 20',
     ].join('\n');
   });
   trie.register('show crypto engine connections active', 'Active crypto engine connections', () => {

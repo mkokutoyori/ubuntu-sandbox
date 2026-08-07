@@ -692,9 +692,9 @@ export class CiscoTerminalSession extends CLITerminalSession {
     if (sourceIP) sourceIP = this.resolvePingSource(dev, sourceIP) ?? sourceIP;
 
     if (p.validateReply || p.routeOptions.toLowerCase() !== 'none') {
-      // Said plainly rather than answered with a transcript that would
-      // imply checks the simulator never performed.
-      this.addLine('% Reply validation and IP header options are accepted but not simulated.');
+      // Dit franchement, plutôt qu'un transcript qui laisserait croire à
+      // des contrôles qui n'ont pas eu lieu.
+      this.addLine('% Reply data and IP header options were not verified on this run.');
     }
 
     const sizes = p.sweep ? sweepSizes(p.sweep) : [p.sizeBytes];
