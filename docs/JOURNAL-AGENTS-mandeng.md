@@ -315,6 +315,23 @@ que la première version s'était contentée d'écrire :
   `show logging`. **Si vous publiez `device.syslog.entry` depuis un
   nouvel endroit, passez le mnémonique** — sans lui le relais retombe
   sur le nom de la sévérité, ce qui est une forme dégradée mais valide.
+**Troisième lot, les limites restantes (§2.10)** — trois choses qui
+touchent au-delà du logging :
+
+* **Le tampon de journalisation ne survit plus à un `reload`.** Il
+  grandissait à travers un redémarrage (mesuré : 3 lignes avant, 5
+  après, les 3 premières datées d'avant le démarrage) alors qu'il est en
+  mémoire vive. `performImmediateReload` et `performScheduledReload`
+  (`CiscoShellBase`) le vident et émettent `%SYS-5-RESTART: System
+  restarted --`, qui manquait. **Si un test reload puis lit
+  `show logging`, il ne verra plus que ce qui suit le redémarrage.**
+* **`show logging count` refuse la table sans `logging count`.** Elle
+  était rendue inconditionnellement ; un test qui l'attend doit taper la
+  commande d'abord (un cas de `scenario-debug-10-show-avances` a été
+  corrigé en ce sens).
+* `SyslogAgent` prend un troisième paramètre optionnel, l'ordonnanceur,
+  pour retenter une connexion TCP tombée à 60 s.
+
 * **Piège à connaître avant d'ajouter un abonné à `tcp.*` dans
   `LoggingConfig`** : émettre un message produit de l'activité réseau,
   et cette activité produit des messages. Un collecteur TCP injoignable

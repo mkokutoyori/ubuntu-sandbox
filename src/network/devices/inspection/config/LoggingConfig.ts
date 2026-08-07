@@ -393,6 +393,71 @@ export class LoggingConfig {
   /** `logging reload [<severity>] [message-limit <n>]`. */
   reloadSeverity: Severity | null = null;
   reloadMessageLimit: number | null = null;
+  private enRedemarrage = false;
+  private messagesDuRedemarrage = 0;
+
+  /**
+   * Le début d'un redémarrage.
+   *
+   * **Le tampon part avec**, et c'est le vrai comportement : il est en
+   * MÉMOIRE VIVE. Le garder faisait qu'un routeur relu montrait, après
+   * son redémarrage, un historique daté d'avant le démarrage — une
+   * machine ne peut pas se souvenir de ce qui a précédé sa mise sous
+   * tension, et diagnostiquer sur cet historique-là est pire que de
+   * n'en avoir aucun.
+   *
+   * `logging reload` prend son sens ici, et nulle part ailleurs : il
+   * décide de ce qui est journalisé PENDANT cette fenêtre.
+   */
+  startReload(): void {
+    this.messages.length = 0;
+    this.enRedemarrage = true;
+    this.messagesDuRedemarrage = 0;
+  }
+
+  /**
+   * Le premier message d'une machine qui boote.
+   *
+   * Il traverse la fenêtre sans la consommer : c'est la bannière du
+   * démarrage, pas un des « messages journalisés pendant le
+   * redémarrage » que `logging reload` borne. Un `message-limit 1` qui
+   * effacerait le `%SYS-5-RESTART` ne laisserait aucune trace du
+   * redémarrage lui-même.
+   */
+  noteRestart(): void {
+    const fenetre = this.enRedemarrage;
+    this.enRedemarrage = false;
+    this.append('notifications', 'sys', 'System restarted --', true, 'RESTART');
+    this.enRedemarrage = fenetre;
+  }
+
+  /**
+   * La fin de la fenêtre.
+   *
+   * Elle ne peut pas être la fin de `powerOn()` : les remontées
+   * d'interface arrivent par le bus, donc après. La coquille la referme
+   * à la commande suivante, ce qui est aussi le moment où l'opérateur
+   * reprend la main.
+   */
+  endReloadWindow(): void {
+    if (!this.enRedemarrage) return;
+    this.enRedemarrage = false;
+    this.messagesDuRedemarrage = 0;
+  }
+
+  /**
+   * Ce que `logging reload` laisse passer pendant la fenêtre : la
+   * sévérité demandée, et pas plus de `message-limit` messages.
+   */
+  private redemarrageAccepte(severity: Severity): boolean {
+    if (!this.enRedemarrage) return true;
+    if (this.reloadSeverity
+      && this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.reloadSeverity]) return false;
+    if (this.reloadMessageLimit !== null
+      && this.messagesDuRedemarrage >= this.reloadMessageLimit) return false;
+    this.messagesDuRedemarrage++;
+    return true;
+  }
   /**
    * Le numéro de séquence compte les messages produits depuis le
    * démarrage, pas ceux que le tampon garde : `clear logging` ne le
@@ -734,6 +799,7 @@ export class LoggingConfig {
   append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
     if (!this.enabled) return;
     if (severity === 'debugging' && !this.debugAllowed(tag)) return;
+    if (!this.redemarrageAccepte(severity)) return;
     // The device's own clock, not the host's: a router whose operator ran
     // `clock set` must date its messages with the date it was given.
     const ts = this.clock?.epochMs() ?? Date.now();
@@ -1868,10 +1934,46 @@ export class LoggingConfig {
     }
   }
 
-  /** `show logging` projection of the real configured state. */
+  /**
+   * Les classes de messages que `logging message-counter` compte.
+   *
+   * IOS en distingue trois : les messages ordinaires (`log`), ceux que
+   * `debug` produit (`debug`), et ceux qui partent vers un serveur
+   * syslog (`syslog`). Un message peut appartenir à deux d'entre elles —
+   * un message ordinaire qui atteint le seuil du relais est à la fois
+   * `log` et `syslog` — et il est compté dès qu'UNE de ses classes est
+   * active. Par défaut seule `log` l'est, ce qui est le défaut d'IOS :
+   * les lignes de debug ne gonflent pas la table.
+   */
+  private compteCeMessage(severity: Severity): boolean {
+    if (severity === 'debugging') {
+      if (this.messageCounters.has('debug')) return true;
+    } else if (this.messageCounters.has('log')) {
+      return true;
+    }
+    return this.messageCounters.has('syslog')
+      && this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.trapSeverity];
+  }
+
+  /**
+   * `show logging count` — la table des occurrences.
+   *
+   * Elle comptait tout, quelle que soit la configuration : ni
+   * `logging count`, qui l'active, ni `logging message-counter`, qui
+   * choisit les classes comptées, n'étaient lus. Une table qui ignore
+   * les deux commandes censées la régler n'est pas une mesure.
+   */
   renderCount(): string {
+    // Réserve d'honnêteté, écrite ici plutôt que découverte : le libellé
+    // exact d'IOS quand on demande la table sans avoir activé le comptage
+    // n'a pas pu être vérifié contre un vrai équipement depuis cet
+    // environnement. La forme retenue suit sa convention — préfixe `%`,
+    // une phrase. Ce qui est sûr, et c'est le point, est qu'une table
+    // pleine alors que la capacité est éteinte serait un mensonge.
+    if (!this.countEnabled) return '% Logging count is not enabled';
     const tally = new Map<string, { count: number; last: number }>();
     for (const m of this.messages) {
+      if (!this.compteCeMessage(m.severity)) continue;
       const sevNum = this.SEVERITY_ORDER[m.severity];
       const key = `${m.tag.toUpperCase()}-${sevNum}-${(m.mnemonic ?? m.severity).toUpperCase()}`;
       const prev = tally.get(key);

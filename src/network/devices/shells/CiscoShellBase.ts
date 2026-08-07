@@ -125,8 +125,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected performImmediateReload(): string {
+    // Le tampon est en mémoire vive : il part avec le redémarrage, et
+    // `logging reload` décide de ce qui est journalisé pendant celui-ci.
+    this.attachLoggingToDevice(this.d());
+    this.logging.startReload();
     this.d().powerOff();
     this.d().powerOn();
+    this.logging.noteRestart();
     this.mode = 'user';
     this.terminalMonitor = false;
     this.cmdHistory = [];
@@ -137,8 +142,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected performScheduledReload(device: TDevice): void {
+    this.attachLoggingToDevice(device);
+    this.logging.startReload();
     device.powerOff();
     device.powerOn();
+    this.logging.noteRestart();
     this.mode = 'user';
     this.terminalMonitor = false;
     this.cmdHistory = [];
@@ -1062,6 +1070,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
 
     this.configExitLogTarget = device;
+
+    // La fenêtre du redémarrage se referme à la commande SUIVANTE, pas à
+    // la fin de `powerOn()` : les remontées d'interface arrivent par le
+    // bus, donc APRÈS. La fermer trop tôt laissait `logging reload` ne
+    // rien borner du tout — le défaut que ce câblage corrige.
+    this.logging.endReloadWindow();
 
     // Global shortcuts (no device ref needed)
     const lower = cmdPart.toLowerCase();

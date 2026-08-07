@@ -720,3 +720,125 @@ describe('le commutateur et le routeur répondent la même chose', () => {
       .toContain('Syslog History Table:');
   });
 });
+
+describe('un redémarrage emporte le tampon, comme la mémoire vive', () => {
+  async function labo(): Promise<CiscoRouter> {
+    const r = new CiscoRouter('R1');
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('interface GigabitEthernet0/0');
+    await r.executeCommand('shutdown');
+    await r.executeCommand('end');
+    return r;
+  }
+
+  const lignes = (s: string) => s.split('\n').filter(l => l.includes('%'));
+
+  it('ce qui précédait le démarrage n\'est plus là', async () => {
+    const r = await labo();
+    expect(lignes(await r.executeCommand('show logging'))
+      .some(l => l.includes('CHANGED'))).toBe(true);
+    await r.executeCommand('reload');
+    await r.executeCommand('enable');
+    // Une machine ne peut pas se souvenir de ce qui a précédé sa mise
+    // sous tension ; diagnostiquer sur cet historique-là est pire que de
+    // n'en avoir aucun.
+    expect(lignes(await r.executeCommand('show logging'))
+      .some(l => l.includes('CHANGED'))).toBe(false);
+  });
+
+  it('la première ligne d\'une machine qui boote est %SYS-5-RESTART', async () => {
+    const r = await labo();
+    await r.executeCommand('reload');
+    await r.executeCommand('enable');
+    expect(lignes(await r.executeCommand('show logging'))[0])
+      .toContain('%SYS-5-RESTART: System restarted --');
+  });
+
+  it('`logging reload <sévérité>` borne ce qui est journalisé pendant', async () => {
+    const r = await labo();
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('logging reload critical');
+    await r.executeCommand('end');
+    await r.executeCommand('reload');
+    await r.executeCommand('enable');
+    const apres = lignes(await r.executeCommand('show logging'));
+    // Les remontées d'interface sont en sévérité 3 et 5 : sous
+    // `critical` (2), aucune ne passe la fenêtre du redémarrage.
+    expect(apres.some(l => l.includes('LINEPROTO'))).toBe(false);
+  });
+
+  it('`message-limit` borne leur NOMBRE', async () => {
+    const r = await labo();
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('logging reload debugging message-limit 1');
+    await r.executeCommand('end');
+    await r.executeCommand('reload');
+    await r.executeCommand('enable');
+    const apres = lignes(await r.executeCommand('show logging'));
+    // Un seul message pendant la fenêtre, plus le %SYS-5-RESTART qui la
+    // suit et n'en fait donc pas partie.
+    expect(apres.length).toBeLessThanOrEqual(2);
+  });
+
+  it('sans la commande, le redémarrage journalise tout', async () => {
+    const r = await labo();
+    await r.executeCommand('reload');
+    await r.executeCommand('enable');
+    const apres = lignes(await r.executeCommand('show logging'));
+    expect(apres.some(l => l.includes('LINEPROTO'))).toBe(true);
+  });
+});
+
+describe('show logging count obéit aux deux commandes qui le règlent', () => {
+  async function labo(config: string[]): Promise<CiscoRouter> {
+    const r = new CiscoRouter('R1');
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    for (const c of config) await r.executeCommand(c);
+    await r.executeCommand('interface GigabitEthernet0/0');
+    await r.executeCommand('shutdown');
+    await r.executeCommand('end');
+    return r;
+  }
+
+  it('sans `logging count`, la table n\'est pas rendue', async () => {
+    const r = await labo([]);
+    expect(await r.executeCommand('show logging count')).toContain('not enabled');
+  });
+
+  it('avec `logging count`, elle compte les messages ordinaires', async () => {
+    const r = await labo(['logging count']);
+    const out = await r.executeCommand('show logging count');
+    expect(out).toContain('Facility');
+    expect(out).toContain('LINK');
+  });
+
+  it('les lignes de debug ne gonflent pas la table par défaut', async () => {
+    const l = new LoggingConfig();
+    l.applyLogging(['buffered'], false);
+    l.applyLogging(['count'], false);
+    l.append('debugging', 'ospf', 'bavardage', true, 'DEBUG');
+    l.append('warnings', 'link', 'vrai', true, 'UPDOWN');
+    expect(l.renderCount()).toContain('LINK');
+    expect(l.renderCount()).not.toContain('OSPF');
+  });
+
+  it('`logging message-counter debug` les y fait entrer', () => {
+    const l = new LoggingConfig();
+    l.applyLogging(['buffered'], false);
+    l.applyLogging(['count'], false);
+    l.applyLogging(['message-counter', 'debug'], false);
+    l.append('debugging', 'ospf', 'bavardage', true, 'DEBUG');
+    expect(l.renderCount()).toContain('OSPF');
+  });
+
+  it('`no logging message-counter log` retire les messages ordinaires', () => {
+    const l = new LoggingConfig();
+    l.applyLogging(['buffered'], false);
+    l.applyLogging(['count'], false);
+    l.applyLogging(['message-counter', 'log'], true);
+    l.append('warnings', 'link', 'vrai', true, 'UPDOWN');
+    expect(l.renderCount()).not.toContain('LINK');
+  });
+});
