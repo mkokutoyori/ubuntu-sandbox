@@ -78,6 +78,14 @@ export interface CommandNode {
   /** If true, this node accepts remaining args as-is */
   greedy?: boolean;
   minArgs?: number;
+  /**
+   * Nombre MAXIMAL d'arguments accepte. Le trie ne portait qu'un
+   * minimum, donc un mot en trop derriere une commande gloutonne etait
+   * silencieusement ignore : `sysname R1 R2` prenait `R1` et jetait
+   * `R2`. Non declare, il n'y a pas de plafond — le comportement de
+   * toutes les commandes existantes est inchange.
+   */
+  maxArgs?: number;
   hintSuggestions?: Array<{ keyword: string; description: string }>;
   _hintOnly?: boolean;
   _passthrough?: boolean;
@@ -918,6 +926,17 @@ export class CommandTrie {
   requireArgs(path: string, minArgs: number): void {
     const node = this.nodeAt(path);
     if (node) node.minArgs = minArgs;
+  }
+
+  /** Plafonne le nombre d'arguments d'une commande. */
+  allowArgs(path: string, maxArgs: number): void {
+    const node = this.nodeAt(path);
+    if (node) node.maxArgs = maxArgs;
+  }
+
+  /** Le plafond declare, ou `null` quand la commande n'en a pas. */
+  argumentCeiling(path: string): number | null {
+    return this.nodeAt(path)?.maxArgs ?? null;
   }
 
   private nodeAt(path: string): CommandNode | null {

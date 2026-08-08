@@ -20,7 +20,7 @@ import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteract
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -476,9 +476,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     let output: string;
     switch (result.status) {
-      case 'ok':
-        output = result.node?.action ? result.node.action(result.args, cmd) : '';
+      case 'ok': {
+        const trop = tropDeParametres(result, cmd);
+        output = trop ?? (result.node?.action
+          ? normaliserErreurVrp(result.node.action(result.args, cmd), cmd, result.matchedKeywords.length)
+          : '');
         break;
+      }
 
       case 'ambiguous':
         // Not `result.error` — CommandTrie's own `.error` is pre-formatted
@@ -665,6 +669,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef._setHostnameInternal(args[0]);
       return '';
     });
+    this.systemTrie.allowArgs('sysname', 1);
 
     // vlan <id> or vlan batch <id> <id> ...
     this.systemTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {

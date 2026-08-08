@@ -27,7 +27,7 @@ import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
 import { huaweiIrreversibleCipher, huaweiCipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
-import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName } from './cli-utils';
+import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres } from './cli-utils';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
 import {
@@ -644,11 +644,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const result = trie.match(cmdPart);
 
     switch (result.status) {
-      case 'ok':
+      case 'ok': {
+        const trop = tropDeParametres(result, cmdPart);
+        if (trop) return trop;
         if (result.node?.action) {
-          return result.node.action(result.args, cmdPart);
+          return normaliserErreurVrp(
+            result.node.action(result.args, cmdPart),
+            cmdPart,
+            result.matchedKeywords.length,
+          );
         }
         return '';
+      }
 
       case 'ambiguous':
         // Never use `result.error` here — CommandTrie's own `.error` is

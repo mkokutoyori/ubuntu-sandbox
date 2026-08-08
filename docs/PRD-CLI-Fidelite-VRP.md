@@ -296,7 +296,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V1** | Chantier B : `undo` refuse l'inconnu (**livré, §9**) | — |
 | **V2** | Chantier A : séparateurs, numéro de règle, pertes sèches, invariant de rejeu (**livré, §10**) | — |
 | **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` (**livré, §11**) | — |
-| **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` | V1 |
+| **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` (**livré, §12**) | V1 |
 | **V5** | Chantier D §3-§5 : bornes, aide, abréviation du nom d'interface | V4 |
 | **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | — |
 
@@ -602,3 +602,102 @@ interfaces, VLAN, ACL, `display`, scénarios, STP, LACP. Typecheck
 seul, avec mes changements en place. C'est la classe déjà documentée dans
 `CLAUDE.md` (registres non réinitialisés globalement — ici celui des
 forêts Active Directory), sans rapport avec VRP.
+
+---
+
+## 12. V4 — Livré
+
+### 12.1 Quatre messages, un format — et 237 sites
+
+VRP n'a que quatre erreurs positionnelles et elles portent **toutes**
+l'écho de la ligne et le curseur. Le dépôt en comptait quatre
+formulations pour le seul paramètre erroné — `Wrong parameter found at
+'^' position.` **sans aucun curseur**, `Wrong parameter found.`,
+`Wrong parameter.`, plus les messages maison `Invalid IP octet: 999` et
+`Invalid OSPF process ID.` — et **237 sites** rendant `Error: Incomplete
+command.` nu.
+
+La première formulation est la pire des cinq : elle annonce une position
+et n'en montre aucune.
+
+Les corriger un par un était exclu, et aurait de toute façon laissé le
+238ᵉ recommencer. **La mise en forme se fait au point de sortie**, une
+fois par plateforme, là où la ligne tapée et le nombre de mots-clés
+reconnus sont encore connus (`normaliserErreurVrp`). Les chemins de la
+trie formataient déjà correctement ; ce sont les retours de gestionnaires
+qui étaient nus.
+
+**Ce qui n'est pas une des quatre familles est laissé tel quel.** Un
+message propre à une commande — `Error: OSPF is not configured.` — n'a
+pas de position à montrer, et lui en inventer une aurait été un mensonge
+de plus. Un test le fixe.
+
+**Le curseur.** Fin de ligne pour `Incomplete command` (« il en manque
+ici », la convention déjà écrite dans `formatVrpPositionalError`) ;
+premier argument pour `Wrong parameter`, puisque c'est le paramètre qui
+est en cause et que le nombre de mots-clés reconnus le localise.
+
+### 12.2 `Too many parameters`, et un plafond qu'on ne pose pas à l'aveugle
+
+Le trie ne portait qu'une arité **minimale** (`minArgs`, consultée à
+l'exécution) et un `_noArgument` que seule l'aide lisait. Un mot en trop
+derrière une commande gloutonne était donc silencieusement jeté :
+`sysname R1 R2` prenait `R1` et perdait `R2`.
+
+`maxArgs` est ajouté au trie, symétrique de `minArgs`, avec
+`allowArgs(path, n)` pour le déclarer et `tropDeParametres()` pour le
+lire au point de sortie VRP. **Le changement est purement additif** :
+non déclaré, il n'y a pas de plafond, et le comportement de toutes les
+commandes existantes — des deux constructeurs — est inchangé. Vérifié :
+122 suites Cisco vertes (1 724 cas).
+
+**Le plafond n'est déclaré que là où les formes légitimes sont closes et
+vérifiables.** `sysname` prend un nom et un seul : la forme est close, le
+plafond est sûr. `ip route-static … extra` et `ospf 1 zzz` ne le sont
+pas — `ip route-static` accepte huit arguments et plus selon les options
+(`preference`, `track`, `permanent`, `description`), et plafonner à
+l'aveugle **refuserait une forme valide, ce qui serait pire que le
+silence d'aujourd'hui**. Ces deux cas restent acceptés, et **un test les
+fixe** pour que la déclaration, quand elle viendra, soit faite sciemment.
+
+C'est le même arbitrage que V1 sur `undo` : la portée se resserre sur ce
+qu'on peut vérifier, plutôt que de s'étendre sur ce qu'on suppose.
+
+### 12.3 La frontière avec le lot de l'autre agent
+
+L'agent « logging » a pris le §1.9 (l'aide `?`) et y traite les **arités
+déclarées**, dont un cas que mon §1.7 relevait : `ip pool` répondant
+`Incomplete command.` là où `interface LoopBack` répond `Wrong
+parameter`. Le partage est net et les deux moitiés se complètent : leur
+correctif est **déclaratif** — faire savoir au trie qu'un argument est
+requis, d'où le bon message — le mien est **le format** de ce message et
+le sort des formulations maison. Une fois les deux posés, un argument
+manquant donne partout `Incomplete command` avec écho et curseur.
+
+**J'ai touché `CommandTrie.ts`**, que cet agent disait éviter sans le
+revendiquer, et je l'ai signalé dans le journal : l'ajout est un champ
+optionnel plus deux accesseurs, sans effet sur les commandes qui ne le
+déclarent pas.
+
+### 12.4 Tests et mesures
+
+`huawei-quatre-messages.test.ts` (12 cas) vérifie une **forme** balayée
+sur une trentaine de commandes : trois lignes, un message parmi les
+quatre familles, la ligne tapée telle quelle, un curseur dans ses bornes.
+S'y ajoutent la position du curseur dans les deux cas où elle se déduit
+(argument fautif, argument manquant), l'absence des cinq formulations
+inventées, le fait qu'un refus ne change rien, et que la forme légitime
+passe toujours.
+
+Discrimination par `git stash` : **7 des 12 tombent** avant.
+
+**Une suite corrigée dans son intention** :
+`probe-vrp-01-loopback-et-display.test.ts` attendait `Invalid IP
+address`. Elle vérifie maintenant le refus de VRP **et** que le curseur
+désigne bien l'adresse fautive — donc plus qu'avant.
+
+**Mesures.** 174 suites connexes vertes (3 555 cas) — toutes celles qui
+construisent une machine Huawei ou qui mentionnent un des messages
+touchés — plus les 122 suites Cisco (1 724 cas) pour le moteur partagé.
+Typecheck `tsc -p tsconfig.app.json` à 165, inchangé ; lint identique au
+baseline (104 problèmes avant, 104 après).

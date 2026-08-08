@@ -101,7 +101,7 @@ IOS. Si un des quatre défauts l'exige, je le dirai ici avant.
 
 
 
-### CLI Huawei VRP — audit + **V1, V2, V3 livrés**, V4–V6 ouverts
+### CLI Huawei VRP — audit + **V1 à V4 livrés**, V5–V6 ouverts
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -253,6 +253,50 @@ demande de savoir laquelle est celle de VRP, ce dont je ne suis pas sûr.
 `scenario-ad-fsmo-roles.test.ts` tombe en campagne large et passe seul.
 C'est le registre des forêts AD, classe déjà documentée dans `CLAUDE.md`,
 sans rapport avec VRP.
+
+---
+
+### V4 livré — quatre messages, un format (détail : PRD §12)
+
+**⚠️ J'ai touché `CommandTrie.ts`**, que vous disiez éviter sans le
+revendiquer. L'ajout est **purement additif** : un champ optionnel
+`maxArgs`, `allowArgs(path, n)` pour le déclarer, `argumentCeiling()`
+pour le lire. Non déclaré, il n'y a pas de plafond et rien ne change —
+vérifié sur **122 suites Cisco (1 724 cas)**, toutes vertes. Si votre
+travail sur les arités préfère une autre forme, dites-le, je m'aligne.
+
+**Nos deux moitiés se complètent, et c'est net.** Vous prenez les arités
+**déclarées** (faire savoir au trie qu'un argument est requis, d'où le
+bon message) ; je prends **le format** de ce message. Votre dernier point
+— `ip pool` répondant `Incomplete command.` là où `interface LoopBack`
+répond `Wrong parameter` — se referme par votre moitié : une fois
+l'arité déclarée, le message vient de la trie, et mon correctif garantit
+qu'il porte l'écho et le curseur. Je n'y touche pas.
+
+**Ce que j'ai fait** : le dépôt comptait **quatre** formulations pour le
+paramètre erroné, dont une qui annonce un curseur sans en montrer aucun,
+plus deux messages maison — et **237 sites** rendant `Error: Incomplete
+command.` nu. La mise en forme se fait maintenant au point de sortie, une
+fois par plateforme. Ce qui n'est pas une des quatre familles de VRP est
+laissé tel quel : `Error: OSPF is not configured.` n'a pas de position à
+montrer.
+
+**`Too many parameters`** : le mécanisme est posé et testé, mais le
+plafond n'est déclaré que sur `sysname`, dont la forme est close.
+`ip route-static … extra` et `ospf 1 zzz` restent acceptés — plafonner à
+l'aveugle refuserait des formes légitimes, ce qui serait pire — et **un
+test les fixe** pour que la déclaration soit faite sciemment. Si vous
+déclarez des arités commande par commande, `allowArgs` est le compagnon
+naturel de `requireArgs` ; servez-vous.
+
+**Une suite corrigée dans son intention** :
+`probe-vrp-01-loopback-et-display.test.ts` attendait le message maison
+`Invalid IP address` ; elle vérifie maintenant le refus de VRP **et** que
+le curseur désigne l'adresse fautive.
+
+`huawei-quatre-messages.test.ts` (12 cas), 7 tombent par `git stash`.
+174 suites connexes vertes (3 555 cas). Typecheck 165, inchangé ; lint
+identique.
 
 ---
 
@@ -1222,7 +1266,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1, V2, V3 livrés** ; V4–V6 ouverts |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V4 livrés** ; V5–V6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
