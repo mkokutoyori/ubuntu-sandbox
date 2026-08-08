@@ -399,7 +399,8 @@ demande.
   `WindowsIisRole` a la même limite assumée pour ASP.NET.
 - **HTTP/2, HTTP/3.** `listen 443 ssl http2;` doit être **refusé par
   `nginx -t`** tant que la couche HTTP ne les sert pas, pas accepté en
-  silence.
+  silence. **Exigence tenue depuis §P6 — voir §9.7** ; elle ne l'était
+  pas quand cette ligne a été écrite.
 - **Limitation de débit, cache, `upstream` avec équilibrage.** Après P6,
   s'il y a une demande.
 - **`worker_processes` / `worker_connections` : la seule exception à P1
@@ -468,9 +469,12 @@ en place.
   `TcpStack.listen(1521)`. Il n'est pas assaini parce qu'un sous-système
   entier en dépend (la bannière, `lsnrctl`, la détection Oracle de
   `nmap`) ; la dette est écrite au point de liaison.
-- **Un listener posé directement sur `TcpStack` n'apparaît pas dans
-  `ss`.** L'erreur symétrique de celle que P0 corrige. `systemd-resolved`
-  y échappe en déclarant son serveur ; les autres non.
+- ~~**Un listener posé directement sur `TcpStack` n'apparaît pas dans
+  `ss`.**~~ **Remesuré lors de §P6 : c'est faux aujourd'hui.** Un
+  `Http1ServerSession.start()` posé à la main sur la pile apparaît bien
+  dans `ss -ltn` et dans `netstat -ltn`. La dette est levée ; la ligne
+  est barrée plutôt que supprimée pour qu'on ne la rouvre pas sur la
+  foi de ce document.
 - **apache2 n'est pas traité**, comme annoncé au §5.
 
 ### 8.3 Ce que le chantier a révélé ailleurs
@@ -679,3 +683,32 @@ conclusion : `printf` passe par le shell, qui mange un `$` non protégé.
 Le premier jet écrivait `proxy_set_header Host ;` dans le fichier et
 concluait que `proxy_set_header` n'était pas appliqué — alors que
 l'analyseur était correct depuis le début.
+
+### 9.7 Les paramètres de `listen`, rangés en trois familles
+
+Trouvé en vérifiant l'exigence du §5 (« `listen 443 ssl http2;` doit
+être refusé ») : elle n'était pas tenue. `parseListen` ne cherchait que
+`default_server` et `ssl` et **ignorait tout le reste**, si bien que
+`listen 443 ssl http2;` était accepté, le serveur démarrait, et il
+servait du HTTP/1.1. C'est le cas de décor le plus trompeur de tout ce
+document — un opérateur qui a écrit `http2` croit tenir du HTTP/2, et
+rien dans la machine ne le détrompe.
+
+Les paramètres suivent désormais la règle des trois familles que ce
+dépôt applique déjà aux options de `curl` et d'`openssl` :
+
+| famille | exemples | réponse |
+|---|---|---|
+| appliqués | `default_server`, `ssl` | agissent |
+| connus, sans effet ici | `backlog=`, `deferred`, `reuseport`, `ipv6only=`, `so_keepalive`, `rcvbuf=`, `sndbuf=`, `bind`, `setfib=`, `fastopen=`, `accept_filter=` | acceptés |
+| connus, effet non produit | `http2`, `http3`, `quic`, `spdy`, `proxy_protocol` | **refusés** en le disant |
+| inexistants | `zorglub`, `backlog` sans valeur | `invalid parameter "…"`, le message de nginx |
+
+`proxy_protocol` est dans la troisième et non la deuxième, et la
+distinction est réelle : il change le format sur le fil ET la
+provenance de l'adresse du client. L'accepter sans le produire
+fausserait `$remote_addr`, que §9.4 vient précisément de rendre exact.
+
+Les réglages de socket restent acceptés parce qu'ils figurent dans des
+configurations réelles et ne décrivent rien d'observable ici — la même
+exception, explicitement bornée, que `worker_processes`.

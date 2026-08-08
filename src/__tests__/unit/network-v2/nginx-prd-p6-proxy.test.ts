@@ -369,3 +369,52 @@ describe('une machine s\'atteint elle-même par sa PROPRE adresse', () => {
     expect(await srv.executeCommand('curl -s http://10.0.0.2/')).toContain('Welcome to nginx');
   });
 });
+
+describe('§5 — les paramètres de `listen`, rangés en trois familles', () => {
+  async function juger(ligne: string): Promise<string> {
+    const s = new LinuxServer('linux-server', 'SRV');
+    s.powerOn();
+    await s.executeCommand(ecrireConf(`server {\n  ${ligne}\n  root /var/www/html;\n}\n`));
+    return s.executeCommand('nginx -t');
+  }
+
+  it('`http2` est REFUSÉ, au lieu d\'être accepté en servant du HTTP/1.1', async () => {
+    // Le cas le plus trompeur des trois familles : un opérateur qui a
+    // écrit `http2` croit tenir du HTTP/2, et rien dans la machine ne
+    // le détrompait — le paramètre n'était lu par personne.
+    const out = await juger('listen 443 ssl http2;');
+    expect(out).toContain('the "http2" parameter of the "listen" directive is not supported');
+    expect(out).toContain('test failed');
+  });
+
+  it('`proxy_protocol` est refusé pour la même raison', async () => {
+    // Il change le format sur le fil ET la provenance de l'adresse du
+    // client : l'accepter sans le produire fausserait `$remote_addr`.
+    expect(await juger('listen 80 proxy_protocol;'))
+      .toContain('the "proxy_protocol" parameter of the "listen" directive is not supported');
+  });
+
+  it('un paramètre qui n\'existe pas reçoit le message de nginx', async () => {
+    const out = await juger('listen 80 zorglub;');
+    expect(out).toContain('invalid parameter "zorglub"');
+    expect(out).not.toContain('not supported by this simulator');
+  });
+
+  it('les réglages de socket réels sont acceptés, comme dans toute configuration réelle', async () => {
+    for (const ligne of [
+      'listen 80 backlog=511;', 'listen 80 deferred;',
+      'listen 80 reuseport;', 'listen 80 ipv6only=on;',
+    ]) {
+      expect(await juger(ligne), ligne).toContain('test is successful');
+    }
+  });
+
+  it('un paramètre à valeur écrit sans sa valeur est refusé', async () => {
+    expect(await juger('listen 80 backlog;')).toContain('invalid parameter "backlog"');
+  });
+
+  it('`default_server` et `ssl` continuent d\'agir', async () => {
+    expect(await juger('listen 80 default_server;')).toContain('test is successful');
+    expect(await juger('listen [::]:80 default_server;')).toContain('test is successful');
+  });
+});

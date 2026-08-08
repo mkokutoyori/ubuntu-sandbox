@@ -319,8 +319,63 @@ export function validateNginxConfig(
  * `502` et la raison dans `error.log`, ce qui est la panne que le TP
  * cherche à montrer.
  */
+/**
+ * Les paramètres de `listen`, rangés comme ce dépôt range les options
+ * de `curl` et d'`openssl` : ceux qui AGISSENT, ceux que nginx connaît
+ * et que cette version ne sait pas produire, et le reste — qui n'existe
+ * pas et reçoit le message de nginx pour un paramètre invalide.
+ */
+const LISTEN_APPLIQUES = new Set(['default_server', 'ssl']);
+
+/**
+ * Connus de nginx, réglages de socket sans effet observable ici : rien
+ * ne modélise une file d'attente d'acceptation ni un tampon noyau. Ils
+ * figurent dans des configurations réelles, donc les refuser coûterait
+ * plus de vérité qu'il n'en apporterait — la règle déjà retenue pour
+ * `worker_processes`.
+ */
+const LISTEN_INERTES = new Set([
+  'bind', 'deferred', 'reuseport', 'so_keepalive',
+]);
+const LISTEN_INERTES_AVEC_VALEUR = new Set([
+  'backlog', 'rcvbuf', 'sndbuf', 'accept_filter', 'setfib', 'fastopen', 'ipv6only',
+]);
+
+/**
+ * Connus de nginx, avec un effet RÉEL que cette version ne produit pas.
+ * Les accepter en silence est le pire des trois cas : un opérateur qui
+ * a écrit `http2` croit tenir du HTTP/2, et la machine servait du
+ * HTTP/1.1 sans le détromper. `proxy_protocol` est du même ordre — il
+ * change le format sur le fil et la provenance de l'adresse du client.
+ */
+const LISTEN_NON_IMPLEMENTES = new Set(['http2', 'http3', 'quic', 'spdy', 'proxy_protocol']);
+
+function validateListenParams(node: NginxDirective): NginxConfigError | null {
+  for (const arg of node.args.slice(1)) {
+    const cle = arg.split('=')[0].toLowerCase();
+    if (LISTEN_APPLIQUES.has(cle) || LISTEN_INERTES.has(cle)) continue;
+    if (arg.includes('=') && LISTEN_INERTES_AVEC_VALEUR.has(cle)) continue;
+    if (LISTEN_NON_IMPLEMENTES.has(cle)) {
+      return emerg(
+        `the "${cle}" parameter of the "listen" directive is not supported by this simulator`,
+        node.file, node.line);
+    }
+    return emerg(`invalid parameter "${arg}"`, node.file, node.line);
+  }
+  return null;
+}
+
 function validateProxyPass(nodes: readonly NginxDirective[]): NginxConfigError | null {
   for (const node of nodes) {
+    // §5 — `listen 443 ssl http2;` était accepté, et le serveur servait
+    // du HTTP/1.1 : le paramètre était lu par personne. C'est le décor
+    // que ce PRD supprime, et son cas le plus trompeur — un opérateur
+    // qui a écrit `http2` croit tenir du HTTP/2, et rien dans la
+    // machine ne le détrompe. Refusé tant que la couche ne le sert pas.
+    if (node.name === 'listen') {
+      const mauvais = validateListenParams(node);
+      if (mauvais) return mauvais;
+    }
     if (node.name === 'proxy_pass') {
       if (node.args.length !== 1) {
         return emerg('invalid number of arguments in "proxy_pass" directive', node.file, node.line);
