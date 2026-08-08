@@ -9,6 +9,7 @@ import { useNetworkStore, isConnectionActive } from '@/store/networkStore';
 import { DeviceIcon } from './DeviceIcon';
 import { isFullyImplemented } from '@/network';
 import { getConnectionDetails } from './properties-panel-logic';
+import { LiveDeviceStats } from './devtools/LiveDeviceStats';
 import { cn } from '@/lib/utils';
 
 interface MACTableEntry {
@@ -409,6 +410,43 @@ export function PropertiesPanel() {
             )}
           </div>
         )}
+
+        {/*
+          Section « Live » — le read-model réactif branché.
+
+          `LiveDeviceStats` existait, testé, et son propre en-tête disait
+          « intentionally untouched by the existing UI » : un pont
+          complet vers l'état réel de l'équipement (ARP, routes, TCP,
+          voisins OSPF, IPSec, NAT, DHCP) que rien n'ouvrait. Voir un
+          voisinage OSPF monter en direct est ce que cet outil a de plus
+          pédagogique, et cela ne coûtait qu'un point d'accroche.
+
+          Repliée par défaut : ses hooks s'abonnent au bus, et un
+          panneau fermé ne doit pas payer d'abonnement pour une donnée
+          que personne ne regarde.
+        */}
+        <div className="border-b border-white/10">
+          <button
+            onClick={() => toggleSection('live')}
+            aria-expanded={expandedSections.includes('live')}
+            className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
+          >
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Live state
+            </span>
+            {expandedSections.includes('live') ? (
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            )}
+          </button>
+
+          {expandedSections.includes('live') && (
+            <div className="px-3 pb-3">
+              <LiveDeviceStats deviceId={selectedDevice.id} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
