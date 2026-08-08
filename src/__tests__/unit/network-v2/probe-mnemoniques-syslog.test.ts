@@ -31,6 +31,15 @@ const NOMS_DE_SEVERITE = [
   'NOTIFICATIONS', 'INFORMATIONAL', 'DEBUGGING',
 ];
 
+/**
+ * Le bus est typé par sujet ; ces sondes publient des charges utiles
+ * partielles, ce qui est le propre d'une sonde. Un seul point de
+ * conversion vaut mieux qu'un `as never` recopié à chaque appel.
+ */
+function emettre(bus: EventBus, topic: string, payload: Record<string, unknown>): void {
+  bus.publish({ topic, payload } as never);
+}
+
 function mnemoniques(journal: string): string[] {
   const out: string[] = [];
   for (const m of journal.matchAll(/%[A-Z0-9_]+-\d-([A-Z0-9_]+):/g)) out.push(m[1]);
@@ -53,13 +62,10 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
 
   it('une violation de port-security porte PSECURE_VIOLATION, pas CRITICAL', async () => {
     const r = await routeurJournalisant(bus, 'R1');
-    bus.publish({
-      topic: 'port.security.violation',
-      payload: {
+    emettre(bus, 'port.security.violation', {
         deviceId: r.id, portName: 'GigabitEthernet0/0',
         mac: new MACAddress('00:11:22:33:44:55'), mode: 'shutdown', action: 'shutdown',
-      },
-    });
+      });
     const out = await Promise.resolve(r.executeCommand('show logging'));
     expect(out).toContain('%PORT_SECURITY-2-PSECURE_VIOLATION:');
     expect(out).not.toContain('%PORT_SECURITY-2-CRITICAL');
@@ -67,17 +73,11 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
 
   it('la mise en err-disable porte ERR_DISABLE et sa levée ERR_RECOVER', async () => {
     const r = await routeurJournalisant(bus, 'R2');
-    bus.publish({
-      topic: 'port.security.errdisable.set',
-      payload: {
+    emettre(bus, 'port.security.errdisable.set', {
         deviceId: r.id, portName: 'GigabitEthernet0/0',
         mac: new MACAddress('00:11:22:33:44:55'),
-      },
-    });
-    bus.publish({
-      topic: 'port.security.errdisable.cleared',
-      payload: { deviceId: r.id, portName: 'GigabitEthernet0/0' },
-    });
+      });
+    emettre(bus, 'port.security.errdisable.cleared', { deviceId: r.id, portName: 'GigabitEthernet0/0' });
     const out = await Promise.resolve(r.executeCommand('show logging'));
     expect(out).toContain('-ERR_DISABLE:');
     expect(out).toContain('-ERR_RECOVER:');
@@ -85,18 +85,9 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
 
   it('HSRP, VRRP et GLBP portent tous les trois STATECHANGE', async () => {
     const r = await routeurJournalisant(bus, 'R3');
-    bus.publish({
-      topic: 'hsrp.state.changed',
-      payload: { deviceId: r.id, iface: 'GigabitEthernet0/0', group: 1, oldState: 'Standby', newState: 'Active' },
-    });
-    bus.publish({
-      topic: 'vrrp.state.changed',
-      payload: { deviceId: r.id, iface: 'GigabitEthernet0/1', vrid: 7, oldState: 'Backup', newState: 'Master' },
-    });
-    bus.publish({
-      topic: 'glbp.avg.changed',
-      payload: { deviceId: r.id, iface: 'GigabitEthernet0/2', group: 3, oldState: 'Standby', newState: 'Active' },
-    });
+    emettre(bus, 'hsrp.state.changed', { deviceId: r.id, iface: 'GigabitEthernet0/0', group: 1, oldState: 'Standby', newState: 'Active' });
+    emettre(bus, 'vrrp.state.changed', { deviceId: r.id, iface: 'GigabitEthernet0/1', vrid: 7, oldState: 'Backup', newState: 'Master' });
+    emettre(bus, 'glbp.avg.changed', { deviceId: r.id, iface: 'GigabitEthernet0/2', group: 3, oldState: 'Standby', newState: 'Active' });
     const out = await Promise.resolve(r.executeCommand('show logging'));
     expect(out).toContain('%HSRP-5-STATECHANGE:');
     expect(out).toContain('%VRRP-5-STATECHANGE:');
@@ -105,14 +96,8 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
 
   it('EtherChannel distingue BUNDLE de UNBUNDLE', async () => {
     const r = await routeurJournalisant(bus, 'R4');
-    bus.publish({
-      topic: 'lacp.port.bundled',
-      payload: { deviceId: r.id, port: 'GigabitEthernet0/0', groupId: 1 },
-    });
-    bus.publish({
-      topic: 'lacp.port.unbundled',
-      payload: { deviceId: r.id, port: 'GigabitEthernet0/0', groupId: 1, cause: 'link down' },
-    });
+    emettre(bus, 'lacp.port.bundled', { deviceId: r.id, port: 'GigabitEthernet0/0', groupId: 1 });
+    emettre(bus, 'lacp.port.unbundled', { deviceId: r.id, port: 'GigabitEthernet0/0', groupId: 1, cause: 'link down' });
     const out = await Promise.resolve(r.executeCommand('show logging'));
     expect(out).toContain('-BUNDLE:');
     expect(out).toContain('-UNBUNDLE:');
@@ -120,14 +105,8 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
 
   it('NTP distingue la synchronisation de sa perte', async () => {
     const r = await routeurJournalisant(bus, 'R5');
-    bus.publish({
-      topic: 'ntp.synced',
-      payload: { deviceId: r.id, serverIp: '10.0.0.9', newStratum: 3, offsetMs: 4 },
-    });
-    bus.publish({
-      topic: 'ntp.unsynced',
-      payload: { deviceId: r.id, reason: 'no reachable server' },
-    });
+    emettre(bus, 'ntp.synced', { deviceId: r.id, serverIp: '10.0.0.9', newStratum: 3, offsetMs: 4 });
+    emettre(bus, 'ntp.unsynced', { deviceId: r.id, reason: 'no reachable server' });
     const out = await Promise.resolve(r.executeCommand('show logging'));
     expect(out).toContain('%NTP-5-PEERSYNC:');
     expect(out).toContain('%NTP-4-PEERUNSYNC:');
@@ -155,7 +134,7 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
       { topic: 'radius.auth.rejected', payload: { username: 'bob', fromIp: '10.0.0.9', reason: 'reject' } },
     ];
     for (const e of evenements) {
-      bus.publish({ topic: e.topic, payload: { deviceId: r.id, ...e.payload } } as never);
+      emettre(bus, e.topic, { deviceId: r.id, ...e.payload });
     }
     const out = await Promise.resolve(r.executeCommand('show logging'));
     const vus = mnemoniques(out);
@@ -181,18 +160,9 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
 
   it('la découverte d\'un voisin CDP ou LLDP n\'écrit rien non plus', async () => {
     const r = await routeurJournalisant(bus, 'R7');
-    bus.publish({
-      topic: 'cdp.neighbor.discovered',
-      payload: { deviceId: r.id, localPort: 'Gi0/0', neighborName: 'SW1' },
-    } as never);
-    bus.publish({
-      topic: 'lldp.neighbor.discovered',
-      payload: { deviceId: r.id, localPort: 'Gi0/0', neighborName: 'SW1' },
-    } as never);
-    bus.publish({
-      topic: 'cdp.config.changed',
-      payload: { deviceId: r.id, enabled: true },
-    } as never);
+    emettre(bus, 'cdp.neighbor.discovered', { deviceId: r.id, localPort: 'Gi0/0', neighborName: 'SW1' });
+    emettre(bus, 'lldp.neighbor.discovered', { deviceId: r.id, localPort: 'Gi0/0', neighborName: 'SW1' });
+    emettre(bus, 'cdp.config.changed', { deviceId: r.id, enabled: true });
     const out = await Promise.resolve(r.executeCommand('show logging'));
     expect(out).not.toContain('%CDP-6-');
     expect(out).not.toContain('%LLDP-6-');
@@ -236,14 +206,8 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
     await Promise.resolve(r.executeCommand('configure terminal'));
     await Promise.resolve(r.executeCommand('logging count'));
     await Promise.resolve(r.executeCommand('end'));
-    bus.publish({
-      topic: 'hsrp.state.changed',
-      payload: { deviceId: r.id, iface: 'Gi0/0', group: 1, oldState: 'Speak', newState: 'Active' },
-    });
-    bus.publish({
-      topic: 'vrrp.state.changed',
-      payload: { deviceId: r.id, iface: 'Gi0/1', vrid: 2, oldState: 'Backup', newState: 'Master' },
-    });
+    emettre(bus, 'hsrp.state.changed', { deviceId: r.id, iface: 'Gi0/0', group: 1, oldState: 'Speak', newState: 'Active' });
+    emettre(bus, 'vrrp.state.changed', { deviceId: r.id, iface: 'Gi0/1', vrid: 2, oldState: 'Backup', newState: 'Master' });
     const out = await Promise.resolve(r.executeCommand('show logging count'));
     expect(out).toContain('STATECHANGE');
     expect(out).not.toContain('NOTIFICATIONS');
