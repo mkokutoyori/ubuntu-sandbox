@@ -1363,8 +1363,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiVxlanDisplayCommands(t, { r: getRouter });
 
     // Backward-compat aliases in user view
-    t.registerGreedy('ip route-static', 'Configure static route', (args) => {
-      return cmdIpRouteStatic(getRouter(), args);
+    t.registerGreedy('ip route-static', 'Configure static route', (args, raw) => {
+      return cmdIpRouteStatic(getRouter(), args, raw);
     });
 
     t.registerGreedy('rip', 'Configure RIP routing', (args) => {
@@ -2830,6 +2830,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args.length < 1) return 'Error: Incomplete command.';
       return cmdRip(getRouter(), ['network', ...args]);
     });
+    // `network <adresse>` sous RIP ne prend que l'adresse classful : un
+    // mot de plus etait lu comme un MASQUE, d'ou un `Invalid subnet
+    // mask:` maison la ou VRP compte les parametres.
+    t.allowArgs('network', 1);
 
     // La version etait ignoree : la commande etait acceptee, le champ
     // que le moteur lit restait a 2, et la configuration rendait 2 quoi
@@ -2840,6 +2844,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       getRouter()._setRipVersion(v);
       return '';
     });
+    t.allowArgs('version', 1);
 
     t.registerGreedy('preference', 'Set RIP preference value', (_args) => {
       return '';

@@ -299,6 +299,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` (**livré, §12**) | V1 |
 | **V5** | Chantier D §3 et §5 : bornes, abréviation du nom d'interface (**livré, §13** ; l'aide §1.9 est passée à l'agent « logging ») | V4 |
 | **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | **Livré, §14** |
+| **V7** | La queue d'une commande lue jusqu'au bout (reliquat de V4/V5) | **Livré, §15** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1010,3 +1011,117 @@ est le signe que sa prémisse était la bonne.
 compris. Typecheck `tsc -p tsconfig.app.json` à **167, le baseline
 inchangé**. Lint sur les dix fichiers touchés : **162 problèmes avant,
 157 après** (cinq `any` de moins, aucun ajouté).
+
+---
+
+## 15. V7 — Livré : la queue d'une commande est lue jusqu'au bout
+
+Ce lot ferme le reliquat que V4 et V5 avaient laissé ouvert **en le
+fixant par test** : « les commandes sans plafond déclaré acceptent encore
+un mot en trop ». V4 avait construit le mécanisme (`allowArgs`,
+`argumentCeiling`, `tropDeParametres`) et ne l'avait déclaré que pour
+`sysname`, en refusant explicitement de plafonner à l'aveugle.
+
+### 15.1 Le constat : dix-sept formes avalent un mot en silence
+
+Balayage de 27 commandes, chacune sur une machine neuve dans sa propre
+vue : la forme légitime, puis la même avec un mot de plus. **Dix-sept
+l'acceptent**, et — c'est ce qui rend le défaut sérieux — la commande
+**prend quand même** :
+
+```
+ip route-static 10.0.0.0 255.0.0.0 10.0.12.2 extra   =>  ""
+display current-configuration                        =>  ip route-static 10.0.0.0 255.0.0.0 10.0.12.2
+```
+
+Le mot n'est ni lu, ni refusé, ni conservé. L'opérateur croit avoir
+configuré ce qu'il a tapé ; la machine a configuré autre chose, sans un
+mot. C'est le même défaut de fond que V1 (`undo` fourre-tout) et V2 (les
+valeurs rangées puis jetées), sur la queue des commandes cette fois.
+
+### 15.2 Pourquoi un plafond ne suffit pas
+
+Mesuré avant de coder — c'est ce qui a changé le correctif prévu. La
+queue légitime de `ip route-static` est **riche** :
+
+```
+ip route-static 10.0.0.0 255.0.0.0 10.0.12.2 preference 100 tag 7 permanent
+ip route-static 10.0.0.0 255.0.0.0 10.0.12.2 description VERS LE SIEGE
+ip route-static 10.0.0.0 255.0.0.0 10.0.12.2 track nqa admin test
+ip route-static 10.0.0.0 255.0.0.0 GigabitEthernet0/0/0 10.0.12.2
+```
+
+Six mots de plus que la forme minimale, tous légitimes, et l'un d'eux
+(`description`) est **libre**. Compter les arguments ne veut donc rien
+dire ici. Deux mécanismes, parce que deux grammaires :
+
+| Grammaire | Mécanisme | Commandes |
+|---|---|---|
+| positionnelle **close** | plafond déclaré (`allowArgs`) | `ip pool` 1, `ip host` 2, `area` 1, `network` (aire) 2, `network` (RIP) 1, `version` 1, `name` (VLAN) 1, `port default vlan` 1 |
+| queue à **mots-clés** | validée par son parseur | `ip route-static`, `ospf <id>`, `rip <id>`, `ip address`, `interface`, `vlan` |
+
+`refuseMotInattenduVrp` (`cli-utils.ts`) est la phrase unique des
+seconds : le mot fautif est **désigné** par le curseur, à la forme VRP à
+trois lignes.
+
+### 15.3 Deux cas où compter aurait été faux, et l'ont prouvé
+
+**`interface`.** VRP admet que le numéro soit séparé du type
+(`interface LoopBack 0`), donc un plafond de deux laisse passer
+`interface GigabitEthernet0/0/0 extra` — mesuré : le plafond posé n'a
+rien changé. La règle est que **le second mot ne peut être que le
+numéro**. Au passage, le refus existait déjà pour ce cas
+(`Wrong parameter`) mais son curseur pointait le nom de l'interface,
+c'est-à-dire le seul mot juste de la ligne.
+
+**`ip address`.** `ip address 10.0.12.1 255.255.255.0 sub` est légitime,
+donc le plafond est à trois — et `… 255.255.255.0 extra` en a trois
+aussi. Le troisième mot est désormais lu : seul `sub` existe.
+
+### 15.4 Un défaut trouvé par le test du lot, pas par la sonde
+
+`ospf 1 zzz` refusait correctement **et laissait `ospf 1` dans la
+configuration** : `_enableOSPF()` était appelé avant la lecture de la
+queue. Un refus ne doit rien poser ; la queue est maintenant lue
+d'abord, le processus activé ensuite. C'est le cas « un refus ne pose
+rien » de la suite qui l'a levé, pas le balayage — un test qui vérifie
+seulement le message serait passé à côté.
+
+### 15.5 Refusé, et pourquoi
+
+**`acl` et `stp` restent perméables**, et c'est écrit dans la suite
+plutôt que masqué. Les deux portent **plusieurs grammaires sous un seul
+nœud** (`acl 2000` / `acl number 2000` / `acl name X advance` ; `stp
+mode`, `stp priority`, `stp root`…). Leur poser un plafond refuserait des
+formes légitimes ; écrire leur grammaire est un travail par commande, pas
+un plafond. Un test les fixe pour que ce soit fait sciemment.
+
+**`sub` est validé et ne fait toujours rien.** Le mot est désormais le
+seul admis en troisième position, mais la machine n'a **pas de notion
+d'adresse secondaire** : la seconde adresse remplace la première. C'est
+un manque du plan de données, pas de la CLI. Nommé par un test qui
+asserte la substitution, plutôt que corrigé à moitié.
+
+**`description` et `vlan batch` ne sont pas plafonnés**, et deux cas le
+vérifient : c'est exactement ce que « ne pas plafonner à l'aveugle »
+veut dire.
+
+### 15.6 Tests et mesures
+
+`huawei-queue-lue-jusquau-bout.test.ts` (50 cas) balaie les **deux
+côtés** systématiquement : 23 formes légitimes qui doivent passer *et
+prendre* (le marqueur est cherché dans la configuration rendue), 18
+formes parasites qui doivent être refusées, plus le curseur vérifié
+mot à mot, le refus qui ne pose rien, le refus qui n'écrase pas ce qui
+était posé, et le refus qui ne fait pas changer de vue. Un test qui ne
+vérifierait que le refus laisserait passer un plafond posé à l'aveugle,
+qui est le défaut inverse et pire.
+
+Discrimination par `git stash` : **20 des 50 tombent** avant. Les 30
+autres sont les formes légitimes — qui doivent passer des deux côtés, par
+construction — et les remainders documentés.
+
+**Mesures.** 85 suites connexes vertes (1 171 cas), plus les suites de
+routage, DHCP et L3. Typecheck : **jeu d'erreurs identique** avant et
+après (168, le baseline courant). Lint sur les cinq fichiers touchés :
+125 problèmes avant, 125 après.

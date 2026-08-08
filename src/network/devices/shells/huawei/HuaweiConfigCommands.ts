@@ -15,7 +15,7 @@ import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../core/ty
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
-import { refuseUnknownUndo, huaweiTypeInterface } from '../cli-utils';
+import { refuseUnknownUndo, huaweiTypeInterface, refuseMotInattenduVrp } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
 
@@ -84,7 +84,7 @@ const VIRTUELLES: ReadonlySet<string> = new Set([
   'LoopBack', 'Tunnel', 'Nve', 'Vlanif', 'Eth-Trunk', 'NULL',
 ]);
 
-export function cmdIpRouteStatic(router: Router, args: string[]): string {
+export function cmdIpRouteStatic(router: Router, args: string[], ligne?: string): string {
   if (args.length < 3) return 'Error: Incomplete command.';
   try {
     let cursor = 0;
@@ -149,6 +149,12 @@ export function cmdIpRouteStatic(router: Router, args: string[]): string {
         track = parts.join(' ');
       } else if (tok === 'permanent') {
         permanent = true;
+      } else {
+        // La queue de `ip route-static` est une suite de mots-cles, et
+        // celui-ci n'en est pas un : il tombait dans le vide, la route
+        // etait posee comme si le mot n'avait pas ete tape.
+        return refuseMotInattenduVrp(
+          ligne ?? `ip route-static ${args.join(' ')}`, tok);
       }
     }
 
@@ -366,8 +372,19 @@ function cmdUndoShutdown(router: Router, ctx: HuaweiShellContext): string {
   return '';
 }
 
-function cmdIpAddress(router: Router, ctx: HuaweiShellContext, args: string[]): string {
+function cmdIpAddress(
+  router: Router, ctx: HuaweiShellContext, args: string[], ligne?: string,
+): string {
   if (args.length < 2) return 'Error: Incomplete command.';
+  // Derriere l'adresse et le masque, VRP n'admet que `sub`. Le 3e mot
+  // n'etait pas lu du tout : `ip address … zzz` posait l'adresse comme
+  // si rien n'avait ete tape.
+  if (args.length > 2 && args[2].toLowerCase() !== 'sub') {
+    return refuseMotInattenduVrp(ligne ?? `ip address ${args.join(' ')}`, args[2]);
+  }
+  if (args.length > 3) {
+    return refuseMotInattenduVrp(ligne ?? `ip address ${args.join(' ')}`, args[3]);
+  }
   try {
     const ip = new IPAddress(args[0]);
     const maskArg = args[1];
@@ -384,6 +401,29 @@ function cmdIpAddress(router: Router, ctx: HuaweiShellContext, args: string[]): 
 function cmdDhcpSelectGlobal(ctx: HuaweiShellContext): string {
   ctx.getDhcpSelectGlobal().add(ctx.getSelectedInterface()!);
   return '';
+}
+
+/** Un numero d'interface VRP : `0`, `0/0/1`, `0/0/1.100`. */
+const NUMERO_INTERFACE = /^\d+(\/\d+)*(\.\d+)?$/;
+
+/**
+ * `interface <type><numero>` : VRP admet que le numero soit separe du
+ * type (`interface LoopBack 0`), donc COMPTER les arguments ne suffit
+ * pas — un plafond de deux laisse passer
+ * `interface GigabitEthernet0/0/0 extra`. Le second mot ne peut etre que
+ * le numero ; le refus existait deja pour ce cas, mais son curseur
+ * pointait le nom de l'interface, c'est-a-dire le seul mot juste.
+ */
+function motEnTropApresInterface(
+  args: readonly string[], ligne: string,
+): string | null {
+  const construire = () => ligne || `interface ${args.join(' ')}`;
+  // Le second mot ne peut etre QUE le numero, jamais autre chose.
+  if (args.length >= 2 && !NUMERO_INTERFACE.test(args[1])) {
+    return refuseMotInattenduVrp(construire(), args[1]);
+  }
+  if (args.length > 2) return refuseMotInattenduVrp(construire(), args[2]);
+  return null;
 }
 
 // ─── Trie Builders ──────────────────────────────────────────────────
@@ -403,8 +443,10 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
   // plafond est sur. `sysname R1 R2` prenait `R1` et jetait `R2`.
   trie.allowArgs('sysname', 1);
 
-  trie.registerGreedy('interface', 'Enter interface view', (args) => {
+  trie.registerGreedy('interface', 'Enter interface view', (args, ligne) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+    const trop = motEnTropApresInterface(args, ligne ?? '');
+    if (trop) return trop;
     const raw = args.join('');
     const portName = resolveOrCreateHuaweiInterface(getRouter(), raw);
     if (!portName) return `Error: Wrong parameter found at '^' position.`;
@@ -413,8 +455,8 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     return '';
   });
 
-  trie.registerGreedy('ip route-static', 'Configure static route', (args) => {
-    return cmdIpRouteStatic(getRouter(), args);
+  trie.registerGreedy('ip route-static', 'Configure static route', (args, raw) => {
+    return cmdIpRouteStatic(getRouter(), args, raw);
   });
 
   trie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
@@ -434,7 +476,7 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     return cmdUndo(getRouter(), ctx, ['ipv6', 'route-static', ...args]);
   });
 
-  trie.registerGreedy('rip', 'Enter RIP view or configure RIP', (args) => {
+  trie.registerGreedy('rip', 'Enter RIP view or configure RIP', (args, raw) => {
     if (!getRouter().isRIPEnabled()) {
       getRouter().enableRIP();
     }
@@ -442,6 +484,15 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     // process 1 being implicit. One-shot forms (`rip network …`) remain
     // for backward compatibility.
     if (args.length === 0 || !isNaN(parseInt(args[0], 10))) {
+      // Derriere l'identifiant de processus, VRP n'admet que
+      // `vpn-instance <nom>` : le reste entrait en vue sans un mot.
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === 'vpn-instance') {
+          if (!args[++i]) return 'Error: Incomplete command.';
+        } else {
+          return refuseMotInattenduVrp(raw ?? `rip ${args.join(' ')}`, args[i]);
+        }
+      }
       ctx.setMode('rip' as any);
       return '';
     }
@@ -507,6 +558,12 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
       return `Error: ${e.message}`;
     }
   });
+
+  // Les formes positionnelles CLOSES declarent leur plafond. Rien n'est
+  // plafonne a l'aveugle : `description` reste libre, et les commandes a
+  // queue de mots-cles sont traitees par leur parseur.
+  trie.allowArgs('ip pool', 1);
+  trie.allowArgs('ip host', 2);
 }
 
 /**
@@ -515,8 +572,10 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
 export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
   const getRouter = () => ctx.r();
 
-  trie.registerGreedy('interface', 'Switch to another interface view', (args) => {
+  trie.registerGreedy('interface', 'Switch to another interface view', (args, ligne) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+    const trop = motEnTropApresInterface(args, ligne ?? '');
+    if (trop) return trop;
     const raw = args.join('');
     const portName = resolveOrCreateHuaweiInterface(getRouter(), raw);
     if (!portName) return `Error: Wrong parameter found at '^' position.`;
@@ -524,8 +583,8 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return '';
   });
 
-  trie.registerGreedy('ip address', 'Configure IP address', (args) => {
-    return cmdIpAddress(getRouter(), ctx, args);
+  trie.registerGreedy('ip address', 'Configure IP address', (args, raw) => {
+    return cmdIpAddress(getRouter(), ctx, args, raw);
   });
 
   trie.register('shutdown', 'Shutdown interface', () => {

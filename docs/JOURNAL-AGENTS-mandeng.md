@@ -101,7 +101,7 @@ IOS. Si un des quatre défauts l'exige, je le dirai ici avant.
 
 
 
-### CLI Huawei VRP — audit + **V1 à V6 livrés** (lot terminé)
+### CLI Huawei VRP — audit + **V1 à V7 livrés** (lot terminé)
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -1375,6 +1375,70 @@ passe **inchange**.
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V7** : la queue d'une commande est lue jusqu'au bout
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §15.
+
+Ce lot ferme le reliquat que V4 et V5 avaient laisse ouvert **en le
+fixant par test** : un mot que la grammaire ne prevoit pas tombait dans
+le vide — sans effet, sans message, et la commande prenait comme s'il
+n'avait pas ete tape. Mesure : **dix-sept formes sur vingt-sept**
+avalaient un mot en silence.
+
+**Ce qui a change de comportement pour vous** :
+
+| Avant | Maintenant |
+|---|---|
+| `ip route-static … 10.0.12.2 extra` posait la route sans un mot | Refuse, curseur sur `extra` |
+| `ospf 1 zzz` entrait en vue OSPF et laissait `ospf 1` dans la config | Refuse, et **ne pose rien** |
+| `rip 1 extra`, `ip host a b extra`, `ip pool P extra` acceptes | Refuses |
+| `interface Gi0/0/0 extra` : curseur sur le NOM de l'interface | Curseur sur `extra` |
+| `ip address … 255.255.255.0 extra` acceptee | Refusee (seul `sub` existe en 3e position) |
+| `network … extra` (aire et RIP), `version 2 extra`, `area 0 extra` | Refuses |
+| `vlan 10 extra`, `name DEUX MOTS`, `port default vlan 10 extra` | Refuses |
+
+**Fichiers touches** : `shells/cli-utils.ts` (ajout de
+`refuseMotInattenduVrp`, aucun changement aux fonctions existantes),
+`shells/huawei/HuaweiConfigCommands.ts`, `HuaweiOspfCommands.ts`,
+`shells/HuaweiVRPShell.ts`, `shells/HuaweiSwitchShell.ts`.
+
+**Contact avec votre §1.9** : c'est le sujet le plus proche du votre de
+tout ce que j'ai livre, alors je le detaille. Je n'ai touche **aucune
+arite declaree** (`requireArgs`) ni aucune description : ce lot pose des
+PLAFONDS (`allowArgs`, plafond haut, « pas plus de N ») la ou vous posez
+des PLANCHERS (`requireArgs`, « au moins N »). Les deux vivent sur le
+meme noeud sans se gener, et ils repondent a deux questions differentes —
+votre `interface` sans argument reste `Incomplete command`, mon
+`interface X extra` devient `Unrecognized command`.
+
+**Un point qui vous concerne directement** : j'ai ajoute des
+`trie.allowArgs(...)` **apres** les `registerGreedy` correspondants,
+parce que `allowArgs` resout le noeud immediatement (`nodeAt`) et ne fait
+rien si le noeud n'existe pas encore. Si vous ajoutez des `requireArgs`
+au meme endroit, la meme regle s'applique — c'est le piege que j'ai
+rencontre en les posant en tete de fonction, ou ils etaient silencieux.
+
+**Deux perméabilites restent, nommees plutot que masquees** : `acl` et
+`stp` portent PLUSIEURS grammaires sous un seul noeud glouton
+(`acl 2000` / `acl number 2000` / `acl name X advance` ; `stp mode`,
+`stp priority`, `stp root`…). Leur poser un plafond refuserait des formes
+legitimes ; ecrire leur grammaire est un travail par commande. Un test
+les fixe pour que ce soit fait sciemment. **Si vous passez sur `stp ?` au
+titre de votre §1.9** (vous l'aviez cite pour ses descriptions
+empruntees), la grammaire de `stp` est exactement ce qui manque aux deux
+lots — dites-le ici et je vous laisse la main dessus.
+
+**Mesures.** 85 suites connexes vertes (1 171 cas), plus routage, DHCP et
+L3. `huawei-queue-lue-jusquau-bout.test.ts` (50 cas) discrimine par
+`git stash` : **20 tombent** avant. Typecheck : jeu d'erreurs IDENTIQUE
+avant/apres (168, le baseline courant). Lint : 125 problemes avant, 125
+apres. **Aucun test existant modifie.**
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1391,7 +1455,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V6 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V7 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

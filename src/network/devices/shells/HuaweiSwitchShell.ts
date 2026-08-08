@@ -20,7 +20,7 @@ import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteract
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -690,8 +690,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.systemTrie.allowArgs('sysname', 1);
 
     // vlan <id> or vlan batch <id> <id> ...
-    this.systemTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
+    this.systemTrie.registerGreedy('vlan', 'VLAN configuration', (args, ligne) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+
+      // `vlan batch` prend une liste, `vlan <id>` prend UN identifiant :
+      // le second mot etait jete, `vlan 10 zzz` entrait en vue VLAN
+      // sans un mot.
+      if (args[0].toLowerCase() !== 'batch' && args.length > 1) {
+        return refuseMotInattenduVrp(ligne ?? `vlan ${args.join(' ')}`, args[1]);
+      }
 
       // vlan batch <id> <id> ...
       if (args[0].toLowerCase() === 'batch') {
@@ -1367,6 +1374,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef.setSwitchportAccessVlan(this.selectedInterface, vlanId);
       return '';
     });
+    this.interfaceTrie.allowArgs('port default vlan', 1);
 
     // port trunk allow-pass vlan <id> [<id>...] | all | none
     this.interfaceTrie.registerGreedy('port trunk allow-pass vlan', 'Set trunk allowed VLANs', (args) => {
@@ -1439,6 +1447,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef.renameVLAN(this.selectedVlan, args[0]);
       return '';
     });
+    // Un nom de VLAN VRP est un seul mot.
+    this.vlanTrie.allowArgs('name', 1);
 
     // description <text> — stored per-VLAN.
     this.vlanTrie.registerGreedy('description', 'Set VLAN description', (args) => {

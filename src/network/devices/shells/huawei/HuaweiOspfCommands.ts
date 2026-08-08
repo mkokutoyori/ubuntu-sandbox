@@ -17,7 +17,7 @@
  */
 
 import type { Router } from '../../Router';
-import { estAdresseIPv4 } from '../cli-utils';
+import { estAdresseIPv4, refuseMotInattenduVrp } from '../cli-utils';
 import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
 // ─── Types for Huawei Shell Context ──────────────────────────────────
@@ -38,24 +38,35 @@ export function registerOSPFSystemCommands(
   ctx: HuaweiOSPFShellContext,
   setOSPFArea: (area: string | null) => void,
 ): void {
-  systemTrie.registerGreedy('ospf', 'Configure OSPF protocol', (args) => {
+  systemTrie.registerGreedy('ospf', 'Configure OSPF protocol', (args, raw) => {
     const processId = args.length >= 1 ? parseInt(args[0], 10) : 1;
     if (isNaN(processId) || processId < 1 || processId > 65535) {
       return 'Error: Invalid OSPF process ID.';
     }
     const router = ctx.r();
+    // La queue de `ospf <id>` n'admet que deux mots-cles. Tout le reste
+    // etait jete : `ospf 1 zzz` entrait en vue OSPF sans un mot.
+    //
+    // Elle est lue AVANT d'activer le processus : un refus ne doit rien
+    // poser, or `_enableOSPF` etait appele en premier et la commande
+    // refusee laissait un `ospf 1` dans la configuration.
+    let routerId: string | null = null;
+    for (let i = 1; i < args.length; i++) {
+      const tok = args[i];
+      if (tok === 'router-id') {
+        const rid = args[++i];
+        if (!rid || !estAdresseIPv4(rid)) return 'Error: Wrong parameter.';
+        routerId = rid;
+      } else if (tok === 'vpn-instance') {
+        if (!args[++i]) return 'Error: Incomplete command.';
+      } else {
+        return refuseMotInattenduVrp(raw ?? `ospf ${args.join(' ')}`, tok);
+      }
+    }
     if (!router._getOSPFEngineInternal()) {
       router._enableOSPF(processId);
     }
-    // `ospf <id> router-id <rid>` est une forme reelle de VRP, et tout
-    // ce qui suivait l'identifiant de processus etait jete : le
-    // router-id ne prenait pas, et n'importe quel mot passait.
-    const ridAt = args.indexOf('router-id');
-    if (ridAt >= 0) {
-      const rid = args[ridAt + 1];
-      if (!rid || !estAdresseIPv4(rid)) return 'Error: Wrong parameter.';
-      router._getOSPFEngineInternal()?.setRouterId(rid);
-    }
+    if (routerId) router._getOSPFEngineInternal()?.setRouterId(routerId);
     ctx.setMode('ospf');
     return '';
   });
@@ -113,6 +124,8 @@ export function buildOSPFViewCommands(
     ctx.setMode('ospf-area');
     return '';
   });
+  // `area <id>` : forme close.
+  trie.allowArgs('area', 1);
 
   trie.registerGreedy('silent-interface', 'Set interface as silent (passive)', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
@@ -357,6 +370,8 @@ export function buildOSPFAreaViewCommands(
     ospf.addNetwork(network, wildcard, areaId);
     return '';
   });
+  // `network <adresse> <masque-generique>` : forme close.
+  trie.allowArgs('network', 2);
 
   trie.registerGreedy('stub', 'Configure area as stub', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();

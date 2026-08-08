@@ -195,6 +195,24 @@ export function refuseUnknownUndo(
   return HUAWEI_ERRORS.UNRECOGNIZED(ligne, pos < 0 ? ligne.length : pos);
 }
 
+/**
+ * Un mot que la grammaire d'une commande ne prevoit pas, refuse EN LE
+ * DESIGNANT.
+ *
+ * Le plafond declare (`allowArgs`) traite les formes positionnelles
+ * closes ; celle-ci traite les queues a mots-cles, ou compter les
+ * arguments ne veut rien dire — `ip route-static … preference 100 tag 7
+ * permanent` en porte six de plus que la forme minimale, tous
+ * legitimes. Les boucles qui lisent ces queues n'avaient pas de branche
+ * finale : un mot inconnu tombait dans le vide, sans effet et sans
+ * message, et l'operateur croyait avoir configure ce qu'il avait tape.
+ */
+export function refuseMotInattenduVrp(ligne: string, token: string): string {
+  const propre = ligne.trim();
+  const pos = propre.toLowerCase().indexOf(token.toLowerCase());
+  return HUAWEI_ERRORS.UNRECOGNIZED(propre, pos < 0 ? propre.length : pos);
+}
+
 // ─── Pipe Filter ───────────────────────────────────────────────────
 
 export interface PipeFilter {
