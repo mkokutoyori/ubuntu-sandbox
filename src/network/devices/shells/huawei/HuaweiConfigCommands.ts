@@ -15,6 +15,7 @@ import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../core/ty
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
+import { VRP_ROUTER_INTERFACE_TYPES } from './vrpCommonCommands';
 import { refuseUnknownUndo, huaweiTypeInterface } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
@@ -403,6 +404,10 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
   // plafond est sur. `sysname R1 R2` prenait `R1` et jetait `R2`.
   trie.allowArgs('sysname', 1);
 
+  // Les types que cette plateforme sait ouvrir. Sans eux, `interface ?`
+  // ne répondait que `WORD` et `interface Gi` ne complétait rien — les
+  // ports de l'AR s'appelant `GE0/0/0`, aucun ne commence par « Gi ».
+  trie.registerSuggestions('interface', [...VRP_ROUTER_INTERFACE_TYPES]);
   trie.registerGreedy('interface', 'Enter interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const raw = args.join('');
@@ -515,6 +520,7 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
 export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
   const getRouter = () => ctx.r();
 
+  trie.registerSuggestions('interface', [...VRP_ROUTER_INTERFACE_TYPES]);
   trie.registerGreedy('interface', 'Switch to another interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const raw = args.join('');

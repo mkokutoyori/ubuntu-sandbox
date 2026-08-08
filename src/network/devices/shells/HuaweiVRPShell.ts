@@ -23,6 +23,10 @@ import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterComm
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { CommandTrie } from './CommandTrie';
+import {
+  withVrpCommonHelp, withVrpCommonCandidates, VRP_ROUTER_INTERFACE_TYPES,
+  type VrpViewKind,
+} from './huawei/vrpCommonCommands';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
@@ -922,7 +926,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(router ? new EquipmentParamResolver(router) : null);
     try {
-      const completions = trie.getCompletions(input);
+      const completions = withVrpCommonHelp(this.vrpView(), input, trie.getCompletions(input));
       if (completions.length === 0) return 'Error: Unrecognized command';
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -942,10 +946,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(new EquipmentParamResolver(router));
     try {
-      return trie.tabCandidates(input);
+      return withVrpCommonCandidates(this.vrpView(), input, trie.tabCandidates(input));
     } finally {
       trie.setDynamicResolver(null);
     }
+  }
+
+  /**
+   * La vue utilisateur n'a rien à remonter : `return` n'y est pas
+   * proposé, comme sur un vrai VRP.
+   */
+  private vrpView(): VrpViewKind {
+    return this.mode === 'user' ? 'user' : 'other';
   }
 
   // ─── Active Trie Selection ─────────────────────────────────────────

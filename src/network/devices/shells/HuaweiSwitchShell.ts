@@ -14,6 +14,10 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import {
+  withVrpCommonHelp, withVrpCommonCandidates, VRP_SWITCH_INTERFACE_TYPES,
+  type VrpViewKind,
+} from './huawei/vrpCommonCommands';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
@@ -534,7 +538,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(sw ? new EquipmentParamResolver(sw) : null);
     try {
-      const completions = trie.getCompletions(input);
+      const completions = withVrpCommonHelp(this.vrpView(), input, trie.getCompletions(input));
       if (completions.length === 0) return 'Error: Unrecognized command';
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -554,10 +558,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(new EquipmentParamResolver(sw));
     try {
-      return trie.tabCandidates(input);
+      return withVrpCommonCandidates(this.vrpView(), input, trie.tabCandidates(input));
     } finally {
       trie.setDynamicResolver(null);
     }
+  }
+
+  /**
+   * La vue utilisateur n'a rien à remonter : `return` n'y est pas
+   * proposé, comme sur un vrai VRP.
+   */
+  private vrpView(): VrpViewKind {
+    return this.mode === 'user' ? 'user' : 'other';
   }
 
   // ─── FSM Transitions ─────────────────────────────────────────────
@@ -901,6 +913,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // interface <name>  (incl. virtual Eth-Trunk; L3 types stay rejected)
+    // Idem côté commutateur, avec SA liste : un S5700 n'ouvre ni `NULL`
+    // ni `Tunnel`, et proposer un type qu'il refuse serait un mensonge.
+    this.systemTrie.registerSuggestions('interface', [...VRP_SWITCH_INTERFACE_TYPES]);
     this.systemTrie.registerGreedy('interface', 'Enter interface view', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       // Eth-Trunk <id>  /  Eth-TrunkN  → link-aggregation virtual interface

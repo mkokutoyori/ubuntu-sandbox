@@ -1,4 +1,4 @@
-# PRD — Complétion par tabulation (Cisco d'abord)
+# PRD — Complétion par tabulation (Cisco puis Huawei)
 
 Plateforme de référence : **Cisco ISR 2911, IOS 15.7(3)M** et **Catalyst
 2960, IOS 15.0(2)SE**, les mêmes que `docs/PRD-CLI-Fidelite-IOS.md`.
@@ -45,6 +45,8 @@ et `tabCandidates` ne l'a jamais eue.
 | B | Les commandes universelles se complètent partout | ✅ |
 | C | `do <commande>` complète l'arbre EXEC | ✅ |
 | D | `interface gi` complète le type, comme IOS | ✅ |
+| E | VRP : `quit` et `return` annoncés partout | ✅ |
+| F | VRP : `interface ?` liste les types | ✅ |
 
 ## Chantier A — un mot inconnu arrête la complétion
 
@@ -102,6 +104,58 @@ l'envers : `interface ?` ne listait **pas** les ports concrets, ni avant
 ni après — il liste les types, exactement comme un vrai Catalyst. Les
 ports réels reviennent dès que le type est écrit.
 
+## Volet Huawei
+
+La politique de tabulation du VRP est **cyclique** — Tab fait défiler les
+candidats au lieu de rester muet sur une ambiguïté — et c'est déjà ce que
+fait `HuaweiTerminalSession` via `CyclingPolicy`. Rien à corriger de ce
+côté : c'est bien le comportement d'un vrai VRP.
+
+Le correctif du chantier A vit dans `CommandTrie`, donc le VRP en a
+bénéficié sans une ligne de plus : `zzz di` ne rend plus rien.
+
+### Mesure de départ (2026-08-08)
+
+| # | Constat mesuré | Règle violée |
+|---|---|---|
+| H1 | `quit` et `return` CHANGENT de vue — invite lue avant et après — et ne sont annoncés ni par `?` ni par Tab, dans aucune vue, sur aucune des deux plateformes | 5 |
+| H2 | `interface ?` ne liste aucun type : `WORD` sur le routeur, `range` sur le commutateur ; donc `interface Gi` ne complète rien sur le routeur, dont les ports s'appellent `GE0/0/0` | 1 et 5 |
+
+H1 est le pendant du trou fermé côté IOS par `universalCommands()`, en
+pire : IOS listait au moins `exit` dans son aide.
+
+### Chantier E — `quit` et `return`
+
+`shells/huawei/vrpCommonCommands.ts` porte la liste, et les **deux**
+shells VRP (`HuaweiVRPShell`, `HuaweiSwitchShell`, qui n'ont aucune base
+commune) l'appellent — pour l'aide et pour la complétion, depuis la même
+fonction. `return` n'est pas proposé en vue utilisateur : il n'y a rien à
+y remonter, et un vrai VRP ne le propose pas non plus.
+
+### Chantier F — les types d'interface
+
+Les deux listes sont **mesurées**, en ouvrant chaque type sur la machine
+correspondante, et un test refait cette ouverture pour que la liste ne
+puisse pas s'écarter de l'analyseur : le routeur ouvre `Eth-Trunk`,
+`GigabitEthernet`, `LoopBack`, `NULL`, `Tunnel`, `Vlanif` mais refuse
+`Ethernet` ; le commutateur n'a ni `NULL` ni `Tunnel`. Une liste recopiée
+d'une documentation aurait annoncé des types que ces machines refusent.
+
+Enregistrées par `registerSuggestions`, elles alimentent `?` **et** la
+tabulation d'une seule déclaration. Combinées à la règle « un mot-clé
+d'abord » du chantier D :
+
+```
+interface ?                       → les six (routeur) / les quatre (commutateur)
+interface Gi<Tab>                 → interface GigabitEthernet
+interface GE0/0/<Tab>             → les ports réels du routeur
+interface GigabitEthernet0/0/<Tab> → les ports réels du commutateur
+```
+
+Les deux voies coexistent sans se gêner parce que `GE` n'est pas un
+préfixe de `GigabitEthernet` — et les deux sont vraies de la machine,
+qui accepte les deux orthographes.
+
 ## Hors périmètre, et pourquoi
 
 - **D5 (`show interfaces f`)** : le résolveur n'est consulté que pour les
@@ -109,5 +163,12 @@ ports réels reviennent dès que le type est écrit.
   glouton sans `ParamSpec`. Le corriger demande de typer les arguments
   de la famille `show`, c'est-à-dire le chantier 4 de
   `PRD-Arbre-CLI.md` appliqué à 77 sous-commandes — un travail distinct.
-- **Huawei** : le VRP a sa propre politique de complétion (cyclique) et
-  ses propres règles ; il vient après.
+- **Le routeur VRP nomme ses ports `GE0/0/0`** là où le commutateur les
+  nomme `GigabitEthernet0/0/1` : deux noms pour une même chose sur une
+  même plateforme. Renommer touche beaucoup de choses au-delà de la
+  complétion ; le chantier F rend le point sans douleur en complétant le
+  TYPE, et les deux orthographes restent acceptées.
+- **`undo ip address` n'existe pas** en vue interface VRP : mesuré, la
+  commande est refusée à l'exécution aussi. Son absence de `?` et de la
+  tabulation est donc cohérente — c'est une commande manquante, pas un
+  défaut de complétion.

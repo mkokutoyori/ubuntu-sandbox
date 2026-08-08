@@ -121,12 +121,21 @@ describe('Dynamic Tab candidates — Cisco (PRD item 2)', () => {
 });
 
 describe('Dynamic Tab candidates — Huawei (PRD items 2 et 3)', () => {
-  it('cliTabCandidates lists the real ports after "interface"', () => {
+  /**
+   * Le jumeau Huawei du cas Cisco ci-dessus, et la même correction : à
+   * la place d'un TYPE, un VRP complète le type, pas les huit ports. Ce
+   * cas attendait les ports dès `interface Gig`, ce qui rendait la
+   * tabulation muette là où la machine réelle écrit le type d'un coup.
+   * Les ports restent atteignables une fois le type écrit — le second
+   * bloc le vérifie sur les noms que la machine leur donne vraiment.
+   */
+  it('cliTabCandidates complète le type, puis les ports réels', () => {
     const sw = new HuaweiSwitch('switch-huawei', 'SW1', 8);
     sw.executeCommand('system-view');
     const realPorts = sw.getPorts().map(p => p.getName()).filter(n => n.startsWith('Gig'));
     expect(realPorts.length).toBeGreaterThan(0);
-    const candidates = sw.cliTabCandidates('interface Gig');
+    expect(sw.cliTabCandidates('interface Gig')).toEqual(['interface GigabitEthernet']);
+    const candidates = sw.cliTabCandidates('interface GigabitEthernet0/0/');
     for (const name of realPorts) {
       expect(candidates).toContain(`interface ${name}`);
     }
