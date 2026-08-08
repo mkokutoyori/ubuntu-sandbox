@@ -219,10 +219,12 @@ le PRD §4.5 comme **plausibles et non attestés** (`BFD_SESS_STATE`,
 `ROUTELIMITWARNING`, `CONN_STATE`) précisément pour être corrigés
 plutôt que découverts.
 
-`probe-mnemoniques-syslog.test.ts` (13 cas), **11 tombent par
-`git stash`** ; les 2 qui passent des deux côtés sont ceux qui étaient
-déjà justes (la ligne de `debug` verbatim, le discriminateur sur
-`mnemonics`).
+`probe-mnemoniques-syslog.test.ts` (13 cas), **11 tombent** quand on
+remet le `LoggingConfig.ts` d'avant ; les 2 qui passent des deux côtés
+sont ceux qui étaient déjà justes (la ligne de `debug` verbatim, le
+discriminateur sur `mnemonics`). **`src/__tests__/unit` en entier :
+1 723 fichiers, 27 412 cas verts**, 0 rouge. Typecheck 163, identique à
+votre pointe `e6831f5` ; lint inchangé sur les fichiers touchés.
 
 ---
 
