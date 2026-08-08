@@ -792,8 +792,28 @@ export class CommandTrie {
         }
       }
 
-      completed.push(tokens[i]);
-      paramIdx++;
+      // Le token n'est pas un mot-clé. Deux cas, et les confondre est ce
+      // qui faisait fabriquer des commandes à la complétion.
+      //
+      // Si le nœud ATTEND un argument à cette place — il lui reste des
+      // `params`, ou son handler est glouton — le token est cette
+      // valeur : on la consomme et on continue, ce qui est le seul moyen
+      // de compléter `ip route 10.0.0.0 255.255.255.`.
+      //
+      // Sinon, la ligne n'est plus analysable. L'ancienne version
+      // empilait le mot ET RESTAIT SUR LE MÊME NŒUD, donc le mot suivant
+      // était comparé aux enfants de la RACINE : `zzz ho` rendait
+      // `zzz hostname`, `blah int` rendait `blah interface`, et `do sh`
+      // rendait `do shutdown` — des lignes qu'aucun IOS n'accepterait.
+      // Un vrai équipement ne complète rien après un mot qu'il ne
+      // reconnaît pas. C'est la garde que `getCompletions` applique
+      // depuis le typage des arguments, et qui manquait ici.
+      if (node.params.length > paramIdx || node.greedy) {
+        completed.push(tokens[i]);
+        paramIdx++;
+        continue;
+      }
+      return [];
     }
 
     const partial = tokens[tokens.length - 1];
@@ -824,7 +844,20 @@ export class CommandTrie {
       if (v.keyword.toLowerCase().startsWith(partialLower)) push(v.keyword);
     }
 
-    if (this.dynamicResolver) {
+    // Un MOT-CLÉ et une VALEUR ne se disputent jamais la même place sur
+    // un vrai IOS : l'analyseur essaie les mots-clés d'abord, et ne lit
+    // une valeur que si aucun ne convient. La complétion les mélangeait,
+    // avec une conséquence très visible : `interface gi` rendait cinq
+    // candidats — le type `GigabitEthernet` ET les ports `0/0`…`0/3` —
+    // donc Tab ne faisait rien, là où un vrai routeur écrit
+    // `interface GigabitEthernet` immédiatement. Le type et son numéro
+    // sont deux jetons pour l'analyseur, même quand on les colle.
+    //
+    // Les valeurs vivantes ne disparaissent pas pour autant : elles
+    // reviennent dès qu'aucun mot-clé ne correspond (`interface 0/1`,
+    // `ip route 10.0.0.0 255.255.255.`), et `?` continue de les lister,
+    // ce qui reste le bon endroit pour découvrir les ports réels.
+    if (this.dynamicResolver && results.length === 0) {
       const context: DynamicCompletionContext = {
         path: completed,
         paramType: node.params[paramIdx]?.type ?? null,
