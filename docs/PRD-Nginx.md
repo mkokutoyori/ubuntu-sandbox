@@ -712,3 +712,48 @@ fausserait `$remote_addr`, que §9.4 vient précisément de rendre exact.
 Les réglages de socket restent acceptés parce qu'ils figurent dans des
 configurations réelles et ne décrivent rien d'observable ici — la même
 exception, explicitement bornée, que `worker_processes`.
+
+### 9.8 `a2ensite` / `a2enmod` : les commandes que le document décrivait sans les écrire
+
+Trouvé en cherchant si Apache souffrait du même défaut qu'nginx (une
+directive acceptée sans effet). Le vrai manquement était ailleurs et
+plus simple : **les quatre commandes n'existaient pas**.
+`a2ensite default-ssl` répondait `command not found`, à la deuxième
+ligne de n'importe quel tutoriel Apache.
+
+Le module entier les nommait pourtant — « `a2ensite` is only an
+`ln -s` », « `a2enmod` is only an `ln -s` and `a2dismod` only an `rm` ».
+L'observation est juste, et elle a servi de raison de ne pas les
+écrire : faire marcher `ln -s` à la main n'exige pourtant pas que la
+commande soit absente.
+
+Elles restent **exactement** ce lien : un lien posé à la main vaut
+autant, et `a2dissite` le retire tout de même — les deux gestes portent
+sur le même objet, sans registre à part (c'est un cas de test). Deux
+différences réelles sont reproduites parce qu'elles enseignent : un site
+se **recharge**, un module se **redémarre** — charger du code dans le
+serveur n'est pas relire un fichier ; et « déjà désactivé » n'est pas
+« n'existe pas », l'un étant un état et l'autre une faute de frappe.
+
+**`mods-available` n'existait pas non plus**, seul `mods-enabled` était
+semé. `a2enmod ssl` n'aurait donc eu aucun fichier à lier — et c'est
+précisément la distinction disponible/activé qui porte la leçon :
+Debian livre `ssl`, `proxy`, `rewrite`, `headers` **éteints**, et les
+allumer est la première ligne du TP. Les modules livrés actifs sont
+désormais des LIENS et non des copies, sans quoi `a2dismod dir`
+supprimerait un fichier que rien ne pourrait recréer.
+
+`apache-a2ensite-a2enmod.test.ts` (13 cas), **les 13 tombent par
+`git stash`**.
+
+**Ce qui reste ouvert du côté d'Apache, mesuré et non traité ici** :
+`apachectl configtest` répond `Syntax OK` à **tout**, y compris à une
+directive qui n'existe pas (`Zorglub on`) et à `ProxyPass` ou
+`Protocols h2`, qu'Apache connaît et que ce simulateur ne produit pas.
+C'est le jumeau exact du défaut que §P2 a corrigé côté nginx. Il n'est
+pas traité ici parce que la grammaire d'Apache est définie **par les
+modules** — son propre message le dit (« *or defined by a module not
+included in the server configuration* ») — de sorte que le refus juste
+dépend de `mods-enabled`, qui vient seulement de devenir manipulable.
+C'est un lot à part, et il a maintenant de quoi être écrit
+correctement.

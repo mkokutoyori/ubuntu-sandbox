@@ -34,6 +34,7 @@ import {
   APACHE_SITES_AVAILABLE, APACHE_SITES_ENABLED, APACHE_DEFAULT_SITE,
   APACHE_DEFAULT_PAGE, APACHE_DOCROOT, APACHE_DEFAULT_MODULES, apacheModuleLoadFile,
   APACHE_ENVVARS, APACHE_ENVVARS_PATH, APACHE_MODS_ENABLED, APACHE_DEFAULT_SSL_SITE,
+  APACHE_MODS_AVAILABLE, APACHE_AVAILABLE_MODULES,
 } from './linux/http/apache/ApacheFiles';
 import { checkNginxCriticalFiles } from './linux/service/CriticalFiles';
 import {
@@ -1231,7 +1232,7 @@ export abstract class LinuxMachine extends EndHost
   private initApache(): void {
     const vfs = this.executor.vfs;
     for (const dir of ['/etc/apache2', APACHE_SITES_AVAILABLE, APACHE_SITES_ENABLED,
-                       APACHE_MODS_ENABLED, '/etc/apache2/conf-enabled',
+                       APACHE_MODS_ENABLED, APACHE_MODS_AVAILABLE, '/etc/apache2/conf-enabled',
                        APACHE_DOCROOT, '/var/log/apache2']) {
       if (!vfs.exists(dir)) vfs.mkdirp(dir, 0o755, 0, 0);
     }
@@ -1261,10 +1262,20 @@ export abstract class LinuxMachine extends EndHost
     // them rather than reciting them: an `ln -s` made by hand under
     // `mods-enabled` has to show up there and an `rm` has to remove it,
     // since that is all `a2enmod`/`a2dismod` do.
+    // `mods-available` d'abord : c'est là que vivent les fichiers, et
+    // `mods-enabled` n'en contient que des liens. Sans ce répertoire,
+    // `a2enmod ssl` n'aurait rien à lier — et c'est la distinction
+    // disponible/activé qui porte toute la leçon.
+    for (const module of APACHE_AVAILABLE_MODULES) {
+      const loadFile = `${APACHE_MODS_AVAILABLE}/${module}.load`;
+      if (!vfs.exists(loadFile)) {
+        vfs.writeFile(loadFile, apacheModuleLoadFile(module), 0, 0, 0o022, true);
+      }
+    }
     for (const module of APACHE_DEFAULT_MODULES) {
       const loadFile = `${APACHE_MODS_ENABLED}/${module}.load`;
       if (!vfs.exists(loadFile)) {
-        vfs.writeFile(loadFile, apacheModuleLoadFile(module), 0, 0, 0o022, true);
+        vfs.createSymlink(loadFile, `../mods-available/${module}.load`, 0, 0);
       }
     }
     // Ubuntu's default page is only laid down if nginx has not already
