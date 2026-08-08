@@ -97,6 +97,13 @@ function positionArgument(ligne: string, nbMotsCles: number): number {
   return spans[nbMotsCles] ?? spans[spans.length - 1] ?? ligne.trimEnd().length;
 }
 
+/** Une adresse IPv4 en notation pointee, quatre octets dans les bornes. */
+export function estAdresseIPv4(valeur: string): boolean {
+  const parts = valeur.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255);
+}
+
 /**
  * Le nom qu'un port PORTE a l'ecran. Les ports sont ranges sous leur nom
  * court (`GE0/0/0`), qui est interne : VRP n'affiche jamais que le nom
@@ -385,20 +392,43 @@ const CISCO_INTERFACE_PREFIXES: Record<string, string> = {
 };
 
 /** Huawei interface abbreviation → full prefix candidates (ordered) */
-const HUAWEI_INTERFACE_PREFIXES: Record<string, string[]> = {
-  'ge': ['GE', 'GigabitEthernet'],
-  'gi': ['GE', 'GigabitEthernet'],
-  'gigabitethernet': ['GE', 'GigabitEthernet'],
-  'loopback': ['LoopBack'],
-  'lo': ['LoopBack'],
-  'lb': ['LoopBack'],
-  'tunnel': ['Tunnel'],
-  'tu': ['Tunnel'],
-  'eth-trunk': ['Eth-Trunk'],
-  'vlanif': ['Vlanif'],
-  'nve': ['Nve'],
-  'null': ['NULL'],
-};
+/**
+ * Les types d'interface de VRP. L'abreviation n'est PAS une liste
+ * d'ecritures admises mais une regle : tout prefixe non ambigu du nom du
+ * type. Une table fermee ne peut jamais l'exprimer — elle acceptait
+ * `ge0/0/0` et `gi0/0/0` mais refusait `g0/0/0`, `loop0` et `l0`, qui
+ * sont pourtant les frappes les plus courantes.
+ */
+const HUAWEI_INTERFACE_TYPES: readonly string[] = [
+  'GigabitEthernet', 'Ethernet', 'Eth-Trunk', 'LoopBack',
+  'NULL', 'Nve', 'Tunnel', 'Vlanif', 'MEth',
+];
+
+/**
+ * Les noms courts INTERNES, qui ne sont pas des abreviations de VRP mais
+ * la facon dont ce simulateur range ses ports. Ils restent acceptes a la
+ * saisie parce qu'ils l'etaient deja.
+ */
+const HUAWEI_INTERNAL_SHORT: Record<string, string> = { 'ge': 'GigabitEthernet' };
+
+/**
+ * Le type d'interface qu'un prefixe designe, ou `null` quand il n'en
+ * designe aucun ou plusieurs. Meme regle pour resoudre un port existant
+ * et pour en creer un : trois tables de types coexistaient, et elles ne
+ * disaient pas la meme chose.
+ */
+export function huaweiTypeInterface(prefixe: string): string | null {
+  const t = huaweiTypesPourPrefixe(prefixe);
+  return t.length === 1 ? t[0] : null;
+}
+
+/** Les types qu'un prefixe designe. Plus d'un : la saisie est ambigue. */
+function huaweiTypesPourPrefixe(prefixe: string): string[] {
+  const p = prefixe.toLowerCase();
+  const interne = HUAWEI_INTERNAL_SHORT[p];
+  if (interne) return [interne];
+  return HUAWEI_INTERFACE_TYPES.filter((t) => t.toLowerCase().startsWith(p));
+}
 
 const IFACE_NAME_RE = /^([a-z]+)([\d/.-]+)$/;
 
@@ -452,10 +482,15 @@ export function resolveHuaweiInterfaceName(
   if (!match) return null;
 
   const numbers = match[2];
-  const candidates = HUAWEI_INTERFACE_PREFIXES[match[1]];
-  if (!candidates) return null;
+  const types = huaweiTypesPourPrefixe(match[1]);
+  // Zero type : la saisie ne designe rien. Plusieurs : elle est ambigue,
+  // et deviner serait pire que refuser.
+  if (types.length !== 1) return null;
 
-  for (const prefix of candidates) {
+  // Le port peut etre range sous son nom complet ou sous le nom court
+  // interne (`GE0/0/0`) : on essaie les deux.
+  const formes = types[0] === 'GigabitEthernet' ? ['GE', 'GigabitEthernet'] : types;
+  for (const prefix of formes) {
     const resolved = `${prefix}${numbers}`;
     for (const name of portNames) {
       if (name === resolved) return name;

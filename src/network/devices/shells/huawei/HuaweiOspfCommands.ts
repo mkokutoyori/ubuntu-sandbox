@@ -17,6 +17,7 @@
  */
 
 import type { Router } from '../../Router';
+import { estAdresseIPv4 } from '../cli-utils';
 import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
 // ─── Types for Huawei Shell Context ──────────────────────────────────
@@ -45,6 +46,15 @@ export function registerOSPFSystemCommands(
     const router = ctx.r();
     if (!router._getOSPFEngineInternal()) {
       router._enableOSPF(processId);
+    }
+    // `ospf <id> router-id <rid>` est une forme reelle de VRP, et tout
+    // ce qui suivait l'identifiant de processus etait jete : le
+    // router-id ne prenait pas, et n'importe quel mot passait.
+    const ridAt = args.indexOf('router-id');
+    if (ridAt >= 0) {
+      const rid = args[ridAt + 1];
+      if (!rid || !estAdresseIPv4(rid)) return 'Error: Wrong parameter.';
+      router._getOSPFEngineInternal()?.setRouterId(rid);
     }
     ctx.setMode('ospf');
     return '';
@@ -84,6 +94,11 @@ export function buildOSPFViewCommands(
 ): void {
   trie.registerGreedy('router-id', 'Set OSPF router ID', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+    // Un router-id EST une adresse IPv4 en notation pointee. N'importe
+    // quel mot etait accepte, `pasuneadresse` compris.
+    // Le message nu suffit : la normalisation du point de sortie (V4)
+    // lui donne l'echo de la ligne et le curseur.
+    if (!estAdresseIPv4(args[0])) return 'Error: Wrong parameter.';
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
     ospf.setRouterId(args[0]);

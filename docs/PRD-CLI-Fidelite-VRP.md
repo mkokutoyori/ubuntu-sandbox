@@ -297,7 +297,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V2** | Chantier A : séparateurs, numéro de règle, pertes sèches, invariant de rejeu (**livré, §10**) | — |
 | **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` (**livré, §11**) | — |
 | **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` (**livré, §12**) | V1 |
-| **V5** | Chantier D §3-§5 : bornes, aide, abréviation du nom d'interface | V4 |
+| **V5** | Chantier D §3 et §5 : bornes, abréviation du nom d'interface (**livré, §13** ; l'aide §1.9 est passée à l'agent « logging ») | V4 |
 | **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | — |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
@@ -701,3 +701,90 @@ construisent une machine Huawei ou qui mentionnent un des messages
 touchés — plus les 122 suites Cisco (1 724 cas) pour le moteur partagé.
 Typecheck `tsc -p tsconfig.app.json` à 165, inchangé ; lint identique au
 baseline (104 problèmes avant, 104 après).
+
+---
+
+## 13. V5 — Livré
+
+Le §1.9 (l'aide `?`) étant passé à l'agent « logging », ce lot se réduit
+aux deux points restants du chantier D : les bornes, et l'abréviation du
+nom d'interface.
+
+### 13.1 Deux bornes vérifiées, deux laissées ouvertes
+
+**Un router-id EST une adresse IPv4**, et n'importe quel mot était
+accepté — `pasuneadresse` compris. Deux défauts se cachaient derrière :
+la validation manquait, et la forme d'une ligne
+`ospf <id> router-id <rid>` **jetait tout ce qui suivait l'identifiant de
+processus**. Le router-id ne prenait donc pas, ce qui rendait la
+validation d'autant plus invisible. Les deux sont corrigés ensemble : la
+forme est honorée et validée.
+
+**La préférence d'une route statique va de 1 à 255.** `0` et `256`
+étaient acceptés, et `0` aurait fabriqué une route indérogeable.
+
+**Deux bornes restent ouvertes, et un test le fixe** : la plage des
+`LoopBack` et la longueur maximale d'un `sysname`. Elles existent sur un
+vrai VRP, mais je n'en connais pas la valeur exacte, et §0 interdit de la
+deviner. Le test qui les épingle n'affirme pas qu'elles sont illimitées :
+il affirme que **ce lot ne les a pas inventées**, pour que la borne, le
+jour où une source la donne, soit posée sciemment.
+
+### 13.2 L'abréviation est une règle, pas une liste
+
+`interface g0/0/0` est l'une des frappes les plus courantes d'un
+opérateur VRP, et elle était refusée — tandis que `ge0/0/0` et `gi0/0/0`
+passaient. La cause : **quatre tables d'écritures admises**, écrites à la
+main, dans quatre fichiers.
+
+| Où | Ce qu'elle admettait |
+|---|---|
+| `cli-utils.ts` (résolution d'un port existant) | `ge`, `gi`, `gigabitethernet`, `lo`, `lb`, `loopback`, `tu`, `tunnel`, … |
+| `HuaweiConfigCommands.ts` (création d'une interface virtuelle) | les noms **entiers** seulement |
+| `HuaweiSwitchShell.ts` (résolution côté switch) | `ge`, `gi`, `gigabitethernet` |
+| `HuaweiSwitchShell.ts` (`vlanif`/`loopback`) | le nom entier, par expression régulière |
+
+Une table fermée ne peut pas exprimer la règle de VRP — **tout préfixe
+non ambigu du nom du type** — et ces quatre-là ne disaient déjà pas la
+même chose. `huaweiTypeInterface(prefixe)` est désormais la règle unique,
+lue par les quatre : elle rend le type quand **exactement un** le porte,
+et `null` quand aucun ou plusieurs le portent, parce que deviner entre
+deux serait pire que refuser.
+
+Le nom court interne `GE` reste accepté à la saisie — il l'était déjà, et
+c'est ainsi que ce simulateur range ses ports — mais ce n'est pas une
+abréviation de VRP, et le code le dit.
+
+### 13.3 Une régression que j'ai faite, et ce qu'elle apprend
+
+En faisant lire la règle aux deux gestionnaires `vlanif`/`loopback` du
+switch, j'ai remplacé une expression régulière dont le **groupe 1 était
+le numéro** par une fonction dont le groupe 1 était le **type** — sans
+toucher les appelants, qui lisaient toujours `[1]`. Résultat : trente
+tests rouges, `interface LoopBack0` ne sélectionnant plus rien.
+
+La leçon est dans la signature : la fonction rend maintenant un `number`
+(`numeroDInterface`) au lieu d'un `RegExpMatchArray`, donc le type
+interdit désormais la confusion que la forme précédente invitait.
+
+### 13.4 Tests et mesures
+
+`huawei-bornes-et-abreviation.test.ts` (10 cas) vérifie deux propriétés :
+une borne connue tient **des deux côtés** (ce qui est hors bornes est
+refusé, ce qui est dedans passe et prend), et l'abréviation est balayée
+sur les **préfixes** — `g`, `gi`, `gig`, `giga`, le nom entier — y
+compris ceux que personne n'avait pensé à inscrire, plus la casse, la
+création d'une interface virtuelle par abréviation, et le refus d'un type
+inconnu.
+
+Discrimination par `git stash` : **8 des 10 tombent** avant.
+
+**Une erreur de cadrage dans mon propre test**, la quatrième de ce
+corpus : les deux bornes ouvertes étaient mesurées à la suite sur une
+même machine, or la première descend en vue d'interface, où `sysname`
+n'existe pas — le refus obtenu n'aurait rien dit de la borne. Chacune est
+sur sa machine.
+
+**Mesures.** 228 suites connexes vertes (3 045 cas), Cisco compris.
+Typecheck `tsc -p tsconfig.app.json` à 166, inchangé ; lint identique au
+baseline (65 problèmes avant, 65 après).
