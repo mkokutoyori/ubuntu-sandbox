@@ -50,3 +50,30 @@ export function huaweiCipher(password: string): string {
 export function huaweiDecipher(blob: string): string {
   return bytesToUtf8(aesCbcDecrypt(CIPHER_KEY, CIPHER_IV, base64ToBytes(blob)));
 }
+
+/**
+ * La MEME commande sert a poser un mot de passe en clair
+ * (`password irreversible-cipher Huawei@123`, que l'operateur tape) et a
+ * rejouer une configuration, qui porte l'empreinte et non le clair. VRP
+ * distingue les deux a la forme de la valeur, et il le faut : sans cela
+ * une configuration rechargee prend son propre condense pour mot de
+ * passe, et le compte n'ouvre plus.
+ *
+ * Le condense fait exactement `SALT_BYTES + KEY_BYTES` octets en base64
+ * sans remplissage, et n'emploie que l'alphabet base64.
+ */
+const IRREVERSIBLE_LENGTH = Math.ceil((SALT_BYTES + KEY_BYTES) * 4 / 3);
+
+export function looksLikeIrreversibleCipher(value: string): boolean {
+  return value.length === IRREVERSIBLE_LENGTH && /^[A-Za-z0-9+/]+$/.test(value);
+}
+
+export function looksLikeReversibleCipher(value: string): boolean {
+  if (!/^[A-Za-z0-9+/]+$/.test(value) || value.length % 4 === 1) return false;
+  try {
+    huaweiDecipher(value);
+    return true;
+  } catch {
+    return false;
+  }
+}

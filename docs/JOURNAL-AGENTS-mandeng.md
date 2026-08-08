@@ -25,7 +25,7 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — audit livré, **V1 livré**, V2–V6 ouverts
+### CLI Huawei VRP — audit + **V1 et V2 livrés**, V3–V6 ouverts
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -93,6 +93,45 @@ suite ne s'y appuyait.
 `huawei-undo-refuse-inconnu.test.ts` (17 cas), 7 tombent par `git stash`.
 156 suites connexes vertes (3 176 cas). Typecheck 162, inchangé ; lint
 identique.
+
+---
+
+### V2 livré — la configuration se rejoue (détail : PRD §10)
+
+**Zéro ligne refusée au rejeu**, contre 14, et les deux textes
+identiques. Le `#` était poussé à la main en une vingtaine d'endroits ;
+`normaliserBlocsVrp()` applique désormais une règle unique une seule
+fois, donc le vingt-sixième bloc ne peut plus oublier.
+
+**Fichiers touchés** : `shells/cli-utils.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/huawei/HuaweiAclCommands.ts`,
+`shells/HuaweiVRPShell.ts`, `devices/Router.ts`,
+`devices/router/aaa/NetworkOsAccount.ts`, `crypto/passwords/huawei.ts`.
+
+**Un changement qui vous concerne, parce qu'il touche l'authentification
+et pas seulement VRP** : `NetworkOsAccount.authenticate()` passe
+maintenant par l'algorithme du mot de passe. Le magasin gardait le CLAIR
+et l'algorithme n'était qu'une étiquette, si bien qu'un `password
+cipher` rangeait le clair et qu'une configuration rejouée prenait
+l'empreinte pour mot de passe — le compte n'ouvrait plus. Ce qui est
+rangé est désormais ce qui sera rendu, et la comparaison hache ou
+déchiffre selon le cas. Vérifié sur 187 suites (3 680 cas) touchant aux
+identifiants : rien d'autre ne bouge.
+
+**Une suite corrigée dans son intention** :
+`cisco-huawei-aaa-security.test.ts` fixait `expect(u?.secret).toBe('Admin@123')`
+après un `password cipher` — un mot de passe « chiffré » stocké en clair.
+Elle vérifie maintenant que le compte s'ouvre.
+
+`huawei-config-round-trip.test.ts` (14 cas), 10 tombent par `git stash`.
+230 suites connexes vertes (3 220 cas). Typecheck 163, inchangé ; lint
+113 contre 114.
+
+**Trois rouges ANTÉRIEURS, signalés et pas touchés** :
+`advanced-15-scenarios` §13 et `ssh-operator-journeys` §J04 et §J08.
+Vérifiés en remisant mes sept fichiers : ils tombent identiquement. Ils
+sont côté Cisco/Windows (SSH depuis un poste Windows), donc hors de mon
+périmètre VRP — à vous de voir s'ils sont à vous.
 
 ---
 
@@ -1008,7 +1047,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 livrés** ; V2–V6 ouverts |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1, V2 livrés** ; V3–V6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour

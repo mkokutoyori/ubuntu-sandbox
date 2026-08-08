@@ -149,8 +149,13 @@ export function buildHuaweiBasicACLCommands(
   const getRouter = () => ctx.r();
   registerAclCommonExtras(trie, ctx);
 
+  // Le numero de regle etait consomme DEUX fois : cette ligne le retirait
+  // avant que la lecture de `ruleId` plus bas puisse le voir, si bien
+  // qu'il etait toujours perdu. Or il decide de l'ordre d'evaluation et
+  // sert a supprimer la regle : une ACL rechargee sous un autre numero
+  // n'est pas la meme ACL.
   trie.registerGreedy('rule', 'Add ACL rule', (rawArgs) => {
-    const args = /^\d+$/.test(rawArgs[0] ?? '') ? rawArgs.slice(1) : rawArgs;
+    const args = rawArgs;
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
     const aclName = ctx.getSelectedACLName();
@@ -177,11 +182,17 @@ export function buildHuaweiBasicACLCommands(
       } else { i++; }
     }
 
-    const opts: { srcIP: IPAddress; srcWildcard: SubnetMask; sequence?: number } = {
+    const opts: {
+      srcIP: IPAddress; srcWildcard: SubnetMask;
+      sequence?: number; sequenceConfigured?: boolean;
+    } = {
       srcIP: new IPAddress(srcIP),
       srcWildcard: new SubnetMask(srcWild),
     };
-    if (ruleId !== undefined) opts.sequence = ruleId;
+    // `sequenceConfigured` distingue le numero ECRIT par l'operateur de
+    // celui que la machine attribue : seul le premier doit etre rendu
+    // tel quel, sinon l'auto-numerotation figerait ses propres valeurs.
+    if (ruleId !== undefined) { opts.sequence = ruleId; opts.sequenceConfigured = true; }
     if (aclName) {
       getRouter().addNamedAccessListEntry(aclName, 'standard', action as 'permit' | 'deny', opts);
     } else {
@@ -198,8 +209,13 @@ export function buildHuaweiAdvancedACLCommands(
   const getRouter = () => ctx.r();
   registerAclCommonExtras(trie, ctx);
 
+  // Le numero de regle etait consomme DEUX fois : cette ligne le retirait
+  // avant que la lecture de `ruleId` plus bas puisse le voir, si bien
+  // qu'il etait toujours perdu. Or il decide de l'ordre d'evaluation et
+  // sert a supprimer la regle : une ACL rechargee sous un autre numero
+  // n'est pas la meme ACL.
   trie.registerGreedy('rule', 'Add ACL rule', (rawArgs) => {
-    const args = /^\d+$/.test(rawArgs[0] ?? '') ? rawArgs.slice(1) : rawArgs;
+    const args = rawArgs;
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
     const aclName = ctx.getSelectedACLName();
@@ -258,7 +274,7 @@ export function buildHuaweiAdvancedACLCommands(
       dstIP: new IPAddress(dstIP),
       dstWildcard: new SubnetMask(dstWild),
     };
-    if (ruleId !== undefined) opts.sequence = ruleId;
+    if (ruleId !== undefined) { opts.sequence = ruleId; opts.sequenceConfigured = true; }
     if (srcPortSpec) { opts.srcPortSpec = srcPortSpec; if (srcPortSpec.op === 'eq') opts.srcPort = srcPortSpec.port; }
     if (dstPortSpec) { opts.dstPortSpec = dstPortSpec; if (dstPortSpec.op === 'eq') opts.dstPort = dstPortSpec.port; }
 
@@ -327,7 +343,7 @@ export function registerHuaweiACLDisplayCommands(
       const type = acl.type === 'extended' ? 'Advanced' : 'Basic';
       const lines = [`${type} ACL ${name}, ${acl.entries.length} rule(s)`, `ACL's step is 5`];
       acl.entries.forEach((entry, idx) => {
-        lines.push(` rule ${idx * 5} ${formatHuaweiAclEntry(entry)}`);
+        lines.push(` rule ${entry.sequenceConfigured ? entry.sequence! : idx * 5} ${formatHuaweiAclEntry(entry)}`);
       });
       return lines.join('\n');
     }
@@ -349,7 +365,7 @@ export function registerHuaweiACLDisplayCommands(
     ];
 
     acl.entries.forEach((entry, idx) => {
-      const ruleNum = idx * 5;
+      const ruleNum = entry.sequenceConfigured ? entry.sequence! : idx * 5;
       lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry)}`);
     });
 
@@ -368,7 +384,7 @@ function formatAllACLs(router: Router): string {
     lines.push(`${label}, ${acl.entries.length} rule(s)`);
     lines.push(`ACL's step is 5`);
     acl.entries.forEach((entry, idx) => {
-      const ruleNum = idx * 5;
+      const ruleNum = entry.sequenceConfigured ? entry.sequence! : idx * 5;
       lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry)}`);
     });
   }
@@ -390,7 +406,7 @@ export function runningConfigACL(router: Router): string[] {
       continue;
     }
     acl.entries.forEach((entry, idx) => {
-      const ruleNum = idx * 5;
+      const ruleNum = entry.sequenceConfigured ? entry.sequence! : idx * 5;
       lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry, { showCounts: false })}`);
     });
   }

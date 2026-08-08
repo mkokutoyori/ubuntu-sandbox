@@ -17,7 +17,8 @@ import {
 import { IPAddress } from '../../../core/types';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
-import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
+import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras } from '../cli-utils';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
 import {
@@ -569,7 +570,10 @@ export function displayCurrentConfig(
   if (router.isRIPEnabled()) {
     lines.push('#');
     lines.push('rip 1');
-    lines.push(' version 2');
+    // La version etait ecrite en dur : un routeur en `version 1`
+    // revenait en `version 2` apres rechargement.
+    lines.push(` version ${(router as unknown as { _ripVersion?: number })._ripVersion ?? 2}`);
+    if (huaweiRipExtras(router).autoSummary === false) lines.push(' undo summary');
     const cfg = router.getRIPConfig();
     for (const net of cfg.networks) {
       lines.push(` network ${net.network}`);
@@ -658,7 +662,7 @@ export function displayCurrentConfig(
   }
 
   const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean }>;
+    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean; serviceTypes?: readonly string[] }>;
   })._listLocalUsers;
   if (listUsers) {
     const users = listUsers.call(router);
@@ -674,12 +678,16 @@ export function displayCurrentConfig(
       for (const u of users) {
         // Real VRP never echoes the cleartext: 'cipher' is reversible
         // (AES), everything else is hashed one-way (irreversible-cipher).
+        // Le secret RANGE est deja sous sa forme rendue depuis que le
+        // parseur reconnait la valeur transformee ; le re-transformer
+        // ici donnait un texte que le rejeu ne pouvait pas reproduire.
         const field = u.secretAlgo === 'cipher'
-          ? `password cipher ${huaweiCipher(u.secret)}`
-          : `password irreversible-cipher ${huaweiIrreversibleCipher(u.secret)}`;
+          ? `password cipher ${looksLikeReversibleCipher(u.secret) ? u.secret : huaweiCipher(u.secret)}`
+          : `password irreversible-cipher ${looksLikeIrreversibleCipher(u.secret) ? u.secret : huaweiIrreversibleCipher(u.secret)}`;
         lines.push(` local-user ${u.name} ${field}`);
         lines.push(` local-user ${u.name} privilege level ${u.privilege}`);
-        lines.push(` local-user ${u.name} service-type ssh`);
+        const types = u.serviceTypes && u.serviceTypes.length > 0 ? u.serviceTypes : ['ssh'];
+        lines.push(` local-user ${u.name} service-type ${types.join(' ')}`);
       }
       lines.push('#');
     }
@@ -706,7 +714,7 @@ export function displayCurrentConfig(
   appendManagementConfig(lines, router);
 
   lines.push('#');
-  return lines.join('\n');
+  return normaliserBlocsVrp(lines).join('\n');
 }
 
 export function displayCounters(router: Router): string {
