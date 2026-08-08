@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { collecteDebug } from './_helpers/debugLines';
+import { DEBUG_VERBATIM } from '@/network/devices/inspection/config/LoggingConfig';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
@@ -185,7 +186,7 @@ describe('D6 — service timestamps debug uptime', () => {
     await run(r, 'end');
     await run(r, 'debug ip ospf events');
 
-    journal.append('debugging', 'ospf', 'OSPF: test');
+    journal.append('debugging', 'ospf', 'OSPF: test', true, DEBUG_VERBATIM);
     // Prémisse corrigée : pas d'astérisque ici. Le `*` d'IOS signale une
     // HORLOGE non autoritaire, et un compteur depuis le démarrage n'a pas
     // de question d'autorité — le routeur le tient lui-même. La forme
@@ -204,7 +205,7 @@ describe('D6 — service timestamps debug uptime', () => {
     await run(r, 'end');
     await run(r, 'debug ip ospf events');
 
-    journal.append('debugging', 'ospf', 'OSPF: test');
+    journal.append('debugging', 'ospf', 'OSPF: test', true, DEBUG_VERBATIM);
     expect(vues.at(-1)).toMatch(/^\*[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}: /);
   });
 });

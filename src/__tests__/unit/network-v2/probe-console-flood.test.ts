@@ -104,7 +104,7 @@ describe('logging rate-limit really limits', () => {
 
   it('caps the console at N messages per second', () => {
     const { cfg, lines } = configured(3);
-    for (let i = 0; i < 40; i++) cfg.append('warnings', 'sys', `burst ${i}`);
+    for (let i = 0; i < 40; i++) cfg.append('warnings', 'sys', `burst ${i}`, true, 'CONFIG_I');
     expect(lines.filter((l) => l.includes('burst')).length).toBe(3);
   });
 
@@ -114,11 +114,11 @@ describe('logging rate-limit really limits', () => {
     try {
       const base = realNow();
       Date.now = () => base;
-      for (let i = 0; i < 10; i++) cfg.append('warnings', 'sys', `burst ${i}`);
+      for (let i = 0; i < 10; i++) cfg.append('warnings', 'sys', `burst ${i}`, true, 'CONFIG_I');
       lines.length = 0;
       // Une seconde plus tard, la premiere ligne qui passe porte le compte.
       Date.now = () => base + 2000;
-      cfg.append('warnings', 'sys', 'apres');
+      cfg.append('warnings', 'sys', 'apres', true, 'CONFIG_I');
     } finally {
       Date.now = realNow;
     }
@@ -127,14 +127,14 @@ describe('logging rate-limit really limits', () => {
 
   it('with no rate-limit configured, nothing is dropped', () => {
     const { cfg, lines } = configured(null);
-    for (let i = 0; i < 40; i++) cfg.append('warnings', 'sys', `burst ${i}`);
+    for (let i = 0; i < 40; i++) cfg.append('warnings', 'sys', `burst ${i}`, true, 'CONFIG_I');
     expect(lines.filter((l) => l.includes('burst')).length).toBe(40);
   });
 
   it('the buffer keeps every message, limited or not', () => {
     const { cfg } = configured(2);
     cfg.apply(['buffered'], false);
-    for (let i = 0; i < 20; i++) cfg.append('warnings', 'sys', `burst ${i}`);
+    for (let i = 0; i < 20; i++) cfg.append('warnings', 'sys', `burst ${i}`, true, 'CONFIG_I');
     expect(cfg.render().split('\n').filter((l) => l.includes('burst')).length)
       .toBeGreaterThan(2);
   });

@@ -294,7 +294,7 @@ describe('Scénario 6 — le tampon est un anneau', () => {
     // sans drapeau posé la porte la rejetterait avant le tampon. Ce qui
     // est mesuré ici, c'est l'anneau, pas le filtrage.
     const journal = r.getLoggingConfig()!;
-    for (let i = 0; i < 500; i++) journal.append('informational', 'test', `message numero ${i}`);
+    for (let i = 0; i < 500; i++) journal.append('informational', 'test', `message numero ${i}`, true, 'CONFIG_I');
 
     const sortie = await run('show logging');
     expect(sortie, 'la commande doit rester cohérente').toContain('Buffer logging');

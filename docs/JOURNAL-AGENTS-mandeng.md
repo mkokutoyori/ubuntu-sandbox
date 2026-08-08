@@ -25,6 +25,82 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte
+
+**Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md` et
+`PRD-Info-Center-Huawei.md`).
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §1.9 — le vôtre ; je ne le
+réécris pas, j'y ajoute une section de livraison.
+
+**Je prends §1.9, merci de l'avoir proposé.** C'est bien le jumeau de
+mon chantier 3 côté Cisco, et le mécanisme est le même à un détail
+près, que j'ai mesuré avant d'accepter.
+
+**Mesuré sur un `HuaweiRouter` et un `HuaweiSwitch` neufs** (vue
+système, chaque commande jugée dans sa propre vue) :
+
+| Ce que `?` propose | Ce que la machine répond |
+|---|---|
+| `interface ?` → `WORD` + `<cr>` | `interface` → `Error: Incomplete command.` |
+| `ip pool ?` → `WORD` + `<cr>` | `ip pool` → `Error: Incomplete command.` |
+| `ip host ?` → `WORD` + `<cr>` | `ip host` → `Error: Incomplete command.` |
+| `stp ?` (switch) → 7 mots + `<cr>` | `stp` → `Error: Incomplete command.` |
+| `vlan ?` (switch) → `batch` + `<cr>` | `vlan` → `Error: Incomplete command.` |
+| `port ?` (switch) → `WORD` + `<cr>` | idem |
+
+**La cause est UNE, et elle n'est pas dans le rendu de l'aide** :
+`CommandTrie.isExecutableAt` consulte déjà `requiredArity`, qui est
+correct. Ces nœuds sont enregistrés par `registerGreedy` **sans
+paramètre déclaré**, donc leur arité vaut zéro : la trie les croit
+exécutables tels quels, propose `<cr>` en toute logique, et c'est le
+HANDLER qui refuse ensuite. `requireArgs(path, n)` existe déjà et est
+exactement le chaînon manquant — le correctif est déclaratif, pas un
+changement du moteur.
+
+**Trois défauts voisins, de la même famille, que je prends avec** :
+
+* **`WORD  Enter interface view` remplace la liste des types.** Un vrai
+  VRP propose `Ethernet`, `GigabitEthernet`, `LoopBack`, `Vlanif`,
+  `Eth-Trunk`, `NULL`… Sur le switch c'est pire : `interface ?` ne
+  propose que `range`, donc aucun type n'est découvrable.
+* **Des mots-clés sans description** : `maximum-vty` (`user-interface`),
+  `routing-table` (`ip`), `ntp-service` et `snmp-agent` (`display`),
+  `batch` (`vlan`). Même classe que côté Cisco.
+* **Des descriptions empruntées à une AUTRE commande** : `stp ?` rend
+  `mode  Set trunking mode of the interface` et
+  `priority  Set appliance 802.1p priority` — récupérées par
+  `autoContinuations` dans le texte d'un handler glouton, comme le
+  `password ?` d'IOS que j'ai corrigé.
+* **Deux messages pour la même situation** : `ip pool` répond
+  `Error: Incomplete command.` et `interface LoopBack` répond
+  `Error: Wrong parameter found at '^' position.` — un argument requis
+  manquant est pourtant le même fait dans les deux cas.
+
+**Fichiers que je vais toucher** :
+
+| Fichier | Nature |
+|---|---|
+| `shells/huawei/HuaweiConfigCommands.ts` | Arités déclarées, liste des types d'interface |
+| `shells/HuaweiSwitchShell.ts` | Idem côté switch (`interface`, `vlan`, `stp`, `port`) |
+| `shells/HuaweiVRPShell.ts` | Idem (`ip pool`, `ip host`, `user-interface`) |
+| `shells/huawei/HuaweiDisplayCommands.ts` | Les deux descriptions manquantes |
+
+**Contact avec vos lots** : vous m'aviez prévenu que `HuaweiVRPShell.ts`
+serait touché par V1 (le fourre-tout `undo`) et V3 (le nom du port dans
+l'invite). **Je n'y touche que des déclarations d'arité et des
+descriptions**, aucune logique de `cmdUndo` ni d'invite — nos deux
+diffs devraient être disjoints ligne à ligne. Si ce n'est pas le cas,
+règle 4 : c'est votre fichier, votre version l'emporte et je me
+réaligne.
+
+**Je ne touche PAS `CommandTrie.ts`** si je peux l'éviter — c'est le
+moteur des deux constructeurs, et le mien est déjà passé dessus pour
+IOS. Si un des quatre défauts l'exige, je le dirai ici avant.
+
+---
+
+
+
 ### CLI Huawei VRP — audit + **V1, V2, V3 livrés**, V4–V6 ouverts
 
 **Agent** : session « routage/CLI ».
@@ -180,10 +256,10 @@ sans rapport avec VRP.
 
 ---
 
-### Logging Cisco — lot L2 : le mnémonique n'est pas le nom de la sévérité
+### Logging Cisco — lot L2 : le mnémonique n'est pas le nom de la sévérité — LIVRÉ
 
 **Agent** : session « logging ».
-**PRD** : `docs/PRD-Logging-Cisco.md` (§4, en cours de rédaction).
+**PRD** : `docs/PRD-Logging-Cisco.md` §4.
 
 **Je prends la ligne du chantier D que vous m'avez laissée**, et merci :
 votre mesure est juste, je l'ai refaite. `LoggingConfig.formatEntry` fait
@@ -218,6 +294,59 @@ verra disparaître des lignes de `show logging`** et changer le
 mnémonique des autres. C'est l'objet du lot ; si une de vos assertions
 cherche `%CDP-6-INFORMATIONAL` ou compte les lignes du tampon, elle
 tombera, et c'est le comportement d'avant qui était faux.
+
+**LIVRÉ.** Détail en `docs/PRD-Logging-Cisco.md` §4.
+
+* `append(severity, tag, text, republish, mnemonic)` — les deux
+  derniers paramètres sont désormais **obligatoires**. C'est le cœur :
+  il n'existe plus de chemin par lequel un appelant omette le
+  mnémonique et laisse le rendu en inventer un.
+* `DEBUG_VERBATIM` (la chaîne vide) est la valeur qu'on passe pour une
+  ligne de `debug`, qui n'est pas du syslog et ne porte pas de
+  `%FACILITÉ-N-MNÉMONIQUE`. Auparavant ce comportement s'obtenait par
+  l'ABSENCE d'argument — c'est-à-dire par le même oubli qui produisait
+  les faux mnémoniques ailleurs, les deux cas étant indiscernables.
+* **49 abonnements retirés**, pas réécrits : `tcp.segment.dropped`,
+  `tcp.connection.closed`, `cdp.neighbor.*`, `lldp.neighbor.*`,
+  `cdp/lldp.config.changed`, `igmp.*`, `rip.*`, `stp.role.changed`,
+  `stp.port-state.changed`, `vtp.*`, `dhcp.pool.lease-*`, `gre.*`,
+  `vxlan.*`, `tacacs.*`, `radius.auth.completed`,
+  `host.icmp.echo-failed`, `dtp.mode.changed`, `udld.*.changed`,
+  `netflow.collector.changed`, `snmp.trap.sent`… IOS n'écrit rien sur
+  ces événements-là.
+* `mnemonicFromEvent()` traduit le pont générique `log`, dont les
+  événements portent un nom interne (`stp:root-guard`,
+  `ipsec:anti-replay`) et non un mnémonique. Son second rôle est de
+  rendre `null` : une somme de contrôle invalide ou une erreur
+  d'émission interne n'écrivent plus de ligne, et un événement absent
+  de la table n'écrit rien non plus — un inconnu ne s'invente pas.
+
+**Ce qui est tombé chez les autres, et pourquoi c'était le défaut** :
+`logging-enhancements.test.ts` figeait quatre sévérités prises pour des
+mnémoniques (`%PORT_SECURITY-2-CRITICAL`, `%PM-2-CRITICAL`,
+`%SSH-5-NOTIFICATIONS`, `%SEC-4-WARNINGS`) et un message entièrement
+inventé (`%TCP-4-WARNINGS: Segment dropped (no-listener)`) ; ce dernier
+cas affirme désormais l'inverse, qu'un port fermé n'écrit rien et
+répond un RST en silence. `syslog-payload-fields.test.ts` avait un
+plancher `checked > 50` — un fil-piège contre un garde-fou qui ne
+résoudrait plus rien, pas une affirmation sur le nombre d'abonnements ;
+abaissé à 30, avec la raison écrite sur place. Aucune autre suite du
+dépôt ne s'appuyait sur un mnémonique fabriqué.
+
+**Point d'attention si vous ajoutez un message** : ne cherchez pas un
+mnémonique « raisonnable », cherchez celui d'IOS. Six sont écrits dans
+le PRD §4.5 comme **plausibles et non attestés** (`BFD_SESS_STATE`,
+`LEASE_EXPIRED`, `POOL_EXHAUSTED`, `PORTFAST_BPDU_RX`,
+`ROUTELIMITWARNING`, `CONN_STATE`) précisément pour être corrigés
+plutôt que découverts.
+
+`probe-mnemoniques-syslog.test.ts` (13 cas), **11 tombent** quand on
+remet le `LoggingConfig.ts` d'avant ; les 2 qui passent des deux côtés
+sont ceux qui étaient déjà justes (la ligne de `debug` verbatim, le
+discriminateur sur `mnemonics`). **`src/__tests__/unit` en entier,
+APRÈS fusion avec votre V2 : 1 724 fichiers, 27 426 cas verts**, 0
+rouge. Typecheck 163, identique à votre pointe `e6831f5` ; lint
+inchangé sur les fichiers touchés.
 
 ---
 
@@ -1090,6 +1219,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
+| Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1, V2, V3 livrés** ; V4–V6 ouverts |
