@@ -30,6 +30,15 @@ export interface NginxFileSource {
 
 const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if', 'upstream']);
 
+/**
+ * Les méthodes d'équilibrage. `least_conn` est REFUSÉE plutôt
+ * qu'acceptée : elle choisit le membre qui a le moins de connexions en
+ * cours, et rien ici n'en tient — la livraison des trames est
+ * synchrone, il n'y a jamais deux requêtes en vol. L'accepter
+ * reviendrait à faire du tour de rôle en l'appelant autrement.
+ */
+const UPSTREAM_METHODES_ABSENTES = new Set(['least_conn', 'hash', 'random', 'least_time']);
+
 const APPLIED_DIRECTIVES = new Set([
   'listen', 'server_name', 'root', 'index', 'try_files', 'return',
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
@@ -255,10 +264,19 @@ function parseBlock(
     if (name === 'proxy_pass' && parent !== 'location' && parent !== 'if') {
       return { ok: false, error: emerg('"proxy_pass" directive is not allowed here', file, line) };
     }
+    if (parent === 'upstream' && UPSTREAM_METHODES_ABSENTES.has(name)) {
+      return { ok: false, error: emerg(`directive "${name}" is not supported by this simulator`, file, line) };
+    }
+    if (parent === 'upstream' && name === 'ip_hash') {
+      out.push({ name, args, line, file });
+      continue;
+    }
     if (parent === 'upstream' && name === 'server') {
       if (args.length === 0) {
         return { ok: false, error: emerg('invalid number of arguments in "server" directive', file, line) };
       }
+      const mauvais = validateUpstreamServer(args);
+      if (mauvais) return { ok: false, error: emerg(mauvais, file, line) };
       out.push({ name, args, line, file });
       continue;
     }
@@ -274,6 +292,30 @@ function parseBlock(
 
     out.push({ name, args, line, file });
   }
+}
+
+/**
+ * `weight=2` était lu par personne. Un paramètre qu'on ne connaît pas
+ * doit être refusé, et non ignoré : c'est la même règle que pour les
+ * paramètres de `listen` (§9.7), et pour la même raison — un réglage
+ * accepté sans effet fait croire à un comportement qui n'existe pas.
+ */
+const UPSTREAM_PARAMS_DRAPEAUX = new Set(['down', 'backup', 'resolve']);
+const UPSTREAM_PARAMS_VALEUR = new Set([
+  'weight', 'max_fails', 'fail_timeout', 'max_conns', 'slow_start',
+]);
+
+function validateUpstreamServer(args: readonly string[]): string | null {
+  for (const a of args.slice(1)) {
+    const [cle, valeur] = a.split('=');
+    const k = cle.toLowerCase();
+    if (valeur === undefined) {
+      if (UPSTREAM_PARAMS_DRAPEAUX.has(k)) continue;
+      return `invalid parameter "${a}"`;
+    }
+    if (!UPSTREAM_PARAMS_VALEUR.has(k)) return `invalid parameter "${a}"`;
+  }
+  return parseUpstreamServer(args) ? null : `invalid parameter "${args.slice(1).join(' ')}"`;
 }
 
 function unknownOrUnsupported(name: string, file: string, line: number): NginxConfigError {
@@ -402,11 +444,22 @@ export interface NginxUpstreamServer {
   readonly host: string;
   readonly port: number;
   readonly down: boolean;
+  /** `weight=N` — combien de tours de rôle ce membre prend. */
+  readonly weight: number;
+  /** `max_fails=N` / `fail_timeout=Ns` — la détection passive de panne. */
+  readonly maxFails: number;
+  readonly failTimeoutMs: number;
+  /** `backup` — servi seulement quand tous les autres sont hors service. */
+  readonly backup: boolean;
 }
+
+/** La façon de choisir un membre. `least_conn` n'est pas ici : voir §9.10. */
+export type NginxUpstreamMethod = 'round-robin' | 'ip_hash';
 
 export interface NginxUpstream {
   readonly name: string;
   readonly servers: readonly NginxUpstreamServer[];
+  readonly method: NginxUpstreamMethod;
 }
 
 /** §P6 — la cible d'un `proxy_pass`, telle qu'elle est écrite. */
@@ -489,6 +542,26 @@ export function parseProxyPass(raw: string | undefined): NginxProxyPass | null {
   return { scheme, host: m[2], port, path: m[4] };
 }
 
+/**
+ * Un paramètre `clé=valeur` de la ligne `server`. Rendre `null` pour un
+ * mot qu'on ne connaît pas est ce qui empêche `weight=2` d'être ignoré
+ * en silence — c'était le cas, et un poids lu par personne est du
+ * décor.
+ */
+function upstreamParam(args: readonly string[], nom: string): string | null {
+  for (const a of args.slice(1)) {
+    const [k, v] = a.split('=');
+    if (k.toLowerCase() === nom && v !== undefined) return v;
+  }
+  return null;
+}
+
+function entierPositif(v: string | null, defaut: number): number | null {
+  if (v === null) return defaut;
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
 function parseUpstreamServer(args: readonly string[]): NginxUpstreamServer | null {
   const first = args[0];
   if (!first) return null;
@@ -496,7 +569,21 @@ function parseUpstreamServer(args: readonly string[]): NginxUpstreamServer | nul
   if (!m) return null;
   const port = m[2] ? Number(m[2]) : 80;
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-  return { host: m[1], port, down: args.includes('down') };
+  const weight = entierPositif(upstreamParam(args, 'weight'), 1);
+  const maxFails = upstreamParam(args, 'max_fails') === null
+    ? 1
+    : Number(upstreamParam(args, 'max_fails'));
+  const failTimeout = upstreamParam(args, 'fail_timeout');
+  if (weight === null) return null;
+  if (!Number.isInteger(maxFails) || maxFails < 0) return null;
+  const secondes = failTimeout === null ? 10 : Number(failTimeout.replace(/s$/, ''));
+  if (!Number.isFinite(secondes) || secondes < 0) return null;
+  return {
+    host: m[1], port,
+    down: args.includes('down'),
+    backup: args.includes('backup'),
+    weight, maxFails, failTimeoutMs: secondes * 1000,
+  };
 }
 
 export function extractUpstreams(tree: readonly NginxDirective[]): NginxUpstream[] {
@@ -505,12 +592,14 @@ export function extractUpstreams(tree: readonly NginxDirective[]): NginxUpstream
     for (const node of nodes) {
       if (node.name === 'upstream') {
         const servers: NginxUpstreamServer[] = [];
+        let method: NginxUpstreamMethod = 'round-robin';
         for (const d of node.block ?? []) {
+          if (d.name === 'ip_hash') { method = 'ip_hash'; continue; }
           if (d.name !== 'server') continue;
           const s = parseUpstreamServer(d.args);
           if (s) servers.push(s);
         }
-        out.push({ name: node.args[0] ?? '', servers });
+        out.push({ name: node.args[0] ?? '', servers, method });
       } else if (node.block) walk(node.block);
     }
   };

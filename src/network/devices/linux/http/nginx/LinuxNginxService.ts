@@ -14,7 +14,7 @@ import { createRequest } from '@/network/http/semantics/types';
 import {
   parseNginxConfig, extractServers, extractUpstreams, validateNginxConfig,
   type NginxFileSource, type NginxServerBlock, type NginxLocation,
-  type NginxUpstream, type NginxProxyPass,
+  type NginxUpstream, type NginxProxyPass, type NginxUpstreamServer,
 } from './NginxConfig';
 import {
   NGINX_VERSION, NGINX_ACCESS_LOG, NGINX_ERROR_LOG,
@@ -211,6 +211,22 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    * épuiser, donc la borne est explicite.
    */
   private proxyDepth = 0;
+  /**
+   * L'état d'équilibrage, par groupe : où en est le tour de rôle, et ce
+   * que chaque membre a raté récemment.
+   *
+   * Il vit ici et non dans la configuration parce que c'est une MESURE,
+   * pas une déclaration. Mais il est REMIS À ZÉRO par `loadConfig()`,
+   * et ce détail a été corrigé après mesure : un rechargement fait
+   * naître de nouveaux processus de travail chez nginx, et sans
+   * `zone` chacun part avec des compteurs vierges. Le garder aurait
+   * fait servir un membre de secours dès la première requête suivant un
+   * rechargement, sur la foi d'une panne constatée avant.
+   */
+  private readonly balance = new Map<string, {
+    curseur: number;
+    echecs: Map<string, { compte: number; depuis: number }>;
+  }>();
   private readonly sessions = new Map<number, NginxSession>();
   /**
    * What each open TLS port was started with, so a reload can tell a
@@ -230,6 +246,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     if (invalid) return invalid.message;
     this.servers = extractServers(parsed.tree);
     this.upstreams = extractUpstreams(parsed.tree);
+    this.balance.clear();
     return null;
   }
 
@@ -536,7 +553,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
         `proxy loop detected after ${MAX_PROXY_DEPTH} hops`, peer);
     }
 
-    const target502 = this.resolveUpstream(pass);
+    const target502 = this.resolveUpstream(pass, peer?.ip);
     if (!target502) {
       return this.badGateway(server, location,
         `${pass.host} could not be resolved`, peer);
@@ -572,6 +589,11 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     }
 
     if (!sent.ok || !sent.response) {
+      // C'est ICI que la détection passive se nourrit : l'échec est
+      // constaté sur du trafic réel, pas sur une sonde.
+      if (target502.groupe) {
+        this.noterEchec(target502.groupe, target502.host, target502.port);
+      }
       return this.badGateway(server, location,
         sent.error ?? 'no response from upstream', peer);
     }
@@ -588,19 +610,101 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    * bloc de ce nom masque un hôte qui s'appellerait pareil.
    */
   private resolveUpstream(
-    pass: NginxProxyPass,
-  ): { ip: string; host: string; port: number } | null {
+    pass: NginxProxyPass, client?: string,
+  ): { ip: string; host: string; port: number; groupe?: string } | null {
     const group = this.upstreams.find((u) => u.name === pass.host);
     if (group) {
-      for (const member of group.servers) {
-        if (member.down) continue;
-        const ip = this.resolveHost(member.host);
-        if (ip) return { ip, host: member.host, port: member.port };
-      }
-      return null;
+      const membre = this.choisirMembre(group, client);
+      if (!membre) return null;
+      const ip = this.resolveHost(membre.host);
+      return ip
+        ? { ip, host: membre.host, port: membre.port, groupe: group.name }
+        : null;
     }
     const ip = this.resolveHost(pass.host);
     return ip ? { ip, host: pass.host, port: pass.port } : null;
+  }
+
+  private cle(m: NginxUpstreamServer): string { return `${m.host}:${m.port}`; }
+
+  private etat(groupe: string) {
+    let e = this.balance.get(groupe);
+    if (!e) { e = { curseur: 0, echecs: new Map() }; this.balance.set(groupe, e); }
+    return e;
+  }
+
+  /**
+   * Un membre est « hors service » tant que sa fenêtre de pénalité
+   * court. La fenêtre est celle de `fail_timeout`, et elle sert DEUX
+   * fois chez nginx — durée pendant laquelle les échecs se comptent, et
+   * durée de mise à l'écart — ce qui est reproduit ici.
+   */
+  private disponible(groupe: string, m: NginxUpstreamServer, maintenant: number): boolean {
+    if (m.down) return false;
+    if (m.maxFails === 0) return true;
+    const e = this.etat(groupe).echecs.get(this.cle(m));
+    if (!e) return true;
+    if (maintenant - e.depuis >= m.failTimeoutMs) {
+      this.etat(groupe).echecs.delete(this.cle(m));
+      return true;
+    }
+    return e.compte < m.maxFails;
+  }
+
+  /**
+   * Le tour de rôle pondéré, et le repli sur les `backup`.
+   *
+   * `weight=3` prend trois tours sur le cycle : la liste est développée
+   * plutôt que d'être parcourue avec un compteur, parce que le résultat
+   * est alors lisible à l'œil dans un test — et un équilibrage qu'on ne
+   * peut pas observer est indiscernable d'un décor.
+   */
+  private choisirMembre(
+    groupe: NginxUpstream, client?: string,
+  ): NginxUpstreamServer | null {
+    const maintenant = this.host.now().getTime();
+    const vivants = (backup: boolean): NginxUpstreamServer[] => {
+      const out: NginxUpstreamServer[] = [];
+      for (const m of groupe.servers) {
+        if (m.backup !== backup) continue;
+        if (!this.disponible(groupe.name, m, maintenant)) continue;
+        for (let i = 0; i < m.weight; i++) out.push(m);
+      }
+      return out;
+    };
+    // Les `backup` ne servent QUE si tous les autres sont hors service :
+    // c'est ce que le mot veut dire, et un repli qui prendrait sa part
+    // du trafic ordinaire ne serait pas un repli.
+    const cycle = vivants(false).length > 0 ? vivants(false) : vivants(true);
+    if (cycle.length === 0) return null;
+
+    if (groupe.method === 'ip_hash' && client) {
+      // La même adresse doit retomber sur le même membre — c'est le seul
+      // usage de cette méthode, et il se vérifie.
+      let h = 0;
+      for (const octet of client.split('.')) h = (h * 31 + Number(octet)) >>> 0;
+      return cycle[h % cycle.length];
+    }
+    const e = this.etat(groupe.name);
+    const choisi = cycle[e.curseur % cycle.length];
+    e.curseur = (e.curseur + 1) % cycle.length;
+    return choisi;
+  }
+
+  /**
+   * La détection PASSIVE de panne : nginx n'interroge pas ses amonts, il
+   * retient ceux qui viennent de le décevoir en servant du trafic réel.
+   * Sans cela, `max_fails` serait une valeur stockée et lue par
+   * personne — et un groupe dont un membre est mort renverrait un `502`
+   * une requête sur deux, indéfiniment.
+   */
+  private noterEchec(groupe: string, hote: string, port: number): void {
+    const e = this.etat(groupe);
+    const cle = `${hote}:${port}`;
+    const maintenant = this.host.now().getTime();
+    const vu = e.echecs.get(cle);
+    if (vu && maintenant - vu.depuis < 60_000) vu.compte++;
+    else e.echecs.set(cle, { compte: 1, depuis: maintenant });
   }
 
   private resolveHost(name: string): string | null {

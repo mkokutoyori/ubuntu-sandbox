@@ -645,13 +645,11 @@ ce chantier.
 
 ### 9.5 Limites assumées
 
-* **Un seul membre d'`upstream` est utilisé** : le premier qui n'est pas
-  `down` et qui se résout. Il n'y a ni répartition de charge, ni
-  `weight`, ni `least_conn`, ni détection de panne passive
-  (`max_fails`/`fail_timeout`) — donc pas de bascule sur un amont qui
-  refuse la connexion. Une répartition suppose de mesurer, et rien ici
-  ne mesure encore ; annoncer `round-robin` en servant toujours le même
-  serait exactement le genre de décor que ce PRD supprime.
+* ~~**Un seul membre d'`upstream` est utilisé**~~ — **levé au §9.10.**
+  La raison invoquée ici (« une répartition suppose de mesurer, et rien
+  ici ne mesure encore ») était la bonne, et c'est précisément ce que ce
+  lot a fait : mesurer. `least_conn` reste refusée, elle, et pour la
+  même raison, qui tient toujours.
 * **Les délais de `proxy_*_timeout` sont acceptés et inertes**, comme
   les autres réglages temporels : la livraison étant synchrone, aucun
   délai ne peut expirer. Ils sont dans `ACCEPTED_INERT` et non refusés,
@@ -831,3 +829,62 @@ sans les lire n'aurait aucun sens.
 non-régression, dont le plus important : **la configuration livrée par
 Debian doit rester valide** — un contrôle qui refuserait le fichier que
 la distribution installe coûterait plus de vérité qu'il n'en apporte.
+
+### 9.10 L'équilibrage d'un `upstream`, mesuré
+
+§9.5 nommait la limite plutôt que de la taire : un seul membre servait,
+« le premier qui n'est pas `down` », et `weight=2` était un mot que rien
+ne lisait. Le refus d'annoncer un tour de rôle sans en faire était juste ;
+ce lot fait le tour de rôle.
+
+**Le principe qui gouverne les tests, et donc la conception** :
+l'équilibrage doit être OBSERVABLE. Chaque amont rend son propre port
+dans le corps de la réponse, si bien qu'une suite de requêtes se lit à
+l'œil — `amont-9001 amont-9002 amont-9001 …`. C'est aussi pourquoi le
+cycle pondéré est DÉVELOPPÉ (un membre `weight=3` figure trois fois dans
+la liste) plutôt que parcouru avec un compteur : le résultat est alors
+vérifiable sans reproduire l'algorithme dans le test.
+
+Livré : tour de rôle pondéré, `down`, `backup`, `ip_hash`, et la
+**détection passive de panne** (`max_fails`, `fail_timeout`).
+
+**« Passive » est le mot important, et il coûte une requête.** nginx
+n'interroge pas ses amonts : il apprend en servant du trafic réel. Le
+premier client qui tombe sur un membre mort reçoit donc un `502`, et
+seulement ensuite le membre sort du cycle. Le cacher aurait été plus
+joli et faux ; un cas l'affirme, et un second cas mesure ce qui se
+passerait sans détection du tout — un `502` une requête sur deux,
+indéfiniment. `max_fails=0` produit exactement cela, puisque c'est ce
+que cette valeur veut dire.
+
+**Un rechargement remet les compteurs à zéro**, et ce détail a été
+corrigé APRÈS mesure : la première version gardait l'état, si bien qu'un
+membre de secours servait dès la première requête suivant un
+rechargement, sur la foi d'une panne constatée avant. Chez nginx un
+rechargement fait naître de nouveaux processus de travail, et sans
+`zone` chacun part avec des compteurs vierges.
+
+**`least_conn` est refusée**, comme `http2` au §9.7 et pour la même
+raison : elle choisit le membre ayant le moins de connexions EN COURS, et
+rien ici n'en tient — la livraison est synchrone, il n'y a jamais deux
+requêtes en vol. L'accepter reviendrait à faire du tour de rôle en
+l'appelant autrement. `hash`, `random` et `least_time` suivent.
+
+**Les paramètres de `server` sont jugés** comme ceux de `listen` :
+`weight`, `max_fails`, `fail_timeout`, `max_conns`, `slow_start` sont
+connus ; `down`, `backup`, `resolve` sont des drapeaux ; tout le reste
+reçoit `invalid parameter "…"`, et `weight=zero` aussi. C'était le
+défaut d'origine — un paramètre accepté sans effet fait croire à un
+réglage qui n'existe pas.
+
+`nginx-upstream-equilibrage.test.ts` (16 cas), **12 tombent par
+`git stash`**.
+
+**Limites assumées** : `max_conns` et `slow_start` sont acceptés et
+inertes (le premier borne des connexions simultanées qui n'existent pas,
+le second lisse une montée en charge dans un temps qui ne s'écoule pas
+entre deux requêtes) ; il n'y a pas de contrôle de santé ACTIF
+(`health_check` est une directive de nginx Plus, absente de la version
+libre que ce simulateur imite) ; et `ip_hash` répartit sur le cycle des
+membres vivants, si bien qu'une panne redistribue les clients — comme
+chez nginx sans `zone`.
