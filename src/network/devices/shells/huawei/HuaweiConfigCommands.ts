@@ -18,6 +18,7 @@ import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
 import { refuseUnknownUndo } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
+import { describeHuaweiInterfaceArg, wordArg } from './huaweiInterfaceHelp';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -397,11 +398,13 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     ctx.setMode('interface');
     return '';
   });
+  describeHuaweiInterfaceArg(trie);
 
   trie.registerGreedy('ip route-static', 'Configure static route', (args) => {
     return cmdIpRouteStatic(getRouter(), args);
   });
 
+  trie.describeArgs('ip pool', [wordArg('DHCP address pool name', 'pool-name')]);
   trie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     return cmdIpPool(getRouter(), ctx, args[0]);
@@ -508,6 +511,7 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     ctx.setSelectedInterface(portName);
     return '';
   });
+  describeHuaweiInterfaceArg(trie);
 
   trie.registerGreedy('ip address', 'Configure IP address', (args) => {
     return cmdIpAddress(getRouter(), ctx, args);

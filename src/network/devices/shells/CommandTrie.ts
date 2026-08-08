@@ -90,6 +90,19 @@ export interface CommandNode {
    */
   _noArgument?: boolean;
   /**
+   * L'arité ne suffit pas toujours à dire si la commande est complète.
+   * `interface GigabitEthernet` a bien son argument — le TYPE — et
+   * reste refusée, parce qu'il y manque le numéro ; or le numéro et le
+   * type s'écrivent aussi bien en UN jeton
+   * (`interface GigabitEthernet0/0/0`), forme que déclarer deux
+   * arguments requis interdirait. Compter les jetons ne peut pas
+   * trancher entre les deux ; les REGARDER le peut.
+   *
+   * Ce prédicat est consulté en plus de l'arité, jamais à sa place :
+   * un nœud qui n'en déclare pas se comporte exactement comme avant.
+   */
+  executableWhen?: (args: readonly string[]) => boolean;
+  /**
    * Keywords auto-extracted from the greedy handler's source (lazy,
    * computed once). Undefined = not yet computed.
    */
@@ -539,8 +552,11 @@ export class CommandTrie {
     );
   }
 
-  private isExecutableAt(node: CommandNode, suppliedArgs: number): boolean {
-    return !!node.action && suppliedArgs >= this.requiredArity(node);
+  private isExecutableAt(
+    node: CommandNode, suppliedArgs: number, args?: readonly string[],
+  ): boolean {
+    if (!node.action || suppliedArgs < this.requiredArity(node)) return false;
+    return node.executableWhen ? node.executableWhen(args ?? []) : true;
   }
 
   private isContinuationKeyword(node: CommandNode, token: string): boolean {
@@ -570,7 +586,7 @@ export class CommandTrie {
     input: string,
   ): MatchResult {
     const keywordForm = args.length > 0 && this.isContinuationKeyword(node, args[0]);
-    const arityMet = keywordForm || this.isExecutableAt(node, args.length);
+    const arityMet = keywordForm || this.isExecutableAt(node, args.length, args);
     if (arityMet && !!node.action && !this.descendantShortfall(node, args)) {
       return { status: 'ok', node, args, matchedKeywords };
     }
@@ -638,6 +654,7 @@ export class CommandTrie {
     const path: string[] = [];
     /** Combien d'arguments du nœud courant ont déjà été fournis. */
     let consumedArgs = 0;
+    let argsSoFar: string[] = [];
     let firstArg: string | null = null;
 
     // Navigate through all complete (non-last) tokens
@@ -674,6 +691,7 @@ export class CommandTrie {
         node = exactRawHelp;
         path.push(node.keyword);
         consumedArgs = 0;
+        argsSoFar = [];
         continue;
       }
 
@@ -682,6 +700,7 @@ export class CommandTrie {
         node = matches[0];
         path.push(node.keyword);
         consumedArgs = 0;
+        argsSoFar = [];
         continue;
       }
 
@@ -710,6 +729,7 @@ export class CommandTrie {
       // y compris pour les commandes que personne n'a testées.
       if (node.params.length > consumedArgs || node.greedy) {
         if (consumedArgs === 0) firstArg = tokens[i];
+        argsSoFar.push(tokens[i]);
         consumedArgs++;
         continue;
       }
@@ -718,7 +738,8 @@ export class CommandTrie {
     }
 
     // Trailing space → show subcommands/children of the last matched node
-    return this.applyFilter(path, this.nodeCompletions(node, consumedArgs, firstArg));
+    return this.applyFilter(path,
+      this.nodeCompletions(node, consumedArgs, firstArg, argsSoFar));
   }
 
   /**
@@ -915,9 +936,43 @@ export class CommandTrie {
     return param?.type === 'ENUM' ? (param.values ?? []) : [];
   }
 
+  /**
+   * Donne sa description à un nœud INTERMÉDIAIRE, celui qu'aucun
+   * enregistrement ne nomme pour lui-même.
+   *
+   * `register('ip routing-table limit', …)` crée `routing-table` en
+   * chemin, avec une description vide ; `ip ?` listait donc un mot-clé
+   * nu, qui dit qu'il existe sans dire ce qu'il fait. Le nœud n'a pas
+   * d'action et n'en reçoit pas : seul son libellé change.
+   */
+  describeNode(path: string, description: string): void {
+    const node = this.nodeAt(path);
+    if (!node) return;
+    // Un nœud créé en chemin reçoit sa propre CLÉ pour description, que
+    // le rendu blanchit ensuite — répéter le mot-clé ne dit rien. Les
+    // deux formes valent donc « pas de description », et ne garder que
+    // le test de la chaîne vide laissait l'appel sans effet, ce qui a
+    // été mesuré.
+    const vide = !node.description
+      || node.description.toLowerCase() === node.keyword.toLowerCase();
+    if (vide) node.description = description;
+  }
+
   requireArgs(path: string, minArgs: number): void {
     const node = this.nodeAt(path);
     if (node) node.minArgs = minArgs;
+  }
+
+  /**
+   * Déclare qu'au-delà de l'arité, la commande n'est complète que si
+   * ses arguments satisfont ce prédicat — le seul moyen de distinguer
+   * `interface GigabitEthernet0/0/0`, qui s'exécute, de
+   * `interface GigabitEthernet`, qui est refusée, alors que les deux
+   * portent exactement un argument.
+   */
+  executableWhen(path: string, predicate: (args: readonly string[]) => boolean): void {
+    const node = this.nodeAt(path);
+    if (node) node.executableWhen = predicate;
   }
 
   private nodeAt(path: string): CommandNode | null {
@@ -960,8 +1015,10 @@ export class CommandTrie {
     node: CommandNode,
     consumedArgs = 0,
     firstArg: string | null = null,
+    argsSoFar: readonly string[] = [],
   ): Array<{ keyword: string; description: string }> {
-    const raw = dedupeByKeyword(this.nodeCompletionsUnsorted(node, consumedArgs, firstArg));
+    const raw = dedupeByKeyword(
+      this.nodeCompletionsUnsorted(node, consumedArgs, firstArg, argsSoFar));
     const rank = (keyword: string): number => {
       if (keyword === '<cr>') return 2;
       if (keyword.startsWith('<')) return 1;
@@ -979,6 +1036,7 @@ export class CommandTrie {
     node: CommandNode,
     consumedArgs = 0,
     firstArg: string | null = null,
+    argsSoFar: readonly string[] = [],
   ): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
@@ -1050,7 +1108,8 @@ export class CommandTrie {
     // <cr> — shown when the current command is already executable
     // (real Cisco always shows <cr> when you can press Enter)
     const keywordForm = firstArg !== null && this.isContinuationKeyword(node, firstArg);
-    if (!!node.action && (keywordForm || this.isExecutableAt(node, consumedArgs))) {
+    if (!!node.action
+      && (keywordForm || this.isExecutableAt(node, consumedArgs, argsSoFar))) {
       results.push({ keyword: '<cr>', description: '' });
     }
 

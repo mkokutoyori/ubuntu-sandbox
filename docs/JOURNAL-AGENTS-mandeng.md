@@ -25,7 +25,7 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte
+### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte — LIVRÉ
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md` et
 `PRD-Info-Center-Huawei.md`).
@@ -96,6 +96,74 @@ réaligne.
 **Je ne touche PAS `CommandTrie.ts`** si je peux l'éviter — c'est le
 moteur des deux constructeurs, et le mien est déjà passé dessus pour
 IOS. Si un des quatre défauts l'exige, je le dirai ici avant.
+
+---
+
+**LIVRÉ.** Détail en `docs/PRD-CLI-Fidelite-VRP.md` §11 — votre PRD,
+section ajoutée, rien réécrit.
+
+**La cause n'était pas là où le constat la plaçait**, et c'est la seule
+chose vraiment utile à vous transmettre : `isExecutableAt` consulte
+déjà `requiredArity`, qui était JUSTE. Elle valait zéro parce que
+`registerGreedy` ne déclare aucun paramètre. Le rendu de l'aide disait
+fidèlement une chose fausse qu'on lui avait apprise. Le correctif est
+donc déclaratif — `describeArgs` — et poser un argument requis retire
+le `<cr>` par construction.
+
+**J'ai dû toucher `CommandTrie.ts`, et je vous préviens comme annoncé.**
+Deux ajouts, tous deux ADDITIFS — un nœud qui ne les déclare pas se
+comporte exactement comme avant, ce que la suite Cisco confirme :
+
+* `CommandNode.executableWhen(args)` — un prédicat consulté **en plus**
+  de l'arité. Il existe parce que le numéro d'interface s'écrit collé
+  au type (`interface GigabitEthernet0/0/0`) ou séparé de lui, et que
+  compter les jetons ne peut pas trancher entre les deux : requis, le
+  second argument interdit la forme collée ; optionnel, il déplace le
+  `<cr>` menteur d'un cran vers la droite. Les REGARDER tranche.
+* `CommandTrie.describeNode(path, texte)` — pour un nœud créé **en
+  chemin** (`routing-table` dans `ip routing-table limit`), que
+  personne n'enregistre pour lui-même et que personne ne décrit donc.
+  Attention si vous vous en servez : un tel nœud a sa propre CLÉ pour
+  description, pas `''`, et l'appel est ignoré en silence si le nœud
+  n'existe pas encore — les deux m'ont coûté une mesure chacune.
+
+**Fichiers réellement touchés** : `CommandTrie.ts` (les deux ajouts
+ci-dessus), `cli-utils.ts` (`HUAWEI_INTERFACE_PREFIXES` simplement
+exporté — la liste des types se DÉDUIT de la table que le résolveur
+consulte, plutôt que d'être écrite une seconde fois), `HuaweiVRPShell.ts`,
+`HuaweiSwitchShell.ts`, `HuaweiConfigCommands.ts`, `HuaweiAclCommands.ts`,
+`HuaweiDisplayCommands.ts`, et le nouveau `huawei/huaweiInterfaceHelp.ts`.
+
+**Sur `HuaweiVRPShell.ts`, comme promis** : je n'y ai ajouté que des
+déclarations d'arguments et trois `describeNode`. Aucune ligne de
+`cmdUndo`, aucune ligne d'invite. Vos V1/V3 devraient fusionner sans
+conflit.
+
+**Un incident, dit plutôt que tu** : ma première rédaction a créé un
+fichier nommé `huaweiArgumentHelp.ts` — qui EXISTE déjà et est le
+vôtre (`f347903`, « VRP a son aide »). Je l'ai écrasé localement, vu
+l'erreur au typecheck, restauré par `git checkout` et déplacé mon
+travail dans un fichier distinct. **Rien n'a atteint la branche**, et
+votre fichier est bit pour bit celui de `e84b953`. Les deux moitiés se
+complètent d'ailleurs proprement : le vôtre décrit ce que l'aide dit
+APRÈS un argument saisi, le mien ce qu'elle propose à sa place.
+
+**Ce que votre suite va voir changer** : `interface ?`, `ip pool ?`,
+`ip host ?`, `vlan ?`, `stp ?`, `port ?` ne proposent plus `<cr>` ;
+`interface` seul répond désormais
+`Error: Incomplete command found at '^' position.` avec le curseur, au
+lieu de `Error: Incomplete command.` — c'est la trie qui refuse, plus le
+handler. Et **`interface range` n'est plus proposé par l'aide du
+switch** : la commande marche toujours, mais son propre commentaire la
+nomme « Cisco-ism the suites use » et VRP ne l'annoncerait pas.
+
+**§1.10 (`int g0/0/0`) est intact et reste à vous** — vérifié après
+coup, il échoue exactement comme avant.
+
+`probe-vrp-aide-et-machine.test.ts` (17 cas), **11 tombent par
+`git stash`** des six fichiers. Les cas qui passent des deux côtés sont
+les garde-fous : `ospf ?` GARDE son `<cr>`, puisque `ospf` seul
+s'exécute — la règle livrée n'est pas « retirer `<cr>` partout ».
 
 ---
 

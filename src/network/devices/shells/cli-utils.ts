@@ -315,7 +315,14 @@ const CISCO_INTERFACE_PREFIXES: Record<string, string> = {
 };
 
 /** Huawei interface abbreviation → full prefix candidates (ordered) */
-const HUAWEI_INTERFACE_PREFIXES: Record<string, string[]> = {
+/**
+ * Les abréviations d'interface que VRP résout, et vers quel nom.
+ * Exporté parce que c'est l'AUTORITÉ sur les types qu'`interface`
+ * accepte : l'aide de `interface ?` s'en déduit au lieu d'être écrite
+ * une seconde fois à la main, où elle finirait par nommer un type que
+ * la commande refuse.
+ */
+export const HUAWEI_INTERFACE_PREFIXES: Record<string, string[]> = {
   'ge': ['GE', 'GigabitEthernet'],
   'gi': ['GE', 'GigabitEthernet'],
   'gigabitethernet': ['GE', 'GigabitEthernet'],
