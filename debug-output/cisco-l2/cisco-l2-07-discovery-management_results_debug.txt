@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-07-discovery-management
-Generated: 2026-08-04T10:58:32.717Z
+Generated: 2026-08-08T00:20:41.750Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CDP/LLDP, management SVI, users/AAA, SSH, logging, NTP/SNTP, SNMP
 Total steps: 366
@@ -22,7 +22,7 @@ Total steps: 366
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  CORE             Gig 0/1           180        S           Cisco Catalyst 2960 Gig 0/1
+  CORE             Gig 0/1           180        S           Cisco Cat Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -56,7 +56,7 @@ Total steps: 366
   Total entries displayed: 0
 
 [7/366] sw1 SW1# show clock
-  *10:58:32.000 UTC Tue Aug 4 2026
+  *00:20:41.000 UTC Sat Aug 8 2026
 
 [8/366] sw1 SW1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
@@ -64,44 +64,55 @@ Total steps: 366
 [9/366] sw1 SW1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
 
 [10/366] sw1 SW1# show snmp
+  Chassis: FOC1235X78Z
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
 [11/366] sw1 SW1# show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 19 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 19 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 19 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 19 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
-  %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
-  %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
+  *Aug  8 00:20:41.718: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug  8 00:20:41.718: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug  8 00:20:41.721: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
+  *Aug  8 00:20:41.722: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.722: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug  8 00:20:41.722: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug  8 00:20:41.723: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
+  *Aug  8 00:20:41.723: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.723: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug  8 00:20:41.723: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug  8 00:20:41.724: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
+  *Aug  8 00:20:41.724: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.727: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:20:41.727: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:20:41.729: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:20:41.729: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
+  *Aug  8 00:20:41.729: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.736: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
+  *Aug  8 00:20:41.736: %SYS-5-CONFIG_I: Configured from console by console
 
 [12/366] sw1 SW1# show ip interface brief
   Interface              IP-Address      OK? Method Status                Protocol
@@ -266,7 +277,7 @@ Total steps: 366
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  CORE             Gig 0/1           180        S           Cisco Catalyst 2960 Gig 0/1
+  CORE             Gig 0/1           180        S           Cisco Cat Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -300,87 +311,87 @@ Total steps: 366
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/4 is up, line protocol is down
+  FastEthernet0/4 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/5 is up, line protocol is down
+  FastEthernet0/5 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/6 is up, line protocol is down
+  FastEthernet0/6 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/7 is up, line protocol is down
+  FastEthernet0/7 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/8 is up, line protocol is down
+  FastEthernet0/8 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/9 is up, line protocol is down
+  FastEthernet0/9 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/10 is up, line protocol is down
+  FastEthernet0/10 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/11 is up, line protocol is down
+  FastEthernet0/11 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/12 is up, line protocol is down
+  FastEthernet0/12 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/13 is up, line protocol is down
+  FastEthernet0/13 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/14 is up, line protocol is down
+  FastEthernet0/14 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/15 is up, line protocol is down
+  FastEthernet0/15 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/16 is up, line protocol is down
+  FastEthernet0/16 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/17 is up, line protocol is down
+  FastEthernet0/17 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/18 is up, line protocol is down
+  FastEthernet0/18 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/19 is up, line protocol is down
+  FastEthernet0/19 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/20 is up, line protocol is down
+  FastEthernet0/20 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/21 is up, line protocol is down
+  FastEthernet0/21 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/22 is up, line protocol is down
+  FastEthernet0/22 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/23 is up, line protocol is down
+  FastEthernet0/23 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  FastEthernet0/24 is up, line protocol is down
+  FastEthernet0/24 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -388,7 +399,7 @@ Total steps: 366
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -847,13 +858,13 @@ Total steps: 366
 <empty>
 
 [145/366] sw1 SW1(config)# do show running-config | include username
-  username admin privilege 15 secret 5 $1$01385192$JeBxa/r1o6aXMUA.C7aHX0
-  username user1 privilege 1 secret 5 $1$2709931b$CaC6NHdHhyUEMAMuZfy82.
-  username user2 privilege 1 secret 5 $1$20ff1ef5$uRC.Gwr3VPIdjfWPjIypm1
-  username user3 privilege 1 secret 5 $1$981ccdf1$XjqfXXNJWK4vdSPCeaZdN0
-  username user4 privilege 15 secret 5 $1$c832bed6$Vi/3TB5YYtAhZ8krTJM431
-  username user5 privilege 15 secret 5 $1$561fc5d8$BZmQggO3lWsBvvKF4Q.3a1
-  username user6 privilege 15 secret 5 $1$f4fd7c6a$.3ln4JpGTKykOZpOHL/O/1
+  username admin privilege 15 secret 5 $1$9494d6ad$EMHpmgg3cgOQgnmM2gsQd.
+  username user1 privilege 1 secret 5 $1$53e41c06$Q.24SB6EPZNFvvZvAbyKG/
+  username user2 privilege 1 secret 5 $1$8c541ae3$bLRKxs9QuisFvd/6wIr14/
+  username user3 privilege 1 secret 5 $1$e7c5c9bd$SRdAo2v42FIokbb6wpVzX.
+  username user4 privilege 15 secret 5 $1$e2da8a9a$3oLt1kuaNnoDjWE2qMEzz.
+  username user5 privilege 15 secret 5 $1$f5da3d83$NURfW2iLVUOBvHYPEyZ8x.
+  username user6 privilege 15 secret 5 $1$fcc44acb$enYmhDDeJH6rnP1RMjWJ.1
 
 [146/366] sw1 SW1(config)# end
 <empty>
@@ -978,53 +989,76 @@ Total steps: 366
 <empty>
 
 [183/366] sw1 SW1(config)# do show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level warnings
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 16384 bytes
-      Trap logging: level informational
-      Facility: local6
-      Timestamps logging: enabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level warnings, 33 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 33 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 33 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
+      Facility: local6
       Source interface: Vlan1
-      Logging to 192.168.1.13
-      Logging to 192.168.1.23
-      Logging to 10.0.0.50
+  
+      Trap logging: level informational, 33 message lines logged
+          Logging to 192.168.1.13  (udp port 514, audit disabled,
+                link up),
+                0 message lines logged, 0 message lines rate-limited,
+                0 message lines dropped-by-MD, xml disabled,
+                sequence number disabled
+          Logging to 192.168.1.23  (udp port 514, audit disabled,
+                link up),
+                0 message lines logged, 0 message lines rate-limited,
+                0 message lines dropped-by-MD, xml disabled,
+                sequence number disabled
+          Logging to 10.0.0.50  (udp port 514, audit disabled,
+                link up),
+                0 message lines logged, 0 message lines rate-limited,
+                0 message lines dropped-by-MD, xml disabled,
+                sequence number disabled
   
   Log Buffer (16384 bytes):
   
-  *Aug  4 10:58:32.692: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug  4 10:58:32.692: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug  4 10:58:32.694: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  *Aug  4 10:58:32.694: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  4 10:58:32.695: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug  4 10:58:32.695: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug  4 10:58:32.695: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  *Aug  4 10:58:32.695: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
-  *Aug  4 10:58:32.696: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug  4 10:58:32.696: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug  4 10:58:32.697: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  *Aug  4 10:58:32.697: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
-  *Aug  4 10:58:32.698: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  4 10:58:32.698: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  4 10:58:32.700: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  4 10:58:32.700: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  *Aug  4 10:58:32.700: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  4 10:58:32.705: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
-  *Aug  4 10:58:32.719: %CDP-6-INFORMATIONAL: CDP enabled
-  *Aug  4 10:58:32.720: %CDP-6-INFORMATIONAL: CDP enabled
-  *Aug  4 10:58:32.723: %LLDP-6-INFORMATIONAL: LLDP enabled
-  *Aug  4 10:58:32.723: %LLDP-6-INFORMATIONAL: LLDP enabled
-  *Aug  4 10:58:32.723: %LLDP-6-INFORMATIONAL: LLDP enabled
-  *Aug  4 10:58:32.725: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
-  *Aug  4 10:58:32.725: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
-  *Aug  4 10:58:32.733: %SYS-6-INFORMATIONAL: User account 'user1' created (priv 1)
-  *Aug  4 10:58:32.733: %SYS-6-INFORMATIONAL: User account 'user2' created (priv 1)
-  *Aug  4 10:58:32.733: %SYS-6-INFORMATIONAL: User account 'user3' created (priv 1)
-  *Aug  4 10:58:32.734: %SYS-6-INFORMATIONAL: User account 'user4' created (priv 15)
-  *Aug  4 10:58:32.734: %SYS-6-INFORMATIONAL: User account 'user5' created (priv 15)
-  *Aug  4 10:58:32.734: %SYS-6-INFORMATIONAL: User account 'user6' created (priv 15)
-  *Aug  4 10:58:32.734: %SYS-6-INFORMATIONAL: User account 'admin' created (priv 15)
+  *Aug  8 00:20:41.718: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug  8 00:20:41.718: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug  8 00:20:41.721: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
+  *Aug  8 00:20:41.722: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.722: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug  8 00:20:41.722: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug  8 00:20:41.723: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
+  *Aug  8 00:20:41.723: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.723: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug  8 00:20:41.723: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug  8 00:20:41.724: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
+  *Aug  8 00:20:41.724: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.727: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:20:41.727: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:20:41.729: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:20:41.729: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
+  *Aug  8 00:20:41.729: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.736: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
+  *Aug  8 00:20:41.736: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:20:41.753: %CDP-6-INFORMATIONAL: CDP enabled
+  *Aug  8 00:20:41.754: %CDP-6-INFORMATIONAL: CDP enabled
+  *Aug  8 00:20:41.754: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:20:41.757: %LLDP-6-INFORMATIONAL: LLDP enabled
+  *Aug  8 00:20:41.757: %LLDP-6-INFORMATIONAL: LLDP enabled
+  *Aug  8 00:20:41.757: %LLDP-6-INFORMATIONAL: LLDP enabled
+  *Aug  8 00:20:41.758: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:20:41.760: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
+  *Aug  8 00:20:41.760: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
+  *Aug  8 00:20:41.762: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:20:41.763: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:20:41.789: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:20:41.791: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:20:41.792: %SYS-5-CONFIG_I: Configured from console by console
 
 [184/366] sw1 SW1(config)# end
 <empty>
@@ -1061,13 +1095,12 @@ Total steps: 366
 [194/366] sw1 SW1(config)# do show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
 
 [195/366] sw1 SW1(config)# do show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
 
 [196/366] sw1 SW1(config)# do show clock
-  *10:58:32.000 UTC Tue Aug 4 2026
+  *00:20:41.000 UTC Sat Aug 8 2026
 
 [197/366] sw1 SW1(config)# end
 <empty>
@@ -1096,6 +1129,7 @@ Total steps: 366
 <empty>
 
 [205/366] sw1 SW1(config)# do show snmp
+  Chassis: FOC1235X78Z
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
@@ -1116,8 +1150,8 @@ Total steps: 366
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  SW1              Gig 0/1           180        S           Cisco Catalyst 2960 Gig 0/1
-  SW2              Gig 0/2           180        S           Cisco Catalyst 2960 Gig 0/1
+  SW1              Gig 0/1           180        S           Cisco Cat Gig 0/1
+  SW2              Gig 0/2           180        S           Cisco Cat Gig 0/1
   
   Total cdp entries displayed : 2
 
@@ -1138,7 +1172,7 @@ Total steps: 366
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  CORE             Gig 0/1           180        S           Cisco Catalyst 2960 Gig 0/2
+  CORE             Gig 0/1           180        S           Cisco Cat Gig 0/2
   
   Total cdp entries displayed : 1
 
@@ -1155,21 +1189,21 @@ Total steps: 366
 --- [214] § management reachability from hosts ---
 [214/366] l1 l1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=2.239 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.699 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=1.594 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.787 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.699/1.469/2.239/0.770 ms
+  rtt min/avg/max/mdev = 0.787/1.191/1.594/0.404 ms
 
 [215/366] srv1 srv1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.415 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.886 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.431 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=1.097 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.415/0.651/0.886/0.235 ms
+  rtt min/avg/max/mdev = 0.431/0.764/1.097/0.333 ms
 
 [216/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -1596,7 +1630,7 @@ Total steps: 366
       Rx state: INIT
 
 [224/366] sw1 SW1# show cdp interface FastEthernet0/4
-  FastEthernet0/4 is up, line protocol is down
+  FastEthernet0/4 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -1734,7 +1768,7 @@ Total steps: 366
       Rx state: INIT
 
 [226/366] sw1 SW1# show cdp interface FastEthernet0/5
-  FastEthernet0/5 is up, line protocol is down
+  FastEthernet0/5 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -1872,7 +1906,7 @@ Total steps: 366
       Rx state: INIT
 
 [228/366] sw1 SW1# show cdp interface FastEthernet0/6
-  FastEthernet0/6 is up, line protocol is down
+  FastEthernet0/6 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -2010,7 +2044,7 @@ Total steps: 366
       Rx state: INIT
 
 [230/366] sw1 SW1# show cdp interface FastEthernet0/7
-  FastEthernet0/7 is up, line protocol is down
+  FastEthernet0/7 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -2148,7 +2182,7 @@ Total steps: 366
       Rx state: INIT
 
 [232/366] sw1 SW1# show cdp interface FastEthernet0/8
-  FastEthernet0/8 is up, line protocol is down
+  FastEthernet0/8 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -2286,7 +2320,7 @@ Total steps: 366
       Rx state: INIT
 
 [234/366] sw1 SW1# show cdp interface FastEthernet0/9
-  FastEthernet0/9 is up, line protocol is down
+  FastEthernet0/9 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -2424,7 +2458,7 @@ Total steps: 366
       Rx state: INIT
 
 [236/366] sw1 SW1# show cdp interface FastEthernet0/10
-  FastEthernet0/10 is up, line protocol is down
+  FastEthernet0/10 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -2562,7 +2596,7 @@ Total steps: 366
       Rx state: INIT
 
 [238/366] sw1 SW1# show cdp interface FastEthernet0/11
-  FastEthernet0/11 is up, line protocol is down
+  FastEthernet0/11 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -2700,7 +2734,7 @@ Total steps: 366
       Rx state: INIT
 
 [240/366] sw1 SW1# show cdp interface FastEthernet0/12
-  FastEthernet0/12 is up, line protocol is down
+  FastEthernet0/12 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -2838,7 +2872,7 @@ Total steps: 366
       Rx state: INIT
 
 [242/366] sw1 SW1# show cdp interface FastEthernet0/13
-  FastEthernet0/13 is up, line protocol is down
+  FastEthernet0/13 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -2976,7 +3010,7 @@ Total steps: 366
       Rx state: INIT
 
 [244/366] sw1 SW1# show cdp interface FastEthernet0/14
-  FastEthernet0/14 is up, line protocol is down
+  FastEthernet0/14 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -3114,7 +3148,7 @@ Total steps: 366
       Rx state: INIT
 
 [246/366] sw1 SW1# show cdp interface FastEthernet0/15
-  FastEthernet0/15 is up, line protocol is down
+  FastEthernet0/15 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -3252,7 +3286,7 @@ Total steps: 366
       Rx state: INIT
 
 [248/366] sw1 SW1# show cdp interface FastEthernet0/16
-  FastEthernet0/16 is up, line protocol is down
+  FastEthernet0/16 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -3390,7 +3424,7 @@ Total steps: 366
       Rx state: INIT
 
 [250/366] sw1 SW1# show cdp interface FastEthernet0/17
-  FastEthernet0/17 is up, line protocol is down
+  FastEthernet0/17 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -3528,7 +3562,7 @@ Total steps: 366
       Rx state: INIT
 
 [252/366] sw1 SW1# show cdp interface FastEthernet0/18
-  FastEthernet0/18 is up, line protocol is down
+  FastEthernet0/18 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -3666,7 +3700,7 @@ Total steps: 366
       Rx state: INIT
 
 [254/366] sw1 SW1# show cdp interface FastEthernet0/19
-  FastEthernet0/19 is up, line protocol is down
+  FastEthernet0/19 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -3804,7 +3838,7 @@ Total steps: 366
       Rx state: INIT
 
 [256/366] sw1 SW1# show cdp interface FastEthernet0/20
-  FastEthernet0/20 is up, line protocol is down
+  FastEthernet0/20 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -3942,7 +3976,7 @@ Total steps: 366
       Rx state: INIT
 
 [258/366] sw1 SW1# show cdp interface FastEthernet0/21
-  FastEthernet0/21 is up, line protocol is down
+  FastEthernet0/21 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -4080,7 +4114,7 @@ Total steps: 366
       Rx state: INIT
 
 [260/366] sw1 SW1# show cdp interface FastEthernet0/22
-  FastEthernet0/22 is up, line protocol is down
+  FastEthernet0/22 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -4218,7 +4252,7 @@ Total steps: 366
       Rx state: INIT
 
 [262/366] sw1 SW1# show cdp interface FastEthernet0/23
-  FastEthernet0/23 is up, line protocol is down
+  FastEthernet0/23 is down, line protocol is down
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
@@ -4437,46 +4471,61 @@ Total steps: 366
   Authentication timeout: 120 secs; Authentication retries: 3
 
 [280/366] sw2 SW2# show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 25 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 25 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 25 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      Logging to 192.168.1.13
+      Facility: local7
+  
+      Trap logging: level informational, 25 message lines logged
+          Logging to 192.168.1.13  (udp port 514, audit disabled,
+                link up),
+                1 message lines logged, 0 message lines rate-limited,
+                0 message lines dropped-by-MD, xml disabled,
+                sequence number disabled
   
   Log Buffer (4096 bytes):
   
-  %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
-  %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
-  %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/2) discovered on GigabitEthernet0/1
-  %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
-  %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
-  %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
+  *Aug  8 00:20:41.725: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug  8 00:20:41.725: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug  8 00:20:41.725: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
+  *Aug  8 00:20:41.725: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.725: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug  8 00:20:41.725: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug  8 00:20:41.726: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
+  *Aug  8 00:20:41.726: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.726: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug  8 00:20:41.726: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug  8 00:20:41.727: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
+  *Aug  8 00:20:41.727: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.730: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:20:41.730: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:20:41.730: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/2) discovered on GigabitEthernet0/1
+  *Aug  8 00:20:41.730: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
+  *Aug  8 00:20:41.731: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
+  *Aug  8 00:20:41.731: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
+  *Aug  8 00:20:41.731: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
+  *Aug  8 00:20:41.737: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
+  *Aug  8 00:20:41.737: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:20:43.568: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
+  *Aug  8 00:20:43.814: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
+  *Aug  8 00:20:43.814: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
+  *Aug  8 00:20:43.815: %SYS-5-CONFIG_I: Configured from console by console
 
 [281/366] sw2 SW2# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
 
 [282/366] sw2 SW2# show running-config
   Building configuration...
@@ -4485,7 +4534,7 @@ Total steps: 366
   !
   hostname SW2
   !
-  enable secret 5 $1$0f1a19c6$FUVLs8WAstt8pC6COeKCZ0
+  enable secret 5 $1$c0f9684e$1osZ/skd4BOgUxSatb3wM1
   !
   ip domain-name lab.local
   !
@@ -4548,28 +4597,30 @@ Total steps: 366
   interface Vlan1
    ip address 192.168.1.253 255.255.255.0
   !
-  logging buffered 4096 debugging
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   logging host 192.168.1.13
   end
 
 [283/366] l2 l2$ ping -c 2 192.168.1.253
   PING 192.168.1.253 (192.168.1.253) 56(84) bytes of data.
-  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.664 ms
-  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.658 ms
+  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.426 ms
+  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.754 ms
   
   --- 192.168.1.253 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.658/0.661/0.664/0.003 ms
+  rtt min/avg/max/mdev = 0.426/0.590/0.754/0.164 ms
 
 
 --- [284] § host service inspection (SRV1/SRV2) ---
 [285/366] srv1 srv1$ ss -tlnp
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
   LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=28,fd=3))
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*         
 
 [286/366] srv1 srv1$ systemctl status sshd
   Unit sshd.service could not be found.
@@ -4582,11 +4633,12 @@ Total steps: 366
 
 [289/366] srv2 srv2$ ss -tlnp
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
   LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=28,fd=3))
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*         
 
 [290/366] srv2 srv2$ systemctl status sshd
   Unit sshd.service could not be found.
@@ -4616,20 +4668,20 @@ Total steps: 366
   Welcome
   ^C
   !
-  enable secret 5 $1$ec95d4ed$iXyMKwbvZfoKEqIhdw7oI0
+  enable secret 5 $1$caacdc99$5IOA7Hw95rii7J3/tCAe01
   enable password Weak
   !
   ip domain-name lab.local
   !
   ip default-gateway 192.168.1.1
   !
-  username admin privilege 15 secret 5 $1$01385192$JeBxa/r1o6aXMUA.C7aHX0
-  username user1 privilege 1 secret 5 $1$2709931b$CaC6NHdHhyUEMAMuZfy82.
-  username user2 privilege 1 secret 5 $1$20ff1ef5$uRC.Gwr3VPIdjfWPjIypm1
-  username user3 privilege 1 secret 5 $1$981ccdf1$XjqfXXNJWK4vdSPCeaZdN0
-  username user4 privilege 15 secret 5 $1$c832bed6$Vi/3TB5YYtAhZ8krTJM431
-  username user5 privilege 15 secret 5 $1$561fc5d8$BZmQggO3lWsBvvKF4Q.3a1
-  username user6 privilege 15 secret 5 $1$f4fd7c6a$.3ln4JpGTKykOZpOHL/O/1
+  username admin privilege 15 secret 5 $1$9494d6ad$EMHpmgg3cgOQgnmM2gsQd.
+  username user1 privilege 1 secret 5 $1$53e41c06$Q.24SB6EPZNFvvZvAbyKG/
+  username user2 privilege 1 secret 5 $1$8c541ae3$bLRKxs9QuisFvd/6wIr14/
+  username user3 privilege 1 secret 5 $1$e7c5c9bd$SRdAo2v42FIokbb6wpVzX.
+  username user4 privilege 15 secret 5 $1$e2da8a9a$3oLt1kuaNnoDjWE2qMEzz.
+  username user5 privilege 15 secret 5 $1$f5da3d83$NURfW2iLVUOBvHYPEyZ8x.
+  username user6 privilege 15 secret 5 $1$fcc44acb$enYmhDDeJH6rnP1RMjWJ.1
   !
   line vty 0 15
    exec-timeout 10 0
@@ -4698,6 +4750,7 @@ Total steps: 366
   logging buffered 16384 debugging
   logging console warnings
   logging facility local6
+  service timestamps debug datetime msec
   service timestamps log datetime msec
   logging source-interface Vlan1
   logging host 192.168.1.13

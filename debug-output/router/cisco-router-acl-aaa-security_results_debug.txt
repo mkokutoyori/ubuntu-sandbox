@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-08-04T11:15:12.084Z
+Generated: 2026-08-08T00:34:51.002Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -123,75 +123,75 @@ Total steps: 388
 
 [38/388] r1 R1# show access-lists
   Standard IP access list 10
-      10 permit 192.168.1.0 0.0.0.255 (0 matches)
-      20 permit 192.168.2.0 0.0.0.255 (0 matches)
-      30 permit 192.168.3.0 0.0.0.255 (0 matches)
-      40 permit 192.168.4.0 0.0.0.255 (0 matches)
-      50 permit 192.168.5.0 0.0.0.255 (0 matches)
-      60 permit 192.168.6.0 0.0.0.255 (0 matches)
-      70 permit 192.168.7.0 0.0.0.255 (0 matches)
-      80 permit 192.168.8.0 0.0.0.255 (0 matches)
-      90 permit 192.168.9.0 0.0.0.255 (0 matches)
-      100 permit 192.168.10.0 0.0.0.255 (0 matches)
-      110 permit 192.168.11.0 0.0.0.255 (0 matches)
-      120 permit 192.168.12.0 0.0.0.255 (0 matches)
-      130 permit 192.168.13.0 0.0.0.255 (0 matches)
-      140 permit 192.168.14.0 0.0.0.255 (0 matches)
-      150 permit 192.168.15.0 0.0.0.255 (0 matches)
-      160 permit 192.168.16.0 0.0.0.255 (0 matches)
-      170 permit 192.168.17.0 0.0.0.255 (0 matches)
-      180 permit 192.168.18.0 0.0.0.255 (0 matches)
-      190 permit 192.168.19.0 0.0.0.255 (0 matches)
-      200 permit 192.168.20.0 0.0.0.255 (0 matches)
-      210 deny any log (0 matches)
+      10 permit 192.168.1.0, wildcard bits 0.0.0.255
+      20 permit 192.168.2.0, wildcard bits 0.0.0.255
+      30 permit 192.168.3.0, wildcard bits 0.0.0.255
+      40 permit 192.168.4.0, wildcard bits 0.0.0.255
+      50 permit 192.168.5.0, wildcard bits 0.0.0.255
+      60 permit 192.168.6.0, wildcard bits 0.0.0.255
+      70 permit 192.168.7.0, wildcard bits 0.0.0.255
+      80 permit 192.168.8.0, wildcard bits 0.0.0.255
+      90 permit 192.168.9.0, wildcard bits 0.0.0.255
+      100 permit 192.168.10.0, wildcard bits 0.0.0.255
+      110 permit 192.168.11.0, wildcard bits 0.0.0.255
+      120 permit 192.168.12.0, wildcard bits 0.0.0.255
+      130 permit 192.168.13.0, wildcard bits 0.0.0.255
+      140 permit 192.168.14.0, wildcard bits 0.0.0.255
+      150 permit 192.168.15.0, wildcard bits 0.0.0.255
+      160 permit 192.168.16.0, wildcard bits 0.0.0.255
+      170 permit 192.168.17.0, wildcard bits 0.0.0.255
+      180 permit 192.168.18.0, wildcard bits 0.0.0.255
+      190 permit 192.168.19.0, wildcard bits 0.0.0.255
+      200 permit 192.168.20.0, wildcard bits 0.0.0.255
+      210 deny any log
 
 [39/388] r1 R1# show access-lists 10
   Standard IP access list 10
-      10 permit 192.168.1.0 0.0.0.255 (0 matches)
-      20 permit 192.168.2.0 0.0.0.255 (0 matches)
-      30 permit 192.168.3.0 0.0.0.255 (0 matches)
-      40 permit 192.168.4.0 0.0.0.255 (0 matches)
-      50 permit 192.168.5.0 0.0.0.255 (0 matches)
-      60 permit 192.168.6.0 0.0.0.255 (0 matches)
-      70 permit 192.168.7.0 0.0.0.255 (0 matches)
-      80 permit 192.168.8.0 0.0.0.255 (0 matches)
-      90 permit 192.168.9.0 0.0.0.255 (0 matches)
-      100 permit 192.168.10.0 0.0.0.255 (0 matches)
-      110 permit 192.168.11.0 0.0.0.255 (0 matches)
-      120 permit 192.168.12.0 0.0.0.255 (0 matches)
-      130 permit 192.168.13.0 0.0.0.255 (0 matches)
-      140 permit 192.168.14.0 0.0.0.255 (0 matches)
-      150 permit 192.168.15.0 0.0.0.255 (0 matches)
-      160 permit 192.168.16.0 0.0.0.255 (0 matches)
-      170 permit 192.168.17.0 0.0.0.255 (0 matches)
-      180 permit 192.168.18.0 0.0.0.255 (0 matches)
-      190 permit 192.168.19.0 0.0.0.255 (0 matches)
-      200 permit 192.168.20.0 0.0.0.255 (0 matches)
-      210 deny any log (0 matches)
+      10 permit 192.168.1.0, wildcard bits 0.0.0.255
+      20 permit 192.168.2.0, wildcard bits 0.0.0.255
+      30 permit 192.168.3.0, wildcard bits 0.0.0.255
+      40 permit 192.168.4.0, wildcard bits 0.0.0.255
+      50 permit 192.168.5.0, wildcard bits 0.0.0.255
+      60 permit 192.168.6.0, wildcard bits 0.0.0.255
+      70 permit 192.168.7.0, wildcard bits 0.0.0.255
+      80 permit 192.168.8.0, wildcard bits 0.0.0.255
+      90 permit 192.168.9.0, wildcard bits 0.0.0.255
+      100 permit 192.168.10.0, wildcard bits 0.0.0.255
+      110 permit 192.168.11.0, wildcard bits 0.0.0.255
+      120 permit 192.168.12.0, wildcard bits 0.0.0.255
+      130 permit 192.168.13.0, wildcard bits 0.0.0.255
+      140 permit 192.168.14.0, wildcard bits 0.0.0.255
+      150 permit 192.168.15.0, wildcard bits 0.0.0.255
+      160 permit 192.168.16.0, wildcard bits 0.0.0.255
+      170 permit 192.168.17.0, wildcard bits 0.0.0.255
+      180 permit 192.168.18.0, wildcard bits 0.0.0.255
+      190 permit 192.168.19.0, wildcard bits 0.0.0.255
+      200 permit 192.168.20.0, wildcard bits 0.0.0.255
+      210 deny any log
 
 [40/388] r1 R1# show ip access-lists 10
   Standard IP access list 10
-      10 permit 192.168.1.0 0.0.0.255 (0 matches)
-      20 permit 192.168.2.0 0.0.0.255 (0 matches)
-      30 permit 192.168.3.0 0.0.0.255 (0 matches)
-      40 permit 192.168.4.0 0.0.0.255 (0 matches)
-      50 permit 192.168.5.0 0.0.0.255 (0 matches)
-      60 permit 192.168.6.0 0.0.0.255 (0 matches)
-      70 permit 192.168.7.0 0.0.0.255 (0 matches)
-      80 permit 192.168.8.0 0.0.0.255 (0 matches)
-      90 permit 192.168.9.0 0.0.0.255 (0 matches)
-      100 permit 192.168.10.0 0.0.0.255 (0 matches)
-      110 permit 192.168.11.0 0.0.0.255 (0 matches)
-      120 permit 192.168.12.0 0.0.0.255 (0 matches)
-      130 permit 192.168.13.0 0.0.0.255 (0 matches)
-      140 permit 192.168.14.0 0.0.0.255 (0 matches)
-      150 permit 192.168.15.0 0.0.0.255 (0 matches)
-      160 permit 192.168.16.0 0.0.0.255 (0 matches)
-      170 permit 192.168.17.0 0.0.0.255 (0 matches)
-      180 permit 192.168.18.0 0.0.0.255 (0 matches)
-      190 permit 192.168.19.0 0.0.0.255 (0 matches)
-      200 permit 192.168.20.0 0.0.0.255 (0 matches)
-      210 deny any log (0 matches)
+      10 permit 192.168.1.0, wildcard bits 0.0.0.255
+      20 permit 192.168.2.0, wildcard bits 0.0.0.255
+      30 permit 192.168.3.0, wildcard bits 0.0.0.255
+      40 permit 192.168.4.0, wildcard bits 0.0.0.255
+      50 permit 192.168.5.0, wildcard bits 0.0.0.255
+      60 permit 192.168.6.0, wildcard bits 0.0.0.255
+      70 permit 192.168.7.0, wildcard bits 0.0.0.255
+      80 permit 192.168.8.0, wildcard bits 0.0.0.255
+      90 permit 192.168.9.0, wildcard bits 0.0.0.255
+      100 permit 192.168.10.0, wildcard bits 0.0.0.255
+      110 permit 192.168.11.0, wildcard bits 0.0.0.255
+      120 permit 192.168.12.0, wildcard bits 0.0.0.255
+      130 permit 192.168.13.0, wildcard bits 0.0.0.255
+      140 permit 192.168.14.0, wildcard bits 0.0.0.255
+      150 permit 192.168.15.0, wildcard bits 0.0.0.255
+      160 permit 192.168.16.0, wildcard bits 0.0.0.255
+      170 permit 192.168.17.0, wildcard bits 0.0.0.255
+      180 permit 192.168.18.0, wildcard bits 0.0.0.255
+      190 permit 192.168.19.0, wildcard bits 0.0.0.255
+      200 permit 192.168.20.0, wildcard bits 0.0.0.255
+      210 deny any log
 
 
 --- [41] § extended numbered ACL ---
@@ -314,103 +314,103 @@ Total steps: 388
 
 [80/388] r1 R1# show access-lists 100
   Extended IP access list 100
-      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
-      20 permit udp any host 10.0.0.1 eq 53 (0 matches)
-      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
-      40 permit udp any host 10.0.0.2 eq 53 (0 matches)
-      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
-      60 permit udp any host 10.0.0.3 eq 53 (0 matches)
-      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
-      80 permit udp any host 10.0.0.4 eq 53 (0 matches)
-      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
-      100 permit udp any host 10.0.0.5 eq 53 (0 matches)
-      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
-      120 permit udp any host 10.0.0.6 eq 53 (0 matches)
-      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
-      140 permit udp any host 10.0.0.7 eq 53 (0 matches)
-      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
-      160 permit udp any host 10.0.0.8 eq 53 (0 matches)
-      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
-      180 permit udp any host 10.0.0.9 eq 53 (0 matches)
-      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
-      200 permit udp any host 10.0.0.10 eq 53 (0 matches)
-      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
-      220 permit udp any host 10.0.0.11 eq 53 (0 matches)
-      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
-      240 permit udp any host 10.0.0.12 eq 53 (0 matches)
-      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
-      260 permit udp any host 10.0.0.13 eq 53 (0 matches)
-      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
-      280 permit udp any host 10.0.0.14 eq 53 (0 matches)
-      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
-      300 permit udp any host 10.0.0.15 eq 53 (0 matches)
-      310 permit icmp any any echo-reply (0 matches)
-      320 deny ip any any log-input (0 matches)
+      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81
+      20 permit udp any host 10.0.0.1 eq 53
+      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82
+      40 permit udp any host 10.0.0.2 eq 53
+      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83
+      60 permit udp any host 10.0.0.3 eq 53
+      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84
+      80 permit udp any host 10.0.0.4 eq 53
+      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85
+      100 permit udp any host 10.0.0.5 eq 53
+      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86
+      120 permit udp any host 10.0.0.6 eq 53
+      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87
+      140 permit udp any host 10.0.0.7 eq 53
+      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88
+      160 permit udp any host 10.0.0.8 eq 53
+      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89
+      180 permit udp any host 10.0.0.9 eq 53
+      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90
+      200 permit udp any host 10.0.0.10 eq 53
+      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91
+      220 permit udp any host 10.0.0.11 eq 53
+      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92
+      240 permit udp any host 10.0.0.12 eq 53
+      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93
+      260 permit udp any host 10.0.0.13 eq 53
+      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94
+      280 permit udp any host 10.0.0.14 eq 53
+      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95
+      300 permit udp any host 10.0.0.15 eq 53
+      310 permit icmp any any echo-reply
+      320 deny ip any any log-input
 
 [81/388] r1 R1# show ip access-lists
   Standard IP access list 10
-      10 permit 192.168.1.0 0.0.0.255 (0 matches)
-      20 permit 192.168.2.0 0.0.0.255 (0 matches)
-      30 permit 192.168.3.0 0.0.0.255 (0 matches)
-      40 permit 192.168.4.0 0.0.0.255 (0 matches)
-      50 permit 192.168.5.0 0.0.0.255 (0 matches)
-      60 permit 192.168.6.0 0.0.0.255 (0 matches)
-      70 permit 192.168.7.0 0.0.0.255 (0 matches)
-      80 permit 192.168.8.0 0.0.0.255 (0 matches)
-      90 permit 192.168.9.0 0.0.0.255 (0 matches)
-      100 permit 192.168.10.0 0.0.0.255 (0 matches)
-      110 permit 192.168.11.0 0.0.0.255 (0 matches)
-      120 permit 192.168.12.0 0.0.0.255 (0 matches)
-      130 permit 192.168.13.0 0.0.0.255 (0 matches)
-      140 permit 192.168.14.0 0.0.0.255 (0 matches)
-      150 permit 192.168.15.0 0.0.0.255 (0 matches)
-      160 permit 192.168.16.0 0.0.0.255 (0 matches)
-      170 permit 192.168.17.0 0.0.0.255 (0 matches)
-      180 permit 192.168.18.0 0.0.0.255 (0 matches)
-      190 permit 192.168.19.0 0.0.0.255 (0 matches)
-      200 permit 192.168.20.0 0.0.0.255 (0 matches)
-      210 deny any log (0 matches)
+      10 permit 192.168.1.0, wildcard bits 0.0.0.255
+      20 permit 192.168.2.0, wildcard bits 0.0.0.255
+      30 permit 192.168.3.0, wildcard bits 0.0.0.255
+      40 permit 192.168.4.0, wildcard bits 0.0.0.255
+      50 permit 192.168.5.0, wildcard bits 0.0.0.255
+      60 permit 192.168.6.0, wildcard bits 0.0.0.255
+      70 permit 192.168.7.0, wildcard bits 0.0.0.255
+      80 permit 192.168.8.0, wildcard bits 0.0.0.255
+      90 permit 192.168.9.0, wildcard bits 0.0.0.255
+      100 permit 192.168.10.0, wildcard bits 0.0.0.255
+      110 permit 192.168.11.0, wildcard bits 0.0.0.255
+      120 permit 192.168.12.0, wildcard bits 0.0.0.255
+      130 permit 192.168.13.0, wildcard bits 0.0.0.255
+      140 permit 192.168.14.0, wildcard bits 0.0.0.255
+      150 permit 192.168.15.0, wildcard bits 0.0.0.255
+      160 permit 192.168.16.0, wildcard bits 0.0.0.255
+      170 permit 192.168.17.0, wildcard bits 0.0.0.255
+      180 permit 192.168.18.0, wildcard bits 0.0.0.255
+      190 permit 192.168.19.0, wildcard bits 0.0.0.255
+      200 permit 192.168.20.0, wildcard bits 0.0.0.255
+      210 deny any log
   Extended IP access list 100
-      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
-      20 permit udp any host 10.0.0.1 eq 53 (0 matches)
-      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
-      40 permit udp any host 10.0.0.2 eq 53 (0 matches)
-      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
-      60 permit udp any host 10.0.0.3 eq 53 (0 matches)
-      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
-      80 permit udp any host 10.0.0.4 eq 53 (0 matches)
-      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
-      100 permit udp any host 10.0.0.5 eq 53 (0 matches)
-      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
-      120 permit udp any host 10.0.0.6 eq 53 (0 matches)
-      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
-      140 permit udp any host 10.0.0.7 eq 53 (0 matches)
-      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
-      160 permit udp any host 10.0.0.8 eq 53 (0 matches)
-      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
-      180 permit udp any host 10.0.0.9 eq 53 (0 matches)
-      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
-      200 permit udp any host 10.0.0.10 eq 53 (0 matches)
-      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
-      220 permit udp any host 10.0.0.11 eq 53 (0 matches)
-      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
-      240 permit udp any host 10.0.0.12 eq 53 (0 matches)
-      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
-      260 permit udp any host 10.0.0.13 eq 53 (0 matches)
-      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
-      280 permit udp any host 10.0.0.14 eq 53 (0 matches)
-      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
-      300 permit udp any host 10.0.0.15 eq 53 (0 matches)
-      310 permit icmp any any echo-reply (0 matches)
-      320 deny ip any any log-input (0 matches)
+      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81
+      20 permit udp any host 10.0.0.1 eq 53
+      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82
+      40 permit udp any host 10.0.0.2 eq 53
+      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83
+      60 permit udp any host 10.0.0.3 eq 53
+      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84
+      80 permit udp any host 10.0.0.4 eq 53
+      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85
+      100 permit udp any host 10.0.0.5 eq 53
+      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86
+      120 permit udp any host 10.0.0.6 eq 53
+      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87
+      140 permit udp any host 10.0.0.7 eq 53
+      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88
+      160 permit udp any host 10.0.0.8 eq 53
+      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89
+      180 permit udp any host 10.0.0.9 eq 53
+      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90
+      200 permit udp any host 10.0.0.10 eq 53
+      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91
+      220 permit udp any host 10.0.0.11 eq 53
+      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92
+      240 permit udp any host 10.0.0.12 eq 53
+      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93
+      260 permit udp any host 10.0.0.13 eq 53
+      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94
+      280 permit udp any host 10.0.0.14 eq 53
+      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95
+      300 permit udp any host 10.0.0.15 eq 53
+      310 permit icmp any any echo-reply
+      320 deny ip any any log-input
   Extended IP access list 101
-      10 permit tcp any any established (0 matches)
+      10 permit tcp any any established
   Extended IP access list 103
-      10 permit tcp any any range 1024 65535 (0 matches)
+      10 permit tcp any any range 1024 65535
   Extended IP access list 104
-      10 permit ip any any dscp af21 (0 matches)
+      10 permit ip any any dscp af21
   Extended IP access list 105
-      10 permit tcp any any eq 80 log (0 matches)
+      10 permit tcp any any eq 80 log
 
 
 --- [82] § named ACL ---
@@ -491,25 +491,25 @@ Total steps: 388
 
 [107/388] r1 R1# show ip access-lists MGMT
   Standard IP access list MGMT
-      10 permit 10.0.0.0 0.0.0.255 (0 matches)
-      20 permit host 192.168.1.10 (0 matches)
-      30 deny any log (0 matches)
+      10 permit 10.0.0.0, wildcard bits 0.0.0.255
+      20 permit host 192.168.1.10
+      30 deny any log
 
 [108/388] r1 R1# show ip access-lists WAN-IN
   Extended IP access list WAN-IN
-      10 permit tcp any host 10.0.0.1 eq 443 (0 matches)
-      20 permit tcp any any eq 22 (0 matches)
-      30 permit tcp any host 10.0.0.2 eq 443 (0 matches)
-      40 permit tcp any host 10.0.0.4 eq 443 (0 matches)
-      50 permit tcp any host 10.0.0.5 eq 443 (0 matches)
-      60 permit tcp any host 10.0.0.6 eq 443 (0 matches)
-      70 permit tcp any host 10.0.0.7 eq 443 (0 matches)
-      80 permit tcp any host 10.0.0.8 eq 443 (0 matches)
-      90 permit tcp any host 10.0.0.9 eq 443 (0 matches)
-      100 permit tcp any host 10.0.0.10 eq 443 (0 matches)
-      110 permit udp any any eq 161 (0 matches)
-      120 deny icmp any any (0 matches)
-      130 permit ip any any (0 matches)
+      10 permit tcp any host 10.0.0.1 eq 443
+      20 permit tcp any any eq 22
+      30 permit tcp any host 10.0.0.2 eq 443
+      40 permit tcp any host 10.0.0.4 eq 443
+      50 permit tcp any host 10.0.0.5 eq 443
+      60 permit tcp any host 10.0.0.6 eq 443
+      70 permit tcp any host 10.0.0.7 eq 443
+      80 permit tcp any host 10.0.0.8 eq 443
+      90 permit tcp any host 10.0.0.9 eq 443
+      100 permit tcp any host 10.0.0.10 eq 443
+      110 permit udp any any eq 161
+      120 deny icmp any any
+      130 permit ip any any
 
 
 --- [109] § time-based / reflexive ---
@@ -564,7 +564,7 @@ Total steps: 388
 
 [125/388] r1 R1# show ip access-lists TIMED
   Extended IP access list TIMED
-      10 permit ip any any time-range BUSINESS-HOURS (0 matches)
+      10 permit ip any any time-range BUSINESS-HOURS
 
 
 --- [126] § apply ACLs to interface / vty ---
@@ -885,43 +885,43 @@ Total steps: 388
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 2026-08-04 11:15:12
-  Key name: default
+  % Key pair was generated at: 00:34:51 UTC Aug 8 2026
+  Key name: R1.lab.local
    Storage Device: not specified
-   Usage: Signature Key
+   Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   E5DDB214B6BE57A48E2E8736D6405D3E0E7688A5215AE6B1BF1F905126DBE209
-    EA167E145AB4983CAD01AC727CA08222ABCE89E53BBBC33950E961DDFAEEB675
-    1D25D7949DF1166CE105C23E7083F6FEBD2953A579FCD349996CB8D99FB5A8D9
-    0513FE943B6CCE24B53FD27A748DA7D2E8BCCFE5CE9B6BD10C7995654FA32945
-    CBA0293442A790A4C8596946B0A3E28EDFDE00C505567191E1C859815A946019
-    64A8E35451320E3CFB5D52A29587E7D26280BC2536664F590B15FB2D2B2C5AC5
-    1E1A42F4D650BC4C7EECC48ED08E4CAEDCA1580525E3E0092990BA491124B0E9
-    052E88144681C6C4F99EC8EA164A7B420667BE65C5F64D51ED7C2AB5F51009B5
+   B580178D0CC3B5915A6BE0DF163C3F5F9922741C326172CCEAD99C98AF1C91E8
+    C7367D8D3A61E62140E0801BF5FC1443C5C9CF5CF518BF5486930D1459EFF2CC
+    4419C60D64EE065921EC39D7645AB31F51F0FD1C71E2A164CDAB88101D4A8B08
+    6B29D10D783A9F999D58EE13D1AE8B73430BDD5C4560BF6C6A20ED8C6C4DC36C
+    E3CE7E8D159085F171C7B2EF1E6AD8EF0ACFDC3CCE6202ECB55E1FA830B81AD8
+    5AAF46ADF958428127CB4A4B9FDE3A735B77E59CA4604DF4B0BD144498F2E39C
+    5756094D3E579A19C097942716660D8FAEC1D97C92CBA5E46765AB609D63C9D8
+    8934A66DAD3EB9597CC870830C1583E37D5397DC1546D9EC58C6313CDAEBCEFC
   
-  % Key pair was generated at: 2026-08-04 11:15:12
+  % Key pair was generated at: 00:34:51 UTC Aug 8 2026
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   0D69D129A042435DC443F1BBCC70925B4EC21838E35BD7B86E8B1D7CABFCDCAC
-    321C91A9735881CD753570FF96E06877A1A05378BEA262309459A070D5A71718
-    16D024A9445389D5A03F5FB3A4D532DBE0972638ECFCC61006BBFDF4173DF48C
-    C1844A29CA46B50553E4B3F7063688B7D478A678B54A1798DE6A35E85B34A9A8
-    417102299A26EB1D8DDD6DCB120550CBA86C0A58489DD038A1E50A8CE32F0EDC
-    E63DA4C9C95E4C6D6175652F547655E72E0A73B83373C5B05D4091A0AA15E048
-    7B4431E9A76B98152AF764033F4931CBF4838C989B924110E4BA8B442B05F33C
-    2EF66989529EBE25D1B860677481EEA7EFDB6AF84BCA1598D09CF758DFC85898
-    467E4BA944D2D61D73E3EE1B478120BB9A382CB80F653EF80B7093DCCED7304C
-    97460029E5F2848DF2A6215F96F826D78B76DBF813F35AB034C34AD0402960F8
-    92F5872914645A958437C413D5A9F73B7E5522B89EAA3B505C00DC54A5C32F6C
-    10CCA0A946ACBAC5245BCC57FC55D61784E516F888BA5B187F21484897DE8BC8
-    E1434CA95DF0F65DAE0A3A2BD15879AB75AF8298D9C47BF88E10A4EC824CF8FC
-    700B8B09EEF4DE6DB9550D8F83F65F47D9D2743839EDB530FF56340057C27D28
-    AF880C6985E387D58AB8C0637BC3112BDF8E94D86F60BD50AAF0B5A4B875D11C
-    6821DFC928A11425925898C76736CC07FCD6FB78F0CE2918F66929B8259D4AB8
+   7F598CB9EAC9562D069BB04BD516B86B776EE9C84FFC7E082305120CA6ADA43C
+    09F6B93953C40F9D2FADDB8F47D475873E3011087FBE0B805E44C100854A6DA8
+    B3B5B8398CF562A531A976438DF836EB488ACFC82B60C2605F494A846ADE6A1C
+    175649B9C97BA8D5B3D17687A32093C7BC113C0871D6B6E8E679E498DAB19ED8
+    9EBAC3B90E131C6D995A1C3B89651FFB5B345FA86B91438869DA0CFCC630280C
+    D3EC0E191754D2FD6013CF5F4BFA4E17C32358C8FC0E8600151AB7D04E57FA78
+    C28612F917EA0265066559F3405E9DFBD469D168E59645607915A534F330616C
+    BCD69259F9D46DB53ABFB21736B433D76967DF88D448D6E8B6A00B284E4B85E8
+    D6CDE239A90A1F6D120517AB0152F60BDBDC8D08558112C8BEAB676C27DF3C9C
+    1702EA7903AF4A1D4633F2AF0542AAA722C4F808250594803256AE208E886B48
+    B81F9539D4E2B765FC610D232829EE0B1AFACA888C8276A0F2699F64A2AEBEBC
+    CDFFA279E1A68F55D42B5D27048B24E71DAC1A88D3C20BE82A27713873C4F738
+    A0A16839FCDB75AD7E23229BFFEF2D9BF3C45E289EE2E848DB444D5CE3CB106C
+    525F2699F46AFC3D3EAB75FF24516BB71D2FF748F5DDD980232E047087452C98
+    0C867779DB0C9DA530BC2053F0A8F59BC3BB8FE8921A5C20BA35A5945590E28C
+    FFB36AD96E9113F5223518B74C804277F4863E082EA75F6855B917C880B99FC8
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1166,27 +1166,65 @@ Total steps: 388
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
   Processor board ID FTX1234567A
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
 
 [281/388] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 6565 bytes
+  Current configuration : 6819 bytes
+  !
+  service password-encryption
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  line console 0
-   login
-   exec-timeout 10 0
-   logging synchronous
+  enable secret 5 $1$0c61792c$V7M3sHZKUwds.uJHVajO0/
   !
-  service dhcp
+  aaa new-model
+  aaa authentication login default local
+  aaa authentication login VTY group radius local
+  aaa authentication login CON line
+  aaa authentication enable default group tacacs+ enable
+  aaa authentication ppp default local
+  aaa authorization exec default local
+  aaa authorization commands 15 default group tacacs+ local
+  aaa authorization network default group radius
+  aaa accounting exec default start-stop group tacacs+
+  aaa accounting commands 15 default stop-only group tacacs+
+  aaa accounting network default start-stop group radius
+  aaa session-id common
+  !
+  aaa group server radius RADGRP
+   server name RAD1
+  !
+  aaa group server tacacs+ TACGRP
+   server name TAC1
+  !
+  ip domain-name lab.local
+  !
+  username admin privilege 15 secret 5 $1$2544239d$rFgAT1mxjTMJKQtKQBWZt/
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1204,8 +1242,10 @@ Total steps: 388
    ipv6 traffic-filter V6-FILTER in
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
   access-list 10 permit 192.168.1.0 0.0.0.255
   access-list 10 permit 192.168.2.0 0.0.0.255
@@ -1264,60 +1304,40 @@ Total steps: 388
   access-list 103 permit tcp any any range 1024 65535
   access-list 104 permit ip any any dscp af21
   access-list 105 permit tcp any any eq 80 log
+  !
   ip access-list standard MGMT
-   10 permit 10.0.0.0 0.0.0.255
-   20 permit host 192.168.1.10
-   30 deny any log
+   permit 10.0.0.0 0.0.0.255
+   permit host 192.168.1.10
+   deny any log
+  !
   ip access-list extended WAN-IN
-   10 permit tcp any host 10.0.0.1 eq 443
+   permit tcp any host 10.0.0.1 eq 443
    20 permit tcp any any eq 22
-   30 permit tcp any host 10.0.0.2 eq 443
-   40 permit tcp any host 10.0.0.4 eq 443
-   50 permit tcp any host 10.0.0.5 eq 443
-   60 permit tcp any host 10.0.0.6 eq 443
-   70 permit tcp any host 10.0.0.7 eq 443
-   80 permit tcp any host 10.0.0.8 eq 443
-   90 permit tcp any host 10.0.0.9 eq 443
-   100 permit tcp any host 10.0.0.10 eq 443
-   110 permit udp any any eq 161
-   120 deny icmp any any
-   130 permit ip any any
+   permit tcp any host 10.0.0.2 eq 443
+   permit tcp any host 10.0.0.4 eq 443
+   permit tcp any host 10.0.0.5 eq 443
+   permit tcp any host 10.0.0.6 eq 443
+   permit tcp any host 10.0.0.7 eq 443
+   permit tcp any host 10.0.0.8 eq 443
+   permit tcp any host 10.0.0.9 eq 443
+   permit tcp any host 10.0.0.10 eq 443
+   permit udp any any eq 161
+   deny icmp any any
+   permit ip any any
+  !
   ip access-list extended TIMED
-   10 permit ip any any time-range BUSINESS-HOURS
+   permit ip any any time-range BUSINESS-HOURS
+  !
   ip access-list extended REFLECT-OUT
-   10 permit tcp any any reflect TCP-REFLECT
+   permit tcp any any reflect TCP-REFLECT
+  !
   ip access-list extended REFLECT-IN
-   10 evaluate TCP-REFLECT
+   evaluate TCP-REFLECT
+  !
   ip access-list extended COPP-CRITICAL
-   10 permit ospf any any
-   20 permit tcp any any eq 179
+   permit ospf any any
+   permit tcp any any eq 179
   !
-  !
-  username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
-  line vty 0 4
-   exec-timeout 5 0
-   access-class MGMT in
-   access-class 10 out
-   login authentication default
-   transport input ssh
-  !
-  enable secret 5 $1$34620419$.GIKHmVuPVJau7.psQMg//
-  service password-encryption
-  ip domain-name lab.local
-  !
-  aaa new-model
-  aaa authentication login default local
-  aaa authentication login VTY group radius local
-  aaa authentication login CON line
-  aaa authentication enable default group tacacs+ enable
-  aaa authentication ppp default local
-  aaa authorization exec default local
-  aaa authorization commands 15 default group tacacs+ local
-  aaa authorization network default group radius
-  aaa accounting exec default start-stop group tacacs+
-  aaa accounting commands 15 default stop-only group tacacs+
-  aaa accounting network default start-stop group radius
-  aaa session-id common
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -1329,43 +1349,60 @@ Total steps: 388
   ip ssh source-interface Loopback0
   ip ssh dh min size 2048
   ip ssh logging events
-  crypto key generate rsa modulus 2048
-  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
+  !
   radius server RAD1
    address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
    key radiussecret
+  !
   tacacs server TAC1
    address ipv4 10.0.0.3
    key tacacssecret
-  aaa group server radius RADGRP
-   server name RAD1
-  aaa group server tacacs+ TACGRP
-   server name TAC1
+  !
   radius-server host 10.0.0.2 key legacy
   tacacs-server host 10.0.0.3 key legacy
+  !
   time-range BUSINESS-HOURS
    absolute start 0:00 1 January 2024 end 23:59 31 December 2024
    periodic weekdays 8:00 to 18:00
+  !
   class-map match-all CM-COPP
    match access-group name COPP-CRITICAL
+  !
   class-map type inspect match-any CM-INSPECT
    match protocol tcp
    match protocol udp
    match protocol icmp
+  !
   policy-map PM-COPP
    class CM-COPP
     police 8000 conform-action transmit exceed-action drop
+  !
   policy-map type inspect PM-IN-OUT
    class type inspect CM-INSPECT
     inspect
    class class-default
     drop log
+  !
   control-plane
    service-policy input PM-COPP
+  !
   zone security INSIDE
   zone security OUTSIDE
+  !
   zone-pair security IN-OUT source INSIDE destination OUTSIDE
    service-policy type inspect PM-IN-OUT
+  !
+  line console 0
+   login
+   exec-timeout 10 0
+   logging synchronous
+  !
+  line vty 0 4
+   exec-timeout 5 0
+   access-class MGMT in
+   access-class 10 out
+   login authentication default
+   transport input ssh
   !
   end
 
@@ -1376,8 +1413,8 @@ Total steps: 388
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
 
 [284/388] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1460,17 +1497,28 @@ Total steps: 388
        0 input drops, 0 output drops
 
 [285/388] r1 R1# show ip route
-  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
-         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
   Gateway of last resort is not set
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
 
 [286/388] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
-  IP routing table maximum-paths is 32
+  IP routing table maximum-paths is 4
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
   connected       2           2           0           304         720
   static          0           0           0           0           0
@@ -1536,7 +1584,7 @@ Total steps: 388
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  Application Layer Gateways: none
 
 [301/388] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1547,187 +1595,187 @@ Total steps: 388
 
 [303/388] r1 R1# show access-lists
   Standard IP access list 10
-      10 permit 192.168.1.0 0.0.0.255 (0 matches)
-      20 permit 192.168.2.0 0.0.0.255 (0 matches)
-      30 permit 192.168.3.0 0.0.0.255 (0 matches)
-      40 permit 192.168.4.0 0.0.0.255 (0 matches)
-      50 permit 192.168.5.0 0.0.0.255 (0 matches)
-      60 permit 192.168.6.0 0.0.0.255 (0 matches)
-      70 permit 192.168.7.0 0.0.0.255 (0 matches)
-      80 permit 192.168.8.0 0.0.0.255 (0 matches)
-      90 permit 192.168.9.0 0.0.0.255 (0 matches)
-      100 permit 192.168.10.0 0.0.0.255 (0 matches)
-      110 permit 192.168.11.0 0.0.0.255 (0 matches)
-      120 permit 192.168.12.0 0.0.0.255 (0 matches)
-      130 permit 192.168.13.0 0.0.0.255 (0 matches)
-      140 permit 192.168.14.0 0.0.0.255 (0 matches)
-      150 permit 192.168.15.0 0.0.0.255 (0 matches)
-      160 permit 192.168.16.0 0.0.0.255 (0 matches)
-      170 permit 192.168.17.0 0.0.0.255 (0 matches)
-      180 permit 192.168.18.0 0.0.0.255 (0 matches)
-      190 permit 192.168.19.0 0.0.0.255 (0 matches)
-      200 permit 192.168.20.0 0.0.0.255 (0 matches)
-      210 deny any log (0 matches)
+      10 permit 192.168.1.0, wildcard bits 0.0.0.255
+      20 permit 192.168.2.0, wildcard bits 0.0.0.255
+      30 permit 192.168.3.0, wildcard bits 0.0.0.255
+      40 permit 192.168.4.0, wildcard bits 0.0.0.255
+      50 permit 192.168.5.0, wildcard bits 0.0.0.255
+      60 permit 192.168.6.0, wildcard bits 0.0.0.255
+      70 permit 192.168.7.0, wildcard bits 0.0.0.255
+      80 permit 192.168.8.0, wildcard bits 0.0.0.255
+      90 permit 192.168.9.0, wildcard bits 0.0.0.255
+      100 permit 192.168.10.0, wildcard bits 0.0.0.255
+      110 permit 192.168.11.0, wildcard bits 0.0.0.255
+      120 permit 192.168.12.0, wildcard bits 0.0.0.255
+      130 permit 192.168.13.0, wildcard bits 0.0.0.255
+      140 permit 192.168.14.0, wildcard bits 0.0.0.255
+      150 permit 192.168.15.0, wildcard bits 0.0.0.255
+      160 permit 192.168.16.0, wildcard bits 0.0.0.255
+      170 permit 192.168.17.0, wildcard bits 0.0.0.255
+      180 permit 192.168.18.0, wildcard bits 0.0.0.255
+      190 permit 192.168.19.0, wildcard bits 0.0.0.255
+      200 permit 192.168.20.0, wildcard bits 0.0.0.255
+      210 deny any log
   Extended IP access list 100
-      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
-      20 permit udp any host 10.0.0.1 eq 53 (0 matches)
-      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
-      40 permit udp any host 10.0.0.2 eq 53 (0 matches)
-      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
-      60 permit udp any host 10.0.0.3 eq 53 (0 matches)
-      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
-      80 permit udp any host 10.0.0.4 eq 53 (0 matches)
-      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
-      100 permit udp any host 10.0.0.5 eq 53 (0 matches)
-      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
-      120 permit udp any host 10.0.0.6 eq 53 (0 matches)
-      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
-      140 permit udp any host 10.0.0.7 eq 53 (0 matches)
-      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
-      160 permit udp any host 10.0.0.8 eq 53 (0 matches)
-      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
-      180 permit udp any host 10.0.0.9 eq 53 (0 matches)
-      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
-      200 permit udp any host 10.0.0.10 eq 53 (0 matches)
-      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
-      220 permit udp any host 10.0.0.11 eq 53 (0 matches)
-      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
-      240 permit udp any host 10.0.0.12 eq 53 (0 matches)
-      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
-      260 permit udp any host 10.0.0.13 eq 53 (0 matches)
-      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
-      280 permit udp any host 10.0.0.14 eq 53 (0 matches)
-      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
-      300 permit udp any host 10.0.0.15 eq 53 (0 matches)
-      310 permit icmp any any echo-reply (0 matches)
-      320 deny ip any any log-input (0 matches)
+      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81
+      20 permit udp any host 10.0.0.1 eq 53
+      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82
+      40 permit udp any host 10.0.0.2 eq 53
+      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83
+      60 permit udp any host 10.0.0.3 eq 53
+      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84
+      80 permit udp any host 10.0.0.4 eq 53
+      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85
+      100 permit udp any host 10.0.0.5 eq 53
+      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86
+      120 permit udp any host 10.0.0.6 eq 53
+      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87
+      140 permit udp any host 10.0.0.7 eq 53
+      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88
+      160 permit udp any host 10.0.0.8 eq 53
+      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89
+      180 permit udp any host 10.0.0.9 eq 53
+      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90
+      200 permit udp any host 10.0.0.10 eq 53
+      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91
+      220 permit udp any host 10.0.0.11 eq 53
+      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92
+      240 permit udp any host 10.0.0.12 eq 53
+      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93
+      260 permit udp any host 10.0.0.13 eq 53
+      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94
+      280 permit udp any host 10.0.0.14 eq 53
+      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95
+      300 permit udp any host 10.0.0.15 eq 53
+      310 permit icmp any any echo-reply
+      320 deny ip any any log-input
   Extended IP access list 101
-      10 permit tcp any any established (0 matches)
+      10 permit tcp any any established
   Extended IP access list 103
-      10 permit tcp any any range 1024 65535 (0 matches)
+      10 permit tcp any any range 1024 65535
   Extended IP access list 104
-      10 permit ip any any dscp af21 (0 matches)
+      10 permit ip any any dscp af21
   Extended IP access list 105
-      10 permit tcp any any eq 80 log (0 matches)
+      10 permit tcp any any eq 80 log
   Standard IP access list MGMT
-      10 permit 10.0.0.0 0.0.0.255 (0 matches)
-      20 permit host 192.168.1.10 (0 matches)
-      30 deny any log (0 matches)
+      10 permit 10.0.0.0, wildcard bits 0.0.0.255
+      20 permit host 192.168.1.10
+      30 deny any log
   Extended IP access list WAN-IN
-      10 permit tcp any host 10.0.0.1 eq 443 (0 matches)
-      20 permit tcp any any eq 22 (0 matches)
-      30 permit tcp any host 10.0.0.2 eq 443 (0 matches)
-      40 permit tcp any host 10.0.0.4 eq 443 (0 matches)
-      50 permit tcp any host 10.0.0.5 eq 443 (0 matches)
-      60 permit tcp any host 10.0.0.6 eq 443 (0 matches)
-      70 permit tcp any host 10.0.0.7 eq 443 (0 matches)
-      80 permit tcp any host 10.0.0.8 eq 443 (0 matches)
-      90 permit tcp any host 10.0.0.9 eq 443 (0 matches)
-      100 permit tcp any host 10.0.0.10 eq 443 (0 matches)
-      110 permit udp any any eq 161 (0 matches)
-      120 deny icmp any any (0 matches)
-      130 permit ip any any (0 matches)
+      10 permit tcp any host 10.0.0.1 eq 443
+      20 permit tcp any any eq 22
+      30 permit tcp any host 10.0.0.2 eq 443
+      40 permit tcp any host 10.0.0.4 eq 443
+      50 permit tcp any host 10.0.0.5 eq 443
+      60 permit tcp any host 10.0.0.6 eq 443
+      70 permit tcp any host 10.0.0.7 eq 443
+      80 permit tcp any host 10.0.0.8 eq 443
+      90 permit tcp any host 10.0.0.9 eq 443
+      100 permit tcp any host 10.0.0.10 eq 443
+      110 permit udp any any eq 161
+      120 deny icmp any any
+      130 permit ip any any
   Extended IP access list TIMED
-      10 permit ip any any time-range BUSINESS-HOURS (0 matches)
+      10 permit ip any any time-range BUSINESS-HOURS
   Extended IP access list REFLECT-OUT
-      10 permit tcp any any reflect TCP-REFLECT (0 matches)
+      10 permit tcp any any reflect TCP-REFLECT
   Extended IP access list REFLECT-IN
-      10 evaluate TCP-REFLECT (0 matches)
+      10 evaluate TCP-REFLECT
   Extended IP access list COPP-CRITICAL
-      10 permit ospf any any (0 matches)
-      20 permit tcp any any eq 179 (0 matches)
+      10 permit ospf any any
+      20 permit tcp any any eq 179
 
 [304/388] r1 R1# show ip access-lists
   Standard IP access list 10
-      10 permit 192.168.1.0 0.0.0.255 (0 matches)
-      20 permit 192.168.2.0 0.0.0.255 (0 matches)
-      30 permit 192.168.3.0 0.0.0.255 (0 matches)
-      40 permit 192.168.4.0 0.0.0.255 (0 matches)
-      50 permit 192.168.5.0 0.0.0.255 (0 matches)
-      60 permit 192.168.6.0 0.0.0.255 (0 matches)
-      70 permit 192.168.7.0 0.0.0.255 (0 matches)
-      80 permit 192.168.8.0 0.0.0.255 (0 matches)
-      90 permit 192.168.9.0 0.0.0.255 (0 matches)
-      100 permit 192.168.10.0 0.0.0.255 (0 matches)
-      110 permit 192.168.11.0 0.0.0.255 (0 matches)
-      120 permit 192.168.12.0 0.0.0.255 (0 matches)
-      130 permit 192.168.13.0 0.0.0.255 (0 matches)
-      140 permit 192.168.14.0 0.0.0.255 (0 matches)
-      150 permit 192.168.15.0 0.0.0.255 (0 matches)
-      160 permit 192.168.16.0 0.0.0.255 (0 matches)
-      170 permit 192.168.17.0 0.0.0.255 (0 matches)
-      180 permit 192.168.18.0 0.0.0.255 (0 matches)
-      190 permit 192.168.19.0 0.0.0.255 (0 matches)
-      200 permit 192.168.20.0 0.0.0.255 (0 matches)
-      210 deny any log (0 matches)
+      10 permit 192.168.1.0, wildcard bits 0.0.0.255
+      20 permit 192.168.2.0, wildcard bits 0.0.0.255
+      30 permit 192.168.3.0, wildcard bits 0.0.0.255
+      40 permit 192.168.4.0, wildcard bits 0.0.0.255
+      50 permit 192.168.5.0, wildcard bits 0.0.0.255
+      60 permit 192.168.6.0, wildcard bits 0.0.0.255
+      70 permit 192.168.7.0, wildcard bits 0.0.0.255
+      80 permit 192.168.8.0, wildcard bits 0.0.0.255
+      90 permit 192.168.9.0, wildcard bits 0.0.0.255
+      100 permit 192.168.10.0, wildcard bits 0.0.0.255
+      110 permit 192.168.11.0, wildcard bits 0.0.0.255
+      120 permit 192.168.12.0, wildcard bits 0.0.0.255
+      130 permit 192.168.13.0, wildcard bits 0.0.0.255
+      140 permit 192.168.14.0, wildcard bits 0.0.0.255
+      150 permit 192.168.15.0, wildcard bits 0.0.0.255
+      160 permit 192.168.16.0, wildcard bits 0.0.0.255
+      170 permit 192.168.17.0, wildcard bits 0.0.0.255
+      180 permit 192.168.18.0, wildcard bits 0.0.0.255
+      190 permit 192.168.19.0, wildcard bits 0.0.0.255
+      200 permit 192.168.20.0, wildcard bits 0.0.0.255
+      210 deny any log
   Extended IP access list 100
-      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
-      20 permit udp any host 10.0.0.1 eq 53 (0 matches)
-      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
-      40 permit udp any host 10.0.0.2 eq 53 (0 matches)
-      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
-      60 permit udp any host 10.0.0.3 eq 53 (0 matches)
-      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
-      80 permit udp any host 10.0.0.4 eq 53 (0 matches)
-      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
-      100 permit udp any host 10.0.0.5 eq 53 (0 matches)
-      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
-      120 permit udp any host 10.0.0.6 eq 53 (0 matches)
-      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
-      140 permit udp any host 10.0.0.7 eq 53 (0 matches)
-      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
-      160 permit udp any host 10.0.0.8 eq 53 (0 matches)
-      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
-      180 permit udp any host 10.0.0.9 eq 53 (0 matches)
-      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
-      200 permit udp any host 10.0.0.10 eq 53 (0 matches)
-      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
-      220 permit udp any host 10.0.0.11 eq 53 (0 matches)
-      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
-      240 permit udp any host 10.0.0.12 eq 53 (0 matches)
-      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
-      260 permit udp any host 10.0.0.13 eq 53 (0 matches)
-      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
-      280 permit udp any host 10.0.0.14 eq 53 (0 matches)
-      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
-      300 permit udp any host 10.0.0.15 eq 53 (0 matches)
-      310 permit icmp any any echo-reply (0 matches)
-      320 deny ip any any log-input (0 matches)
+      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81
+      20 permit udp any host 10.0.0.1 eq 53
+      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82
+      40 permit udp any host 10.0.0.2 eq 53
+      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83
+      60 permit udp any host 10.0.0.3 eq 53
+      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84
+      80 permit udp any host 10.0.0.4 eq 53
+      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85
+      100 permit udp any host 10.0.0.5 eq 53
+      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86
+      120 permit udp any host 10.0.0.6 eq 53
+      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87
+      140 permit udp any host 10.0.0.7 eq 53
+      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88
+      160 permit udp any host 10.0.0.8 eq 53
+      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89
+      180 permit udp any host 10.0.0.9 eq 53
+      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90
+      200 permit udp any host 10.0.0.10 eq 53
+      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91
+      220 permit udp any host 10.0.0.11 eq 53
+      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92
+      240 permit udp any host 10.0.0.12 eq 53
+      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93
+      260 permit udp any host 10.0.0.13 eq 53
+      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94
+      280 permit udp any host 10.0.0.14 eq 53
+      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95
+      300 permit udp any host 10.0.0.15 eq 53
+      310 permit icmp any any echo-reply
+      320 deny ip any any log-input
   Extended IP access list 101
-      10 permit tcp any any established (0 matches)
+      10 permit tcp any any established
   Extended IP access list 103
-      10 permit tcp any any range 1024 65535 (0 matches)
+      10 permit tcp any any range 1024 65535
   Extended IP access list 104
-      10 permit ip any any dscp af21 (0 matches)
+      10 permit ip any any dscp af21
   Extended IP access list 105
-      10 permit tcp any any eq 80 log (0 matches)
+      10 permit tcp any any eq 80 log
   Standard IP access list MGMT
-      10 permit 10.0.0.0 0.0.0.255 (0 matches)
-      20 permit host 192.168.1.10 (0 matches)
-      30 deny any log (0 matches)
+      10 permit 10.0.0.0, wildcard bits 0.0.0.255
+      20 permit host 192.168.1.10
+      30 deny any log
   Extended IP access list WAN-IN
-      10 permit tcp any host 10.0.0.1 eq 443 (0 matches)
-      20 permit tcp any any eq 22 (0 matches)
-      30 permit tcp any host 10.0.0.2 eq 443 (0 matches)
-      40 permit tcp any host 10.0.0.4 eq 443 (0 matches)
-      50 permit tcp any host 10.0.0.5 eq 443 (0 matches)
-      60 permit tcp any host 10.0.0.6 eq 443 (0 matches)
-      70 permit tcp any host 10.0.0.7 eq 443 (0 matches)
-      80 permit tcp any host 10.0.0.8 eq 443 (0 matches)
-      90 permit tcp any host 10.0.0.9 eq 443 (0 matches)
-      100 permit tcp any host 10.0.0.10 eq 443 (0 matches)
-      110 permit udp any any eq 161 (0 matches)
-      120 deny icmp any any (0 matches)
-      130 permit ip any any (0 matches)
+      10 permit tcp any host 10.0.0.1 eq 443
+      20 permit tcp any any eq 22
+      30 permit tcp any host 10.0.0.2 eq 443
+      40 permit tcp any host 10.0.0.4 eq 443
+      50 permit tcp any host 10.0.0.5 eq 443
+      60 permit tcp any host 10.0.0.6 eq 443
+      70 permit tcp any host 10.0.0.7 eq 443
+      80 permit tcp any host 10.0.0.8 eq 443
+      90 permit tcp any host 10.0.0.9 eq 443
+      100 permit tcp any host 10.0.0.10 eq 443
+      110 permit udp any any eq 161
+      120 deny icmp any any
+      130 permit ip any any
   Extended IP access list TIMED
-      10 permit ip any any time-range BUSINESS-HOURS (0 matches)
+      10 permit ip any any time-range BUSINESS-HOURS
   Extended IP access list REFLECT-OUT
-      10 permit tcp any any reflect TCP-REFLECT (0 matches)
+      10 permit tcp any any reflect TCP-REFLECT
   Extended IP access list REFLECT-IN
-      10 evaluate TCP-REFLECT (0 matches)
+      10 evaluate TCP-REFLECT
   Extended IP access list COPP-CRITICAL
-      10 permit ospf any any (0 matches)
-      20 permit tcp any any eq 179 (0 matches)
+      10 permit ospf any any
+      20 permit tcp any any eq 179
 
 [305/388] r1 R1# show crypto isakmp sa
   IPSec not configured.
@@ -1750,10 +1798,12 @@ Total steps: 388
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [311/388] r1 R1# show track
-  No tracked objects configured.
+  % No tracked objects configured.
 
 [312/388] r1 R1# show ip sla statistics
-  No IP SLA operations configured.
+  IPSLAs Latest Operation Statistics
+  
+  No IP SLAs operations configured.
 
 [313/388] r1 R1# show policy-map interface
    GigabitEthernet0/1
@@ -1762,36 +1812,47 @@ Total steps: 388
     Zone member: INSIDE
 
 [314/388] r1 R1# show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 16 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 16 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 16 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 16 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
-  %SYS-6-INFORMATIONAL: User account 'admin' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
+  *Aug  8 00:34:50.996: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:50.996: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:50.998: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:50.998: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:50.999: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:51.009: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.019: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.021: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.024: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.025: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.026: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.028: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.030: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.034: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.036: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.037: %SYS-5-CONFIG_I: Configured from console by console
 
 [315/388] r1 R1# show snmp
+  Chassis: FTX1234567A
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
@@ -1799,23 +1860,22 @@ Total steps: 388
 [316/388] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C4840.2C8B4395 (11:15:12.174 UTC Tue Aug 4 2026)
+  reference time is EE20F82B.1916872B (00:34:51.098 UTC Sat Aug 8 2026)
   clock offset is 0.00 msec
 
 [317/388] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
 
 [318/388] r1 R1# show clock
-  *11:15:12.000 UTC Tue Aug 4 2026
+  *00:34:51.000 UTC Sat Aug 8 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1842,8 +1902,8 @@ Total steps: 388
 
 [322/388] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
-  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
+  Processor    1A2B3C4    503316480    150994944    352321536    334705459    341751889
+  I/O          5D6E7F8     33554432     8388608    25165824    23907532    24410849
 
 [323/388] r1 R1# show flash
   Directory of flash:/
@@ -1981,27 +2041,65 @@ Total steps: 388
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
   Processor board ID FTX1234567A
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
   
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 6565 bytes
+  Current configuration : 6819 bytes
+  !
+  service password-encryption
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  line console 0
-   login
-   exec-timeout 10 0
-   logging synchronous
+  enable secret 5 $1$0c61792c$V7M3sHZKUwds.uJHVajO0/
   !
-  service dhcp
+  aaa new-model
+  aaa authentication login default local
+  aaa authentication login VTY group radius local
+  aaa authentication login CON line
+  aaa authentication enable default group tacacs+ enable
+  aaa authentication ppp default local
+  aaa authorization exec default local
+  aaa authorization commands 15 default group tacacs+ local
+  aaa authorization network default group radius
+  aaa accounting exec default start-stop group tacacs+
+  aaa accounting commands 15 default stop-only group tacacs+
+  aaa accounting network default start-stop group radius
+  aaa session-id common
+  !
+  aaa group server radius RADGRP
+   server name RAD1
+  !
+  aaa group server tacacs+ TACGRP
+   server name TAC1
+  !
+  ip domain-name lab.local
+  !
+  username admin privilege 15 secret 5 $1$2544239d$rFgAT1mxjTMJKQtKQBWZt/
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2019,8 +2117,10 @@ Total steps: 388
    ipv6 traffic-filter V6-FILTER in
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
   access-list 10 permit 192.168.1.0 0.0.0.255
   access-list 10 permit 192.168.2.0 0.0.0.255
@@ -2079,60 +2179,40 @@ Total steps: 388
   access-list 103 permit tcp any any range 1024 65535
   access-list 104 permit ip any any dscp af21
   access-list 105 permit tcp any any eq 80 log
+  !
   ip access-list standard MGMT
-   10 permit 10.0.0.0 0.0.0.255
-   20 permit host 192.168.1.10
-   30 deny any log
+   permit 10.0.0.0 0.0.0.255
+   permit host 192.168.1.10
+   deny any log
+  !
   ip access-list extended WAN-IN
-   10 permit tcp any host 10.0.0.1 eq 443
+   permit tcp any host 10.0.0.1 eq 443
    20 permit tcp any any eq 22
-   30 permit tcp any host 10.0.0.2 eq 443
-   40 permit tcp any host 10.0.0.4 eq 443
-   50 permit tcp any host 10.0.0.5 eq 443
-   60 permit tcp any host 10.0.0.6 eq 443
-   70 permit tcp any host 10.0.0.7 eq 443
-   80 permit tcp any host 10.0.0.8 eq 443
-   90 permit tcp any host 10.0.0.9 eq 443
-   100 permit tcp any host 10.0.0.10 eq 443
-   110 permit udp any any eq 161
-   120 deny icmp any any
-   130 permit ip any any
+   permit tcp any host 10.0.0.2 eq 443
+   permit tcp any host 10.0.0.4 eq 443
+   permit tcp any host 10.0.0.5 eq 443
+   permit tcp any host 10.0.0.6 eq 443
+   permit tcp any host 10.0.0.7 eq 443
+   permit tcp any host 10.0.0.8 eq 443
+   permit tcp any host 10.0.0.9 eq 443
+   permit tcp any host 10.0.0.10 eq 443
+   permit udp any any eq 161
+   deny icmp any any
+   permit ip any any
+  !
   ip access-list extended TIMED
-   10 permit ip any any time-range BUSINESS-HOURS
+   permit ip any any time-range BUSINESS-HOURS
+  !
   ip access-list extended REFLECT-OUT
-   10 permit tcp any any reflect TCP-REFLECT
+   permit tcp any any reflect TCP-REFLECT
+  !
   ip access-list extended REFLECT-IN
-   10 evaluate TCP-REFLECT
+   evaluate TCP-REFLECT
+  !
   ip access-list extended COPP-CRITICAL
-   10 permit ospf any any
-   20 permit tcp any any eq 179
+   permit ospf any any
+   permit tcp any any eq 179
   !
-  !
-  username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
-  line vty 0 4
-   exec-timeout 5 0
-   access-class MGMT in
-   access-class 10 out
-   login authentication default
-   transport input ssh
-  !
-  enable secret 5 $1$34620419$.GIKHmVuPVJau7.psQMg//
-  service password-encryption
-  ip domain-name lab.local
-  !
-  aaa new-model
-  aaa authentication login default local
-  aaa authentication login VTY group radius local
-  aaa authentication login CON line
-  aaa authentication enable default group tacacs+ enable
-  aaa authentication ppp default local
-  aaa authorization exec default local
-  aaa authorization commands 15 default group tacacs+ local
-  aaa authorization network default group radius
-  aaa accounting exec default start-stop group tacacs+
-  aaa accounting commands 15 default stop-only group tacacs+
-  aaa accounting network default start-stop group radius
-  aaa session-id common
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2144,43 +2224,60 @@ Total steps: 388
   ip ssh source-interface Loopback0
   ip ssh dh min size 2048
   ip ssh logging events
-  crypto key generate rsa modulus 2048
-  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
+  !
   radius server RAD1
    address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
    key radiussecret
+  !
   tacacs server TAC1
    address ipv4 10.0.0.3
    key tacacssecret
-  aaa group server radius RADGRP
-   server name RAD1
-  aaa group server tacacs+ TACGRP
-   server name TAC1
+  !
   radius-server host 10.0.0.2 key legacy
   tacacs-server host 10.0.0.3 key legacy
+  !
   time-range BUSINESS-HOURS
    absolute start 0:00 1 January 2024 end 23:59 31 December 2024
    periodic weekdays 8:00 to 18:00
+  !
   class-map match-all CM-COPP
    match access-group name COPP-CRITICAL
+  !
   class-map type inspect match-any CM-INSPECT
    match protocol tcp
    match protocol udp
    match protocol icmp
+  !
   policy-map PM-COPP
    class CM-COPP
     police 8000 conform-action transmit exceed-action drop
+  !
   policy-map type inspect PM-IN-OUT
    class type inspect CM-INSPECT
     inspect
    class class-default
     drop log
+  !
   control-plane
    service-policy input PM-COPP
+  !
   zone security INSIDE
   zone security OUTSIDE
+  !
   zone-pair security IN-OUT source INSIDE destination OUTSIDE
    service-policy type inspect PM-IN-OUT
+  !
+  line console 0
+   login
+   exec-timeout 10 0
+   logging synchronous
+  !
+  line vty 0 4
+   exec-timeout 5 0
+   access-class MGMT in
+   access-class 10 out
+   login authentication default
+   transport input ssh
   !
   end
   
@@ -2188,16 +2285,28 @@ Total steps: 388
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   
   ------------------ show ip route ------------------
-  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
   Gateway of last resort is not set
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -2313,7 +2422,7 @@ Total steps: 388
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  Application Layer Gateways: none
   
   ------------------ show ip ospf neighbor ------------------
   % OSPF is not configured
@@ -2323,48 +2432,57 @@ Total steps: 388
                    Hardware address
   
   ------------------ show logging ------------------
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 16 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 16 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 16 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 16 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:22
-  %SYS-6-INFORMATIONAL: User account 'admin' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
+  *Aug  8 00:34:50.996: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:50.996: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:50.998: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:50.998: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:50.999: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:51.009: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.019: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.021: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.024: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.025: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.026: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.028: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.030: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.034: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.036: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:51.037: %SYS-5-CONFIG_I: Configured from console by console
 
 [332/388] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
   PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [333/388] r1 R1# show environment
-  Environmental monitoring is not instrumented on this platform.
+  Number of Critical alarms:  0
+  Number of Major alarms:     0
+  Number of Minor alarms:     0
 
 [334/388] r1 R1# show redundancy
-  Redundant System Information :
-         Configured Redundancy Mode = Simplex
-  Current Processor Information :
-         Active Location = slot 0
-         Current Software state = ACTIVE
+          ^
+  % Invalid input detected at '^' marker.
 
 [335/388] r1 R1# show ip vrf
     Name                             Default RD            Protocols   Interfaces
@@ -2374,8 +2492,11 @@ Total steps: 388
 
 [337/388] r1 R1# show hosts
   Default domain is lab.local
+  Name/address lookup uses static mappings
   Name servers are 255.255.255.255
-  Name/address lookup uses static table only (recursive resolver not simulated)
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+         temp - temporary, perm - permanent
+         NA - Not Applicable None - Not defined
   
   Host                      Port  Flags      Age Type   Address(es)
 
@@ -2384,13 +2505,14 @@ Total steps: 388
   Authentication timeout: 120 secs; Authentication retries: 3
 
 [339/388] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+     Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 VTY               -    -    -    -      0     0   0/0       -
+       1    1 AUX               -    -    -    -      0     0   0/0       -
        2    2 VTY               -    -    -    -      0     0   0/0       -
        3    3 VTY               -    -    -    -      0     0   0/0       -
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
+       6    6 VTY               -    -    -    -      0     0   0/0       -
 
 [340/388] r1 R1# show terminal
   Line 0, Location: "", Type: ""
@@ -2432,18 +2554,38 @@ Total steps: 388
    ipv6 traffic-filter V6-FILTER in
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
   ip ssh source-interface Loopback0
 
 [344/388] r1 R1# show running-config | begin line
-  line console 0
-   login
-   exec-timeout 10 0
-   logging synchronous
+  aaa authentication login CON line
+  aaa authentication enable default group tacacs+ enable
+  aaa authentication ppp default local
+  aaa authorization exec default local
+  aaa authorization commands 15 default group tacacs+ local
+  aaa authorization network default group radius
+  aaa accounting exec default start-stop group tacacs+
+  aaa accounting commands 15 default stop-only group tacacs+
+  aaa accounting network default start-stop group radius
+  aaa session-id common
   !
-  service dhcp
+  aaa group server radius RADGRP
+   server name RAD1
+  !
+  aaa group server tacacs+ TACGRP
+   server name TAC1
+  !
+  ip domain-name lab.local
+  !
+  username admin privilege 15 secret 5 $1$2544239d$rFgAT1mxjTMJKQtKQBWZt/
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2461,8 +2603,10 @@ Total steps: 388
    ipv6 traffic-filter V6-FILTER in
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
   access-list 10 permit 192.168.1.0 0.0.0.255
   access-list 10 permit 192.168.2.0 0.0.0.255
@@ -2521,60 +2665,40 @@ Total steps: 388
   access-list 103 permit tcp any any range 1024 65535
   access-list 104 permit ip any any dscp af21
   access-list 105 permit tcp any any eq 80 log
+  !
   ip access-list standard MGMT
-   10 permit 10.0.0.0 0.0.0.255
-   20 permit host 192.168.1.10
-   30 deny any log
+   permit 10.0.0.0 0.0.0.255
+   permit host 192.168.1.10
+   deny any log
+  !
   ip access-list extended WAN-IN
-   10 permit tcp any host 10.0.0.1 eq 443
+   permit tcp any host 10.0.0.1 eq 443
    20 permit tcp any any eq 22
-   30 permit tcp any host 10.0.0.2 eq 443
-   40 permit tcp any host 10.0.0.4 eq 443
-   50 permit tcp any host 10.0.0.5 eq 443
-   60 permit tcp any host 10.0.0.6 eq 443
-   70 permit tcp any host 10.0.0.7 eq 443
-   80 permit tcp any host 10.0.0.8 eq 443
-   90 permit tcp any host 10.0.0.9 eq 443
-   100 permit tcp any host 10.0.0.10 eq 443
-   110 permit udp any any eq 161
-   120 deny icmp any any
-   130 permit ip any any
+   permit tcp any host 10.0.0.2 eq 443
+   permit tcp any host 10.0.0.4 eq 443
+   permit tcp any host 10.0.0.5 eq 443
+   permit tcp any host 10.0.0.6 eq 443
+   permit tcp any host 10.0.0.7 eq 443
+   permit tcp any host 10.0.0.8 eq 443
+   permit tcp any host 10.0.0.9 eq 443
+   permit tcp any host 10.0.0.10 eq 443
+   permit udp any any eq 161
+   deny icmp any any
+   permit ip any any
+  !
   ip access-list extended TIMED
-   10 permit ip any any time-range BUSINESS-HOURS
+   permit ip any any time-range BUSINESS-HOURS
+  !
   ip access-list extended REFLECT-OUT
-   10 permit tcp any any reflect TCP-REFLECT
+   permit tcp any any reflect TCP-REFLECT
+  !
   ip access-list extended REFLECT-IN
-   10 evaluate TCP-REFLECT
+   evaluate TCP-REFLECT
+  !
   ip access-list extended COPP-CRITICAL
-   10 permit ospf any any
-   20 permit tcp any any eq 179
+   permit ospf any any
+   permit tcp any any eq 179
   !
-  !
-  username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
-  line vty 0 4
-   exec-timeout 5 0
-   access-class MGMT in
-   access-class 10 out
-   login authentication default
-   transport input ssh
-  !
-  enable secret 5 $1$34620419$.GIKHmVuPVJau7.psQMg//
-  service password-encryption
-  ip domain-name lab.local
-  !
-  aaa new-model
-  aaa authentication login default local
-  aaa authentication login VTY group radius local
-  aaa authentication login CON line
-  aaa authentication enable default group tacacs+ enable
-  aaa authentication ppp default local
-  aaa authorization exec default local
-  aaa authorization commands 15 default group tacacs+ local
-  aaa authorization network default group radius
-  aaa accounting exec default start-stop group tacacs+
-  aaa accounting commands 15 default stop-only group tacacs+
-  aaa accounting network default start-stop group radius
-  aaa session-id common
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2586,56 +2710,95 @@ Total steps: 388
   ip ssh source-interface Loopback0
   ip ssh dh min size 2048
   ip ssh logging events
-  crypto key generate rsa modulus 2048
-  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
+  !
   radius server RAD1
    address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
    key radiussecret
+  !
   tacacs server TAC1
    address ipv4 10.0.0.3
    key tacacssecret
-  aaa group server radius RADGRP
-   server name RAD1
-  aaa group server tacacs+ TACGRP
-   server name TAC1
+  !
   radius-server host 10.0.0.2 key legacy
   tacacs-server host 10.0.0.3 key legacy
+  !
   time-range BUSINESS-HOURS
    absolute start 0:00 1 January 2024 end 23:59 31 December 2024
    periodic weekdays 8:00 to 18:00
+  !
   class-map match-all CM-COPP
    match access-group name COPP-CRITICAL
+  !
   class-map type inspect match-any CM-INSPECT
    match protocol tcp
    match protocol udp
    match protocol icmp
+  !
   policy-map PM-COPP
    class CM-COPP
     police 8000 conform-action transmit exceed-action drop
+  !
   policy-map type inspect PM-IN-OUT
    class type inspect CM-INSPECT
     inspect
    class class-default
     drop log
+  !
   control-plane
    service-policy input PM-COPP
+  !
   zone security INSIDE
   zone security OUTSIDE
+  !
   zone-pair security IN-OUT source INSIDE destination OUTSIDE
    service-policy type inspect PM-IN-OUT
+  !
+  line console 0
+   login
+   exec-timeout 10 0
+   logging synchronous
+  !
+  line vty 0 4
+   exec-timeout 5 0
+   access-class MGMT in
+   access-class 10 out
+   login authentication default
+   transport input ssh
   !
   end
 
 [345/388] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 6565 bytes
+  Current configuration : 6819 bytes
+  service password-encryption
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   hostname R1
-  line console 0
-   login
-   exec-timeout 10 0
-   logging synchronous
-  service dhcp
+  enable secret 5 $1$0c61792c$V7M3sHZKUwds.uJHVajO0/
+  aaa new-model
+  aaa authentication login default local
+  aaa authentication login VTY group radius local
+  aaa authentication login CON line
+  aaa authentication enable default group tacacs+ enable
+  aaa authentication ppp default local
+  aaa authorization exec default local
+  aaa authorization commands 15 default group tacacs+ local
+  aaa authorization network default group radius
+  aaa accounting exec default start-stop group tacacs+
+  aaa accounting commands 15 default stop-only group tacacs+
+  aaa accounting network default start-stop group radius
+  aaa session-id common
+  aaa group server radius RADGRP
+   server name RAD1
+  aaa group server tacacs+ TACGRP
+   server name TAC1
+  ip domain-name lab.local
+  username admin privilege 15 secret 5 $1$2544239d$rFgAT1mxjTMJKQtKQBWZt/
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    zone-member security INSIDE
@@ -2650,7 +2813,9 @@ Total steps: 388
    zone-member security OUTSIDE
    ipv6 traffic-filter V6-FILTER in
   interface GigabitEthernet0/2
+   no ip address
   interface GigabitEthernet0/3
+   no ip address
   access-list 10 permit 192.168.1.0 0.0.0.255
   access-list 10 permit 192.168.2.0 0.0.0.255
   access-list 10 permit 192.168.3.0 0.0.0.255
@@ -2709,55 +2874,32 @@ Total steps: 388
   access-list 104 permit ip any any dscp af21
   access-list 105 permit tcp any any eq 80 log
   ip access-list standard MGMT
-   10 permit 10.0.0.0 0.0.0.255
-   20 permit host 192.168.1.10
-   30 deny any log
+   permit 10.0.0.0 0.0.0.255
+   permit host 192.168.1.10
+   deny any log
   ip access-list extended WAN-IN
-   10 permit tcp any host 10.0.0.1 eq 443
+   permit tcp any host 10.0.0.1 eq 443
    20 permit tcp any any eq 22
-   30 permit tcp any host 10.0.0.2 eq 443
-   40 permit tcp any host 10.0.0.4 eq 443
-   50 permit tcp any host 10.0.0.5 eq 443
-   60 permit tcp any host 10.0.0.6 eq 443
-   70 permit tcp any host 10.0.0.7 eq 443
-   80 permit tcp any host 10.0.0.8 eq 443
-   90 permit tcp any host 10.0.0.9 eq 443
-   100 permit tcp any host 10.0.0.10 eq 443
-   110 permit udp any any eq 161
-   120 deny icmp any any
-   130 permit ip any any
+   permit tcp any host 10.0.0.2 eq 443
+   permit tcp any host 10.0.0.4 eq 443
+   permit tcp any host 10.0.0.5 eq 443
+   permit tcp any host 10.0.0.6 eq 443
+   permit tcp any host 10.0.0.7 eq 443
+   permit tcp any host 10.0.0.8 eq 443
+   permit tcp any host 10.0.0.9 eq 443
+   permit tcp any host 10.0.0.10 eq 443
+   permit udp any any eq 161
+   deny icmp any any
+   permit ip any any
   ip access-list extended TIMED
-   10 permit ip any any time-range BUSINESS-HOURS
+   permit ip any any time-range BUSINESS-HOURS
   ip access-list extended REFLECT-OUT
-   10 permit tcp any any reflect TCP-REFLECT
+   permit tcp any any reflect TCP-REFLECT
   ip access-list extended REFLECT-IN
-   10 evaluate TCP-REFLECT
+   evaluate TCP-REFLECT
   ip access-list extended COPP-CRITICAL
-   10 permit ospf any any
-   20 permit tcp any any eq 179
-  username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
-  line vty 0 4
-   exec-timeout 5 0
-   access-class MGMT in
-   access-class 10 out
-   login authentication default
-   transport input ssh
-  enable secret 5 $1$34620419$.GIKHmVuPVJau7.psQMg//
-  service password-encryption
-  ip domain-name lab.local
-  aaa new-model
-  aaa authentication login default local
-  aaa authentication login VTY group radius local
-  aaa authentication login CON line
-  aaa authentication enable default group tacacs+ enable
-  aaa authentication ppp default local
-  aaa authorization exec default local
-  aaa authorization commands 15 default group tacacs+ local
-  aaa authorization network default group radius
-  aaa accounting exec default start-stop group tacacs+
-  aaa accounting commands 15 default stop-only group tacacs+
-  aaa accounting network default start-stop group radius
-  aaa session-id common
+   permit ospf any any
+   permit tcp any any eq 179
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2769,18 +2911,12 @@ Total steps: 388
   ip ssh source-interface Loopback0
   ip ssh dh min size 2048
   ip ssh logging events
-  crypto key generate rsa modulus 2048
-  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
   radius server RAD1
    address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
    key radiussecret
   tacacs server TAC1
    address ipv4 10.0.0.3
    key tacacssecret
-  aaa group server radius RADGRP
-   server name RAD1
-  aaa group server tacacs+ TACGRP
-   server name TAC1
   radius-server host 10.0.0.2 key legacy
   tacacs-server host 10.0.0.3 key legacy
   time-range BUSINESS-HOURS
@@ -2806,6 +2942,16 @@ Total steps: 388
   zone security OUTSIDE
   zone-pair security IN-OUT source INSIDE destination OUTSIDE
    service-policy type inspect PM-IN-OUT
+  line console 0
+   login
+   exec-timeout 10 0
+   logging synchronous
+  line vty 0 4
+   exec-timeout 5 0
+   access-class MGMT in
+   access-class 10 out
+   login authentication default
+   transport input ssh
   end
 
 [346/388] r1 R1# show ip route | include via
@@ -2888,8 +3034,8 @@ Total steps: 388
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
 
 [371/388] r1 R1(config-if)# shutdown
 <empty>
@@ -2904,7 +3050,17 @@ Total steps: 388
 <empty>
 
 [375/388] r1 R1(config-router)# do show ip protocols
-  No routing protocol is configured.
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 192.168.1.1
+    Number of areas in this router is 0. 0 normal 0 stub 0 nssa
+    Reference bandwidth unit is 100 mbps
+    Maximum path: 4
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
 
 [376/388] r1 R1(config-router)# exit
 <empty>
@@ -2924,100 +3080,98 @@ Total steps: 388
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [381/388] r1 R1(config)# interface ?
-    GigabitEthernet     GigabitEthernet IEEE 802.3z
-    FastEthernet        FastEthernet IEEE 802.3u
-    Ethernet            IEEE 802.3
-    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
-    Loopback            Loopback interface
-    Serial              Serial
-    Tunnel              Tunnel interface
-    Vlan                Catalyst VLANs
-    Port-channel        Ethernet Channel of interfaces
-    BVI                 Bridge-Group Virtual Interface
-    <cr>                
+    BVI              Bridge-Group Virtual Interface
+    Ethernet         IEEE 802.3
+    FastEthernet     FastEthernet IEEE 802.3u
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
+    Loopback         Loopback interface
+    Port-channel     Ethernet Channel of interfaces
+    Serial           Serial
+    Tunnel           Tunnel interface
 
 [382/388] r1 R1(config)# ip ?
-    cef              Enable CEF
-    http             Hypertext Transfer Protocol
-    source-route     IP source-route
-    name-server      Configure DNS name servers
-    domain-lookup    Enable DNS lookups
-    bootp            Bootstrap Protocol
-    finger           Enable finger service
-    gratuitous-arps  Enable gratuitous ARP
-    community-list   Define BGP community list
-    as-path          BGP autonomous-system path filter
-    domain-name      Set domain name
-    domain           IP domain configuration
-    host             Configure a static host entry
-    ssh              SSH config
-    dhcp             Dynamic Host Configuration Protocol
-    route            Establish static routes
-    default-network  Configure default-network
-    local            Local settings
-    pim              Protocol Independent Multicast
-    prefix-list      Build a prefix list
-    sla              Configure an IP SLA operation
-    access-list      
-    nat              Network Address Translation
-    vrf              Define a VRF instance
-    routing          Enable IP routing
-    flow-export      Legacy NetFlow export
-    flow-cache       NetFlow cache timeout
-    route-cache      
+    access-list        Add an access list entry
+    as-path            BGP autonomous-system path filter
+    bootp              Bootstrap Protocol
+    cef                Enable CEF
+    classless          Accepted, default behaviour on IOS 12.0 and later
+    community-list     Define BGP community list
+    default-network    Configure default-network
+    dhcp               Dynamic Host Configuration Protocol
+    domain             IP domain configuration
+    domain-lookup      Enable DNS lookups
+    domain-name        Set domain name
+    finger             Enable finger service
+    flow-cache         NetFlow cache timeout
+    flow-export        Legacy NetFlow export
+    gratuitous-arps    Enable gratuitous ARP
+    host               Configure a static host entry
+    http               Hypertext Transfer Protocol
+    local              Local settings
+    multicast-routing  Enable IP multicast routing
+    name-server        Configure DNS name servers
+    nat                Network Address Translation
+    pim                Protocol Independent Multicast
+    prefix-list        Build a prefix list
+    route              Establish static routes
+    route-cache        Route cache
+    routing            Enable IP routing
+    sla                Configure an IP SLAs operation
+    source-route       IP source-route
+    ssh                SSH config
+    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    vrf                Define a VRF instance
 
 [383/388] r1 R1(config)# router ?
-    rip    Enter RIP routing protocol configuration
-    eigrp  Enter EIGRP configuration
     bgp    Enter BGP configuration
+    eigrp  Enter EIGRP configuration
     ospf   Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
 
 [384/388] r1 R1(config)# crypto ?
-    isakmp       Internet Security Association and Key Management Protocol
+    dynamic-map  Define a dynamic crypto map
+    gdoi         Group Domain of Interpretation
+    ikev2        Internet Key Exchange version 2
     ipsec        IP Security
+    isakmp       Internet Security Association and Key Management Protocol
+    key          Key management
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
-    dynamic-map  Define a dynamic crypto map
-    ikev2        Internet Key Exchange version 2
-    gdoi         Group Domain of Interpretation
-    key          Key management
     pki          Public Key Infrastructure
     <cr>         
 
 [385/388] r1 R1(config)# no ?
-    sntp         Configure SNTP
-    boot         
-    hostname     Reset hostname
+    access-list  Remove an access list
     alias        Remove a command alias
+    arp          Remove ARP entry
+    banner       Remove a banner
+    boot         Boot Commands
     cdp          CDP global configuration
-    lldp         LLDP global configuration
+    crypto       Encryption and key management
+    enable       Modify enable password parameters
+    event        Embedded Event Manager
+    hostname     Reset hostname
+    interface    Remove a virtual interface
     ip           Global IP configuration subcommands
     ipv6         Global IPv6 configuration subcommands
-    banner       Remove a banner
-    privilege    Remove privilege command rule
-    logging      Disable logging
-    service      Disable a service
-    ntp          Remove NTP config
-    enable       Modify enable password parameters
-    username     Remove a local user
-    arp          Remove ARP entry
-    interface    Remove a virtual interface
-    router       Enable a routing protocol
-    shutdown     Enable (no-op in global config)
-    route-map    Remove a route-map
-    track        Remove a tracked object
-    access-list  Remove an access list
     key          Key management
-    crypto       Encryption and key management
-    event        Embedded Event Manager
-    vlan         Remove a VLAN
     line         Remove line configuration
+    lldp         LLDP global configuration
+    logging      Modify message logging facilities
+    ntp          Remove NTP config
+    privilege    Remove privilege command rule
+    route-map    Remove a route-map
+    router       Enable a routing protocol
+    service      Disable a service
+    sntp         Configure SNTP
+    track        Remove a tracked object
+    username     Remove a local user
 
 [386/388] r1 R1(config)# end
 <empty>
 
 [387/388] r1 R1# show running-config | count !
-  16
+  35
 
 [388/388] r1 R1# write memory
   Building configuration...

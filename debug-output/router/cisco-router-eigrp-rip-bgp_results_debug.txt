@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-08-04T11:13:26.579Z
+Generated: 2026-08-08T00:34:47.675Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -182,28 +182,20 @@ Total steps: 355
 <empty>
 
 [58/355] r1 R1# show ip rip database
-  10.1.0.0/8    auto-summary
   10.1.0.0/8
       [1] directly connected, via configured network
-  10.2.0.0/8    auto-summary
   10.2.0.0/8
       [1] directly connected, via configured network
-  10.3.0.0/8    auto-summary
   10.3.0.0/8
       [1] directly connected, via configured network
-  10.4.0.0/8    auto-summary
   10.4.0.0/8
       [1] directly connected, via configured network
-  10.5.0.0/8    auto-summary
   10.5.0.0/8
       [1] directly connected, via configured network
-  10.6.0.0/8    auto-summary
   10.6.0.0/8
       [1] directly connected, via configured network
-  192.168.1.0/24    auto-summary
   192.168.1.0/24
       [1] directly connected, via configured network
-  10.0.0.0/8    auto-summary
   10.0.0.0/8
       [1] directly connected, via configured network
 
@@ -233,24 +225,31 @@ Total steps: 355
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    offset-list 1 in 5 GigabitEthernet0/1
-    offset-list 1 out 5 GigabitEthernet0/1
-    redistribute connected
-    redistribute static metric 3
-    redistribute ospf 1 metric 5
-    output-delay 50
-    flash-update-threshold 10
-    validate-update-source
+    [object Object]
+    [object Object]
+    [object Object]
     Distance: 120
 
 [60/355] r1 R1# show ip route rip
-  % Network not in table
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
 
 [61/355] r1 R1# debug ip rip
   RIP debugging is on
 
 [62/355] r1 R1# debug ip rip events
-  IP packet debugging is on for rip events
+              ^
+  % Invalid input detected at '^' marker.
 
 [63/355] r1 R1# undebug all
   All possible debugging has been turned off
@@ -371,12 +370,10 @@ Total steps: 355
 [101/355] r1 R1# show ip eigrp neighbors
   EIGRP-IPv4 Neighbors for AS(100)
   H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
-  (no neighbours — no real EIGRP peer cabled)
 
 [102/355] r1 R1# show ip eigrp neighbors detail
   EIGRP-IPv4 Neighbors for AS(100)
   H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
-  (no neighbours — no real EIGRP peer cabled)
 
 [103/355] r1 R1# show ip eigrp topology
   EIGRP-IPv4 Topology Table for AS(100)
@@ -414,7 +411,18 @@ Total steps: 355
                                          Count    Count    Uptime
 
 [109/355] r1 R1# show ip route eigrp
-  % Network not in table
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
 
 [110/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
@@ -442,17 +450,25 @@ Total steps: 355
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    offset-list 1 in 5 GigabitEthernet0/1
-    offset-list 1 out 5 GigabitEthernet0/1
-    redistribute connected
-    redistribute static metric 3
-    redistribute ospf 1 metric 5
-    output-delay 50
-    flash-update-threshold 10
-    validate-update-source
+    [object Object]
+    [object Object]
+    [object Object]
     Distance: 120
   Routing Protocol is "eigrp 100"
-    Router-ID: 1.1.1.1
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    EIGRP-IPv4 Protocol for AS(100)
+      Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
+      Router-ID: 1.1.1.1
+      Topology : 0 (base)
+        Active Timer: 3 min
+        Distance: internal 90 external 170
+        Maximum path: 4
+        Maximum hopcount 100
+        Maximum metric variance 4
+  
+    Automatic Summarization: disabled
+    Maximum path: 4
     Routing for Networks:
       10.1.0.0 0.0.255.255
       10.2.0.0 0.0.255.255
@@ -462,9 +478,12 @@ Total steps: 355
       10.6.0.0 0.0.255.255
       192.168.1.0 0.0.0.255
       10.0.0.0 0.0.0.3
-    redistribute connected
-    redistribute static metric 10000 100 255 1 1500
-    redistribute ospf 1 metric 10000 100 255 1 1500
+    [object Object]
+    [object Object]
+    [object Object]
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: internal 90 external 170
 
 [111/355] r1 R1# clear ip eigrp neighbors
 <empty>
@@ -484,62 +503,73 @@ Total steps: 355
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [116/355] r1 R1(config)# router eigrp CORP
-<empty>
-
-[117/355] r1 R1(config-router)# address-family ipv4 unicast autonomous-system 200
-<empty>
-
-[118/355] r1 R1(config-router)# network 192.168.1.0 0.0.0.255
-<empty>
-
-[119/355] r1 R1(config-router)# eigrp router-id 1.1.1.1
-<empty>
-
-[120/355] r1 R1(config-router)# af-interface GigabitEthernet0/1
-<empty>
-
-[121/355] r1 R1(config-router)# hello-interval 5
-                    ^
+                          ^
   % Invalid input detected at '^' marker.
 
-[122/355] r1 R1(config-router)# hold-time 15
-                    ^
+[117/355] r1 R1(config)# address-family ipv4 unicast autonomous-system 200
+             ^
   % Invalid input detected at '^' marker.
 
-[123/355] r1 R1(config-router)# authentication mode md5
-                    ^
+[118/355] r1 R1(config)# network 192.168.1.0 0.0.0.255
+             ^
   % Invalid input detected at '^' marker.
 
-[124/355] r1 R1(config-router)# summary-address 172.16.0.0 255.255.0.0
-                    ^
+[119/355] r1 R1(config)# eigrp router-id 1.1.1.1
+             ^
   % Invalid input detected at '^' marker.
 
-[125/355] r1 R1(config-router)# exit-af-interface
+[120/355] r1 R1(config)# af-interface GigabitEthernet0/1
+             ^
+  % Invalid input detected at '^' marker.
+
+[121/355] r1 R1(config)# hello-interval 5
+             ^
+  % Invalid input detected at '^' marker.
+
+[122/355] r1 R1(config)# hold-time 15
+             ^
+  % Invalid input detected at '^' marker.
+
+[123/355] r1 R1(config)# authentication mode md5
+             ^
+  % Invalid input detected at '^' marker.
+
+[124/355] r1 R1(config)# summary-address 172.16.0.0 255.255.0.0
+             ^
+  % Invalid input detected at '^' marker.
+
+[125/355] r1 R1(config)# exit-af-interface
+             ^
+  % Invalid input detected at '^' marker.
+
+[126/355] r1 R1(config)# topology base
+             ^
+  % Invalid input detected at '^' marker.
+
+[127/355] r1 R1(config)# redistribute static
+             ^
+  % Invalid input detected at '^' marker.
+
+[128/355] r1 R1(config)# variance 2
+             ^
+  % Invalid input detected at '^' marker.
+
+[129/355] r1 R1(config)# exit-af-topology
+             ^
+  % Invalid input detected at '^' marker.
+
+[130/355] r1 R1(config)# exit-address-family
+             ^
+  % Invalid input detected at '^' marker.
+
+[131/355] r1 R1(config)# exit
 <empty>
 
-[126/355] r1 R1(config-router)# topology base
-<empty>
-
-[127/355] r1 R1(config-router)# redistribute static
-<empty>
-
-[128/355] r1 R1(config-router)# variance 2
-<empty>
-
-[129/355] r1 R1(config-router)# exit-af-topology
-<empty>
-
-[130/355] r1 R1(config-router)# exit-address-family
-<empty>
-
-[131/355] r1 R1(config-router)# exit
-<empty>
-
-[132/355] r1 R1(config)# end
+[132/355] r1 R1# end
 <empty>
 
 [133/355] r1 R1# show eigrp protocols
-  EIGRP-IPv4 Protocol for AS(0)
+  EIGRP-IPv4 Protocol for AS(100)
     Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
     Soft SIA disabled
     NSF-aware route hold timer is 240
@@ -547,12 +577,12 @@ Total steps: 355
     Topology : 0 (base)
       Active Timer: 3 min
       Distance: internal 90 external 170
-      Maximum path: 4
-      Maximum hopcount 100
-      Maximum metric variance 2
+      Maximum path: 6
+      Maximum hopcount 50
+      Maximum metric variance 4
 
 [134/355] r1 R1# show eigrp address-family ipv4 neighbors
-  EIGRP-IPv4 Address-Family Neighbors for AS(0)
+  EIGRP-IPv4 Address-Family Neighbors for AS(100)
   H   Address                 Interface       Hold Uptime   SRTT   RTO  Q  Seq
                                               (sec)         (ms)       Cnt Num
 
@@ -708,94 +738,95 @@ Total steps: 355
 [184/355] r1 R1(config-router)# address-family ipv4 unicast
 <empty>
 
-[185/355] r1 R1(config-router)# network 192.168.1.0 mask 255.255.255.0
+[185/355] r1 R1(config-router-af)# network 192.168.1.0 mask 255.255.255.0
 <empty>
 
-[186/355] r1 R1(config-router)# network 10.0.0.0 mask 255.255.255.252
+[186/355] r1 R1(config-router-af)# network 10.0.0.0 mask 255.255.255.252
 <empty>
 
-[187/355] r1 R1(config-router)# aggregate-address 192.168.0.0 255.255.0.0 summary-only
+[187/355] r1 R1(config-router-af)# aggregate-address 192.168.0.0 255.255.0.0 summary-only
 <empty>
 
-[188/355] r1 R1(config-router)# aggregate-address 172.16.0.0 255.255.0.0 as-set
+[188/355] r1 R1(config-router-af)# aggregate-address 172.16.0.0 255.255.0.0 as-set
 <empty>
 
-[189/355] r1 R1(config-router)# redistribute connected
+[189/355] r1 R1(config-router-af)# redistribute connected
 <empty>
 
-[190/355] r1 R1(config-router)# redistribute static
+[190/355] r1 R1(config-router-af)# redistribute static
 <empty>
 
-[191/355] r1 R1(config-router)# redistribute ospf 1 match internal external
+[191/355] r1 R1(config-router-af)# redistribute ospf 1 match internal external
 <empty>
 
-[192/355] r1 R1(config-router)# neighbor 10.0.0.1 activate
+[192/355] r1 R1(config-router-af)# neighbor 10.0.0.1 activate
 <empty>
 
-[193/355] r1 R1(config-router)# neighbor 10.0.0.1 next-hop-self
+[193/355] r1 R1(config-router-af)# neighbor 10.0.0.1 next-hop-self
 <empty>
 
-[194/355] r1 R1(config-router)# neighbor 10.0.0.1 route-reflector-client
+[194/355] r1 R1(config-router-af)# neighbor 10.0.0.1 route-reflector-client
 <empty>
 
-[195/355] r1 R1(config-router)# neighbor 10.0.0.1 send-community both
+[195/355] r1 R1(config-router-af)# neighbor 10.0.0.1 send-community both
 <empty>
 
-[196/355] r1 R1(config-router)# neighbor 10.0.0.1 soft-reconfiguration inbound
+[196/355] r1 R1(config-router-af)# neighbor 10.0.0.1 soft-reconfiguration inbound
 <empty>
 
-[197/355] r1 R1(config-router)# neighbor 10.0.0.1 maximum-prefix 1000 80
+[197/355] r1 R1(config-router-af)# neighbor 10.0.0.1 maximum-prefix 1000 80
 <empty>
 
-[198/355] r1 R1(config-router)# neighbor 10.0.0.1 route-map RM-IN in
+[198/355] r1 R1(config-router-af)# neighbor 10.0.0.1 route-map RM-IN in
 <empty>
 
-[199/355] r1 R1(config-router)# neighbor 10.0.0.1 route-map RM-OUT out
+[199/355] r1 R1(config-router-af)# neighbor 10.0.0.1 route-map RM-OUT out
 <empty>
 
-[200/355] r1 R1(config-router)# neighbor 10.0.0.1 prefix-list PL-IN in
+[200/355] r1 R1(config-router-af)# neighbor 10.0.0.1 prefix-list PL-IN in
 <empty>
 
-[201/355] r1 R1(config-router)# neighbor 10.0.0.1 filter-list 1 out
+[201/355] r1 R1(config-router-af)# neighbor 10.0.0.1 filter-list 1 out
 <empty>
 
-[202/355] r1 R1(config-router)# neighbor 10.0.0.1 default-originate
+[202/355] r1 R1(config-router-af)# neighbor 10.0.0.1 default-originate
 <empty>
 
-[203/355] r1 R1(config-router)# neighbor 10.0.0.1 weight 100
+[203/355] r1 R1(config-router-af)# neighbor 10.0.0.1 weight 100
 <empty>
 
-[204/355] r1 R1(config-router)# neighbor 10.0.0.1 allowas-in 3
+[204/355] r1 R1(config-router-af)# neighbor 10.0.0.1 allowas-in 3
 <empty>
 
-[205/355] r1 R1(config-router)# distance bgp 20 200 200
+[205/355] r1 R1(config-router-af)# distance bgp 20 200 200
 <empty>
 
-[206/355] r1 R1(config-router)# maximum-paths 4
+[206/355] r1 R1(config-router-af)# maximum-paths 4
 <empty>
 
-[207/355] r1 R1(config-router)# maximum-paths ibgp 4
+[207/355] r1 R1(config-router-af)# maximum-paths ibgp 4
 <empty>
 
-[208/355] r1 R1(config-router)# exit-address-family
+[208/355] r1 R1(config-router-af)# exit-address-family
 <empty>
 
 [209/355] r1 R1(config-router)# address-family vpnv4
 <empty>
 
-[210/355] r1 R1(config-router)# neighbor 10.0.0.1 activate
+[210/355] r1 R1(config-router-af)# neighbor 10.0.0.1 activate
 <empty>
 
-[211/355] r1 R1(config-router)# exit-address-family
+[211/355] r1 R1(config-router-af)# exit-address-family
 <empty>
 
 [212/355] r1 R1(config-router)# address-family ipv6 unicast
 <empty>
 
-[213/355] r1 R1(config-router)# network 2001:db8::/32
+[213/355] r1 R1(config-router-af)# network 2001:db8::/32
+                               ^
   % Invalid input detected at '^' marker.
 
-[214/355] r1 R1(config-router)# exit-address-family
+[214/355] r1 R1(config-router-af)# exit-address-family
 <empty>
 
 [215/355] r1 R1(config-router)# exit
@@ -867,78 +898,19 @@ Total steps: 355
     BGP state = Idle
 
 [227/355] r1 R1# show ip bgp neighbors 10.0.0.2 advertised-routes
-  BGP neighbor is 10.0.0.2, remote AS 65002
-    Description: PEER-1
-    BGP state = Idle
-  BGP neighbor is 10.0.0.3, remote AS 65003
-    Description: PEER-2
-    BGP state = Idle
-  BGP neighbor is 10.0.0.4, remote AS 65004
-    Description: PEER-3
-    BGP state = Idle
-  BGP neighbor is 10.0.0.5, remote AS 65005
-    Description: PEER-4
-    BGP state = Idle
-  BGP neighbor is 10.0.0.6, remote AS 65006
-    Description: PEER-5
-    BGP state = Idle
-  BGP neighbor is 10.0.0.10, remote AS 65000
-    Description: (none)
-    BGP state = Idle
-  BGP neighbor is 10.0.0.1, remote AS unset
-    Description: (none)
-    BGP state = Idle
+  Total number of prefixes 0
 
 [228/355] r1 R1# show ip bgp neighbors 10.0.0.2 received-routes
   BGP neighbor is 10.0.0.2, remote AS 65002
     Description: PEER-1
     BGP state = Idle
-  BGP neighbor is 10.0.0.3, remote AS 65003
-    Description: PEER-2
-    BGP state = Idle
-  BGP neighbor is 10.0.0.4, remote AS 65004
-    Description: PEER-3
-    BGP state = Idle
-  BGP neighbor is 10.0.0.5, remote AS 65005
-    Description: PEER-4
-    BGP state = Idle
-  BGP neighbor is 10.0.0.6, remote AS 65006
-    Description: PEER-5
-    BGP state = Idle
-  BGP neighbor is 10.0.0.10, remote AS 65000
-    Description: (none)
-    BGP state = Idle
-  BGP neighbor is 10.0.0.1, remote AS unset
-    Description: (none)
-    BGP state = Idle
 
 [229/355] r1 R1# show ip bgp neighbors 10.0.0.2 routes
-  BGP neighbor is 10.0.0.2, remote AS 65002
-    Description: PEER-1
-    BGP state = Idle
-  BGP neighbor is 10.0.0.3, remote AS 65003
-    Description: PEER-2
-    BGP state = Idle
-  BGP neighbor is 10.0.0.4, remote AS 65004
-    Description: PEER-3
-    BGP state = Idle
-  BGP neighbor is 10.0.0.5, remote AS 65005
-    Description: PEER-4
-    BGP state = Idle
-  BGP neighbor is 10.0.0.6, remote AS 65006
-    Description: PEER-5
-    BGP state = Idle
-  BGP neighbor is 10.0.0.10, remote AS 65000
-    Description: (none)
-    BGP state = Idle
-  BGP neighbor is 10.0.0.1, remote AS unset
-    Description: (none)
-    BGP state = Idle
+  Total number of prefixes 0
 
 [230/355] r1 R1# show ip bgp 192.168.1.0
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   10.0.0.0/30      0.0.0.0             0         32768 i
   *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [231/355] r1 R1# show ip bgp paths
@@ -969,7 +941,18 @@ Total steps: 355
   BGP local AS 65000, 7 neighbour(s), 0 established
 
 [236/355] r1 R1# show ip route bgp
-  % Network not in table
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
 
 [237/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
@@ -997,22 +980,25 @@ Total steps: 355
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    offset-list 1 in 5 GigabitEthernet0/1
-    offset-list 1 out 5 GigabitEthernet0/1
-    redistribute connected
-    redistribute static metric 3
-    redistribute ospf 1 metric 5
-    output-delay 50
-    flash-update-threshold 10
-    validate-update-source
+    [object Object]
+    [object Object]
+    [object Object]
     Distance: 120
-  Routing Protocol is "eigrp 0"
-    Router-ID: 1.1.1.1
-    Routing for Networks:
-      192.168.1.0 0.0.0.255
-    redistribute static
   Routing Protocol is "eigrp 100"
-    Router-ID: 1.1.1.1
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    EIGRP-IPv4 Protocol for AS(100)
+      Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
+      Router-ID: 1.1.1.1
+      Topology : 0 (base)
+        Active Timer: 3 min
+        Distance: internal 90 external 170
+        Maximum path: 4
+        Maximum hopcount 100
+        Maximum metric variance 4
+  
+    Automatic Summarization: disabled
+    Maximum path: 4
     Routing for Networks:
       10.1.0.0 0.0.255.255
       10.2.0.0 0.0.255.255
@@ -1022,9 +1008,12 @@ Total steps: 355
       10.6.0.0 0.0.255.255
       192.168.1.0 0.0.0.255
       10.0.0.0 0.0.0.3
-    redistribute connected
-    redistribute static metric 10000 100 255 1 1500
-    redistribute ospf 1 metric 10000 100 255 1 1500
+    [object Object]
+    [object Object]
+    [object Object]
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: internal 90 external 170
   Routing Protocol is "bgp 65000"
     IGP synchronization is disabled
     Neighbor(s): 7
@@ -1058,7 +1047,8 @@ Total steps: 355
   BGP debugging is on
 
 [244/355] r1 R1# debug ip bgp updates
-  IP packet debugging is on for bgp updates
+              ^
+  % Invalid input detected at '^' marker.
 
 [245/355] r1 R1# undebug all
   All possible debugging has been turned off
@@ -1077,22 +1067,45 @@ Total steps: 355
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
   Processor board ID FTX1234567A
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
 
 [248/355] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 626 bytes
+  Current configuration : 4520 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  !
+  key chain RIP-KEY
+   key 1
+    key-string secretrip
+    accept-lifetime 00:00:00 Jan 1 2020 infinite
+    send-lifetime 00:00:00 Jan 1 2020 infinite
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1101,9 +1114,32 @@ Total steps: 355
    ip address 10.0.0.1 255.255.255.252
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
+  router eigrp 100
+   eigrp router-id 1.1.1.1
+   network 10.1.0.0 0.0.255.255
+   network 10.2.0.0 0.0.255.255
+   network 10.3.0.0 0.0.255.255
+   network 10.4.0.0 0.0.255.255
+   network 10.5.0.0 0.0.255.255
+   network 10.6.0.0 0.0.255.255
+   network 192.168.1.0 0.0.0.255
+   network 10.0.0.0 0.0.0.3
+   passive-interface GigabitEthernet0/0
+   redistribute connected
+   redistribute static metric 10000 100 255 1 1500
+   redistribute ospf 1 metric 10000 100 255 1 1500
+   timers active-time 3
+   traffic-share balanced
+   variance 4
+   maximum-paths 6
+   metric maximum-hops 50
+   eigrp stub connected summary
+   no auto-summary
   !
   router rip
    version 2
@@ -1115,15 +1151,97 @@ Total steps: 355
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+   passive-interface GigabitEthernet0/0
+   passive-interface GigabitEthernet0/2
+   passive-interface GigabitEthernet0/3
+   neighbor 10.0.0.2
+   redistribute connected
+   redistribute static metric 3
+   redistribute ospf 1 metric 5
+   offset-list 1 in 5 GigabitEthernet0/1
+   offset-list 1 out 5 GigabitEthernet0/1
+   output-delay 50
+   flash-update-threshold 10
+   validate-update-source
+   default-information originate
+   no auto-summary
+  !
+  router bgp 65000
+   bgp router-id 1.1.1.1
+   no bgp default ipv4-unicast
+   neighbor IBGP peer-group
+   neighbor IBGP remote-as 65000
+   neighbor 10.0.0.1 next-hop-self
+   neighbor 10.0.0.1 route-reflector-client
+   neighbor 10.0.0.1 send-community both
+   neighbor 10.0.0.1 soft-reconfiguration inbound
+   neighbor 10.0.0.1 maximum-prefix 1000 80
+   neighbor 10.0.0.1 route-map RM-IN in
+   neighbor 10.0.0.1 route-map RM-OUT out
+   neighbor 10.0.0.1 prefix-list PL-IN in
+   neighbor 10.0.0.1 filter-list 1 out
+   neighbor 10.0.0.1 default-originate
+   neighbor 10.0.0.1 weight 100
+   neighbor 10.0.0.1 allowas-in 3
+   neighbor 10.0.0.10 remote-as 65000
+   neighbor 10.0.0.10 peer-group IBGP
+   neighbor 10.0.0.10 update-source Loopback0
+   neighbor 10.0.0.2 remote-as 65002
+   neighbor 10.0.0.2 description PEER-1
+   neighbor 10.0.0.2 update-source Loopback0
+   neighbor 10.0.0.2 ebgp-multihop 2
+   neighbor 10.0.0.2 password bgpsecret
+   neighbor 10.0.0.2 timers 10 30
+   neighbor 10.0.0.2 fall-over bfd
+   neighbor 10.0.0.3 remote-as 65003
+   neighbor 10.0.0.3 description PEER-2
+   neighbor 10.0.0.3 update-source Loopback0
+   neighbor 10.0.0.3 ebgp-multihop 2
+   neighbor 10.0.0.3 password bgpsecret
+   neighbor 10.0.0.3 timers 10 30
+   neighbor 10.0.0.3 fall-over bfd
+   neighbor 10.0.0.4 remote-as 65004
+   neighbor 10.0.0.4 description PEER-3
+   neighbor 10.0.0.4 update-source Loopback0
+   neighbor 10.0.0.4 ebgp-multihop 2
+   neighbor 10.0.0.4 password bgpsecret
+   neighbor 10.0.0.4 timers 10 30
+   neighbor 10.0.0.4 fall-over bfd
+   neighbor 10.0.0.5 remote-as 65005
+   neighbor 10.0.0.5 description PEER-4
+   neighbor 10.0.0.5 update-source Loopback0
+   neighbor 10.0.0.5 ebgp-multihop 2
+   neighbor 10.0.0.5 password bgpsecret
+   neighbor 10.0.0.5 timers 10 30
+   neighbor 10.0.0.5 fall-over bfd
+   neighbor 10.0.0.6 remote-as 65006
+   neighbor 10.0.0.6 description PEER-5
+   neighbor 10.0.0.6 update-source Loopback0
+   neighbor 10.0.0.6 ebgp-multihop 2
+   neighbor 10.0.0.6 password bgpsecret
+   neighbor 10.0.0.6 timers 10 30
+   neighbor 10.0.0.6 fall-over bfd
+   network 192.168.1.0 mask 255.255.255.0
+   network 10.0.0.0 mask 255.255.255.252
+   redistribute connected
+   redistribute static
+   redistribute ospf 1 match internal external
+   bgp log-neighbor-changes
+   bgp always-compare-med
+   bgp deterministic-med
+   bgp bestpath as-path multipath-relax
+   bgp graceful-restart
+   timers bgp 10 30
+   aggregate-address 192.168.0.0 255.255.0.0 summary-only
+   aggregate-address 172.16.0.0 255.255.0.0 as-set
   !
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
   !
-  key chain RIP-KEY
-   key 1
-    key-string secretrip
-    accept-lifetime 00:00:00 Jan 1 2020 infinite
-    send-lifetime 00:00:00 Jan 1 2020 infinite
+  route-map RM-IN permit 10
+   set local-preference 200
+   set community 65000:100 additive
+   set as-path prepend 65000 65000
   !
   end
 
@@ -1134,8 +1252,8 @@ Total steps: 355
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
 
 [251/355] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1175,7 +1293,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       94 packets output, 9360 bytes, 0 underruns
+       91 packets output, 9054 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1218,17 +1336,28 @@ Total steps: 355
        0 input drops, 0 output drops
 
 [252/355] r1 R1# show ip route
-  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
-         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
   Gateway of last resort is not set
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
 
 [253/355] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
-  IP routing table maximum-paths is 32
+  IP routing table maximum-paths is 4
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
   connected       2           2           0           304         720
   static          0           0           0           0           0
@@ -1265,22 +1394,25 @@ Total steps: 355
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    offset-list 1 in 5 GigabitEthernet0/1
-    offset-list 1 out 5 GigabitEthernet0/1
-    redistribute connected
-    redistribute static metric 3
-    redistribute ospf 1 metric 5
-    output-delay 50
-    flash-update-threshold 10
-    validate-update-source
+    [object Object]
+    [object Object]
+    [object Object]
     Distance: 120
-  Routing Protocol is "eigrp 0"
-    Router-ID: 1.1.1.1
-    Routing for Networks:
-      192.168.1.0 0.0.0.255
-    redistribute static
   Routing Protocol is "eigrp 100"
-    Router-ID: 1.1.1.1
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    EIGRP-IPv4 Protocol for AS(100)
+      Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
+      Router-ID: 1.1.1.1
+      Topology : 0 (base)
+        Active Timer: 3 min
+        Distance: internal 90 external 170
+        Maximum path: 4
+        Maximum hopcount 100
+        Maximum metric variance 4
+  
+    Automatic Summarization: disabled
+    Maximum path: 4
     Routing for Networks:
       10.1.0.0 0.0.255.255
       10.2.0.0 0.0.255.255
@@ -1290,9 +1422,12 @@ Total steps: 355
       10.6.0.0 0.0.255.255
       192.168.1.0 0.0.0.255
       10.0.0.0 0.0.0.3
-    redistribute connected
-    redistribute static metric 10000 100 255 1 1500
-    redistribute ospf 1 metric 10000 100 255 1 1500
+    [object Object]
+    [object Object]
+    [object Object]
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: internal 90 external 170
   Routing Protocol is "bgp 65000"
     IGP synchronization is disabled
     Neighbor(s): 7
@@ -1323,12 +1458,11 @@ Total steps: 355
   % OSPF is not configured
 
 [261/355] r1 R1# show ip eigrp neighbors
-  EIGRP-IPv4 Neighbors for AS(0)
+  EIGRP-IPv4 Neighbors for AS(100)
   H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
-  (no neighbours — no real EIGRP peer cabled)
 
 [262/355] r1 R1# show ip eigrp topology
-  EIGRP-IPv4 Topology Table for AS(0)
+  EIGRP-IPv4 Topology Table for AS(100)
   P 10.0.0.0/30, 1 successors, FD is 2816
           via Connected
 
@@ -1351,28 +1485,20 @@ Total steps: 355
   10.0.0.1        4 0          0        0       0    0    0 never    Idle
 
 [265/355] r1 R1# show ip rip database
-  10.1.0.0/8    auto-summary
   10.1.0.0/8
       [1] directly connected, via configured network
-  10.2.0.0/8    auto-summary
   10.2.0.0/8
       [1] directly connected, via configured network
-  10.3.0.0/8    auto-summary
   10.3.0.0/8
       [1] directly connected, via configured network
-  10.4.0.0/8    auto-summary
   10.4.0.0/8
       [1] directly connected, via configured network
-  10.5.0.0/8    auto-summary
   10.5.0.0/8
       [1] directly connected, via configured network
-  10.6.0.0/8    auto-summary
   10.6.0.0/8
       [1] directly connected, via configured network
-  192.168.1.0/24    auto-summary
   192.168.1.0/24
       [1] directly connected, via configured network
-  10.0.0.0/8    auto-summary
   10.0.0.0/8
       [1] directly connected, via configured network
 
@@ -1395,7 +1521,7 @@ Total steps: 355
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  Application Layer Gateways: none
 
 [268/355] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1431,44 +1557,53 @@ Total steps: 355
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [278/355] r1 R1# show track
-  No tracked objects configured.
+  % No tracked objects configured.
 
 [279/355] r1 R1# show ip sla statistics
-  No IP SLA operations configured.
+  IPSLAs Latest Operation Statistics
+  
+  No IP SLAs operations configured.
 
 [280/355] r1 R1# show policy-map interface
 <empty>
 
 [281/355] r1 R1# show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 11 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 11 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 11 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 11 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  %RIP-5-NOTIFICATIONS: RIP routing process started
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:179
+  *Aug  8 00:34:47.669: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:47.670: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:47.672: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:47.672: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:47.673: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:47.682: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:47.683: %RIP-5-NOTIFICATIONS: RIP routing process started
+  *Aug  8 00:34:47.688: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:47.707: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:47.711: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:47.731: %SYS-5-CONFIG_I: Configured from console by console
 
 [282/355] r1 R1# show snmp
+  Chassis: FTX1234567A
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
@@ -1476,23 +1611,22 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C47D6.A8F5C28F (11:13:26.660 UTC Tue Aug 4 2026)
+  reference time is EE20F827.C5E353F7 (00:34:47.773 UTC Sat Aug 8 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *11:13:26.000 UTC Tue Aug 4 2026
+  *00:34:47.000 UTC Sat Aug 8 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1519,8 +1653,8 @@ Total steps: 355
 
 [289/355] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
-  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
+  Processor    1A2B3C4    503316480    150994944    352321536    334705459    341751889
+  I/O          5D6E7F8     33554432     8388608    25165824    23907532    24410849
 
 [290/355] r1 R1# show flash
   Directory of flash:/
@@ -1604,7 +1738,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       99 packets output, 9870 bytes, 0 underruns
+       96 packets output, 9564 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1626,7 +1760,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       99 packets output, 9870 bytes, 0 underruns
+       96 packets output, 9564 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1658,22 +1792,45 @@ Total steps: 355
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
   Processor board ID FTX1234567A
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
   
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 626 bytes
+  Current configuration : 4520 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  !
+  key chain RIP-KEY
+   key 1
+    key-string secretrip
+    accept-lifetime 00:00:00 Jan 1 2020 infinite
+    send-lifetime 00:00:00 Jan 1 2020 infinite
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1682,9 +1839,32 @@ Total steps: 355
    ip address 10.0.0.1 255.255.255.252
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
+  router eigrp 100
+   eigrp router-id 1.1.1.1
+   network 10.1.0.0 0.0.255.255
+   network 10.2.0.0 0.0.255.255
+   network 10.3.0.0 0.0.255.255
+   network 10.4.0.0 0.0.255.255
+   network 10.5.0.0 0.0.255.255
+   network 10.6.0.0 0.0.255.255
+   network 192.168.1.0 0.0.0.255
+   network 10.0.0.0 0.0.0.3
+   passive-interface GigabitEthernet0/0
+   redistribute connected
+   redistribute static metric 10000 100 255 1 1500
+   redistribute ospf 1 metric 10000 100 255 1 1500
+   timers active-time 3
+   traffic-share balanced
+   variance 4
+   maximum-paths 6
+   metric maximum-hops 50
+   eigrp stub connected summary
+   no auto-summary
   !
   router rip
    version 2
@@ -1696,15 +1876,97 @@ Total steps: 355
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+   passive-interface GigabitEthernet0/0
+   passive-interface GigabitEthernet0/2
+   passive-interface GigabitEthernet0/3
+   neighbor 10.0.0.2
+   redistribute connected
+   redistribute static metric 3
+   redistribute ospf 1 metric 5
+   offset-list 1 in 5 GigabitEthernet0/1
+   offset-list 1 out 5 GigabitEthernet0/1
+   output-delay 50
+   flash-update-threshold 10
+   validate-update-source
+   default-information originate
+   no auto-summary
+  !
+  router bgp 65000
+   bgp router-id 1.1.1.1
+   no bgp default ipv4-unicast
+   neighbor IBGP peer-group
+   neighbor IBGP remote-as 65000
+   neighbor 10.0.0.1 next-hop-self
+   neighbor 10.0.0.1 route-reflector-client
+   neighbor 10.0.0.1 send-community both
+   neighbor 10.0.0.1 soft-reconfiguration inbound
+   neighbor 10.0.0.1 maximum-prefix 1000 80
+   neighbor 10.0.0.1 route-map RM-IN in
+   neighbor 10.0.0.1 route-map RM-OUT out
+   neighbor 10.0.0.1 prefix-list PL-IN in
+   neighbor 10.0.0.1 filter-list 1 out
+   neighbor 10.0.0.1 default-originate
+   neighbor 10.0.0.1 weight 100
+   neighbor 10.0.0.1 allowas-in 3
+   neighbor 10.0.0.10 remote-as 65000
+   neighbor 10.0.0.10 peer-group IBGP
+   neighbor 10.0.0.10 update-source Loopback0
+   neighbor 10.0.0.2 remote-as 65002
+   neighbor 10.0.0.2 description PEER-1
+   neighbor 10.0.0.2 update-source Loopback0
+   neighbor 10.0.0.2 ebgp-multihop 2
+   neighbor 10.0.0.2 password bgpsecret
+   neighbor 10.0.0.2 timers 10 30
+   neighbor 10.0.0.2 fall-over bfd
+   neighbor 10.0.0.3 remote-as 65003
+   neighbor 10.0.0.3 description PEER-2
+   neighbor 10.0.0.3 update-source Loopback0
+   neighbor 10.0.0.3 ebgp-multihop 2
+   neighbor 10.0.0.3 password bgpsecret
+   neighbor 10.0.0.3 timers 10 30
+   neighbor 10.0.0.3 fall-over bfd
+   neighbor 10.0.0.4 remote-as 65004
+   neighbor 10.0.0.4 description PEER-3
+   neighbor 10.0.0.4 update-source Loopback0
+   neighbor 10.0.0.4 ebgp-multihop 2
+   neighbor 10.0.0.4 password bgpsecret
+   neighbor 10.0.0.4 timers 10 30
+   neighbor 10.0.0.4 fall-over bfd
+   neighbor 10.0.0.5 remote-as 65005
+   neighbor 10.0.0.5 description PEER-4
+   neighbor 10.0.0.5 update-source Loopback0
+   neighbor 10.0.0.5 ebgp-multihop 2
+   neighbor 10.0.0.5 password bgpsecret
+   neighbor 10.0.0.5 timers 10 30
+   neighbor 10.0.0.5 fall-over bfd
+   neighbor 10.0.0.6 remote-as 65006
+   neighbor 10.0.0.6 description PEER-5
+   neighbor 10.0.0.6 update-source Loopback0
+   neighbor 10.0.0.6 ebgp-multihop 2
+   neighbor 10.0.0.6 password bgpsecret
+   neighbor 10.0.0.6 timers 10 30
+   neighbor 10.0.0.6 fall-over bfd
+   network 192.168.1.0 mask 255.255.255.0
+   network 10.0.0.0 mask 255.255.255.252
+   redistribute connected
+   redistribute static
+   redistribute ospf 1 match internal external
+   bgp log-neighbor-changes
+   bgp always-compare-med
+   bgp deterministic-med
+   bgp bestpath as-path multipath-relax
+   bgp graceful-restart
+   timers bgp 10 30
+   aggregate-address 192.168.0.0 255.255.0.0 summary-only
+   aggregate-address 172.16.0.0 255.255.0.0 as-set
   !
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
   !
-  key chain RIP-KEY
-   key 1
-    key-string secretrip
-    accept-lifetime 00:00:00 Jan 1 2020 infinite
-    send-lifetime 00:00:00 Jan 1 2020 infinite
+  route-map RM-IN permit 10
+   set local-preference 200
+   set community 65000:100 additive
+   set as-path prepend 65000 65000
   !
   end
   
@@ -1712,16 +1974,28 @@ Total steps: 355
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   
   ------------------ show ip route ------------------
-  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
   Gateway of last resort is not set
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -1761,7 +2035,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       99 packets output, 9870 bytes, 0 underruns
+       96 packets output, 9564 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1855,7 +2129,7 @@ Total steps: 355
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  Application Layer Gateways: none
   
   ------------------ show ip ospf neighbor ------------------
   % OSPF is not configured
@@ -1865,47 +2139,52 @@ Total steps: 355
                    Hardware address
   
   ------------------ show logging ------------------
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 11 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 11 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 11 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 11 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  %RIP-5-NOTIFICATIONS: RIP routing process started
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:179
+  *Aug  8 00:34:47.669: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:47.670: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:47.672: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:47.672: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:47.673: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:47.682: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:47.683: %RIP-5-NOTIFICATIONS: RIP routing process started
+  *Aug  8 00:34:47.688: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:47.707: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:47.711: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:47.731: %SYS-5-CONFIG_I: Configured from console by console
 
 [299/355] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
   PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [300/355] r1 R1# show environment
-  Environmental monitoring is not instrumented on this platform.
+  Number of Critical alarms:  0
+  Number of Major alarms:     0
+  Number of Minor alarms:     0
 
 [301/355] r1 R1# show redundancy
-  Redundant System Information :
-         Configured Redundancy Mode = Simplex
-  Current Processor Information :
-         Active Location = slot 0
-         Current Software state = ACTIVE
+          ^
+  % Invalid input detected at '^' marker.
 
 [302/355] r1 R1# show ip vrf
     Name                             Default RD            Protocols   Interfaces
@@ -1915,8 +2194,11 @@ Total steps: 355
 
 [304/355] r1 R1# show hosts
   Default domain is not set
+  Name/address lookup uses static mappings
   Name servers are 255.255.255.255
-  Name/address lookup uses static table only (recursive resolver not simulated)
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+         temp - temporary, perm - permanent
+         NA - Not Applicable None - Not defined
   
   Host                      Port  Flags      Age Type   Address(es)
 
@@ -1925,13 +2207,14 @@ Total steps: 355
   Authentication timeout: 120 secs; Authentication retries: 3
 
 [306/355] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+     Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 VTY               -    -    -    -      0     0   0/0       -
+       1    1 AUX               -    -    -    -      0     0   0/0       -
        2    2 VTY               -    -    -    -      0     0   0/0       -
        3    3 VTY               -    -    -    -      0     0   0/0       -
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
+       6    6 VTY               -    -    -    -      0     0   0/0       -
 
 [307/355] r1 R1# show terminal
   Line 0, Location: "", Type: ""
@@ -1954,7 +2237,11 @@ Total steps: 355
 
 --- [309] § regression: pipe filters ---
 [309/355] r1 R1# show running-config | include router
+  router eigrp 100
+   eigrp router-id 1.1.1.1
   router rip
+  router bgp 65000
+   bgp router-id 1.1.1.1
 
 [310/355] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
@@ -1964,8 +2251,10 @@ Total steps: 355
    ip address 10.0.0.1 255.255.255.252
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
 
 [311/355] r1 R1# show running-config | begin line
@@ -1974,15 +2263,48 @@ Total steps: 355
 [312/355] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 626 bytes
+  Current configuration : 4520 bytes
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   hostname R1
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  key chain RIP-KEY
+   key 1
+    key-string secretrip
+    accept-lifetime 00:00:00 Jan 1 2020 infinite
+    send-lifetime 00:00:00 Jan 1 2020 infinite
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
   interface GigabitEthernet0/2
+   no ip address
   interface GigabitEthernet0/3
+   no ip address
+  router eigrp 100
+   eigrp router-id 1.1.1.1
+   network 10.1.0.0 0.0.255.255
+   network 10.2.0.0 0.0.255.255
+   network 10.3.0.0 0.0.255.255
+   network 10.4.0.0 0.0.255.255
+   network 10.5.0.0 0.0.255.255
+   network 10.6.0.0 0.0.255.255
+   network 192.168.1.0 0.0.0.255
+   network 10.0.0.0 0.0.0.3
+   passive-interface GigabitEthernet0/0
+   redistribute connected
+   redistribute static metric 10000 100 255 1 1500
+   redistribute ospf 1 metric 10000 100 255 1 1500
+   timers active-time 3
+   traffic-share balanced
+   variance 4
+   maximum-paths 6
+   metric maximum-hops 50
+   eigrp stub connected summary
+   no auto-summary
   router rip
    version 2
    network 10.1.0.0
@@ -1993,13 +2315,94 @@ Total steps: 355
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+   passive-interface GigabitEthernet0/0
+   passive-interface GigabitEthernet0/2
+   passive-interface GigabitEthernet0/3
+   neighbor 10.0.0.2
+   redistribute connected
+   redistribute static metric 3
+   redistribute ospf 1 metric 5
+   offset-list 1 in 5 GigabitEthernet0/1
+   offset-list 1 out 5 GigabitEthernet0/1
+   output-delay 50
+   flash-update-threshold 10
+   validate-update-source
+   default-information originate
+   no auto-summary
+  router bgp 65000
+   bgp router-id 1.1.1.1
+   no bgp default ipv4-unicast
+   neighbor IBGP peer-group
+   neighbor IBGP remote-as 65000
+   neighbor 10.0.0.1 next-hop-self
+   neighbor 10.0.0.1 route-reflector-client
+   neighbor 10.0.0.1 send-community both
+   neighbor 10.0.0.1 soft-reconfiguration inbound
+   neighbor 10.0.0.1 maximum-prefix 1000 80
+   neighbor 10.0.0.1 route-map RM-IN in
+   neighbor 10.0.0.1 route-map RM-OUT out
+   neighbor 10.0.0.1 prefix-list PL-IN in
+   neighbor 10.0.0.1 filter-list 1 out
+   neighbor 10.0.0.1 default-originate
+   neighbor 10.0.0.1 weight 100
+   neighbor 10.0.0.1 allowas-in 3
+   neighbor 10.0.0.10 remote-as 65000
+   neighbor 10.0.0.10 peer-group IBGP
+   neighbor 10.0.0.10 update-source Loopback0
+   neighbor 10.0.0.2 remote-as 65002
+   neighbor 10.0.0.2 description PEER-1
+   neighbor 10.0.0.2 update-source Loopback0
+   neighbor 10.0.0.2 ebgp-multihop 2
+   neighbor 10.0.0.2 password bgpsecret
+   neighbor 10.0.0.2 timers 10 30
+   neighbor 10.0.0.2 fall-over bfd
+   neighbor 10.0.0.3 remote-as 65003
+   neighbor 10.0.0.3 description PEER-2
+   neighbor 10.0.0.3 update-source Loopback0
+   neighbor 10.0.0.3 ebgp-multihop 2
+   neighbor 10.0.0.3 password bgpsecret
+   neighbor 10.0.0.3 timers 10 30
+   neighbor 10.0.0.3 fall-over bfd
+   neighbor 10.0.0.4 remote-as 65004
+   neighbor 10.0.0.4 description PEER-3
+   neighbor 10.0.0.4 update-source Loopback0
+   neighbor 10.0.0.4 ebgp-multihop 2
+   neighbor 10.0.0.4 password bgpsecret
+   neighbor 10.0.0.4 timers 10 30
+   neighbor 10.0.0.4 fall-over bfd
+   neighbor 10.0.0.5 remote-as 65005
+   neighbor 10.0.0.5 description PEER-4
+   neighbor 10.0.0.5 update-source Loopback0
+   neighbor 10.0.0.5 ebgp-multihop 2
+   neighbor 10.0.0.5 password bgpsecret
+   neighbor 10.0.0.5 timers 10 30
+   neighbor 10.0.0.5 fall-over bfd
+   neighbor 10.0.0.6 remote-as 65006
+   neighbor 10.0.0.6 description PEER-5
+   neighbor 10.0.0.6 update-source Loopback0
+   neighbor 10.0.0.6 ebgp-multihop 2
+   neighbor 10.0.0.6 password bgpsecret
+   neighbor 10.0.0.6 timers 10 30
+   neighbor 10.0.0.6 fall-over bfd
+   network 192.168.1.0 mask 255.255.255.0
+   network 10.0.0.0 mask 255.255.255.252
+   redistribute connected
+   redistribute static
+   redistribute ospf 1 match internal external
+   bgp log-neighbor-changes
+   bgp always-compare-med
+   bgp deterministic-med
+   bgp bestpath as-path multipath-relax
+   bgp graceful-restart
+   timers bgp 10 30
+   aggregate-address 192.168.0.0 255.255.0.0 summary-only
+   aggregate-address 172.16.0.0 255.255.0.0 as-set
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
-  key chain RIP-KEY
-   key 1
-    key-string secretrip
-    accept-lifetime 00:00:00 Jan 1 2020 infinite
-    send-lifetime 00:00:00 Jan 1 2020 infinite
+  route-map RM-IN permit 10
+   set local-preference 200
+   set community 65000:100 additive
+   set as-path prepend 65000 65000
   end
 
 [313/355] r1 R1# show ip route | include via
@@ -2082,8 +2485,8 @@ Total steps: 355
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
 
 [338/355] r1 R1(config-if)# shutdown
 <empty>
@@ -2102,8 +2505,9 @@ Total steps: 355
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
     Router ID 192.168.1.1
-    Number of areas in this router is 0
+    Number of areas in this router is 0. 0 normal 0 stub 0 nssa
     Reference bandwidth unit is 100 mbps
+    Maximum path: 4
     Routing for Networks:
     Routing Information Sources:
       Gateway         Distance      Last Update
@@ -2134,22 +2538,25 @@ Total steps: 355
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    offset-list 1 in 5 GigabitEthernet0/1
-    offset-list 1 out 5 GigabitEthernet0/1
-    redistribute connected
-    redistribute static metric 3
-    redistribute ospf 1 metric 5
-    output-delay 50
-    flash-update-threshold 10
-    validate-update-source
+    [object Object]
+    [object Object]
+    [object Object]
     Distance: 120
-  Routing Protocol is "eigrp 0"
-    Router-ID: 1.1.1.1
-    Routing for Networks:
-      192.168.1.0 0.0.0.255
-    redistribute static
   Routing Protocol is "eigrp 100"
-    Router-ID: 1.1.1.1
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    EIGRP-IPv4 Protocol for AS(100)
+      Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
+      Router-ID: 1.1.1.1
+      Topology : 0 (base)
+        Active Timer: 3 min
+        Distance: internal 90 external 170
+        Maximum path: 4
+        Maximum hopcount 100
+        Maximum metric variance 4
+  
+    Automatic Summarization: disabled
+    Maximum path: 4
     Routing for Networks:
       10.1.0.0 0.0.255.255
       10.2.0.0 0.0.255.255
@@ -2159,9 +2566,12 @@ Total steps: 355
       10.6.0.0 0.0.255.255
       192.168.1.0 0.0.0.255
       10.0.0.0 0.0.0.3
-    redistribute connected
-    redistribute static metric 10000 100 255 1 1500
-    redistribute ospf 1 metric 10000 100 255 1 1500
+    [object Object]
+    [object Object]
+    [object Object]
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: internal 90 external 170
   Routing Protocol is "bgp 65000"
     IGP synchronization is disabled
     Neighbor(s): 7
@@ -2191,100 +2601,98 @@ Total steps: 355
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [348/355] r1 R1(config)# interface ?
-    GigabitEthernet     GigabitEthernet IEEE 802.3z
-    FastEthernet        FastEthernet IEEE 802.3u
-    Ethernet            IEEE 802.3
-    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
-    Loopback            Loopback interface
-    Serial              Serial
-    Tunnel              Tunnel interface
-    Vlan                Catalyst VLANs
-    Port-channel        Ethernet Channel of interfaces
-    BVI                 Bridge-Group Virtual Interface
-    <cr>                
+    BVI              Bridge-Group Virtual Interface
+    Ethernet         IEEE 802.3
+    FastEthernet     FastEthernet IEEE 802.3u
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
+    Loopback         Loopback interface
+    Port-channel     Ethernet Channel of interfaces
+    Serial           Serial
+    Tunnel           Tunnel interface
 
 [349/355] r1 R1(config)# ip ?
-    cef              Enable CEF
-    http             Hypertext Transfer Protocol
-    source-route     IP source-route
-    name-server      Configure DNS name servers
-    domain-lookup    Enable DNS lookups
-    bootp            Bootstrap Protocol
-    finger           Enable finger service
-    gratuitous-arps  Enable gratuitous ARP
-    community-list   Define BGP community list
-    as-path          BGP autonomous-system path filter
-    domain-name      Set domain name
-    domain           IP domain configuration
-    host             Configure a static host entry
-    ssh              SSH config
-    dhcp             Dynamic Host Configuration Protocol
-    route            Establish static routes
-    default-network  Configure default-network
-    local            Local settings
-    pim              Protocol Independent Multicast
-    prefix-list      Build a prefix list
-    sla              Configure an IP SLA operation
-    access-list      
-    nat              Network Address Translation
-    vrf              Define a VRF instance
-    routing          Enable IP routing
-    flow-export      Legacy NetFlow export
-    flow-cache       NetFlow cache timeout
-    route-cache      
+    access-list        Add an access list entry
+    as-path            BGP autonomous-system path filter
+    bootp              Bootstrap Protocol
+    cef                Enable CEF
+    classless          Accepted, default behaviour on IOS 12.0 and later
+    community-list     Define BGP community list
+    default-network    Configure default-network
+    dhcp               Dynamic Host Configuration Protocol
+    domain             IP domain configuration
+    domain-lookup      Enable DNS lookups
+    domain-name        Set domain name
+    finger             Enable finger service
+    flow-cache         NetFlow cache timeout
+    flow-export        Legacy NetFlow export
+    gratuitous-arps    Enable gratuitous ARP
+    host               Configure a static host entry
+    http               Hypertext Transfer Protocol
+    local              Local settings
+    multicast-routing  Enable IP multicast routing
+    name-server        Configure DNS name servers
+    nat                Network Address Translation
+    pim                Protocol Independent Multicast
+    prefix-list        Build a prefix list
+    route              Establish static routes
+    route-cache        Route cache
+    routing            Enable IP routing
+    sla                Configure an IP SLAs operation
+    source-route       IP source-route
+    ssh                SSH config
+    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    vrf                Define a VRF instance
 
 [350/355] r1 R1(config)# router ?
-    rip    Enter RIP routing protocol configuration
-    eigrp  Enter EIGRP configuration
     bgp    Enter BGP configuration
+    eigrp  Enter EIGRP configuration
     ospf   Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
 
 [351/355] r1 R1(config)# crypto ?
-    isakmp       Internet Security Association and Key Management Protocol
+    dynamic-map  Define a dynamic crypto map
+    gdoi         Group Domain of Interpretation
+    ikev2        Internet Key Exchange version 2
     ipsec        IP Security
+    isakmp       Internet Security Association and Key Management Protocol
+    key          Key management
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
-    dynamic-map  Define a dynamic crypto map
-    ikev2        Internet Key Exchange version 2
-    gdoi         Group Domain of Interpretation
-    key          Key management
     pki          Public Key Infrastructure
     <cr>         
 
 [352/355] r1 R1(config)# no ?
-    sntp         Configure SNTP
-    boot         
-    hostname     Reset hostname
+    access-list  Remove an access list
     alias        Remove a command alias
+    arp          Remove ARP entry
+    banner       Remove a banner
+    boot         Boot Commands
     cdp          CDP global configuration
-    lldp         LLDP global configuration
+    crypto       Encryption and key management
+    enable       Modify enable password parameters
+    event        Embedded Event Manager
+    hostname     Reset hostname
+    interface    Remove a virtual interface
     ip           Global IP configuration subcommands
     ipv6         Global IPv6 configuration subcommands
-    banner       Remove a banner
-    privilege    Remove privilege command rule
-    logging      Disable logging
-    service      Disable a service
-    ntp          Remove NTP config
-    enable       Modify enable password parameters
-    username     Remove a local user
-    arp          Remove ARP entry
-    interface    Remove a virtual interface
-    router       Enable a routing protocol
-    shutdown     Enable (no-op in global config)
-    route-map    Remove a route-map
-    track        Remove a tracked object
-    access-list  Remove an access list
     key          Key management
-    crypto       Encryption and key management
-    event        Embedded Event Manager
-    vlan         Remove a VLAN
     line         Remove line configuration
+    lldp         LLDP global configuration
+    logging      Modify message logging facilities
+    ntp          Remove NTP config
+    privilege    Remove privilege command rule
+    route-map    Remove a route-map
+    router       Enable a routing protocol
+    service      Disable a service
+    sntp         Configure SNTP
+    track        Remove a tracked object
+    username     Remove a local user
 
 [353/355] r1 R1(config)# end
 <empty>
 
 [354/355] r1 R1# show running-config | count !
-  15
+  16
 
 [355/355] r1 R1# write memory
   Building configuration...
