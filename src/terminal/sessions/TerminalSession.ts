@@ -853,9 +853,20 @@ export abstract class TerminalSession {
   private _pasteRunning = false;
   private _pasteAborted = false;
 
-  /** Un collage est-il en cours ? Lu par le Ctrl-C du terminal. */
+  /**
+   * Un collage est-il en cours ? Lu par le Ctrl-C du terminal.
+   *
+   * La question porte sur la CHAÎNE entière, pas sur une session
+   * précise. `pasteText` est appelé sur la session que la vue tient —
+   * l'hôte — et y pose son drapeau, tandis que les premières versions
+   * de ces deux accesseurs déléguaient au sous-shell le plus profond :
+   * le drapeau était donc posé à un endroit et lu à un autre, et le
+   * Ctrl-C d'interruption échouait en silence dès qu'un `ssh` était
+   * ouvert. Chercher dans toute la chaîne rend la réponse indépendante
+   * de la session sur laquelle le collage a commencé.
+   */
   isPasteRunning(): boolean {
-    return this._children.length > 0 ? this.foreground.isPasteRunning() : this._pasteRunning;
+    return this.pastingSession() !== null;
   }
 
   /**
@@ -864,10 +875,20 @@ export abstract class TerminalSession {
    * rendait jamais la main, donc la touche n'était même pas lue.
    */
   abortPaste(): boolean {
-    if (this._children.length > 0) return this.foreground.abortPaste();
-    if (!this._pasteRunning) return false;
-    this._pasteAborted = true;
+    const cible = this.pastingSession();
+    if (!cible) return false;
+    cible._pasteAborted = true;
     return true;
+  }
+
+  /** La session de la chaîne qui colle, la plus proche d'abord. */
+  private pastingSession(): TerminalSession | null {
+    let s: TerminalSession | undefined = this;
+    while (s) {
+      if (s._pasteRunning) return s;
+      s = s._children[s._children.length - 1];
+    }
+    return null;
   }
 
   private reportPasteAborted(restantes: number): void {

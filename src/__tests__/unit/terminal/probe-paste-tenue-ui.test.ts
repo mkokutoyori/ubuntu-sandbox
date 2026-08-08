@@ -128,3 +128,58 @@ describe('un mot de passe est une ligne, et le reste ne s\'y ajoute pas', () => 
     expect(texte()).not.toMatch(/ignored/);
   }, 30_000);
 });
+
+/**
+ * Le collage sous un sous-shell — ce qu'un `ssh` ouvre.
+ *
+ * `pasteText` s'exécute sur la session que la VUE tient — l'hôte — et y
+ * pose son drapeau, alors que les accesseurs déléguaient au sous-shell
+ * le plus profond : le drapeau était posé à un endroit et lu à un
+ * autre, donc le Ctrl-C d'interruption échouait en silence dès qu'une
+ * session distante était ouverte.
+ *
+ * Le second cas ne corrige rien : il PINNE une propriété qui tenait
+ * déjà, parce que toutes les sous-classes concrètes surchargent
+ * `currentInputMode` pour déléguer au premier plan. Seule la base
+ * abstraite ne le fait pas, et elle n'est jamais instanciée — j'ai cru
+ * y voir un défaut, la mesure dit le contraire. Le test reste, parce
+ * que rien n'empêchait jusqu'ici qu'une future sous-classe oublie cette
+ * surcharge et fasse fuiter un bloc collé dans une invite masquée.
+ */
+describe('sous un sous-shell, le collage reste gouvernable', () => {
+  /** Ce que fait `ssh` : une session enfant attachée à l'hôte. */
+  async function avecSousShell(): Promise<LinuxTerminalSession> {
+    const enfant = new LinuxTerminalSession('term-enfant', pc);
+    enfant.attachAsChildOf(session);
+    expect(session.hasActiveChild, 'le sous-shell ne s\'est pas attaché').toBe(true);
+    return enfant;
+  }
+
+  it('le Ctrl-C interrompt un collage même quand un sous-shell est ouvert', async () => {
+    await avecSousShell();
+    const marche = session.pasteText(BLOC_300);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(session.isPasteRunning(), 'le collage n\'est pas vu depuis l\'hôte').toBe(true);
+    expect(session.abortPaste(), 'le collage n\'a pas pu être interrompu').toBe(true);
+    await marche;
+    expect(texte()).toMatch(/Paste aborted/);
+    expect(session.isPasteRunning()).toBe(false);
+  }, 60_000);
+
+  it('une invite de mot de passe DANS le sous-shell arrête le collage', async () => {
+    const enfant = await avecSousShell();
+    // Si l'hôte cessait de relayer le mode de son premier plan, le
+    // collage soumettrait la suite du bloc dans l'invite masquée.
+    enfant.setInput('su - root');
+    await enfant.dispatchEnter();
+    expect(enfant.currentInputMode.type).toBe('password');
+    // L'hôte relaie le mode de son premier plan : c'est cette
+    // délégation que le test protège.
+    expect(session.currentInputMode.type).toBe('password');
+
+    await session.pasteText('secret\necho FUITE\n');
+    expect(enfant.getPasswordBuf()).toBe('secret');
+    expect(texte(), 'la suite du bloc a été exécutée depuis une invite masquée')
+      .not.toContain('FUITE');
+  }, 30_000);
+});
