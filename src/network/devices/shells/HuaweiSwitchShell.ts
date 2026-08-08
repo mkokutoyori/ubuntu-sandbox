@@ -28,6 +28,7 @@ import {
   displayPatchInformation, displayDiagnosticInformation,
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import {
   registerHuaweiNATInterfaceCommands,
   registerHuaweiNATSystemCommands,
@@ -94,6 +95,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: Switch | null = null;
+
+  /** Le magasin unique de l'etat `debugging` de ce switch. */
+  private debugService(): HuaweiDebugService | null {
+    return (this.swRef as unknown as { getHuaweiDebugService?: () => HuaweiDebugService } | null)
+      ?.getHuaweiDebugService?.() ?? null;
+  }
 
   private applyToStpAgent(fn: (a: import('@/network/stp/StpAgent').StpAgent) => void): void {
     const ag = this.stpAgent();
@@ -1890,6 +1897,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // `display port` seul répondait « Incomplete command » alors que
     // VRP l'accepte : c'est la vue d'ensemble des ports, dont
     // `display port vlan` n'est qu'une colonne (audit 11, §5).
+    trie.register('display debugging', 'Display active debugging flags', () =>
+      this.debugService()?.format() ?? 'No debugging is on');
     trie.register('display port', 'Display port summary', () => {
       if (!this.swRef) return '';
       const rows = ['Interface                   Status     Link Type  PVID  Speed  Duplex'];
@@ -2387,7 +2396,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private registerCommonMgmt(trie: CommandTrie): void {
     registerHuaweiCommonMgmt(
       trie,
-      undefined,
+      { service: () => this.debugService(), platform: 'switch' },
       () => { if (this.swRef) this.swRef._captureStartupConfig(this.displayCurrentConfig(this.swRef)); },
       () => { this.swRef?._eraseStartupConfig(); },
     );

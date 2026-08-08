@@ -29,6 +29,7 @@ import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup'
 import { huaweiIrreversibleCipher, huaweiCipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres } from './cli-utils';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
@@ -283,7 +284,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private bfdSessionTrie = new CommandTrie();
   private selectedBfdSession: string | null = null;
 
-  private huaweiDebugFlags = new Set<string>();
 
   constructor() {
     this.buildUserCommands();
@@ -616,7 +616,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // Bind router reference
     this.routerRef = router;
-    (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags = this.huaweiDebugFlags;
 
     // Expand `command-alias` shortcuts before any trie match — same
     // behaviour as the SSH dispatcher so the local shell honours
@@ -1214,6 +1213,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
   }
 
+  /** Le magasin unique de l'etat `debugging` de cet equipement. */
+  protected debugService(): HuaweiDebugService | null {
+    return (this.routerRef as unknown as { getHuaweiDebugService?: () => HuaweiDebugService })
+      ?.getHuaweiDebugService?.() ?? null;
+  }
+
   getScreenLength(): number { return this.screenLength; }
   /** Symmetric with getScreenLength — column hint. */
   getScreenWidth(): number { return this.screenWidth; }
@@ -1324,7 +1329,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
+    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' });
     t.registerGreedy('header', 'Configure login/shell banner', (args) => {
       const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
       if (typeof router._setSshBanner === 'function') {
@@ -1481,21 +1486,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('reset isis', 'Reset IS-IS data', (_args) => '');
     t.registerGreedy('reset bgp', 'Reset BGP data', (_args) => '');
 
-    const svc = (): import('../router/diag/HuaweiDebugService').HuaweiDebugService | null => {
-      return (getRouter() as unknown as { getHuaweiDebugService?: () => import('../router/diag/HuaweiDebugService').HuaweiDebugService }).getHuaweiDebugService?.() ?? null;
-    };
-
-    t.register('debugging ospf spf', 'Enable OSPF SPF debugging', () => svc()?.enable('ospf-spf') ?? '');
-    t.register('debugging ospf hello', 'Enable OSPF Hello debugging', () => svc()?.enable('ospf-hello') ?? '');
-    t.register('undo debugging ospf spf', 'Disable OSPF SPF debugging', () => svc()?.disable('ospf-spf') ?? '');
-    t.register('undo debugging ospf hello', 'Disable OSPF Hello debugging', () => svc()?.disable('ospf-hello') ?? '');
-    t.register('debugging icmp', 'Enable ICMP debugging', () => svc()?.enable('ip-icmp') ?? '');
-    t.register('undo debugging icmp', 'Disable ICMP debugging', () => svc()?.disable('ip-icmp') ?? '');
-    t.register('debugging ip packet', 'Enable IP packet debugging', () => svc()?.enable('ip-packet') ?? '');
-    t.register('undo debugging ip packet', 'Disable IP packet debugging', () => svc()?.disable('ip-packet') ?? '');
-    t.register('undo debugging all', 'Disable all debugging', () => svc()?.disableAll() ?? '');
-    t.register('display debug', 'Display enabled debug flags', () => svc()?.format() ?? 'No debugging is on');
-
     t.register('terminal debugging', 'Send debug output to this terminal', () => {
       this.terminalDebugging = true;
       return 'Info: Current terminal debugging is on.';
@@ -1513,15 +1503,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.terminalDebugging = false;
       return 'Info: Current terminal monitor is off.';
     });
-
-    t.registerGreedy('debugging rip', 'Enable RIP debugging', () => svc()?.enable('rip') ?? '');
-    t.registerGreedy('debugging bgp', 'Enable BGP debugging', () => svc()?.enable('bgp') ?? '');
-    t.registerGreedy('debugging vrrp', 'Enable VRRP debugging', () => svc()?.enable('vrrp') ?? '');
-    t.registerGreedy('undo debugging rip', 'Disable RIP debugging', () => svc()?.disable('rip') ?? '');
-    t.registerGreedy('undo debugging bgp', 'Disable BGP debugging', () => svc()?.disable('bgp') ?? '');
-    t.registerGreedy('undo debugging vrrp', 'Disable VRRP debugging', () => svc()?.disable('vrrp') ?? '');
-    t.registerGreedy('debugging isis', 'Enable IS-IS debugging', (_args) => '');
-    t.registerGreedy('undo debugging isis', 'Disable IS-IS debugging', (_args) => '');
 
     // save — persist configuration (Huawei equivalent of write memory).
     // Captures a REAL snapshot so `display saved-configuration` shows what
@@ -1592,7 +1573,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
+    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' });
 
     const applyLldp = (fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void => {
       const ag = (getRouter() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();

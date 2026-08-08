@@ -298,7 +298,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` (**livré, §11**) | — |
 | **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` (**livré, §12**) | V1 |
 | **V5** | Chantier D §3 et §5 : bornes, abréviation du nom d'interface (**livré, §13** ; l'aide §1.9 est passée à l'agent « logging ») | V4 |
-| **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | — |
+| **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | **Livré, §14** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -788,3 +788,225 @@ sur sa machine.
 **Mesures.** 228 suites connexes vertes (3 045 cas), Cisco compris.
 Typecheck `tsc -p tsconfig.app.json` à 166, inchangé ; lint identique au
 baseline (65 problèmes avant, 65 après).
+
+---
+
+## 14. V6 — Livré : le `debugging` VRP
+
+Audit séparé, comme annoncé au §8, et conduit comme celui du §0 : chaque
+commande jugée **dans sa propre vue, sur une machine neuve**, sur un
+`HuaweiRouter` et un `HuaweiSwitch` — dix-neuf formes de `debugging`,
+leur `undo`, les deux vues d'état, et la ligne suivie **jusqu'à
+l'abonné**, à la source (`HuaweiDebugService.subscribe`).
+
+Ce lot n'a pas trouvé un défaut mais **un défaut de structure et sept
+conséquences**. La cause unique : il y avait **quatre magasins** pour une
+seule question — « qu'est-ce qui est allumé ? ».
+
+### 14.1 Le constat qui commande tous les autres : quatre magasins
+
+Mesuré, sur une machine neuve, en enchaînant deux commandes :
+
+```
+debugging ospf event        -> ""                       (magasin A : le service)
+debugging ip icmp           -> "Info: ip icmp debugging is on."   (magasin B : un Set)
+display debugging           -> "ip icmp debugging is on
+                                OSPF event debugging is on"
+undo debugging all          -> "1 debug switch(s) have been turned off"
+display debugging           -> "ip icmp debugging is on"          ← toujours allumé
+```
+
+**La commande dont c'est l'unique raison d'être n'éteignait pas tout**,
+et annonçait un compte faux en le disant. Les quatre magasins :
+
+| # | Magasin | Écrit par | Émetteur ? | Vu par `display debugging` ? |
+|---|---|---|---|---|
+| A | `HuaweiDebugService` | formes OSPF/ICMP/IP du routeur | oui | oui |
+| B | `_huaweiDebugFlags` (`Set<string>`) | le fourre-tout glouton de `HuaweiCommonConfig` | **non** | oui |
+| C | `IPSecEngine` | `debugging ike` / `ipsec` | oui | oui |
+| D | `DHCPServer` | `debugging dhcp server …` | oui | oui |
+
+Le magasin B n'avait **ni propriétaire ni émetteur** : il rangeait la
+phrase déjà rendue (`"ip icmp debugging is on"`), personne ne s'y
+abonnait, aucune ligne n'en sortait jamais. `undo debugging all` du
+routeur ne vidait que A ; une **seconde** déclaration de `undo debugging
+all`, dans le module IPSec, ne vidait que C **en annonçant `Info: All
+debugging turned off.`** — la phrase la plus fausse du sous-système.
+
+### 14.2 Un sujet, deux écritures, dont la bonne était morte
+
+`debugging icmp` allait dans A (et **émettait**) ; `debugging ip icmp` —
+**l'écriture de VRP** — allait dans B et n'émettait rien. Les deux
+apparaissaient dans `display debugging`, donc **un seul sujet occupait
+deux lignes**, et l'écriture qu'un apprenant tape est précisément celle
+qui ne traçait rien.
+
+### 14.3 Trois formats de confirmation sur une seule machine
+
+```
+debugging ospf spf   -> "OSPF SPF debugging is on"        (sans `Info:`, sans point)
+debugging ip icmp    -> "Info: ip icmp debugging is on."
+debugging ospf event -> ""                                 (silence)
+```
+
+Et une **phrase d'IOS sur un équipement Huawei** : `disableAll()` rendait
+`All possible debugging has been turned off` — les mots exacts d'IOS —
+alors que le switch, au même instant, rendait ceux de VRP
+(`Info: All possible debugging functions are off.`).
+
+### 14.4 La même commande, deux réponses selon la vue
+
+| Commande | Vue utilisateur | Vue système |
+|---|---|---|
+| `debugging ospf spf` | `OSPF SPF debugging is on` | **refusée** (`Unrecognized command`) |
+| `debugging icmp` | `ICMP debugging is on` | `Info: icmp debugging is on.` |
+
+Deux enregistrements distincts pour une commande, sur deux tries.
+
+### 14.5 `debugging zzz` était accepté ; `debugging` seul valait `all`
+
+Le fourre-tout acceptait **n'importe quel mot** comme nom de catégorie
+(`Info: zzz debugging is on.`, puis listé par `display debugging`), et
+`debugging` sans argument était traité comme `debugging all`. Symétrique-
+ment, `undo debugging` seul rendait `Info:  debugging is off.` — deux
+espaces, sujet vide.
+
+### 14.6 Trois catégories déclarées sans aucune source
+
+`rip`, `bgp`, `vrrp` : acceptées, listées « on », et **structurellement
+muettes** — `attachToBus` ne s'abonnait à aucun sujet les concernant.
+Vérifié : RIP configuré des deux côtés, VRRP configuré, `display rip 1
+route` exécuté → **0 ligne**. `isis` était pire encore : accepté, rendu
+`""`, rangé **nulle part**.
+
+### 14.7 Le switch : décoratif de bout en bout
+
+```
+debugging stp        -> "Info: stp debugging is on."
+_huaweiDebugFlags    -> []            ← rangé nulle part
+display debugging    -> Error: Unrecognized command found at '^' position.
+display debug        -> Error: Unrecognized command found at '^' position.
+undo debugging all   -> "Info: All possible debugging functions are off."
+```
+
+Le switch n'avait **aucun service de debug**. La commande était acceptée
+avec une confirmation, ne rangeait rien, n'émettait rien, et l'état ne
+pouvait **pas être relu** — la seule commande capable de le contredire
+étant refusée.
+
+### 14.8 Le nom du port dans la trace
+
+Les lignes émises nommaient `GE0/0/0` là où **toutes** les vues VRP
+disent `GigabitEthernet0/0/0` depuis V3. La règle « un port a un seul
+nom » n'avait pas atteint ce canal.
+
+---
+
+### 14.9 Le correctif : un magasin, une table, une phrase
+
+**Un magasin.** `_huaweiDebugFlags` est supprimé. `HuaweiDebugService`
+est le registre unique ; DHCP et IPSec gardent leur propre drapeau — ils
+en sont légitimement propriétaires — et s'y **annoncent**
+(`registerSwitchboard`) au lieu d'y être recopiés : `display debugging`
+les rend d'une seule voix et `undo debugging all` les atteint. La seconde
+déclaration de `undo debugging all` (module IPSec) est supprimée.
+
+**Une table.** `router/diag/huaweiDebugCatalog.ts` porte, par catégorie :
+l'**écriture canonique de VRP**, la **désignation unique** (celle de la
+confirmation *et* du listage) et les **plateformes**. La résolution est
+une règle — plus long préfixe gagnant, le reste étant une portée
+(`debugging rip 1`) — et non une liste de `register` dispersés.
+
+Chaque écriture canonique est aussi un **vrai chemin de la trie**, et pas
+seulement une branche du fourre-tout. Ce n'était pas prévu : en retirant
+les anciens nœuds littéraux, `debugging ip icmp` s'est mis à être **avalé
+par `debugging ipsec`**, dont `ip` est un préfixe non ambigu — mesuré par
+un test qui a viré au rouge, pas déduit. Effet de bord utile : ces formes
+redeviennent découvrables par `?`.
+
+**Une phrase.** Confirmation `Info: <désignation> debugging is on.`,
+listage `<désignation> debugging is on`, extinction totale
+`Info: N debugging switch(es) have been turned off.` — ou
+`Info: All possible debugging functions are off.` quand il n'y avait
+rien. Les mots d'IOS ont quitté l'équipement Huawei.
+
+**Ce qui est accepté peut émettre.** C'est le cliquet de `PRD-Debug-
+Fidelite-Cisco.md` §4.1, transposé : une catégorie n'entre au catalogue
+que si le service l'émet, et un test **lit le fichier** pour l'imposer.
+`rip`, `bgp`, `vrrp` ont donc reçu de vrais émetteurs (les mêmes sujets
+de bus que le service Cisco, avec les mots de VRP), `arp packet` et `stp`
+aussi. `isis` n'en a pas : il est refusé **en nommant la brique
+manquante** (`Error: The IS-IS module produces no debugging information
+in this simulator.`), et figure dans `HUAWEI_DEBUG_SANS_SOURCE`, liste
+qui ne doit que **rétrécir** — même règle que le refus des types NQA de
+`PRD-NQA.md`.
+
+**Le switch a le même magasin**, sur les catégories qu'il sait tracer,
+et `display debugging` lui répond.
+
+**Une seule écriture par sujet.** `debugging icmp` n'existe plus :
+`debugging ip icmp` est la forme de VRP, celle que `display debugging`
+montrait déjà, et celle qu'un test existant attendait. `display debug`
+n'est plus une seconde commande mais l'abréviation de `display
+debugging`, donc la même réponse par construction.
+
+### 14.10 Refusé, et pourquoi
+
+**`debugging all` est refusé.** VRP a `undo debugging all` et n'a pas son
+symétrique — l'asymétrie est celle de VRP, pas une simplification. Le
+fourre-tout l'acceptait et allumait une catégorie nommée `all`.
+
+**L'horodatage de la trace n'est pas fait ici, et c'est délibéré.** La
+ligne part sans horodatage :
+
+```
+"ICMP: Echo Request sent, src=1.1.1.1, dst=2.2.2.2"
+```
+
+alors que la même machine, au même instant, annonce
+`Timestamp: log date, trap date, debug date` à `display info-center` —
+un réglage qui existe (`InfoCenterConfig.timestamps.debug`, format et
+précision), qui est rendu, et que **rien ne lit**. C'est le jumeau VRP du
+§1.1 du PRD debug Cisco. Il n'est pas corrigé dans ce lot pour une raison
+de coordination, pas de difficulté : `info-center` appartient à l'autre
+agent (`PRD-Info-Center-Huawei.md`), **aucun rendu d'horodatage VRP
+n'existe encore**, et celui qu'il faut écrire servira aussi au canal
+`log` vers `monitor`. L'écrire ici en ferait un second — exactement la
+duplication que ce journal existe pour éviter. Le constat est passé dans
+`JOURNAL-AGENTS-mandeng.md` avec le point d'accroche exact.
+
+**Ce que le format de `display debugging` doit à VRP n'est pas
+inventé.** Je n'ai pas de matériel pour vérifier le rendu exact ; les
+désignations existantes sont **conservées** plutôt que remplacées par une
+autre supposition. Ce que ce lot corrige est ce qui est démontrable sans
+matériel : qu'une désignation soit **la même partout**.
+
+### 14.11 Tests et mesures
+
+`huawei-debugging-un-seul-magasin.test.ts` (17 cas) fixe quatre
+propriétés : un seul magasin (extinction totale, compte annoncé exact,
+extinction ciblée, et le second magasin absent **du code**) ; une seule
+désignation (balayage de **tout** le catalogue : la confirmation, le
+listage et l'extinction doivent se répondre) ; ce qui est accepté peut
+émettre (le cliquet lu dans le fichier, le refus nommé, la forme VRP à
+trois lignes pour un mot inconnu, et **deux traces réellement reçues** —
+ICMP par un `ping`, OSPF par un `shutdown`/`undo shutdown` — dont on
+vérifie qu'elles nomment `GigabitEthernet0/0/0` et jamais `GE0/0/0`) ;
+les deux vues et les deux plateformes.
+
+Discrimination par `git stash` : **15 des 17 tombent** avant. Les deux
+qui passent des deux côtés sont exactement les cas déjà corrects pour les
+catégories que le magasin A servait seul.
+
+**Un test existant corrigé, et un seul** : `probe-debug-05-sortie-via-
+ssh.test.ts` tapait `debugging icmp`, la seconde écriture supprimée. La
+prémisse était fausse, pas l'attente — les trois lignes passent à
+`debugging ip icmp` et le fichier est vert sans autre changement. Aucun
+autre test n'a été touché : `huawei-config-parity.test.ts`, qui vérifie
+que `display debugging` contient `ip icmp`, passe **inchangé**, ce qui
+est le signe que sa prémisse était la bonne.
+
+**Mesures.** 87 suites connexes vertes (1 359 cas), Cisco et DHCP
+compris. Typecheck `tsc -p tsconfig.app.json` à **167, le baseline
+inchangé**. Lint sur les dix fichiers touchés : **162 problèmes avant,
+157 après** (cinq `any` de moins, aucun ajouté).

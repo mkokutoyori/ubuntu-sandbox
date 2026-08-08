@@ -101,7 +101,7 @@ IOS. Si un des quatre défauts l'exige, je le dirai ici avant.
 
 
 
-### CLI Huawei VRP — audit + **V1 à V5 livrés**, V6 ouvert
+### CLI Huawei VRP — audit + **V1 à V6 livrés** (lot terminé)
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -1294,6 +1294,87 @@ côtés — `show logging` affiche les deux chiffres côte à côte, et leur
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V6** : le `debugging` VRP (lot V1–V6 terminé)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §14.
+
+V6 etait l'audit separe du `debugging` VRP, annonce au §8 du PRD. Il n'a
+pas trouve un defaut mais un defaut de STRUCTURE : **quatre magasins**
+pour une seule question, « qu'est-ce qui est allume ? ».
+
+**Ce qui a change de comportement pour vous** :
+
+| Avant | Maintenant |
+|---|---|
+| Quatre magasins | Un seul, `HuaweiDebugService` ; DHCP et IPSec s'y **annoncent** |
+| `undo debugging all` en vidait un et annoncait un compte faux | Eteint tout, DHCP et IPSec compris |
+| `debugging icmp` **et** `debugging ip icmp`, deux magasins | Une seule ecriture : `debugging ip icmp`, celle de VRP |
+| Trois formats de confirmation, dont une phrase d'IOS | `Info: <designation> debugging is on.` partout |
+| `debugging zzz` accepte, `debugging` seul valant `all` | Refuses a la forme VRP a trois lignes |
+| Switch : accepte, range nulle part, `display debugging` refuse | Meme magasin, meme table, `display debugging` repond |
+| `rip`/`bgp`/`vrrp` listes « on » et structurellement muets | Vrais emetteurs ; `isis` refuse **en nommant** la brique absente |
+
+**Fichiers touches** : `router/diag/HuaweiDebugService.ts`,
+`router/diag/huaweiDebugCatalog.ts` (nouveau),
+`shells/huawei/HuaweiCommonConfig.ts`, `HuaweiOspfCommands.ts`,
+`HuaweiDisplayCommands.ts`, `HuaweiIPSecCommands.ts`,
+`shells/HuaweiVRPShell.ts`, `shells/HuaweiSwitchShell.ts`,
+`HuaweiRouter.ts`, `HuaweiSwitch.ts`.
+
+**Contact avec votre §1.9** : j'ai touche `HuaweiVRPShell.ts` et
+`HuaweiSwitchShell.ts`, mais **uniquement** les enregistrements
+`debugging`/`undo debugging` — supprimes, remplaces par un appel unique
+depuis `HuaweiCommonConfig`. Aucune arite, aucune description
+d'interface, aucun `?`. Effet **favorable** pour vous : les ecritures
+canoniques de `debugging` sont desormais de vrais chemins de la trie avec
+description, donc `debugging ?` propose une liste au lieu du fourre-tout
+glouton dont `autoContinuations` tirait n'importe quoi.
+
+**Un constat que je vous PASSE plutot que de le corriger — il est a
+vous.** La trace de debug part **sans horodatage** :
+
+```
+"ICMP: Echo Request sent, src=1.1.1.1, dst=2.2.2.2"
+```
+
+alors que la meme machine annonce `Timestamp: log date, trap date,
+debug date` a `display info-center`. `InfoCenterConfig.timestamps.debug`
+existe, porte `format` (`boot`/`date`/`short-date`/`format-date`/`none`)
+et `precision`, est rendu par `display info-center` **et** par
+`toRunningConfig()` — et **rien ne le lit**. C'est le jumeau VRP du §1.1
+de votre PRD debug Cisco.
+
+Je ne l'ai pas fait pour une raison de coordination, pas de difficulte :
+**aucun rendu d'horodatage VRP n'existe encore** dans le depot (seul
+`HuaweiNqaCommands.ts` a un `formatVrpTimestamp` local, pour ses propres
+tableaux), et celui qu'il faut ecrire servira **aussi** au canal `log`
+vers `monitor`. L'ecrire dans le sous-systeme `debugging` en ferait un
+second, qui divergerait du votre — la duplication que ce journal existe
+pour eviter.
+
+**Le point d'accroche exact, si vous le prenez** :
+`HuaweiDebugService.emit(category, line)` est le **seul** endroit d'ou
+part une ligne de debug — tout passe par lui. Il lui manque un port
+etroit vers l'info-center du device, sur le modele de
+`LoggingClockSource` cote Cisco : la source d'horloge, plus
+`timestamps.debug`. Le service ne connait aujourd'hui que son bus et son
+`deviceId`, donc le port est a passer a la construction
+(`HuaweiRouter.getHuaweiDebugService()` et `HuaweiSwitch`, deux sites).
+**Je ne touche pas `InfoCenterConfig.ts`.**
+
+**Mesures.** 87 suites connexes vertes (1 359 cas), Cisco et DHCP
+compris. `huawei-debugging-un-seul-magasin.test.ts` (17 cas) discrimine
+par `git stash` : **15 tombent** avant. Typecheck a 167, le baseline
+inchange. Lint sur les dix fichiers : 162 problemes avant, 157 apres. Un
+seul test existant corrige (`probe-debug-05-sortie-via-ssh.test.ts`, qui
+tapait l'ecriture supprimee `debugging icmp`) ; `huawei-config-parity`
+passe **inchange**.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1310,8 +1391,9 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V5 livrés** ; V6 ouvert |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V6 livrés** ; lot terminé |
 
-**Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
-Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
-ne pas décider des deux à partir des mesures d'un seul.
+**Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
+pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
+l'horodatage de la trace de debug, via `info-center timestamp debug` —
+détail et point d'accroche dans l'entrée V6.

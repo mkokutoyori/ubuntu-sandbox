@@ -893,31 +893,10 @@ export function displayIpv6InterfaceBrief(router: Router): string {
 }
 
 export function displayDebugging(router: Router): string {
-  const lines: string[] = [];
-  const flags = (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags;
-  if (flags) for (const f of [...flags].sort()) lines.push(f);
   const debugSvc = (router as unknown as {
     getHuaweiDebugService?: () => HuaweiDebugService;
   }).getHuaweiDebugService?.();
-  if (debugSvc?.hasAnyFlag()) {
-    for (const f of debugSvc.list()) {
-      lines.push(`${HuaweiDebugService.label(f.category)} debugging is on`);
-    }
-  }
-  const dhcp = router._getDHCPServerInternal();
-  const dhcpDebug = dhcp.formatDebugShow();
-  if (!dhcpDebug.includes('No')) {
-    lines.push('DHCP debugging:');
-    lines.push(dhcpDebug);
-  }
-  const ipsecEng = (router as any)._getIPSecEngineInternal?.();
-  if (ipsecEng) {
-    if (ipsecEng.isDebugEnabled?.('isakmp')) lines.push('IKE debugging is on');
-    if (ipsecEng.isDebugEnabled?.('ipsec')) lines.push('IPSec debugging is on');
-    if (ipsecEng.isDebugEnabled?.('ikev2')) lines.push('IKEv2 debugging is on');
-  }
-  if (lines.length === 0) return 'No debugging is enabled.';
-  return lines.join('\n');
+  return debugSvc ? debugSvc.format() : 'No debugging is on';
 }
 
 export function displayIpProtocols(router: Router): string {
