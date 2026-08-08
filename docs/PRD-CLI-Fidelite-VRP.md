@@ -295,7 +295,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 |---|---|---|
 | **V1** | Chantier B : `undo` refuse l'inconnu (**livré, §9**) | — |
 | **V2** | Chantier A : séparateurs, numéro de règle, pertes sèches, invariant de rejeu (**livré, §10**) | — |
-| **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` | — |
+| **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` (**livré, §11**) | — |
 | **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` | V1 |
 | **V5** | Chantier D §3-§5 : bornes, aide, abréviation du nom d'interface | V4 |
 | **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | — |
@@ -503,3 +503,102 @@ retiré du sac RIP).
 `advanced-15-scenarios` §13 et `ssh-operator-journeys` §J04/§J08 tombent
 identiquement avec mes changements remisés. Ils sont côté Cisco/Windows,
 hors du périmètre VRP, et signalés dans le journal.
+
+---
+
+## 11. V3 — Livré
+
+### 11.1 Une correction de mon propre audit, d'abord
+
+**Le §1.4 accusait à tort le switch.** J'y écrivais que son `display this`
+« rend la configuration entière » ; la mesure avait été prise **après un
+`quit`**, donc en vue système — où la vue courante EST la machine et où
+tout rendre est juste. Le balayage de V3, qui parcourt chaque vue une par
+une, l'a montré. Le vrai défaut du switch était ailleurs : `display this`
+n'existait pas du tout en vue de VLAN.
+
+C'est la troisième fois de ce corpus qu'une sonde mal cadrée accuse le
+produit de plus qu'il ne fait (les deux autres sont notées en
+`PRD-Routage-Fidelite.md` §14.1 et au §1.2 ci-dessus). La règle qui
+manque à chaque fois est la même : **une commande se juge dans sa vue.**
+
+### 11.2 Un port a un seul nom
+
+Les ports sont rangés sous leur nom court (`GE0/0/0`), qui est interne.
+L'expansion vers le nom complet était écrite **en ligne dans deux vues et
+absente des quatre autres** — l'invite, `display interface brief`,
+`display interface description` et `display interface <nom>` montraient
+donc le nom interne. `huaweiDisplayInterfaceName()` est désormais la
+seule expansion, lue par les six.
+
+L'abréviation d'entrée ne change pas : `interface GE0/0/0` reste accepté,
+seul l'affichage devient `[LAB-GigabitEthernet0/0/0]`.
+
+### 11.3 Une interface virtuelle est vivante
+
+Chaque vue calculait son état, et de façons différentes :
+`getIsUp() && isConnected()` dans trois d'entre elles, et dans
+`display interface` une liste d'interfaces virtuelles écrite à la main
+(`/^(LoopBack|Tunnel)/`) qui oubliait `Vlanif` et `NULL`. Une Loopback
+était donc rapportée morte alors que sa route était installée.
+
+`iosInterfaceStatus` décrit l'état d'un **port**, pas un modèle par
+constructeur : les vues VRP le lisent maintenant, chacune avec ses mots
+(`*down` pour un arrêt administratif). Trois faits en découlent, et
+chacun est tenu par un test : la Loopback est vivante, une interface
+physique sans porteuse reste morte, et l'arrêt administratif se distingue
+de la porteuse absente — distinction que le prédicat maison, rendant un
+booléen, ne pouvait pas exprimer.
+
+### 11.4 `display this` rend la vue courante
+
+Quatre extracteurs de bloc écrits à la main, un par vue, chacun
+s'arrêtant sur `#` **seulement** — ce qui laissait tout passer quand un
+séparateur manquait, et c'est précisément ce qui faisait fuir `aaa` dans
+la vue OSPF avant V2. Une seule marche les remplace, et elle s'arrête
+aussi sur **toute ligne de premier niveau** : elle ne peut plus déborder,
+même si la structure change à nouveau.
+
+Les vues `aaa` et `acl` du routeur tombaient dans le `default` et
+rendaient la configuration entière ; elles ont maintenant leur cas. La
+vue de VLAN du switch n'avait pas la commande : elle l'a.
+
+Le `default` — vue système — rend toujours tout, et c'est juste (§11.1).
+
+### 11.5 Refusé, et pourquoi
+
+**La terminaison diverge et je n'y touche pas** : `display this` finit par
+`#` sur le routeur et par `return` sur le switch. L'incohérence est
+réelle, mais trancher demande de savoir laquelle est celle de VRP, et je
+n'en suis pas sûr. §0 interdit de faire reposer un correctif sur un point
+non confirmé seul ; le cas reste ouvert plutôt que d'être aligné au
+hasard sur la majorité du dépôt.
+
+### 11.6 Tests et mesures
+
+`huawei-une-verite-par-objet.test.ts` (17 cas) compare les vues **entre
+elles** : les six qui nomment une interface emploient le même nom, celles
+qui donnent son état s'accordent avec la table de routage, et
+`display this` est **strictement plus petit** que la configuration dès
+qu'on est descendu dans une vue — chacune de ses lignes devant par
+ailleurs se retrouver dans la configuration complète, ce qui interdit
+qu'il invente.
+
+Discrimination par `git stash` : **10 des 17 tombent** avant.
+
+**Cinq suites corrigées dans leur intention**, toutes fixant le nom
+interne à l'écran (`toContain('GE0/0/0')`, `'[Huawei-GE0/0/0]'`). Leur
+intention — l'abréviation est acceptée, la navigation fonctionne, la vue
+reflète l'adresse — est conservée ; c'est la prémisse d'affichage qui
+change, et le §1.5 dit pourquoi.
+
+**Mesures.** 288 suites connexes vertes (3 126 cas) : Huawei, VRP,
+interfaces, VLAN, ACL, `display`, scénarios, STP, LACP. Typecheck
+`tsc -p tsconfig.app.json` à 164, inchangé ; lint identique au baseline
+(103 problèmes avant, 103 après).
+
+**Un rouge de pollution inter-fichiers, signalé** :
+`scenario-ad-fsmo-roles.test.ts` tombe dans une campagne large et passe
+seul, avec mes changements en place. C'est la classe déjà documentée dans
+`CLAUDE.md` (registres non réinitialisés globalement — ici celui des
+forêts Active Directory), sans rapport avec VRP.

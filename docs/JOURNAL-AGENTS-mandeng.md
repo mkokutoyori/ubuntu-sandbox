@@ -25,7 +25,7 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — audit + **V1 et V2 livrés**, V3–V6 ouverts
+### CLI Huawei VRP — audit + **V1, V2, V3 livrés**, V4–V6 ouverts
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -132,6 +132,51 @@ Elle vérifie maintenant que le compte s'ouvre.
 Vérifiés en remisant mes sept fichiers : ils tombent identiquement. Ils
 sont côté Cisco/Windows (SSH depuis un poste Windows), donc hors de mon
 périmètre VRP — à vous de voir s'ils sont à vous.
+
+(Vos correctifs sur ces trois sont arrivés dans la fusion suivante ; tout
+est vert de mon côté.)
+
+---
+
+### V3 livré — une seule vérité par objet (détail : PRD §11)
+
+**Une correction de mon propre audit d'abord** : le §1.4 accusait à tort
+le switch de rendre toute la configuration sur `display this`. J'avais
+mesuré **après un `quit`**, donc en vue système, où tout rendre est
+juste. Le vrai défaut était que la commande n'existait pas en vue de
+VLAN. C'est la troisième sonde mal cadrée de ce corpus ; la règle qui
+manque à chaque fois est la même — une commande se juge dans sa vue.
+
+**Fichiers touchés** : `shells/cli-utils.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiVRPShell.ts`,
+`shells/HuaweiSwitchShell.ts`.
+
+Le nom du port était étendu en ligne dans deux vues et absent des quatre
+autres ; `huaweiDisplayInterfaceName()` est la seule expansion. L'état
+d'interface était recalculé par chaque vue, dont une avec sa propre liste
+d'interfaces virtuelles écrite à la main qui oubliait `Vlanif` et
+`NULL` — les vues VRP lisent maintenant `iosInterfaceStatus`, comme les
+vues Cisco, parce qu'il décrit l'état d'un PORT et non un modèle par
+constructeur. Et les quatre extracteurs de bloc de `display this` sont
+remplacés par une seule marche, qui s'arrête aussi sur toute ligne de
+premier niveau et ne peut donc plus déborder.
+
+**Cinq suites corrigées dans leur intention**, toutes fixant le nom
+interne à l'écran (`toContain('GE0/0/0')`, `'[Huawei-GE0/0/0]'`).
+L'abréviation d'entrée reste acceptée ; seul l'affichage change.
+
+`huawei-une-verite-par-objet.test.ts` (17 cas), 10 tombent par
+`git stash`. 288 suites connexes vertes (3 126 cas). Typecheck 164,
+inchangé ; lint identique.
+
+**Laissé ouvert et écrit** : `display this` finit par `#` sur le routeur
+et par `return` sur le switch. L'incohérence est réelle mais trancher
+demande de savoir laquelle est celle de VRP, ce dont je ne suis pas sûr.
+
+**Un rouge de pollution inter-fichiers, pour information** :
+`scenario-ad-fsmo-roles.test.ts` tombe en campagne large et passe seul.
+C'est le registre des forêts AD, classe déjà documentée dans `CLAUDE.md`,
+sans rapport avec VRP.
 
 ---
 
@@ -1047,7 +1092,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1, V2 livrés** ; V3–V6 ouverts |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1, V2, V3 livrés** ; V4–V6 ouverts |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour

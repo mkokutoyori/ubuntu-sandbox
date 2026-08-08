@@ -38,6 +38,17 @@ export const HUAWEI_ERRORS = {
   UNRECOGNIZED: (input: string, pos?: number) => formatVrpPositionalError('Unrecognized command', input, pos),
 } as const;
 
+/**
+ * Le nom qu'un port PORTE a l'ecran. Les ports sont ranges sous leur nom
+ * court (`GE0/0/0`), qui est interne : VRP n'affiche jamais que le nom
+ * complet, l'invite comprise. L'expansion etait ecrite en ligne dans
+ * deux vues et absente des deux autres, si bien que la meme interface
+ * s'appelait `GE0/0/0` ici et `GigabitEthernet0/0/0` la.
+ */
+export function huaweiDisplayInterfaceName(interne: string): string {
+  return interne.startsWith('GE') ? interne.replace(/^GE/, 'GigabitEthernet') : interne;
+}
+
 /** Ce que la vue RIP de VRP retient hors du moteur commun. */
 export interface HuaweiRipExtras {
   autoSummary?: boolean;
