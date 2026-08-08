@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-08-04T11:15:48.529Z
+Generated: 2026-08-08T00:34:48.200Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -27,7 +27,7 @@ Total steps: 343
 <empty>
 
 [7/343] r1 R1(config-if)# ipv6 address fe80::1 link-local
-  % Invalid IPv6 address format (expected addr/prefix)
+<empty>
 
 [8/343] r1 R1(config-if)# ipv6 enable
 <empty>
@@ -232,9 +232,9 @@ Total steps: 343
 [74/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/1         unassigned      YES unset  up                    up
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -459,8 +459,8 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -483,7 +483,7 @@ Total steps: 343
   GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
 
 [145/343] r1 R1# show interfaces GigabitEthernet0/0.10
-  GigabitEthernet0/0.10 is down, line protocol is down
+  GigabitEthernet0/0.10 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -492,7 +492,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -576,8 +576,8 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -600,7 +600,7 @@ Total steps: 343
   GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel2                    unassigned      YES manual up                    up
+  Tunnel2                    unassigned      YES unset  up                    up
 
 [169/343] r1 R1# show interfaces Tunnel0
   Tunnel0 is up, line protocol is up
@@ -649,8 +649,8 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual administratively down down
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -660,20 +660,20 @@ Total steps: 343
   Loopback7                  10.255.255.7    YES manual up                    up
   Loopback8                  10.255.255.8    YES manual up                    up
   Loopback100                172.31.0.1      YES manual up                    up
-  GigabitEthernet0/0.10      192.168.1.1     YES manual administratively down down
-  GigabitEthernet0/0.20      192.168.2.1     YES manual administratively down down
-  GigabitEthernet0/0.30      192.168.3.1     YES manual administratively down down
-  GigabitEthernet0/0.40      192.168.4.1     YES manual administratively down down
-  GigabitEthernet0/0.50      192.168.5.1     YES manual administratively down down
-  GigabitEthernet0/0.60      192.168.6.1     YES manual administratively down down
-  GigabitEthernet0/0.70      192.168.7.1     YES manual administratively down down
-  GigabitEthernet0/0.80      192.168.8.1     YES manual administratively down down
-  GigabitEthernet0/0.90      192.168.9.1     YES manual administratively down down
-  GigabitEthernet0/0.100     192.168.10.1    YES manual administratively down down
-  GigabitEthernet0/0.999     192.168.99.1    YES manual administratively down down
+  GigabitEthernet0/0.10      192.168.1.1     YES manual down                  down
+  GigabitEthernet0/0.20      192.168.2.1     YES manual down                  down
+  GigabitEthernet0/0.30      192.168.3.1     YES manual down                  down
+  GigabitEthernet0/0.40      192.168.4.1     YES manual down                  down
+  GigabitEthernet0/0.50      192.168.5.1     YES manual down                  down
+  GigabitEthernet0/0.60      192.168.6.1     YES manual down                  down
+  GigabitEthernet0/0.70      192.168.7.1     YES manual down                  down
+  GigabitEthernet0/0.80      192.168.8.1     YES manual down                  down
+  GigabitEthernet0/0.90      192.168.9.1     YES manual down                  down
+  GigabitEthernet0/0.100     192.168.10.1    YES manual down                  down
+  GigabitEthernet0/0.999     192.168.99.1    YES manual down                  down
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel2                    unassigned      YES manual up                    up
+  Tunnel2                    unassigned      YES unset  up                    up
 
 [182/343] r1 R1(config-if)# no shutdown
 <empty>
@@ -691,8 +691,8 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual administratively down down
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -715,7 +715,7 @@ Total steps: 343
   GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel2                    unassigned      YES manual up                    up
+  Tunnel2                    unassigned      YES unset  up                    up
 
 [187/343] r1 R1(config-if)# no shutdown
 <empty>
@@ -855,7 +855,7 @@ Total steps: 343
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
-  GigabitEthernet0/0.10 is down, line protocol is down
+  GigabitEthernet0/0.10 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -864,7 +864,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -875,7 +875,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.20 is down, line protocol is down
+  GigabitEthernet0/0.20 is up, line protocol is up
     Description: VLAN20
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.2.1/24
@@ -885,7 +885,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -896,7 +896,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.30 is down, line protocol is down
+  GigabitEthernet0/0.30 is up, line protocol is up
     Description: VLAN30
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.3.1/24
@@ -906,7 +906,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -917,7 +917,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.40 is down, line protocol is down
+  GigabitEthernet0/0.40 is up, line protocol is up
     Description: VLAN40
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.4.1/24
@@ -927,7 +927,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -938,7 +938,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.50 is down, line protocol is down
+  GigabitEthernet0/0.50 is up, line protocol is up
     Description: VLAN50
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.5.1/24
@@ -948,7 +948,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -959,7 +959,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.60 is down, line protocol is down
+  GigabitEthernet0/0.60 is up, line protocol is up
     Description: VLAN60
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.6.1/24
@@ -969,7 +969,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -980,7 +980,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.70 is down, line protocol is down
+  GigabitEthernet0/0.70 is up, line protocol is up
     Description: VLAN70
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.7.1/24
@@ -990,7 +990,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1001,7 +1001,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.80 is down, line protocol is down
+  GigabitEthernet0/0.80 is up, line protocol is up
     Description: VLAN80
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.8.1/24
@@ -1011,7 +1011,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1022,7 +1022,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.90 is down, line protocol is down
+  GigabitEthernet0/0.90 is up, line protocol is up
     Description: VLAN90
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.9.1/24
@@ -1032,7 +1032,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1043,7 +1043,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.100 is down, line protocol is down
+  GigabitEthernet0/0.100 is up, line protocol is up
     Description: VLAN100
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.10.1/24
@@ -1053,7 +1053,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1064,7 +1064,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.999 is down, line protocol is down
+  GigabitEthernet0/0.999 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1073,7 +1073,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1146,8 +1146,8 @@ Total steps: 343
 [197/343] r1 R1# show ipv6 interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     IPv6 is enabled
-    Address: [object Object]
-    Address: [object Object]
+    Address: 2001:db8:1::1/64
+    Address: fe80::1
     MTU is 1400 bytes
 
 [198/343] r1 R1# show interfaces GigabitEthernet0/0 accounting
@@ -1156,8 +1156,8 @@ Total steps: 343
                       IP           0           0           0           0
 
 [199/343] r1 R1# show interfaces GigabitEthernet0/0 switchport
-  Name: GigabitEthernet0/0
-  Switchport: Disabled (router interface)
+                    ^
+  % Invalid input detected at '^' marker.
 
 [200/343] r1 R1# show interfaces GigabitEthernet0/0 stats
   GigabitEthernet0/0
@@ -1172,55 +1172,11 @@ Total steps: 343
     Hardware is present, link is connected
     Administrative state: up
     0 carrier transitions
-  GigabitEthernet0/0.10 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.20 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.30 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.40 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.50 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.60 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.70 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.80 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.90 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.100 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.999 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
 
 [202/343] r1 R1# show running-config interface GigabitEthernet0/0
   Building configuration...
   
-  Current configuration : interface GigabitEthernet0/0
+  Current configuration : 180 bytes
   !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
@@ -1284,8 +1240,8 @@ Total steps: 343
                       IP           4         256           5         320
 
 [207/343] r1 R1# show interfaces GigabitEthernet0/1 switchport
-  Name: GigabitEthernet0/1
-  Switchport: Disabled (router interface)
+                    ^
+  % Invalid input detected at '^' marker.
 
 [208/343] r1 R1# show interfaces GigabitEthernet0/1 stats
   GigabitEthernet0/1
@@ -1304,7 +1260,7 @@ Total steps: 343
 [210/343] r1 R1# show running-config interface GigabitEthernet0/1
   Building configuration...
   
-  Current configuration : interface GigabitEthernet0/1
+  Current configuration : 72 bytes
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
@@ -1315,9 +1271,11 @@ Total steps: 343
   % Invalid input detected at '^' marker.
 
 [212/343] r1 R1# show ip interface Loopback0
+                       ^
   % Invalid input detected at '^' marker.
 
 [213/343] r1 R1# show ipv6 interface Loopback0
+                         ^
   % Invalid input detected at '^' marker.
 
 [214/343] r1 R1# show interfaces Loopback0 accounting
@@ -1351,7 +1309,7 @@ Total steps: 343
     Tunnel protocol/transport GRE/IP
 
 [221/343] r1 R1# show ipv6 interface Tunnel0
-  Tunnel0 is up, line protocol is down
+  Tunnel0 is up, line protocol is up
     IPv6 is disabled
     MTU is 1500 bytes
 
@@ -1361,8 +1319,8 @@ Total steps: 343
                       IP           0           0           0           0
 
 [223/343] r1 R1# show interfaces Tunnel0 switchport
-  Name: Tunnel0
-  Switchport: Disabled (router interface)
+                    ^
+  % Invalid input detected at '^' marker.
 
 [224/343] r1 R1# show interfaces Tunnel0 stats
   Tunnel0
@@ -1373,15 +1331,12 @@ Total steps: 343
                     Total          0           0           0           0
 
 [225/343] r1 R1# show controllers Tunnel0
-  Tunnel0 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
+  Interface does not exist
 
 [226/343] r1 R1# show running-config interface Tunnel0
   Building configuration...
   
-  Current configuration : interface Tunnel0
+  Current configuration : 63 bytes
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
@@ -1391,68 +1346,42 @@ Total steps: 343
   Interface                      Status         Protocol Description
   GigabitEthernet0/0             up             up       ## LAN to L1 ##
   GigabitEthernet0/1             up             up       
-  GigabitEthernet0/2             up             down     
-  GigabitEthernet0/3             up             down     
-  Loopback1                      up             down     LOOP-1
-  Loopback2                      up             down     LOOP-2
-  Loopback3                      up             down     LOOP-3
-  Loopback4                      up             down     LOOP-4
-  Loopback5                      up             down     LOOP-5
-  Loopback6                      up             down     LOOP-6
-  Loopback7                      up             down     LOOP-7
-  Loopback8                      up             down     LOOP-8
-  Loopback100                    up             down     
-  GigabitEthernet0/0.10          up             down     
-  GigabitEthernet0/0.20          up             down     VLAN20
-  GigabitEthernet0/0.30          up             down     VLAN30
-  GigabitEthernet0/0.40          up             down     VLAN40
-  GigabitEthernet0/0.50          up             down     VLAN50
-  GigabitEthernet0/0.60          up             down     VLAN60
-  GigabitEthernet0/0.70          up             down     VLAN70
-  GigabitEthernet0/0.80          up             down     VLAN80
-  GigabitEthernet0/0.90          up             down     VLAN90
-  GigabitEthernet0/0.100         up             down     VLAN100
-  GigabitEthernet0/0.999         up             down     
-  Tunnel0                        up             down     
-  Tunnel1                        up             down     
-  Tunnel2                        up             down     
+  GigabitEthernet0/2             down           down     
+  GigabitEthernet0/3             down           down     
+  Loopback1                      up             up       LOOP-1
+  Loopback2                      up             up       LOOP-2
+  Loopback3                      up             up       LOOP-3
+  Loopback4                      up             up       LOOP-4
+  Loopback5                      up             up       LOOP-5
+  Loopback6                      up             up       LOOP-6
+  Loopback7                      up             up       LOOP-7
+  Loopback8                      up             up       LOOP-8
+  Loopback100                    up             up       
+  GigabitEthernet0/0.10          up             up       
+  GigabitEthernet0/0.20          up             up       VLAN20
+  GigabitEthernet0/0.30          up             up       VLAN30
+  GigabitEthernet0/0.40          up             up       VLAN40
+  GigabitEthernet0/0.50          up             up       VLAN50
+  GigabitEthernet0/0.60          up             up       VLAN60
+  GigabitEthernet0/0.70          up             up       VLAN70
+  GigabitEthernet0/0.80          up             up       VLAN80
+  GigabitEthernet0/0.90          up             up       VLAN90
+  GigabitEthernet0/0.100         up             up       VLAN100
+  GigabitEthernet0/0.999         up             up       
+  Tunnel0                        up             up       
+  Tunnel1                        up             up       
+  Tunnel2                        up             up       
 
 [228/343] r1 R1# show interfaces status
-  Port      Name               Status       Vlan       Duplex  Speed Type
-  GigabitEt ## LAN to L1 ##    connected    routed     full    1000  1000BASE-T
-  GigabitEt                    connected    routed     full    1000  1000BASE-T
-  GigabitEt                    notconnect   routed     full    1000  1000BASE-T
-  GigabitEt                    notconnect   routed     full    1000  1000BASE-T
-  Loopback1 LOOP-1             notconnect   routed     full    1000  10/100BaseTX
-  Loopback2 LOOP-2             notconnect   routed     full    1000  10/100BaseTX
-  Loopback3 LOOP-3             notconnect   routed     full    1000  10/100BaseTX
-  Loopback4 LOOP-4             notconnect   routed     full    1000  10/100BaseTX
-  Loopback5 LOOP-5             notconnect   routed     full    1000  10/100BaseTX
-  Loopback6 LOOP-6             notconnect   routed     full    1000  10/100BaseTX
-  Loopback7 LOOP-7             notconnect   routed     full    1000  10/100BaseTX
-  Loopback8 LOOP-8             notconnect   routed     full    1000  10/100BaseTX
-  Loopback1                    notconnect   routed     full    1000  10/100BaseTX
-  GigabitEt                    notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN20             notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN30             notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN40             notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN50             notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN60             notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN70             notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN80             notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN90             notconnect   routed     full    1000  1000BASE-T
-  GigabitEt VLAN100            notconnect   routed     full    1000  1000BASE-T
-  GigabitEt                    notconnect   routed     full    1000  1000BASE-T
-  Tunnel0                      notconnect   routed     full    1000  10/100BaseTX
-  Tunnel1                      notconnect   routed     full    1000  10/100BaseTX
-  Tunnel2                      notconnect   routed     full    1000  10/100BaseTX
+                    ^
+  % Invalid input detected at '^' marker.
 
 [229/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -1475,17 +1404,17 @@ Total steps: 343
   GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel2                    unassigned      YES manual up                    up
+  Tunnel2                    unassigned      YES unset  up                    up
 
 [230/343] r1 R1# show ipv6 interface brief
   GigabitEthernet0/0         [up/up]
-      [object Object]
-      [object Object]
+      2001:db8:1::1/64
+      fe80::1
   GigabitEthernet0/1         [up/up]
       unassigned
-  GigabitEthernet0/2         [up/down]
+  GigabitEthernet0/2         [down/down]
       unassigned
-  GigabitEthernet0/3         [up/down]
+  GigabitEthernet0/3         [down/down]
       unassigned
   Loopback1                  [up/up]
       unassigned
@@ -1505,39 +1434,39 @@ Total steps: 343
       unassigned
   Loopback100                [up/up]
       unassigned
-  GigabitEthernet0/0.10      [up/down]
+  GigabitEthernet0/0.10      [up/up]
       unassigned
-  GigabitEthernet0/0.20      [up/down]
+  GigabitEthernet0/0.20      [up/up]
       unassigned
-  GigabitEthernet0/0.30      [up/down]
+  GigabitEthernet0/0.30      [up/up]
       unassigned
-  GigabitEthernet0/0.40      [up/down]
+  GigabitEthernet0/0.40      [up/up]
       unassigned
-  GigabitEthernet0/0.50      [up/down]
+  GigabitEthernet0/0.50      [up/up]
       unassigned
-  GigabitEthernet0/0.60      [up/down]
+  GigabitEthernet0/0.60      [up/up]
       unassigned
-  GigabitEthernet0/0.70      [up/down]
+  GigabitEthernet0/0.70      [up/up]
       unassigned
-  GigabitEthernet0/0.80      [up/down]
+  GigabitEthernet0/0.80      [up/up]
       unassigned
-  GigabitEthernet0/0.90      [up/down]
+  GigabitEthernet0/0.90      [up/up]
       unassigned
-  GigabitEthernet0/0.100     [up/down]
+  GigabitEthernet0/0.100     [up/up]
       unassigned
-  GigabitEthernet0/0.999     [up/down]
+  GigabitEthernet0/0.999     [up/up]
       unassigned
   Tunnel0                    [up/up]
       unassigned
   Tunnel1                    [up/up]
       unassigned
   Tunnel2                    [up/up]
-      [object Object]
-      [object Object]
+      fe80::ff:fe00:27
+      2001:db8:ffff::1/64
 
 [231/343] r1 R1# show interfaces trunk
-  Port        Mode             Encapsulation  Status        Native vlan
-  (none — this is a router, no L2 trunks)
+                    ^
+  % Invalid input detected at '^' marker.
 
 [232/343] r1 R1# show ip interface brief | include up
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
@@ -1564,7 +1493,7 @@ Total steps: 343
   GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel2                    unassigned      YES manual up                    up
+  Tunnel2                    unassigned      YES unset  up                    up
 
 [233/343] r1 R1# end
 <empty>
@@ -1583,27 +1512,46 @@ Total steps: 343
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
   Processor board ID FTX1234567A
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
 
 [236/343] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 2731 bytes
+  Current configuration : 3208 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
    ip address 192.168.1.1 255.255.255.0
    ip address 192.168.100.1 255.255.255.0 secondary
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address fe80::1 link-local
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -1615,8 +1563,10 @@ Total steps: 343
    ip address 10.0.0.1 255.255.255.252
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
   interface Loopback1
    description LOOP-1
@@ -1720,6 +1670,7 @@ Total steps: 343
    tunnel destination 10.0.0.2
   !
   interface Tunnel2
+   ipv6 address 2001:db8:ffff::1/64
    tunnel mode ipv6ip
   !
   end
@@ -1731,8 +1682,8 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -1755,7 +1706,7 @@ Total steps: 343
   GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel2                    unassigned      YES manual up                    up
+  Tunnel2                    unassigned      YES unset  up                    up
 
 [239/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1872,7 +1823,7 @@ Total steps: 343
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
-  GigabitEthernet0/0.10 is down, line protocol is down
+  GigabitEthernet0/0.10 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1881,7 +1832,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1892,7 +1843,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.20 is down, line protocol is down
+  GigabitEthernet0/0.20 is up, line protocol is up
     Description: VLAN20
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.2.1/24
@@ -1902,7 +1853,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1913,7 +1864,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.30 is down, line protocol is down
+  GigabitEthernet0/0.30 is up, line protocol is up
     Description: VLAN30
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.3.1/24
@@ -1923,7 +1874,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1934,7 +1885,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.40 is down, line protocol is down
+  GigabitEthernet0/0.40 is up, line protocol is up
     Description: VLAN40
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.4.1/24
@@ -1944,7 +1895,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1955,7 +1906,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.50 is down, line protocol is down
+  GigabitEthernet0/0.50 is up, line protocol is up
     Description: VLAN50
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.5.1/24
@@ -1965,7 +1916,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1976,7 +1927,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.60 is down, line protocol is down
+  GigabitEthernet0/0.60 is up, line protocol is up
     Description: VLAN60
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.6.1/24
@@ -1986,7 +1937,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -1997,7 +1948,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.70 is down, line protocol is down
+  GigabitEthernet0/0.70 is up, line protocol is up
     Description: VLAN70
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.7.1/24
@@ -2007,7 +1958,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -2018,7 +1969,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.80 is down, line protocol is down
+  GigabitEthernet0/0.80 is up, line protocol is up
     Description: VLAN80
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.8.1/24
@@ -2028,7 +1979,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -2039,7 +1990,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.90 is down, line protocol is down
+  GigabitEthernet0/0.90 is up, line protocol is up
     Description: VLAN90
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.9.1/24
@@ -2049,7 +2000,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -2060,7 +2011,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.100 is down, line protocol is down
+  GigabitEthernet0/0.100 is up, line protocol is up
     Description: VLAN100
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.10.1/24
@@ -2070,7 +2021,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -2081,7 +2032,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.999 is down, line protocol is down
+  GigabitEthernet0/0.999 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2090,7 +2041,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -2115,48 +2066,84 @@ Total steps: 343
     Tunnel protocol/transport GRE/IP
 
 [240/343] r1 R1# show ip route
-  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
-         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
   Gateway of last resort is not set
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
-  C    10.255.255.1/32 is directly connected, Loopback1
-  C    10.255.255.2/32 is directly connected, Loopback2
-  C    10.255.255.3/32 is directly connected, Loopback3
-  C    10.255.255.4/32 is directly connected, Loopback4
-  C    10.255.255.5/32 is directly connected, Loopback5
-  C    10.255.255.6/32 is directly connected, Loopback6
-  C    10.255.255.7/32 is directly connected, Loopback7
-  C    10.255.255.8/32 is directly connected, Loopback8
-  C    172.31.0.1/32 is directly connected, Loopback100
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  C    192.168.2.0/24 is directly connected, GigabitEthernet0/0.20
-  C    192.168.3.0/24 is directly connected, GigabitEthernet0/0.30
-  C    192.168.4.0/24 is directly connected, GigabitEthernet0/0.40
-  C    192.168.5.0/24 is directly connected, GigabitEthernet0/0.50
-  C    192.168.6.0/24 is directly connected, GigabitEthernet0/0.60
-  C    192.168.7.0/24 is directly connected, GigabitEthernet0/0.70
-  C    192.168.8.0/24 is directly connected, GigabitEthernet0/0.80
-  C    192.168.9.0/24 is directly connected, GigabitEthernet0/0.90
-  C    192.168.10.0/24 is directly connected, GigabitEthernet0/0.100
-  C    192.168.99.0/24 is directly connected, GigabitEthernet0/0.999
-  C    172.16.0.0/30 is directly connected, Tunnel0
-  C    172.16.0.4/30 is directly connected, Tunnel1
+        10.0.0.0/8 is variably subnetted, 10 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+  C        10.255.255.1/32 is directly connected, Loopback1
+  C        10.255.255.2/32 is directly connected, Loopback2
+  C        10.255.255.3/32 is directly connected, Loopback3
+  C        10.255.255.4/32 is directly connected, Loopback4
+  C        10.255.255.5/32 is directly connected, Loopback5
+  C        10.255.255.6/32 is directly connected, Loopback6
+  C        10.255.255.7/32 is directly connected, Loopback7
+  C        10.255.255.8/32 is directly connected, Loopback8
+        172.16.0.0/16 is variably subnetted, 4 subnets, 2 masks
+  C        172.16.0.0/30 is directly connected, Tunnel0
+  L        172.16.0.1/32 is directly connected, Tunnel0
+  C        172.16.0.4/30 is directly connected, Tunnel1
+  L        172.16.0.5/32 is directly connected, Tunnel1
+        172.31.0.0/16 is subnetted, 1 subnets
+  C        172.31.0.1/32 is directly connected, Loopback100
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
+        192.168.2.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.2.0/24 is directly connected, GigabitEthernet0/0.20
+  L        192.168.2.1/32 is directly connected, GigabitEthernet0/0.20
+        192.168.3.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.3.0/24 is directly connected, GigabitEthernet0/0.30
+  L        192.168.3.1/32 is directly connected, GigabitEthernet0/0.30
+        192.168.4.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.4.0/24 is directly connected, GigabitEthernet0/0.40
+  L        192.168.4.1/32 is directly connected, GigabitEthernet0/0.40
+        192.168.5.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.5.0/24 is directly connected, GigabitEthernet0/0.50
+  L        192.168.5.1/32 is directly connected, GigabitEthernet0/0.50
+        192.168.6.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.6.0/24 is directly connected, GigabitEthernet0/0.60
+  L        192.168.6.1/32 is directly connected, GigabitEthernet0/0.60
+        192.168.7.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.7.0/24 is directly connected, GigabitEthernet0/0.70
+  L        192.168.7.1/32 is directly connected, GigabitEthernet0/0.70
+        192.168.8.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.8.0/24 is directly connected, GigabitEthernet0/0.80
+  L        192.168.8.1/32 is directly connected, GigabitEthernet0/0.80
+        192.168.9.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.9.0/24 is directly connected, GigabitEthernet0/0.90
+  L        192.168.9.1/32 is directly connected, GigabitEthernet0/0.90
+        192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.10.0/24 is directly connected, GigabitEthernet0/0.100
+  L        192.168.10.1/32 is directly connected, GigabitEthernet0/0.100
+        192.168.99.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.99.0/24 is directly connected, GigabitEthernet0/0.999
+  L        192.168.99.1/32 is directly connected, GigabitEthernet0/0.999
+        192.168.100.0/24 is subnetted, 1 subnets
+  C        192.168.100.0/24 is directly connected, GigabitEthernet0/0
 
 [241/343] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
-  IP routing table maximum-paths is 32
+  IP routing table maximum-paths is 4
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
-  connected       25          25          0           3800        9000
+  connected       24          24          0           3648        8640
   static          0           0           0           0           0
   ospf            0           0           0           0           0
   eigrp           0           0           0           0           0
   bgp             0           0           0           0           0
   rip             0           0           0           0           0
   default         0           0           0           0           0
-  Total           25          25          0           3800        9000
+  Total           24          24          0           3648        8640
 
 [242/343] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -2213,7 +2200,7 @@ Total steps: 343
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  Application Layer Gateways: none
 
 [256/343] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -2252,79 +2239,63 @@ Total steps: 343
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [266/343] r1 R1# show track
-  No tracked objects configured.
+  % No tracked objects configured.
 
 [267/343] r1 R1# show ip sla statistics
-  No IP SLA operations configured.
+  IPSLAs Latest Operation Statistics
+  
+  No IP SLAs operations configured.
 
 [268/343] r1 R1# show policy-map interface
 <empty>
 
 [269/343] r1 R1# show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 21 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 21 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 21 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 21 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address fe80::ff:fe00:1%GigabitEthernet0/0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address 2001:db8:1::1 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, MTU changed to 1400
-  %IFMGR-6-INFORMATIONAL: Interface Loopback1, IPv4 address 10.255.255.1/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback2, IPv4 address 10.255.255.2/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback3, IPv4 address 10.255.255.3/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback4, IPv4 address 10.255.255.4/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback5, IPv4 address 10.255.255.5/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback6, IPv4 address 10.255.255.6/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback7, IPv4 address 10.255.255.7/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback8, IPv4 address 10.255.255.8/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback100, IPv4 address 172.31.0.1/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.10, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.20, IPv4 address 192.168.2.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.30, IPv4 address 192.168.3.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.40, IPv4 address 192.168.4.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.50, IPv4 address 192.168.5.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.60, IPv4 address 192.168.6.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.70, IPv4 address 192.168.7.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.80, IPv4 address 192.168.8.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.90, IPv4 address 192.168.9.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.100, IPv4 address 192.168.10.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.999, IPv4 address 192.168.99.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Tunnel0, IPv4 address 172.16.0.1/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Tunnel1, IPv4 address 172.16.0.5/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Tunnel2, IPv6 address fe80::ff:fe00:27%Tunnel2 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Tunnel2, IPv6 address 2001:db8:ffff::1 assigned
-  %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  %CDP-5-NOTIFICATIONS: Neighbor R2 expired on GigabitEthernet0/1
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:48.192: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:48.193: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:48.197: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:48.197: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:48.198: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:48.213: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.216: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.220: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.224: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.225: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.225: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  *Aug  8 00:34:48.225: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  *Aug  8 00:34:48.226: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:48.226: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:48.227: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Aug  8 00:34:48.227: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Aug  8 00:34:48.227: %CDP-5-NOTIFICATIONS: Neighbor R2 expired on GigabitEthernet0/1
+  *Aug  8 00:34:48.227: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:48.227: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:48.228: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:48.228: %SYS-5-CONFIG_I: Configured from console by console
 
 [270/343] r1 R1# show snmp
+  Chassis: FTX1234567A
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
@@ -2332,23 +2303,22 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C4864.96041893 (11:15:48.586 UTC Tue Aug 4 2026)
+  reference time is EE20F828.44189374 (00:34:48.266 UTC Sat Aug 8 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *11:15:48.000 UTC Tue Aug 4 2026
+  *00:34:48.000 UTC Sat Aug 8 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -2375,8 +2345,8 @@ Total steps: 343
 
 [277/343] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
-  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
+  Processor    1A2B3C4    503316480    150994944    352321536    334705459    341751889
+  I/O          5D6E7F8     33554432     8388608    25165824    23907532    24410849
 
 [278/343] r1 R1# show flash
   Directory of flash:/
@@ -2418,6 +2388,7 @@ Total steps: 343
   Prefix               Next Hop             Interface
   0.0.0.0/0            no route
   192.168.1.0/24       attached             GigabitEthernet0/0
+  192.168.1.0/24       attached             GigabitEthernet0/0.10
   192.168.100.0/24     attached             GigabitEthernet0/0
   10.255.255.1/32      attached             Loopback1
   10.255.255.2/32      attached             Loopback2
@@ -2429,7 +2400,6 @@ Total steps: 343
   10.255.255.8/32      attached             Loopback8
   172.31.0.1/32        attached             Loopback100
   10.0.0.0/30          attached             GigabitEthernet0/1
-  192.168.1.0/24       attached             GigabitEthernet0/0.10
   192.168.2.0/24       attached             GigabitEthernet0/0.20
   192.168.3.0/24       attached             GigabitEthernet0/0.30
   192.168.4.0/24       attached             GigabitEthernet0/0.40
@@ -2527,98 +2497,6 @@ Total steps: 343
     Hardware is present, link is down
     Administrative state: up
     0 carrier transitions
-  Loopback1 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Loopback2 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Loopback3 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Loopback4 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Loopback5 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Loopback6 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Loopback7 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Loopback8 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Loopback100 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.10 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.20 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.30 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.40 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.50 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.60 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.70 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.80 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.90 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.100 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  GigabitEthernet0/0.999 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Tunnel0 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Tunnel1 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Tunnel2 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
 
 [286/343] r1 R1# show tech-support
   ------------------ show version ------------------
@@ -2630,27 +2508,46 @@ Total steps: 343
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
   Processor board ID FTX1234567A
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
   
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 2731 bytes
+  Current configuration : 3208 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
    ip address 192.168.1.1 255.255.255.0
    ip address 192.168.100.1 255.255.255.0 secondary
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address fe80::1 link-local
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -2662,8 +2559,10 @@ Total steps: 343
    ip address 10.0.0.1 255.255.255.252
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
   interface Loopback1
    description LOOP-1
@@ -2767,6 +2666,7 @@ Total steps: 343
    tunnel destination 10.0.0.2
   !
   interface Tunnel2
+   ipv6 address 2001:db8:ffff::1/64
    tunnel mode ipv6ip
   !
   end
@@ -2775,8 +2675,8 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -2799,38 +2699,75 @@ Total steps: 343
   GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel2                    unassigned      YES manual up                    up
+  Tunnel2                    unassigned      YES unset  up                    up
   
   ------------------ show ip route ------------------
-  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
   Gateway of last resort is not set
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
-  C    10.255.255.1/32 is directly connected, Loopback1
-  C    10.255.255.2/32 is directly connected, Loopback2
-  C    10.255.255.3/32 is directly connected, Loopback3
-  C    10.255.255.4/32 is directly connected, Loopback4
-  C    10.255.255.5/32 is directly connected, Loopback5
-  C    10.255.255.6/32 is directly connected, Loopback6
-  C    10.255.255.7/32 is directly connected, Loopback7
-  C    10.255.255.8/32 is directly connected, Loopback8
-  C    172.31.0.1/32 is directly connected, Loopback100
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0.10
-  C    192.168.2.0/24 is directly connected, GigabitEthernet0/0.20
-  C    192.168.3.0/24 is directly connected, GigabitEthernet0/0.30
-  C    192.168.4.0/24 is directly connected, GigabitEthernet0/0.40
-  C    192.168.5.0/24 is directly connected, GigabitEthernet0/0.50
-  C    192.168.6.0/24 is directly connected, GigabitEthernet0/0.60
-  C    192.168.7.0/24 is directly connected, GigabitEthernet0/0.70
-  C    192.168.8.0/24 is directly connected, GigabitEthernet0/0.80
-  C    192.168.9.0/24 is directly connected, GigabitEthernet0/0.90
-  C    192.168.10.0/24 is directly connected, GigabitEthernet0/0.100
-  C    192.168.99.0/24 is directly connected, GigabitEthernet0/0.999
-  C    172.16.0.0/30 is directly connected, Tunnel0
-  C    172.16.0.4/30 is directly connected, Tunnel1
+        10.0.0.0/8 is variably subnetted, 10 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+  C        10.255.255.1/32 is directly connected, Loopback1
+  C        10.255.255.2/32 is directly connected, Loopback2
+  C        10.255.255.3/32 is directly connected, Loopback3
+  C        10.255.255.4/32 is directly connected, Loopback4
+  C        10.255.255.5/32 is directly connected, Loopback5
+  C        10.255.255.6/32 is directly connected, Loopback6
+  C        10.255.255.7/32 is directly connected, Loopback7
+  C        10.255.255.8/32 is directly connected, Loopback8
+        172.16.0.0/16 is variably subnetted, 4 subnets, 2 masks
+  C        172.16.0.0/30 is directly connected, Tunnel0
+  L        172.16.0.1/32 is directly connected, Tunnel0
+  C        172.16.0.4/30 is directly connected, Tunnel1
+  L        172.16.0.5/32 is directly connected, Tunnel1
+        172.31.0.0/16 is subnetted, 1 subnets
+  C        172.31.0.1/32 is directly connected, Loopback100
+        192.168.1.0/24 is variably subnetted, 3 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0.10
+  L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
+        192.168.2.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.2.0/24 is directly connected, GigabitEthernet0/0.20
+  L        192.168.2.1/32 is directly connected, GigabitEthernet0/0.20
+        192.168.3.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.3.0/24 is directly connected, GigabitEthernet0/0.30
+  L        192.168.3.1/32 is directly connected, GigabitEthernet0/0.30
+        192.168.4.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.4.0/24 is directly connected, GigabitEthernet0/0.40
+  L        192.168.4.1/32 is directly connected, GigabitEthernet0/0.40
+        192.168.5.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.5.0/24 is directly connected, GigabitEthernet0/0.50
+  L        192.168.5.1/32 is directly connected, GigabitEthernet0/0.50
+        192.168.6.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.6.0/24 is directly connected, GigabitEthernet0/0.60
+  L        192.168.6.1/32 is directly connected, GigabitEthernet0/0.60
+        192.168.7.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.7.0/24 is directly connected, GigabitEthernet0/0.70
+  L        192.168.7.1/32 is directly connected, GigabitEthernet0/0.70
+        192.168.8.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.8.0/24 is directly connected, GigabitEthernet0/0.80
+  L        192.168.8.1/32 is directly connected, GigabitEthernet0/0.80
+        192.168.9.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.9.0/24 is directly connected, GigabitEthernet0/0.90
+  L        192.168.9.1/32 is directly connected, GigabitEthernet0/0.90
+        192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.10.0/24 is directly connected, GigabitEthernet0/0.100
+  L        192.168.10.1/32 is directly connected, GigabitEthernet0/0.100
+        192.168.99.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.99.0/24 is directly connected, GigabitEthernet0/0.999
+  L        192.168.99.1/32 is directly connected, GigabitEthernet0/0.999
+        192.168.100.0/24 is subnetted, 1 subnets
+  C        192.168.100.0/24 is directly connected, GigabitEthernet0/0
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -2947,7 +2884,7 @@ Total steps: 343
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
-  GigabitEthernet0/0.10 is down, line protocol is down
+  GigabitEthernet0/0.10 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2956,7 +2893,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -2967,7 +2904,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.20 is down, line protocol is down
+  GigabitEthernet0/0.20 is up, line protocol is up
     Description: VLAN20
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.2.1/24
@@ -2977,7 +2914,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -2988,7 +2925,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.30 is down, line protocol is down
+  GigabitEthernet0/0.30 is up, line protocol is up
     Description: VLAN30
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.3.1/24
@@ -2998,7 +2935,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3009,7 +2946,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.40 is down, line protocol is down
+  GigabitEthernet0/0.40 is up, line protocol is up
     Description: VLAN40
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.4.1/24
@@ -3019,7 +2956,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3030,7 +2967,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.50 is down, line protocol is down
+  GigabitEthernet0/0.50 is up, line protocol is up
     Description: VLAN50
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.5.1/24
@@ -3040,7 +2977,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3051,7 +2988,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.60 is down, line protocol is down
+  GigabitEthernet0/0.60 is up, line protocol is up
     Description: VLAN60
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.6.1/24
@@ -3061,7 +2998,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3072,7 +3009,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.70 is down, line protocol is down
+  GigabitEthernet0/0.70 is up, line protocol is up
     Description: VLAN70
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.7.1/24
@@ -3082,7 +3019,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3093,7 +3030,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.80 is down, line protocol is down
+  GigabitEthernet0/0.80 is up, line protocol is up
     Description: VLAN80
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.8.1/24
@@ -3103,7 +3040,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3114,7 +3051,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.90 is down, line protocol is down
+  GigabitEthernet0/0.90 is up, line protocol is up
     Description: VLAN90
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.9.1/24
@@ -3124,7 +3061,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3135,7 +3072,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.100 is down, line protocol is down
+  GigabitEthernet0/0.100 is up, line protocol is up
     Description: VLAN100
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.10.1/24
@@ -3145,7 +3082,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3156,7 +3093,7 @@ Total steps: 343
        0 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
-  GigabitEthernet0/0.999 is down, line protocol is down
+  GigabitEthernet0/0.999 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -3165,7 +3102,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
+    Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
@@ -3223,7 +3160,7 @@ Total steps: 343
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  Application Layer Gateways: none
   
   ------------------ show ip ospf neighbor ------------------
   % OSPF is not configured
@@ -3233,82 +3170,62 @@ Total steps: 343
                    Hardware address
   
   ------------------ show logging ------------------
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 21 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 21 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 21 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 21 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address fe80::ff:fe00:1%GigabitEthernet0/0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv6 address 2001:db8:1::1 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, MTU changed to 1400
-  %IFMGR-6-INFORMATIONAL: Interface Loopback1, IPv4 address 10.255.255.1/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback2, IPv4 address 10.255.255.2/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback3, IPv4 address 10.255.255.3/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback4, IPv4 address 10.255.255.4/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback5, IPv4 address 10.255.255.5/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback6, IPv4 address 10.255.255.6/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback7, IPv4 address 10.255.255.7/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback8, IPv4 address 10.255.255.8/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Loopback100, IPv4 address 172.31.0.1/255.255.255.255 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.10, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.20, IPv4 address 192.168.2.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.30, IPv4 address 192.168.3.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.40, IPv4 address 192.168.4.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.50, IPv4 address 192.168.5.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.60, IPv4 address 192.168.6.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.70, IPv4 address 192.168.7.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.80, IPv4 address 192.168.8.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.90, IPv4 address 192.168.9.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.100, IPv4 address 192.168.10.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0.999, IPv4 address 192.168.99.1/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Tunnel0, IPv4 address 172.16.0.1/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Tunnel1, IPv4 address 172.16.0.5/255.255.255.252 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Tunnel2, IPv6 address fe80::ff:fe00:27%Tunnel2 assigned
-  %IFMGR-6-INFORMATIONAL: Interface Tunnel2, IPv6 address 2001:db8:ffff::1 assigned
-  %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  %CDP-5-NOTIFICATIONS: Neighbor R2 expired on GigabitEthernet0/1
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:48.192: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:48.193: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:48.197: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:48.197: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:48.198: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:48.213: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.216: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.220: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.224: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.225: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:48.225: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  *Aug  8 00:34:48.225: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  *Aug  8 00:34:48.226: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:48.226: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:48.227: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Aug  8 00:34:48.227: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Aug  8 00:34:48.227: %CDP-5-NOTIFICATIONS: Neighbor R2 expired on GigabitEthernet0/1
+  *Aug  8 00:34:48.227: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:48.227: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:48.228: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:48.228: %SYS-5-CONFIG_I: Configured from console by console
 
 [287/343] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
   PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [288/343] r1 R1# show environment
-  Environmental monitoring is not instrumented on this platform.
+  Number of Critical alarms:  0
+  Number of Major alarms:     0
+  Number of Minor alarms:     0
 
 [289/343] r1 R1# show redundancy
-  Redundant System Information :
-         Configured Redundancy Mode = Simplex
-  Current Processor Information :
-         Active Location = slot 0
-         Current Software state = ACTIVE
+          ^
+  % Invalid input detected at '^' marker.
 
 [290/343] r1 R1# show ip vrf
     Name                             Default RD            Protocols   Interfaces
@@ -3318,8 +3235,11 @@ Total steps: 343
 
 [292/343] r1 R1# show hosts
   Default domain is not set
+  Name/address lookup uses static mappings
   Name servers are 255.255.255.255
-  Name/address lookup uses static table only (recursive resolver not simulated)
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+         temp - temporary, perm - permanent
+         NA - Not Applicable None - Not defined
   
   Host                      Port  Flags      Age Type   Address(es)
 
@@ -3328,13 +3248,14 @@ Total steps: 343
   Authentication timeout: 120 secs; Authentication retries: 3
 
 [294/343] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+     Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 VTY               -    -    -    -      0     0   0/0       -
+       1    1 AUX               -    -    -    -      0     0   0/0       -
        2    2 VTY               -    -    -    -      0     0   0/0       -
        3    3 VTY               -    -    -    -      0     0   0/0       -
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
+       6    6 VTY               -    -    -    -      0     0   0/0       -
 
 [295/343] r1 R1# show terminal
   Line 0, Location: "", Type: ""
@@ -3364,6 +3285,8 @@ Total steps: 343
    description ## LAN to L1 ##
    ip address 192.168.1.1 255.255.255.0
    ip address 192.168.100.1 255.255.255.0 secondary
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address fe80::1 link-local
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -3375,8 +3298,10 @@ Total steps: 343
    ip address 10.0.0.1 255.255.255.252
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
   interface Loopback1
    description LOOP-1
@@ -3480,6 +3405,7 @@ Total steps: 343
    tunnel destination 10.0.0.2
   !
   interface Tunnel2
+   ipv6 address 2001:db8:ffff::1/64
    tunnel mode ipv6ip
   !
 
@@ -3489,13 +3415,20 @@ Total steps: 343
 [300/343] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 2731 bytes
+  Current configuration : 3208 bytes
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   hostname R1
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
    ip address 192.168.1.1 255.255.255.0
    ip address 192.168.100.1 255.255.255.0 secondary
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address fe80::1 link-local
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -3505,7 +3438,9 @@ Total steps: 343
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
   interface GigabitEthernet0/2
+   no ip address
   interface GigabitEthernet0/3
+   no ip address
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
@@ -3586,6 +3521,7 @@ Total steps: 343
    tunnel source Loopback0
    tunnel destination 10.0.0.2
   interface Tunnel2
+   ipv6 address 2001:db8:ffff::1/64
    tunnel mode ipv6ip
   end
 
@@ -3691,8 +3627,8 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
   Loopback3                  10.255.255.3    YES manual up                    up
@@ -3715,7 +3651,7 @@ Total steps: 343
   GigabitEthernet0/0.999     192.168.99.1    YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel2                    unassigned      YES manual up                    up
+  Tunnel2                    unassigned      YES unset  up                    up
 
 [326/343] r1 R1(config-if)# shutdown
 <empty>
@@ -3730,7 +3666,17 @@ Total steps: 343
 <empty>
 
 [330/343] r1 R1(config-router)# do show ip protocols
-  No routing protocol is configured.
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 172.31.0.1
+    Number of areas in this router is 0. 0 normal 0 stub 0 nssa
+    Reference bandwidth unit is 100 mbps
+    Maximum path: 4
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
 
 [331/343] r1 R1(config-router)# exit
 <empty>
@@ -3750,100 +3696,98 @@ Total steps: 343
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [336/343] r1 R1(config)# interface ?
-    GigabitEthernet     GigabitEthernet IEEE 802.3z
-    FastEthernet        FastEthernet IEEE 802.3u
-    Ethernet            IEEE 802.3
-    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
-    Loopback            Loopback interface
-    Serial              Serial
-    Tunnel              Tunnel interface
-    Vlan                Catalyst VLANs
-    Port-channel        Ethernet Channel of interfaces
-    BVI                 Bridge-Group Virtual Interface
-    <cr>                
+    BVI              Bridge-Group Virtual Interface
+    Ethernet         IEEE 802.3
+    FastEthernet     FastEthernet IEEE 802.3u
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
+    Loopback         Loopback interface
+    Port-channel     Ethernet Channel of interfaces
+    Serial           Serial
+    Tunnel           Tunnel interface
 
 [337/343] r1 R1(config)# ip ?
-    cef              Enable CEF
-    http             Hypertext Transfer Protocol
-    source-route     IP source-route
-    name-server      Configure DNS name servers
-    domain-lookup    Enable DNS lookups
-    bootp            Bootstrap Protocol
-    finger           Enable finger service
-    gratuitous-arps  Enable gratuitous ARP
-    community-list   Define BGP community list
-    as-path          BGP autonomous-system path filter
-    domain-name      Set domain name
-    domain           IP domain configuration
-    host             Configure a static host entry
-    ssh              SSH config
-    dhcp             Dynamic Host Configuration Protocol
-    route            Establish static routes
-    default-network  Configure default-network
-    local            Local settings
-    pim              Protocol Independent Multicast
-    prefix-list      Build a prefix list
-    sla              Configure an IP SLA operation
-    access-list      
-    nat              Network Address Translation
-    vrf              Define a VRF instance
-    routing          Enable IP routing
-    flow-export      Legacy NetFlow export
-    flow-cache       NetFlow cache timeout
-    route-cache      
+    access-list        Add an access list entry
+    as-path            BGP autonomous-system path filter
+    bootp              Bootstrap Protocol
+    cef                Enable CEF
+    classless          Accepted, default behaviour on IOS 12.0 and later
+    community-list     Define BGP community list
+    default-network    Configure default-network
+    dhcp               Dynamic Host Configuration Protocol
+    domain             IP domain configuration
+    domain-lookup      Enable DNS lookups
+    domain-name        Set domain name
+    finger             Enable finger service
+    flow-cache         NetFlow cache timeout
+    flow-export        Legacy NetFlow export
+    gratuitous-arps    Enable gratuitous ARP
+    host               Configure a static host entry
+    http               Hypertext Transfer Protocol
+    local              Local settings
+    multicast-routing  Enable IP multicast routing
+    name-server        Configure DNS name servers
+    nat                Network Address Translation
+    pim                Protocol Independent Multicast
+    prefix-list        Build a prefix list
+    route              Establish static routes
+    route-cache        Route cache
+    routing            Enable IP routing
+    sla                Configure an IP SLAs operation
+    source-route       IP source-route
+    ssh                SSH config
+    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    vrf                Define a VRF instance
 
 [338/343] r1 R1(config)# router ?
-    rip    Enter RIP routing protocol configuration
-    eigrp  Enter EIGRP configuration
     bgp    Enter BGP configuration
+    eigrp  Enter EIGRP configuration
     ospf   Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
 
 [339/343] r1 R1(config)# crypto ?
-    isakmp       Internet Security Association and Key Management Protocol
+    dynamic-map  Define a dynamic crypto map
+    gdoi         Group Domain of Interpretation
+    ikev2        Internet Key Exchange version 2
     ipsec        IP Security
+    isakmp       Internet Security Association and Key Management Protocol
+    key          Key management
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
-    dynamic-map  Define a dynamic crypto map
-    ikev2        Internet Key Exchange version 2
-    gdoi         Group Domain of Interpretation
-    key          Key management
     pki          Public Key Infrastructure
     <cr>         
 
 [340/343] r1 R1(config)# no ?
-    sntp         Configure SNTP
-    boot         
-    hostname     Reset hostname
+    access-list  Remove an access list
     alias        Remove a command alias
+    arp          Remove ARP entry
+    banner       Remove a banner
+    boot         Boot Commands
     cdp          CDP global configuration
-    lldp         LLDP global configuration
+    crypto       Encryption and key management
+    enable       Modify enable password parameters
+    event        Embedded Event Manager
+    hostname     Reset hostname
+    interface    Remove a virtual interface
     ip           Global IP configuration subcommands
     ipv6         Global IPv6 configuration subcommands
-    banner       Remove a banner
-    privilege    Remove privilege command rule
-    logging      Disable logging
-    service      Disable a service
-    ntp          Remove NTP config
-    enable       Modify enable password parameters
-    username     Remove a local user
-    arp          Remove ARP entry
-    interface    Remove a virtual interface
-    router       Enable a routing protocol
-    shutdown     Enable (no-op in global config)
-    route-map    Remove a route-map
-    track        Remove a tracked object
-    access-list  Remove an access list
     key          Key management
-    crypto       Encryption and key management
-    event        Embedded Event Manager
-    vlan         Remove a VLAN
     line         Remove line configuration
+    lldp         LLDP global configuration
+    logging      Modify message logging facilities
+    ntp          Remove NTP config
+    privilege    Remove privilege command rule
+    route-map    Remove a route-map
+    router       Enable a routing protocol
+    service      Disable a service
+    sntp         Configure SNTP
+    track        Remove a tracked object
+    username     Remove a local user
 
 [341/343] r1 R1(config)# end
 <empty>
 
 [342/343] r1 R1# show running-config | count !
-  35
+  34
 
 [343/343] r1 R1# write memory
   Building configuration...

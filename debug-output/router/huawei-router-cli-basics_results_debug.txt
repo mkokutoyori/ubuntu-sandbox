@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-08-04T11:16:46.507Z
+Generated: 2026-08-08T00:22:57.516Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-08-04 11:16:46
-  Tuesday
+  2026-08-08 00:22:57
+  Saturday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-04 11:16:46
+  CPU Usage Stat. Time : 2026-08-08 00:22:57
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-04 11:16:46
+  Memory utilization statistics at 2026-08-08 00:22:57
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -85,6 +85,20 @@ Total steps: 304
   #
   interface GigabitEthernet0/0/3
    shutdown
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
   #
 
@@ -106,6 +120,20 @@ Total steps: 304
   #
   interface GigabitEthernet0/0/3
    shutdown
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
   #
 
@@ -284,22 +312,16 @@ Total steps: 304
 
 [38/304] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 10
-  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  Current messages : 4
+  2026-08-08 00:22:57 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-08 00:22:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-08 00:22:57 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-08 00:22:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -427,112 +449,113 @@ Total steps: 304
   No DNS server configured.
 
 [59/304] r1 <R1> ?
-    system-view    Enter system view
-    stelnet        stelnet client
-    ssh            ssh client
-    display        
-    save           Save current configuration
-    reboot         Reboot device
-    reset          
-    commit         Commit candidate configuration
-    screen-length  Set terminal screen length
-    header         Configure login/shell banner
-    terminal       
-    undo           Undo configuration
-    debugging      Enable debugging
-    screen-width   Set terminal screen width
-    ip             Internet Protocol
-    rip            Configure RIP routing
     bgp            Configure BGP routing
+    commit         Commit candidate configuration
+    compare        Compare function
+    debugging      Enable debugging
+    display        Display current system information
+    header         Configure login/shell banner
+    ip             Internet Protocol
     isis           Configure IS-IS routing
-    tracert        Trace route to destination
     ping           Send ICMP echo messages
+    reboot         Reboot device
+    reset          Reset operation
+    rip            Configure RIP routing
+    save           Save current configuration
+    screen-length  Set terminal screen length
+    screen-width   Set terminal screen width
+    ssh            ssh client
+    startup        Startup configuration
+    stelnet        stelnet client
+    system-view    Enter system view
     telnet         Open Telnet session
-    compare        
-    startup        
+    terminal       Set the terminal line characteristics
+    tracert        Trace route to destination
+    undo           Undo configuration
 
 [60/304] r1 <R1> display ?
-    version                 Display version information
-    ip                      Internet Protocol
-    icmp                    Internet Control Message Protocol
-    arp                     Display ARP table
-    current-configuration   Display running configuration
-    traffic-filter          Traffic filter configuration
-    saved-configuration     Display saved configuration
-    startup                 Display startup configuration
-    history-command         Display CLI history
-    alarm                   Display alarm records
     aaa                     Authentication, Authorization and Accounting
-    user-interface          Display user interface info
-    dhcp                    Display DHCP snooping
-    nat                     Network Address Translation
-    vrrp                    Display VRRP groups
-    bfd                     Bidirectional Forwarding Detection
-    qos                     Quality of Service
-    traffic                 Display traffic statistics
-    ssh                     Display SSH server status
-    stelnet                 Secure Telnet (SSH-based)
-    telnet                  Telnet protocol
-    snmp-agent              Display SNMP agent info
-    ntp-service             Display NTP status
-    info-center             Display info-center configuration
-    sflow                   Display sFlow configuration
-    lldp                    Display LLDP
-    bgp                     Border Gateway Protocol
-    isis                    Intermediate System to Intermediate System
-    rip                     Display RIP information
-    counters                Display traffic counters
-    router                  Router configuration information
-    fib                     Display forwarding table
-    ipv6                    Internet Protocol version 6
-    debugging               Display active debugging flags
-    interface               Display interface information
-    clock                   Display system clock
-    cpu-usage               Display CPU usage
-    memory-usage            Display memory usage
-    users                   Display user sessions
-    device                  Display device status
-    elabel                  Display electronic label
-    license                 Display license information
-    logbuffer               Display log buffer
-    trapbuffer              Display trap buffer
-    patch-information       Display patch information
-    diagnostic-information  Collect diagnostic information
-    local-user              Display local users
-    ospf                    Open Shortest Path First
-    ospfv3                  OSPF version 3 (IPv6)
-    igmp                    Internet Group Management Protocol
-    pim                     Protocol Independent Multicast
-    multicast               IP multicast
-    ike                     Internet Key Exchange
-    ipsec                   IP Security
-    ikev2                   Internet Key Exchange version 2
     acl                     Display ACL configuration
-    vxlan                   Virtual Extensible LAN
+    alarm                   Display alarm records
+    arp                     Display ARP table
+    bfd                     Bidirectional Forwarding Detection
+    bgp                     Border Gateway Protocol
+    channel                 Display information channels
+    clock                   Display system clock
+    counters                Display traffic counters
+    cpu-defend              CPU defend policy configuration
+    cpu-usage               Display CPU usage
+    current-configuration   Display running configuration
     debug                   Display enabled debug flags
-    health                  Display device health
-    temperature             Display device temperature
-    fan                     Display fan status
-    power                   Display power supply status
-    environment             Display environment status
-    tcp                     Transmission Control Protocol
-    sockets                 Display open sockets
-    dns                     Domain Name System
+    debugging               Display active debugging flags
+    device                  Display device status
+    dhcp                    Display DHCP snooping
     dhcp-server             DHCP server configuration
     dhcp-snooping           DHCP snooping configuration
     dhcpv6                  DHCPv6 configuration
-    route-policy            Display a route-policy
-    traffic-policy          Traffic policy configuration
-    nqa                     Network Quality Analysis
+    diagnostic-information  Collect diagnostic information
+    dns                     Domain Name System
     domain                  Display AAA domains
-    radius-server           
-    hwtacacs-server         
-    rsa                     RSA key pair
-    time-range              Time range configuration
-    cpu-defend              CPU defend policy configuration
+    elabel                  Display electronic label
+    environment             Display environment status
+    fan                     Display fan status
+    fib                     Display forwarding table
     firewall                Firewall configuration
-    channel                 Display info-center channels
+    health                  Display device health
+    history-command         Display CLI history
+    hwtacacs-server         
+    icmp                    Internet Control Message Protocol
+    igmp                    Internet Group Management Protocol
+    ike                     Internet Key Exchange
+    ikev2                   Internet Key Exchange version 2
+    info-center             Display info-center configuration
+    interface               Display interface information
+    ip                      Internet Protocol
+    ipsec                   IP Security
+    ipv6                    Internet Protocol version 6
+    isis                    Intermediate System to Intermediate System
+    license                 Display license information
+    lldp                    Display LLDP
+    local-user              Display local users
+    logbuffer               Display log buffer
+    memory-usage            Display memory usage
+    multicast               IP multicast
+    nat                     Network Address Translation
+    nqa                     Network Quality Analysis
+    nqa-server              Display the NQA server status
+    ntp-service             Display NTP status
+    ospf                    Open Shortest Path First
+    ospfv3                  OSPF version 3 (IPv6)
+    patch-information       Display patch information
+    pim                     Protocol Independent Multicast
+    power                   Display power supply status
+    qos                     Quality of Service
+    radius-server           
+    rip                     Display RIP information
+    route-policy            Display a route-policy
+    router                  Router configuration information
+    rsa                     RSA key pair
+    saved-configuration     Display saved configuration
+    sflow                   Display sFlow configuration
+    snmp-agent              Display SNMP agent info
+    sockets                 Display open sockets
+    ssh                     Display SSH server status
+    startup                 Display startup configuration
+    stelnet                 Secure Telnet (SSH-based)
+    tcp                     Transmission Control Protocol
+    telnet                  Telnet protocol
+    temperature             Display device temperature
     this                    Display current view configuration
+    time-range              Time range configuration
+    traffic                 Display traffic statistics
+    traffic-filter          Traffic filter configuration
+    traffic-policy          Traffic policy configuration
+    trapbuffer              Display trap buffer
+    user-interface          Display user interface info
+    users                   Display user sessions
+    version                 Display version information
+    vrrp                    Display VRRP groups
+    vxlan                   Virtual Extensible LAN
 
 [61/304] r1 <R1> ping 10.0.0.2
   PING 10.0.0.2: 56  data bytes, press CTRL_C to break
@@ -612,6 +635,19 @@ Total steps: 304
 [79/304] r1 [R1-CORE-ospf-1] display this
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
 
 [80/304] r1 [R1-CORE-ospf-1] quit
@@ -659,6 +695,20 @@ Total steps: 304
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   #
@@ -696,6 +746,20 @@ Total steps: 304
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
@@ -734,6 +798,20 @@ Total steps: 304
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
@@ -772,6 +850,20 @@ Total steps: 304
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
@@ -823,6 +915,20 @@ Total steps: 304
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
@@ -863,6 +969,20 @@ Total steps: 304
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
@@ -905,6 +1025,20 @@ Total steps: 304
   ospf 1
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
@@ -946,6 +1080,20 @@ Total steps: 304
   #
   ospf 1
   user-interface vty 0 4
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
   #
   bgp 65000
@@ -992,6 +1140,20 @@ Total steps: 304
    authentication-algorithm sha
    dh group1
   user-interface vty 0 4
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
   #
   bgp 65000
@@ -1041,6 +1203,20 @@ Total steps: 304
   ipsec proposal P1
    encapsulation-mode tunnel
   user-interface vty 0 4
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
   #
   bgp 65000
@@ -1097,9 +1273,25 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 
@@ -1148,9 +1340,25 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 [124/304] r1 [R1-EDGE] int g0/0/0
@@ -1194,9 +1402,25 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 [126/304] r1 [R1-EDGE] q
@@ -1243,9 +1467,25 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 [129/304] r1 <R1-EDGE> dis ip int b
@@ -1285,49 +1525,51 @@ Total steps: 304
 
 [133/304] r1 [R1-EDGE] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
     routing-table  
 
 [134/304] r1 [R1-EDGE] ospf ?
-    WORD  Configure OSPF protocol
-    <cr>  
+    <1-65535>  Process ID
+    <cr>       
 
 [135/304] r1 [R1-EDGE] undo ?
-    terminal       
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
+    debugging      Disable debugging
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
     ip             Internet Protocol
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    multicast      Disable multicast routing
-    ike            Internet Key Exchange
-    ipsec          IP Security
-    ikev2          Internet Key Exchange version 2
-    acl            Delete Access Control List
-    nat            Network Address Translation
     route-policy   Remove a route-policy
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
     traffic        Display traffic statistics
-    nqa            Network Quality Analysis
-    firewall       Firewall configuration
     <cr>           
 
 [136/304] r1 [R1-EDGE] acl ?
     advanced  
     basic     
     ipv6      Internet Protocol version 6
-    name      
+    name      Name
     <cr>      
 
 [137/304] r1 [R1-EDGE] aaa ?
@@ -1354,13 +1596,12 @@ Total steps: 304
 
 [143/304] r1 [R1-EDGE-GE0/0/0] ip ?
     address           Configure IP address
+    forward-protocol  Protocols to forward
     helper-address    Set DHCP relay helper address
-    forward-protocol  
     urpf              Configure URPF mode
 
 [144/304] r1 [R1-EDGE-GE0/0/0] ip address ?
-    WORD  Configure IP address
-    <cr>  
+    A.B.C.D  IP address
 
 [145/304] r1 [R1-EDGE-GE0/0/0] quit
 <empty>
@@ -1449,6 +1690,10 @@ Total steps: 304
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
   ipsec proposal P1
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
 
 [172/304] r1 <Huawei> display current-configuration | exclude #
   sysname Huawei
@@ -1476,8 +1721,22 @@ Total steps: 304
   ipsec proposal P1
    encapsulation-mode tunnel
   user-interface vty 0 4
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   bgp 65000
   isis 1
+  undo info-center enable
 
 [173/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1513,9 +1772,25 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 [174/304] r1 <Huawei> display ip routing-table | include Direct
@@ -1633,9 +1908,25 @@ Total steps: 304
    idle-timeout 5 0
    protocol inbound ssh
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 [195/304] r1 <Huawei> reset saved-configuration
@@ -1718,9 +2009,25 @@ Total steps: 304
    idle-timeout 5 0
    protocol inbound ssh
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 [203/304] r1 <R1> display saved-configuration
@@ -1954,8 +2261,8 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <R1> display clock
-  2026-08-04 11:16:46
-  Tuesday
+  2026-08-08 00:22:58
+  Saturday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <R1> display lldp neighbor
@@ -1967,13 +2274,13 @@ Total steps: 304
 [238/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-04 11:16:46
+  CPU Usage Stat. Time : 2026-08-08 00:22:58
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-04 11:16:46
+  Memory utilization statistics at 2026-08-08 00:22:58
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2009,33 +2316,23 @@ Total steps: 304
 
 [243/304] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 21
-  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-08-04 11:16:46 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-04 11:16:46 %01RIP/5/NOTIFICATIONS: RIP routing process started
-  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:21
-  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:21
-  2026-08-04 11:16:46 %01LLDP/6/INFORMATIONAL: LLDP enabled
-  2026-08-04 11:16:46 %01LLDP/6/INFORMATIONAL: LLDP disabled
-  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:179
-  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to down
-  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-04 11:16:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-04 11:16:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-04 11:16:46 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:23
+  Current messages : 11
+  2026-08-08 00:22:57 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-08 00:22:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-08 00:22:57 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-08 00:22:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-08 00:22:57 %01RIP/5/NOTIFICATIONS: RIP routing process started
+  2026-08-08 00:22:58 %01LLDP/6/INFORMATIONAL: LLDP enabled
+  2026-08-08 00:22:58 %01LLDP/6/INFORMATIONAL: LLDP disabled
+  2026-08-08 00:22:58 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-08-08 00:22:58 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-08-08 00:22:58 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-08 00:22:58 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [244/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -2155,9 +2452,25 @@ Total steps: 304
    idle-timeout 5 0
    protocol inbound ssh
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 [254/304] r1 <R1> display diagnostic-information
@@ -2250,9 +2563,25 @@ Total steps: 304
    idle-timeout 5 0
    protocol inbound ssh
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
   bgp 65000
   isis 1
+  #
+  undo info-center enable
   #
 
 [263/304] r1 <R1> display current-configuration | exclude #
@@ -2283,8 +2612,22 @@ Total steps: 304
    authentication-mode aaa
    idle-timeout 5 0
    protocol inbound ssh
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   bgp 65000
   isis 1
+  undo info-center enable
 
 [264/304] r1 <R1> display ip routing-table | include Direct
 <empty>
@@ -2407,45 +2750,47 @@ Total steps: 304
 
 [300/304] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
     routing-table  
 
 [301/304] r1 [Huawei] undo ?
-    terminal       
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
+    debugging      Disable debugging
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
     ip             Internet Protocol
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    multicast      Disable multicast routing
-    ike            Internet Key Exchange
-    ipsec          IP Security
-    ikev2          Internet Key Exchange version 2
-    acl            Delete Access Control List
-    nat            Network Address Translation
     route-policy   Remove a route-policy
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
     traffic        Display traffic statistics
-    nqa            Network Quality Analysis
-    firewall       Firewall configuration
     <cr>           
 
 [302/304] r1 [Huawei] acl ?
     advanced  
     basic     
     ipv6      Internet Protocol version 6
-    name      
+    name      Name
     <cr>      
 
 [303/304] r1 [Huawei] return

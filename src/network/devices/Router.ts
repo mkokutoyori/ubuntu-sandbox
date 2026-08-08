@@ -3735,11 +3735,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const a = this.getCredentialStore().get(name);
     return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
   }
-  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean }> {
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean; serviceTypes: readonly string[] }> {
     return this.getCredentialStore().list().map(a => ({
       name: a.name, privilege: a.privilege, secret: a.secret,
       secretAlgo: a.passwordHashAlgorithm,
       factoryDefault: a.factoryDefault,
+      // Le `service-type` etait stocke par `withServiceTypes()` et
+      // laisse de cote par cette projection, si bien que le rendu
+      // ecrivait `ssh` en dur : un compte configure `telnet` revenait
+      // `ssh` apres rechargement.
+      serviceTypes: a.serviceTypes,
     }));
   }
 

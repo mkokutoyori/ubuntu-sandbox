@@ -26,7 +26,8 @@ import { CommandTrie } from './CommandTrie';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
-import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
+import { huaweiIrreversibleCipher, huaweiCipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras } from './cli-utils';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
 import {
@@ -2251,6 +2252,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         ? (args[idx] === 'irreversible-cipher' ? 'irreversible-cipher' : 'cipher')
         : 'plain';
       const raw = args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret;
+      // Ce que l'on RANGE est toujours ce que la configuration rendra :
+      // l'empreinte pour `irreversible-cipher`, le chiffre pour
+      // `cipher`. L'operateur tape le clair, un rejeu de configuration
+      // repasse la valeur deja transformee — d'ou la reconnaissance de
+      // forme, faute de quoi le rejeu prend le condense pour un mot de
+      // passe et le compte n'ouvre plus.
+      const stored = algo === 'irreversible-cipher'
+        ? (looksLikeIrreversibleCipher(raw) ? raw : huaweiIrreversibleCipher(raw))
+        : algo === 'cipher'
+          ? (looksLikeReversibleCipher(raw) ? raw : huaweiCipher(raw))
+          : raw;
       const policy = router.getHuaweiAaaService().passwordPolicy;
       // Length only applies to a cleartext entry — a cipher/irreversible-cipher
       // value is already hashed, exactly like Cisco's `secret 5|8|9` forms.
@@ -2260,7 +2272,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (existing.wouldReuseSecret(raw, policy.historyMaxRecords ?? 0)) {
         return 'Error: The password has been used before. Please choose a different one.';
       }
-      next = existing.withSecretRetainingHistory(raw, algo, policy.historyMaxRecords ?? 0);
+      next = existing.withSecretRetainingHistory(stored, algo, policy.historyMaxRecords ?? 0);
       if (policy.expireDays) {
         next = next.withPasswordExpireAt(Date.now() + policy.expireDays * 86_400_000);
       }
@@ -2840,7 +2852,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return cmdRip(getRouter(), ['network', ...args]);
     });
 
-    t.registerGreedy('version', 'Set RIP version', (_args) => {
+    // La version etait ignoree : la commande etait acceptee, le champ
+    // que le moteur lit restait a 2, et la configuration rendait 2 quoi
+    // qu'on ait tape. Le champ existe et sert deja cote Cisco.
+    t.registerGreedy('version', 'Set RIP version', (args) => {
+      const v = Number(args[0]);
+      if (v !== 1 && v !== 2) return HUAWEI_ERRORS.UNRECOGNIZED(`version ${args.join(' ')}`.trim(), 'version '.length);
+      getRouter()._setRipVersion(v);
       return '';
     });
 
@@ -2852,10 +2870,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    const ripExtras = () => {
-      const r = this.r() as any;
-      return r._huaweiRipExtras ?? (r._huaweiRipExtras = {});
-    };
+    const ripExtras = () => huaweiRipExtras(this.r());
     t.register('summary', 'Enable RIP auto-summary', () => { ripExtras().autoSummary = true; return ''; });
     t.register('undo summary', 'Disable RIP auto-summary', () => { ripExtras().autoSummary = false; return ''; });
     t.registerGreedy('timers rip', 'Set RIP timers (update/timeout/garbage)', (args) => {

@@ -294,7 +294,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | Lot | Contenu | Dépend de |
 |---|---|---|
 | **V1** | Chantier B : `undo` refuse l'inconnu (**livré, §9**) | — |
-| **V2** | Chantier A : séparateurs, numéro de règle, pertes sèches, invariant de rejeu | — |
+| **V2** | Chantier A : séparateurs, numéro de règle, pertes sèches, invariant de rejeu (**livré, §10**) | — |
 | **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` | — |
 | **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` | V1 |
 | **V5** | Chantier D §3-§5 : bornes, aide, abréviation du nom d'interface | V4 |
@@ -404,3 +404,102 @@ exige maintenant que ce mot commun soit le refus.
 tapent `undo` ou construisent une machine Huawei. Typecheck
 `tsc -p tsconfig.app.json` à 162, inchangé ; lint identique au baseline
 (40 problèmes avant, 40 après).
+
+---
+
+## 10. V2 — Livré
+
+**L'invariant est tenu** : sérialiser, retaper sur une machine neuve en
+honorant les `#`, re-sérialiser, comparer. **Zéro ligne refusée** (contre
+14) et les deux textes identiques.
+
+### 10.1 Le `#` : une règle mécanique plutôt que vingt-cinq rappels
+
+Le séparateur était poussé à la main en une vingtaine d'endroits, donc
+deux manquaient. Ajouter les deux aurait laissé le vingt-sixième oublier
+à son tour. `normaliserBlocsVrp()` applique une règle unique, une seule
+fois, à la fin : **on quitte un bloc dès qu'une ligne de premier niveau
+suit une ligne indentée, et il faut alors un `#`.** Deux lignes de
+premier niveau qui se suivent n'en demandent pas — VRP groupe ses
+commandes autonomes, et une règle plus large aurait coupé ces groupes.
+La même passe supprime les `#` doublés.
+
+### 10.2 Le numéro de règle, et un piège qui a corrigé mon correctif
+
+Deux défauts se suivaient. Le parseur **consommait le numéro deux fois** :
+`rawArgs.slice(1)` le retirait avant que la lecture de `ruleId`, dix
+lignes plus bas, puisse le voir — il était donc toujours perdu. Et le
+rendu écrivait `idx * 5`, sans jamais lire ce qui était rangé.
+
+Mon premier correctif rendait `entry.sequence ?? idx * 5`, ce qui a fait
+tomber une suite existante — à juste titre. Ce test tape
+`rule permit source …` **sans numéro** et attend `rule 0`/`rule 5` :
+c'est l'auto-numérotation, qui est légitime. Le champ
+`sequenceConfigured` existait déjà pour exactement cette distinction
+(« L'opérateur a-t-il ÉCRIT ce numéro ? ») ; il est maintenant posé par
+les deux parseurs et lu par les quatre rendus. La suite passe **sans être
+modifiée**, ce qui est le bon signe : sa prémisse n'était pas le défaut.
+
+### 10.3 Le mot de passe, ou pourquoi la moitié du correctif aurait été pire
+
+Les séparateurs réparés, l'aller-retour ne refusait plus rien mais
+produisait **une machine cassée** : le rejeu prenait l'empreinte du
+compte pour son mot de passe, et `zoe` n'ouvrait plus. Rendre le texte
+identique en laissant cela aurait été le motif que ce dépôt passe son
+temps à retirer — un fait affiché que rien ne soutient.
+
+La cause : le magasin gardait le **clair**, l'algorithme n'étant qu'une
+étiquette, et le rendu chiffrait à l'affichage. Le commentaire du parseur
+affirmait pourtant déjà le contraire (« a cipher value is already
+hashed »). Le modèle est désormais cohérent d'un bout à l'autre :
+
+- **ce qui est rangé est ce qui sera rendu** — l'empreinte pour
+  `irreversible-cipher`, le chiffre pour `cipher` ;
+- la **même commande** sert à poser un clair (ce que l'opérateur tape) et
+  à rejouer une configuration (qui porte la valeur transformée), donc
+  `looksLikeIrreversibleCipher`/`looksLikeReversibleCipher` distinguent
+  les deux à la forme, comme VRP le fait avec son encodage de longueur
+  fixe ;
+- `authenticate()` passe par l'algorithme : PBKDF2 du mot tapé comparé à
+  l'empreinte, déchiffrement pour le cipher réversible.
+
+Conséquence assumée et vérifiée : la configuration **ne porte jamais le
+clair**, et un compte rejoué s'ouvre quand même avec son mot de passe
+d'origine. Une suite existante fixait la prémisse inverse
+(`expect(u?.secret).toBe('Admin@123')` après un `password cipher`) —
+c'est-à-dire un mot de passe « chiffré » stocké en clair ; elle teste
+maintenant son intention réelle, que le compte s'ouvre.
+
+### 10.4 Trois pertes sèches, trois causes différentes
+
+| Perte | Cause |
+|---|---|
+| `service-type telnet` → `ssh` | la projection `_listLocalUsers()` laissait le champ de côté, et le rendu écrivait `ssh` en dur |
+| `undo summary` absent | `_huaweiRipExtras` était écrit par le CLI et **lu par personne** — même forme morte que `_huaweiRipIfExtras`, trouvée en R7 |
+| `version 1` → `version 2` | le rendu écrivait `2` en dur, et la commande `version` **ignorait son argument** : elle était acceptée et ne réglait rien |
+
+Le troisième cas n'était pas dans la liste de l'audit ; le test de
+l'aller-retour l'a fait sortir. `huaweiRipExtras()` est maintenant un
+accesseur unique partagé par celui qui écrit et celui qui rend.
+
+### 10.5 Tests et mesures
+
+`huawei-config-round-trip.test.ts` (14 cas) : l'aller-retour lui-même
+(aucun refus, textes identiques, rendu stable), la structure en blocs
+vérifiée comme une **propriété** — aucune ligne de premier niveau ne suit
+une ligne indentée sans `#` — et non par une liste de positions, ce que
+l'opérateur a écrit qui revient tel quel, ce que la machine numérote
+elle-même qui le reste, et le compte qui s'ouvre après rejeu.
+
+Discrimination par `git stash` : **10 des 14 tombent** avant.
+
+**Mesures.** 230 suites connexes vertes (3 220 cas) : Huawei, SSH, AAA,
+authentification, telnet, ACL, RIP ; puis 187 suites (3 680 cas) sur tout
+ce qui touche aux identifiants. Typecheck `tsc -p tsconfig.app.json` à
+163, inchangé ; lint à 113 problèmes contre 114 (un de moins, le `any`
+retiré du sac RIP).
+
+**Trois rouges antérieurs, vérifiés et non traités** :
+`advanced-15-scenarios` §13 et `ssh-operator-journeys` §J04/§J08 tombent
+identiquement avec mes changements remisés. Ils sont côté Cisco/Windows,
+hors du périmètre VRP, et signalés dans le journal.

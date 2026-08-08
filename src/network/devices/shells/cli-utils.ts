@@ -38,6 +38,58 @@ export const HUAWEI_ERRORS = {
   UNRECOGNIZED: (input: string, pos?: number) => formatVrpPositionalError('Unrecognized command', input, pos),
 } as const;
 
+/** Ce que la vue RIP de VRP retient hors du moteur commun. */
+export interface HuaweiRipExtras {
+  autoSummary?: boolean;
+  importRoute?: string[];
+  silentInterfaces?: Set<string>;
+  updateSec?: number;
+  timeoutSec?: number;
+  gcSec?: number;
+  defaultOriginate?: boolean;
+  maximumPaths?: number;
+  checkZero?: boolean;
+  verifySource?: boolean;
+}
+
+/**
+ * Le CLI ecrivait ce sac et personne ne le lisait : `undo summary` etait
+ * accepte, stocke, et absent de la configuration rendue. Un seul
+ * accesseur pour celui qui ecrit et celui qui rend, sinon les deux
+ * finissent par ne plus parler du meme objet.
+ */
+export function huaweiRipExtras(router: unknown): HuaweiRipExtras {
+  const r = router as { _huaweiRipExtras?: HuaweiRipExtras };
+  return r._huaweiRipExtras ?? (r._huaweiRipExtras = {});
+}
+
+/**
+ * Le `#` d'une configuration VRP separe les blocs, et c'est lui qui
+ * ramene en vue systeme quand la configuration est REJOUEE — ce que fait
+ * l'import d'une topologie. Il etait pousse a la main en une vingtaine
+ * d'endroits, donc deux manquaient : `ip route-static` sortait a
+ * l'interieur du bloc `acl`, et le bloc `aaa` a l'interieur du bloc
+ * OSPF. Retapees, ces lignes tombaient.
+ *
+ * La regle est mecanique et se pose une seule fois : on quitte un bloc
+ * des qu'une ligne de premier niveau suit une ligne indentee, et il faut
+ * alors un `#`. Deux lignes de premier niveau qui se suivent n'en
+ * demandent pas — VRP groupe ses commandes autonomes.
+ */
+export function normaliserBlocsVrp(lignes: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const ligne of lignes) {
+    const premierNiveau = ligne.length > 0 && !/^\s/.test(ligne) && ligne !== '#';
+    const precedente = out[out.length - 1];
+    if (premierNiveau && precedente !== undefined && /^\s/.test(precedente)) {
+      out.push('#');
+    }
+    if (ligne === '#' && precedente === '#') continue;
+    out.push(ligne);
+  }
+  return out;
+}
+
 /**
  * `undo X` existe si et seulement si `X` se configure dans cette vue :
  * c'est la regle de VRP, et le trie de la vue sait deja y repondre. Le

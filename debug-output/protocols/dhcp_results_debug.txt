@@ -21,9 +21,10 @@ Total steps: 300
   DHCP server packet debugging is on
 
 [5/300] rhq R-HQ# show debugging
-  DHCP server debugging is on
-  DHCP server packet debugging is on
-  DHCP server event debugging is on
+  DHCP:
+    DHCP server debugging is on
+    DHCP server packet debugging is on
+    DHCP server event debugging is on
 
 [6/300] rdc R-DC# terminal monitor
 <empty>
@@ -35,9 +36,10 @@ Total steps: 300
   DHCP server packet debugging is on
 
 [9/300] rdc R-DC# show debugging
-  DHCP server debugging is on
-  DHCP server packet debugging is on
-  DHCP server event debugging is on
+  DHCP:
+    DHCP server debugging is on
+    DHCP server packet debugging is on
+    DHCP server event debugging is on
 
 
 --- [10] § DHCP — activation logs & debug (Huawei) ---
@@ -93,19 +95,23 @@ Total steps: 300
 
 [25/300] rhq R-HQ# show ip dhcp pool
   Pool LAN-HQ :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 0
+   Excluded addresses             : 9
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   10.1.1.1             10.1.1.1         - 10.1.1.254       0    /9        /254
     Network          : 10.1.1.0/24
     Default Router   : 10.1.1.1
     DNS Server(s)    : 10.3.3.10, 8.8.8.8
     Domain Name      : acme.example
     Lease Time       : 8 hours
-    Total addresses  : 254
-    Leased addresses : 0
-    Excluded addresses : 9
-    Pending event    : none
     Current Bindings : 0
 
 [26/300] rhq R-HQ# show running-config | section dhcp
-  service dhcp
   ip dhcp excluded-address 10.1.1.1 10.1.1.9
   !
   ip dhcp pool LAN-HQ
@@ -147,15 +153,20 @@ Total steps: 300
 
 [36/300] rdc R-DC# show ip dhcp pool
   Pool LAN-DC :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 0
+   Excluded addresses             : 10
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   10.3.3.1             10.3.3.1         - 10.3.3.254       0    /10       /254
     Network          : 10.3.3.0/24
     Default Router   : 10.3.3.1
     DNS Server(s)    : 10.3.3.10
     Domain Name      : not configured
     Lease Time       : 2 days
-    Total addresses  : 254
-    Leased addresses : 0
-    Excluded addresses : 10
-    Pending event    : none
     Current Bindings : 0
 
 
@@ -255,11 +266,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.532 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.473 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.532/0.532/0.532/0.000 ms
+  rtt min/avg/max/mdev = 0.473/0.473/0.473/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -392,11 +403,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.527 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.490 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.527/0.527/0.527/0.000 ms
+  rtt min/avg/max/mdev = 0.490/0.490/0.490/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -500,7 +511,7 @@ Total steps: 300
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [71/300] ldc ldc$ ip addr flush dev eth0
 <empty>
@@ -529,29 +540,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.326 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.550 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.326/0.326/0.326/0.000 ms
+  rtt min/avg/max/mdev = 0.550/0.550/0.550/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.263 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.435 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.263/0.263/0.263/0.000 ms
+  rtt min/avg/max/mdev = 0.435/0.435/0.435/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.573 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.625 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.573/0.573/0.573/0.000 ms
+  rtt min/avg/max/mdev = 0.625/0.625/0.625/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -561,33 +572,33 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.481 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.553 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.481/0.481/0.481/0.000 ms
+  rtt min/avg/max/mdev = 0.553/0.553/0.553/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.516 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.613 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.516/0.516/0.516/0.000 ms
+  rtt min/avg/max/mdev = 0.613/0.613/0.613/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=253
+  Reply from 10.2.2.1: bytes=32 time=1ms TTL=253
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 
 --- [82] § DHCP — baux côté serveur ---
@@ -599,15 +610,20 @@ Total steps: 300
 
 [83/300] rhq R-HQ# show ip dhcp pool
   Pool LAN-HQ :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 2
+   Excluded addresses             : 9
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   10.1.1.1             10.1.1.1         - 10.1.1.254       2    /9        /254
     Network          : 10.1.1.0/24
     Default Router   : 10.1.1.1
     DNS Server(s)    : 10.3.3.10, 8.8.8.8
     Domain Name      : acme.example
     Lease Time       : 8 hours
-    Total addresses  : 254
-    Leased addresses : 2
-    Excluded addresses : 9
-    Pending event    : none
     Current Bindings : 2
 
 [84/300] rhq R-HQ# show ip dhcp server statistics
@@ -634,15 +650,20 @@ Total steps: 300
 
 [86/300] rdc R-DC# show ip dhcp pool
   Pool LAN-DC :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 1
+   Excluded addresses             : 10
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   10.3.3.1             10.3.3.1         - 10.3.3.254       1    /10       /254
     Network          : 10.3.3.0/24
     Default Router   : 10.3.3.1
     DNS Server(s)    : 10.3.3.10
     Domain Name      : not configured
     Lease Time       : 2 days
-    Total addresses  : 254
-    Leased addresses : 1
-    Excluded addresses : 10
-    Pending event    : none
     Current Bindings : 1
 
 [87/300] rbr <R-BR> display ip pool name LAN-BR
@@ -1175,15 +1196,17 @@ Total steps: 300
 
 [145/300] rhq R-HQ# show ip dhcp pool RES-HQ
   Pool RES-HQ :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 0
+   Leased addresses               : 0
+   Excluded addresses             : 0
+   Pending event                  : none
     Network          : not configured/?
     Default Router   : 10.1.1.1
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
-    Total addresses  : 0
-    Leased addresses : 0
-    Excluded addresses : 0
-    Pending event    : none
     Current Bindings : 0
     Manual Binding   : 10.1.1.50/24
     Client Identifier: 0100.0000.0000.4b
@@ -1586,35 +1609,35 @@ Total steps: 300
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.486 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.577 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.486/0.486/0.486/0.000 ms
+  rtt min/avg/max/mdev = 0.577/0.577/0.577/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.448 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.462 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.448/0.448/0.448/0.000 ms
+  rtt min/avg/max/mdev = 0.462/0.462/0.462/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.397 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.401 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.397/0.397/0.397/0.000 ms
+  rtt min/avg/max/mdev = 0.401/0.401/0.401/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.466 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.562 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
+  rtt min/avg/max/mdev = 0.562/0.562/0.562/0.000 ms
 
 [214/300] whq whq$ ping -n 1 10.1.1.1
   
@@ -1649,44 +1672,44 @@ Total steps: 300
 [217/300] whq whq$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=2ms TTL=62
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 2ms, Maximum = 2ms, Average = 2ms
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.362 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.506 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.362/0.362/0.362/0.000 ms
+  rtt min/avg/max/mdev = 0.506/0.506/0.506/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.228 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.332 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.228/0.228/0.228/0.000 ms
+  rtt min/avg/max/mdev = 0.332/0.332/0.332/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.266 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.691 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.266/0.266/0.266/0.000 ms
+  rtt min/avg/max/mdev = 0.691/0.691/0.691/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.543 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.618 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.543/0.543/0.543/0.000 ms
+  rtt min/avg/max/mdev = 0.618/0.618/0.618/0.000 ms
 
 [222/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -1726,53 +1749,58 @@ Total steps: 300
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [226/300] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.251 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.315 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.251/0.251/0.251/0.000 ms
+  rtt min/avg/max/mdev = 0.315/0.315/0.315/0.000 ms
 
 [227/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.395 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.422 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.395/0.395/0.395/0.000 ms
+  rtt min/avg/max/mdev = 0.422/0.422/0.422/0.000 ms
 
 [228/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.146 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.322 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.146/0.146/0.146/0.000 ms
+  rtt min/avg/max/mdev = 0.322/0.322/0.322/0.000 ms
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.280 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.226 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.280/0.280/0.280/0.000 ms
+  rtt min/avg/max/mdev = 0.226/0.226/0.226/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
 [230/300] rhq R-HQ# show ip dhcp pool LAN-HQ
   Pool LAN-HQ :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 2
+   Excluded addresses             : 30
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   10.1.1.1             10.1.1.1         - 10.1.1.254       2    /30       /254
     Network          : 10.1.1.0/24
     Default Router   : 10.1.1.1
     DNS Server(s)    : 10.3.3.10, 8.8.8.8
     Domain Name      : acme.example
     Lease Time       : 8 hours
-    Total addresses  : 254
-    Leased addresses : 2
-    Excluded addresses : 30
-    Pending event    : none
     Current Bindings : 2
 
 [231/300] rhq R-HQ# show ip dhcp binding 10.1.1.10
@@ -2159,43 +2187,55 @@ Total steps: 300
 
 [288/300] rhq R-HQ# show ip dhcp pool
   Pool LAN-HQ :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 2
+   Excluded addresses             : 30
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   10.1.1.1             10.1.1.1         - 10.1.1.254       2    /30       /254
     Network          : 10.1.1.0/24
     Default Router   : 10.1.1.1
     DNS Server(s)    : 1.1.1.1, 8.8.4.4
     Domain Name      : acme.example
     Lease Time       : 8 hours
-    Total addresses  : 254
-    Leased addresses : 2
-    Excluded addresses : 30
-    Pending event    : none
     Current Bindings : 2
     NetBIOS Server(s): 10.3.3.10
     Option 42 (ip) : 10.3.3.10
   
   Pool RES-HQ :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 0
+   Leased addresses               : 0
+   Excluded addresses             : 0
+   Pending event                  : none
     Network          : not configured/?
     Default Router   : 10.1.1.1
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
-    Total addresses  : 0
-    Leased addresses : 0
-    Excluded addresses : 0
-    Pending event    : none
     Current Bindings : 0
     Manual Binding   : 10.1.1.50/24
     Client Identifier: 0100.0000.0000.4b
   
   Pool RELAY-DC :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 1
+   Excluded addresses             : 0
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   10.3.3.1             10.3.3.1         - 10.3.3.254       1    /0        /254
     Network          : 10.3.3.0/24
     Default Router   : 10.3.3.1
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
-    Total addresses  : 254
-    Leased addresses : 1
-    Excluded addresses : 0
-    Pending event    : none
     Current Bindings : 1
 
 [289/300] swhq SW-HQ# show ip dhcp snooping binding
@@ -2324,24 +2364,28 @@ Total steps: 300
   Pool number: 1
 
 [299/300] rhq R-HQ# show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level informational
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 32768 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamps logging: enabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level informational, 16 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 16 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 88 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 16 message lines logged
+          No active syslog hosts
   
   Log Buffer (32768 bytes):
   
-  *Jun  6 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  *Jun  6 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  *Jun  6 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  *Jun  6 08:00:00.000: %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  *Jun  6 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  *Jun  6 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
@@ -2350,34 +2394,98 @@ Total steps: 300
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
-  *Jun  6 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
-  *Jun  6 08:00:00.000: %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  *Jun  6 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
-  *Jun  6 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
-  *Jun  6 08:00:00.000: %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.11 to 0200.0000.0047
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 136B0410, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid D4F6C45F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid D4F6C45F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid D4F6C45F, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid D4F6C45F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid ACF5618F, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid ACF5618F, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid B29397DA, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid B29397DA, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 3DDE9A47, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 3DDE9A47, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid C50EBCD0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid C50EBCD0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid C50EBCD0, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid C50EBCD0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid E27D2B17, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid E27D2B17, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid E27D2B17, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid E27D2B17, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.005b for 10.3.3.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid B90161F3, chaddr 0200.0000.005b, ciaddr 10.3.3.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.005b for 10.3.3.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid B90161F3, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 1A5B9F53, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 1A5B9F53, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 1A5B9F53, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 1A5B9F53, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid FE8AF77, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid FE8AF77, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid FE8AF77, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid FE8AF77, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
 
 [300/300] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 17
-  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-06-06 08:00:00 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
+  Current messages : 6
   2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
   2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
   2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
   2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
   2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/2, changed state to up
   2026-06-06 08:00:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/2, changed state to up
-  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener closed on 0.0.0.0:1812
-  2026-06-06 08:00:00 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 10.2.2.1/255.255.255.0 assigned
-  2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 172.16.12.2/255.255.255.252 assigned
-  2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/2, IPv4 address 172.16.23.2/255.255.255.252 assigned

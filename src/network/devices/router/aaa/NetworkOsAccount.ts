@@ -1,4 +1,8 @@
 import type { IEventBus } from '@/events/EventBus';
+import {
+  huaweiIrreversibleCipher, huaweiDecipher,
+  looksLikeIrreversibleCipher, looksLikeReversibleCipher,
+} from '@/crypto/passwords/huawei';
 
 export type SshAuthMethod = 'password' | 'publickey' | 'keyboard-interactive';
 export type PasswordHashAlgorithm =
@@ -294,8 +298,25 @@ export class NetworkOsAccount {
     return { ok: true };
   }
 
+  /**
+   * Le secret range est sous la forme que la configuration rend : une
+   * empreinte pour `irreversible-cipher`, un chiffre pour `cipher`. La
+   * comparaison doit donc passer par l'algorithme, sinon un compte
+   * recharge depuis une configuration n'ouvre plus — la configuration ne
+   * porte pas le clair, et c'est bien son role.
+   */
   authenticate(password: string): boolean {
     if (!this.secret) return false;
+    if (this.passwordHashAlgorithm === 'irreversible-cipher') {
+      return looksLikeIrreversibleCipher(this.secret)
+        ? huaweiIrreversibleCipher(password) === this.secret
+        : this.secret === password;
+    }
+    if (this.passwordHashAlgorithm === 'cipher') {
+      return looksLikeReversibleCipher(this.secret)
+        ? huaweiDecipher(this.secret) === password
+        : this.secret === password;
+    }
     return this.secret === password;
   }
 
