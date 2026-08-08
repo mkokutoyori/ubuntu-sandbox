@@ -36,7 +36,84 @@ export const HUAWEI_ERRORS = {
   AMBIGUOUS: (input: string, pos?: number) => formatVrpPositionalError('Ambiguous command', input, pos),
   INCOMPLETE: (input: string, pos?: number) => formatVrpPositionalError('Incomplete command', input, pos),
   UNRECOGNIZED: (input: string, pos?: number) => formatVrpPositionalError('Unrecognized command', input, pos),
+  TOO_MANY: (input: string, pos?: number) => formatVrpPositionalError('Too many parameters', input, pos),
 } as const;
+
+/**
+ * VRP n'a que quatre messages positionnels, et ils portent TOUS l'echo
+ * de la ligne et le curseur. Les gestionnaires rendent la chaine nue —
+ * 237 sites pour le seul `Error: Incomplete command.` — et trois
+ * orthographes coexistent pour le parametre errone, dont une qui annonce
+ * un curseur (« found at '^' position ») sans en montrer aucun.
+ *
+ * Les corriger un par un etait exclu et aurait laissé le 238e recommencer :
+ * la mise en forme se fait au POINT DE SORTIE, une fois, la ou la ligne
+ * tapee et le nombre de mots-cles reconnus sont encore connus.
+ *
+ * Ce qui n'est pas une des quatre familles est laisse tel quel : un
+ * message propre a une commande (`Error: OSPF is not configured.`) n'a
+ * pas de position a montrer, et lui en inventer une serait un mensonge
+ * de plus.
+ */
+export function normaliserErreurVrp(
+  sortie: string,
+  ligne: string,
+  nbMotsCles = 0,
+): string {
+  if (!sortie.startsWith('Error: ')) return sortie;
+  if (sortie.includes('\n')) return sortie;
+
+  const tete = sortie.slice('Error: '.length).replace(/\.$/, '');
+  if (/^Incomplete command/.test(tete)) return HUAWEI_ERRORS.INCOMPLETE(ligne);
+  if (/^Unrecognized command/.test(tete)) return HUAWEI_ERRORS.UNRECOGNIZED(ligne);
+  if (/^(Wrong parameter|Invalid (IP|OSPF)|Expected )/.test(tete)) {
+    return formatVrpPositionalError('Wrong parameter', ligne, positionArgument(ligne, nbMotsCles));
+  }
+  return sortie;
+}
+
+/**
+ * Le mot en trop, quand la commande declare un plafond d'arguments.
+ *
+ * Le plafond est OPTIONNEL et n'est pose que la ou les formes legitimes
+ * sont connues et closes : plafonner a l'aveugle refuserait une forme
+ * valide, ce qui serait pire que le silence d'aujourd'hui. Une commande
+ * sans plafond declare se comporte exactement comme avant.
+ */
+export function tropDeParametres(
+  resultat: { node?: { maxArgs?: number }; args: readonly string[]; matchedKeywords: readonly string[] },
+  ligne: string,
+): string | null {
+  const max = resultat.node?.maxArgs;
+  if (max === undefined || resultat.args.length <= max) return null;
+  return HUAWEI_ERRORS.TOO_MANY(ligne, positionArgument(ligne, resultat.matchedKeywords.length + max));
+}
+
+/** Le debut du premier argument : la ou un parametre errone se trouve. */
+function positionArgument(ligne: string, nbMotsCles: number): number {
+  const spans: number[] = [];
+  const re = /\S+/g;
+  for (let m = re.exec(ligne); m !== null; m = re.exec(ligne)) spans.push(m.index);
+  return spans[nbMotsCles] ?? spans[spans.length - 1] ?? ligne.trimEnd().length;
+}
+
+/** Une adresse IPv4 en notation pointee, quatre octets dans les bornes. */
+export function estAdresseIPv4(valeur: string): boolean {
+  const parts = valeur.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255);
+}
+
+/**
+ * Le nom qu'un port PORTE a l'ecran. Les ports sont ranges sous leur nom
+ * court (`GE0/0/0`), qui est interne : VRP n'affiche jamais que le nom
+ * complet, l'invite comprise. L'expansion etait ecrite en ligne dans
+ * deux vues et absente des deux autres, si bien que la meme interface
+ * s'appelait `GE0/0/0` ici et `GigabitEthernet0/0/0` la.
+ */
+export function huaweiDisplayInterfaceName(interne: string): string {
+  return interne.startsWith('GE') ? interne.replace(/^GE/, 'GigabitEthernet') : interne;
+}
 
 /** Ce que la vue RIP de VRP retient hors du moteur commun. */
 export interface HuaweiRipExtras {
@@ -314,28 +391,43 @@ const CISCO_INTERFACE_PREFIXES: Record<string, string> = {
   'ge': 'GE',
 };
 
-/** Huawei interface abbreviation → full prefix candidates (ordered) */
 /**
- * Les abréviations d'interface que VRP résout, et vers quel nom.
- * Exporté parce que c'est l'AUTORITÉ sur les types qu'`interface`
- * accepte : l'aide de `interface ?` s'en déduit au lieu d'être écrite
- * une seconde fois à la main, où elle finirait par nommer un type que
- * la commande refuse.
+ * Les types d'interface de VRP. L'abreviation n'est PAS une liste
+ * d'ecritures admises mais une regle : tout prefixe non ambigu du nom du
+ * type. Une table fermee ne peut jamais l'exprimer — elle acceptait
+ * `ge0/0/0` et `gi0/0/0` mais refusait `g0/0/0`, `loop0` et `l0`, qui
+ * sont pourtant les frappes les plus courantes.
  */
-export const HUAWEI_INTERFACE_PREFIXES: Record<string, string[]> = {
-  'ge': ['GE', 'GigabitEthernet'],
-  'gi': ['GE', 'GigabitEthernet'],
-  'gigabitethernet': ['GE', 'GigabitEthernet'],
-  'loopback': ['LoopBack'],
-  'lo': ['LoopBack'],
-  'lb': ['LoopBack'],
-  'tunnel': ['Tunnel'],
-  'tu': ['Tunnel'],
-  'eth-trunk': ['Eth-Trunk'],
-  'vlanif': ['Vlanif'],
-  'nve': ['Nve'],
-  'null': ['NULL'],
-};
+export const HUAWEI_INTERFACE_TYPES: readonly string[] = [
+  'GigabitEthernet', 'Ethernet', 'Eth-Trunk', 'LoopBack',
+  'NULL', 'Nve', 'Tunnel', 'Vlanif', 'MEth',
+];
+
+/**
+ * Les noms courts INTERNES, qui ne sont pas des abreviations de VRP mais
+ * la facon dont ce simulateur range ses ports. Ils restent acceptes a la
+ * saisie parce qu'ils l'etaient deja.
+ */
+const HUAWEI_INTERNAL_SHORT: Record<string, string> = { 'ge': 'GigabitEthernet' };
+
+/**
+ * Le type d'interface qu'un prefixe designe, ou `null` quand il n'en
+ * designe aucun ou plusieurs. Meme regle pour resoudre un port existant
+ * et pour en creer un : trois tables de types coexistaient, et elles ne
+ * disaient pas la meme chose.
+ */
+export function huaweiTypeInterface(prefixe: string): string | null {
+  const t = huaweiTypesPourPrefixe(prefixe);
+  return t.length === 1 ? t[0] : null;
+}
+
+/** Les types qu'un prefixe designe. Plus d'un : la saisie est ambigue. */
+function huaweiTypesPourPrefixe(prefixe: string): string[] {
+  const p = prefixe.toLowerCase();
+  const interne = HUAWEI_INTERNAL_SHORT[p];
+  if (interne) return [interne];
+  return HUAWEI_INTERFACE_TYPES.filter((t) => t.toLowerCase().startsWith(p));
+}
 
 const IFACE_NAME_RE = /^([a-z]+)([\d/.-]+)$/;
 
@@ -389,10 +481,15 @@ export function resolveHuaweiInterfaceName(
   if (!match) return null;
 
   const numbers = match[2];
-  const candidates = HUAWEI_INTERFACE_PREFIXES[match[1]];
-  if (!candidates) return null;
+  const types = huaweiTypesPourPrefixe(match[1]);
+  // Zero type : la saisie ne designe rien. Plusieurs : elle est ambigue,
+  // et deviner serait pire que refuser.
+  if (types.length !== 1) return null;
 
-  for (const prefix of candidates) {
+  // Le port peut etre range sous son nom complet ou sous le nom court
+  // interne (`GE0/0/0`) : on essaie les deux.
+  const formes = types[0] === 'GigabitEthernet' ? ['GE', 'GigabitEthernet'] : types;
+  for (const prefix of formes) {
     const resolved = `${prefix}${numbers}`;
     for (const name of portNames) {
       if (name === resolved) return name;

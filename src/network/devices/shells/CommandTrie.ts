@@ -35,6 +35,16 @@ export interface ParamSpec {
   literal?: string;
   /** Valeurs admises d'un `ENUM`, rendues chacune comme un mot-clé propre. */
   values?: ReadonlyArray<{ keyword: string; description: string }>;
+  /**
+   * Les valeurs servent à `?` et JAMAIS à la complétion par Tab.
+   *
+   * Existe pour `interface <type>` sur VRP : `?` doit nommer les types
+   * (`GigabitEthernet`, `LoopBack`…), tandis que Tab doit compléter les
+   * PORTS RÉELS de la machine — deux réponses différentes à deux
+   * questions différentes, et les confondre supprimait les seconds,
+   * puisqu'un mot-clé l'emporte sur une valeur dynamique.
+   */
+  helpOnly?: boolean;
 }
 
 /**
@@ -78,6 +88,14 @@ export interface CommandNode {
   /** If true, this node accepts remaining args as-is */
   greedy?: boolean;
   minArgs?: number;
+  /**
+   * Nombre MAXIMAL d'arguments accepte. Le trie ne portait qu'un
+   * minimum, donc un mot en trop derriere une commande gloutonne etait
+   * silencieusement ignore : `sysname R1 R2` prenait `R1` et jetait
+   * `R2`. Non declare, il n'y a pas de plafond — le comportement de
+   * toutes les commandes existantes est inchange.
+   */
+  maxArgs?: number;
   hintSuggestions?: Array<{ keyword: string; description: string }>;
   _hintOnly?: boolean;
   _passthrough?: boolean;
@@ -805,8 +823,28 @@ export class CommandTrie {
         }
       }
 
-      completed.push(tokens[i]);
-      paramIdx++;
+      // Le token n'est pas un mot-clé. Deux cas, et les confondre est ce
+      // qui faisait fabriquer des commandes à la complétion.
+      //
+      // Si le nœud ATTEND un argument à cette place — il lui reste des
+      // `params`, ou son handler est glouton — le token est cette
+      // valeur : on la consomme et on continue, ce qui est le seul moyen
+      // de compléter `ip route 10.0.0.0 255.255.255.`.
+      //
+      // Sinon, la ligne n'est plus analysable. L'ancienne version
+      // empilait le mot ET RESTAIT SUR LE MÊME NŒUD, donc le mot suivant
+      // était comparé aux enfants de la RACINE : `zzz ho` rendait
+      // `zzz hostname`, `blah int` rendait `blah interface`, et `do sh`
+      // rendait `do shutdown` — des lignes qu'aucun IOS n'accepterait.
+      // Un vrai équipement ne complète rien après un mot qu'il ne
+      // reconnaît pas. C'est la garde que `getCompletions` applique
+      // depuis le typage des arguments, et qui manquait ici.
+      if (node.params.length > paramIdx || node.greedy) {
+        completed.push(tokens[i]);
+        paramIdx++;
+        continue;
+      }
+      return [];
     }
 
     const partial = tokens[tokens.length - 1];
@@ -833,11 +871,24 @@ export class CommandTrie {
       if (auto.keyword.startsWith(partialLower)) push(auto.keyword);
     }
 
-    for (const v of this.enumValues(node, paramIdx)) {
+    for (const v of this.enumValues(node, paramIdx, true)) {
       if (v.keyword.toLowerCase().startsWith(partialLower)) push(v.keyword);
     }
 
-    if (this.dynamicResolver) {
+    // Un MOT-CLÉ et une VALEUR ne se disputent jamais la même place sur
+    // un vrai IOS : l'analyseur essaie les mots-clés d'abord, et ne lit
+    // une valeur que si aucun ne convient. La complétion les mélangeait,
+    // avec une conséquence très visible : `interface gi` rendait cinq
+    // candidats — le type `GigabitEthernet` ET les ports `0/0`…`0/3` —
+    // donc Tab ne faisait rien, là où un vrai routeur écrit
+    // `interface GigabitEthernet` immédiatement. Le type et son numéro
+    // sont deux jetons pour l'analyseur, même quand on les colle.
+    //
+    // Les valeurs vivantes ne disparaissent pas pour autant : elles
+    // reviennent dès qu'aucun mot-clé ne correspond (`interface 0/1`,
+    // `ip route 10.0.0.0 255.255.255.`), et `?` continue de les lister,
+    // ce qui reste le bon endroit pour découvrir les ports réels.
+    if (this.dynamicResolver && results.length === 0) {
       const context: DynamicCompletionContext = {
         path: completed,
         paramType: node.params[paramIdx]?.type ?? null,
@@ -931,9 +982,12 @@ export class CommandTrie {
   private enumValues(
     node: CommandNode,
     consumedArgs: number,
+    pourTab = false,
   ): ReadonlyArray<{ keyword: string; description: string }> {
     const param = node.params[consumedArgs];
-    return param?.type === 'ENUM' ? (param.values ?? []) : [];
+    if (param?.type !== 'ENUM') return [];
+    if (pourTab && param.helpOnly) return [];
+    return param.values ?? [];
   }
 
   /**
@@ -973,6 +1027,17 @@ export class CommandTrie {
   executableWhen(path: string, predicate: (args: readonly string[]) => boolean): void {
     const node = this.nodeAt(path);
     if (node) node.executableWhen = predicate;
+  }
+
+  /** Plafonne le nombre d'arguments d'une commande. */
+  allowArgs(path: string, maxArgs: number): void {
+    const node = this.nodeAt(path);
+    if (node) node.maxArgs = maxArgs;
+  }
+
+  /** Le plafond declare, ou `null` quand la commande n'en a pas. */
+  argumentCeiling(path: string): number | null {
+    return this.nodeAt(path)?.maxArgs ?? null;
   }
 
   private nodeAt(path: string): CommandNode | null {

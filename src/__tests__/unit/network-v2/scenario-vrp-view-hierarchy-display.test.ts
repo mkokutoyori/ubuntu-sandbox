@@ -81,7 +81,7 @@ describe('Scénario 1 — Prise en main VRP : vues et display fondamentaux', () 
       // router shell tests), unlike the S-series switch which keeps the
       // full GigabitEthernet0/0/0 form.
       await r.executeCommand('interface GigabitEthernet 0/0/0');
-      expect(r.getPrompt()).toBe('[Huawei-GE0/0/0]');
+      expect(r.getPrompt()).toBe('[Huawei-GigabitEthernet0/0/0]');
       await r.executeCommand('quit');
       expect(r.getPrompt()).toBe('[Huawei]');
 

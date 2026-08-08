@@ -18,7 +18,8 @@ import { IPAddress } from '../../../core/types';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
-import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras } from '../cli-utils';
+import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName } from '../cli-utils';
+import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
 import {
@@ -64,13 +65,13 @@ export function displayInterface(router: Router, ifName: string): string {
 
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  const isUp = port.getIsUp();
-  const isConn = port.isConnected();
-  const isVirtual = /^(LoopBack|Tunnel)/i.test(portName);
-
+  // Une sixieme facon de calculer l'etat, et une liste d'interfaces
+  // virtuelles ecrite a la main qui oubliait `Vlanif` et `NULL`.
+  const st = iosInterfaceStatus(port, portName, router._getPortsInternal());
   const lines = [
-    `${portName} current state : ${isUp ? (isConn || isVirtual ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
-    `Line protocol current state : ${isConn || isVirtual ? 'UP' : 'DOWN'}`,
+    `${huaweiDisplayInterfaceName(portName)} current state : `
+      + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
+    `Line protocol current state : ${st.protocol.toUpperCase()}`,
   ];
 
   const desc = router.getInterfaceDescription(portName);
@@ -288,11 +289,10 @@ export function displayIpIntBrief(router: Router): string {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
-    const phys = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
-    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
+    const { phys, proto } = vrpEtatPort(port, name, router._getPortsInternal());
     if (phys === 'up') upPhys++; else downPhys++;
     if (proto === 'up') upProto++; else downProto++;
-    const renderedName = name.startsWith('GE') ? name.replace(/^GE/, 'GigabitEthernet') : name;
+    const renderedName = huaweiDisplayInterfaceName(name);
     rows.push(`${renderedName.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${proto}`);
   }
   const lines = [
@@ -344,16 +344,37 @@ export function displayInterfaceAll(router: Router): string {
   return names.map((n) => displayInterface(router, n)).join('\n');
 }
 
+
+/**
+ * L'etat d'un port pour les vues VRP.
+ *
+ * Chaque vue calculait le sien (`getIsUp() && isConnected()`), ce qui se
+ * trompe de trois facons : une porteuse tombee a l'autre bout n'est pas
+ * vue, `administratively down` est aplati, et une interface VIRTUELLE —
+ * qui n'a pas de porteuse — est declaree morte alors que sa route est
+ * installee. `iosInterfaceStatus` decrit l'etat d'un PORT, pas un modele
+ * par constructeur : les deux CLI le lisent maintenant, chacun avec ses
+ * mots.
+ */
+function vrpEtatPort(port: import('../../../hardware/Port').Port, nom: string,
+  ports?: ReadonlyMap<string, import('../../../hardware/Port').Port>): { phys: string; proto: string } {
+  const st = iosInterfaceStatus(port, nom, ports);
+  return {
+    phys: st.status === 'administratively down' ? '*down' : st.status,
+    proto: st.protocol,
+  };
+}
+
 /** `display interface brief` — real status table. */
 export function displayInterfaceBrief(router: Router): string {
   const rows = [
     'PHY: Physical   *down: administratively down',
     'Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors',
   ];
-  for (const [name, port] of router._getPortsInternal()) {
-    const phy = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
-    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
-    rows.push(`${name.padEnd(28)}${phy.padEnd(8)}${proto.padEnd(10)}` +
+  const ports = router._getPortsInternal();
+  for (const [name, port] of ports) {
+    const { phys, proto } = vrpEtatPort(port, name, ports);
+    rows.push(`${huaweiDisplayInterfaceName(name).padEnd(28)}${phys.padEnd(8)}${proto.padEnd(10)}` +
       `0%    0%       0          0`);
   }
   return rows.join('\n');
@@ -362,11 +383,11 @@ export function displayInterfaceBrief(router: Router): string {
 /** `display interface description` — real description table. */
 export function displayInterfaceDescription(router: Router): string {
   const rows = ['Interface                     PHY     Protocol Description'];
-  for (const [name, port] of router._getPortsInternal()) {
-    const phy = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
-    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
+  const ports = router._getPortsInternal();
+  for (const [name, port] of ports) {
+    const { phys, proto } = vrpEtatPort(port, name, ports);
     const desc = router.getInterfaceDescription(name) || '';
-    rows.push(`${name.padEnd(30)}${phy.padEnd(8)}${proto.padEnd(9)}${desc}`);
+    rows.push(`${huaweiDisplayInterfaceName(name).padEnd(30)}${phys.padEnd(8)}${proto.padEnd(9)}${desc}`);
   }
   return rows.join('\n');
 }
@@ -519,7 +540,7 @@ export function displayCurrentConfig(
     const mask = port.getSubnetMask();
     // Real VRP renders the canonical interface name (GigabitEthernet*)
     // rather than the abbreviated 'GE*' device label.
-    const renderedName = name.startsWith('GE') ? name.replace(/^GE/, 'GigabitEthernet') : name;
+    const renderedName = huaweiDisplayInterfaceName(name);
     lines.push(`interface ${renderedName}`);
     const desc = descs.get(name);
     if (desc) lines.push(` description ${desc}`);
@@ -872,31 +893,10 @@ export function displayIpv6InterfaceBrief(router: Router): string {
 }
 
 export function displayDebugging(router: Router): string {
-  const lines: string[] = [];
-  const flags = (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags;
-  if (flags) for (const f of [...flags].sort()) lines.push(f);
   const debugSvc = (router as unknown as {
     getHuaweiDebugService?: () => HuaweiDebugService;
   }).getHuaweiDebugService?.();
-  if (debugSvc?.hasAnyFlag()) {
-    for (const f of debugSvc.list()) {
-      lines.push(`${HuaweiDebugService.label(f.category)} debugging is on`);
-    }
-  }
-  const dhcp = router._getDHCPServerInternal();
-  const dhcpDebug = dhcp.formatDebugShow();
-  if (!dhcpDebug.includes('No')) {
-    lines.push('DHCP debugging:');
-    lines.push(dhcpDebug);
-  }
-  const ipsecEng = (router as any)._getIPSecEngineInternal?.();
-  if (ipsecEng) {
-    if (ipsecEng.isDebugEnabled?.('isakmp')) lines.push('IKE debugging is on');
-    if (ipsecEng.isDebugEnabled?.('ipsec')) lines.push('IPSec debugging is on');
-    if (ipsecEng.isDebugEnabled?.('ikev2')) lines.push('IKEv2 debugging is on');
-  }
-  if (lines.length === 0) return 'No debugging is enabled.';
-  return lines.join('\n');
+  return debugSvc ? debugSvc.format() : 'No debugging is on';
 }
 
 export function displayIpProtocols(router: Router): string {

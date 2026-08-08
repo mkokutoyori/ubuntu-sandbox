@@ -27,6 +27,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { stripAnsi } from '@/terminal/core/OutputFormatter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
@@ -166,7 +167,7 @@ describe('§F5.10 — le redémarrage suivant échoue, et c\'est là que ça cas
     // 203/EXEC est tout le diagnostic : l'enfant n'a jamais pu être
     // exécuté, ce n'est pas un démon qui a démarré puis refusé.
     expect(status).toContain('code=exited, status=203/EXEC');
-    expect(status).toContain('Active: failed (Result: exit-code)');
+    expect(stripAnsi(status)).toContain('Active: failed (Result: exit-code)');
   });
 
   it('le journal nomme le fichier manquant', async () => {

@@ -15,7 +15,7 @@ import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../core/ty
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
-import { refuseUnknownUndo } from '../cli-utils';
+import { refuseUnknownUndo, huaweiTypeInterface } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
 import { describeHuaweiInterfaceArg, wordArg } from './huaweiInterfaceHelp';
@@ -67,18 +67,31 @@ function resolveOrCreateHuaweiInterface(router: Router, raw: string): string | n
   }
   const direct = resolveHuaweiInterfaceName(router, raw);
   if (direct) return direct;
-  const vMatch = raw.match(/^(loopback|tunnel|nve|vlanif|eth-trunk|null)([\d/]+)$/i);
+  // La troisieme table de types du depot vivait ici, et elle n'acceptait
+  // que le nom entier : `loop0` et `l0` etaient refuses alors que VRP
+  // admet tout prefixe non ambigu. Une seule regle sert desormais a
+  // resoudre un port existant et a en creer un.
+  const vMatch = raw.match(/^([a-z-]+)([\d/]+)$/i);
   if (!vMatch) return null;
-  const typeMap: Record<string, string> = {
-    'loopback': 'LoopBack', 'lo': 'LoopBack',
-    'tunnel': 'Tunnel', 'tu': 'Tunnel',
-    'nve': 'Nve', 'vlanif': 'Vlanif',
-    'eth-trunk': 'Eth-Trunk', 'null': 'NULL',
-  };
-  const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+  const type = huaweiTypeInterface(vMatch[1]);
+  if (!type || !VIRTUELLES.has(type)) return null;
+  const fullName = `${type}${vMatch[2]}`;
   router._createVirtualInterface(fullName);
   return fullName;
 }
+
+/**
+ * Les types qu'on peut CREER a la volee ; les autres sont du materiel.
+ *
+ * Exporté parce que l'aide de `interface ?` s'en déduit : elle ne doit
+ * nommer que ce qui s'ouvre. `HUAWEI_INTERFACE_TYPES` sert à RÉSOUDRE
+ * une abréviation et contient donc des types que VRP connaît sans que
+ * cette image en porte (`Ethernet`, `MEth`) — les proposer ferait
+ * nommer un refus à l'aide, ce qui est le défaut qu'elle corrige.
+ */
+export const VIRTUELLES: ReadonlySet<string> = new Set([
+  'LoopBack', 'Tunnel', 'Nve', 'Vlanif', 'Eth-Trunk', 'NULL',
+]);
 
 export function cmdIpRouteStatic(router: Router, args: string[]): string {
   if (args.length < 3) return 'Error: Incomplete command.';
@@ -126,7 +139,14 @@ export function cmdIpRouteStatic(router: Router, args: string[]): string {
     let permanent = false;
     for (let i = cursor; i < args.length; i++) {
       const tok = args[i];
-      if (tok === 'preference' && args[i + 1]) { preference = parseInt(args[++i], 10); }
+      if (tok === 'preference' && args[i + 1]) {
+        preference = parseInt(args[++i], 10);
+        // La preference d'une route statique VRP va de 1 a 255 : 0 et
+        // 256 etaient acceptes, et 0 aurait fait une route inderogeable.
+        if (isNaN(preference) || preference < 1 || preference > 255) {
+          return 'Error: Wrong parameter.';
+        }
+      }
       else if (tok === 'tag' && args[i + 1]) { tag = parseInt(args[++i], 10); }
       else if (tok === 'description' && args[i + 1]) {
         description = args.slice(i + 1).join(' '); i = args.length;
@@ -388,6 +408,9 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     getRouter()._setHostnameInternal(args[0]);
     return '';
   });
+  // `sysname` prend UN nom, et un seul : la forme est close, donc le
+  // plafond est sur. `sysname R1 R2` prenait `R1` et jetait `R2`.
+  trie.allowArgs('sysname', 1);
 
   trie.registerGreedy('interface', 'Enter interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';

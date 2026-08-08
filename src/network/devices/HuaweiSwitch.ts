@@ -17,6 +17,7 @@ import { Dot1xAgent } from '../dot1x/Dot1xAgent';
 import { ETHERTYPE_EAPOL } from '../dot1x/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
+import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
 
 export class HuaweiSwitch extends Switch {
   private readonly agents = new AgentRegistry();
@@ -119,6 +120,25 @@ export class HuaweiSwitch extends Switch {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
+    this._huaweiDebugService?.attachToBus(this.getBus(), this.id);
+  }
+
+  private _huaweiDebugService: HuaweiDebugService | null = null;
+
+  /**
+   * Le switch n'avait AUCUN magasin : `debugging stp` repondait
+   * `Info: stp debugging is on.` et n'etait range nulle part, tandis que
+   * `display debugging` etait refuse — la commande ne pouvait donc ni
+   * agir ni etre relue. Meme service que le routeur, meme table, sur les
+   * categories que cette plateforme sait tracer.
+   */
+  getHuaweiDebugService(): HuaweiDebugService {
+    if (!this._huaweiDebugService) {
+      this._huaweiDebugService = new HuaweiDebugService();
+      this._huaweiDebugService.setPlatform('switch');
+    }
+    this._huaweiDebugService.attachToBus(this.getBus(), this.id);
+    return this._huaweiDebugService;
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {

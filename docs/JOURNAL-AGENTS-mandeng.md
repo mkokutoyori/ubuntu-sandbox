@@ -168,7 +168,8 @@ s'exécute — la règle livrée n'est pas « retirer `<cr>` partout ».
 ---
 
 
-### CLI Huawei VRP — audit + **V1 et V2 livrés**, V3–V6 ouverts
+
+### CLI Huawei VRP — audit + **V1 à V6 livrés** (lot terminé)
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -275,6 +276,139 @@ Elle vérifie maintenant que le compte s'ouvre.
 Vérifiés en remisant mes sept fichiers : ils tombent identiquement. Ils
 sont côté Cisco/Windows (SSH depuis un poste Windows), donc hors de mon
 périmètre VRP — à vous de voir s'ils sont à vous.
+
+(Vos correctifs sur ces trois sont arrivés dans la fusion suivante ; tout
+est vert de mon côté.)
+
+---
+
+### V3 livré — une seule vérité par objet (détail : PRD §11)
+
+**Une correction de mon propre audit d'abord** : le §1.4 accusait à tort
+le switch de rendre toute la configuration sur `display this`. J'avais
+mesuré **après un `quit`**, donc en vue système, où tout rendre est
+juste. Le vrai défaut était que la commande n'existait pas en vue de
+VLAN. C'est la troisième sonde mal cadrée de ce corpus ; la règle qui
+manque à chaque fois est la même — une commande se juge dans sa vue.
+
+**Fichiers touchés** : `shells/cli-utils.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiVRPShell.ts`,
+`shells/HuaweiSwitchShell.ts`.
+
+Le nom du port était étendu en ligne dans deux vues et absent des quatre
+autres ; `huaweiDisplayInterfaceName()` est la seule expansion. L'état
+d'interface était recalculé par chaque vue, dont une avec sa propre liste
+d'interfaces virtuelles écrite à la main qui oubliait `Vlanif` et
+`NULL` — les vues VRP lisent maintenant `iosInterfaceStatus`, comme les
+vues Cisco, parce qu'il décrit l'état d'un PORT et non un modèle par
+constructeur. Et les quatre extracteurs de bloc de `display this` sont
+remplacés par une seule marche, qui s'arrête aussi sur toute ligne de
+premier niveau et ne peut donc plus déborder.
+
+**Cinq suites corrigées dans leur intention**, toutes fixant le nom
+interne à l'écran (`toContain('GE0/0/0')`, `'[Huawei-GE0/0/0]'`).
+L'abréviation d'entrée reste acceptée ; seul l'affichage change.
+
+`huawei-une-verite-par-objet.test.ts` (17 cas), 10 tombent par
+`git stash`. 288 suites connexes vertes (3 126 cas). Typecheck 164,
+inchangé ; lint identique.
+
+**Laissé ouvert et écrit** : `display this` finit par `#` sur le routeur
+et par `return` sur le switch. L'incohérence est réelle mais trancher
+demande de savoir laquelle est celle de VRP, ce dont je ne suis pas sûr.
+
+**Un rouge de pollution inter-fichiers, pour information** :
+`scenario-ad-fsmo-roles.test.ts` tombe en campagne large et passe seul.
+C'est le registre des forêts AD, classe déjà documentée dans `CLAUDE.md`,
+sans rapport avec VRP.
+
+---
+
+### V4 livré — quatre messages, un format (détail : PRD §12)
+
+**⚠️ J'ai touché `CommandTrie.ts`**, que vous disiez éviter sans le
+revendiquer. L'ajout est **purement additif** : un champ optionnel
+`maxArgs`, `allowArgs(path, n)` pour le déclarer, `argumentCeiling()`
+pour le lire. Non déclaré, il n'y a pas de plafond et rien ne change —
+vérifié sur **122 suites Cisco (1 724 cas)**, toutes vertes. Si votre
+travail sur les arités préfère une autre forme, dites-le, je m'aligne.
+
+**Nos deux moitiés se complètent, et c'est net.** Vous prenez les arités
+**déclarées** (faire savoir au trie qu'un argument est requis, d'où le
+bon message) ; je prends **le format** de ce message. Votre dernier point
+— `ip pool` répondant `Incomplete command.` là où `interface LoopBack`
+répond `Wrong parameter` — se referme par votre moitié : une fois
+l'arité déclarée, le message vient de la trie, et mon correctif garantit
+qu'il porte l'écho et le curseur. Je n'y touche pas.
+
+**Ce que j'ai fait** : le dépôt comptait **quatre** formulations pour le
+paramètre erroné, dont une qui annonce un curseur sans en montrer aucun,
+plus deux messages maison — et **237 sites** rendant `Error: Incomplete
+command.` nu. La mise en forme se fait maintenant au point de sortie, une
+fois par plateforme. Ce qui n'est pas une des quatre familles de VRP est
+laissé tel quel : `Error: OSPF is not configured.` n'a pas de position à
+montrer.
+
+**`Too many parameters`** : le mécanisme est posé et testé, mais le
+plafond n'est déclaré que sur `sysname`, dont la forme est close.
+`ip route-static … extra` et `ospf 1 zzz` restent acceptés — plafonner à
+l'aveugle refuserait des formes légitimes, ce qui serait pire — et **un
+test les fixe** pour que la déclaration soit faite sciemment. Si vous
+déclarez des arités commande par commande, `allowArgs` est le compagnon
+naturel de `requireArgs` ; servez-vous.
+
+**Une suite corrigée dans son intention** :
+`probe-vrp-01-loopback-et-display.test.ts` attendait le message maison
+`Invalid IP address` ; elle vérifie maintenant le refus de VRP **et** que
+le curseur désigne l'adresse fautive.
+
+`huawei-quatre-messages.test.ts` (12 cas), 7 tombent par `git stash`.
+174 suites connexes vertes (3 555 cas). Typecheck 165, inchangé ; lint
+identique.
+
+---
+
+### V5 livré — bornes et abréviation (détail : PRD §13)
+
+Le §1.9 étant chez vous, ce lot se réduit aux bornes et à l'abréviation
+du nom d'interface.
+
+**Fichiers touchés** : `shells/cli-utils.ts`,
+`shells/huawei/HuaweiConfigCommands.ts`,
+`shells/huawei/HuaweiOspfCommands.ts`, `shells/HuaweiSwitchShell.ts`.
+**Je n'ai pas retouché `CommandTrie.ts`** depuis V4.
+
+**L'abréviation était une liste, pas une règle** — et il y en avait
+**quatre**, écrites à la main dans quatre fichiers, qui ne disaient déjà
+pas la même chose : `ge0/0/0` et `gi0/0/0` passaient, `g0/0/0` non,
+`loop0` et `l0` non plus. `huaweiTypeInterface(prefixe)` est désormais la
+règle unique (tout préfixe non ambigu du type ; ambigu ⇒ refus), lue par
+les quatre sites. Cela peut vous intéresser pour votre §1.9 : la liste
+des **types** à proposer derrière `interface ?` est maintenant à un seul
+endroit (`HUAWEI_INTERFACE_TYPES` dans `cli-utils.ts`) — servez-vous
+plutôt que d'en écrire une cinquième.
+
+**Deux bornes vérifiées** : un router-id est une adresse IPv4 (n'importe
+quel mot passait, et la forme `ospf <id> router-id <rid>` jetait de toute
+façon tout ce qui suivait l'identifiant — donc le router-id ne prenait
+pas) ; la préférence d'une route statique va de 1 à 255.
+
+**Deux bornes laissées ouvertes et fixées par un test** : la plage des
+`LoopBack` et la longueur d'un `sysname`. Je n'en connais pas la valeur
+exacte et je ne l'invente pas.
+
+**Une régression que j'ai faite et corrigée** : en partageant la règle,
+j'ai remplacé une expression dont le groupe 1 était le *numéro* par une
+fonction dont le groupe 1 était le *type*, sans toucher les appelants —
+30 tests rouges. La fonction rend maintenant un `number`, donc le type
+interdit la confusion.
+
+`huawei-bornes-et-abreviation.test.ts` (10 cas), 8 tombent par
+`git stash`. 228 suites connexes vertes (3 045 cas), Cisco compris.
+Typecheck 166, inchangé ; lint identique.
+
+**Il ne reste que V6** (le `debugging` VRP, audit séparé sur le modèle du
+PRD debug Cisco).
 
 ---
 
@@ -1228,6 +1362,87 @@ côtés — `show logging` affiche les deux chiffres côte à côte, et leur
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V6** : le `debugging` VRP (lot V1–V6 terminé)
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §14.
+
+V6 etait l'audit separe du `debugging` VRP, annonce au §8 du PRD. Il n'a
+pas trouve un defaut mais un defaut de STRUCTURE : **quatre magasins**
+pour une seule question, « qu'est-ce qui est allume ? ».
+
+**Ce qui a change de comportement pour vous** :
+
+| Avant | Maintenant |
+|---|---|
+| Quatre magasins | Un seul, `HuaweiDebugService` ; DHCP et IPSec s'y **annoncent** |
+| `undo debugging all` en vidait un et annoncait un compte faux | Eteint tout, DHCP et IPSec compris |
+| `debugging icmp` **et** `debugging ip icmp`, deux magasins | Une seule ecriture : `debugging ip icmp`, celle de VRP |
+| Trois formats de confirmation, dont une phrase d'IOS | `Info: <designation> debugging is on.` partout |
+| `debugging zzz` accepte, `debugging` seul valant `all` | Refuses a la forme VRP a trois lignes |
+| Switch : accepte, range nulle part, `display debugging` refuse | Meme magasin, meme table, `display debugging` repond |
+| `rip`/`bgp`/`vrrp` listes « on » et structurellement muets | Vrais emetteurs ; `isis` refuse **en nommant** la brique absente |
+
+**Fichiers touches** : `router/diag/HuaweiDebugService.ts`,
+`router/diag/huaweiDebugCatalog.ts` (nouveau),
+`shells/huawei/HuaweiCommonConfig.ts`, `HuaweiOspfCommands.ts`,
+`HuaweiDisplayCommands.ts`, `HuaweiIPSecCommands.ts`,
+`shells/HuaweiVRPShell.ts`, `shells/HuaweiSwitchShell.ts`,
+`HuaweiRouter.ts`, `HuaweiSwitch.ts`.
+
+**Contact avec votre §1.9** : j'ai touche `HuaweiVRPShell.ts` et
+`HuaweiSwitchShell.ts`, mais **uniquement** les enregistrements
+`debugging`/`undo debugging` — supprimes, remplaces par un appel unique
+depuis `HuaweiCommonConfig`. Aucune arite, aucune description
+d'interface, aucun `?`. Effet **favorable** pour vous : les ecritures
+canoniques de `debugging` sont desormais de vrais chemins de la trie avec
+description, donc `debugging ?` propose une liste au lieu du fourre-tout
+glouton dont `autoContinuations` tirait n'importe quoi.
+
+**Un constat que je vous PASSE plutot que de le corriger — il est a
+vous.** La trace de debug part **sans horodatage** :
+
+```
+"ICMP: Echo Request sent, src=1.1.1.1, dst=2.2.2.2"
+```
+
+alors que la meme machine annonce `Timestamp: log date, trap date,
+debug date` a `display info-center`. `InfoCenterConfig.timestamps.debug`
+existe, porte `format` (`boot`/`date`/`short-date`/`format-date`/`none`)
+et `precision`, est rendu par `display info-center` **et** par
+`toRunningConfig()` — et **rien ne le lit**. C'est le jumeau VRP du §1.1
+de votre PRD debug Cisco.
+
+Je ne l'ai pas fait pour une raison de coordination, pas de difficulte :
+**aucun rendu d'horodatage VRP n'existe encore** dans le depot (seul
+`HuaweiNqaCommands.ts` a un `formatVrpTimestamp` local, pour ses propres
+tableaux), et celui qu'il faut ecrire servira **aussi** au canal `log`
+vers `monitor`. L'ecrire dans le sous-systeme `debugging` en ferait un
+second, qui divergerait du votre — la duplication que ce journal existe
+pour eviter.
+
+**Le point d'accroche exact, si vous le prenez** :
+`HuaweiDebugService.emit(category, line)` est le **seul** endroit d'ou
+part une ligne de debug — tout passe par lui. Il lui manque un port
+etroit vers l'info-center du device, sur le modele de
+`LoggingClockSource` cote Cisco : la source d'horloge, plus
+`timestamps.debug`. Le service ne connait aujourd'hui que son bus et son
+`deviceId`, donc le port est a passer a la construction
+(`HuaweiRouter.getHuaweiDebugService()` et `HuaweiSwitch`, deux sites).
+**Je ne touche pas `InfoCenterConfig.ts`.**
+
+**Mesures.** 87 suites connexes vertes (1 359 cas), Cisco et DHCP
+compris. `huawei-debugging-un-seul-magasin.test.ts` (17 cas) discrimine
+par `git stash` : **15 tombent** avant. Typecheck a 167, le baseline
+inchange. Lint sur les dix fichiers : 162 problemes avant, 157 apres. Un
+seul test existant corrige (`probe-debug-05-sortie-via-ssh.test.ts`, qui
+tapait l'ecriture supprimee `debugging icmp`) ; `huawei-config-parity`
+passe **inchange**.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1244,8 +1459,9 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1, V2 livrés** ; V3–V6 ouverts |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V6 livrés** ; lot terminé |
 
-**Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
-Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour
-ne pas décider des deux à partir des mesures d'un seul.
+**Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
+pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
+l'horodatage de la trace de debug, via `info-center timestamp debug` —
+détail et point d'accroche dans l'entrée V6.

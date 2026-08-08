@@ -28,6 +28,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { stripAnsi } from '@/terminal/core/OutputFormatter';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { parseMemoryMax } from '@/network/devices/linux/LinuxServiceManager';
@@ -65,7 +66,7 @@ describe('§F5.9 — le plafond dépassé fait tuer le service', () => {
     expect((await srv.executeCommand('systemctl is-active ssh')).trim()).toBe('failed');
     const status = await srv.executeCommand('systemctl status ssh');
     // `oom-kill` et pas `exit-code` : la cause est distincte.
-    expect(status).toContain('Active: failed (Result: oom-kill)');
+    expect(stripAnsi(status)).toContain('Active: failed (Result: oom-kill)');
     expect(status).toContain('code=killed, signal=KILL');
   });
 

@@ -21,7 +21,7 @@
  */
 
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
-import { HUAWEI_INTERFACE_PREFIXES } from '../cli-utils';
+import { VIRTUELLES } from './HuaweiConfigCommands';
 
 const TYPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'Eth-Trunk': 'Ethernet-Trunk interface',
@@ -34,11 +34,18 @@ const TYPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Les types que `interface` accepte, déduits de la table que le
- * résolveur consulte lui-même (`HUAWEI_INTERFACE_PREFIXES`) plutôt
- * qu'écrits une seconde fois. Une liste tenue à part finirait par
- * nommer un type que la commande refuse — ce serait le défaut qu'on
- * corrige, dans l'autre sens.
+ * Les types que `interface` peut réellement OUVRIR : ceux que le
+ * résolveur crée à la volée (`VIRTUELLES`, sa propre table) plus les
+ * types physiques que la machine porte. L'aide ne doit nommer que cela
+ * — proposer un type que la commande refuse serait le défaut qu'elle
+ * corrige, retourné.
+ *
+ * La distinction s'est révélée à la fusion, et elle est réelle :
+ * `HUAWEI_INTERFACE_TYPES` sert à RÉSOUDRE une abréviation et contient
+ * donc `Ethernet` et `MEth`, que VRP connaît et dont cette image ne
+ * porte aucun exemplaire. S'en servir pour l'aide faisait proposer
+ * `interface Ethernet0`, que la machine refuse — mesuré par le cas
+ * « chaque type proposé est réellement accepté ».
  *
  * Elle ne dépend pas du châssis, et c'est exact : un routeur sans
  * `Vlanif` accepte quand même `interface Vlanif 10`, puisque le
@@ -54,13 +61,16 @@ const TYPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
  */
 export function huaweiInterfaceTypeParam(): ParamSpec {
   const vus = new Map<string, string>();
-  for (const candidats of Object.values(HUAWEI_INTERFACE_PREFIXES)) {
-    const nom = candidats[candidats.length - 1];
+  for (const nom of ['GigabitEthernet', ...VIRTUELLES]) {
     if (!vus.has(nom)) vus.set(nom, TYPE_DESCRIPTIONS[nom] ?? `${nom} interface`);
   }
   return {
     name: 'type', type: 'ENUM', description: 'Interface type',
     validator: () => true,
+    // `?` nomme les types ; Tab complète les PORTS RÉELS, ce que l'autre
+    // lot (« Tab n'invente plus ») a réglé et que ces valeurs auraient
+    // supprimé, un mot-clé l'emportant sur une valeur dynamique.
+    helpOnly: true,
     values: [...vus.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([keyword, description]) => ({ keyword, description })),

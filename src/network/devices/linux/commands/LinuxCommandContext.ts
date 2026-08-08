@@ -88,4 +88,13 @@ export interface LinuxCommandContext {
    * SIGHUP / `systemctl reload ssh`). Backs `sshd -T`.
    */
   readonly sshServerConfig: () => SshdServerConfigSnapshot;
+
+  /**
+   * Vrai quand la sortie standard de cette commande n'est pas un terminal
+   * — étage suivant d'un tube, ou redirection vers un fichier. C'est le
+   * `isatty(STDOUT_FILENO)` des vrais outils, que `ShellContext.isPiped`
+   * offrait déjà aux commandes du grand `switch` et qui manquait ici :
+   * `ip -c=auto` en dépend entièrement.
+   */
+  readonly outputPiped?: boolean;
 }

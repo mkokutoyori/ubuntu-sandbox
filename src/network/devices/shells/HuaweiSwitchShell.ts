@@ -20,7 +20,7 @@ import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteract
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -28,6 +28,7 @@ import {
   displayPatchInformation, displayDiagnosticInformation,
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import {
   registerHuaweiNATInterfaceCommands,
   registerHuaweiNATSystemCommands,
@@ -52,6 +53,17 @@ type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
   | 'aaa' | 'user-interface' | 'acl' | 'dhcp-pool'
   | 'traffic-classifier' | 'traffic-behavior' | 'traffic-policy';
+
+/**
+ * Le NUMERO d'une saisie `<type><n>` ou `<type> <n>`, quand le type
+ * designe bien `attendu` — par son nom entier ou par n'importe quel
+ * prefixe non ambigu, comme VRP l'admet.
+ */
+function numeroDInterface(saisie: string, attendu: string): number | null {
+  const m = saisie.replace(/\s+/g, '').match(/^([a-z-]+)(\d+)$/i);
+  if (!m || huaweiTypeInterface(m[1]) !== attendu) return null;
+  return parseInt(m[2], 10);
+}
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -87,6 +99,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: Switch | null = null;
+
+  /** Le magasin unique de l'etat `debugging` de ce switch. */
+  private debugService(): HuaweiDebugService | null {
+    return (this.swRef as unknown as { getHuaweiDebugService?: () => HuaweiDebugService } | null)
+      ?.getHuaweiDebugService?.() ?? null;
+  }
 
   private applyToStpAgent(fn: (a: import('@/network/stp/StpAgent').StpAgent) => void): void {
     const ag = this.stpAgent();
@@ -481,9 +499,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     let output: string;
     switch (result.status) {
-      case 'ok':
-        output = result.node?.action ? result.node.action(result.args, cmd) : '';
+      case 'ok': {
+        const trop = tropDeParametres(result, cmd);
+        output = trop ?? (result.node?.action
+          ? normaliserErreurVrp(result.node.action(result.args, cmd), cmd, result.matchedKeywords.length)
+          : '');
         break;
+      }
 
       case 'ambiguous':
         // Not `result.error` — CommandTrie's own `.error` is pre-formatted
@@ -670,6 +692,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef._setHostnameInternal(args[0]);
       return '';
     });
+    this.systemTrie.allowArgs('sysname', 1);
 
     // vlan <id> or vlan batch <id> <id> ...
     this.systemTrie.describeArgs('vlan', [{
@@ -940,9 +963,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'port-group';
         return '';
       }
-      const vlanIfMatch = args.join(' ').match(/^vlanif\s*(\d+)$/i);
-      if (vlanIfMatch) {
-        const vlan = parseInt(vlanIfMatch[1], 10);
+      const vlanIfMatch = numeroDInterface(args.join(' '), 'Vlanif');
+      if (vlanIfMatch !== null) {
+        const vlan = vlanIfMatch;
         if (vlan < 1 || vlan > 4094) return `Error: Wrong parameter found at '^' position.`;
         this.swRef.ensureSvi(vlan);
         this.swRef.setSviAdminUp(vlan, true);
@@ -951,9 +974,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       }
 
-      const loopMatch = args.join(' ').match(/^loopback\s*(\d+)$/i);
-      if (loopMatch) {
-        this.selectedInterface = `LoopBack${loopMatch[1]}`;
+      const loopMatch = numeroDInterface(args.join(' '), 'LoopBack');
+      if (loopMatch !== null) {
+        this.selectedInterface = `LoopBack${loopMatch}`;
         // Matérialise l'interface : sans ça, entrer dans la vue ne
         // créait rien et l'interface restait invisible partout.
         this.swRef.ensureLoopback(this.selectedInterface);
@@ -1914,6 +1937,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // `display port` seul répondait « Incomplete command » alors que
     // VRP l'accepte : c'est la vue d'ensemble des ports, dont
     // `display port vlan` n'est qu'une colonne (audit 11, §5).
+    trie.register('display debugging', 'Display active debugging flags', () =>
+      this.debugService()?.format() ?? 'No debugging is on');
     trie.register('display port', 'Display port summary', () => {
       if (!this.swRef) return '';
       const rows = ['Interface                   Status     Link Type  PVID  Speed  Duplex'];
@@ -2200,15 +2225,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       displayHistoryCommand(this.history));
 
     // `display this` — running config of the CURRENT view only.
-    trie.register('display this', 'Display active view configuration', () => {
-      if (!this.swRef) return '';
-      if (this.mode === 'interface' && this.selectedInterface) {
-        const etm = this.selectedInterface.match(/^Eth-Trunk(\d+)$/);
-        if (etm) return this.displayEthTrunkConfig(parseInt(etm[1], 10));
-        return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
-      }
-      return this.displayCurrentConfig(this.swRef);
-    });
+    trie.register('display this', 'Display active view configuration', () => this.renderDisplayThis());
+    // La vue de VLAN n'avait pas la commande du tout : `display this` y
+    // repondait `Unrecognized command`, alors que c'est justement une
+    // vue ou l'on veut voir ce qu'on vient de poser.
+    this.vlanTrie.register('display this', 'Display active view configuration', () => this.renderDisplayThis());
+
 
     // `display saved-configuration` — real semantics: render the snapshot
     // captured by `save`, never a mirror of the running configuration.
@@ -2414,7 +2436,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private registerCommonMgmt(trie: CommandTrie): void {
     registerHuaweiCommonMgmt(
       trie,
-      undefined,
+      { service: () => this.debugService(), platform: 'switch' },
       () => { if (this.swRef) this.swRef._captureStartupConfig(this.displayCurrentConfig(this.swRef)); },
       () => { this.swRef?._eraseStartupConfig(); },
     );
@@ -2990,6 +3012,35 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   /** `display this` body for an Eth-Trunk interface view. */
+
+  /**
+   * La configuration de la vue COURANTE. En vue systeme la vue courante
+   * est la machine, donc tout rendre y est juste ; ailleurs il faut le
+   * bloc, et la marche s'arrete sur `#` comme sur toute ligne de premier
+   * niveau pour ne pas deborder.
+   */
+  private renderDisplayThis(): string {
+    if (!this.swRef) return '';
+    if (this.mode === 'interface' && this.selectedInterface) {
+      const etm = this.selectedInterface.match(/^Eth-Trunk(\d+)$/);
+      if (etm) return this.displayEthTrunkConfig(parseInt(etm[1], 10));
+      return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
+    }
+    if (this.mode === 'vlan' && this.selectedVlan !== null) {
+      const tete = `vlan ${this.selectedVlan}`;
+      const out: string[] = ['#'];
+      let dedans = false;
+      for (const l of this.displayCurrentConfig(this.swRef).split('\n')) {
+        if (!dedans) { if (l === tete) { dedans = true; out.push(l); } continue; }
+        if (l === '#' || (l.length > 0 && !/^\s/.test(l))) break;
+        out.push(l);
+      }
+      out.push('#');
+      return out.join('\n');
+    }
+    return this.displayCurrentConfig(this.swRef);
+  }
+
   private displayEthTrunkConfig(id: number): string {
     const t = this.ethTrunks.get(id);
     if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
@@ -3454,14 +3505,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (name.toLowerCase() === input.toLowerCase()) return name;
     }
 
-    // Abbreviation: GE0/0/0 → GigabitEthernet0/0/0
-    const lower = input.toLowerCase();
-    const match = lower.match(/^(ge|gigabitethernet|gi)([\d/]+)$/);
+    // L'abreviation de VRP est tout prefixe non ambigu du type ; une
+    // quatrieme table fermee vivait ici et n'admettait que `ge`, `gi` et
+    // le nom entier.
+    const match = input.toLowerCase().match(/^([a-z-]+)([\d/]+)$/);
     if (match) {
-      const numbers = match[2];
-      const resolved = `GigabitEthernet${numbers}`;
-      for (const name of this.swRef.getPortNames()) {
-        if (name === resolved) return name;
+      const type = huaweiTypeInterface(match[1]);
+      if (type) {
+        for (const forme of type === 'GigabitEthernet' ? ['GigabitEthernet', 'GE'] : [type]) {
+          const resolved = `${forme}${match[2]}`;
+          for (const name of this.swRef.getPortNames()) {
+            if (name === resolved) return name;
+          }
+        }
       }
     }
 

@@ -322,7 +322,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
     it('should display interface statistics', async () => {
       const r = new HuaweiRouter('R1');
       const output = await r.executeCommand('display interface GE0/0/0');
-      expect(output).toContain('GE0/0/0');
+      expect(output).toContain('GigabitEthernet0/0/0');
       expect(output).toContain('Input:');
       expect(output).toContain('Output:');
     });
@@ -888,7 +888,10 @@ describe('Group 8: Huawei Router — CLI Completion & Help', () => {
       await r.executeCommand('system-view');
       await r.executeCommand('int GE0/0/0');
       const prompt = r.getPrompt();
-      expect(prompt).toContain('GE0/0/0');
+      // L'abreviation est acceptee ; ce que l'invite AFFICHE est le nom
+      // complet, `GE0/0/0` etant le nom interne du port
+      // (PRD-CLI-Fidelite-VRP §1.5).
+      expect(prompt).toContain('GigabitEthernet0/0/0');
     });
   });
 
@@ -1090,7 +1093,7 @@ describe('Group 8: Huawei Router — CLI Completion & Help', () => {
       await r.executeCommand('system-view');
       expect(r.getPrompt()).toBe('[R1]');
       await r.executeCommand('interface GE0/0/0');
-      expect(r.getPrompt()).toContain('GE0/0/0');
+      expect(r.getPrompt()).toContain('GigabitEthernet0/0/0');
       await r.executeCommand('quit');
       expect(r.getPrompt()).toBe('[R1]');
       await r.executeCommand('return');
