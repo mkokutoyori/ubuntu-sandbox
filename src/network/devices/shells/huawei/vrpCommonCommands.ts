@@ -1,30 +1,22 @@
 /**
- * Ce que TOUTE vue d'un VRP porte, et les types d'interface qu'il ouvre.
+ * Ce que TOUTE vue d'un VRP porte : `quit` et `return`.
  *
- * Deux manques mesurés sur un `HuaweiRouter` et un `HuaweiSwitch` réels,
- * consignés dans `docs/PRD-Completion-CLI.md` :
+ * Manque mesuré sur un `HuaweiRouter` et un `HuaweiSwitch` réels : les
+ * deux commandes les plus tapées d'un VRP CHANGENT bien de vue —
+ * vérifié en lisant l'invite avant et après — et n'étaient annoncées
+ * nulle part, ni par `?` ni par la tabulation, dans aucune vue, sur
+ * aucune des deux plateformes. C'est le pendant exact du trou que
+ * `CiscoShellBase.universalCommands()` a fermé côté IOS, en pire : IOS
+ * listait au moins `exit` dans son aide.
  *
- *  - **`quit` et `return` s'exécutent et ne sont annoncés nulle part.**
- *    Les deux commandes les plus tapées d'un VRP changent bien de vue —
- *    vérifié en lisant l'invite avant et après — mais aucune des deux
- *    n'apparaît dans `?` ni ne se complète par tabulation, dans aucune
- *    vue, sur aucune des deux plateformes. C'est le pendant exact du
- *    trou que `CiscoShellBase.universalCommands()` a fermé côté IOS, en
- *    pire : IOS listait au moins `exit` dans son aide.
+ * Les deux shells VRP n'ont aucune base commune ; ce module est leur
+ * seule définition partagée, pour que l'aide et la complétion ne
+ * puissent pas se contredire à quatre endroits.
  *
- *  - **`interface ?` ne liste aucun type.** Le routeur répondait
- *    `WORD  Enter interface view` et le commutateur `range`, là où un
- *    vrai VRP énumère les types qu'il sait ouvrir. Faute de types dans
- *    l'arbre, `interface Gi` ne complétait rien sur le routeur (ses
- *    ports s'appellent `GE0/0/0`) et noyait le commutateur sous
- *    vingt-quatre noms de ports.
- *
- * Les deux listes de types sont MESURÉES, pas recopiées d'une
- * documentation : chaque type ci-dessous a été ouvert sur la machine
- * correspondante, et ceux qu'elle refuse n'y figurent pas — le routeur
- * n'a pas d'`Ethernet`, le commutateur n'a ni `NULL` ni `Tunnel`. Un
- * test rentre dans chaque vue pour que la liste ne puisse pas s'écarter
- * de ce que l'analyseur accepte vraiment.
+ * Ce qui `interface ?` propose N'EST PAS ici : `huaweiInterfaceHelp.ts`
+ * s'en charge, en dérivant les types de la table du résolveur plutôt
+ * que d'une seconde liste tenue à la main. Voir `PRD-Completion-CLI.md`
+ * pour pourquoi cette moitié-là a été retirée d'ici.
  */
 
 export interface VrpKeyword {
@@ -89,21 +81,3 @@ export function withVrpCommonCandidates(
   }
   return out;
 }
-
-/** Les types qu'un AR ouvre. `Ethernet` n'en fait pas partie : mesuré. */
-export const VRP_ROUTER_INTERFACE_TYPES: readonly VrpKeyword[] = [
-  { keyword: 'Eth-Trunk', description: 'Ethernet-Trunk interface' },
-  { keyword: 'GigabitEthernet', description: 'GigabitEthernet interface' },
-  { keyword: 'LoopBack', description: 'LoopBack interface' },
-  { keyword: 'NULL', description: 'NULL interface' },
-  { keyword: 'Tunnel', description: 'Tunnel interface' },
-  { keyword: 'Vlanif', description: 'Vlan interface' },
-];
-
-/** Ceux d'un S5700. Ni `NULL` ni `Tunnel` : mesuré aussi. */
-export const VRP_SWITCH_INTERFACE_TYPES: readonly VrpKeyword[] = [
-  { keyword: 'Eth-Trunk', description: 'Ethernet-Trunk interface' },
-  { keyword: 'GigabitEthernet', description: 'GigabitEthernet interface' },
-  { keyword: 'LoopBack', description: 'LoopBack interface' },
-  { keyword: 'Vlanif', description: 'Vlan interface' },
-];

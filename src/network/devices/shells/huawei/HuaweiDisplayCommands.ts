@@ -1287,6 +1287,12 @@ export function registerDisplayCommands(
     }
     return lines.join('\n');
   });
+  // `source` et `check` ne sont créés qu'en CHEMIN par la ligne
+  // ci-dessus : ils naissaient donc avec leur propre mot pour
+  // description, que le rendu blanchit — `display ip ?` répondait
+  // « source  Source », qui n'apprend rien.
+  trie.describeNode('display ip source', 'IP source guard information');
+  trie.describeNode('display ip source check', 'IP source check information');
 
   trie.register('display dhcp server statistics', 'Display DHCP server statistics', () => {
     const dhcp = getRouter()._getDHCPServerInternal();

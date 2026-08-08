@@ -24,7 +24,7 @@ import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { CommandTrie } from './CommandTrie';
 import {
-  withVrpCommonHelp, withVrpCommonCandidates, VRP_ROUTER_INTERFACE_TYPES,
+  withVrpCommonHelp, withVrpCommonCandidates,
   type VrpViewKind,
 } from './huawei/vrpCommonCommands';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
@@ -1684,6 +1684,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // `user-interface vty <first> [last]` — enter VTY user-interface view
     // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the
     // device's accepted VTY transports.
+    t.describeArgs('user-interface', [{
+      name: 'type', type: 'ENUM', description: 'User-interface type',
+      validator: () => true,
+      values: [
+        { keyword: 'aux', description: 'Auxiliary line' },
+        { keyword: 'console', description: 'Primary terminal line' },
+        { keyword: 'maximum-vty', description: 'Maximum number of VTY lines' },
+        { keyword: 'vty', description: 'Virtual terminal line' },
+      ],
+    }, {
+      name: 'first-ui-number', type: 'INT',
+      description: 'First user-interface number', optional: true, range: [0, 20],
+    }, {
+      name: 'last-ui-number', type: 'INT',
+      description: 'Last user-interface number', optional: true, range: [0, 20],
+    }]);
     t.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
       const head = args[0]?.toLowerCase();
       if (head === 'vty') {
@@ -1980,6 +1996,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       r?._setRoutingTableLimit?.(null);
       return '';
     });
+
+    // Ces trois nœuds ne sont créés qu'en CHEMIN — personne ne les
+    // enregistre pour eux-mêmes — donc ils naissent sans description et
+    // `?` les listait nus. Les décrire APRÈS coup est obligatoire :
+    // avant, le nœud n'existe pas encore et l'appel est ignoré en
+    // silence, ce qui a été mesuré.
+    t.describeNode('display radius-server', 'RADIUS server information');
+    t.describeNode('display hwtacacs-server', 'HWTACACS server information');
+    t.describeNode('ip routing-table', 'Routing table configuration');
     t.registerGreedy('ftp', 'FTP server config', (args) => {
       if (args[0] === 'server' && (args[1] === 'enable' || !args[1])) {
         this.r()._setFtpServerEnabled(true);

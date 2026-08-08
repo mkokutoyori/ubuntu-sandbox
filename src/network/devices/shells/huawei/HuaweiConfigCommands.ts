@@ -15,10 +15,10 @@ import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../core/ty
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
-import { VRP_ROUTER_INTERFACE_TYPES } from './vrpCommonCommands';
 import { refuseUnknownUndo, huaweiTypeInterface } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
+import { describeHuaweiInterfaceArg, wordArg } from './huaweiInterfaceHelp';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -80,8 +80,16 @@ function resolveOrCreateHuaweiInterface(router: Router, raw: string): string | n
   return fullName;
 }
 
-/** Les types qu'on peut CREER a la volee ; les autres sont du materiel. */
-const VIRTUELLES: ReadonlySet<string> = new Set([
+/**
+ * Les types qu'on peut CREER a la volee ; les autres sont du materiel.
+ *
+ * Exporté parce que l'aide de `interface ?` s'en déduit : elle ne doit
+ * nommer que ce qui s'ouvre. `HUAWEI_INTERFACE_TYPES` sert à RÉSOUDRE
+ * une abréviation et contient donc des types que VRP connaît sans que
+ * cette image en porte (`Ethernet`, `MEth`) — les proposer ferait
+ * nommer un refus à l'aide, ce qui est le défaut qu'elle corrige.
+ */
+export const VIRTUELLES: ReadonlySet<string> = new Set([
   'LoopBack', 'Tunnel', 'Nve', 'Vlanif', 'Eth-Trunk', 'NULL',
 ]);
 
@@ -404,10 +412,6 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
   // plafond est sur. `sysname R1 R2` prenait `R1` et jetait `R2`.
   trie.allowArgs('sysname', 1);
 
-  // Les types que cette plateforme sait ouvrir. Sans eux, `interface ?`
-  // ne répondait que `WORD` et `interface Gi` ne complétait rien — les
-  // ports de l'AR s'appelant `GE0/0/0`, aucun ne commence par « Gi ».
-  trie.registerSuggestions('interface', [...VRP_ROUTER_INTERFACE_TYPES]);
   trie.registerGreedy('interface', 'Enter interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const raw = args.join('');
@@ -417,11 +421,13 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     ctx.setMode('interface');
     return '';
   });
+  describeHuaweiInterfaceArg(trie);
 
   trie.registerGreedy('ip route-static', 'Configure static route', (args) => {
     return cmdIpRouteStatic(getRouter(), args);
   });
 
+  trie.describeArgs('ip pool', [wordArg('DHCP address pool name', 'pool-name')]);
   trie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     return cmdIpPool(getRouter(), ctx, args[0]);
@@ -520,7 +526,6 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
 export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
   const getRouter = () => ctx.r();
 
-  trie.registerSuggestions('interface', [...VRP_ROUTER_INTERFACE_TYPES]);
   trie.registerGreedy('interface', 'Switch to another interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const raw = args.join('');
@@ -529,6 +534,7 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     ctx.setSelectedInterface(portName);
     return '';
   });
+  describeHuaweiInterfaceArg(trie);
 
   trie.registerGreedy('ip address', 'Configure IP address', (args) => {
     return cmdIpAddress(getRouter(), ctx, args);

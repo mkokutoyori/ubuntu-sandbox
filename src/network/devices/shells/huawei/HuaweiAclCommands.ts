@@ -107,6 +107,16 @@ export function registerHuaweiACLSystemCommands(
     }
     return 'Error: ACL number must be 2000-2999 (basic) or 3000-3999 (advanced).';
   });
+  // `advanced` et `basic` étaient extraits du texte de ce handler par
+  // `autoContinuations`, qui ne trouve pas de description pour eux dans
+  // son dictionnaire global : `acl ?` listait deux mots nus. Les
+  // curater les fait sortir de l'extraction avec leur libellé.
+  trie.addCompletionKeywords('acl', [
+    { keyword: 'advanced', description: 'Advanced ACL (3000-3999)' },
+    { keyword: 'basic', description: 'Basic ACL (2000-2999)' },
+    { keyword: 'name', description: 'Named ACL' },
+    { keyword: 'number', description: 'ACL number' },
+  ]);
 
   trie.registerGreedy('undo acl', 'Delete Access Control List', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';

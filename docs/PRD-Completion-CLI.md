@@ -46,7 +46,7 @@ et `tabCandidates` ne l'a jamais eue.
 | C | `do <commande>` complète l'arbre EXEC | ✅ |
 | D | `interface gi` complète le type, comme IOS | ✅ |
 | E | VRP : `quit` et `return` annoncés partout | ✅ |
-| F | VRP : `interface ?` liste les types | ✅ |
+| F | VRP : `interface ?` liste les types | ↪ repris par un autre lot |
 
 ## Chantier A — un mot inconnu arrête la complétion
 
@@ -119,7 +119,7 @@ bénéficié sans une ligne de plus : `zzz di` ne rend plus rien.
 | # | Constat mesuré | Règle violée |
 |---|---|---|
 | H1 | `quit` et `return` CHANGENT de vue — invite lue avant et après — et ne sont annoncés ni par `?` ni par Tab, dans aucune vue, sur aucune des deux plateformes | 5 |
-| H2 | `interface ?` ne liste aucun type : `WORD` sur le routeur, `range` sur le commutateur ; donc `interface Gi` ne complète rien sur le routeur, dont les ports s'appellent `GE0/0/0` | 1 et 5 |
+| H2 | `interface ?` ne liste aucun type : `WORD` sur le routeur, `range` sur le commutateur ; donc `interface Gi` ne complète rien sur le routeur, dont les ports s'appellent `GE0/0/0` | 1 et 5 | *(fermé en parallèle, voir plus bas)* |
 
 H1 est le pendant du trou fermé côté IOS par `universalCommands()`, en
 pire : IOS listait au moins `exit` dans son aide.
@@ -132,29 +132,33 @@ commune) l'appellent — pour l'aide et pour la complétion, depuis la même
 fonction. `return` n'est pas proposé en vue utilisateur : il n'y a rien à
 y remonter, et un vrai VRP ne le propose pas non plus.
 
-### Chantier F — les types d'interface
+### Chantier F — les types d'interface : retiré au profit d'un autre lot
 
-Les deux listes sont **mesurées**, en ouvrant chaque type sur la machine
-correspondante, et un test refait cette ouverture pour que la liste ne
-puisse pas s'écarter de l'analyseur : le routeur ouvre `Eth-Trunk`,
-`GigabitEthernet`, `LoopBack`, `NULL`, `Tunnel`, `Vlanif` mais refuse
-`Ethernet` ; le commutateur n'a ni `NULL` ni `Tunnel`. Une liste recopiée
-d'une documentation aurait annoncé des types que ces machines refusent.
+H2 a été fermé en parallèle par `huaweiInterfaceHelp.ts` (lot « VRP : ce
+que `?` propose, la machine l'accepte »), qui **dérive** les types de la
+table du résolveur (`VIRTUELLES`) au lieu d'en tenir une seconde liste.
+C'est une meilleure réponse que la mienne — une liste à la main aurait
+divergé du résolveur au premier type ajouté — donc la mienne a été
+**retirée** à la fusion plutôt que gardée à côté. Ce dépôt a déjà payé
+la facture des deux sources pour une même question.
 
-Enregistrées par `registerSuggestions`, elles alimentent `?` **et** la
-tabulation d'une seule déclaration. Combinées à la règle « un mot-clé
-d'abord » du chantier D :
+Un point d'arbitrage mérite d'être écrit, parce qu'il *contredit* le
+chantier D en apparence : ce lot-là garde les **ports réels** sur la
+tabulation (`helpOnly` sur le `ParamSpec`), là où le chantier D repliait
+les ports sur le type côté Cisco. Les deux sont justes, et la raison
+n'est pas la règle mais la **politique de tabulation de la plateforme** :
 
-```
-interface ?                       → les six (routeur) / les quatre (commutateur)
-interface Gi<Tab>                 → interface GigabitEthernet
-interface GE0/0/<Tab>             → les ports réels du routeur
-interface GigabitEthernet0/0/<Tab> → les ports réels du commutateur
-```
+- sur IOS, une ambiguïté rend Tab **muet**, donc replier cinq ports sur
+  le type fait gagner une frappe au lieu de n'en rien faire ;
+- sur VRP, la tabulation est **cyclique**, donc proposer les ports réels
+  les rend tous atteignables l'un après l'autre.
 
-Les deux voies coexistent sans se gêner parce que `GE` n'est pas un
-préfixe de `GigabitEthernet` — et les deux sont vraies de la machine,
-qui accepte les deux orthographes.
+Appliquer mécaniquement la même règle des deux côtés aurait dégradé
+l'une des deux plateformes.
+
+Reste donc du volet Huawei le seul chantier E, plus deux cas de garde
+qui tiennent la **frontière** entre les deux lots — `?` nomme les types,
+Tab rend les ports, et `quit`/`return` ne parasitent pas cette position.
 
 ## Hors périmètre, et pourquoi
 

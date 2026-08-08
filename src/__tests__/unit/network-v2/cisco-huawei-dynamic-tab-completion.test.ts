@@ -122,20 +122,23 @@ describe('Dynamic Tab candidates — Cisco (PRD item 2)', () => {
 
 describe('Dynamic Tab candidates — Huawei (PRD items 2 et 3)', () => {
   /**
-   * Le jumeau Huawei du cas Cisco ci-dessus, et la même correction : à
-   * la place d'un TYPE, un VRP complète le type, pas les huit ports. Ce
-   * cas attendait les ports dès `interface Gig`, ce qui rendait la
-   * tabulation muette là où la machine réelle écrit le type d'un coup.
-   * Les ports restent atteignables une fois le type écrit — le second
-   * bloc le vérifie sur les noms que la machine leur donne vraiment.
+   * Ce cas NE suit PAS son jumeau Cisco, et c'est délibéré.
+   *
+   * Côté IOS, replier les ports sur le type fait gagner une frappe,
+   * parce qu'une ambiguïté y rend Tab muet. Sur VRP la tabulation est
+   * CYCLIQUE : proposer les huit ports les rend tous atteignables l'un
+   * après l'autre, et les replier sur le type en supprimerait sept.
+   * `huaweiInterfaceHelp.ts` marque donc ses types `helpOnly` — ils
+   * nomment la position dans `?` sans concourir avec les valeurs. La
+   * règle « un mot-clé d'abord » est la même des deux côtés ; c'est la
+   * politique de tabulation de la plateforme qui décide du résultat.
    */
-  it('cliTabCandidates complète le type, puis les ports réels', () => {
+  it('cliTabCandidates lists the real ports after "interface"', () => {
     const sw = new HuaweiSwitch('switch-huawei', 'SW1', 8);
     sw.executeCommand('system-view');
     const realPorts = sw.getPorts().map(p => p.getName()).filter(n => n.startsWith('Gig'));
     expect(realPorts.length).toBeGreaterThan(0);
-    expect(sw.cliTabCandidates('interface Gig')).toEqual(['interface GigabitEthernet']);
-    const candidates = sw.cliTabCandidates('interface GigabitEthernet0/0/');
+    const candidates = sw.cliTabCandidates('interface Gig');
     for (const name of realPorts) {
       expect(candidates).toContain(`interface ${name}`);
     }

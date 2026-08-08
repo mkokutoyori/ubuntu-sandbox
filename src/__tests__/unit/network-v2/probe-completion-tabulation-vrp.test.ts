@@ -5,25 +5,14 @@
  * la mesure de départ et les arbitrages sont dans
  * `docs/PRD-Completion-CLI.md`.
  *
- * Deux manques mesurés, et le second était pire que son équivalent IOS :
- *
- *  - `quit` et `return` CHANGENT bien de vue — vérifié en lisant
- *    l'invite avant et après — et n'étaient annoncés nulle part : ni
- *    par `?`, ni par la tabulation, dans aucune vue, sur aucune des
- *    deux plateformes. Ce sont les deux commandes les plus tapées d'un
- *    VRP.
- *  - `interface ?` ne listait aucun type : le routeur répondait `WORD`,
- *    le commutateur `range`. Faute de types dans l'arbre, `interface Gi`
- *    ne complétait rien sur le routeur — ses ports s'appellent
- *    `GE0/0/0`, et aucun ne commence par « Gi ».
+ * Manque mesuré : `quit` et `return` CHANGENT bien de vue — vérifié en
+ * lisant l'invite avant et après — et n'étaient annoncés nulle part, ni
+ * par `?`, ni par la tabulation, dans aucune vue, sur aucune des deux
+ * plateformes. Ce sont les deux commandes les plus tapées d'un VRP.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
-import {
-  VRP_ROUTER_INTERFACE_TYPES,
-  VRP_SWITCH_INTERFACE_TYPES,
-} from '@/network/devices/shells/huawei/vrpCommonCommands';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 
@@ -94,71 +83,38 @@ describe('`quit` et `return` sont annoncés là où ils agissent', () => {
   });
 });
 
-describe('`interface ?` liste les types, et la tabulation les écrit', () => {
-  it('le routeur annonce exactement les types qu\'il ouvre', async () => {
-    const r = new HuaweiRouter('router-huawei', 'AR1');
-    await r.executeCommand('system-view');
-    const listés = listeParAide(r.cliHelp('interface '));
-    for (const t of VRP_ROUTER_INTERFACE_TYPES) expect(listés, t.keyword).toContain(t.keyword);
-  });
-
-  /**
-   * La garde qui empêche la liste de s'écarter de l'analyseur : chaque
-   * type annoncé est OUVERT pour de bon, et l'invite le prouve. Une
-   * liste recopiée d'une documentation aurait proposé `Ethernet`, que
-   * cette plateforme refuse.
-   */
-  it('et chacun de ces types ouvre réellement une vue', async () => {
-    const r = new HuaweiRouter('router-huawei', 'AR1');
-    await r.executeCommand('system-view');
-    const numéro: Record<string, string> = {
-      'GigabitEthernet': '0/0/1', 'LoopBack': '0', 'NULL': '0',
-      'Vlanif': '1', 'Tunnel': '0/0/1', 'Eth-Trunk': '1',
-    };
-    for (const t of VRP_ROUTER_INTERFACE_TYPES) {
-      const out = await r.executeCommand(`interface ${t.keyword}${numéro[t.keyword]}`);
-      expect(String(out), t.keyword).not.toContain('Error');
-      expect(r.getPrompt(), t.keyword).toContain(t.keyword);
-      await r.executeCommand('quit');
-    }
-  });
-
-  it('le commutateur a SA liste : ni `NULL` ni `Tunnel`, qu\'il refuse', async () => {
+/**
+ * Le second manque mesuré ici — `interface ?` ne listant aucun type — a
+ * été fermé en parallèle par `huaweiInterfaceHelp.ts`, qui DÉRIVE les
+ * types de la table du résolveur au lieu d'en tenir une seconde liste à
+ * la main : une meilleure réponse que la mienne, et la mienne a été
+ * retirée plutôt que gardée à côté.
+ *
+ * Son arbitrage sur la tabulation diverge du volet Cisco, et c'est
+ * juste : sur IOS une ambiguïté rend Tab MUET, donc replier les ports
+ * sur le type fait gagner une frappe ; sur VRP la tabulation est
+ * CYCLIQUE, donc proposer les ports réels les rend tous atteignables.
+ * La même règle donnerait deux résultats opposés — c'est la politique
+ * de tabulation de la plateforme qui décide, pas la règle.
+ *
+ * Les cas ci-dessous ne redisent pas ce que
+ * `probe-vrp-aide-et-machine.test.ts` vérifie déjà ; ils tiennent la
+ * frontière entre les deux lots, qui est exactement ce qu'une fusion
+ * peut casser sans que personne s'en aperçoive.
+ */
+describe('la frontière avec l\'autre lot tient', () => {
+  it('`?` nomme les types, la tabulation rend les ports réels', async () => {
     const s = new HuaweiSwitch('switch-huawei', 'SW1', 24);
     await s.executeCommand('system-view');
-    const listés = listeParAide(s.cliHelp('interface '));
-    for (const t of VRP_SWITCH_INTERFACE_TYPES) expect(listés, t.keyword).toContain(t.keyword);
-    expect(listés).not.toContain('NULL');
-    expect(listés).not.toContain('Tunnel');
-    expect(await s.executeCommand('interface NULL0')).toContain('Error');
-  });
-
-  it('`interface Gi` écrit le type, sur les deux plateformes', async () => {
-    const r = new HuaweiRouter('router-huawei', 'AR1');
-    await r.executeCommand('system-view');
-    for (const saisie of ['interface g', 'interface Gi', 'interface Gig']) {
-      expect(r.cliTabCandidates(saisie), saisie).toEqual(['interface GigabitEthernet']);
-    }
-    expect(r.cliTabCandidates('interface L')).toEqual(['interface LoopBack']);
-    const s = new HuaweiSwitch('switch-huawei', 'SW1', 24);
-    await s.executeCommand('system-view');
-    expect(s.cliTabCandidates('interface Gig')).toEqual(['interface GigabitEthernet']);
-  });
-
-  it('les ports concrets restent atteignables, sous le nom que la machine leur donne', async () => {
-    // Le routeur nomme ses ports `GE0/0/x` — et `GE` n'est pas un
-    // préfixe de `GigabitEthernet`, donc les deux voies coexistent sans
-    // se gêner, chacune vraie de la machine.
-    const r = new HuaweiRouter('router-huawei', 'AR1');
-    await r.executeCommand('system-view');
-    expect(r.cliTabCandidates('interface GE0/0/')).toContain('interface GE0/0/1');
-    expect(await r.executeCommand('interface GigabitEthernet0/0/2')).not.toContain('Error');
-
-    const s = new HuaweiSwitch('switch-huawei', 'SW1', 24);
-    await s.executeCommand('system-view');
-    const ports = s.cliTabCandidates('interface GigabitEthernet0/0/');
+    expect(listeParAide(s.cliHelp('interface '))).toContain('GigabitEthernet');
+    const ports = s.cliTabCandidates('interface Gig');
     expect(ports).toContain('interface GigabitEthernet0/0/1');
-    expect(ports.length).toBeGreaterThan(4);
+  });
+
+  it('et les commandes communes ne parasitent pas cette position', async () => {
+    const s = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    await s.executeCommand('system-view');
+    expect(s.cliTabCandidates('interface qu')).toEqual([]);
   });
 });
 

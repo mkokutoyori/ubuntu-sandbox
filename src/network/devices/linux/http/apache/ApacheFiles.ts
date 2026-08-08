@@ -20,6 +20,7 @@ export const APACHE_PORTS_PATH = '/etc/apache2/ports.conf';
 export const APACHE_SITES_AVAILABLE = '/etc/apache2/sites-available';
 export const APACHE_SITES_ENABLED = '/etc/apache2/sites-enabled';
 export const APACHE_MODS_ENABLED = '/etc/apache2/mods-enabled';
+export const APACHE_MODS_AVAILABLE = '/etc/apache2/mods-available';
 export const APACHE_ACCESS_LOG = '/var/log/apache2/access.log';
 export const APACHE_ERROR_LOG = '/var/log/apache2/error.log';
 export const APACHE_DOCROOT = '/var/www/html';
@@ -107,6 +108,25 @@ export const APACHE_DEFAULT_MODULES: readonly string[] = [
   'authz_core', 'authz_host', 'authz_user', 'autoindex', 'deflate',
   'dir', 'env', 'filter', 'mime', 'mpm_event', 'negotiation',
   'reqtimeout', 'setenvif', 'status',
+];
+
+/**
+ * Ce que Debian rend DISPONIBLE, par opposition à ce qu'il active.
+ *
+ * Le répertoire n'existait pas : seul `mods-enabled` était semé, si bien
+ * qu'`a2enmod ssl` n'aurait eu aucun fichier à lier. C'est pourtant
+ * cette distinction qui porte la leçon — `ssl`, `proxy`, `rewrite`,
+ * `headers` sont livrés et ÉTEINTS, et les allumer est la première
+ * ligne de tout TP Apache.
+ */
+export const APACHE_AVAILABLE_MODULES: readonly string[] = [
+  'access_compat', 'alias', 'auth_basic', 'authn_core', 'authn_file',
+  'authz_core', 'authz_groupfile', 'authz_host', 'authz_user', 'autoindex',
+  'cgi', 'deflate', 'dir', 'env', 'expires', 'filter', 'headers',
+  'include', 'info', 'mime', 'mpm_event', 'mpm_prefork', 'mpm_worker',
+  'negotiation', 'proxy', 'proxy_balancer', 'proxy_fcgi', 'proxy_http',
+  'reqtimeout', 'rewrite', 'setenvif', 'socache_shmcb', 'ssl', 'status',
+  'userdir',
 ];
 
 export function apacheModuleLoadFile(name: string): string {
