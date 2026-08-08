@@ -1,5 +1,5 @@
 import type { TcpStack } from '@/network/tcp/TcpStack';
-import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
+import { Http1ServerSession, type Http1Peer } from '@/network/http/http1/Http1ServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
 import { pemToCert, pemToPrivateKey } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -9,13 +9,16 @@ import { contentTypeForPath } from '@/network/http/HttpTypes';
 import type { PortSpec } from '../../../../core/ports/PortNumber';
 import type { ServiceSocketServer } from '../../ports/ServiceSocketServer';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
+import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
+import { createRequest } from '@/network/http/semantics/types';
 import {
-  parseNginxConfig, extractServers, validateNginxConfig,
+  parseNginxConfig, extractServers, extractUpstreams, validateNginxConfig,
   type NginxFileSource, type NginxServerBlock, type NginxLocation,
+  type NginxUpstream, type NginxProxyPass, type NginxUpstreamServer,
 } from './NginxConfig';
 import {
   NGINX_VERSION, NGINX_ACCESS_LOG, NGINX_ERROR_LOG,
-  notFoundPage, forbiddenPage,
+  notFoundPage, forbiddenPage, badGatewayPage,
 } from './NginxFiles';
 
 export interface NginxHostFs extends NginxFileSource {
@@ -27,6 +30,14 @@ export interface NginxHostFs extends NginxFileSource {
 export interface NginxHost {
   readonly fs: NginxHostFs;
   tcpStack(): TcpStack;
+  /**
+   * §P6 — `proxy_pass http://amont;` nomme le plus souvent un hôte et
+   * non une adresse. Le mandataire résout par la machine qui l'exécute,
+   * comme le vrai nginx : c'est le `/etc/hosts` et le
+   * `/etc/resolv.conf` du serveur qui décident, pas une table à part.
+   * `null` quand l'hôte ne se résout pas.
+   */
+  resolve?(name: string): string | null;
   /** Un autre processus tient-il déjà ce port ? */
   portTaken(port: number): boolean;
   appendLog(path: string, line: string): void;
@@ -42,6 +53,69 @@ function bytes(text: string): Uint8Array {
 function joinPath(root: string, rel: string): string {
   const base = root.endsWith('/') ? root.slice(0, -1) : root;
   return rel.startsWith('/') ? `${base}${rel}` : `${base}/${rel}`;
+}
+
+/**
+ * §P6 — la borne de récursion du mandataire. Voir `proxyDepth`.
+ */
+const MAX_PROXY_DEPTH = 4;
+
+/**
+ * RFC 9110 §7.6.1 — les en-têtes qui décrivent la connexion elle-même
+ * et non le message. Un mandataire ne les relaie pas, dans un sens
+ * comme dans l'autre.
+ */
+const HOP_BY_HOP = [
+  'Connection', 'Keep-Alive', 'Proxy-Authenticate', 'Proxy-Authorization',
+  'TE', 'Trailer', 'Transfer-Encoding', 'Upgrade',
+];
+
+/**
+ * La règle de nginx, et c'est la plus mal comprise de `proxy_pass` :
+ * la présence d'un chemin dans l'URI décide, pas sa valeur.
+ *
+ *   proxy_pass http://amont;    → /api/v1 part tel quel
+ *   proxy_pass http://amont/;   → /api/v1 devient /v1   (le préfixe de
+ *                                 la `location` est REMPLACÉ)
+ *   proxy_pass http://amont/x;  → /api/v1 devient /x/v1
+ *
+ * D'où `path?: string` plutôt qu'une chaîne : `undefined` et `''` sont
+ * deux configurations différentes.
+ */
+function rewriteTarget(target: string, locationPath: string, passPath?: string): string {
+  if (passPath === undefined) return target;
+  const reste = target.startsWith(locationPath) ? target.slice(locationPath.length) : target;
+  const base = passPath.endsWith('/') ? passPath.slice(0, -1) : passPath;
+  const suite = reste.startsWith('/') ? reste : `/${reste}`;
+  const out = `${base}${suite}`;
+  return out === '' ? '/' : out;
+}
+
+/**
+ * Les variables que `proxy_set_header` emploie en pratique. Une
+ * variable inconnue est laissée telle quelle plutôt que vidée : nginx
+ * REFUSE au démarrage une variable qu'il ne connaît pas, et rendre une
+ * chaîne vide ferait passer une faute de frappe pour un en-tête absent.
+ */
+function expandProxyVariables(
+  value: string, req: HttpMessage, upstream: { host: string; port: number },
+  peer?: Http1Peer,
+): string {
+  const client = peer?.ip ?? '0.0.0.0';
+  return value
+    .replace(/\$proxy_add_x_forwarded_for/g, (() => {
+      // La variable la plus utile de la liste, et la seule qui AJOUTE :
+      // elle empile le client derrière la chaîne déjà reçue, ce qui est
+      // exactement ce que `X-Forwarded-For` sert à porter.
+      const recu = req.headers.get('X-Forwarded-For');
+      return recu ? `${recu}, ${client}` : client;
+    })())
+    .replace(/\$proxy_host/g, `${upstream.host}:${upstream.port}`)
+    .replace(/\$http_host/g, req.headers.get('Host') ?? '')
+    .replace(/\$host/g, (req.headers.get('Host') ?? '').split(':')[0])
+    .replace(/\$remote_addr/g, client)
+    .replace(/\$scheme/g, 'http')
+    .replace(/\$request_uri/g, req.target ?? '/');
 }
 
 function matchLocation(server: NginxServerBlock, target: string): NginxLocation | null {
@@ -125,6 +199,34 @@ function tlsFingerprint(m: { cert: X509Certificate; key: PkiPrivateKey }): strin
 
 export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private servers: NginxServerBlock[] = [];
+  private upstreams: NginxUpstream[] = [];
+  /**
+   * §P6 — profondeur de mandat en cours.
+   *
+   * La livraison des trames est SYNCHRONE ici : le mandataire appelle
+   * l'amont depuis l'intérieur de son propre gestionnaire de requête, et
+   * une configuration qui se mandate elle-même récurserait sans fin,
+   * bloquant l'onglet. Un vrai nginx boucle aussi, mais il finit par
+   * épuiser ses connexions et répondre une erreur ; ici il n'y a rien à
+   * épuiser, donc la borne est explicite.
+   */
+  private proxyDepth = 0;
+  /**
+   * L'état d'équilibrage, par groupe : où en est le tour de rôle, et ce
+   * que chaque membre a raté récemment.
+   *
+   * Il vit ici et non dans la configuration parce que c'est une MESURE,
+   * pas une déclaration. Mais il est REMIS À ZÉRO par `loadConfig()`,
+   * et ce détail a été corrigé après mesure : un rechargement fait
+   * naître de nouveaux processus de travail chez nginx, et sans
+   * `zone` chacun part avec des compteurs vierges. Le garder aurait
+   * fait servir un membre de secours dès la première requête suivant un
+   * rechargement, sur la foi d'une panne constatée avant.
+   */
+  private readonly balance = new Map<string, {
+    curseur: number;
+    echecs: Map<string, { compte: number; depuis: number }>;
+  }>();
   private readonly sessions = new Map<number, NginxSession>();
   /**
    * What each open TLS port was started with, so a reload can tell a
@@ -143,6 +245,8 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     const invalid = validateNginxConfig(parsed.tree);
     if (invalid) return invalid.message;
     this.servers = extractServers(parsed.tree);
+    this.upstreams = extractUpstreams(parsed.tree);
+    this.balance.clear();
     return null;
   }
 
@@ -188,12 +292,12 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
     const session: NginxSession = tls === null
       ? new Http1ServerSession(
-        this.host.tcpStack(), spec.port, (req) => this.respond(spec.port, req),
+        this.host.tcpStack(), spec.port, (req, peer) => this.respond(spec.port, req, peer),
       )
       : new HttpsServerSession(
         this.host.tcpStack(), spec.port,
         { serverCert: tls.cert, serverPrivateKey: tls.key },
-        (req) => this.respond(spec.port, req),
+        (req, peer) => this.respond(spec.port, req, peer),
       );
     try {
       session.start(identity);
@@ -355,19 +459,26 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return onPort.find((s) => s.listen.some((l) => l.port === port && l.defaultServer)) ?? onPort[0];
   }
 
-  private respond(port: number, req: HttpMessage): HttpMessage {
+  private respond(port: number, req: HttpMessage, peer?: Http1Peer): HttpMessage {
     const target = (req.target ?? '/').split('?')[0];
     const hostHeader = req.headers.get('Host') ?? '';
     const server = this.selectServer(port, hostHeader);
     const response = server
-      ? this.serve(server, target)
+      ? this.serve(server, target, req, peer)
       : this.errorResponse(404, 'Not Found', notFoundPage());
-    this.logRequest(server, req, response, target);
+    this.logRequest(server, req, response, target, peer);
     return response;
   }
 
-  private serve(server: NginxServerBlock, target: string): HttpMessage {
+  private serve(
+    server: NginxServerBlock, target: string,
+    req?: HttpMessage, peer?: Http1Peer,
+  ): HttpMessage {
     const location = matchLocation(server, target);
+
+    if (location?.proxyPass && req) {
+      return this.proxy(server, location, location.proxyPass, target, req, peer);
+    }
 
     if (location?.returnStatus !== undefined) {
       const res = createResponse(location.returnStatus, location.returnStatus === 301 ? 'Moved Permanently' : 'Found');
@@ -416,6 +527,206 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return this.errorResponse(404, 'Not Found', notFoundPage(), server, location);
   }
 
+  /**
+   * §P6 — nginx en mandataire inverse.
+   *
+   * Il n'y a rien d'asynchrone ici, et ce n'est pas une simplification :
+   * la livraison des trames est synchrone dans ce simulateur, donc
+   * `Http1ClientSession.send()` rend la réponse de l'amont avant de
+   * revenir. Le PRD supposait le contraire et annonçait « un chantier à
+   * part entière » ; la mesure a montré qu'un gestionnaire de requête
+   * peut appeler l'amont EN LIGNE et écrire sa réponse dans la foulée.
+   */
+  private proxy(
+    server: NginxServerBlock, location: NginxLocation,
+    pass: NginxProxyPass, target: string, req: HttpMessage, peer?: Http1Peer,
+  ): HttpMessage {
+    if (pass.scheme === 'https') {
+      // Refusé plutôt qu'ouvert en clair : tout ce qui lit `https`
+      // attend du chiffré, et parler en clair sur cette foi serait la
+      // pire des réponses disponibles — la même règle que `tlsMaterialFor`.
+      return this.badGateway(server, location,
+        'https upstreams are not supported by this simulator', peer);
+    }
+    if (this.proxyDepth >= MAX_PROXY_DEPTH) {
+      return this.badGateway(server, location,
+        `proxy loop detected after ${MAX_PROXY_DEPTH} hops`, peer);
+    }
+
+    const target502 = this.resolveUpstream(pass, peer?.ip);
+    if (!target502) {
+      return this.badGateway(server, location,
+        `${pass.host} could not be resolved`, peer);
+    }
+
+    const outboundTarget = rewriteTarget(target, location.path, pass.path);
+    const request = createRequest(req.method ?? 'GET', outboundTarget);
+    for (const [k, v] of req.headers.entries()) request.headers.set(k, v);
+    // Par défaut nginx réécrit `Host` avec l'autorité du `proxy_pass` ;
+    // `proxy_set_header Host $host` est précisément ce qu'on écrit pour
+    // l'en empêcher, donc l'ordre compte et le défaut vient d'abord.
+    request.headers.set('Host', `${target502.host}:${target502.port}`);
+    // Un mandataire ne relaie pas les en-têtes saut-par-saut (RFC 9110
+    // §7.6.1) : les transmettre ferait fermer la connexion de l'amont
+    // par celle du client.
+    for (const hop of HOP_BY_HOP) request.headers.delete(hop);
+    for (const [name, value] of [...server.proxySetHeaders, ...location.proxySetHeaders]) {
+      const resolved = expandProxyVariables(value, req, target502, peer);
+      if (resolved === '') request.headers.delete(name);
+      else request.headers.set(name, resolved);
+    }
+    request.body = req.body;
+
+    this.proxyDepth++;
+    let sent;
+    try {
+      const client = new Http1ClientSession(
+        this.host.tcpStack(), target502.ip, target502.port);
+      sent = client.send(request);
+      client.close();
+    } finally {
+      this.proxyDepth--;
+    }
+
+    if (!sent.ok || !sent.response) {
+      // C'est ICI que la détection passive se nourrit : l'échec est
+      // constaté sur du trafic réel, pas sur une sonde.
+      if (target502.groupe) {
+        this.noterEchec(target502.groupe, target502.host, target502.port);
+      }
+      return this.badGateway(server, location,
+        sent.error ?? 'no response from upstream', peer);
+    }
+    const res = sent.response;
+    for (const hop of HOP_BY_HOP) res.headers.delete(hop);
+    res.headers.set('Server', `nginx/${NGINX_VERSION}`);
+    this.applyHeaders(res, server, location);
+    return res;
+  }
+
+  /**
+   * `proxy_pass http://amont;` désigne soit un bloc `upstream`, soit un
+   * hôte. L'`upstream` est consulté EN PREMIER, comme chez nginx : un
+   * bloc de ce nom masque un hôte qui s'appellerait pareil.
+   */
+  private resolveUpstream(
+    pass: NginxProxyPass, client?: string,
+  ): { ip: string; host: string; port: number; groupe?: string } | null {
+    const group = this.upstreams.find((u) => u.name === pass.host);
+    if (group) {
+      const membre = this.choisirMembre(group, client);
+      if (!membre) return null;
+      const ip = this.resolveHost(membre.host);
+      return ip
+        ? { ip, host: membre.host, port: membre.port, groupe: group.name }
+        : null;
+    }
+    const ip = this.resolveHost(pass.host);
+    return ip ? { ip, host: pass.host, port: pass.port } : null;
+  }
+
+  private cle(m: NginxUpstreamServer): string { return `${m.host}:${m.port}`; }
+
+  private etat(groupe: string) {
+    let e = this.balance.get(groupe);
+    if (!e) { e = { curseur: 0, echecs: new Map() }; this.balance.set(groupe, e); }
+    return e;
+  }
+
+  /**
+   * Un membre est « hors service » tant que sa fenêtre de pénalité
+   * court. La fenêtre est celle de `fail_timeout`, et elle sert DEUX
+   * fois chez nginx — durée pendant laquelle les échecs se comptent, et
+   * durée de mise à l'écart — ce qui est reproduit ici.
+   */
+  private disponible(groupe: string, m: NginxUpstreamServer, maintenant: number): boolean {
+    if (m.down) return false;
+    if (m.maxFails === 0) return true;
+    const e = this.etat(groupe).echecs.get(this.cle(m));
+    if (!e) return true;
+    if (maintenant - e.depuis >= m.failTimeoutMs) {
+      this.etat(groupe).echecs.delete(this.cle(m));
+      return true;
+    }
+    return e.compte < m.maxFails;
+  }
+
+  /**
+   * Le tour de rôle pondéré, et le repli sur les `backup`.
+   *
+   * `weight=3` prend trois tours sur le cycle : la liste est développée
+   * plutôt que d'être parcourue avec un compteur, parce que le résultat
+   * est alors lisible à l'œil dans un test — et un équilibrage qu'on ne
+   * peut pas observer est indiscernable d'un décor.
+   */
+  private choisirMembre(
+    groupe: NginxUpstream, client?: string,
+  ): NginxUpstreamServer | null {
+    const maintenant = this.host.now().getTime();
+    const vivants = (backup: boolean): NginxUpstreamServer[] => {
+      const out: NginxUpstreamServer[] = [];
+      for (const m of groupe.servers) {
+        if (m.backup !== backup) continue;
+        if (!this.disponible(groupe.name, m, maintenant)) continue;
+        for (let i = 0; i < m.weight; i++) out.push(m);
+      }
+      return out;
+    };
+    // Les `backup` ne servent QUE si tous les autres sont hors service :
+    // c'est ce que le mot veut dire, et un repli qui prendrait sa part
+    // du trafic ordinaire ne serait pas un repli.
+    const cycle = vivants(false).length > 0 ? vivants(false) : vivants(true);
+    if (cycle.length === 0) return null;
+
+    if (groupe.method === 'ip_hash' && client) {
+      // La même adresse doit retomber sur le même membre — c'est le seul
+      // usage de cette méthode, et il se vérifie.
+      let h = 0;
+      for (const octet of client.split('.')) h = (h * 31 + Number(octet)) >>> 0;
+      return cycle[h % cycle.length];
+    }
+    const e = this.etat(groupe.name);
+    const choisi = cycle[e.curseur % cycle.length];
+    e.curseur = (e.curseur + 1) % cycle.length;
+    return choisi;
+  }
+
+  /**
+   * La détection PASSIVE de panne : nginx n'interroge pas ses amonts, il
+   * retient ceux qui viennent de le décevoir en servant du trafic réel.
+   * Sans cela, `max_fails` serait une valeur stockée et lue par
+   * personne — et un groupe dont un membre est mort renverrait un `502`
+   * une requête sur deux, indéfiniment.
+   */
+  private noterEchec(groupe: string, hote: string, port: number): void {
+    const e = this.etat(groupe);
+    const cle = `${hote}:${port}`;
+    const maintenant = this.host.now().getTime();
+    const vu = e.echecs.get(cle);
+    if (vu && maintenant - vu.depuis < 60_000) vu.compte++;
+    else e.echecs.set(cle, { compte: 1, depuis: maintenant });
+  }
+
+  private resolveHost(name: string): string | null {
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(name)) return name;
+    return this.host.resolve?.(name) ?? null;
+  }
+
+  /**
+   * `502 Bad Gateway`, et la RAISON dans le journal d'erreurs — c'est
+   * là que l'opérateur la cherche, la page servie au client ne la
+   * portant jamais.
+   */
+  private badGateway(
+    server: NginxServerBlock, location: NginxLocation, reason: string,
+    peer?: Http1Peer,
+  ): HttpMessage {
+    this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
+      `${formatErrorTime(this.host.now())} [error] 0#0: *1 ${reason}, `
+      + `client: ${peer?.ip ?? '0.0.0.0'}, server: ${server.serverNames[0] ?? '_'}`);
+    return this.errorResponse(502, 'Bad Gateway', badGatewayPage(), server, location);
+  }
+
   private applyHeaders(res: HttpMessage, server?: NginxServerBlock, location?: NginxLocation | null): void {
     for (const [k, v] of server?.addHeaders ?? []) res.headers.set(k, v);
     for (const [k, v] of location?.addHeaders ?? []) res.headers.set(k, v);
@@ -437,14 +748,24 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private logRequest(
     server: NginxServerBlock | null, req: HttpMessage, res: HttpMessage, target: string,
+    peer?: Http1Peer,
   ): void {
     const status = res.statusCode ?? 0;
     const accessLog = server ? server.accessLog : NGINX_ACCESS_LOG;
     if (accessLog) {
-      const line = `- - - [${formatLogTime(this.host.now())}] "${req.method ?? 'GET'} ${target} HTTP/${req.httpVersion}" ${status} ${res.body?.length ?? 0} "-" "${req.headers.get('User-Agent') ?? '-'}"`;
+      // Le format combiné commence par l'adresse du client. Elle valait
+      // `-` faute de la connaître ; un journal d'accès qui ne dit pas
+      // qui a demandé est la moitié d'un journal d'accès.
+      const line = `${peer?.ip ?? '-'} - - [${formatLogTime(this.host.now())}] "${req.method ?? 'GET'} ${target} HTTP/${req.httpVersion}" ${status} ${res.body?.length ?? 0} "-" "${req.headers.get('User-Agent') ?? '-'}"`;
       this.host.appendLog(accessLog, line);
     }
-    if (status >= 400) {
+    // Seuls 403 et 404 viennent d'une recherche de FICHIER, et cette
+    // ligne parle d'`open()`. Avant §P6, tout ce qui dépassait 400
+    // venait de là, si bien qu'un `status >= 400` était équivalent ; un
+    // `502` du mandataire ne l'est plus — il n'a ouvert aucun fichier,
+    // et il a déjà écrit sa vraie raison. La conserver produisait deux
+    // lignes pour une panne, dont une fausse.
+    if (status === 403 || status === 404) {
       const errorLog = server?.errorLog ?? NGINX_ERROR_LOG;
       const what = status === 403 ? 'Permission denied' : 'No such file or directory';
       this.host.appendLog(

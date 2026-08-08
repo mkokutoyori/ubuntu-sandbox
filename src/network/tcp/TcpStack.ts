@@ -1501,8 +1501,7 @@ export class TcpStack {
         payloadSize: seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1),
       },
     });
-    const isLoopback = family === 'ipv6' ? new IPv6Address(dstIp).isLoopback() : new IPAddress(dstIp).isLoopback();
-    if (isLoopback) {
+    if (this.isLocalDestination(dstIp, family)) {
       this.handleSegment(srcIp, dstIp, seg);
       return;
     }
@@ -1620,7 +1619,12 @@ export class TcpStack {
     // qu'on ne sait pas lire est simplement une destination sans route.
     const parsedTarget = IPAddress.tryParse(targetIp);
     if (!parsedTarget) return null;
-    if (parsedTarget.isLoopback()) return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
+    // Avant la recherche de route, et c'est l'ordre du noyau : la table
+    // `local` est consultée en premier, si bien qu'un paquet adressé à
+    // une adresse que la machine PORTE ne sort jamais sur le fil.
+    if (this.isLocalDestination(targetIp, 'ipv4')) {
+      return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
+    }
 
     if (this.host.resolveRoute) {
       const route = this.host.resolveRoute(targetIp);
@@ -1654,10 +1658,47 @@ export class TcpStack {
     return null;
   }
 
+  /**
+   * La destination est-elle la machine elle-même ?
+   *
+   * `127.0.0.1` n'est pas la seule réponse, et c'est le défaut que ceci
+   * corrige : sur un vrai Linux la table de routage `local` porte une
+   * entrée `local <adresse> dev lo` pour CHAQUE adresse configurée, si
+   * bien que `curl http://<ma-propre-adresse>/` atteint le serveur local
+   * sans qu'aucune trame ne parte. Ici, seule la boucle locale était
+   * traitée : un serveur joignable de toute la topologie ne l'était pas
+   * depuis la machine qui l'exécute — `curl 127.0.0.1` répondait et
+   * `curl 10.0.0.2` restait sur « Trying… » indéfiniment.
+   */
+  private isLocalDestination(targetIp: string, family: IpFamily): boolean {
+    if (family === 'ipv6') {
+      let v6: IPv6Address;
+      try { v6 = new IPv6Address(targetIp); } catch { return false; }
+      if (v6.isLoopback()) return true;
+      const cible = v6.toString();
+      for (const port of this.host.getPorts()) {
+        for (const entry of port.getIPv6Addresses?.() ?? []) {
+          if (entry.address.toString() === cible) return true;
+        }
+      }
+      return false;
+    }
+    const v4 = IPAddress.tryParse(targetIp);
+    if (!v4) return false;
+    if (v4.isLoopback()) return true;
+    for (const port of this.host.getPorts()) {
+      const own = port.getIPAddress();
+      if (own && own.equals(v4)) return true;
+    }
+    return false;
+  }
+
   private resolveEgress6(
     targetIp: string,
   ): { name: string; port?: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
-    if (new IPv6Address(targetIp).isLoopback()) return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
+    if (this.isLocalDestination(targetIp, 'ipv6')) {
+      return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
+    }
     if (!this.host.resolveRoute6 || !this.host.localAddress6) return null;
     const route = this.host.resolveRoute6(targetIp);
     if (!route) return null;

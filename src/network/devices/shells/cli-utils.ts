@@ -409,7 +409,6 @@ const CISCO_INTERFACE_PREFIXES: Record<string, string> = {
   'ge': 'GE',
 };
 
-/** Huawei interface abbreviation → full prefix candidates (ordered) */
 /**
  * Les types d'interface de VRP. L'abreviation n'est PAS une liste
  * d'ecritures admises mais une regle : tout prefixe non ambigu du nom du
@@ -417,7 +416,7 @@ const CISCO_INTERFACE_PREFIXES: Record<string, string> = {
  * `ge0/0/0` et `gi0/0/0` mais refusait `g0/0/0`, `loop0` et `l0`, qui
  * sont pourtant les frappes les plus courantes.
  */
-const HUAWEI_INTERFACE_TYPES: readonly string[] = [
+export const HUAWEI_INTERFACE_TYPES: readonly string[] = [
   'GigabitEthernet', 'Ethernet', 'Eth-Trunk', 'LoopBack',
   'NULL', 'Nve', 'Tunnel', 'Vlanif', 'MEth',
 ];

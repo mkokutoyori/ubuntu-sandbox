@@ -34,6 +34,7 @@ import {
   APACHE_SITES_AVAILABLE, APACHE_SITES_ENABLED, APACHE_DEFAULT_SITE,
   APACHE_DEFAULT_PAGE, APACHE_DOCROOT, APACHE_DEFAULT_MODULES, apacheModuleLoadFile,
   APACHE_ENVVARS, APACHE_ENVVARS_PATH, APACHE_MODS_ENABLED, APACHE_DEFAULT_SSL_SITE,
+  APACHE_MODS_AVAILABLE, APACHE_AVAILABLE_MODULES,
 } from './linux/http/apache/ApacheFiles';
 import { checkNginxCriticalFiles } from './linux/service/CriticalFiles';
 import {
@@ -522,7 +523,7 @@ export abstract class LinuxMachine extends EndHost
       if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
     });
 
-    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false, stdin) => {
+    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false, stdin, outputPiped = false) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
       const unavailable = this.registryDependencyFailure(cmd, argv[0]);
@@ -587,7 +588,7 @@ export abstract class LinuxMachine extends EndHost
         const denial = evaluatePrivilegeRequirement(cmd.privilege, argv[0], args, actor);
         if (denial) { restore(); return Promise.resolve(denial); }
       }
-      const ctx = this.buildCommandContext();
+      const ctx = this.buildCommandContext(outputPiped);
       if (cmd.runWithStatusSync) {
         try { return Promise.resolve(cmd.runWithStatusSync(ctx, args, input)); } finally { restore(); }
       }
@@ -1166,6 +1167,11 @@ export abstract class LinuxMachine extends EndHost
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
       now: () => new Date(),
+      // §P6 — le mandataire résout par la MACHINE qui l'exécute :
+      // `/etc/hosts` et `/etc/resolv.conf` du serveur décident, comme
+      // pour le vrai nginx. La variante synchrone est la bonne ici,
+      // la réponse devant partir dans le même tour que la requête.
+      resolve: (name) => this.resolveHostnameSyncForServices(name),
     });
 
     this.executor.registerServiceSocketServer('nginx', this.nginxService);
@@ -1226,7 +1232,7 @@ export abstract class LinuxMachine extends EndHost
   private initApache(): void {
     const vfs = this.executor.vfs;
     for (const dir of ['/etc/apache2', APACHE_SITES_AVAILABLE, APACHE_SITES_ENABLED,
-                       APACHE_MODS_ENABLED, '/etc/apache2/conf-enabled',
+                       APACHE_MODS_ENABLED, APACHE_MODS_AVAILABLE, '/etc/apache2/conf-enabled',
                        APACHE_DOCROOT, '/var/log/apache2']) {
       if (!vfs.exists(dir)) vfs.mkdirp(dir, 0o755, 0, 0);
     }
@@ -1256,10 +1262,20 @@ export abstract class LinuxMachine extends EndHost
     // them rather than reciting them: an `ln -s` made by hand under
     // `mods-enabled` has to show up there and an `rm` has to remove it,
     // since that is all `a2enmod`/`a2dismod` do.
+    // `mods-available` d'abord : c'est là que vivent les fichiers, et
+    // `mods-enabled` n'en contient que des liens. Sans ce répertoire,
+    // `a2enmod ssl` n'aurait rien à lier — et c'est la distinction
+    // disponible/activé qui porte toute la leçon.
+    for (const module of APACHE_AVAILABLE_MODULES) {
+      const loadFile = `${APACHE_MODS_AVAILABLE}/${module}.load`;
+      if (!vfs.exists(loadFile)) {
+        vfs.writeFile(loadFile, apacheModuleLoadFile(module), 0, 0, 0o022, true);
+      }
+    }
     for (const module of APACHE_DEFAULT_MODULES) {
       const loadFile = `${APACHE_MODS_ENABLED}/${module}.load`;
       if (!vfs.exists(loadFile)) {
-        vfs.writeFile(loadFile, apacheModuleLoadFile(module), 0, 0, 0o022, true);
+        vfs.createSymlink(loadFile, `../mods-available/${module}.load`, 0, 0);
       }
     }
     // Ubuntu's default page is only laid down if nginx has not already
@@ -2124,8 +2140,9 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** Build the context object passed to every `LinuxCommand.run()` call. */
-  protected buildCommandContext(): LinuxCommandContext {
+  protected buildCommandContext(outputPiped = false): LinuxCommandContext {
     return {
+      outputPiped,
       executor: this.executor,
       net: this.net,
       netConfig: this.executor.netConfig,
@@ -2930,6 +2947,26 @@ export abstract class LinuxMachine extends EndHost
   }
 
   // ─── Hostname resolution (shared between buildNetKernel & commands) ─
+
+  /**
+   * La résolution synchrone dont un service a besoin pour répondre dans
+   * le même tour que la requête (§P6 : le mandataire de nginx).
+   *
+   * Elle passe par le NSS de la machine — donc `/etc/hosts` puis le
+   * résolveur — plutôt que par une table à part : un service qui ne
+   * résoudrait pas comme `ping` sur la même machine serait un piège.
+   */
+  private resolveHostnameSyncForServices(name: string): string | null {
+    try { return new IPAddress(name).toString(); } catch { /* pas une adresse littérale */ }
+    const r = this.executor.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+    if (r.status === 'SUCCESS' && r.entry) {
+      for (const h of r.entry) {
+        if (h.addressFamily !== 2) continue;
+        try { return new IPAddress(h.address).toString(); } catch { continue; }
+      }
+    }
+    return null;
+  }
 
   private async resolveHostnameOverWire(name: string): Promise<IPAddress | null> {
     try { return new IPAddress(name); } catch { void 0; }

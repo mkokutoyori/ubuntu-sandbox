@@ -322,7 +322,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     await typeRoot(t, 'systemctl status ssh');
-    expectAnyLine(t, /Active:\s+active \(running\)/);
+    expectAnyLine(t, /Active:.*active \(running\)/);
   });
 
   test('§18 — exit pops back to the client prompt', async () => {

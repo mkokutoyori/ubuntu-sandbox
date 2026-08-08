@@ -23,8 +23,24 @@ function machine(name = 'AT'): LinuxServer {
   return srv;
 }
 
+/**
+ * Le premier geste d'un TP TLS Apache, et il n'était pas fait ici.
+ *
+ * `mod_ssl` est livré ÉTEINT par Debian, et Apache saute le bloc
+ * `<IfModule mod_ssl.c>` tant qu'il l'est : sans cette ligne,
+ * `default-ssl.conf` n'est pas lu du tout et `SSLEngine` reçoit
+ * `Invalid command`, ce qu'un vrai serveur répond aussi. Ces cas
+ * passaient auparavant parce que le simulateur ignorait `<IfModule>` et
+ * ne jugeait aucune directive — ils décrivaient un TLS qui marche sans
+ * son module.
+ */
+async function enableSsl(srv: LinuxServer): Promise<void> {
+  await srv.executeCommand('a2enmod ssl');
+}
+
 /** The learner's own steps, in order. */
 async function makeCertificate(srv: LinuxServer): Promise<void> {
+  await enableSsl(srv);
   await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
   await srv.executeCommand(
     'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/lab.key '
@@ -32,6 +48,7 @@ async function makeCertificate(srv: LinuxServer): Promise<void> {
 }
 
 async function writeSslSite(srv: LinuxServer, cert: string, key: string): Promise<void> {
+  await enableSsl(srv);
   await srv.executeCommand(
     `sh -c 'printf "<VirtualHost *:443>\\n\\tDocumentRoot /var/www/html\\n`
     + `\\tSSLEngine on\\n\\tSSLCertificateFile ${cert}\\n`
@@ -53,6 +70,7 @@ describe('apache2 over TLS — Debian ships default-ssl disabled', () => {
 
   it('enabling it as shipped refuses, because the snakeoil certificate is absent', async () => {
     const srv = machine();
+    await enableSsl(srv);
     // `a2ensite default-ssl` is only an `ln -s`.
     await srv.executeCommand(
       'ln -s ../sites-available/default-ssl.conf /etc/apache2/sites-enabled/default-ssl.conf');
@@ -141,6 +159,7 @@ describe('apache2 over TLS — never cleartext on 443', () => {
 
   it('SSLEngine on with no certificate at all is refused with AH02572', async () => {
     const srv = machine();
+    await enableSsl(srv);
     await srv.executeCommand(
       `sh -c 'printf "<VirtualHost *:443>\\n\\tDocumentRoot /var/www/html\\n`
       + `\\tSSLEngine on\\n</VirtualHost>\\n" > /etc/apache2/sites-available/bare.conf'`);

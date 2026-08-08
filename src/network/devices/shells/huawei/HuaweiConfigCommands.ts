@@ -18,6 +18,7 @@ import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
 import { refuseUnknownUndo, huaweiTypeInterface, refuseMotInattenduVrp } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
+import { describeHuaweiInterfaceArg, wordArg } from './huaweiInterfaceHelp';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -79,8 +80,16 @@ function resolveOrCreateHuaweiInterface(router: Router, raw: string): string | n
   return fullName;
 }
 
-/** Les types qu'on peut CREER a la volee ; les autres sont du materiel. */
-const VIRTUELLES: ReadonlySet<string> = new Set([
+/**
+ * Les types qu'on peut CREER a la volee ; les autres sont du materiel.
+ *
+ * Exporté parce que l'aide de `interface ?` s'en déduit : elle ne doit
+ * nommer que ce qui s'ouvre. `HUAWEI_INTERFACE_TYPES` sert à RÉSOUDRE
+ * une abréviation et contient donc des types que VRP connaît sans que
+ * cette image en porte (`Ethernet`, `MEth`) — les proposer ferait
+ * nommer un refus à l'aide, ce qui est le défaut qu'elle corrige.
+ */
+export const VIRTUELLES: ReadonlySet<string> = new Set([
   'LoopBack', 'Tunnel', 'Nve', 'Vlanif', 'Eth-Trunk', 'NULL',
 ]);
 
@@ -454,11 +463,13 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     ctx.setMode('interface');
     return '';
   });
+  describeHuaweiInterfaceArg(trie);
 
   trie.registerGreedy('ip route-static', 'Configure static route', (args, raw) => {
     return cmdIpRouteStatic(getRouter(), args, raw);
   });
 
+  trie.describeArgs('ip pool', [wordArg('DHCP address pool name', 'pool-name')]);
   trie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     return cmdIpPool(getRouter(), ctx, args[0]);
@@ -582,6 +593,7 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     ctx.setSelectedInterface(portName);
     return '';
   });
+  describeHuaweiInterfaceArg(trie);
 
   trie.registerGreedy('ip address', 'Configure IP address', (args, raw) => {
     return cmdIpAddress(getRouter(), ctx, args, raw);

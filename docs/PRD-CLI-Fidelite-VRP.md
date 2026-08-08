@@ -299,7 +299,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` (**livré, §12**) | V1 |
 | **V5** | Chantier D §3 et §5 : bornes, abréviation du nom d'interface (**livré, §13** ; l'aide §1.9 est passée à l'agent « logging ») | V4 |
 | **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | **Livré, §14** |
-| **V7** | La queue d'une commande lue jusqu'au bout (reliquat de V4/V5) | **Livré, §15** |
+| **V7** | La queue d'une commande lue jusqu'au bout (reliquat de V4/V5) | **Livré, §16** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1014,7 +1014,117 @@ inchangé**. Lint sur les dix fichiers touchés : **162 problèmes avant,
 
 ---
 
-## 15. V7 — Livré : la queue d'une commande est lue jusqu'au bout
+## 15. §1.9 — Livré (agent « logging »)
+
+Repris avec l'accord de l'agent « routage/CLI », qui l'avait proposé
+comme jumeau du chantier Cisco « ce que `?` propose, la machine
+l'accepte ».
+
+### 15.1 La cause n'était pas là où le constat la plaçait
+
+Mesuré avant d'écrire une ligne : `CommandTrie.isExecutableAt` consulte
+**déjà** `requiredArity` avant de proposer `<cr>`, et cette arité était
+juste. Elle valait **zéro**. Ces commandes sont enregistrées par
+`registerGreedy`, qui ne déclare aucun paramètre : la trie les croyait
+exécutables telles quelles, proposait `<cr>` en toute logique, et c'est
+le HANDLER qui refusait ensuite. Le rendu de l'aide n'avait aucun tort ;
+il disait fidèlement une chose fausse qu'on lui avait apprise.
+
+D'où un correctif **déclaratif** plutôt qu'un changement de moteur :
+`describeArgs` pose les arguments, et poser un argument requis retire le
+`<cr>` par construction. Un seul geste pour les deux moitiés du constat
+— l'aide nomme ce qu'il faut taper, et cesse d'annoncer qu'on peut ne
+rien taper.
+
+Le relevé complet, routeur et switch, vue système :
+
+| Commande | Avant | Après |
+|---|---|---|
+| `interface ?` | `WORD` + `<cr>` | les 7 types, sans `<cr>` |
+| `interface` | `Error: Incomplete command.` | `Error: Incomplete command found at '^' position.` + curseur |
+| `ip pool ?` / `ip host ?` | `WORD` + `<cr>` | le nom, sans `<cr>` |
+| `vlan ?` (switch) | `batch` + `<cr>` | `<1-4094>` + `batch`, sans `<cr>` |
+| `stp ?` (switch) | 7 mots empruntés + `<cr>` | les 13 mots du handler, sans `<cr>` |
+| `interface ?` (switch) | `range` + `<cr>` | les 7 types |
+
+### 15.2 Le piège : l'arité ne suffit pas
+
+Déclarer le type comme argument requis retire bien le `<cr>` derrière
+`interface`. Mais le numéro s'écrit de deux façons —
+`interface GigabitEthernet0/0/0` en un jeton, `interface GigabitEthernet
+0/0/0` en deux — et **compter les jetons ne peut pas trancher entre
+elles** : requis, le second argument interdit la forme collée ;
+optionnel, il déplace simplement le `<cr>` menteur d'un cran vers la
+droite, derrière un type nu que la machine refuse.
+
+C'est le seul endroit où le moteur a dû changer, et le changement est
+additif : `CommandNode.executableWhen`, un prédicat consulté **en plus**
+de l'arité, jamais à sa place. Un nœud qui n'en déclare pas se comporte
+exactement comme avant. Ici il tient en une ligne — une interface se
+désigne par un numéro, donc l'un des arguments doit porter un chiffre.
+
+Deuxième ajout, du même ordre : `CommandTrie.describeNode(path, texte)`.
+Un nœud créé **en chemin** — `routing-table` dans
+`ip routing-table limit`, `radius-server` dans
+`display radius-server configuration` — reçoit sa propre clé pour
+description, que le rendu blanchit ensuite, puisque répéter le mot-clé
+n'apprend rien. Personne ne l'enregistre pour lui-même, donc personne ne
+le décrit. `describeNode` est la seule façon de le faire sans lui
+inventer une action.
+
+### 15.3 Trois erreurs de ma part, corrigées par la mesure
+
+Écrites ici parce qu'elles se reproduiraient sans cela.
+
+1. **`describeArgs` minuscule la clé du nœud qu'il crée.** Décrire le
+   numéro par un nœud sous chaque type (`interface LoopBack`) fabriquait
+   des enfants `loopback`, `nve`, `tunnel` — si bien que la liste
+   revenait mi-`LoopBack` mi-`loopback`, les seconds portant en prime
+   une description prise au dictionnaire global
+   (`loopback  Set the loopback mode`, celle d'un tout autre usage du
+   mot). Un seul nœud à **deux** arguments dit la même chose sans
+   fabriquer d'enfant.
+2. **`addCompletionKeywords` et `describeNode` sont ignorés en silence
+   si le nœud n'existe pas encore.** Mes premiers appels précédaient
+   l'enregistrement : aucun effet, aucun message. Ils doivent suivre.
+3. **`describeNode` ne peut pas se contenter de tester la chaîne
+   vide.** La description d'un nœud de chemin vaut sa propre clé, pas
+   `''` ; le garde-fou n'entrait donc jamais. Les deux formes valent
+   « pas de description ».
+
+### 15.4 Ce qui a été volontairement laissé
+
+* **`interface range` n'est plus proposé par l'aide du switch.** Le
+  handler l'accepte — son propre commentaire le nomme « Cisco-ism the
+  suites use » — mais VRP ne connaît pas cette forme, et son aide ne
+  l'annoncerait pas. La commande continue de fonctionner ; elle cesse
+  d'être présentée comme du VRP.
+* **§1.10 (`int g0/0/0` refusé) n'est pas traité** : c'est
+  l'abréviation du NOM d'interface, pas l'aide, et elle appartient au
+  V5 de l'agent « routage/CLI ». Vérifié inchangé par ce lot.
+* **Six mnémoniques d'aide restent des descriptions écrites par moi**
+  plutôt que relevées sur un équipement de référence (les sept types
+  d'interface, les treize mots de `stp`). Elles décrivent ce que le
+  handler fait réellement — c'est vérifiable ici — mais leur formulation
+  n'est pas celle de Huawei mot pour mot.
+
+### 15.5 Mesures
+
+`probe-vrp-aide-et-machine.test.ts` (17 cas), **11 tombent par
+`git stash`** des six fichiers touchés. Les cas qui passent des deux
+côtés sont les garde-fous de non-régression : `ospf ?` garde son `<cr>`
+parce que `ospf` seul s'exécute — la règle livrée n'est pas « retirer
+`<cr>` partout », c'est « le proposer là où la commande marche ».
+
+Deux invariants sont vérifiés de bout en bout plutôt que cas par cas :
+**chaque type proposé par `interface ?` ouvre réellement une interface**,
+et **aucun mot-clé n'est proposé sans description ni avec une
+description qui répète son mot**, sur quatorze racines de commandes et
+les deux plateformes.
+
+---
+
+## 16. V7 — Livré : la queue d'une commande est lue jusqu'au bout
 
 Ce lot ferme le reliquat que V4 et V5 avaient laissé ouvert **en le
 fixant par test** : « les commandes sans plafond déclaré acceptent encore
@@ -1022,7 +1132,7 @@ un mot en trop ». V4 avait construit le mécanisme (`allowArgs`,
 `argumentCeiling`, `tropDeParametres`) et ne l'avait déclaré que pour
 `sysname`, en refusant explicitement de plafonner à l'aveugle.
 
-### 15.1 Le constat : dix-sept formes avalent un mot en silence
+### 16.1 Le constat : dix-sept formes avalent un mot en silence
 
 Balayage de 27 commandes, chacune sur une machine neuve dans sa propre
 vue : la forme légitime, puis la même avec un mot de plus. **Dix-sept
@@ -1039,7 +1149,7 @@ configuré ce qu'il a tapé ; la machine a configuré autre chose, sans un
 mot. C'est le même défaut de fond que V1 (`undo` fourre-tout) et V2 (les
 valeurs rangées puis jetées), sur la queue des commandes cette fois.
 
-### 15.2 Pourquoi un plafond ne suffit pas
+### 16.2 Pourquoi un plafond ne suffit pas
 
 Mesuré avant de coder — c'est ce qui a changé le correctif prévu. La
 queue légitime de `ip route-static` est **riche** :
@@ -1064,7 +1174,7 @@ dire ici. Deux mécanismes, parce que deux grammaires :
 seconds : le mot fautif est **désigné** par le curseur, à la forme VRP à
 trois lignes.
 
-### 15.3 Deux cas où compter aurait été faux, et l'ont prouvé
+### 16.3 Deux cas où compter aurait été faux, et l'ont prouvé
 
 **`interface`.** VRP admet que le numéro soit séparé du type
 (`interface LoopBack 0`), donc un plafond de deux laisse passer
@@ -1078,7 +1188,7 @@ c'est-à-dire le seul mot juste de la ligne.
 donc le plafond est à trois — et `… 255.255.255.0 extra` en a trois
 aussi. Le troisième mot est désormais lu : seul `sub` existe.
 
-### 15.4 Un défaut trouvé par le test du lot, pas par la sonde
+### 16.4 Un défaut trouvé par le test du lot, pas par la sonde
 
 `ospf 1 zzz` refusait correctement **et laissait `ospf 1` dans la
 configuration** : `_enableOSPF()` était appelé avant la lecture de la
@@ -1087,7 +1197,7 @@ d'abord, le processus activé ensuite. C'est le cas « un refus ne pose
 rien » de la suite qui l'a levé, pas le balayage — un test qui vérifie
 seulement le message serait passé à côté.
 
-### 15.5 Refusé, et pourquoi
+### 16.5 Refusé, et pourquoi
 
 **`acl` et `stp` restent perméables**, et c'est écrit dans la suite
 plutôt que masqué. Les deux portent **plusieurs grammaires sous un seul
@@ -1106,7 +1216,7 @@ asserte la substitution, plutôt que corrigé à moitié.
 vérifient : c'est exactement ce que « ne pas plafonner à l'aveugle »
 veut dire.
 
-### 15.6 Tests et mesures
+### 16.6 Tests et mesures
 
 `huawei-queue-lue-jusquau-bout.test.ts` (50 cas) balaie les **deux
 côtés** systématiquement : 23 formes légitimes qui doivent passer *et

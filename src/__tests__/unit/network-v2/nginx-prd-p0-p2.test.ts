@@ -178,14 +178,31 @@ describe('§P2 — la configuration décide, et `nginx -t` la juge', () => {
   it('une directive que nginx connaît et que ce simulateur n\'applique pas le dit', async () => {
     const { server } = lab();
     await server.executeCommand(
-      `sh -c 'printf "server {\\n  listen 80;\\n  proxy_pass http://backend;\\n}\\n" > /etc/nginx/sites-available/default'`,
+      `sh -c 'printf "server {\\n  listen 80;\\n  fastcgi_pass 127.0.0.1:9000;\\n}\\n" > /etc/nginx/sites-available/default'`,
     );
 
     // `unknown directive` serait faux : nginx connaît parfaitement
-    // proxy_pass. Le refus doit dire ce qui est vrai.
+    // fastcgi_pass. Le refus doit dire ce qui est vrai.
+    //
+    // Ce cas portait sur `proxy_pass` jusqu'à ce que §P6 l'IMPLÉMENTE.
+    // Il fallait donc une directive qui soit encore dans ce cas-là, et
+    // non affaiblir l'assertion.
     const out = await server.executeCommand('nginx -t');
-    expect(out).toContain('directive "proxy_pass" is not supported by this simulator');
+    expect(out).toContain('directive "fastcgi_pass" is not supported by this simulator');
     expect(out).not.toContain('unknown directive');
+  });
+
+  it('`proxy_pass` hors d\'une `location` est refusée là où nginx la refuse', async () => {
+    const { server } = lab();
+    await server.executeCommand(
+      `sh -c 'printf "server {\\n  listen 80;\\n  proxy_pass http://backend;\\n}\\n" > /etc/nginx/sites-available/default'`,
+    );
+
+    // Le refus a changé de RAISON avec §P6, pas disparu : la directive
+    // est désormais mise en œuvre, et c'est son emplacement qui cloche.
+    const out = await server.executeCommand('nginx -t');
+    expect(out).toContain('"proxy_pass" directive is not allowed here');
+    expect(out).not.toContain('is not supported by this simulator');
   });
 
   it('une configuration invalide fait ÉCHOUER le démarrage du service', async () => {

@@ -14,6 +14,10 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import {
+  withVrpCommonHelp, withVrpCommonCandidates,
+  type VrpViewKind,
+} from './huawei/vrpCommonCommands';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
@@ -44,6 +48,10 @@ import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { parseHuaweiPortSpec } from './huawei/HuaweiAclCommands';
 import { formatHuaweiAclEntry } from '../router/ACLEngine';
 import { vrrpVirtualMac, effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
+import {
+  describeHuaweiInterfaceArg, wordArg,
+  STP_SYSTEM_KEYWORDS, STP_INTERFACE_KEYWORDS,
+} from './huawei/huaweiInterfaceHelp';
 
 type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
@@ -203,6 +211,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private buildDhcpCommands(): void {
     // `ip pool <name>` enters the DHCP pool view.
+    this.systemTrie.describeArgs('ip pool', [wordArg('DHCP address pool name', 'pool-name')]);
     this.systemTrie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       const dhcp = this.swRef._getDHCPServerInternal();
@@ -534,7 +543,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(sw ? new EquipmentParamResolver(sw) : null);
     try {
-      const completions = trie.getCompletions(input);
+      const completions = withVrpCommonHelp(this.vrpView(), input, trie.getCompletions(input));
       if (completions.length === 0) return 'Error: Unrecognized command';
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -554,10 +563,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(new EquipmentParamResolver(sw));
     try {
-      return trie.tabCandidates(input);
+      return withVrpCommonCandidates(this.vrpView(), input, trie.tabCandidates(input));
     } finally {
       trie.setDynamicResolver(null);
     }
+  }
+
+  /**
+   * La vue utilisateur n'a rien à remonter : `return` n'y est pas
+   * proposé, comme sur un vrai VRP.
+   */
+  private vrpView(): VrpViewKind {
+    return this.mode === 'user' ? 'user' : 'other';
   }
 
   // ─── FSM Transitions ─────────────────────────────────────────────
@@ -690,6 +707,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.systemTrie.allowArgs('sysname', 1);
 
     // vlan <id> or vlan batch <id> <id> ...
+    this.systemTrie.describeArgs('vlan', [{
+      name: 'vlan-id', type: 'INT', description: 'VLAN ID', range: [1, 4094],
+    }]);
+    this.systemTrie.addCompletionKeywords('vlan', [
+      { keyword: 'batch', description: 'Create several VLANs at once' },
+    ]);
     this.systemTrie.registerGreedy('vlan', 'VLAN configuration', (args, ligne) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
 
@@ -774,6 +797,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.mode = 'acl';
       return '';
     });
+    // `name` naissait en chemin avec son propre mot pour description
+    // (« name  Name »), qui est vrai et n'apprend rien ; `basic` et
+    // `advanced` étaient extraits du texte du handler sans description
+    // du tout. Les curater règle les deux.
+    this.systemTrie.addCompletionKeywords('acl', [
+      { keyword: 'advanced', description: 'Advanced ACL (3000-3999)' },
+      { keyword: 'basic', description: 'Basic ACL (2000-2999)' },
+      { keyword: 'name', description: 'Named ACL' },
+      { keyword: 'number', description: 'ACL number' },
+    ]);
 
     this.systemTrie.registerGreedy('traffic classifier', 'Configure a traffic classifier', (args) => {
       if (!args[0] || !this.swRef) return 'Error: Incomplete command.';
@@ -820,6 +853,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // user-interface {console <n> | vty <first> [last] | maxvty …} → UI view
+    this.systemTrie.describeArgs('user-interface', [{
+      name: 'type', type: 'ENUM', description: 'User-interface type',
+      validator: () => true,
+      values: [
+        { keyword: 'console', description: 'Primary terminal line' },
+        { keyword: 'maxvty', description: 'Maximum number of VTY lines' },
+        { keyword: 'vty', description: 'Virtual terminal line' },
+      ],
+    }, {
+      name: 'first-ui-number', type: 'INT',
+      description: 'First user-interface number', optional: true, range: [0, 20],
+    }, {
+      name: 'last-ui-number', type: 'INT',
+      description: 'Last user-interface number', optional: true, range: [0, 20],
+    }]);
     this.systemTrie.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
       if (args.length === 0) return 'Error: Incomplete command.';
       if (args[0].toLowerCase() === 'maxvty') return ''; // global setting, no view
@@ -908,6 +956,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // interface <name>  (incl. virtual Eth-Trunk; L3 types stay rejected)
+    describeHuaweiInterfaceArg(this.systemTrie);
+    this.systemTrie.addCompletionKeywords('interface', [
+      { keyword: 'range', description: 'Configure a range of interfaces' },
+    ]);
     this.systemTrie.registerGreedy('interface', 'Enter interface view', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       // Eth-Trunk <id>  /  Eth-TrunkN  → link-aggregation virtual interface
@@ -2416,6 +2468,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   /** System-view `stp …` configuration commands. */
   private registerStpSystemCommands(trie: CommandTrie): void {
+    trie.describeArgs('stp', [{
+      name: 'option', type: 'ENUM', description: 'Spanning tree parameter',
+      validator: () => true,
+      values: STP_SYSTEM_KEYWORDS.map(k => ({ ...k })),
+    }]);
     trie.registerGreedy('stp', 'Spanning Tree Protocol configuration', (args) => {
       const a = args.map(s => s.toLowerCase());
       if (a.length === 0) return 'Error: Incomplete command.';
@@ -2494,6 +2551,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   /** Interface-view `stp …` configuration commands. */
   private registerStpInterfaceCommands(trie: CommandTrie): void {
+    trie.describeArgs('stp', [{
+      name: 'option', type: 'ENUM', description: 'Spanning tree parameter',
+      validator: () => true,
+      values: STP_INTERFACE_KEYWORDS.map(k => ({ ...k })),
+    }]);
     trie.registerGreedy('stp', 'Interface STP configuration', (args) => {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
       const a = args.map(s => s.toLowerCase());

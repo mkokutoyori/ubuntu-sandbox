@@ -410,7 +410,9 @@ export const ipCommand: LinuxCommand = {
       return ctx.netns.exec(name, cmdLine);
     }
     const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps, ctx.netns, ctx.maddr);
-    const out = executeIpCommand(ipCtx, args);
+    // Seul `-c=auto` consulte ce drapeau ; les autres formes de `-c`
+    // tranchent d'elles-mêmes.
+    const out = executeIpCommand(ipCtx, args, ctx.outputPiped === true);
     return out;
   },
 };

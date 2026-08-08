@@ -5,7 +5,21 @@ import { encodeResponse, parseRequest } from './Http1Wire';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
 
-export type Http1RequestHandler = (request: HttpMessage) => HttpMessage;
+/**
+ * Le second paramètre est l'adresse du CLIENT, que le gestionnaire ne
+ * pouvait pas connaître : la socket la porte, la requête non. Sans
+ * elle, un journal d'accès ne peut pas nommer qui a demandé quoi, et
+ * `$remote_addr` ne peut valoir qu'un espace réservé. Il est optionnel
+ * pour que les gestionnaires qui l'ignorent restent inchangés.
+ */
+export interface Http1Peer {
+  readonly ip: string;
+  readonly port: number;
+}
+
+export type Http1RequestHandler = (
+  request: HttpMessage, peer?: Http1Peer,
+) => HttpMessage;
 
 /**
  * RFC 9112 §9.3 — accepts connections and keeps each one open across
@@ -53,7 +67,7 @@ export class Http1ServerSession {
         const method = parsed.message.method ?? 'GET';
         const target = parsed.message.target ?? '';
         this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
-        response = this.handler(parsed.message);
+        response = this.handler(parsed.message, { ip: socket.remoteIp, port: socket.remotePort });
         this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: response.statusCode ?? 0 } });
         shouldClose =
           parsed.message.headers.get('Connection')?.toLowerCase() === 'close' ||

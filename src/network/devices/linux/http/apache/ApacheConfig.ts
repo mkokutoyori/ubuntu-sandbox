@@ -98,11 +98,176 @@ function expand(value: string, env: Map<string, string>): string {
   });
 }
 
+
+/**
+ * Quelle directive vient de quel module — et pourquoi cette table est la
+ * forme JUSTE du contrôle.
+ *
+ * Apache ne dit pas « directive inconnue » : il dit
+ * « *Invalid command 'X', perhaps misspelled **or defined by a module not
+ * included in the server configuration*** ». Son propre message reconnaît
+ * qu'il ne sait pas distinguer une faute de frappe d'un module éteint,
+ * parce que sa grammaire est définie PAR les modules chargés. Un contrôle
+ * qui refuserait `ProxyPass` en dur dirait donc quelque chose de faux :
+ * ce qui cloche n'est pas la directive, c'est que `mod_proxy` n'est pas
+ * allumé — et `a2enmod proxy` est la réponse.
+ *
+ * `core` désigne ce que le serveur comprend sans module chargeable.
+ */
+const DIRECTIVE_MODULE: Readonly<Record<string, string>> = {
+  serveradmin: 'core', servername: 'core', serveralias: 'core',
+  serversignature: 'core', documentroot: 'core', errorlog: 'core',
+  loglevel: 'core', options: 'core', allowoverride: 'core',
+  errordocument: 'core', limitrequestbody: 'core', timeout: 'core',
+  keepalive: 'core', keepalivetimeout: 'core', hostnamelookups: 'core',
+  accessfilename: 'core', adddefaultcharset: 'core', usecanonicalname: 'core',
+  protocols: 'core', serverpath: 'core', maxkeepaliverequests: 'core',
+  customlog: 'log_config', transferlog: 'log_config', logformat: 'log_config',
+  require: 'authz_core', directoryindex: 'dir', fallbackresource: 'dir',
+  setenv: 'env', unsetenv: 'env', passenv: 'env',
+  indexoptions: 'autoindex', indexignore: 'autoindex', headername: 'autoindex',
+  alias: 'alias', aliasmatch: 'alias', scriptalias: 'alias',
+  redirect: 'alias', redirectmatch: 'alias', redirectpermanent: 'alias',
+  header: 'headers', requestheader: 'headers',
+  rewriteengine: 'rewrite', rewriterule: 'rewrite', rewritecond: 'rewrite',
+  rewritebase: 'rewrite', rewriteoptions: 'rewrite', rewritemap: 'rewrite',
+  sslengine: 'ssl', sslcertificatefile: 'ssl', sslcertificatekeyfile: 'ssl',
+  sslcertificatechainfile: 'ssl', sslcacertificatefile: 'ssl',
+  sslprotocol: 'ssl', sslciphersuite: 'ssl', sslhonorcipherorder: 'ssl',
+  sslverifyclient: 'ssl', sslsessioncache: 'ssl',
+  proxypass: 'proxy', proxypassreverse: 'proxy', proxypreservehost: 'proxy',
+  proxyrequests: 'proxy', proxytimeout: 'proxy', proxypassmatch: 'proxy',
+  proxyvia: 'proxy', proxyaddheaders: 'proxy',
+  expiresactive: 'expires', expiresbytype: 'expires', expiresdefault: 'expires',
+  authtype: 'auth_basic', authname: 'auth_basic', authbasicprovider: 'auth_basic',
+  authuserfile: 'authn_file', authgroupfile: 'authz_groupfile',
+  cgimapextension: 'cgi', scriptlog: 'cgi',
+  userdir: 'userdir',
+  addoutputfilterbytype: 'filter', setoutputfilter: 'filter',
+  addtype: 'mime', addencoding: 'mime', addhandler: 'mime', addcharset: 'mime',
+};
+
+/**
+ * Ce que le serveur de ce simulateur LIT vraiment (le `switch` de
+ * `parseApacheConfig`). Toute autre directive n'a, au mieux, aucun effet.
+ */
+const APACHE_APPLIQUEES = new Set([
+  'documentroot', 'servername', 'serveralias', 'directoryindex',
+  'customlog', 'sslengine', 'sslcertificatefile', 'sslcertificatekeyfile',
+]);
+
+/**
+ * Acceptées sans effet observable : elles décrivent une identité, un
+ * journal ou un réglage que rien ici ne mesure. Les refuser rendrait
+ * invalide la configuration que Debian LIVRE — le coût dépasserait le
+ * gain, comme pour `worker_processes` chez nginx.
+ */
+const APACHE_INERTES = new Set([
+  'serveradmin', 'serversignature', 'errorlog', 'loglevel', 'options',
+  'allowoverride', 'require', 'limitrequestbody', 'timeout', 'keepalive',
+  'keepalivetimeout', 'hostnamelookups', 'accessfilename', 'adddefaultcharset',
+  'usecanonicalname', 'serverpath', 'maxkeepaliverequests',
+  'transferlog', 'logformat', 'setenv', 'unsetenv', 'passenv',
+  'indexoptions', 'indexignore', 'headername',
+  'addtype', 'addencoding', 'addhandler', 'addcharset',
+  'addoutputfilterbytype', 'setoutputfilter',
+  'sslcertificatechainfile', 'sslcacertificatefile',
+  'sslprotocol', 'sslciphersuite', 'sslhonorcipherorder',
+  'sslverifyclient', 'sslsessioncache',
+]);
+
+/**
+ * Le module est chargé, la directive existe, et ce serveur ne produit pas
+ * son effet. C'est le cas où le silence coûte le plus cher : un
+ * `ProxyPass` accepté et sans effet fait croire à un mandat qui
+ * n'existe pas, et un `RewriteRule` avalé fait chercher la panne
+ * ailleurs pendant une heure.
+ */
+const APACHE_NON_IMPLEMENTEES = new Set([
+  'proxypass', 'proxypassreverse', 'proxypreservehost', 'proxyrequests',
+  'proxytimeout', 'proxypassmatch', 'proxyvia', 'proxyaddheaders',
+  'rewriteengine', 'rewriterule', 'rewritecond', 'rewritebase',
+  'rewriteoptions', 'rewritemap',
+  'alias', 'aliasmatch', 'scriptalias', 'redirect', 'redirectmatch',
+  'redirectpermanent', 'fallbackresource',
+  'header', 'requestheader',
+  'expiresactive', 'expiresbytype', 'expiresdefault',
+  'authtype', 'authname', 'authbasicprovider', 'authuserfile',
+  'authgroupfile',
+  'protocols', 'userdir', 'cgimapextension', 'scriptlog',
+  'errordocument',
+]);
+
+/**
+ * `Invalid command`, le message d'Apache — le même pour une faute de
+ * frappe et pour un module éteint, parce qu'Apache lui-même ne les
+ * distingue pas.
+ */
+function invalidCommand(nom: string, path: string, n: number): ApacheConfigError {
+  return {
+    message: `apache2: Syntax error on line ${n} of ${path}: Invalid command '${nom}', `
+      + 'perhaps misspelled or defined by a module not included in the server configuration',
+    line: n,
+  };
+}
+
+/**
+ * Les modules chargés, lus là où `apachectl -M` les lit : le répertoire
+ * `mods-enabled`, et le nom pris dans la ligne `LoadModule` du fichier
+ * plutôt que dans le nom du lien — c'est `LoadModule` qui nomme le
+ * module, et renommer un lien ne change pas ce qu'Apache charge.
+ *
+ * Une seule lecture pour les deux usages, sans quoi `apachectl -M` et
+ * `apachectl configtest` pourraient un jour ne pas être d'accord sur ce
+ * qui est chargé — la contradiction la plus déroutante possible.
+ */
+export function loadedApacheModules(
+  src: ApacheFileSource, modsEnabled: string,
+): Set<string> {
+  const out = new Set<string>();
+  for (const nom of src.list(modsEnabled) ?? []) {
+    if (!nom.endsWith('.load')) continue;
+    const texte = src.read(`${modsEnabled}/${nom}`) ?? '';
+    const m = /^\s*LoadModule\s+(\S+)/m.exec(texte);
+    out.add((m ? m[1] : nom.replace(/\.load$/, '')).replace(/_module$/, ''));
+  }
+  // Ce qui est lié dans le binaire est chargé sans `mods-enabled`.
+  for (const statique of ['core', 'so', 'watchdog', 'http_core',
+    'log_config', 'logio', 'version', 'unixd']) out.add(statique);
+  return out;
+}
+
+export function validateApacheDirective(
+  nom: string, path: string, n: number, modulesCharges: ReadonlySet<string>,
+): ApacheConfigError | null {
+  const cle = nom.toLowerCase();
+  const module = DIRECTIVE_MODULE[cle];
+  // Inconnue, ou fournie par un module qui n'est pas chargé : le même
+  // message, celui d'Apache.
+  if (!module) return invalidCommand(nom, path, n);
+  if (module !== 'core' && !modulesCharges.has(module)) return invalidCommand(nom, path, n);
+  if (APACHE_APPLIQUEES.has(cle) || APACHE_INERTES.has(cle)) return null;
+  if (APACHE_NON_IMPLEMENTEES.has(cle)) {
+    return {
+      message: `apache2: Syntax error on line ${n} of ${path}: `
+        + `the '${nom}' directive is not supported by this simulator`,
+      line: n,
+    };
+  }
+  return null;
+}
+
 export function parseApacheConfig(
   src: ApacheFileSource,
   portsPath: string,
   sitesEnabled: string,
   envvarsPath = '/etc/apache2/envvars',
+  /**
+   * Les modules chargés. Absent = on ne juge pas — les appelants qui ne
+   * les connaissent pas gardent le comportement d'avant, plutôt que de
+   * refuser tout ce qui n'est pas `core`.
+   */
+  modulesCharges?: ReadonlySet<string>,
 ): { config: ApacheConfig; error: ApacheConfigError | null } {
   const env = readEnvvars(src, envvarsPath);
   const listenPorts: number[] = [];
@@ -134,7 +299,30 @@ export function parseApacheConfig(
       sslEngine: boolean; sslCert: string | null; sslKey: string | null;
     } | null = null;
 
+    // `<IfModule mod_ssl.c>` : Apache SAUTE le bloc quand le module
+    // n'est pas chargé. C'est ainsi que Debian livre `default-ssl.conf`,
+    // et c'est ce qui fait qu'`a2ensite default-ssl` sans
+    // `a2enmod ssl` ne sert RIEN sur 443 au lieu d'échouer — la vraie
+    // première marche de tout TP TLS Apache. Le bloc était ignoré comme
+    // une ligne quelconque, donc l'hôte virtuel était lu quand même.
+    let sauteJusquA = 0;
+
     for (const { n, content } of meaningfulLines(text)) {
+      const ifModule = /^<IfModule\s+!?(?:mod_)?([A-Za-z0-9_]+)(?:\.c)?\s*>$/i.exec(content);
+      if (ifModule) {
+        const nie = content.includes('!');
+        const nom = ifModule[1].replace(/_module$/, '');
+        const charge = modulesCharges === undefined || modulesCharges.has(nom);
+        if (nie ? charge : !charge) sauteJusquA++;
+        else if (sauteJusquA > 0) sauteJusquA++;
+        continue;
+      }
+      if (/^<\/IfModule>$/i.test(content)) {
+        if (sauteJusquA > 0) sauteJusquA--;
+        continue;
+      }
+      if (sauteJusquA > 0) continue;
+
       const opening = /^<VirtualHost\s+(.+)>$/i.exec(content);
       if (opening) {
         const port = virtualHostPort(opening[1]);
@@ -171,9 +359,14 @@ export function parseApacheConfig(
       }
       if (!current) continue;
 
-      const directiveMatch = /^(\w+)\s+(.+)$/.exec(content);
+      const directiveMatch = /^(\w+)(?:\s+(.+))?$/.exec(content);
       if (!directiveMatch) continue;
-      const [, directive, rawValue] = directiveMatch;
+      const [, directive, rawArgs] = directiveMatch;
+      if (modulesCharges) {
+        const mauvaise = validateApacheDirective(directive, path, n, modulesCharges);
+        if (mauvaise) return { config: { listenPorts, vhosts }, error: mauvaise };
+      }
+      const rawValue = rawArgs ?? '';
       // Values go through `envvars`: Debian's shipped configuration writes
       // `${APACHE_LOG_DIR}/access.log`, and without this expansion the log
       // would land in a directory literally named `${APACHE_LOG_DIR}`.

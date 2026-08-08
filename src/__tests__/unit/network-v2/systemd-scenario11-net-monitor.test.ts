@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { stripAnsi } from '@/terminal/core/OutputFormatter';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
@@ -108,7 +109,7 @@ describe('Scénario 11 — service de surveillance réseau', () => {
 
     const status = await pc.executeCommand('systemctl status net-monitor');
     expect(status).toContain('Loaded: loaded (/etc/systemd/system/net-monitor.service');
-    expect(status).toContain('Active: inactive (dead)');
+    expect(stripAnsi(status)).toContain('Active: inactive (dead)');
 
     await pc.executeCommand('systemctl enable net-monitor');
     expect(vfsOf(pc).exists(WANTS_LINK)).toBe(true);
@@ -120,7 +121,7 @@ describe('Scénario 11 — service de surveillance réseau', () => {
     await sleep(2500);
 
     const status = await pc.executeCommand('systemctl status net-monitor');
-    expect(status).toContain('Active: active (running)');
+    expect(stripAnsi(status)).toContain('Active: active (running)');
     expect(status).toContain('Main PID:');
     expect(status).toContain('Tasks:');
     expect(status).toContain('Memory:');

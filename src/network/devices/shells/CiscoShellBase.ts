@@ -1119,6 +1119,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // no-op at EVERY prompt and never leaves the current sub-mode —
     // pasting a show running-config must not spray "% Invalid input".
     if (trimmed.startsWith('!')) return '';
+    // Les caractères de contrôle sont ICI le sujet — une ligne qui n'en
+    // contient que doit être ignorée — donc la règle ne s'applique pas.
+    // eslint-disable-next-line no-control-regex
     if (/^[\x00-\x1f]+$/.test(trimmed) && trimmed !== '\x03' && trimmed !== '\x1a') return '';
     if (!trimmed.endsWith('?') && this.terminalHistoryEnabled
         && this.terminalHistorySize > 0
@@ -1722,13 +1725,71 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   tabCandidates(input: string, device: TDevice): string[] {
+    const viaDo = this.doTabCandidates(input, device);
+    if (viaDo !== null) return viaDo;
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(new EquipmentParamResolver(device));
     try {
-      return trie.tabCandidates(input);
+      return this.withUniversalCandidates(input, trie.tabCandidates(input));
     } finally {
       trie.setDynamicResolver(null);
     }
+  }
+
+  /**
+   * `do <commande>` se complète dans l'arbre EXEC, comme il s'y exécute.
+   *
+   * Le répartiteur bascule `this.mode` sur `privileged` le temps de la
+   * sous-commande ; la complétion fait exactement la même bascule et
+   * réutilise sa propre méthode, plutôt que d'aller lire le trie
+   * privilégié à la main — ainsi les commandes universelles et le
+   * résolveur dynamique s'appliquent après `do` comme avant, sans second
+   * chemin à tenir à jour.
+   *
+   * Rend `null` quand la ligne ne commence pas par `do` : l'appelant
+   * poursuit normalement. Rend `[]` pour `do ` seul, une espace finale ne
+   * proposant jamais rien sur un vrai IOS.
+   */
+  private doTabCandidates(input: string, device: TDevice): string[] | null {
+    if (!this.isConfigMode()) return null;
+    const m = /^\s*do\s+(.*)$/i.exec(input);
+    if (!m) return null;
+    const reste = m[1];
+    if (reste.trim().length === 0) return [];
+    const modeSauve = this.mode;
+    this.mode = 'privileged';
+    try {
+      return this.tabCandidates(reste, device).map((c) => `do ${c}`);
+    } finally {
+      this.mode = modeSauve;
+    }
+  }
+
+  /**
+   * Les commandes universelles complétées comme les autres.
+   *
+   * `exit`, `help`, et en configuration `end`, `do` et `default` vivent
+   * dans {@link universalCommands} et non dans le trie — c'est ce qui
+   * leur permet d'exister dans TOUS les modes sans être réenregistrées
+   * quinze fois. L'aide les rendait donc, et la complétion les ignorait :
+   * `ex` ne donnait rien là où `?` annonçait `exit`, dans chaque mode des
+   * deux plateformes. Elles sont ajoutées ICI, à partir de la MÊME
+   * méthode que l'aide, pour que les deux ne puissent pas diverger — une
+   * seconde liste aurait recréé exactement l'écart qu'on ferme.
+   *
+   * Elles ne valent que pour le PREMIER mot de la ligne : `exit` n'est
+   * pas une continuation de `show`, et `show ex` ne doit rien proposer.
+   */
+  private withUniversalCandidates(input: string, candidates: string[]): string[] {
+    if (/\s/.test(input.trim()) || input.endsWith(' ')) return candidates;
+    const partiel = input.trim().toLowerCase();
+    if (partiel.length === 0) return candidates;
+    const deja = new Set(candidates.map((c) => c.toLowerCase()));
+    const out = [...candidates];
+    for (const u of this.universalCommands()) {
+      if (u.keyword.startsWith(partiel) && !deja.has(u.keyword)) out.push(u.keyword);
+    }
+    return out;
   }
 
   // ─── Prompt ─────────────────────────────────────────────────────

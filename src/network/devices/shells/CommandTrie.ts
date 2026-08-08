@@ -35,6 +35,16 @@ export interface ParamSpec {
   literal?: string;
   /** Valeurs admises d'un `ENUM`, rendues chacune comme un mot-clé propre. */
   values?: ReadonlyArray<{ keyword: string; description: string }>;
+  /**
+   * Les valeurs servent à `?` et JAMAIS à la complétion par Tab.
+   *
+   * Existe pour `interface <type>` sur VRP : `?` doit nommer les types
+   * (`GigabitEthernet`, `LoopBack`…), tandis que Tab doit compléter les
+   * PORTS RÉELS de la machine — deux réponses différentes à deux
+   * questions différentes, et les confondre supprimait les seconds,
+   * puisqu'un mot-clé l'emporte sur une valeur dynamique.
+   */
+  helpOnly?: boolean;
 }
 
 /**
@@ -97,6 +107,19 @@ export interface CommandNode {
    * `WORD` et lui recopie la description du parent.
    */
   _noArgument?: boolean;
+  /**
+   * L'arité ne suffit pas toujours à dire si la commande est complète.
+   * `interface GigabitEthernet` a bien son argument — le TYPE — et
+   * reste refusée, parce qu'il y manque le numéro ; or le numéro et le
+   * type s'écrivent aussi bien en UN jeton
+   * (`interface GigabitEthernet0/0/0`), forme que déclarer deux
+   * arguments requis interdirait. Compter les jetons ne peut pas
+   * trancher entre les deux ; les REGARDER le peut.
+   *
+   * Ce prédicat est consulté en plus de l'arité, jamais à sa place :
+   * un nœud qui n'en déclare pas se comporte exactement comme avant.
+   */
+  executableWhen?: (args: readonly string[]) => boolean;
   /**
    * Keywords auto-extracted from the greedy handler's source (lazy,
    * computed once). Undefined = not yet computed.
@@ -547,8 +570,11 @@ export class CommandTrie {
     );
   }
 
-  private isExecutableAt(node: CommandNode, suppliedArgs: number): boolean {
-    return !!node.action && suppliedArgs >= this.requiredArity(node);
+  private isExecutableAt(
+    node: CommandNode, suppliedArgs: number, args?: readonly string[],
+  ): boolean {
+    if (!node.action || suppliedArgs < this.requiredArity(node)) return false;
+    return node.executableWhen ? node.executableWhen(args ?? []) : true;
   }
 
   private isContinuationKeyword(node: CommandNode, token: string): boolean {
@@ -578,7 +604,7 @@ export class CommandTrie {
     input: string,
   ): MatchResult {
     const keywordForm = args.length > 0 && this.isContinuationKeyword(node, args[0]);
-    const arityMet = keywordForm || this.isExecutableAt(node, args.length);
+    const arityMet = keywordForm || this.isExecutableAt(node, args.length, args);
     if (arityMet && !!node.action && !this.descendantShortfall(node, args)) {
       return { status: 'ok', node, args, matchedKeywords };
     }
@@ -646,6 +672,7 @@ export class CommandTrie {
     const path: string[] = [];
     /** Combien d'arguments du nœud courant ont déjà été fournis. */
     let consumedArgs = 0;
+    let argsSoFar: string[] = [];
     let firstArg: string | null = null;
 
     // Navigate through all complete (non-last) tokens
@@ -682,6 +709,7 @@ export class CommandTrie {
         node = exactRawHelp;
         path.push(node.keyword);
         consumedArgs = 0;
+        argsSoFar = [];
         continue;
       }
 
@@ -690,6 +718,7 @@ export class CommandTrie {
         node = matches[0];
         path.push(node.keyword);
         consumedArgs = 0;
+        argsSoFar = [];
         continue;
       }
 
@@ -718,6 +747,7 @@ export class CommandTrie {
       // y compris pour les commandes que personne n'a testées.
       if (node.params.length > consumedArgs || node.greedy) {
         if (consumedArgs === 0) firstArg = tokens[i];
+        argsSoFar.push(tokens[i]);
         consumedArgs++;
         continue;
       }
@@ -726,7 +756,8 @@ export class CommandTrie {
     }
 
     // Trailing space → show subcommands/children of the last matched node
-    return this.applyFilter(path, this.nodeCompletions(node, consumedArgs, firstArg));
+    return this.applyFilter(path,
+      this.nodeCompletions(node, consumedArgs, firstArg, argsSoFar));
   }
 
   /**
@@ -792,8 +823,28 @@ export class CommandTrie {
         }
       }
 
-      completed.push(tokens[i]);
-      paramIdx++;
+      // Le token n'est pas un mot-clé. Deux cas, et les confondre est ce
+      // qui faisait fabriquer des commandes à la complétion.
+      //
+      // Si le nœud ATTEND un argument à cette place — il lui reste des
+      // `params`, ou son handler est glouton — le token est cette
+      // valeur : on la consomme et on continue, ce qui est le seul moyen
+      // de compléter `ip route 10.0.0.0 255.255.255.`.
+      //
+      // Sinon, la ligne n'est plus analysable. L'ancienne version
+      // empilait le mot ET RESTAIT SUR LE MÊME NŒUD, donc le mot suivant
+      // était comparé aux enfants de la RACINE : `zzz ho` rendait
+      // `zzz hostname`, `blah int` rendait `blah interface`, et `do sh`
+      // rendait `do shutdown` — des lignes qu'aucun IOS n'accepterait.
+      // Un vrai équipement ne complète rien après un mot qu'il ne
+      // reconnaît pas. C'est la garde que `getCompletions` applique
+      // depuis le typage des arguments, et qui manquait ici.
+      if (node.params.length > paramIdx || node.greedy) {
+        completed.push(tokens[i]);
+        paramIdx++;
+        continue;
+      }
+      return [];
     }
 
     const partial = tokens[tokens.length - 1];
@@ -820,11 +871,24 @@ export class CommandTrie {
       if (auto.keyword.startsWith(partialLower)) push(auto.keyword);
     }
 
-    for (const v of this.enumValues(node, paramIdx)) {
+    for (const v of this.enumValues(node, paramIdx, true)) {
       if (v.keyword.toLowerCase().startsWith(partialLower)) push(v.keyword);
     }
 
-    if (this.dynamicResolver) {
+    // Un MOT-CLÉ et une VALEUR ne se disputent jamais la même place sur
+    // un vrai IOS : l'analyseur essaie les mots-clés d'abord, et ne lit
+    // une valeur que si aucun ne convient. La complétion les mélangeait,
+    // avec une conséquence très visible : `interface gi` rendait cinq
+    // candidats — le type `GigabitEthernet` ET les ports `0/0`…`0/3` —
+    // donc Tab ne faisait rien, là où un vrai routeur écrit
+    // `interface GigabitEthernet` immédiatement. Le type et son numéro
+    // sont deux jetons pour l'analyseur, même quand on les colle.
+    //
+    // Les valeurs vivantes ne disparaissent pas pour autant : elles
+    // reviennent dès qu'aucun mot-clé ne correspond (`interface 0/1`,
+    // `ip route 10.0.0.0 255.255.255.`), et `?` continue de les lister,
+    // ce qui reste le bon endroit pour découvrir les ports réels.
+    if (this.dynamicResolver && results.length === 0) {
       const context: DynamicCompletionContext = {
         path: completed,
         paramType: node.params[paramIdx]?.type ?? null,
@@ -918,14 +982,51 @@ export class CommandTrie {
   private enumValues(
     node: CommandNode,
     consumedArgs: number,
+    pourTab = false,
   ): ReadonlyArray<{ keyword: string; description: string }> {
     const param = node.params[consumedArgs];
-    return param?.type === 'ENUM' ? (param.values ?? []) : [];
+    if (param?.type !== 'ENUM') return [];
+    if (pourTab && param.helpOnly) return [];
+    return param.values ?? [];
+  }
+
+  /**
+   * Donne sa description à un nœud INTERMÉDIAIRE, celui qu'aucun
+   * enregistrement ne nomme pour lui-même.
+   *
+   * `register('ip routing-table limit', …)` crée `routing-table` en
+   * chemin, avec une description vide ; `ip ?` listait donc un mot-clé
+   * nu, qui dit qu'il existe sans dire ce qu'il fait. Le nœud n'a pas
+   * d'action et n'en reçoit pas : seul son libellé change.
+   */
+  describeNode(path: string, description: string): void {
+    const node = this.nodeAt(path);
+    if (!node) return;
+    // Un nœud créé en chemin reçoit sa propre CLÉ pour description, que
+    // le rendu blanchit ensuite — répéter le mot-clé ne dit rien. Les
+    // deux formes valent donc « pas de description », et ne garder que
+    // le test de la chaîne vide laissait l'appel sans effet, ce qui a
+    // été mesuré.
+    const vide = !node.description
+      || node.description.toLowerCase() === node.keyword.toLowerCase();
+    if (vide) node.description = description;
   }
 
   requireArgs(path: string, minArgs: number): void {
     const node = this.nodeAt(path);
     if (node) node.minArgs = minArgs;
+  }
+
+  /**
+   * Déclare qu'au-delà de l'arité, la commande n'est complète que si
+   * ses arguments satisfont ce prédicat — le seul moyen de distinguer
+   * `interface GigabitEthernet0/0/0`, qui s'exécute, de
+   * `interface GigabitEthernet`, qui est refusée, alors que les deux
+   * portent exactement un argument.
+   */
+  executableWhen(path: string, predicate: (args: readonly string[]) => boolean): void {
+    const node = this.nodeAt(path);
+    if (node) node.executableWhen = predicate;
   }
 
   /** Plafonne le nombre d'arguments d'une commande. */
@@ -979,8 +1080,10 @@ export class CommandTrie {
     node: CommandNode,
     consumedArgs = 0,
     firstArg: string | null = null,
+    argsSoFar: readonly string[] = [],
   ): Array<{ keyword: string; description: string }> {
-    const raw = dedupeByKeyword(this.nodeCompletionsUnsorted(node, consumedArgs, firstArg));
+    const raw = dedupeByKeyword(
+      this.nodeCompletionsUnsorted(node, consumedArgs, firstArg, argsSoFar));
     const rank = (keyword: string): number => {
       if (keyword === '<cr>') return 2;
       if (keyword.startsWith('<')) return 1;
@@ -998,6 +1101,7 @@ export class CommandTrie {
     node: CommandNode,
     consumedArgs = 0,
     firstArg: string | null = null,
+    argsSoFar: readonly string[] = [],
   ): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
@@ -1069,7 +1173,8 @@ export class CommandTrie {
     // <cr> — shown when the current command is already executable
     // (real Cisco always shows <cr> when you can press Enter)
     const keywordForm = firstArg !== null && this.isContinuationKeyword(node, firstArg);
-    if (!!node.action && (keywordForm || this.isExecutableAt(node, consumedArgs))) {
+    if (!!node.action
+      && (keywordForm || this.isExecutableAt(node, consumedArgs, argsSoFar))) {
       results.push({ keyword: '<cr>', description: '' });
     }
 
