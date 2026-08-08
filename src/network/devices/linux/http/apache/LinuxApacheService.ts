@@ -10,12 +10,12 @@ import type { ServiceSocketServer } from '../../ports/ServiceSocketServer';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { NginxHost } from '../nginx/LinuxNginxService';
 import {
-  parseApacheConfig, apacheWarnings, selectVirtualHost,
+  parseApacheConfig, apacheWarnings, selectVirtualHost, loadedApacheModules,
   type ApacheConfig, type ApacheVirtualHost,
 } from './ApacheConfig';
 import {
   APACHE_VERSION, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
-  APACHE_ACCESS_LOG, APACHE_ERROR_LOG,
+  APACHE_ACCESS_LOG, APACHE_ERROR_LOG, APACHE_MODS_ENABLED,
   apacheNotFoundPage, apacheForbiddenPage,
 } from './ApacheFiles';
 
@@ -96,10 +96,20 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
   loadConfig(): string | null {
     const { config, error } = parseApacheConfig(
       this.host.fs, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
+      this.modules(),
     );
     this.config = config;
     this.loaded = error === null;
     return error ? error.message : null;
+  }
+
+  /**
+   * Les modules chargés, relus à CHAQUE fois : `a2enmod` pose un lien et
+   * ne prévient personne, donc les garder en cache ferait juger la
+   * configuration sur un état périmé.
+   */
+  private modules(): ReadonlySet<string> {
+    return loadedApacheModules(this.host.fs, APACHE_MODS_ENABLED);
   }
 
   configWarnings(): string[] {
@@ -242,6 +252,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     // server's view of its own configuration.
     const { config } = parseApacheConfig(
       this.host.fs, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
+      this.modules(),
     );
     for (const vhost of config.vhosts) {
       if (!vhost.sslEngine) continue;

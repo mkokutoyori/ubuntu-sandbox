@@ -746,14 +746,88 @@ supprimerait un fichier que rien ne pourrait recréer.
 `apache-a2ensite-a2enmod.test.ts` (13 cas), **les 13 tombent par
 `git stash`**.
 
-**Ce qui reste ouvert du côté d'Apache, mesuré et non traité ici** :
-`apachectl configtest` répond `Syntax OK` à **tout**, y compris à une
-directive qui n'existe pas (`Zorglub on`) et à `ProxyPass` ou
-`Protocols h2`, qu'Apache connaît et que ce simulateur ne produit pas.
-C'est le jumeau exact du défaut que §P2 a corrigé côté nginx. Il n'est
-pas traité ici parce que la grammaire d'Apache est définie **par les
-modules** — son propre message le dit (« *or defined by a module not
-included in the server configuration* ») — de sorte que le refus juste
-dépend de `mods-enabled`, qui vient seulement de devenir manipulable.
-C'est un lot à part, et il a maintenant de quoi être écrit
-correctement.
+**Ce qui restait ouvert du côté d'Apache** — `apachectl configtest`
+répondant `Syntax OK` à tout — **est traité au §9.9**, avec de quoi être
+écrit correctement grâce à `mods-enabled` devenu manipulable.
+
+### 9.9 `apachectl configtest` juge, et il juge par les MODULES
+
+`apachectl configtest` répondait `Syntax OK` à **tout** : à
+`Zorglub on`, à `ProxyPass`, à `Protocols h2`. Le parseur finissait
+littéralement par `default: break; // the rest of the grammar is read
+and ignored` — le jumeau exact du défaut que §P2 avait corrigé côté
+nginx.
+
+**La forme du contrôle n'est pas une liste de mots interdits**, et c'est
+tout l'intérêt de ce lot. Apache ne dit jamais « directive inconnue » ;
+il dit :
+
+```
+Invalid command 'ProxyPass', perhaps misspelled or defined by
+a module not included in the server configuration
+```
+
+Son propre message reconnaît qu'il ne sait pas distinguer une faute de
+frappe d'un module éteint, **parce que sa grammaire est définie par les
+modules chargés**. Refuser `ProxyPass` en dur aurait donc énoncé quelque
+chose de faux : ce qui cloche n'est pas la directive, c'est que
+`mod_proxy` n'est pas allumé — et `a2enmod proxy` est la réponse. Ce lot
+n'était écrivable qu'après §9.8, qui a rendu `mods-enabled`
+manipulable.
+
+D'où quatre issues, et non deux :
+
+| situation | réponse |
+|---|---|
+| module chargé, directive appliquée | acceptée |
+| module chargé, directive descriptive | acceptée (inerte) |
+| module chargé, effet non produit ici | `the 'X' directive is not supported by this simulator` |
+| module éteint **ou** directive inexistante | `Invalid command 'X', perhaps misspelled…` — le message d'Apache, le même pour les deux, comme chez lui |
+
+La séquence que cela produit est celle d'un vrai serveur :
+`ProxyPass` → *module absent* ; `a2enmod proxy` ; `ProxyPass` → *non
+produit par ce simulateur*. Deux manques différents, deux messages
+différents, et l'ordre enseigne.
+
+**`<IfModule>` est honoré**, ce qui était la moitié manquante. Le bloc
+était traité comme une ligne quelconque, si bien que le
+`default-ssl.conf` de Debian — entièrement enveloppé dans
+`<IfModule mod_ssl.c>` — était lu même sans `mod_ssl`. Apache SAUTE le
+bloc. La différence porte tout le TP TLS :
+
+* `a2ensite default-ssl` sans `a2enmod ssl` → `Syntax OK`, et **rien sur
+  443**. C'est la confusion classique, reproduite plutôt qu'évitée.
+* `a2enmod ssl` ensuite → le bloc est lu, et bute sur le certificat
+  « snakeoil » que Debian nomme et que cette image ne fabrique pas.
+  C'est la vraie première marche.
+
+La forme niée (`<IfModule !mod_ssl.c>`) et l'imbrication sont traitées :
+un bloc sauté ne fait pas juger ses directives, sans quoi un
+`RewriteEngine` placé dans une garde serait refusé bien qu'Apache n'y
+entre jamais.
+
+**Une seule lecture des modules** (`loadedApacheModules`) sert
+`apachectl -M` et `configtest`, et le nom vient de la ligne
+`LoadModule` du fichier plutôt que du nom du lien — c'est `LoadModule`
+qui nomme le module. Deux vues en désaccord sur ce qui est chargé
+seraient la contradiction la plus déroutante possible ; un cas de test
+les compare au même instant.
+
+**Sept cas d'`apache2-https.test.ts` sont tombés, et c'était le
+défaut** : ils montaient du TLS **sans jamais activer `mod_ssl`**, ce
+qu'aucun Debian ne permet. Ils passaient parce que le simulateur
+ignorait `<IfModule>` et ne jugeait aucune directive. Ils appellent
+désormais `a2enmod ssl` en premier — le geste réel, devenu possible au
+§9.8 — plutôt que d'affaiblir l'assertion.
+
+**Limite assumée** : le contrôle ne porte que sur les directives lues
+dans `sites-enabled`, à l'intérieur d'un `<VirtualHost>`. `apache2.conf`
+et ses blocs `<Directory>` ne sont pas analysés — ils ne le sont pas
+davantage aujourd'hui pour en extraire quoi que ce soit, et les juger
+sans les lire n'aurait aucun sens.
+
+`apache-configtest-juge.test.ts` (17 cas), **12 tombent par
+`git stash`**. Les 5 qui passent des deux côtés sont les garde-fous de
+non-régression, dont le plus important : **la configuration livrée par
+Debian doit rester valide** — un contrôle qui refuserait le fichier que
+la distribution installe coûterait plus de vérité qu'il n'en apporte.
