@@ -200,9 +200,55 @@ export class HuaweiRouter extends Router {
    * HuaweiTerminalSession.ts).
    */
   getHuaweiDebugService(): HuaweiDebugService {
-    if (!this._huaweiDebugService) this._huaweiDebugService = new HuaweiDebugService();
+    if (!this._huaweiDebugService) {
+      this._huaweiDebugService = new HuaweiDebugService();
+      this._huaweiDebugService.setPlatform('router');
+      this._registerDebugSwitchboards(this._huaweiDebugService);
+    }
     this._huaweiDebugService.attachToBus(this.getBus(), this.id);
     return this._huaweiDebugService;
+  }
+
+  /**
+   * DHCP et IPSec tiennent legitimement leur propre drapeau : ils
+   * s'annoncent au magasin unique plutot que d'etre recopies dedans, ce
+   * qui donne une seule voix a `display debugging` et fait enfin porter
+   * `undo debugging all` sur eux.
+   */
+  private _registerDebugSwitchboards(svc: HuaweiDebugService): void {
+    svc.registerSwitchboard({
+      lignes: () => {
+        const d = this._getDHCPServerInternal().getDebugFlags();
+        const out: string[] = [];
+        if (d.serverPacket) out.push('DHCP server packet debugging is on');
+        if (d.serverEvents) out.push('DHCP server event debugging is on');
+        return out;
+      },
+      eteindre: () => {
+        const dhcp = this._getDHCPServerInternal();
+        dhcp.setDebugServerPacket(false);
+        dhcp.setDebugServerEvents(false);
+      },
+    });
+    svc.registerSwitchboard({
+      lignes: () => {
+        const eng = (this as unknown as {
+          _getIPSecEngineInternal?: () => { isDebugEnabled?: (k: string) => boolean };
+        })._getIPSecEngineInternal?.();
+        if (!eng?.isDebugEnabled) return [];
+        const out: string[] = [];
+        if (eng.isDebugEnabled('isakmp')) out.push('IKE debugging is on');
+        if (eng.isDebugEnabled('ipsec')) out.push('IPSec debugging is on');
+        if (eng.isDebugEnabled('ikev2')) out.push('IKEv2 debugging is on');
+        return out;
+      },
+      eteindre: () => {
+        const eng = (this as unknown as {
+          _getIPSecEngineInternal?: () => { setDebug?: (k: string, on: boolean) => void };
+        })._getIPSecEngineInternal?.();
+        for (const k of ['isakmp', 'ipsec', 'ikev2']) eng?.setDebug?.(k, false);
+      },
+    });
   }
 
   /**

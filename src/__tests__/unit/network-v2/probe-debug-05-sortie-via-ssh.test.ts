@@ -334,7 +334,7 @@ describe('Scénario 7 — VRP demande son propre interrupteur', () => {
     const recu: string[] = [];
     canal.onData((d) => recu.push(d));
 
-    await canal.runLine('debugging icmp');
+    await canal.runLine('debugging ip icmp');
     await canal.runLine('terminal monitor');
 
     recu.length = 0;
@@ -354,7 +354,7 @@ describe('Scénario 7 — VRP demande son propre interrupteur', () => {
     const recu: string[] = [];
     canal.onData((d) => recu.push(d));
 
-    await canal.runLine('debugging icmp');
+    await canal.runLine('debugging ip icmp');
     await canal.runLine('terminal monitor');
     await canal.runLine('terminal debugging');
 
@@ -374,7 +374,7 @@ describe('Scénario 7 — VRP demande son propre interrupteur', () => {
     const recu: string[] = [];
     canal.onData((d) => recu.push(d));
 
-    await canal.runLine('debugging icmp');
+    await canal.runLine('debugging ip icmp');
     await canal.runLine('terminal monitor');
     await canal.runLine('terminal debugging');
     recu.length = 0;
