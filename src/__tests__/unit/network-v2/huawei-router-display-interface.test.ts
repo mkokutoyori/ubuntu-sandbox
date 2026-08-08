@@ -29,12 +29,12 @@ describe('Huawei router display interface family (real state)', () => {
 
     const all = await r.executeCommand('display interface');
     expect(all).not.toMatch(/Invalid input|Incomplete/);
-    expect(all).toContain('GE0/0/0');
+    expect(all).toContain('GigabitEthernet0/0/0');
     expect(all).toContain('192.168.9.1');
 
     const brief = await r.executeCommand('display interface brief');
     expect(brief).not.toMatch(/Invalid input/);
-    expect(brief).toContain('GE0/0/0');
+    expect(brief).toContain('GigabitEthernet0/0/0');
 
     const desc = await r.executeCommand('display interface description');
     expect(desc).not.toMatch(/Invalid input/);

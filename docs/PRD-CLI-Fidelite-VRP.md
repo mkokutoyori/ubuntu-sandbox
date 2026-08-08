@@ -295,8 +295,8 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 |---|---|---|
 | **V1** | Chantier B : `undo` refuse l'inconnu (**livré, §9**) | — |
 | **V2** | Chantier A : séparateurs, numéro de règle, pertes sèches, invariant de rejeu (**livré, §10**) | — |
-| **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` | — |
-| **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` | V1 |
+| **V3** | Chantier C : le nom du port, l'interface virtuelle, `display this` (**livré, §11**) | — |
+| **V4** | Chantier D §1-§2 : les quatre messages, `Too many parameters` (**livré, §12**) | V1 |
 | **V5** | Chantier D §3-§5 : bornes, aide, abréviation du nom d'interface | V4 |
 | **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | — |
 
@@ -503,3 +503,201 @@ retiré du sac RIP).
 `advanced-15-scenarios` §13 et `ssh-operator-journeys` §J04/§J08 tombent
 identiquement avec mes changements remisés. Ils sont côté Cisco/Windows,
 hors du périmètre VRP, et signalés dans le journal.
+
+---
+
+## 11. V3 — Livré
+
+### 11.1 Une correction de mon propre audit, d'abord
+
+**Le §1.4 accusait à tort le switch.** J'y écrivais que son `display this`
+« rend la configuration entière » ; la mesure avait été prise **après un
+`quit`**, donc en vue système — où la vue courante EST la machine et où
+tout rendre est juste. Le balayage de V3, qui parcourt chaque vue une par
+une, l'a montré. Le vrai défaut du switch était ailleurs : `display this`
+n'existait pas du tout en vue de VLAN.
+
+C'est la troisième fois de ce corpus qu'une sonde mal cadrée accuse le
+produit de plus qu'il ne fait (les deux autres sont notées en
+`PRD-Routage-Fidelite.md` §14.1 et au §1.2 ci-dessus). La règle qui
+manque à chaque fois est la même : **une commande se juge dans sa vue.**
+
+### 11.2 Un port a un seul nom
+
+Les ports sont rangés sous leur nom court (`GE0/0/0`), qui est interne.
+L'expansion vers le nom complet était écrite **en ligne dans deux vues et
+absente des quatre autres** — l'invite, `display interface brief`,
+`display interface description` et `display interface <nom>` montraient
+donc le nom interne. `huaweiDisplayInterfaceName()` est désormais la
+seule expansion, lue par les six.
+
+L'abréviation d'entrée ne change pas : `interface GE0/0/0` reste accepté,
+seul l'affichage devient `[LAB-GigabitEthernet0/0/0]`.
+
+### 11.3 Une interface virtuelle est vivante
+
+Chaque vue calculait son état, et de façons différentes :
+`getIsUp() && isConnected()` dans trois d'entre elles, et dans
+`display interface` une liste d'interfaces virtuelles écrite à la main
+(`/^(LoopBack|Tunnel)/`) qui oubliait `Vlanif` et `NULL`. Une Loopback
+était donc rapportée morte alors que sa route était installée.
+
+`iosInterfaceStatus` décrit l'état d'un **port**, pas un modèle par
+constructeur : les vues VRP le lisent maintenant, chacune avec ses mots
+(`*down` pour un arrêt administratif). Trois faits en découlent, et
+chacun est tenu par un test : la Loopback est vivante, une interface
+physique sans porteuse reste morte, et l'arrêt administratif se distingue
+de la porteuse absente — distinction que le prédicat maison, rendant un
+booléen, ne pouvait pas exprimer.
+
+### 11.4 `display this` rend la vue courante
+
+Quatre extracteurs de bloc écrits à la main, un par vue, chacun
+s'arrêtant sur `#` **seulement** — ce qui laissait tout passer quand un
+séparateur manquait, et c'est précisément ce qui faisait fuir `aaa` dans
+la vue OSPF avant V2. Une seule marche les remplace, et elle s'arrête
+aussi sur **toute ligne de premier niveau** : elle ne peut plus déborder,
+même si la structure change à nouveau.
+
+Les vues `aaa` et `acl` du routeur tombaient dans le `default` et
+rendaient la configuration entière ; elles ont maintenant leur cas. La
+vue de VLAN du switch n'avait pas la commande : elle l'a.
+
+Le `default` — vue système — rend toujours tout, et c'est juste (§11.1).
+
+### 11.5 Refusé, et pourquoi
+
+**La terminaison diverge et je n'y touche pas** : `display this` finit par
+`#` sur le routeur et par `return` sur le switch. L'incohérence est
+réelle, mais trancher demande de savoir laquelle est celle de VRP, et je
+n'en suis pas sûr. §0 interdit de faire reposer un correctif sur un point
+non confirmé seul ; le cas reste ouvert plutôt que d'être aligné au
+hasard sur la majorité du dépôt.
+
+### 11.6 Tests et mesures
+
+`huawei-une-verite-par-objet.test.ts` (17 cas) compare les vues **entre
+elles** : les six qui nomment une interface emploient le même nom, celles
+qui donnent son état s'accordent avec la table de routage, et
+`display this` est **strictement plus petit** que la configuration dès
+qu'on est descendu dans une vue — chacune de ses lignes devant par
+ailleurs se retrouver dans la configuration complète, ce qui interdit
+qu'il invente.
+
+Discrimination par `git stash` : **10 des 17 tombent** avant.
+
+**Cinq suites corrigées dans leur intention**, toutes fixant le nom
+interne à l'écran (`toContain('GE0/0/0')`, `'[Huawei-GE0/0/0]'`). Leur
+intention — l'abréviation est acceptée, la navigation fonctionne, la vue
+reflète l'adresse — est conservée ; c'est la prémisse d'affichage qui
+change, et le §1.5 dit pourquoi.
+
+**Mesures.** 288 suites connexes vertes (3 126 cas) : Huawei, VRP,
+interfaces, VLAN, ACL, `display`, scénarios, STP, LACP. Typecheck
+`tsc -p tsconfig.app.json` à 164, inchangé ; lint identique au baseline
+(103 problèmes avant, 103 après).
+
+**Un rouge de pollution inter-fichiers, signalé** :
+`scenario-ad-fsmo-roles.test.ts` tombe dans une campagne large et passe
+seul, avec mes changements en place. C'est la classe déjà documentée dans
+`CLAUDE.md` (registres non réinitialisés globalement — ici celui des
+forêts Active Directory), sans rapport avec VRP.
+
+---
+
+## 12. V4 — Livré
+
+### 12.1 Quatre messages, un format — et 237 sites
+
+VRP n'a que quatre erreurs positionnelles et elles portent **toutes**
+l'écho de la ligne et le curseur. Le dépôt en comptait quatre
+formulations pour le seul paramètre erroné — `Wrong parameter found at
+'^' position.` **sans aucun curseur**, `Wrong parameter found.`,
+`Wrong parameter.`, plus les messages maison `Invalid IP octet: 999` et
+`Invalid OSPF process ID.` — et **237 sites** rendant `Error: Incomplete
+command.` nu.
+
+La première formulation est la pire des cinq : elle annonce une position
+et n'en montre aucune.
+
+Les corriger un par un était exclu, et aurait de toute façon laissé le
+238ᵉ recommencer. **La mise en forme se fait au point de sortie**, une
+fois par plateforme, là où la ligne tapée et le nombre de mots-clés
+reconnus sont encore connus (`normaliserErreurVrp`). Les chemins de la
+trie formataient déjà correctement ; ce sont les retours de gestionnaires
+qui étaient nus.
+
+**Ce qui n'est pas une des quatre familles est laissé tel quel.** Un
+message propre à une commande — `Error: OSPF is not configured.` — n'a
+pas de position à montrer, et lui en inventer une aurait été un mensonge
+de plus. Un test le fixe.
+
+**Le curseur.** Fin de ligne pour `Incomplete command` (« il en manque
+ici », la convention déjà écrite dans `formatVrpPositionalError`) ;
+premier argument pour `Wrong parameter`, puisque c'est le paramètre qui
+est en cause et que le nombre de mots-clés reconnus le localise.
+
+### 12.2 `Too many parameters`, et un plafond qu'on ne pose pas à l'aveugle
+
+Le trie ne portait qu'une arité **minimale** (`minArgs`, consultée à
+l'exécution) et un `_noArgument` que seule l'aide lisait. Un mot en trop
+derrière une commande gloutonne était donc silencieusement jeté :
+`sysname R1 R2` prenait `R1` et perdait `R2`.
+
+`maxArgs` est ajouté au trie, symétrique de `minArgs`, avec
+`allowArgs(path, n)` pour le déclarer et `tropDeParametres()` pour le
+lire au point de sortie VRP. **Le changement est purement additif** :
+non déclaré, il n'y a pas de plafond, et le comportement de toutes les
+commandes existantes — des deux constructeurs — est inchangé. Vérifié :
+122 suites Cisco vertes (1 724 cas).
+
+**Le plafond n'est déclaré que là où les formes légitimes sont closes et
+vérifiables.** `sysname` prend un nom et un seul : la forme est close, le
+plafond est sûr. `ip route-static … extra` et `ospf 1 zzz` ne le sont
+pas — `ip route-static` accepte huit arguments et plus selon les options
+(`preference`, `track`, `permanent`, `description`), et plafonner à
+l'aveugle **refuserait une forme valide, ce qui serait pire que le
+silence d'aujourd'hui**. Ces deux cas restent acceptés, et **un test les
+fixe** pour que la déclaration, quand elle viendra, soit faite sciemment.
+
+C'est le même arbitrage que V1 sur `undo` : la portée se resserre sur ce
+qu'on peut vérifier, plutôt que de s'étendre sur ce qu'on suppose.
+
+### 12.3 La frontière avec le lot de l'autre agent
+
+L'agent « logging » a pris le §1.9 (l'aide `?`) et y traite les **arités
+déclarées**, dont un cas que mon §1.7 relevait : `ip pool` répondant
+`Incomplete command.` là où `interface LoopBack` répond `Wrong
+parameter`. Le partage est net et les deux moitiés se complètent : leur
+correctif est **déclaratif** — faire savoir au trie qu'un argument est
+requis, d'où le bon message — le mien est **le format** de ce message et
+le sort des formulations maison. Une fois les deux posés, un argument
+manquant donne partout `Incomplete command` avec écho et curseur.
+
+**J'ai touché `CommandTrie.ts`**, que cet agent disait éviter sans le
+revendiquer, et je l'ai signalé dans le journal : l'ajout est un champ
+optionnel plus deux accesseurs, sans effet sur les commandes qui ne le
+déclarent pas.
+
+### 12.4 Tests et mesures
+
+`huawei-quatre-messages.test.ts` (12 cas) vérifie une **forme** balayée
+sur une trentaine de commandes : trois lignes, un message parmi les
+quatre familles, la ligne tapée telle quelle, un curseur dans ses bornes.
+S'y ajoutent la position du curseur dans les deux cas où elle se déduit
+(argument fautif, argument manquant), l'absence des cinq formulations
+inventées, le fait qu'un refus ne change rien, et que la forme légitime
+passe toujours.
+
+Discrimination par `git stash` : **7 des 12 tombent** avant.
+
+**Une suite corrigée dans son intention** :
+`probe-vrp-01-loopback-et-display.test.ts` attendait `Invalid IP
+address`. Elle vérifie maintenant le refus de VRP **et** que le curseur
+désigne bien l'adresse fautive — donc plus qu'avant.
+
+**Mesures.** 174 suites connexes vertes (3 555 cas) — toutes celles qui
+construisent une machine Huawei ou qui mentionnent un des messages
+touchés — plus les 122 suites Cisco (1 724 cas) pour le moteur partagé.
+Typecheck `tsc -p tsconfig.app.json` à 165, inchangé ; lint identique au
+baseline (104 problèmes avant, 104 après).

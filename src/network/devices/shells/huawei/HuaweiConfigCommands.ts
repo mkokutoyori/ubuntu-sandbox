@@ -387,6 +387,9 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     getRouter()._setHostnameInternal(args[0]);
     return '';
   });
+  // `sysname` prend UN nom, et un seul : la forme est close, donc le
+  // plafond est sur. `sysname R1 R2` prenait `R1` et jetait `R2`.
+  trie.allowArgs('sysname', 1);
 
   trie.registerGreedy('interface', 'Enter interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';

@@ -36,7 +36,77 @@ export const HUAWEI_ERRORS = {
   AMBIGUOUS: (input: string, pos?: number) => formatVrpPositionalError('Ambiguous command', input, pos),
   INCOMPLETE: (input: string, pos?: number) => formatVrpPositionalError('Incomplete command', input, pos),
   UNRECOGNIZED: (input: string, pos?: number) => formatVrpPositionalError('Unrecognized command', input, pos),
+  TOO_MANY: (input: string, pos?: number) => formatVrpPositionalError('Too many parameters', input, pos),
 } as const;
+
+/**
+ * VRP n'a que quatre messages positionnels, et ils portent TOUS l'echo
+ * de la ligne et le curseur. Les gestionnaires rendent la chaine nue —
+ * 237 sites pour le seul `Error: Incomplete command.` — et trois
+ * orthographes coexistent pour le parametre errone, dont une qui annonce
+ * un curseur (« found at '^' position ») sans en montrer aucun.
+ *
+ * Les corriger un par un etait exclu et aurait laissé le 238e recommencer :
+ * la mise en forme se fait au POINT DE SORTIE, une fois, la ou la ligne
+ * tapee et le nombre de mots-cles reconnus sont encore connus.
+ *
+ * Ce qui n'est pas une des quatre familles est laisse tel quel : un
+ * message propre a une commande (`Error: OSPF is not configured.`) n'a
+ * pas de position a montrer, et lui en inventer une serait un mensonge
+ * de plus.
+ */
+export function normaliserErreurVrp(
+  sortie: string,
+  ligne: string,
+  nbMotsCles = 0,
+): string {
+  if (!sortie.startsWith('Error: ')) return sortie;
+  if (sortie.includes('\n')) return sortie;
+
+  const tete = sortie.slice('Error: '.length).replace(/\.$/, '');
+  if (/^Incomplete command/.test(tete)) return HUAWEI_ERRORS.INCOMPLETE(ligne);
+  if (/^Unrecognized command/.test(tete)) return HUAWEI_ERRORS.UNRECOGNIZED(ligne);
+  if (/^(Wrong parameter|Invalid (IP|OSPF)|Expected )/.test(tete)) {
+    return formatVrpPositionalError('Wrong parameter', ligne, positionArgument(ligne, nbMotsCles));
+  }
+  return sortie;
+}
+
+/**
+ * Le mot en trop, quand la commande declare un plafond d'arguments.
+ *
+ * Le plafond est OPTIONNEL et n'est pose que la ou les formes legitimes
+ * sont connues et closes : plafonner a l'aveugle refuserait une forme
+ * valide, ce qui serait pire que le silence d'aujourd'hui. Une commande
+ * sans plafond declare se comporte exactement comme avant.
+ */
+export function tropDeParametres(
+  resultat: { node?: { maxArgs?: number }; args: readonly string[]; matchedKeywords: readonly string[] },
+  ligne: string,
+): string | null {
+  const max = resultat.node?.maxArgs;
+  if (max === undefined || resultat.args.length <= max) return null;
+  return HUAWEI_ERRORS.TOO_MANY(ligne, positionArgument(ligne, resultat.matchedKeywords.length + max));
+}
+
+/** Le debut du premier argument : la ou un parametre errone se trouve. */
+function positionArgument(ligne: string, nbMotsCles: number): number {
+  const spans: number[] = [];
+  const re = /\S+/g;
+  for (let m = re.exec(ligne); m !== null; m = re.exec(ligne)) spans.push(m.index);
+  return spans[nbMotsCles] ?? spans[spans.length - 1] ?? ligne.trimEnd().length;
+}
+
+/**
+ * Le nom qu'un port PORTE a l'ecran. Les ports sont ranges sous leur nom
+ * court (`GE0/0/0`), qui est interne : VRP n'affiche jamais que le nom
+ * complet, l'invite comprise. L'expansion etait ecrite en ligne dans
+ * deux vues et absente des deux autres, si bien que la meme interface
+ * s'appelait `GE0/0/0` ici et `GigabitEthernet0/0/0` la.
+ */
+export function huaweiDisplayInterfaceName(interne: string): string {
+  return interne.startsWith('GE') ? interne.replace(/^GE/, 'GigabitEthernet') : interne;
+}
 
 /** Ce que la vue RIP de VRP retient hors du moteur commun. */
 export interface HuaweiRipExtras {

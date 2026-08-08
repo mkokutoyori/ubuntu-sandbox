@@ -20,7 +20,7 @@ import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteract
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -476,9 +476,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     let output: string;
     switch (result.status) {
-      case 'ok':
-        output = result.node?.action ? result.node.action(result.args, cmd) : '';
+      case 'ok': {
+        const trop = tropDeParametres(result, cmd);
+        output = trop ?? (result.node?.action
+          ? normaliserErreurVrp(result.node.action(result.args, cmd), cmd, result.matchedKeywords.length)
+          : '');
         break;
+      }
 
       case 'ambiguous':
         // Not `result.error` — CommandTrie's own `.error` is pre-formatted
@@ -665,6 +669,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef._setHostnameInternal(args[0]);
       return '';
     });
+    this.systemTrie.allowArgs('sysname', 1);
 
     // vlan <id> or vlan batch <id> <id> ...
     this.systemTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
@@ -2160,15 +2165,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       displayHistoryCommand(this.history));
 
     // `display this` — running config of the CURRENT view only.
-    trie.register('display this', 'Display active view configuration', () => {
-      if (!this.swRef) return '';
-      if (this.mode === 'interface' && this.selectedInterface) {
-        const etm = this.selectedInterface.match(/^Eth-Trunk(\d+)$/);
-        if (etm) return this.displayEthTrunkConfig(parseInt(etm[1], 10));
-        return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
-      }
-      return this.displayCurrentConfig(this.swRef);
-    });
+    trie.register('display this', 'Display active view configuration', () => this.renderDisplayThis());
+    // La vue de VLAN n'avait pas la commande du tout : `display this` y
+    // repondait `Unrecognized command`, alors que c'est justement une
+    // vue ou l'on veut voir ce qu'on vient de poser.
+    this.vlanTrie.register('display this', 'Display active view configuration', () => this.renderDisplayThis());
+
 
     // `display saved-configuration` — real semantics: render the snapshot
     // captured by `save`, never a mirror of the running configuration.
@@ -2940,6 +2942,35 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   /** `display this` body for an Eth-Trunk interface view. */
+
+  /**
+   * La configuration de la vue COURANTE. En vue systeme la vue courante
+   * est la machine, donc tout rendre y est juste ; ailleurs il faut le
+   * bloc, et la marche s'arrete sur `#` comme sur toute ligne de premier
+   * niveau pour ne pas deborder.
+   */
+  private renderDisplayThis(): string {
+    if (!this.swRef) return '';
+    if (this.mode === 'interface' && this.selectedInterface) {
+      const etm = this.selectedInterface.match(/^Eth-Trunk(\d+)$/);
+      if (etm) return this.displayEthTrunkConfig(parseInt(etm[1], 10));
+      return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
+    }
+    if (this.mode === 'vlan' && this.selectedVlan !== null) {
+      const tete = `vlan ${this.selectedVlan}`;
+      const out: string[] = ['#'];
+      let dedans = false;
+      for (const l of this.displayCurrentConfig(this.swRef).split('\n')) {
+        if (!dedans) { if (l === tete) { dedans = true; out.push(l); } continue; }
+        if (l === '#' || (l.length > 0 && !/^\s/.test(l))) break;
+        out.push(l);
+      }
+      out.push('#');
+      return out.join('\n');
+    }
+    return this.displayCurrentConfig(this.swRef);
+  }
+
   private displayEthTrunkConfig(id: number): string {
     const t = this.ethTrunks.get(id);
     if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
