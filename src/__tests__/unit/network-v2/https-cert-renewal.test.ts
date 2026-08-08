@@ -60,6 +60,12 @@ async function writeNginxSite(srv: LinuxServer): Promise<void> {
 }
 
 async function writeApacheSslSite(srv: LinuxServer): Promise<void> {
+  // `mod_ssl` est livré ÉTEINT par Debian, et Apache refuse `SSLEngine`
+  // tant qu'il l'est — `Invalid command`, exactement comme un vrai
+  // serveur. Ces cas passaient parce que le simulateur ne jugeait
+  // aucune directive : ils décrivaient un TLS qui marche sans son
+  // module (voir `docs/PRD-Nginx.md` §9.9).
+  await srv.executeCommand('a2enmod ssl');
   await srv.executeCommand(
     `sh -c 'printf "<VirtualHost *:443>\\n\\tDocumentRoot /var/www/html\\n`
     + `\\tSSLEngine on\\n\\tSSLCertificateFile /etc/ssl/certs/lab.crt\\n`
