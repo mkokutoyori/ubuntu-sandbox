@@ -89,8 +89,24 @@ async function typeRoot(t: TerminalSession, line: string): Promise<void> {
   t.setInput(line); t.handleKey(key('Enter')); await flush();
 }
 
+/**
+ * Tape une ligne dans la session distante, puis VIDE LE PAGER.
+ *
+ * Une sortie plus longue que l'écran fait entrer IOS en `--More--`, et
+ * la touche suivante y est consommée au lieu d'atteindre le shell —
+ * c'est le comportement d'un vrai routeur. Sans cette boucle, la
+ * première commande un peu longue laissait la session au pager et tout
+ * ce qui suivait était avalé en silence : `show version` passant de 16
+ * à 26 lignes (table de licences) a suffi à faire tomber ces parcours,
+ * qui croyaient taper des commandes alors qu'ils appuyaient sur
+ * « page suivante ».
+ */
 async function typeSub(t: TerminalSession, line: string): Promise<void> {
   t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
+  for (let garde = 0; garde < 50 && t.foreground.currentInputMode.type === 'pager'; garde++) {
+    t.handleKey(key(' '));
+    await flush();
+  }
 }
 
 async function sudoSub(t: TerminalSession, line: string, pw: string): Promise<void> {
