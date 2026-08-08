@@ -8,6 +8,10 @@
  */
 
 import { findHostByAddress } from './network/HostLookup';
+import {
+  ipColorizer, parseIpColorOption, ipUnknownOptionError,
+  type IpColorizer, type IpColorMode,
+} from './LinuxIpColor';
 import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
 import { broadcastAddress } from '../../core/ip';
 import {
@@ -345,20 +349,38 @@ export interface IpOutputOptions {
   json: boolean;
   pretty: boolean;
   oneline: boolean;
+  /** Ce qui colorie la sortie, ou l'identité quand `-c` est absent. */
+  color: IpColorizer;
 }
 
-export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string {
+/**
+ * `outputPiped` répond au seul `-c=auto` : le vrai `ip` n'y colorie que
+ * si sa sortie standard est un terminal. Les trois autres formes (`-c`
+ * nu, `=always`, `=never`) tranchent sans rien demander à personne.
+ */
+export function executeIpCommand(
+  ctx: IpNetworkContext,
+  args: string[],
+  outputPiped = false,
+): string {
   // Parse global options
   let brief = false;
   let stats = false;
   let json = false;
   let pretty = false;
   let oneline = false;
+  let colorMode: IpColorMode = 'never';
   let family: IpFamily = 'any';
   const filteredArgs: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    const couleur = parseIpColorOption(arg);
+    if (couleur === 'invalid') return ipUnknownOptionError(arg);
+    if (couleur !== null) {
+      colorMode = couleur;
+      continue;
+    }
     if (arg === '-br' || arg === '-brief') {
       brief = true;
     } else if (arg === '-s' || arg === '-statistics') {
@@ -389,7 +411,8 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
 
   const object = filteredArgs[0];
   const subArgs = filteredArgs.slice(1);
-  const outputOpts: IpOutputOptions = { family, stats, json, pretty, oneline };
+  const color = ipColorizer(colorMode === 'always' || (colorMode === 'auto' && !outputPiped));
+  const outputOpts: IpOutputOptions = { family, stats, json, pretty, oneline, color };
 
   switch (object) {
     case 'help':
@@ -398,7 +421,7 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'addr':
     case 'address':
     case 'a':
-      return brief ? ipAddrBrief(ctx, subArgs) : ipAddr(ctx, subArgs, outputOpts);
+      return brief ? ipAddrBrief(ctx, subArgs, color) : ipAddr(ctx, subArgs, outputOpts);
 
     case 'link':
     case 'l':
@@ -619,26 +642,29 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputO
   const group = 'default';
   const qlen = isLoopback ? '' : ' qlen 1000';
 
+  const c = opts.color;
   const lines: string[] = [];
-  lines.push(`${idx}: ${info.name}: <${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${state} group ${group}${qlen}`);
-  lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${info.mac} brd ${isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff'}`);
+  lines.push(`${idx}: ${c.ifname(`${info.name}: `)}<${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${c.operstate(state, `${state} `)}group ${group}${qlen}`);
+  lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${c.mac(String(info.mac))} brd ${c.mac(isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff')}`);
   if (opts.stats) lines.push(...statsLines(info));
 
   if (family !== 'inet6' && info.ip && info.cidr !== null) {
-    const dynFlag = info.isDHCP ? ' dynamic' : '';
+    const dynFlag = info.isDHCP ? 'dynamic ' : '';
     const scope = isLoopback ? 'host' : 'global';
     const brd = broadcastAddress(info.ip, info.cidr);
-    const brdStr = brd ? ` brd ${brd}` : '';
-    lines.push(`    inet ${info.ip}/${info.cidr}${brdStr}${dynFlag} scope ${scope} ${info.name}`);
+    // L'espace qui précède `scope` appartient à ce qui le précède : au
+    // fragment colorié quand il y a un `brd`, à la chaîne nue sinon.
+    const brdStr = brd ? ` brd ${c.inet(`${brd} `)}` : ' ';
+    lines.push(`    inet ${c.inet(String(info.ip))}/${info.cidr}${brdStr}${dynFlag}scope ${scope} ${info.name}`);
     for (const sec of info.secondaryIPs ?? []) {
       const secBrd = broadcastAddress(sec.ip, sec.cidr);
-      lines.push(`    inet ${sec.ip}/${sec.cidr}${secBrd ? ` brd ${secBrd}` : ''} scope ${scope} secondary ${info.name}`);
+      lines.push(`    inet ${c.inet(String(sec.ip))}/${sec.cidr}${secBrd ? ` brd ${c.inet(`${secBrd} `)}` : ' '}scope ${scope} secondary ${info.name}`);
     }
   }
 
   if (family !== 'inet') {
     for (const v6 of info.ipv6 ?? []) {
-      lines.push(`    inet6 ${v6.address}/${v6.prefixLength} scope ${v6.scope}`);
+      lines.push(`    inet6 ${c.inet6(String(v6.address))}/${v6.prefixLength} scope ${v6.scope}`);
       lines.push(`       valid_lft forever preferred_lft forever`);
     }
   }
@@ -646,7 +672,7 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputO
   return lines.join('\n');
 }
 
-function ipAddrBrief(ctx: IpNetworkContext, args: string[]): string {
+function ipAddrBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): string {
   const names = ['lo', ...ctx.getInterfaceNames().filter(n => n !== 'lo')];
   const lines: string[] = [];
 
@@ -654,10 +680,13 @@ function ipAddrBrief(ctx: IpNetworkContext, args: string[]): string {
     const info = ctx.getInterfaceInfo(name);
     if (!info) continue;
     const state = info.isUp && info.isConnected ? 'UP' : 'DOWN';
-    const ipStr = info.ip && info.cidr !== null ? `${info.ip}/${info.cidr}` : '';
+    // En mode bref, la couleur enveloppe la COLONNE complétée et non le
+    // mot : le vrai `ip -br` colorie `eth0            ` d'un bloc, ce qui
+    // se voit quand on aligne deux lignes l'une sous l'autre.
+    const ipStr = info.ip && info.cidr !== null ? `${c.inet(String(info.ip))}/${info.cidr}` : '';
     // Left-pad name to 16 chars, state to 14 chars
-    const nameCol = info.name.padEnd(16);
-    const stateCol = state.padEnd(14);
+    const nameCol = c.ifname(info.name.padEnd(16));
+    const stateCol = c.operstate(state, state.padEnd(14));
     lines.push(`${nameCol}${stateCol}${ipStr}`);
   }
 
@@ -871,7 +900,7 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
     if (!info) return `Device "${filterDev}" does not exist.`;
     const idx = ctx.getIfIndex(filterDev);
     if (opts.json) return toJsonText([buildLinkJsonEntry(info, idx, computeIfaceFlags(info), opts.stats)], opts.pretty);
-    const block = formatLinkInterface(info, idx, opts.stats);
+    const block = formatLinkInterface(info, idx, opts.stats, opts.color);
     return opts.oneline ? collapseOneline(block) : block;
   }
 
@@ -889,12 +918,14 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
   for (let i = 0; i < names.length; i++) {
     const info = ctx.getInterfaceInfo(names[i]);
     if (!info) continue;
-    blocks.push(formatLinkInterface(info, ctx.getIfIndex(names[i]), opts.stats));
+    blocks.push(formatLinkInterface(info, ctx.getIfIndex(names[i]), opts.stats, opts.color));
   }
   return opts.oneline ? blocks.map(collapseOneline).join('\n') : blocks.join('\n\n');
 }
 
-function formatLinkInterface(info: IpInterfaceInfo, idx: number, stats = false): string {
+function formatLinkInterface(
+  info: IpInterfaceInfo, idx: number, stats = false, c: IpColorizer = ipColorizer(false),
+): string {
   const isLoopback = info.name === 'lo';
   const uniqueFlags = computeIfaceFlags(info);
 
@@ -905,8 +936,8 @@ function formatLinkInterface(info: IpInterfaceInfo, idx: number, stats = false):
   const qlen = isLoopback ? '' : ' qlen 1000';
 
   const lines: string[] = [];
-  lines.push(`${idx}: ${info.name}: <${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${state} mode ${mode} group ${group}${qlen}`);
-  lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${info.mac} brd ${isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff'}`);
+  lines.push(`${idx}: ${c.ifname(`${info.name}: `)}<${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${c.operstate(state, `${state} `)}mode ${mode} group ${group}${qlen}`);
+  lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${c.mac(String(info.mac))} brd ${c.mac(isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff')}`);
   if (stats) lines.push(...statsLines(info));
 
   return lines.join('\n');
@@ -1090,6 +1121,13 @@ function ipRouteShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
 
   if (opts.json) return toJsonText(sorted.map(buildRouteJsonEntry), opts.pretty);
 
+  // Sur une route, le préfixe est DANS la couleur (`10.0.0.0/24 `) alors
+  // qu'il en sort sur une adresse d'interface (`10.0.0.1` puis `/24`) :
+  // deux formats d'impression distincts dans iproute2, tous deux mesurés.
+  const c = opts.color;
+  const reseau = (r: IpRouteEntry) => c.inet(`${r.network}/${r.cidr} `);
+  const dev = (r: IpRouteEntry) => c.ifname(`${r.iface} `);
+
   const lines: string[] = [];
   for (const route of sorted) {
     // A route whose interface has no carrier stays listed, with the flag
@@ -1099,16 +1137,16 @@ function ipRouteShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
     if (route.type === 'default') {
       const proto = route.isDHCP ? 'dhcp' : 'static';
       const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
-      lines.push(`default via ${route.nextHop} dev ${route.iface} proto ${proto}${metricStr}${dead}`);
+      lines.push(`default via ${c.inet(`${route.nextHop} `)}dev ${dev(route)}proto ${proto}${metricStr}${dead}`);
     } else if (route.type === 'connected') {
-      const srcStr = route.srcIp ? ` src ${route.srcIp}` : '';
-      lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto kernel scope link${srcStr} metric ${route.metric}${dead}`);
+      const srcStr = route.srcIp ? ` src ${c.inet(String(route.srcIp))}` : '';
+      lines.push(`${reseau(route)}dev ${dev(route)}proto kernel scope link${srcStr} metric ${route.metric}${dead}`);
     } else if (route.nextHop) {
       // static via a gateway
-      lines.push(`${route.network}/${route.cidr} via ${route.nextHop} dev ${route.iface} proto static metric ${route.metric}${dead}`);
+      lines.push(`${reseau(route)}via ${c.inet(`${route.nextHop} `)}dev ${dev(route)}proto static metric ${route.metric}${dead}`);
     } else {
       // static on-link (dev route, no gateway)
-      lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto static scope link metric ${route.metric}${dead}`);
+      lines.push(`${reseau(route)}dev ${dev(route)}proto static scope link metric ${route.metric}${dead}`);
     }
   }
 
@@ -1134,13 +1172,16 @@ function ipRoute6(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions):
     return toJsonText(entries, opts.pretty);
   }
 
+  const c = opts.color;
   const lines: string[] = [];
   for (const route of table) {
     const proto = route.type === 'connected' ? 'kernel'
       : route.type === 'ra' ? 'ra' : 'static';
-    const dest = route.type === 'default' ? 'default' : `${route.prefix}/${route.prefixLength}`;
-    const via = route.nextHop ? ` via ${route.nextHop}` : '';
-    lines.push(`${dest}${via} dev ${route.iface} proto ${proto} metric ${route.metric} pref medium`);
+    const dest = route.type === 'default'
+      ? 'default '
+      : c.inet6(`${route.prefix}/${route.prefixLength} `);
+    const via = route.nextHop ? `via ${c.inet6(`${route.nextHop} `)}` : '';
+    lines.push(`${dest}${via}dev ${c.ifname(`${route.iface} `)}proto ${proto} metric ${route.metric} pref medium`);
   }
   return lines.join('\n');
 }
@@ -1400,10 +1441,11 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
   if (addr) neighbors = neighbors.filter(n => n.ip === addr);
   if (neighbors.length > 0) {
     if (opts.json) return toJsonText(neighbors.map(buildNeighJsonEntry), opts.pretty);
+    const c = opts.color;
     return neighbors
       .map(n => n.state === 'FAILED'
-        ? `${n.ip} dev ${n.iface}  FAILED`
-        : `${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`)
+        ? `${c.inet(`${n.ip} `)}dev ${c.ifname(`${n.iface} `)} FAILED`
+        : `${c.inet(`${n.ip} `)}dev ${c.ifname(`${n.iface} `)}lladdr ${c.mac(`${n.mac} `)}${n.state}`)
       .join('\n');
   }
 
@@ -1418,7 +1460,7 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
       const found = findHostByAddress(addr, undefined, ctx.getLocalDevice?.() as never);
       if (!found || found.poweredOff || found.interfaceDown) {
         if (opts.json) return toJsonText([{ dst: addr, dev: route.iface, state: ['FAILED'] }], opts.pretty);
-        return `${addr} dev ${route.iface}  FAILED`;
+        return `${opts.color.inet(`${addr} `)}dev ${opts.color.ifname(`${route.iface} `)} FAILED`;
       }
     }
   }

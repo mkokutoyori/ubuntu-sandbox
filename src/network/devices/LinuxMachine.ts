@@ -522,7 +522,7 @@ export abstract class LinuxMachine extends EndHost
       if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
     });
 
-    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false, stdin) => {
+    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false, stdin, outputPiped = false) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
       const unavailable = this.registryDependencyFailure(cmd, argv[0]);
@@ -587,7 +587,7 @@ export abstract class LinuxMachine extends EndHost
         const denial = evaluatePrivilegeRequirement(cmd.privilege, argv[0], args, actor);
         if (denial) { restore(); return Promise.resolve(denial); }
       }
-      const ctx = this.buildCommandContext();
+      const ctx = this.buildCommandContext(outputPiped);
       if (cmd.runWithStatusSync) {
         try { return Promise.resolve(cmd.runWithStatusSync(ctx, args, input)); } finally { restore(); }
       }
@@ -2124,8 +2124,9 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** Build the context object passed to every `LinuxCommand.run()` call. */
-  protected buildCommandContext(): LinuxCommandContext {
+  protected buildCommandContext(outputPiped = false): LinuxCommandContext {
     return {
+      outputPiped,
       executor: this.executor,
       net: this.net,
       netConfig: this.executor.netConfig,

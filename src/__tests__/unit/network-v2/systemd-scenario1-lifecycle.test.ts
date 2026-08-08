@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { stripAnsi } from '@/terminal/core/OutputFormatter';
 import { EventBus } from '@/events/EventBus';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 
@@ -37,7 +38,7 @@ describe('Scénario 1 — cycle de vie complet d\'un service systemd', () => {
 
     expect(out).toContain('myapp.service - My custom application');
     expect(out).toContain('Loaded: loaded (/etc/systemd/system/myapp.service; disabled');
-    expect(out).toContain('Active: inactive (dead)');
+    expect(stripAnsi(out)).toContain('Active: inactive (dead)');
   });
 
   it('enable crée le lien symbolique wants sans démarrer le service', () => {
@@ -54,7 +55,7 @@ describe('Scénario 1 — cycle de vie complet d\'un service systemd', () => {
     exec.execute('systemctl start myapp');
 
     const status = exec.execute('systemctl status myapp');
-    expect(status).toContain('Active: active (running)');
+    expect(stripAnsi(status)).toContain('Active: active (running)');
     const pid = Number(/Main PID: (\d+)/.exec(status)?.[1]);
     expect(pid).toBeGreaterThan(1);
 
@@ -100,7 +101,7 @@ describe('Scénario 1 — cycle de vie complet d\'un service systemd', () => {
 
     exec.execute('systemctl stop myapp');
 
-    expect(exec.execute('systemctl status myapp')).toContain('Active: inactive (dead)');
+    expect(stripAnsi(exec.execute('systemctl status myapp'))).toContain('Active: inactive (dead)');
     expect(exec.execute('ps aux')).not.toContain('/usr/bin/myapp --daemon');
     expect(exec.processMgr.get(pid)).toBeUndefined();
     expect(exec.execute('systemctl is-active myapp').trim()).toBe('inactive');
@@ -127,7 +128,7 @@ describe('Scénario 1 — cycle de vie complet d\'un service systemd', () => {
     exec.execute('reboot');
 
     const status = exec.execute('systemctl status myapp');
-    expect(status).toContain('Active: active (running)');
+    expect(stripAnsi(status)).toContain('Active: active (running)');
     expect(exec.serviceMgr.status('myapp')!.mainPid).not.toBe(pidBefore);
 
     exec.execute('systemctl disable myapp');
