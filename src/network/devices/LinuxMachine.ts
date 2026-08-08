@@ -1166,6 +1166,11 @@ export abstract class LinuxMachine extends EndHost
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
       now: () => new Date(),
+      // §P6 — le mandataire résout par la MACHINE qui l'exécute :
+      // `/etc/hosts` et `/etc/resolv.conf` du serveur décident, comme
+      // pour le vrai nginx. La variante synchrone est la bonne ici,
+      // la réponse devant partir dans le même tour que la requête.
+      resolve: (name) => this.resolveHostnameSyncForServices(name),
     });
 
     this.executor.registerServiceSocketServer('nginx', this.nginxService);
@@ -2930,6 +2935,26 @@ export abstract class LinuxMachine extends EndHost
   }
 
   // ─── Hostname resolution (shared between buildNetKernel & commands) ─
+
+  /**
+   * La résolution synchrone dont un service a besoin pour répondre dans
+   * le même tour que la requête (§P6 : le mandataire de nginx).
+   *
+   * Elle passe par le NSS de la machine — donc `/etc/hosts` puis le
+   * résolveur — plutôt que par une table à part : un service qui ne
+   * résoudrait pas comme `ping` sur la même machine serait un piège.
+   */
+  private resolveHostnameSyncForServices(name: string): string | null {
+    try { return new IPAddress(name).toString(); } catch { /* pas une adresse littérale */ }
+    const r = this.executor.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+    if (r.status === 'SUCCESS' && r.entry) {
+      for (const h of r.entry) {
+        if (h.addressFamily !== 2) continue;
+        try { return new IPAddress(h.address).toString(); } catch { continue; }
+      }
+    }
+    return null;
+  }
 
   private async resolveHostnameOverWire(name: string): Promise<IPAddress | null> {
     try { return new IPAddress(name); } catch { void 0; }

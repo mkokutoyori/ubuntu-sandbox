@@ -28,7 +28,7 @@ export interface NginxFileSource {
   list(dir: string): string[] | null;
 }
 
-const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if']);
+const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if', 'upstream']);
 
 const APPLIED_DIRECTIVES = new Set([
   'listen', 'server_name', 'root', 'index', 'try_files', 'return',
@@ -37,6 +37,10 @@ const APPLIED_DIRECTIVES = new Set([
   // §P5 — these two DECIDE which certificate a `listen … ssl` port
   // presents, so they belong here and not in `ACCEPTED_INERT`.
   'ssl_certificate', 'ssl_certificate_key',
+  // §P6 — `proxy_pass` DÉCIDE vers où la requête part, `proxy_set_header`
+  // ce qu'elle emporte, et `server` (dans un bloc `upstream`) nomme la
+  // cible. Les trois agissent ; elles ne peuvent pas être inertes.
+  'proxy_pass', 'proxy_set_header',
 ]);
 
 /**
@@ -57,6 +61,12 @@ const ACCEPTED_INERT = new Set([
   'gzip_buffers', 'gzip_http_version', 'gzip_types', 'gzip_min_length',
   'log_format', 'charset', 'etag', 'expires', 'error_page_recursive',
   'reset_timedout_connection', 'open_file_cache', 'aio', 'directio',
+  // §P6 — réglages du mandataire sans effet observable ici : le temps
+  // n'existe pas (la livraison des trames est synchrone), donc aucun
+  // délai ne peut expirer, et il n'y a pas de tampon à dimensionner.
+  'proxy_buffering', 'proxy_buffers', 'proxy_buffer_size', 'proxy_redirect',
+  'proxy_read_timeout', 'proxy_connect_timeout', 'proxy_send_timeout',
+  'proxy_http_version', 'proxy_next_upstream', 'keepalive',
 ]);
 
 /**
@@ -65,8 +75,8 @@ const ACCEPTED_INERT = new Set([
  * une faute de frappe.
  */
 const KNOWN_UNSUPPORTED = new Set([
-  'proxy_pass', 'proxy_set_header', 'proxy_redirect', 'proxy_buffering',
-  'proxy_read_timeout', 'proxy_connect_timeout', 'upstream',
+  // `proxy_pass`, `proxy_set_header` et le bloc `upstream` ont quitté
+  // cette liste : docs/PRD-Nginx.md §P6 les IMPLÉMENTE.
   'fastcgi_pass', 'fastcgi_param', 'fastcgi_index', 'include_fastcgi',
   'rewrite', 'limit_req', 'limit_req_zone', 'limit_conn', 'limit_conn_zone',
   'auth_basic', 'auth_basic_user_file',
@@ -149,11 +159,19 @@ interface ParseState {
   pos: number;
 }
 
+/**
+ * §P6 — `server` a deux sens chez nginx selon l'endroit : un BLOC qui
+ * décrit un site, et une DIRECTIVE qui nomme un membre d'`upstream`.
+ * Les distinguer demande de savoir dans quel bloc on se trouve, d'où ce
+ * paramètre : sans lui, accepter `server 10.0.0.2:8080;` partout
+ * laisserait passer au niveau `http` une ligne que nginx refuse.
+ */
 function parseBlock(
   state: ParseState,
   source: NginxFileSource,
   depth: number,
   seen: Set<string>,
+  parent: string | null = null,
 ): NginxParseResult {
   const out: NginxDirective[] = [];
 
@@ -206,7 +224,7 @@ function parseBlock(
         return { ok: false, error: unknownOrUnsupported(name, file, line) };
       }
       state.pos++;
-      const inner = parseBlock(state, source, depth + 1, seen);
+      const inner = parseBlock(state, source, depth + 1, seen, name);
       if (inner.ok === false) return inner;
       out.push({ name, args, line, file, block: inner.tree });
       continue;
@@ -230,6 +248,26 @@ function parseBlock(
       continue;
     }
 
+    // `proxy_pass` n'a de sens que dans une `location` : c'est elle qui
+    // dit QUELLES requêtes partent vers l'amont. Écrite dans un `server`,
+    // nginx la refuse — et le refus doit être celui-là, pas
+    // « not supported », maintenant que le simulateur la met en œuvre.
+    if (name === 'proxy_pass' && parent !== 'location' && parent !== 'if') {
+      return { ok: false, error: emerg('"proxy_pass" directive is not allowed here', file, line) };
+    }
+    if (parent === 'upstream' && name === 'server') {
+      if (args.length === 0) {
+        return { ok: false, error: emerg('invalid number of arguments in "server" directive', file, line) };
+      }
+      out.push({ name, args, line, file });
+      continue;
+    }
+    if (name === 'server') {
+      // Hors d'un `upstream`, `server` est un bloc. Le message est celui
+      // de nginx pour une directive écrite là où elle n'a pas cours,
+      // et non « unknown directive » : nginx la connaît très bien.
+      return { ok: false, error: emerg('"server" directive is not allowed here', file, line) };
+    }
     if (!APPLIED_DIRECTIVES.has(name) && !ACCEPTED_INERT.has(name)) {
       return { ok: false, error: unknownOrUnsupported(name, file, line) };
     }
@@ -269,10 +307,71 @@ export function validateNginxConfig(
   if (!tree.some((d) => d.name === 'events')) {
     return { message: `nginx: [emerg] no "events" section in configuration in ${path}` };
   }
+  return validateProxyPass(tree);
+}
+
+/**
+ * §P6 — `nginx -t` refuse une URL de mandat qu'il ne sait pas lire, avec
+ * le message du vrai. C'est le seul contrôle fait ICI : la RÉSOLUTION de
+ * l'hôte n'en est pas un, parce qu'elle dépend de l'état du réseau au
+ * moment de la requête et non du fichier. Un vrai nginx échoue au
+ * démarrage sur un amont introuvable ; ici l'amont injoignable donne un
+ * `502` et la raison dans `error.log`, ce qui est la panne que le TP
+ * cherche à montrer.
+ */
+function validateProxyPass(nodes: readonly NginxDirective[]): NginxConfigError | null {
+  for (const node of nodes) {
+    if (node.name === 'proxy_pass') {
+      if (node.args.length !== 1) {
+        return emerg('invalid number of arguments in "proxy_pass" directive', node.file, node.line);
+      }
+      if (!parseProxyPass(node.args[0])) {
+        return emerg(`invalid URL prefix in "${node.args[0]}"`, node.file, node.line);
+      }
+    }
+    if (node.name === 'upstream' && !node.args[0]) {
+      return emerg('invalid number of arguments in "upstream" directive', node.file, node.line);
+    }
+    if (node.block) {
+      const inner = validateProxyPass(node.block);
+      if (inner) return inner;
+    }
+  }
   return null;
 }
 
 // ─── Modèle exploité par le serveur ────────────────────────────────────
+
+/** §P6 — un membre d'`upstream`, tel que la ligne `server` l'écrit. */
+export interface NginxUpstreamServer {
+  readonly host: string;
+  readonly port: number;
+  readonly down: boolean;
+}
+
+export interface NginxUpstream {
+  readonly name: string;
+  readonly servers: readonly NginxUpstreamServer[];
+}
+
+/** §P6 — la cible d'un `proxy_pass`, telle qu'elle est écrite. */
+export interface NginxProxyPass {
+  /** `http` ou `https` — le second n'est pas servi, et le dit. */
+  readonly scheme: string;
+  /** Une adresse littérale, un nom d'hôte, ou le nom d'un `upstream`. */
+  readonly host: string;
+  readonly port: number;
+  /**
+   * Le chemin écrit après l'autorité, s'il y en a un.
+   *
+   * La règle de nginx tient à sa PRÉSENCE et non à sa valeur :
+   * `proxy_pass http://amont;` transmet l'URI d'origine telle quelle,
+   * `proxy_pass http://amont/;` remplace la partie du chemin qui a
+   * servi à choisir la `location`. Une chaîne vide et `undefined` ne
+   * veulent donc pas dire la même chose.
+   */
+  readonly path?: string;
+}
 
 export interface NginxLocation {
   readonly path: string;
@@ -283,6 +382,9 @@ export interface NginxLocation {
   readonly returnTarget?: string;
   readonly autoindex?: boolean;
   readonly addHeaders: readonly (readonly [string, string])[];
+  /** §P6 */
+  readonly proxyPass?: NginxProxyPass;
+  readonly proxySetHeaders: readonly (readonly [string, string])[];
 }
 
 export interface NginxServerBlock {
@@ -297,6 +399,8 @@ export interface NginxServerBlock {
   /** §P5 — the PEM files this server presents, as written in the file. */
   readonly sslCertificate: string | null;
   readonly sslCertificateKey: string | null;
+  /** §P6 — hérités par les `location` qui n'en déclarent pas. */
+  readonly proxySetHeaders: readonly (readonly [string, string])[];
 }
 
 function parseListen(args: readonly string[]): { port: number; defaultServer: boolean; ssl: boolean } | null {
@@ -314,12 +418,59 @@ function parseListen(args: readonly string[]): { port: number; defaultServer: bo
   };
 }
 
+/**
+ * `proxy_pass http://hote[:port][/chemin]`.
+ *
+ * Le port par défaut suit le schéma (80 / 443) comme chez nginx, et le
+ * chemin est conservé DISTINCT de son absence — voir `NginxProxyPass`.
+ */
+export function parseProxyPass(raw: string | undefined): NginxProxyPass | null {
+  if (!raw) return null;
+  const m = /^(https?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/.exec(raw);
+  if (!m) return null;
+  const scheme = m[1];
+  const port = m[3] ? Number(m[3]) : (scheme === 'https' ? 443 : 80);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { scheme, host: m[2], port, path: m[4] };
+}
+
+function parseUpstreamServer(args: readonly string[]): NginxUpstreamServer | null {
+  const first = args[0];
+  if (!first) return null;
+  const m = /^([^:]+)(?::(\d+))?$/.exec(first);
+  if (!m) return null;
+  const port = m[2] ? Number(m[2]) : 80;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { host: m[1], port, down: args.includes('down') };
+}
+
+export function extractUpstreams(tree: readonly NginxDirective[]): NginxUpstream[] {
+  const out: NginxUpstream[] = [];
+  const walk = (nodes: readonly NginxDirective[]): void => {
+    for (const node of nodes) {
+      if (node.name === 'upstream') {
+        const servers: NginxUpstreamServer[] = [];
+        for (const d of node.block ?? []) {
+          if (d.name !== 'server') continue;
+          const s = parseUpstreamServer(d.args);
+          if (s) servers.push(s);
+        }
+        out.push({ name: node.args[0] ?? '', servers });
+      } else if (node.block) walk(node.block);
+    }
+  };
+  walk(tree);
+  return out;
+}
+
 function collectLocation(node: NginxDirective, inheritedRoot: string): NginxLocation {
   const loc: {
     path: string; root?: string; index?: string[]; tryFiles?: string[];
     returnStatus?: number; returnTarget?: string; autoindex?: boolean;
     addHeaders: (readonly [string, string])[];
-  } = { path: node.args[node.args.length - 1] ?? '/', addHeaders: [] };
+    proxyPass?: NginxProxyPass;
+    proxySetHeaders: (readonly [string, string])[];
+  } = { path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [] };
 
   for (const d of node.block ?? []) {
     if (d.name === 'root') loc.root = d.args[0];
@@ -327,7 +478,10 @@ function collectLocation(node: NginxDirective, inheritedRoot: string): NginxLoca
     else if (d.name === 'try_files') loc.tryFiles = [...d.args];
     else if (d.name === 'autoindex') loc.autoindex = d.args[0] === 'on';
     else if (d.name === 'add_header' && d.args.length >= 2) loc.addHeaders.push([d.args[0], d.args[1]]);
-    else if (d.name === 'return') {
+    else if (d.name === 'proxy_pass') loc.proxyPass = parseProxyPass(d.args[0]) ?? undefined;
+    else if (d.name === 'proxy_set_header' && d.args.length >= 2) {
+      loc.proxySetHeaders.push([d.args[0], d.args.slice(1).join(' ')]);
+    } else if (d.name === 'return') {
       const status = Number(d.args[0]);
       if (Number.isInteger(status)) {
         loc.returnStatus = status;
@@ -350,6 +504,7 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
   const addHeaders: (readonly [string, string])[] = [];
   let sslCertificate: string | null = null;
   let sslCertificateKey: string | null = null;
+  const proxySetHeaders: (readonly [string, string])[] = [];
 
   for (const d of node.block ?? []) {
     if (d.name === 'ssl_certificate') sslCertificate = d.args[0] ?? null;
@@ -363,6 +518,9 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
     else if (d.name === 'access_log') accessLog = d.args[0] === 'off' ? null : (d.args[0] ?? accessLog);
     else if (d.name === 'error_log') errorLog = d.args[0] ?? errorLog;
     else if (d.name === 'add_header' && d.args.length >= 2) addHeaders.push([d.args[0], d.args[1]]);
+    else if (d.name === 'proxy_set_header' && d.args.length >= 2) {
+      proxySetHeaders.push([d.args[0], d.args.slice(1).join(' ')]);
+    }
   }
   for (const d of node.block ?? []) {
     if (d.name === 'location') locations.push(collectLocation(d, root));
@@ -370,7 +528,7 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
 
   return {
     listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
-    sslCertificate, sslCertificateKey,
+    sslCertificate, sslCertificateKey, proxySetHeaders,
   };
 }
 

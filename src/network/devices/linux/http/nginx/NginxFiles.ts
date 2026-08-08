@@ -83,3 +83,12 @@ export function notFoundPage(): string {
 export function forbiddenPage(): string {
   return `<html>\r\n<head><title>403 Forbidden</title></head>\r\n<body>\r\n<center><h1>403 Forbidden</h1></center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
 }
+
+/**
+ * §P6 — la page qu'un vrai nginx sert quand l'amont ne répond pas.
+ * Elle ne dit PAS pourquoi, exactement comme la vraie : la raison va
+ * dans `error.log`, et c'est là que l'opérateur apprend à la chercher.
+ */
+export function badGatewayPage(): string {
+  return `<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
+}

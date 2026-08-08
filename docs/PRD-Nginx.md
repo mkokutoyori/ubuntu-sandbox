@@ -373,7 +373,7 @@ serveurs partagent désormais la règle, chacun avec ses propres codes
 `ss -ltnp` aurait montré un `:443` sans propriétaire à côté d'un `:80`
 qui en a un — les deux vues de la même machine en désaccord.
 
-### P6 — Proxy inverse
+### P6 — Proxy inverse — **livré** (et la prémisse ci-dessous était fausse)
 
 `proxy_pass http://<amont>;`, plus `proxy_set_header`. C'est l'usage
 moderne majoritaire de nginx et le plus intéressant en TP (nginx devant
@@ -382,6 +382,11 @@ que serveur — donc qu'il réutilise `Http1ClientSession` sur sa propre
 pile, ce qui fait passer sa requête sortante sur le vrai réseau. C'est
 un chantier à part entière, à traiter après P2 et seulement si un TP le
 demande.
+
+> **Ce paragraphe est conservé pour ce qu'il a d'instructif : il est
+> faux.** « Un chantier à part entière » reposait sur l'idée qu'un
+> serveur devenu client doit attendre, donc être asynchrone. La mesure
+> dit le contraire — voir §9.
 
 ## 5. Hors périmètre, et dit d'emblée
 
@@ -504,5 +509,173 @@ avec le chemin cherché et l'errno, et pour les refus de démarrage.
 ### 8.6 Non fait
 
 P5 (HTTPS) est livré : le chemin `openssl req` → PEM existe désormais
-sous Linux, et c'est celui que le TP emprunte. P6 (`proxy_pass`) reste
-refusé par `nginx -t` avec le message qui le dit, pas avalé.
+sous Linux, et c'est celui que le TP emprunte.
+
+**P6 est livré depuis** — voir §9. La phrase qui suivait ici
+(« `proxy_pass` reste refusé par `nginx -t` ») n'est plus vraie et est
+conservée sous cette forme pour ne pas laisser deux réponses à la même
+question : `proxy_pass` est désormais MIS EN ŒUVRE, et ce que `nginx -t`
+refuse est une URL illisible ou la directive écrite hors d'une
+`location` — deux refus qui ont changé de raison, pas disparu.
+
+---
+
+## 9. P6 — Le mandataire inverse, livré
+
+### 9.1 La prémisse du PRD était fausse, et c'est la mesure qui l'a dit
+
+§P6 différait ce chantier au motif qu'il « suppose que nginx soit client
+HTTP autant que serveur ». C'est vrai, et ce n'était pas le problème :
+le raisonnement implicite était qu'un serveur qui attend une réponse
+doit être **asynchrone**, et que rendre asynchrone
+`Http1ServerSession.handler` — partagé avec Apache et IIS — était le
+vrai coût.
+
+Mesuré avant d'écrire une ligne : **la livraison des trames est
+synchrone dans ce simulateur**. `Http1ClientSession.send()` écrit,
+l'`onData` du pair se déclenche dans le même tour, et la réponse est là
+avant que `send()` ne revienne. Un gestionnaire de requête peut donc
+appeler l'amont **en ligne** et écrire sa réponse dans la foulée. La
+vérification a été faite avec deux `Http1ServerSession` nus, avant de
+toucher à nginx.
+
+Rien n'est devenu asynchrone. La signature du gestionnaire a bien été
+élargie, mais pour une tout autre raison (§9.4).
+
+### 9.2 Ce qui est livré
+
+* **`proxy_pass http://hôte[:port][/chemin]`** dans une `location`. La
+  réécriture du chemin suit la règle de nginx, qui est la plus mal
+  comprise de cette directive : c'est la **présence** d'un chemin dans
+  l'URI qui décide, pas sa valeur.
+
+  | écrit | `/api/v1` devient |
+  |---|---|
+  | `proxy_pass http://amont;` | `/api/v1` (inchangé) |
+  | `proxy_pass http://amont/;` | `/v1` (le préfixe de la `location` est REMPLACÉ) |
+  | `proxy_pass http://amont/backend;` | `/backend/v1` |
+
+  D'où `NginxProxyPass.path?: string` et non une chaîne : `undefined` et
+  `''` sont deux configurations différentes, et les confondre casserait
+  la première ligne du tableau.
+
+* **Les blocs `upstream`**, avec `server <hôte>[:<port>] [down]`. Un
+  membre `down` est sauté. Le groupe est consulté **avant** la
+  résolution de nom, comme chez nginx : un `upstream` masque un hôte du
+  même nom.
+
+* **`proxy_set_header`**, avec `$host`, `$http_host`, `$proxy_host`,
+  `$remote_addr`, `$scheme`, `$request_uri` et
+  `$proxy_add_x_forwarded_for` — la seule qui AJOUTE, en empilant le
+  client derrière la chaîne déjà reçue. Par défaut `Host` prend
+  l'autorité de l'amont ; `proxy_set_header Host $host` est précisément
+  ce qu'on écrit pour l'en empêcher, donc l'ordre compte.
+
+* **Les en-têtes saut-par-saut** (RFC 9110 §7.6.1) ne sont relayés dans
+  aucun sens.
+
+* **La résolution passe par la MACHINE** qui exécute nginx — son
+  `/etc/hosts`, son `/etc/resolv.conf`, via le même NSS que `ping` sur
+  la même machine. Un service qui ne résoudrait pas comme le reste de la
+  machine serait un piège.
+
+* **Les pannes, qui sont l'objet du TP** : amont éteint, nom
+  introuvable, amont `https`, boucle de mandat — toutes rendent `502
+  Bad Gateway` avec la page de nginx, et la **raison** dans `error.log`,
+  jamais dans la page. C'est là que le vrai nginx la met, et c'est ce
+  qu'un opérateur doit apprendre à lire.
+
+* **`nginx -t` juge** : `invalid URL prefix in "…"` pour une URL
+  illisible, `"proxy_pass" directive is not allowed here` hors d'une
+  `location`, `"server" directive is not allowed here` hors d'un
+  `upstream`.
+
+### 9.3 La boucle de mandat, et pourquoi elle est bornée explicitement
+
+nginx qui se mandate lui-même est une configuration qu'un apprenant
+écrit par accident. La livraison étant synchrone, c'est une **récursion
+infinie** : l'onglet se fige, sans message. Un vrai nginx boucle aussi,
+mais il finit par épuiser ses connexions de travail et répond une
+erreur ; ici il n'y a rien à épuiser.
+
+`MAX_PROXY_DEPTH` borne donc la profondeur, et au-delà le mandataire
+rend `502` en écrivant `proxy loop detected after N hops`. La divergence
+est assumée et écrite : le vrai nginx ne dit pas cela. Un onglet figé
+n'apprend rien du tout.
+
+### 9.4 Trois manquements trouvés AILLEURS, et corrigés
+
+Aucun des trois n'était dans nginx, et aucun n'aurait été visible sans
+ce chantier.
+
+1. **Le gestionnaire de requête HTTP ignorait qui l'appelait.**
+   `Http1RequestHandler` ne recevait que la requête ; la socket, elle,
+   porte l'adresse du pair depuis toujours. Conséquence :
+   `$remote_addr` ne pouvait valoir qu'un espace réservé — un
+   `X-Real-IP: 0.0.0.0` n'apprend rien de ce que cet en-tête existe
+   pour — et le journal d'accès commençait par `-` là où le format
+   combiné veut l'adresse du client. Un `Http1Peer` optionnel est
+   maintenant passé aux deux sessions (claire et TLS) ; les
+   gestionnaires qui l'ignorent sont inchangés, et **Apache et IIS en
+   bénéficient sans modification**.
+
+2. **nginx écrivait une ligne `open() … failed` pour tout état ≥ 400.**
+   Avant P6 c'était équivalent, puisque tout ce qui dépassait 400 venait
+   d'une recherche de fichier. Un `502` de mandataire n'ouvre aucun
+   fichier et a déjà écrit sa vraie raison : la ligne produisait une
+   seconde explication, fausse. La condition est désormais `403 || 404`,
+   les deux seuls états qui viennent réellement d'un `open()`.
+
+3. **Une machine ne s'atteignait pas par sa PROPRE adresse.** Le plus
+   lourd des trois, et sans rapport avec HTTP. `curl http://127.0.0.1/`
+   répondait, `curl http://10.0.0.2/` sur la machine qui PORTE
+   `10.0.0.2` restait sur `Trying…` indéfiniment. Sur un vrai Linux la
+   table de routage `local` contient une entrée `local <adresse> dev lo`
+   pour **chaque** adresse configurée, si bien qu'un paquet qui lui est
+   destiné ne sort jamais sur le fil ; ici seule la boucle locale était
+   traitée. `TcpStack.isLocalDestination()` couvre maintenant les deux,
+   en v4 comme en v6, et il est consulté **avant** la recherche de route
+   — c'est l'ordre du noyau. Cela vaut pour tout service, pas seulement
+   nginx : un serveur joignable de toute la topologie ne l'était pas
+   depuis la machine qui l'exécute.
+
+### 9.5 Limites assumées
+
+* **Un seul membre d'`upstream` est utilisé** : le premier qui n'est pas
+  `down` et qui se résout. Il n'y a ni répartition de charge, ni
+  `weight`, ni `least_conn`, ni détection de panne passive
+  (`max_fails`/`fail_timeout`) — donc pas de bascule sur un amont qui
+  refuse la connexion. Une répartition suppose de mesurer, et rien ici
+  ne mesure encore ; annoncer `round-robin` en servant toujours le même
+  serait exactement le genre de décor que ce PRD supprime.
+* **Les délais de `proxy_*_timeout` sont acceptés et inertes**, comme
+  les autres réglages temporels : la livraison étant synchrone, aucun
+  délai ne peut expirer. Ils sont dans `ACCEPTED_INERT` et non refusés,
+  parce qu'ils figurent dans toute configuration réelle.
+* **`proxy_pass https://` est refusé** plutôt qu'ouvert en clair. Tout
+  ce qui lit `https` attend du chiffré ; parler en clair sur cette foi
+  serait la pire réponse disponible — la même règle que
+  `tlsMaterialFor` applique déjà à un `listen … ssl` dont le certificat
+  est illisible.
+* **Un hôte d'amont introuvable donne `502` à la requête** et non un
+  refus au démarrage. Le vrai nginx échoue au démarrage
+  (`host not found in upstream`) ; ici la résolution dépend de l'état du
+  réseau au moment de la requête, et la panne visible à l'exécution est
+  celle que le TP cherche à montrer.
+* **`proxy_redirect` n'est pas appliqué** : un `Location` renvoyé par
+  l'amont traverse tel quel.
+
+### 9.6 Mesures
+
+`nginx-prd-p6-proxy.test.ts` (23 cas), **22 tombent par `git stash`**
+des fichiers touchés. Le vingt-troisième est le cas « un 502 n'écrit pas
+de ligne `open()` » : sa première rédaction ne portait que
+l'assertion négative et passait des deux côtés — sans mandataire, aucune
+ligne n'est écrite et le `not.toContain` était satisfait sans rien
+prouver. L'assertion positive qui l'accompagne désormais l'en empêche.
+
+Un piège de rédaction, noté parce qu'il a produit une fausse
+conclusion : `printf` passe par le shell, qui mange un `$` non protégé.
+Le premier jet écrivait `proxy_set_header Host ;` dans le fichier et
+concluait que `proxy_set_header` n'était pas appliqué — alors que
+l'analyseur était correct depuis le début.
