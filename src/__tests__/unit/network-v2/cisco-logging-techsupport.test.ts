@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
-import { LoggingConfig } from '@/network/devices/inspection/config/LoggingConfig';
+import { LoggingConfig, DEBUG_VERBATIM } from '@/network/devices/inspection/config/LoggingConfig';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -38,12 +38,12 @@ describe('LoggingConfig (unit)', () => {
   it('appended messages appear in the buffer section of `show logging`', () => {
     const l = new LoggingConfig();
     l.apply(['buffered', '8000', 'informational'], false);
-    l.append('informational', 'sec_login', 'Login accepted from 10.0.0.1');
-    l.append('warnings', 'tcp', 'Segment dropped (no-listener) from 10.0.0.9:1234 to 10.0.0.2:9999');
+    l.append('informational', 'sec_login', 'Login accepted from 10.0.0.1', true, 'LOGIN_SUCCESS');
+    l.append('warnings', 'tcp', 'Segment dropped (no-listener) from 10.0.0.9:1234 to 10.0.0.2:9999', true, 'CONN_STATE');
     const out = l.render();
     expect(out).toContain('Log Buffer (8000 bytes):');
-    expect(out).toMatch(/%SEC_LOGIN-6-INFORMATIONAL:.+Login accepted/);
-    expect(out).toMatch(/%TCP-4-WARNINGS:.+Segment dropped/);
+    expect(out).toMatch(/%SEC_LOGIN-6-LOGIN_SUCCESS:.+Login accepted/);
+    expect(out).toMatch(/%TCP-4-CONN_STATE:.+Segment dropped/);
   });
 
   it('drops entries below the buffered severity threshold', () => {
@@ -51,8 +51,8 @@ describe('LoggingConfig (unit)', () => {
     // 4096 et non 4000 : la borne basse d'IOS est 4096, et une taille
     // hors bornes est maintenant refusée au lieu d'être appliquée.
     l.apply(['buffered', '4096', 'warnings'], false);
-    l.append('debugging', 'sys', 'noise');
-    l.append('warnings', 'sys', 'kept');
+    l.append('debugging', 'sys', 'noise', true, DEBUG_VERBATIM);
+    l.append('warnings', 'sys', 'kept', true, 'CONFIG_I');
     expect(l.render()).toContain('kept');
     expect(l.render()).not.toContain('noise');
   });

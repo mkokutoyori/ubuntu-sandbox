@@ -436,3 +436,115 @@ tient les lignes de debug hors de la table.
 * **`<0-7>` est listé après les noms** et non avant comme sur IOS : le
   tri de l'aide est une convention du dépôt entière, pas de cette
   famille.
+
+## 4. Le mnémonique cesse d'être fabriqué
+
+### 4.1 Ce qui a été mesuré
+
+`formatEntry` rendait la ligne ainsi :
+
+```ts
+const mnem = (mnemonic ?? severity).toUpperCase();
+return `${prefix}%${tag.toUpperCase()}-${sevNum}-${mnem}: ${text}`;
+```
+
+Le `?? severity` est le défaut : **92 des 105 appels à `append()` ne
+passaient aucun mnémonique**, si bien que la SÉVÉRITÉ était réécrite à
+la place du mnémonique et que l'équipement imprimait
+
+```
+%RIP-5-NOTIFICATIONS: ...
+%TCP-4-WARNINGS: Segment dropped (no-listener) from 10.0.0.9:1234 ...
+%CDP-6-INFORMATIONAL: CDP enabled
+```
+
+Aucune de ces trois lignes n'existe sur un IOS. La deuxième composante
+d'un message de syslog est déjà le NUMÉRO de la sévérité — écrire son
+NOM en troisième position répète la même information et supprime la
+seule qui compte : lequel des messages de cette famille vient d'être
+émis. C'est aussi celle que l'opérateur cherche, puisque c'est elle
+qu'il tape dans un moteur de recherche, elle que `logging discriminator
+… mnemonics includes …` filtre, et elle que la table de `show logging
+count` regroupe. Un journal dont toutes les lignes d'un même niveau
+portent le même « mnémonique » rend ces trois usages inutilisables.
+
+### 4.2 Ce qui n'est pas journalisé du tout
+
+Fabriquer un mnémonique n'était pas le seul défaut : la moitié de ces
+appels journalisaient des événements sur lesquels **un vrai équipement
+n'écrit rien**. Cinquante abonnements ont été retirés, pas réécrits :
+`tcp.segment.dropped` (un port fermé répond un RST, en silence),
+`tcp.connection.closed`, `cdp.neighbor.discovered`/`expired`,
+`lldp.neighbor.*`, `cdp.config.changed`/`lldp.config.changed`,
+`igmp.*`, `rip.route.*`, `stp.role.changed`, `vtp.*`,
+`dhcp.pool.lease-*`, `gre.*`, `vxlan.*`, `tacacs.*`,
+`radius.auth.completed`, `host.icmp.echo-failed`. Ce sont des
+événements internes du simulateur, utiles au bus, mais dont la
+présence dans le tampon donnait au journal un volume et un contenu
+qu'aucun équipement ne produit — et cachait les lignes qui, elles,
+comptent.
+
+### 4.3 Ce qui est livré
+
+Le mnémonique devient **obligatoire** dans la signature :
+
+```ts
+append(severity, tag, text, republish: boolean, mnemonic: string): void
+```
+
+C'est le cœur du correctif, et il est structurel plutôt que
+déclaratif : il n'existe plus de chemin par lequel un appelant puisse
+omettre le mnémonique et laisser le rendu en inventer un. Les familles
+qu'IOS journalise reçoivent le leur — `UPDOWN`/`CHANGED` (lien),
+`ADJCHG` (OSPF), `ADJCHANGE` (BGP), `NBRCHANGE` (EIGRP),
+`STATECHANGE` (HSRP, VRRP, GLBP), `BUNDLE`/`UNBUNDLE` (EtherChannel),
+`PSECURE_VIOLATION`, `ERR_DISABLE`/`ERR_RECOVER`,
+`ROOTCHANGE`/`TOPOTRAP`/`BLOCK_BPDUGUARD`/`ROOTGUARD_BLOCK`
+(spanning-tree), `LOGIN_SUCCESS`/`LOGIN_FAILED`/`USER_LOCKED`,
+`SSH2_SESSION`/`SSH2_CLOSE`, `NBRCHG`/`DRCHG` (PIM),
+`UDLD_PORT_DISABLED`, `DUPLEX_MISMATCH`, `NATIVE_VLAN_MISMATCH`,
+`PEERSYNC`/`PEERUNSYNC` (NTP), `IKMP_SA_AUTH`/`IKE_DPD_TIMEOUT`
+(crypto), `AUTHFAIL` (SNMP), `DECLINE_CONFLICT` (DHCP),
+`SUCCESS`/`FAIL` (802.1X), `IPACCESSLOGP` (déni d'ACL).
+
+Deux conséquences valent d'être nommées parce qu'elles ne sont pas
+cosmétiques.
+
+**La sortie de `debug` n'est pas du syslog**, et le dire est
+maintenant un choix explicite : `DEBUG_VERBATIM` (la chaîne vide) est
+la valeur qu'on passe pour obtenir une ligne sans
+`%FACILITÉ-N-MNÉMONIQUE`. Avant, ce comportement était obtenu par
+l'ABSENCE d'argument, c'est-à-dire par le même oubli qui produisait
+les faux mnémoniques ailleurs — les deux cas étaient indiscernables
+dans le code.
+
+**Le pont générique `log`** portait un nom d'événement interne
+(`stp:root-guard`, `ipsec:anti-replay`) et non un mnémonique.
+`mnemonicFromEvent()` est la table qui traduit, et son second rôle est
+de rendre `null` : un compteur de somme de contrôle invalide, une
+erreur d'émission interne, un sous-ensemble VTP orphelin ne produisent
+plus de ligne, pour la même raison que les cinquante abonnements
+retirés au §4.2. Un événement absent de la table n'écrit rien non plus
+— un inconnu ne s'invente pas.
+
+### 4.4 Trois tests qui encodaient le défaut
+
+`logging-enhancements.test.ts` exigeait `%PORT_SECURITY-2-CRITICAL`,
+`%PM-2-CRITICAL`, `%SSH-5-NOTIFICATIONS` et `%SEC-4-WARNINGS` : quatre
+sévérités prises pour des mnémoniques, figées par des assertions. Elles
+ont été corrigées vers les mnémoniques réels. Le cinquième cas exigeait
+`%TCP-4-WARNINGS: Segment dropped (no-listener)` — un message
+entièrement inventé sur un événement qu'IOS ne journalise pas ; il
+affirme désormais l'inverse, que rien n'est écrit, ce qui est le
+comportement du vrai équipement.
+
+### 4.5 Limites assumées
+
+Une poignée de mnémoniques sont **plausibles plutôt qu'attestés**,
+faute d'un équipement de référence joignable depuis cet environnement :
+`BFD_SESS_STATE`, `LEASE_EXPIRED`, `POOL_EXHAUSTED`,
+`PORTFAST_BPDU_RX`, `ROUTELIMITWARNING`, `CONN_STATE`. Ils sont écrits
+ici pour être corrigés plutôt que découverts. La différence avec l'état
+précédent n'est pas de degré : un mnémonique approximatif reste un
+mnémonique, propre à une famille de messages et utilisable par un
+filtre ou un regroupement ; `NOTIFICATIONS` ne l'était pas.

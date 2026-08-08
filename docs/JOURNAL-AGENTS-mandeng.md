@@ -96,7 +96,7 @@ identique.
 
 ---
 
-### Logging Cisco — lot L2 : le mnémonique n'est pas le nom de la sévérité
+### Logging Cisco — lot L2 : le mnémonique n'est pas le nom de la sévérité — LIVRÉ
 
 **Agent** : session « logging ».
 **PRD** : `docs/PRD-Logging-Cisco.md` (§4, en cours de rédaction).
@@ -134,6 +134,56 @@ verra disparaître des lignes de `show logging`** et changer le
 mnémonique des autres. C'est l'objet du lot ; si une de vos assertions
 cherche `%CDP-6-INFORMATIONAL` ou compte les lignes du tampon, elle
 tombera, et c'est le comportement d'avant qui était faux.
+
+**LIVRÉ.** Détail en `docs/PRD-Logging-Cisco.md` §4.
+
+* `append(severity, tag, text, republish, mnemonic)` — les deux
+  derniers paramètres sont désormais **obligatoires**. C'est le cœur :
+  il n'existe plus de chemin par lequel un appelant omette le
+  mnémonique et laisse le rendu en inventer un.
+* `DEBUG_VERBATIM` (la chaîne vide) est la valeur qu'on passe pour une
+  ligne de `debug`, qui n'est pas du syslog et ne porte pas de
+  `%FACILITÉ-N-MNÉMONIQUE`. Auparavant ce comportement s'obtenait par
+  l'ABSENCE d'argument — c'est-à-dire par le même oubli qui produisait
+  les faux mnémoniques ailleurs, les deux cas étant indiscernables.
+* **49 abonnements retirés**, pas réécrits : `tcp.segment.dropped`,
+  `tcp.connection.closed`, `cdp.neighbor.*`, `lldp.neighbor.*`,
+  `cdp/lldp.config.changed`, `igmp.*`, `rip.*`, `stp.role.changed`,
+  `stp.port-state.changed`, `vtp.*`, `dhcp.pool.lease-*`, `gre.*`,
+  `vxlan.*`, `tacacs.*`, `radius.auth.completed`,
+  `host.icmp.echo-failed`, `dtp.mode.changed`, `udld.*.changed`,
+  `netflow.collector.changed`, `snmp.trap.sent`… IOS n'écrit rien sur
+  ces événements-là.
+* `mnemonicFromEvent()` traduit le pont générique `log`, dont les
+  événements portent un nom interne (`stp:root-guard`,
+  `ipsec:anti-replay`) et non un mnémonique. Son second rôle est de
+  rendre `null` : une somme de contrôle invalide ou une erreur
+  d'émission interne n'écrivent plus de ligne, et un événement absent
+  de la table n'écrit rien non plus — un inconnu ne s'invente pas.
+
+**Ce qui est tombé chez les autres, et pourquoi c'était le défaut** :
+`logging-enhancements.test.ts` figeait quatre sévérités prises pour des
+mnémoniques (`%PORT_SECURITY-2-CRITICAL`, `%PM-2-CRITICAL`,
+`%SSH-5-NOTIFICATIONS`, `%SEC-4-WARNINGS`) et un message entièrement
+inventé (`%TCP-4-WARNINGS: Segment dropped (no-listener)`) ; ce dernier
+cas affirme désormais l'inverse, qu'un port fermé n'écrit rien et
+répond un RST en silence. `syslog-payload-fields.test.ts` avait un
+plancher `checked > 50` — un fil-piège contre un garde-fou qui ne
+résoudrait plus rien, pas une affirmation sur le nombre d'abonnements ;
+abaissé à 30, avec la raison écrite sur place. Aucune autre suite du
+dépôt ne s'appuyait sur un mnémonique fabriqué.
+
+**Point d'attention si vous ajoutez un message** : ne cherchez pas un
+mnémonique « raisonnable », cherchez celui d'IOS. Six sont écrits dans
+le PRD §4.5 comme **plausibles et non attestés** (`BFD_SESS_STATE`,
+`LEASE_EXPIRED`, `POOL_EXHAUSTED`, `PORTFAST_BPDU_RX`,
+`ROUTELIMITWARNING`, `CONN_STATE`) précisément pour être corrigés
+plutôt que découverts.
+
+`probe-mnemoniques-syslog.test.ts` (13 cas), **11 tombent par
+`git stash`** ; les 2 qui passent des deux côtés sont ceux qui étaient
+déjà justes (la ligne de `debug` verbatim, le discriminateur sur
+`mnemonics`).
 
 ---
 
@@ -1006,6 +1056,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 |---|---|---|
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
+| Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 livrés** ; V2–V6 ouverts |

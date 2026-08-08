@@ -136,7 +136,7 @@ describe('Logging — unified device.syslog.entry across all device types', () =
 });
 
 describe('Logging — Cisco port security violation goes to show logging', () => {
-  it('a port-security violation lands as %PORT_SECURITY-2-CRITICAL', async () => {
+  it('a port-security violation lands as %PORT_SECURITY-2-PSECURE_VIOLATION', async () => {
     const bus = new EventBus();
     const r = new CiscoRouter('R');
     r.setEventBus(bus);
@@ -158,8 +158,8 @@ describe('Logging — Cisco port security violation goes to show logging', () =>
     });
 
     const out = await Promise.resolve(r.executeCommand('show logging'));
-    expect(out).toMatch(/%PORT_SECURITY-2-CRITICAL:.+MAC address 00:11:22:33:44:55/);
-    expect(out).toMatch(/%PM-2-CRITICAL:.+err-disabled/);
+    expect(out).toMatch(/%PORT_SECURITY-2-PSECURE_VIOLATION:.+MAC address 00:11:22:33:44:55/);
+    expect(out).toMatch(/%PM-2-ERR_DISABLE:.+err-disabled/);
   });
 });
 
@@ -210,7 +210,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('show logging'));
     expect(out).toContain('Log Buffer');
-    expect(out).toMatch(/%SSH-5-NOTIFICATIONS:.+AUTHENTICATION.+from 10\.0\.0\.1:\d+ accepted on port 22/);
+    expect(out).toMatch(/%SSH-5-SSH2_SESSION:.+AUTHENTICATION.+from 10\.0\.0\.1:\d+ accepted on port 22/);
   });
 
   it('an inbound ACL deny on TCP lands in the show-logging buffer', async () => {
@@ -236,7 +236,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
 
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('show logging'));
-    expect(out).toMatch(/%SEC-4-WARNINGS:.+ACL denied inbound on GigabitEthernet0\/0/);
+    expect(out).toMatch(/%SEC-4-IPACCESSLOGP:.+ACL denied inbound on GigabitEthernet0\/0/);
   });
 
   it('a Windows firewall Block rule emits a 5152 Security event', async () => {
@@ -311,7 +311,12 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     expect(out).toMatch(/%LINK-3-UPDOWN:.+GigabitEthernet0\/0.+state to down/);
   });
 
-  it('a TCP segment dropped for no-listener lands as a warning', async () => {
+  // Un vrai IOS ne journalise RIEN quand un segment arrive sur un port
+  // fermé : il répond un RST, en silence. La ligne
+  // `%TCP-4-WARNINGS: Segment dropped (no-listener)` que ce cas exigeait
+  // était fabriquée de bout en bout — sévérité prise pour mnémonique,
+  // sur un événement qu'aucun équipement ne publie.
+  it('a TCP segment dropped for no-listener writes nothing at all', async () => {
     const bus = new EventBus();
     const cli = new CiscoRouter('CLI');
     const srv = new CiscoRouter('SRV');
@@ -328,6 +333,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
 
     cli.getTcpStack().connect('10.0.0.2', 9999);
     const out = await Promise.resolve(srv.executeCommand('show logging'));
-    expect(out).toMatch(/%TCP-4-WARNINGS:.+Segment dropped \(no-listener\)/);
+    expect(out).not.toContain('Segment dropped');
+    expect(out).not.toContain('%TCP-4');
   });
 });

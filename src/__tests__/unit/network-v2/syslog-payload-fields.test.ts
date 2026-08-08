@@ -101,7 +101,11 @@ describe('syslog subscriptions read fields their payload actually publishes', ()
       }
     }
 
-    expect(checked, 'the guard must actually resolve subscriptions, not vacuously pass').toBeGreaterThan(50);
+    // Le plancher est un fil-piège contre un garde-fou qui ne résoudrait
+    // plus rien, pas une affirmation sur le NOMBRE d'abonnements : il a
+    // été abaissé de 50 à 30 le jour où cinquante abonnements ont été
+    // retirés parce qu'IOS ne journalise pas ces événements-là.
+    expect(checked, 'the guard must actually resolve subscriptions, not vacuously pass').toBeGreaterThan(30);
     expect(offenders, `subscriptions rendering '?' instead of a value:\n  ${offenders.join('\n  ')}`).toEqual([]);
     // Ce garde-fou lit l'arborescence des sources au lieu de monter un
     // lab : quelques centaines de millisecondes seul, mais la lecture
