@@ -101,7 +101,7 @@ IOS. Si un des quatre défauts l'exige, je le dirai ici avant.
 
 
 
-### CLI Huawei VRP — audit + **V1 à V4 livrés**, V5–V6 ouverts
+### CLI Huawei VRP — audit + **V1 à V5 livrés**, V6 ouvert
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -297,6 +297,50 @@ le curseur désigne l'adresse fautive.
 `huawei-quatre-messages.test.ts` (12 cas), 7 tombent par `git stash`.
 174 suites connexes vertes (3 555 cas). Typecheck 165, inchangé ; lint
 identique.
+
+---
+
+### V5 livré — bornes et abréviation (détail : PRD §13)
+
+Le §1.9 étant chez vous, ce lot se réduit aux bornes et à l'abréviation
+du nom d'interface.
+
+**Fichiers touchés** : `shells/cli-utils.ts`,
+`shells/huawei/HuaweiConfigCommands.ts`,
+`shells/huawei/HuaweiOspfCommands.ts`, `shells/HuaweiSwitchShell.ts`.
+**Je n'ai pas retouché `CommandTrie.ts`** depuis V4.
+
+**L'abréviation était une liste, pas une règle** — et il y en avait
+**quatre**, écrites à la main dans quatre fichiers, qui ne disaient déjà
+pas la même chose : `ge0/0/0` et `gi0/0/0` passaient, `g0/0/0` non,
+`loop0` et `l0` non plus. `huaweiTypeInterface(prefixe)` est désormais la
+règle unique (tout préfixe non ambigu du type ; ambigu ⇒ refus), lue par
+les quatre sites. Cela peut vous intéresser pour votre §1.9 : la liste
+des **types** à proposer derrière `interface ?` est maintenant à un seul
+endroit (`HUAWEI_INTERFACE_TYPES` dans `cli-utils.ts`) — servez-vous
+plutôt que d'en écrire une cinquième.
+
+**Deux bornes vérifiées** : un router-id est une adresse IPv4 (n'importe
+quel mot passait, et la forme `ospf <id> router-id <rid>` jetait de toute
+façon tout ce qui suivait l'identifiant — donc le router-id ne prenait
+pas) ; la préférence d'une route statique va de 1 à 255.
+
+**Deux bornes laissées ouvertes et fixées par un test** : la plage des
+`LoopBack` et la longueur d'un `sysname`. Je n'en connais pas la valeur
+exacte et je ne l'invente pas.
+
+**Une régression que j'ai faite et corrigée** : en partageant la règle,
+j'ai remplacé une expression dont le groupe 1 était le *numéro* par une
+fonction dont le groupe 1 était le *type*, sans toucher les appelants —
+30 tests rouges. La fonction rend maintenant un `number`, donc le type
+interdit la confusion.
+
+`huawei-bornes-et-abreviation.test.ts` (10 cas), 8 tombent par
+`git stash`. 228 suites connexes vertes (3 045 cas), Cisco compris.
+Typecheck 166, inchangé ; lint identique.
+
+**Il ne reste que V6** (le `debugging` VRP, audit séparé sur le modèle du
+PRD debug Cisco).
 
 ---
 
@@ -1266,7 +1310,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V4 livrés** ; V5–V6 ouverts |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V5 livrés** ; V6 ouvert |
 
 **Hors périmètre du debug Cisco, et disponible** : le `debug`/`debugging`
 Huawei (`HuaweiDebugService`), que le PRD debug écarte explicitement pour

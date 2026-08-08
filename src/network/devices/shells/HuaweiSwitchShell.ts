@@ -20,7 +20,7 @@ import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteract
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -48,6 +48,17 @@ type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
   | 'aaa' | 'user-interface' | 'acl' | 'dhcp-pool'
   | 'traffic-classifier' | 'traffic-behavior' | 'traffic-policy';
+
+/**
+ * Le NUMERO d'une saisie `<type><n>` ou `<type> <n>`, quand le type
+ * designe bien `attendu` — par son nom entier ou par n'importe quel
+ * prefixe non ambigu, comme VRP l'admet.
+ */
+function numeroDInterface(saisie: string, attendu: string): number | null {
+  const m = saisie.replace(/\s+/g, '').match(/^([a-z-]+)(\d+)$/i);
+  if (!m || huaweiTypeInterface(m[1]) !== attendu) return null;
+  return parseInt(m[2], 10);
+}
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -905,9 +916,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'port-group';
         return '';
       }
-      const vlanIfMatch = args.join(' ').match(/^vlanif\s*(\d+)$/i);
-      if (vlanIfMatch) {
-        const vlan = parseInt(vlanIfMatch[1], 10);
+      const vlanIfMatch = numeroDInterface(args.join(' '), 'Vlanif');
+      if (vlanIfMatch !== null) {
+        const vlan = vlanIfMatch;
         if (vlan < 1 || vlan > 4094) return `Error: Wrong parameter found at '^' position.`;
         this.swRef.ensureSvi(vlan);
         this.swRef.setSviAdminUp(vlan, true);
@@ -916,9 +927,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       }
 
-      const loopMatch = args.join(' ').match(/^loopback\s*(\d+)$/i);
-      if (loopMatch) {
-        this.selectedInterface = `LoopBack${loopMatch[1]}`;
+      const loopMatch = numeroDInterface(args.join(' '), 'LoopBack');
+      if (loopMatch !== null) {
+        this.selectedInterface = `LoopBack${loopMatch}`;
         // Matérialise l'interface : sans ça, entrer dans la vue ne
         // créait rien et l'interface restait invisible partout.
         this.swRef.ensureLoopback(this.selectedInterface);
@@ -3435,14 +3446,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (name.toLowerCase() === input.toLowerCase()) return name;
     }
 
-    // Abbreviation: GE0/0/0 → GigabitEthernet0/0/0
-    const lower = input.toLowerCase();
-    const match = lower.match(/^(ge|gigabitethernet|gi)([\d/]+)$/);
+    // L'abreviation de VRP est tout prefixe non ambigu du type ; une
+    // quatrieme table fermee vivait ici et n'admettait que `ge`, `gi` et
+    // le nom entier.
+    const match = input.toLowerCase().match(/^([a-z-]+)([\d/]+)$/);
     if (match) {
-      const numbers = match[2];
-      const resolved = `GigabitEthernet${numbers}`;
-      for (const name of this.swRef.getPortNames()) {
-        if (name === resolved) return name;
+      const type = huaweiTypeInterface(match[1]);
+      if (type) {
+        for (const forme of type === 'GigabitEthernet' ? ['GigabitEthernet', 'GE'] : [type]) {
+          const resolved = `${forme}${match[2]}`;
+          for (const name of this.swRef.getPortNames()) {
+            if (name === resolved) return name;
+          }
+        }
       }
     }
 
