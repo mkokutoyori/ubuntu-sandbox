@@ -278,6 +278,13 @@ describe('Cisco IOS Debugging System Suite', () => {
       await sw.executeCommand('enable');
       await sw.executeCommand('debug mac address-table');
       await sw.executeCommand('terminal monitor');
+      // Le switch a déjà appris les MAC du lien : un hôte bavarde dès le
+      // démarrage (LLMNR et mDNS s'annoncent sur leurs groupes IPv6, ce
+      // que l'adresse de lien-local permet sans aucune configuration).
+      // Sans vider la table, le ping ci-dessous n'apprend RIEN de neuf et
+      // n'a donc aucun événement à journaliser — c'est d'ailleurs le
+      // geste qu'un opérateur fait avant de regarder cet apprentissage.
+      await sw.executeCommand('clear mac address-table dynamic');
 
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc1.executeCommand('ping -c 1 10.0.0.254'); // trigger frame transmission

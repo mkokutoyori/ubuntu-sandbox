@@ -32,17 +32,23 @@ describe('CDP CLI — never fabricates neighbors for non-CDP peers', () => {
     expect(out).toMatch(/Total cdp entries displayed : 0/);
   });
 
-  it('a port with no real CDP neighbor is never listed while its input counter stays at 0 — no incoherence', async () => {
+  it('a port with no real CDP neighbor is never listed while no CDP packet was received — no incoherence', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'Switch1', 8);
     const pc1 = new LinuxPC('linux-pc', 'PC1', 0, 0);
     new Cable('a').connect(sw.getPort('FastEthernet0/1')!, pc1.getPort('eth0')!);
 
     await sw.executeCommand('enable');
     const neighbors = await sw.executeCommand('show cdp neighbors');
-    const ifaceShow = await sw.executeCommand('show interfaces FastEthernet0/1');
+    const cdpTraffic = await sw.executeCommand('show cdp traffic');
 
     expect(neighbors).not.toMatch(/PC1/);
-    expect(ifaceShow).toMatch(/0 packets input/);
+    // Le compteur qui prouve la cohérence est celui de CDP, pas celui de
+    // l'interface : un hôte parle dès son démarrage sans dire un mot de
+    // CDP (LLMNR et mDNS s'annoncent sur leurs groupes IPv6, ce que
+    // l'adresse de lien-local permet sans configuration). Compter les
+    // paquets de l'interface confondait « rien reçu » avec « rien reçu
+    // en CDP », et seul le second dit quelque chose ici.
+    expect(cdpTraffic).toMatch(/Total packets output: \d+, Input: 0/);
   });
 
   it('two switches cabled together still see each other via real CDP frames', async () => {

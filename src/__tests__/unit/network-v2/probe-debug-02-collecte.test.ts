@@ -109,7 +109,14 @@ describe('Scénario 5 — port mirroring local (SPAN)', () => {
 
     const unicastPourAutrui = capture.filter((f) => {
       const dst = f.dstMAC.toString().toLowerCase();
-      return dst !== 'ff:ff:ff:ff:ff:ff' && !dst.startsWith('01:00:5e');
+      // Le diffusé et le multicast IPv4 étaient déjà écartés : un switch
+      // les inonde légitimement, et ce cas parle de l'UNICAST appris.
+      // `33:33:…` est le multicast IPv6 (RFC 2464 §7), de la même
+      // famille ; il n'apparaissait pas ici tant que rien n'émettait
+      // vers un groupe v6 — LLMNR et mDNS le font maintenant.
+      return dst !== 'ff:ff:ff:ff:ff:ff'
+        && !dst.startsWith('01:00:5e')
+        && !dst.startsWith('33:33');
     });
     expect(
       unicastPourAutrui,
