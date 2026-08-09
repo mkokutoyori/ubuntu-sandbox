@@ -9,8 +9,7 @@ import type { McastDnsBinding } from '@/network/dns/transport/MulticastDnsTransp
 
 export const MDNS_PORT = 5353;
 export const MDNS_IPV4_GROUP = '224.0.0.251';
-/** Le groupe IPv6 (RFC 6762 §3). Emis pour de bon depuis que la pile
- *  v6 porte l'emission vers un groupe quelconque. */
+/** The IPv6 group (RFC 6762 §3). */
 export const MDNS_IPV6_GROUP = 'ff02::fb';
 
 /** Le seul domaine que mDNS sert (RFC 6762 §3). */

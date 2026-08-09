@@ -49,12 +49,11 @@ interface QueuedIPv6Packet {
 
 export interface RAConfig {
   /**
-   * `ipv6 nd ra suppress` : les annonces NON sollicitées se taisent.
-   * Le routeur répond toujours à une sollicitation — c'est ce que fait
-   * IOS, et c'est `suppress all` qui coupe aussi les réponses.
+   * `ipv6 nd ra suppress`: unsolicited advertisements go quiet. The
+   * router still answers a solicitation — `suppress all` stops that too.
    */
   enabled: boolean;
-  /** `ipv6 nd ra suppress all` : plus rien, réponses comprises. */
+  /** `ipv6 nd ra suppress all`: nothing at all, answers included. */
   suppressAll?: boolean;
   interval: number;
   curHopLimit: number;
@@ -89,9 +88,8 @@ export interface IPv6RouterContext {
   /** `ipv6 dhcp relay destination <addr>` targets for a relaying interface. */
   getDhcpv6RelayDestinations(iface: string): string[];
   /**
-   * OSPFv3 tourne directement sur IPv6 (en-tête suivant 89, RFC 5340 §2).
-   * Port étroit vers l'intégration OSPF, absent d'un routeur qui ne la
-   * porte pas : sans lui le paquet arrivait et n'allait nulle part.
+   * OSPFv3 runs directly over IPv6 (next header 89, RFC 5340 §2). Narrow
+   * port into the OSPF integration, absent on a router that has none.
    */
   deliverOspfv3?(inPort: string, srcIP: string, packet: unknown, ipsecProtected: boolean): void;
 }
@@ -168,26 +166,20 @@ export class IPv6DataPlane {
 
     Logger.info(this.ctx.id, 'router:ipv6-interface-config',
       `${this.ctx.name}: ${portName} configured ${address}/${prefixLength}`);
-    this.annoncerSurInterface(portName);
+    this.advertiseOnInterface(portName);
     return true;
   }
 
-  /**
-   * L'annonce non sollicitée qu'un routeur émet quand une interface se
-   * met à porter un préfixe (RFC 4861 §6.2.4).
+/**
+   * The unsolicited advertisement a router emits when an interface
+   * starts carrying a prefix (RFC 4861 §6.2.4). It serves the host that
+   * was already there; one arriving later solicits for itself.
    *
-   * Elle sert l'hôte qui était déjà là quand le routeur a été
-   * configuré : celui qui arrive ensuite sollicite lui-même, et
-   * `handleRouterSolicitation` lui répond. Sans l'une ni l'autre —
-   * c'était l'état mesuré — l'autoconfiguration n'avait jamais lieu,
-   * bien que tout le reste de la chaîne fût écrit.
-   *
-   * Le minuteur périodique, lui, reste armé par `configureRA` seul :
-   * l'annoncer toutes les 200 s n'apporterait rien de plus à un
-   * laboratoire et ferait tourner un minuteur sur chaque interface de
-   * chaque routeur.
+   * The periodic timer stays armed by `configureRA` alone: advertising
+   * every 200 s would add nothing to a lab and would run a timer on
+   * every interface of every router.
    */
-  annoncerSurInterface(portName: string): void {
+  advertiseOnInterface(portName: string): void {
     if (!this.enabled) return;
     const ra = this.raConfig.get(portName);
     if (ra && (ra.enabled === false || ra.suppressAll)) return;
@@ -272,9 +264,8 @@ export class IPv6DataPlane {
     const isAllRoutersMulticast = destIP.isAllRoutersMulticast();
     const isAllDhcpMulticast = destIP.isAllDhcpRelayAgentsAndServersMulticast();
     const isSolicitedNode = destIP.isSolicitedNodeMulticast();
-    // ff02::5 / ff02::6 (RFC 5340 §A.1) : un routeur qui parle OSPFv3 est
-    // membre de ces groupes, et ils ne se routent pas — sans cette porte
-    // le paquet tombait dans forwardPacket, donc nulle part.
+    // ff02::5 / ff02::6 (RFC 5340 §A.1): a router speaking OSPFv3 is a
+    // member of these groups, and they are never forwarded.
     const isOspfv3Group = destIP.isAllSpfRoutersMulticast() || destIP.isAllDRoutersMulticast();
 
     if (isForUs || isAllNodesMulticast || isAllRoutersMulticast || isAllDhcpMulticast
@@ -383,8 +374,8 @@ export class IPv6DataPlane {
       server.processRelease({ clientDuid: pkt.clientDuid!, iaid, address: pkt.ia?.addresses[0]?.address ?? '' });
       return;
     } else if (pkt.msgType === 'INFORMATION-REQUEST') {
-      // Service sans etat (RFC 8415 §18.3.5) : la reponse ne porte que
-      // la configuration annexe, et rien n'est attribue ni retenu.
+      // Stateless service (RFC 8415 §18.3.5): the reply carries only
+      // the other configuration; nothing is assigned or retained.
       const info = server.processInformationRequest(
         { transactionId: pkt.transactionId }, poolName, clientAddr.toString());
       if (!info) return;
@@ -653,9 +644,8 @@ export class IPv6DataPlane {
         ipv6.sourceIP.toString(), srcLLOpt.address, inPort, false);
     }
 
-    // `ipv6 nd ra suppress all` : le routeur ne répond même plus.
-    // `suppress` seul laisse la réponse, seule l'annonce spontanée
-    // se tait — c'est la distinction qu'IOS fait entre les deux.
+    // `suppress all` stops the answer too; `suppress` alone only
+    // silences the unsolicited advertisement.
     if (this.raConfig.get(inPort)?.suppressAll) return;
 
     this.sendRouterAdvertisement(inPort, ipv6.sourceIP.isUnspecified() ? null : ipv6.sourceIP);
@@ -691,8 +681,8 @@ export class IPv6DataPlane {
     }
   }
 
-  /** La configuration d'annonce d'une interface, créée au besoin. */
-  private raConfigFor(ifName: string): RAConfig {
+  /** An interface's advertisement config, created on demand. */
+  private raConfigOf(ifName: string): RAConfig {
     const existing = this.raConfig.get(ifName);
     if (existing) return existing;
     const frais: RAConfig = {
@@ -705,16 +695,13 @@ export class IPv6DataPlane {
   }
 
   /**
-   * Régler un paramètre d'annonce SANS armer le minuteur périodique.
-   *
-   * `configureRA` arme un `setInterval` : s'en servir pour poser le
-   * drapeau M ferait démarrer une annonce périodique sur la seule
-   * interface où l'opérateur a touché un drapeau, et pas sur les
-   * autres — une différence de comportement qu'aucune commande n'aurait
-   * demandée. Les drapeaux et le minuteur sont deux sujets.
+   * Set an advertisement parameter WITHOUT arming the periodic timer.
+   * `configureRA` arms a `setInterval`; using it to set the M flag would
+   * start periodic advertisements on the one interface where a flag was
+   * touched — a behaviour difference no command asked for.
    */
   setRaParams(ifName: string, params: Partial<RAConfig>): void {
-    const config = this.raConfigFor(ifName);
+    const config = this.raConfigOf(ifName);
     Object.assign(config, params);
     if (config.enabled === false) {
       const t = this.raTimers.get(ifName);

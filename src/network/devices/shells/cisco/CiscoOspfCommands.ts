@@ -1000,11 +1000,9 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     return '';
   });
 
-  // Ces deux commandes etaient refusees tant qu'aucun Hello ne circulait :
-  // stocker une valeur que personne ne lit aurait ete un decor. Depuis que
-  // l'adjacence se forme sur de vraies trames, `processHello` refuse un
-  // voisin dont les temporisateurs different — la valeur est donc lue, et
-  // un ecart empeche vraiment l'adjacence.
+  // Refused while no Hello travelled: storing a value nobody reads would
+  // have been decoration. Now that adjacency forms on real frames,
+  // `processHello` reads these and a mismatch really prevents it.
   configIfTrie.registerGreedy('ipv6 ospf hello-interval', 'Set OSPFv3 hello interval', (args) => {
     const val = parseInt(args[0], 10);
     if (isNaN(val) || val < 1 || val > 65535) return '% Invalid value';
@@ -1023,10 +1021,8 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     return '';
   });
 
-  // L'arite se declare sur la trie plutot que de se refuser dans le
-  // handler : c'est le mecanisme que le lot « diagnostic a sortie
-  // unique » installe, et un handler de plus qui ecrirait le message
-  // lui-meme ferait remonter son compteur.
+  // Arity is declared on the trie rather than refused in the handler:
+  // that is the single-exit diagnostic mechanism.
   configIfTrie.requireArgs('ipv6 ospf hello-interval', 1);
   configIfTrie.requireArgs('ipv6 ospf dead-interval', 1);
 

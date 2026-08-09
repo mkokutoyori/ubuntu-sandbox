@@ -424,21 +424,18 @@ export class IPv6Address {
   }
 
   /**
-   * Portée d'une adresse multicast (RFC 4291 §2.7) : le second quartet
-   * du second octet, 1 = interface, 2 = lien, 5 = site, e = global.
-   * Rend -1 pour une adresse qui n'est pas un groupe.
+   * Multicast scope (RFC 4291 §2.7): 1 = interface, 2 = link, 5 = site,
+   * e = global. Returns -1 for a non-multicast address.
    *
-   * Ce n'est PAS `isLinkLocal()`, qui teste `fe80::/10` et vaut donc
-   * faux pour tout groupe, `ff02::5` compris — s'en servir pour décider
-   * de la portée d'un envoi multicast donne silencieusement la mauvaise
-   * réponse dans tous les cas.
+   * This is NOT `isLinkLocal()`, which tests `fe80::/10` and is
+   * therefore false for every group including `ff02::5`.
    */
   multicastScope(): number {
     if (!this.isMulticast()) return -1;
     return this.hextets[0] & 0x000f;
   }
 
-  /** Un groupe de portée locale au lien (`ff02::/16`). */
+  /** A link-scoped group (`ff02::/16`). */
   isLinkLocalScopeMulticast(): boolean {
     return this.multicastScope() === 2;
   }
@@ -1105,12 +1102,10 @@ export interface IPv6Packet extends NetworkPdu {
   /** Upper-layer payload (ICMPv6, UDP, TCP, etc.) */
   payload: ICMPv6Packet | UDPPacket | unknown;
   /**
-   * Présence d'un en-tête AH/ESP protégeant ce paquet (RFC 4302/4303).
-   * Ce simulateur ne sérialise aucun octet, donc l'en-tête ne peut pas
-   * être porté autrement ; ce qui compte est qu'un récepteur sans
-   * association de sécurité correspondante le voie et rejette, ce qu'il
-   * ne pouvait pas faire tant que la protection ne quittait pas la
-   * configuration de l'émetteur. Utilisé par OSPFv3 (RFC 4552 §3).
+   * An AH/ESP header protects this packet (RFC 4302/4303). No bytes are
+   * serialized here, so the header cannot travel any other way; what
+   * matters is that a receiver without a matching security association
+   * sees it and drops. Used by OSPFv3 (RFC 4552 §3).
    */
   ipsecProtected?: boolean;
 }

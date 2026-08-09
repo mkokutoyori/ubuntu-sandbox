@@ -57,7 +57,7 @@ export const dhclientCommand: LinuxCommand = {
     let specificServer: string | null = null;
     let iface = '';
     let v6 = false;
-    let sansEtat = false;
+    let stateless = false;
 
     for (let i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -67,7 +67,7 @@ export const dhclientCommand: LinuxCommand = {
         case '-x': exit = true; break;
         case '-w': wait = true; break;
         case '-6': v6 = true; break;
-        case '-S': sansEtat = true; break;
+        case '-S': stateless = true; break;
         case '-s':
           if (args[i + 1]) { specificServer = args[i + 1]; i++; }
           break;
@@ -84,10 +84,9 @@ export const dhclientCommand: LinuxCommand = {
     if (v6) {
       if (!iface) return 'Usage: dhclient -6 [-v] <interface>';
       if (!ctx.net.getPorts().has(iface)) return `RTNETLINK answers: No such device ${iface}`;
-      // `-S` demande la configuration SANS adresse (INFORMATION-REQUEST,
-      // RFC 8415 §18.2.6) : c'est la forme sans etat, celle que reclame
-      // le drapeau O d'une annonce de routeur.
-      return sansEtat
+      // `-S` asks for the configuration WITHOUT an address
+      // (INFORMATION-REQUEST, RFC 8415 §18.2.6).
+      return stateless
         ? ctx.net.requestDhcpv6Information(iface, verbose)
         : ctx.net.requestDhcpv6Lease(iface, verbose);
     }

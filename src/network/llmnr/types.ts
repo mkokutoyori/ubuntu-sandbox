@@ -9,8 +9,7 @@ import type { McastDnsBinding } from '@/network/dns/transport/MulticastDnsTransp
 
 export const LLMNR_PORT = 5355;
 export const LLMNR_IPV4_GROUP = '224.0.0.252';
-/** Le groupe IPv6 (RFC 4795 §2). La pile v6 porte desormais l'emission
- *  vers un groupe quelconque, donc celui-ci sert. */
+/** The IPv6 group (RFC 4795 §2). */
 export const LLMNR_IPV6_GROUP = 'ff02::1:3';
 
 export const LLMNR_BINDING: McastDnsBinding = {

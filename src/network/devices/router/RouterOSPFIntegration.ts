@@ -209,9 +209,8 @@ export class RouterOSPFIntegration {
     const v3Bus = this.ctx.getBus?.();
     if (v3Bus) this.ospfv3Engine.setEventBus(v3Bus);
 
-    // Le moteur v3 émettait déjà ses Hello vers ff02::5 ; personne
-    // n'avait branché le rappel, donc `sendHello` sortait par sa
-    // première ligne et l'adjacence se formait hors bande.
+    // The v3 engine already sent its Hellos to ff02::5; nobody had
+    // wired the callback, so `sendHello` returned on its first line.
     this.ospfv3Engine.setSendCallback((ifaceName, packet, destIPv6) => {
       this.sendPacketV3(ifaceName, packet, destIPv6);
     });
@@ -270,13 +269,11 @@ export class RouterOSPFIntegration {
   }
 
   /**
-   * Émettre un paquet OSPFv3 (RFC 5340 §2 : en-tête suivant 89, comme
-   * OSPFv2 sur IPv4 ; il n'y a pas d'encapsulation UDP).
+   * Send an OSPFv3 packet (RFC 5340 §2: next header 89, no UDP).
    *
-   * La source est l'adresse de lien-local de l'interface — RFC 5340 §2.5
-   * l'impose, et c'est elle que le voisin inscrit comme adresse de saut
-   * suivant. La destination Ethernet se déduit du groupe (RFC 2464 §7),
-   * exactement comme `sendPacket` la déduit de `224.0.0.5`.
+   * The source is the interface's link-local address (RFC 5340 §2.5) —
+   * what the neighbour records as next hop. The Ethernet destination
+   * derives from the group (RFC 2464 §7).
    */
   private sendPacketV3(outIface: string, ospfPkt: unknown, destIPv6: string): void {
     const port = this.ctx.getPorts().get(outIface);
@@ -302,17 +299,15 @@ export class RouterOSPFIntegration {
     });
   }
 
-  /** Paquets OSPFv3 venus du fil — le seul chemin vers le moteur v3. */
+  /** OSPFv3 packets off the wire — the only path into the v3 engine. */
   receivePacketV3(
     ifaceName: string, srcIP: string, packet: unknown, ipsecProtected = false,
   ): void {
     const pkt = packet as { packetType?: number };
     if (!this.ospfv3Engine || pkt?.packetType !== 1) return;
 
-    // RFC 4552 §3 : sans association de sécurité correspondante, le
-    // paquet est écarté par IPsec avant d'atteindre OSPF — dans les deux
-    // sens, un paquet protégé sur une interface qui ne l'attend pas
-    // n'étant pas plus recevable que l'inverse.
+    // RFC 4552 §3: without a matching security association the packet
+    // is dropped by IPsec before reaching OSPF — both ways.
     const expectsIpsec = !!this.extraConfig.pendingV3IfConfig.get(ifaceName)?.ipsecAuth;
     if (expectsIpsec !== ipsecProtected) return;
 
@@ -322,7 +317,7 @@ export class RouterOSPFIntegration {
     );
   }
 
-  /** Brancher l'émission v3 de chaque pair sur de vraies trames. */
+  /** Wire every peer's v3 send callback to real frames. */
   private setupV3SendCallbacks(allPeers: RouterOSPFIntegration[]): void {
     for (const peer of allPeers) {
       if (!peer.ospfv3Engine) continue;
@@ -332,7 +327,7 @@ export class RouterOSPFIntegration {
     }
   }
 
-  /** Un vrai Hello v3 par interface câblée et non passive de chaque pair. */
+  /** One real v3 Hello per cabled, non-passive interface of every peer. */
   private pumpHellosV3(allPeers: RouterOSPFIntegration[]): void {
     for (const peer of allPeers) {
       if (!peer.ospfv3Engine) continue;
@@ -798,18 +793,11 @@ export class RouterOSPFIntegration {
   // ════════════════════════════════════════════════════════════════
 
   /**
-   * Convergence OSPFv3. L'adjacence se forme désormais sur de VRAIS
-   * Hello émis vers `ff02::5` (RFC 5340 §2, en-tête suivant 89) et non
-   * plus par appel de méthode entre deux routeurs voisins.
+   * OSPFv3 convergence, driven by REAL Hellos to `ff02::5`.
    *
-   * Ce que le parcours de topologie décidait, le paquet le décide
-   * maintenant tout seul, et par le même mécanisme que le vrai
-   * protocole : la correspondance des temporisateurs est refusée par
-   * `processHello`, une interface passive n'émet rien, et un voisin
-   * n'existe que parce que son Hello est arrivé. Le seul contrôle qui
-   * ne pouvait pas se lire dans un paquet — l'authentification IPsec —
-   * voyage maintenant sur le paquet, ce qu'EST un en-tête AH/ESP
-   * (RFC 4552 §3), et se juge à la réception.
+   * What the topology walk used to decide, the packet now decides:
+   * `processHello` refuses mismatched timers, a passive interface sends
+   * nothing, and a neighbour exists only because its Hello arrived.
    */
   private v3AutoConverge(): void {
     if (!this.ospfv3Engine) return;
@@ -817,15 +805,13 @@ export class RouterOSPFIntegration {
     const allPeers = this.collectOSPFv3Domain();
     this.setupV3SendCallbacks(allPeers);
 
-    // Deux tours, comme en v2 : le premier fait se découvrir les voisins
-    // (Down → Init), le second porte la liste de voisins qui fait
-    // franchir 2-Way.
+    // Two rounds, as in v2: discovery (Down → Init), then the neighbour
+    // list that carries the pair past 2-Way.
     this.pumpHellosV3(allPeers);
     this.pumpHellosV3(allPeers);
 
-    // Accélérateur du WaitTimer : une interface de diffusion encore en
-    // attente élit maintenant, faute de quoi personne ne serait DR et
-    // aucune adjacence ne dépasserait 2-Way avant le dead-interval.
+    // WaitTimer accelerator: a broadcast interface still waiting elects
+    // now, otherwise nobody is DR before the dead interval.
     for (const peer of allPeers) {
       if (!peer.ospfv3Engine) continue;
       for (const [, iface] of peer.ospfv3Engine.getInterfaces()) {
@@ -836,7 +822,7 @@ export class RouterOSPFIntegration {
       }
     }
 
-    // Un troisième tour porte les déclarations DR/BDR.
+    // A third round carries the DR/BDR declarations.
     this.pumpHellosV3(allPeers);
 
     this.floodV3LinkLSAs(allPeers);
@@ -844,13 +830,11 @@ export class RouterOSPFIntegration {
   }
 
   /**
-   * Propager les Link-LSA (RFC 5340 §4.4.3.8) entre voisins.
+   * Propagate Link-LSAs (RFC 5340 §4.4.3.8) between neighbours.
    *
-   * Toujours par recopie et non par un LSU sur le fil — ce moteur n'a
-   * ni base d'échange DD ni traitement de LSU —, mais la recopie est
-   * désormais COMMANDÉE par l'adjacence réelle : un routeur ne reçoit
-   * le Link-LSA d'un autre que si son Hello lui est parvenu et l'a fait
-   * entrer dans la table de voisins.
+   * Still by copy rather than an LSU on the wire — this engine has
+   * neither DD exchange nor LSU handling — but the copy is now DRIVEN by
+   * the real adjacency.
    */
   private floodV3LinkLSAs(allPeers: RouterOSPFIntegration[]): void {
     for (const peer of allPeers) {

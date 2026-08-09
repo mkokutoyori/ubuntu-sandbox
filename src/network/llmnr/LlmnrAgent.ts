@@ -67,11 +67,10 @@ export class LlmnrAgent {
   }
 
   /**
-   * Les adresses IPv6 GLOBALES. Le lien-local est ecarte : il est
-   * ambigu hors de son lien, et l'enregistrement ne porte pas l'indice
-   * de zone qui le desambiguiserait.
+   * The GLOBAL IPv6 addresses. Link-local is left out: it is ambiguous
+   * off its link and the record carries no zone index.
    */
-  private ownAddresses6(): string[] {
+  private ownIpv6Addresses(): string[] {
     const out: string[] = [];
     for (const port of this.host.getPorts()) {
       if (port.getName() === 'lo') continue;
@@ -152,14 +151,13 @@ export class LlmnrAgent {
     const veutAaaa = question.qtype === RRType.AAAA || question.qtype === RRType.ANY;
     if (!veutA && !veutAaaa) return null;
 
-    // On repond du TYPE demande. Repondre en A a une question AAAA
-    // serait une reponse a une autre question, et le demandeur la
-    // rangerait comme telle.
+    // Answer the type that was asked: an A record in reply to an AAAA
+    // question answers a different question.
     const answers: DnsRecord[] = [
       ...(veutA ? this.ownAddresses().map((ip) => ({
         name: question.qname, type: 'A' as const, value: ip, ttl: LLMNR_RECORD_TTL,
       })) : []),
-      ...(veutAaaa ? this.ownAddresses6().map((ip) => ({
+      ...(veutAaaa ? this.ownIpv6Addresses().map((ip) => ({
         name: question.qname, type: 'AAAA' as const, value: ip, ttl: LLMNR_RECORD_TTL,
       })) : []),
     ];
@@ -268,10 +266,9 @@ export class LlmnrAgent {
   }
 
   /**
-   * La même question pour la famille v6. Elle n'existait pas : ce
-   * résolveur ne savait demander qu'un enregistrement A, de sorte
-   * qu'un lien purement IPv6 n'avait aucun moyen d'apprendre une
-   * adresse par LLMNR — la question elle-même n'était pas posable.
+   * The same question for the v6 family. This resolver could only ask
+   * for an A record, so on a v6-only link the question could not even
+   * be put.
    */
   async resolveAaaa(name: string, timeoutMs: number = LLMNR_TIMEOUT_MS): Promise<string[]> {
     const label = name.toLowerCase().replace(/\.$/, '');
@@ -298,12 +295,8 @@ export class LlmnrAgent {
 }
 
 /**
- * Les adresses annoncées par les répondeurs, sans doublon.
- *
- * Le type recherché est celui qui a été demandé : ramasser les deux
- * familles indistinctement rendrait une adresse v6 à qui a posé une
- * question A, et l'appelant la rangerait comme une réponse à SA
- * question.
+ * The addresses the responders announced, deduplicated, of the type that
+ * was asked for.
  */
 function announcedAddresses(
   responses: readonly DnsMessage[], type: number = RRType.A,

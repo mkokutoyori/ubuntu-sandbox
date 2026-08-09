@@ -587,18 +587,15 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
-   * L'envoi vers un groupe IPv6 — ce qui manquait à cette pile.
+   * Send to an IPv6 group — what this stack was missing.
    *
-   * `sendUdpDatagram6` passait par `resolveIPv6Route` puis résolvait le
-   * prochain saut par NDP : pour `ff02::5` cela ne peut PAS aboutir, un
-   * groupe n'ayant pas de voisin à solliciter. La destination
-   * Ethernet se DÉDUIT de l'adresse (RFC 2464 §7, `toMulticastMAC()`,
-   * déjà présent et sans appelant), exactement comme du côté IPv4.
+   * `sendUdpDatagram6` resolved the next hop by NDP, which can never
+   * succeed for `ff02::5`: a group has no neighbour to solicit. The
+   * Ethernet destination DERIVES from the address (RFC 2464 §7), as on
+   * the IPv4 side.
    *
-   * Comme en v4, l'émission a lieu sur CHAQUE lien opérationnel portant
-   * une adresse — un groupe n'a pas de route — et la limite de sauts
-   * vaut 1 pour une portée locale au lien (`ff02::/16`), ce qui est ce
-   * que veulent OSPFv3, mDNS et NDP.
+   * The send happens on EVERY operational link carrying an address — a
+   * group has no route — and the hop limit is 1 for link scope.
    */
   public sendIPv6ToGroup(
     group: IPv6Address,
@@ -609,22 +606,18 @@ export abstract class EndHost extends Equipment {
   ): boolean {
     if (!group.isMulticast()) return false;
     const dstMAC = group.toMulticastMAC();
-    // La portée d'un GROUPE se lit dans son second quartet (RFC 4291
-    // §2.7) et non dans le préfixe `fe80::/10` : `isLinkLocal()` vaut
-    // faux pour `ff02::5`, donc s'en servir ici donnait la limite de
-    // sauts et la source d'un envoi de portée globale à un paquet qui
-    // ne doit pas quitter le lien.
-    const surLeLien = group.isLinkLocalScopeMulticast();
-    const hopLimit = surLeLien ? 1 : this.defaultHopLimit;
+    // A GROUP's scope is its second nibble (RFC 4291 §2.7), not the
+    // `fe80::/10` prefix: `isLinkLocal()` is false for `ff02::5`.
+    const onLink = group.isLinkLocalScopeMulticast();
+    const hopLimit = onLink ? 1 : this.defaultHopLimit;
     let sent = false;
     for (const [name, port] of this.ports) {
       if (name === 'lo') continue;
       if (iface && name !== iface) continue;
       if (!port.isOperationallyUp() || !port.isIPv6Enabled()) continue;
-      // La source d'un paquet vers un groupe local au lien est
-      // l'adresse de lien-local de l'interface : c'est elle que le
-      // voisin doit voir pour répondre.
-      const srcIP = surLeLien
+      // A packet to a link-scoped group sources from the interface's
+      // link-local address: that is what the neighbour replies to.
+      const srcIP = onLink
         ? (port.getLinkLocalIPv6() ?? port.getGlobalIPv6())
         : (port.getGlobalIPv6() ?? port.getLinkLocalIPv6());
       if (!srcIP) continue;
@@ -966,12 +959,9 @@ export abstract class EndHost extends Equipment {
   protected onDhcpLeaseConfigured(_iface: string): void {}
 
   /**
-   * Le pendant v6 du crochet ci-dessus. Il n'existait pas, et le client
-   * DHCPv6 ne lisait de sa REPLY que l'adresse : les serveurs de noms et
-   * le nom de domaine y voyageaient — le pool les porte, le paquet les
-   * transporte — et etaient jetes a l'arrivee. Un `dns-server` configure
-   * sous `ipv6 dhcp pool` n'atteignait donc jamais l'hote, alors que son
-   * homologue IPv4 ecrit bien `/etc/resolv.conf`.
+   * The v6 counterpart of the hook above. The DHCPv6 client read only
+   * the address from its REPLY, so the name servers and domain it
+   * carried were dropped on arrival.
    */
   protected onDhcpv6LeaseConfigured(
     _iface: string, _dnsServers: readonly string[], _domainName: string | null,
@@ -1035,43 +1025,30 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
-   * Aller chercher un bail DHCPv6 parce qu'une annonce l'a demandé.
-   *
-   * Ne redemande pas si l'interface porte déjà un bail : une annonce
-   * arrive à chaque sollicitation et à chaque lien qui monte, et une
-   * demande par annonce ferait tourner l'échange en boucle pour un
-   * résultat déjà obtenu.
+   * Fetch a DHCPv6 lease because an advertisement asked for one. Skipped
+   * when the interface already holds one: an advertisement arrives on
+   * every solicitation and every link-up.
    */
-  private demanderBailDhcpv6(iface: string): void {
+  private requestDhcpv6LeaseIfNeeded(iface: string): void {
     const port = this.ports.get(iface);
     if (!port) return;
     if (port.getIPv6Addresses().some((e) => e.origin === 'dhcpv6')) return;
     try { this.requestDhcpv6Lease(iface); } catch { /* pas de serveur : on reste sans bail */ }
   }
 
-  /**
-   * Aller chercher la configuration annexe parce qu'une annonce a posé
-   * le drapeau O, une seule fois par interface.
-   *
-   * Une annonce arrive à chaque sollicitation et à chaque lien qui
-   * monte ; sans ce garde, l'hôte reposerait la question à chacune.
-   */
-  private demanderInfosDhcpv6(iface: string): void {
-    if (this.dhcpv6InfosDemandees.has(iface)) return;
-    this.dhcpv6InfosDemandees.add(iface);
-    try { this.requestDhcpv6Information(iface); } catch { this.dhcpv6InfosDemandees.delete(iface); }
+  /** Fetch the other configuration once per interface, for the O flag. */
+  private requestDhcpv6InfoIfNeeded(iface: string): void {
+    if (this.dhcpv6InfoRequested.has(iface)) return;
+    this.dhcpv6InfoRequested.add(iface);
+    try { this.requestDhcpv6Information(iface); } catch { this.dhcpv6InfoRequested.delete(iface); }
   }
 
-  private dhcpv6InfosDemandees = new Set<string>();
+  private dhcpv6InfoRequested = new Set<string>();
 
   /**
-   * DHCPv6 sans état : INFORMATION-REQUEST → REPLY (RFC 8415 §18.2.6).
-   *
-   * L'échange n'a ni IA ni bail — le client ne demande pas d'adresse et
-   * le serveur ne retient rien —, ce qui est exactement ce que le
-   * drapeau O d'une annonce de routeur réclame : un hôte qui tient son
-   * adresse de l'autoconfiguration et à qui il ne manque que le
-   * résolveur.
+   * Stateless DHCPv6: INFORMATION-REQUEST → REPLY (RFC 8415 §18.2.6).
+   * No IA and no lease — the client asks for no address and the server
+   * retains nothing.
    */
   requestDhcpv6Information(iface: string, verbose = false): string {
     const port = this.ports.get(iface);
@@ -2556,23 +2533,16 @@ export abstract class EndHost extends Equipment {
     super.addPort(port);
     port.onLinkChange((state) => {
       if (state === 'down') { this.abortSessionsBrokenByLinkLoss(); return; }
-      this.soliciterRouteurs(port);
+      this.solicitRouters(port);
     });
   }
 
   /**
-   * RFC 4861 §6.3.7 : une interface qui s'active sollicite les routeurs
-   * du lien au lieu d'attendre la prochaine annonce non sollicitée, qui
-   * peut être à plusieurs centaines de secondes.
-   *
-   * `sendRouterSolicitation` existait, complet et correct, et n'avait
-   * qu'un seul appelant dans tout le dépôt : `ipconfig /renew6` sous
-   * Windows. Aucun hôte ne sollicitait donc jamais de lui-même, et comme
-   * le routeur n'annonçait pas non plus, l'autoconfiguration ne pouvait
-   * pas avoir lieu : la réception SLAAC était écrite et n'était jamais
-   * atteinte.
+   * RFC 4861 §6.3.7: an interface coming up solicits the link's routers
+   * rather than waiting for the next unsolicited advertisement, which
+   * may be hundreds of seconds away.
    */
-  private soliciterRouteurs(port: Port): void {
+  private solicitRouters(port: Port): void {
     if (!port.isIPv6Enabled() || !port.getLinkLocalIPv6()) return;
     this.sendRouterSolicitation(port.getName());
   }
@@ -2839,9 +2809,8 @@ export abstract class EndHost extends Equipment {
       return true;
     }
 
-    // Un groupe n'a ni route ni voisin : le résoudre par NDP ne pouvait
-    // pas aboutir, et `sendUdpDatagram6` échouait silencieusement pour
-    // toute destination multicast.
+    // A group has neither route nor neighbour, so resolving it by NDP
+    // could never succeed and every multicast send failed silently.
     if (destinationIP.isMulticast()) {
       return this.sendIPv6ToGroup(destinationIP, IP_PROTO_UDP, udp, udp.length);
     }
@@ -3943,17 +3912,12 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
-   * La route connectée `fe80::/10` de l'interface.
+   * The interface's `fe80::/10` connected route.
    *
-   * Deux défauts tenaient ici. Elle n'était posée que par
-   * `enableIPv6()`, jamais par `configureIPv6Interface()` — le chemin
-   * que prend `ip -6 addr add` —, si bien qu'un hôte configuré
-   * normalement ne pouvait joindre AUCUNE adresse de lien-local :
-   * `resolveIPv6Route` ne trouvait rien et l'envoi échouait en silence.
-   * C'est ce qui empêchait une réponse LLMNR/mDNS de revenir sur le
-   * groupe v6, dont la source est justement de lien-local. Et elle
-   * était empilée sans vérification, donc `enableIPv6()` appelé deux
-   * fois laissait deux routes identiques.
+   * It was installed only by `enableIPv6()`, never by
+   * `configureIPv6Interface()` — the path `ip -6 addr add` takes — so a
+   * normally configured host could reach NO link-local address at all.
+   * It was also pushed without a check, leaving duplicates.
    */
   private ensureLinkLocalRoute(ifName: string): void {
     const port = this.ports.get(ifName);
@@ -4335,11 +4299,9 @@ export abstract class EndHost extends Equipment {
 
     // If router lifetime > 0, consider as default router
     if (ra.routerLifetime > 0 && !this.defaultGateway6) {
-      // L'indice de zone n'est PAS sur le fil : il ne fait pas partie
-      // des 128 bits, et il ne veut rien dire chez le voisin. Adopter
-      // tel quel le `%GigabitEthernet0/0` du routeur donnait à l'hôte
-      // une route par défaut désignant une interface qu'il n'a pas.
-      // Un vrai récepteur note l'interface par laquelle il a entendu.
+      // The zone index never travels: it is not part of the 128 bits
+      // and means nothing to a peer. A real receiver records the
+      // interface it heard the advertisement on.
       this.setDefaultGateway6(
         new IPv6Address(ipv6.sourceIP.getHextets(), portName));
     }
@@ -4377,22 +4339,13 @@ export abstract class EndHost extends Equipment {
       }
     }
 
-    // RFC 4861 §4.2 / RFC 8415 §5 : le drapeau M dit à l'hôte d'aller
-    // chercher une adresse en DHCPv6. Le client existe, complet, et
-    // n'était déclenché que par un `dhclient -6` tapé à la main : le bit
-    // voyageait sans que personne l'exécute, de sorte qu'un routeur
-    // configuré en `managed` ne servait aucune adresse tant qu'on ne
-    // demandait pas soi-même.
-    //
-    // Le drapeau A du préfixe reste indépendant (RFC 4862 §5.5.3) :
-    // un hôte peut légitimement porter les deux adresses, et c'est ce
-    // que fait un vrai hôte sous une annonce qui pose M et A ensemble.
-    if (ra.managedFlag) this.demanderBailDhcpv6(portName);
-    // Le drapeau O seul (RFC 4861 §4.2) : l'hôte ne veut PAS d'adresse,
-    // seulement la configuration annexe. Sous M, la question ne se pose
-    // pas — le bail complet la porte déjà, et la reposer ferait un
-    // aller-retour pour la même réponse.
-    else if (ra.otherConfigFlag) this.demanderInfosDhcpv6(portName);
+    // RFC 4861 §4.2 / RFC 8415 §5: the M flag tells the host to fetch an
+    // address by DHCPv6. The prefix's A flag stays independent
+    // (RFC 4862 §5.5.3), so both addresses may legitimately coexist.
+    if (ra.managedFlag) this.requestDhcpv6LeaseIfNeeded(portName);
+    // The O flag alone (RFC 4861 §4.2): no address wanted, only the
+    // other configuration. Under M the full lease already carries it.
+    else if (ra.otherConfigFlag) this.requestDhcpv6InfoIfNeeded(portName);
   }
 
   // ─── NDP Resolution (IPv6 equivalent of ARP) ────────────────────
