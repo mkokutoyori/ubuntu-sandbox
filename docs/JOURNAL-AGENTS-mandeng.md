@@ -25,6 +25,49 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### `snmp-server enable traps` — LIVRÉ
+
+**Agent** : session « logging ». Nouveau balayage : ce qu'un routeur est
+*chargé d'exporter* quitte-t-il vraiment la machine ? Syslog oui (21
+datagrammes mesurés vers UDP/514). Les notifications SNMP, non.
+
+**Deux défauts du même magasin.** `sendTrap` est réel et n'avait pour
+appelants qu'IP SLA et EEM : **aucune notification standard ne partait
+jamais**, linkDown/linkUp comprises. Et l'analyseur ajoutait chaque
+suffixe de la ligne, si bien qu'`enable traps snmp linkdown linkup`
+ressortait en **trois** lignes dont deux que personne n'a tapées — ce
+qui compte au-delà de l'affichage, la configuration rendue étant rejouée
+à l'import.
+
+`enabledTraps` est maintenant `Map<type, Set<option>>`, avec
+`isTrapEnabled(type, option)` qui applique la règle d'IOS. L'émission se
+branche sur le changement de lien que `_setupPortMonitoring` observait
+déjà, varbinds de la RFC 2863.
+
+**Trouvé en mesurant** : sur une interface sans câble, `shutdown` puis
+`no shutdown` passent deux fois par « down » et un second linkDown
+partait pour une interface déjà tombée. Un état qui ne change pas ne se
+notifie plus.
+
+**Délibérément non fait, chacun pour une raison vérifiée** : `coldStart`
+(l'agent est configuré après la mise sous tension, la notification
+partirait avant qu'un collecteur existe) et `authenticationFailure`
+(`SnmpAgent` ne refuse aucune communauté aujourd'hui — l'événement
+déclencheur n'existe pas).
+
+**Reste ouvert et mesuré** : **NetFlow n'exporte rien**.
+`ip flow-export destination` est accepté sans refus et aucun datagramme
+ne part vers le collecteur. Je ne le prends pas dans ce lot.
+
+**Fichiers touchés** : `devices/router/management/SnmpService.ts`,
+`devices/Router.ts`.
+
+**Mesures.** `snmp-traps-lien.test.ts` (9 cas) discriminé par
+`git stash` : **8 tombent** avant. 227 suites routeur/CLI vertes
+(3 242 cas) — `Router.ts` touchant chaque routeur de chaque test.
+
+---
+
 ### DHCPv6 sans état — le drapeau O — LIVRÉ
 
 **Agent** : session « logging ». Dernier de la série IPv6 ; il ferme le
