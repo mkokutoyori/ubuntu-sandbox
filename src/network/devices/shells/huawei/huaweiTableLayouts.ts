@@ -10,7 +10,7 @@
  * seul cote et un marqueur `(s)` d'un seul cote.
  */
 
-import { renderTable, VRP_TABLE, type TableColumn } from '../cli/TextTable';
+import { renderTable, VRP_TABLE, FIXED_TABLE, type TableColumn } from '../cli/TextTable';
 
 /** Une ligne de `display ip interface brief`. */
 export interface LigneIpBrief {
@@ -78,4 +78,55 @@ export function rendreIpInterfaceBrief(lignes: readonly LigneIpBrief[]): string 
     '',
     ...renderTable(lignes, COLONNES_IP_BRIEF, VRP_TABLE),
   ].join('\n');
+}
+
+// ── `display interface brief` et `display interface description` ────
+
+/** Une ligne de la famille « brief » des interfaces. */
+export interface LigneInterface {
+  readonly nom: string;
+  readonly physique: string;
+  readonly protocole: string;
+  readonly description: string;
+}
+
+/**
+ * Les largeurs sont celles d'un vrai VRP, relevees sur une sortie
+ * capturee — `probe-alignement-tableaux-cli.test.ts` les fixe au
+ * caractere pres. Le commutateur en declarait d'autres (30/8/10) et
+ * n'avait ni `inErrors` ni `outErrors` : deux tableaux pour une commande.
+ */
+export const COLONNES_INTERFACE_BRIEF: ReadonlyArray<TableColumn<LigneInterface>> = [
+  { header: 'Interface', width: 28, value: (r) => r.nom },
+  { header: 'PHY', width: 6, value: (r) => r.physique },
+  { header: 'Protocol', width: 10, value: (r) => r.protocole },
+  { header: 'InUti', width: 5, align: 'right', value: () => '0%' },
+  { header: 'OutUti', width: 7, align: 'right', value: () => '0%' },
+  { header: 'inErrors', width: 11, align: 'right', value: () => '0' },
+  { header: 'outErrors', width: 11, align: 'right', value: () => '0' },
+];
+
+/**
+ * La legende de cette vue. Elle declare `*down` — le marqueur qu'un port
+ * ferme par l'operateur porte — et le commutateur ne l'imprimait pas,
+ * cohérent avec le fait qu'il ne posait jamais le marqueur non plus.
+ */
+export const LEGENDE_INTERFACE_BRIEF = 'PHY: Physical   *down: administratively down';
+
+export const COLONNES_INTERFACE_DESCRIPTION: ReadonlyArray<TableColumn<LigneInterface>> = [
+  { header: 'Interface', width: 30, value: (r) => r.nom },
+  { header: 'PHY', width: 8, value: (r) => r.physique },
+  { header: 'Protocol', width: 9, value: (r) => r.protocole },
+  { header: 'Description', value: (r) => r.description },
+];
+
+export function rendreInterfaceBrief(lignes: readonly LigneInterface[]): string {
+  return [
+    LEGENDE_INTERFACE_BRIEF,
+    ...renderTable(lignes, COLONNES_INTERFACE_BRIEF, FIXED_TABLE),
+  ].join('\n');
+}
+
+export function rendreInterfaceDescription(lignes: readonly LigneInterface[]): string {
+  return renderTable(lignes, COLONNES_INTERFACE_DESCRIPTION, FIXED_TABLE).join('\n');
 }

@@ -20,9 +20,9 @@ import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName } from '../cli-utils';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
-import { renderTable, FIXED_TABLE } from '../cli/TextTable';
 import {
-  type LigneIpBrief, protocoleVrp, rendreIpInterfaceBrief,
+  type LigneIpBrief, type LigneInterface, protocoleVrp, rendreIpInterfaceBrief,
+  rendreInterfaceBrief, rendreInterfaceDescription,
 } from './huaweiTableLayouts';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
@@ -389,37 +389,47 @@ function vrpEtatPort(port: import('../../../hardware/Port').Port, nom: string,
  * si bien que `outErrors` finissait un caractère après son intitulé.
  * Les quatre compteurs sont alignés à DROITE sur la vraie machine.
  */
-export function displayInterfaceBrief(router: Router): string {
+export function displayInterfaceBrief(router: Router, filtre?: string): string {
+  const lignes = lignesInterfaceVrp(router);
+  const retenues = filtrerInterfaces(router, lignes, filtre);
+  return typeof retenues === 'string' ? retenues : rendreInterfaceBrief(retenues);
+}
+
+/** Les lignes de la famille « brief », une seule fois pour ses deux vues. */
+function lignesInterfaceVrp(router: Router): LigneInterface[] {
   const ports = router._getPortsInternal();
-  const rows: Array<{ nom: string; phys: string; proto: string }> = [];
+  const out: LigneInterface[] = [];
   for (const [name, port] of ports) {
     const { phys, proto } = vrpEtatPort(port, name, ports);
-    rows.push({ nom: huaweiDisplayInterfaceName(name), phys, proto });
+    out.push({
+      nom: huaweiDisplayInterfaceName(name),
+      physique: phys,
+      protocole: proto,
+      description: router.getInterfaceDescription(name) || '',
+    });
   }
-  return [
-    'PHY: Physical   *down: administratively down',
-    ...renderTable(rows, [
-      { header: 'Interface', width: 28, value: (r) => r.nom },
-      { header: 'PHY', width: 6, value: (r) => r.phys },
-      { header: 'Protocol', width: 10, value: (r) => r.proto },
-      { header: 'InUti', width: 5, align: 'right', value: () => '0%' },
-      { header: 'OutUti', width: 7, align: 'right', value: () => '0%' },
-      { header: 'inErrors', width: 11, align: 'right', value: () => '0' },
-      { header: 'outErrors', width: 11, align: 'right', value: () => '0' },
-    ], FIXED_TABLE),
-  ].join('\n');
+  return out;
+}
+
+/**
+ * Le filtre par interface. Il etait LU puis jete : `display interface
+ * brief GigabitEthernet0/0/0` rendait tout le tableau, et un nom qui
+ * n'existe pas aussi.
+ */
+function filtrerInterfaces(
+  router: Router, lignes: LigneInterface[], filtre?: string,
+): LigneInterface[] | string {
+  if (filtre === undefined || filtre === '') return lignes;
+  const cible = resolveHuaweiInterfaceName(router, filtre);
+  if (!cible) return `Error: Wrong parameter found at '^' position.`;
+  const attendu = huaweiDisplayInterfaceName(cible);
+  return lignes.filter((l) => l.nom === attendu);
 }
 
 /** `display interface description` — real description table. */
-export function displayInterfaceDescription(router: Router): string {
-  const rows = ['Interface                     PHY     Protocol Description'];
-  const ports = router._getPortsInternal();
-  for (const [name, port] of ports) {
-    const { phys, proto } = vrpEtatPort(port, name, ports);
-    const desc = router.getInterfaceDescription(name) || '';
-    rows.push(`${huaweiDisplayInterfaceName(name).padEnd(30)}${phys.padEnd(8)}${proto.padEnd(9)}${desc}`);
-  }
-  return rows.join('\n');
+export function displayInterfaceDescription(router: Router, filtre?: string): string {
+  const retenues = filtrerInterfaces(router, lignesInterfaceVrp(router), filtre);
+  return typeof retenues === 'string' ? retenues : rendreInterfaceDescription(retenues);
 }
 
 export function displayArp(router: Router): string {
@@ -1742,8 +1752,9 @@ export function registerDisplayCommands(
   trie.registerGreedy('display interface', 'Display interface information', (args) => {
     const sub = (args[0] || '').toLowerCase();
     if (args.length === 0) return displayInterfaceAll(getRouter());
-    if (sub === 'brief') return displayInterfaceBrief(getRouter());
-    if (sub === 'description') return displayInterfaceDescription(getRouter());
+    const reste = args.slice(1).join(' ').trim();
+    if (sub === 'brief') return displayInterfaceBrief(getRouter(), reste || undefined);
+    if (sub === 'description') return displayInterfaceDescription(getRouter(), reste || undefined);
     return displayInterface(getRouter(), args.join(' '));
   });
 
