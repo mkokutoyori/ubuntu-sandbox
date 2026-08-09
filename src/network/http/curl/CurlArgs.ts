@@ -28,6 +28,14 @@ export interface CurlOptions {
   cookie: string | null;
   /** `-c` : où écrire le bocal en sortie. */
   cookieJar: string | null;
+  /** `-V`/`--version` : n'effectue aucun transfert, imprime et sort. */
+  version: boolean;
+  /** `-e` : l'en-tête `Referer`. */
+  referer: string | null;
+  /** `-D` : où écrire les en-têtes de réponse. */
+  dumpHeader: string | null;
+  /** `-T` : le fichier à téléverser, qui fait de la requête un `PUT`. */
+  uploadFile: string | null;
   urls: string[];
 }
 
@@ -39,9 +47,9 @@ export const CURL_USER_AGENT = 'curl/8.5.0';
 
 const TRY_HELP = "curl: try 'curl --help' for more information";
 
-const SHORT_NO_ARG = 'IksSvfLOi';
+const SHORT_NO_ARG = 'IksSvfLOiV';
 
-const SHORT_WITH_ARG = 'owXdHuAbc';
+const SHORT_WITH_ARG = 'owXdHuAbceDT';
 
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
@@ -53,6 +61,7 @@ const LONG_NO_ARG: Record<string, string> = {
   location: 'L',
   'remote-name': 'O',
   include: 'i',
+  version: 'V',
 };
 
 const LONG_WITH_ARG: Record<string, string> = {
@@ -71,29 +80,36 @@ const LONG_WITH_ARG: Record<string, string> = {
   cacert: 'cacert',
   cookie: 'b',
   'cookie-jar': 'c',
+  referer: 'e',
+  'dump-header': 'D',
+  'upload-file': 'T',
+  'data-urlencode': 'data-urlencode',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
   // `b` et `c` ont quitté cette liste : ils ouvrent la porte du bocal
   // à témoins (`http/cookies/`), un moteur RFC 6265 complet qui
   // n'avait aucun appelant.
-  x: true, F: true, T: true, C: true, m: true, '#': true,
+  x: true, F: true, C: true, m: true, '#': true,
   E: true, y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
-  K: true, r: true, P: true, Q: true, p: true, U: true, D: true, e: true,
+  K: true, r: true, P: true, Q: true, p: true, U: true,
 };
 
 const UNSUPPORTED_LONG: Record<string, true> = {
   proxy: true, retry: true, 'retry-delay': true,
-  'retry-max-time': true, form: true, 'form-string': true, 'upload-file': true,
+  'retry-max-time': true, form: true, 'form-string': true,
   http2: true, 'http2-prior-knowledge': true, http3: true, 'http0.9': true,
   'limit-rate': true, 'continue-at': true, 'progress-bar': true, cert: true,
+  // `--version` a quitté la liste des INCONNUES : curl la connaît, et
+  // répondre « is unknown » à l'option la plus tapée de toutes était le
+  // seul message de ce fichier qui mentait.
   key: true, capath: true, interface: true, 'max-time': true,
   'connect-timeout': true, compressed: true, 'anyauth': true, ntlm: true,
   negotiate: true, digest: true, 'proxy-user': true, socks5: true, socks4: true,
   'tlsv1.2': true, 'tlsv1.3': true, 'ciphers': true, 'keepalive-time': true,
   'speed-limit': true, 'speed-time': true, range: true, 'time-cond': true,
   'remote-time': true, netrc: true, 'trace': true, 'trace-ascii': true,
-  config: true, 'data-urlencode': true, referer: true, 'dump-header': true,
+  config: true,
   'proxytunnel': true, 'ftp-port': true, quote: true, 'no-buffer': true,
 };
 
@@ -120,6 +136,10 @@ function defaults(): CurlOptions {
     caCert: null,
     cookie: null,
     cookieJar: null,
+    version: false,
+    referer: null,
+    dumpHeader: null,
+    uploadFile: null,
     urls: [],
   };
 }
@@ -170,6 +190,19 @@ function applyValued(
     case 'u': opts.user = value; break;
     case 'b': opts.cookie = value; break;
     case 'c': opts.cookieJar = value; break;
+    case 'e': opts.referer = value; break;
+    case 'D': opts.dumpHeader = value; break;
+    case 'T': opts.uploadFile = value; break;
+    case 'data-urlencode': {
+      // `nom=valeur` n'encode QUE la valeur ; une chaîne sans `=` est
+      // encodée en entier. C'est la règle de curl, et la confondre
+      // enverrait `nom%3Dvaleur`, que rien ne sait relire.
+      const eq = value.indexOf('=');
+      opts.data.push(eq > 0
+        ? `${value.slice(0, eq)}=${encodeURIComponent(value.slice(eq + 1))}`
+        : encodeURIComponent(value));
+      break;
+    }
     case 'A': opts.userAgent = value; break;
     case 'resolve': {
       const entry = parseResolveEntry(value);
@@ -195,6 +228,7 @@ function applyFlag(opts: CurlOptions, letter: string): void {
   switch (letter) {
     case 'I': opts.head = true; break;
     case 'i': opts.include = true; break;
+    case 'V': opts.version = true; break;
     case 'k': opts.insecure = true; break;
     case 's': opts.silent = true; break;
     case 'S': opts.showError = true; break;
@@ -255,6 +289,10 @@ export function parseCurlArgs(args: readonly string[]): CurlParseResult {
     }
   }
 
+  // `--version` n'effectue aucun transfert : elle n'exige donc pas
+  // d'URL, et l'exiger ferait répondre le mode d'emploi à la commande la
+  // plus tapée de toutes.
+  if (opts.version) return { ok: true, options: opts };
   if (opts.urls.length === 0) return usageFailure(null);
   return { ok: true, options: opts };
 }

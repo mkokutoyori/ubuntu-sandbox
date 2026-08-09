@@ -1,4 +1,4 @@
-import { parseCurlArgs, remoteNameFor, type CurlOptions } from './CurlArgs';
+import { parseCurlArgs, remoteNameFor, CURL_USER_AGENT, type CurlOptions } from './CurlArgs';
 import { parseCurlUrl, performCurlRequest, type CurlOutcome, type CurlSuccess } from './CurlTransfer';
 import { applyWriteOut, type WriteOutFacts } from './CurlWriteOut';
 import type { CurlHost } from './CurlHost';
@@ -110,6 +110,12 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promis
   const elapsed = (Date.now() - started) / 1000;
 
   if (opts.verbose) stderrLines.push(...outcome.trace);
+  // `-D` écrit les en-têtes REÇUS dans un fichier, quelle que soit la
+  // destination du corps : c'est ce qui la distingue de `-i`, laquelle
+  // les mêle au corps.
+  if (opts.dumpHeader && outcome.ok === true) {
+    host.writeFile(opts.dumpHeader, `${headerBlock(outcome)}\n`);
+  }
 
   let exitCode = 0;
   let errorMsg = '';
@@ -162,11 +168,33 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promis
   return { output: stdoutParts.join(''), exitCode, stderr: stderrLines.join('\n') };
 }
 
+/**
+ * Ce que `curl --version` annonce.
+ *
+ * La liste des protocoles est celle que ce simulateur SERT réellement,
+ * et non celle du vrai curl : recopier `ftp gopher imap ldap …` ferait
+ * annoncer une vingtaine de schémas que la commande refuse deux lignes
+ * plus bas. Même règle pour les fonctionnalités.
+ */
+function versionBanner(): string {
+  return [
+    `${CURL_USER_AGENT.replace('/', ' ')} (x86_64-pc-linux-gnu) libcurl/8.5.0 OpenSSL/3.0.13`,
+    'Release-Date: 2023-12-06',
+    'Protocols: http https',
+    // Ce que ce curl SAIT faire, et rien d'autre. Recopier la ligne du
+    // vrai (`HTTPS-proxy TLS-SRP UnixSockets…`) annoncerait des
+    // capacités que la commande refuse deux lignes plus bas — le décor
+    // que ces PRD passent leur temps à retirer.
+    'Features: IPv6 SSL',
+  ].join('\n');
+}
+
 export async function runCurl(host: CurlHost, args: readonly string[]): Promise<CurlRun> {
   const parsed = parseCurlArgs(args);
   if (parsed.ok === false) return { output: '', exitCode: parsed.exitCode, stderr: parsed.message };
 
   const opts = parsed.options;
+  if (opts.version) return { output: `${versionBanner()}\n`, exitCode: 0, stderr: '' };
   const stdout: string[] = [];
   const stderr: string[] = [];
   let exitCode = 0;

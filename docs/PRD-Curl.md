@@ -363,3 +363,74 @@ simple `-H "Cookie: …"`, lequel serait envoyé à tout le monde.
   que les autres le sont.
 
 `curl-cookies.test.ts` (15 cas), **12 tombent par `git stash`**.
+
+
+---
+
+## 10. `--version` et quatre options — livré
+
+### 10.1 Le point de départ est un DÉFAUT, pas une absence
+
+`curl --version` répondait :
+
+```
+curl: option --version: is unknown
+```
+
+Or §3 pose trois familles d'options, et `is unknown` appartient à la
+troisième — celle des options qui **n'existent pas chez curl**.
+L'appliquer à `--version`, l'option la plus tapée de toutes, était le
+seul message de ce fichier qui mentait sur ce que curl EST. Les autres
+refus étaient honnêtes ; celui-là ne l'était pas.
+
+### 10.2 Ce que la bannière annonce, et pourquoi pas plus
+
+```
+curl 8.5.0 (x86_64-pc-linux-gnu) libcurl/8.5.0 OpenSSL/3.0.13
+Release-Date: 2023-12-06
+Protocols: http https
+Features: IPv6 SSL
+```
+
+Les deux dernières lignes sont la partie qui demandait un choix.
+Recopier celles du vrai curl (`ftp gopher imap ldap smtp telnet…`,
+`HTTPS-proxy TLS-SRP UnixSockets…`) aurait fait annoncer une vingtaine
+de schémas et une poignée de capacités que la commande refuse deux
+lignes plus bas — exactement le décor que ces PRD passent leur temps à
+retirer. Elles disent donc ce que ce curl SERT, et un cas vérifie
+l'absence des autres.
+
+`--version` n'exige pas d'URL, puisqu'elle ne transfère rien : l'exiger
+ferait répondre le mode d'emploi à la commande qu'on tape précisément
+sans URL.
+
+### 10.3 Quatre options qui n'exigeaient aucune invention
+
+Elles étaient refusées honnêtement, et chacune ne demandait qu'une
+brique déjà là : un en-tête, une lecture de fichier, une écriture, un
+encodage.
+
+* **`-e`/`--referer`** — l'en-tête `Referer`.
+* **`-T`/`--upload-file`** — un **PUT**, et non un POST : c'est un
+  téléversement, et les confondre changerait la sémantique côté
+  serveur. Aucun `Content-Type` n'est imposé, là où `-d` déclare
+  `x-www-form-urlencoded` : un fichier n'est pas un formulaire. Un
+  fichier absent échoue **avant toute connexion**, avec le code 26 de
+  curl — il n'ouvre pas une socket pour découvrir qu'il n'a rien à
+  envoyer.
+* **`--data-urlencode`** — n'encode QUE la valeur d'une paire
+  `nom=valeur`, et la chaîne entière sinon. Encoder le tout enverrait
+  `a%3Db%20c`, que rien ne sait relire.
+* **`-D`/`--dump-header`** — écrit le bloc d'en-têtes REÇUS dans un
+  fichier, sans le corps. C'est ce qui la distingue de `-i`, laquelle
+  les mêle au corps ; un cas mesure les deux fichiers séparément.
+
+### 10.4 Ce qui reste refusé
+
+`-x` (proxy), `--retry`, `-F` (formulaires) — un cas le vérifie, pour
+qu'ouvrir cinq portes ne laisse pas croire que les autres le sont. Et
+une option qui n'existe vraiment pas garde `is unknown`, ce qui
+redevient vrai maintenant que `--version` n'y est plus.
+
+`curl-version-et-options.test.ts` (17 cas), **13 tombent par
+`git stash`**.

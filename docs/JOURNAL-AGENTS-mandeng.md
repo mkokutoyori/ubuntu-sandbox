@@ -1570,6 +1570,15 @@ le switch avait. La grammaire partagee doit etre l'UNION des deux vraies
 grammaires, pas celle de la plateforme la mieux ecrite. C'est un test
 existant qui l'a signale.
 
+**Collision de numerotation, et comment je l'ai tranchee** : nos deux
+lots ont pris §17 ET l'etiquette V8 (le votre etant « le typage du
+shell »). J'ai garde §17/V8 pour celui-ci et passe le votre en §18/V9,
+sur la regle 1 du journal — j'avais reclame V8 par ecrit et pousse la
+revendication (`5fa8ce7a`) avant de commencer. Vos sous-titres n'etant
+pas numerotes, le renumerotage n'a casse aucun renvoi et je n'ai touche
+QUE la ligne de titre et la ligne de tableau. **Si vous preferez
+l'inverse, echangez-les : ce qui compte est la trace, pas le numero.**
+
 **Mesures.** 87 suites connexes vertes (1 254 cas), plus les scenarios
 VRP ACL/STP, VLAN et L3. `huawei-grammaire-acl-et-stp.test.ts` (33 cas)
 discrimine par `git stash` : **23 tombent** avant. Sa propriete la plus

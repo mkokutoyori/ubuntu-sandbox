@@ -117,7 +117,8 @@ function applyCustomHeaders(request: HttpMessage, specs: readonly string[]): voi
   }
 }
 
-function bodyFor(opts: CurlOptions): string | null {
+function bodyFor(opts: CurlOptions, host: CurlHost): string | null {
+  if (opts.uploadFile !== null) return host.readFile(opts.uploadFile);
   if (opts.data.length === 0) return null;
   return opts.data.join('&');
 }
@@ -125,6 +126,9 @@ function bodyFor(opts: CurlOptions): string | null {
 function methodFor(opts: CurlOptions): string {
   if (opts.method) return opts.method;
   if (opts.head) return 'HEAD';
+  // `-T` fait un PUT, pas un POST : c'est un TÉLÉVERSEMENT, et le
+  // confondre changerait la sémantique côté serveur.
+  if (opts.uploadFile !== null) return 'PUT';
   if (opts.data.length > 0) return 'POST';
   return 'GET';
 }
@@ -141,6 +145,7 @@ function buildRequest(
   request.headers.set('Host', authority);
   request.headers.set('User-Agent', opts.userAgent);
   request.headers.set('Accept', '*/*');
+  if (opts.referer !== null) request.headers.set('Referer', opts.referer);
   if (opts.user) {
     const colon = opts.user.indexOf(':');
     const name = colon === -1 ? opts.user : opts.user.slice(0, colon);
@@ -148,7 +153,11 @@ function buildRequest(
     request.headers.set('Authorization', encodeBasicCredentials(name, secret));
   }
   if (body !== null) {
-    request.headers.set('Content-Type', 'application/x-www-form-urlencoded');
+    // Un téléversement n'est pas un formulaire : curl n'impose alors
+    // aucun type et laisse le serveur décider.
+    if (opts.uploadFile === null) {
+      request.headers.set('Content-Type', 'application/x-www-form-urlencoded');
+    }
     request.body = binaryStringToBytes(body);
   }
   if (jar) {
@@ -207,7 +216,17 @@ export async function performCurlRequest(
   opts: CurlOptions,
 ): Promise<CurlOutcome> {
   const trace: string[] = [];
-  const body = bodyFor(opts);
+  const body = bodyFor(opts, host);
+  // `-T` sur un fichier absent est une erreur AVANT toute connexion :
+  // curl ne va pas ouvrir une socket pour découvrir qu'il n'a rien à
+  // envoyer.
+  if (opts.uploadFile !== null && body === null) {
+    return {
+      ok: false, code: 26,
+      message: `curl: (26) Failed to open/read local data from file/application`,
+      url: first, remoteIp: '', method: 'PUT', numRedirects: 0, trace: [],
+    };
+  }
   let url = first;
   let method = methodFor(opts);
   let sendBody = body !== null;
