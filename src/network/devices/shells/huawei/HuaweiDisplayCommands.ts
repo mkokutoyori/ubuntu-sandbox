@@ -20,6 +20,7 @@ import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName } from '../cli-utils';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
+import { renderTable, FIXED_TABLE } from '../cli/TextTable';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
 import {
@@ -365,19 +366,45 @@ function vrpEtatPort(port: import('../../../hardware/Port').Port, nom: string,
   };
 }
 
-/** `display interface brief` — real status table. */
+/**
+ * `display interface brief`.
+ *
+ * Mise en page relevée sur du texte capturé sur de vraies machines (jeu
+ * de référence `huawei_vrp/display_interface_brief` de
+ * `ntc-templates`) :
+ *
+ * ```
+ * Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+ * Aux0/0/1                    down  down         0%     0%          0          0
+ * Eth-Trunk4                  up    down      0.69% 13.57%       4625          0
+ * ```
+ *
+ * Deux écarts que la mesure a montrés et que l'œil ne voyait pas : la
+ * colonne `PHY` était large de huit caractères au lieu de six — donc
+ * TOUT ce qui suit était décalé de deux — et les quatre colonnes de
+ * droite étaient écrites à la main, chacune avec son propre décompte,
+ * si bien que `outErrors` finissait un caractère après son intitulé.
+ * Les quatre compteurs sont alignés à DROITE sur la vraie machine.
+ */
 export function displayInterfaceBrief(router: Router): string {
-  const rows = [
-    'PHY: Physical   *down: administratively down',
-    'Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors',
-  ];
   const ports = router._getPortsInternal();
+  const rows: Array<{ nom: string; phys: string; proto: string }> = [];
   for (const [name, port] of ports) {
     const { phys, proto } = vrpEtatPort(port, name, ports);
-    rows.push(`${huaweiDisplayInterfaceName(name).padEnd(28)}${phys.padEnd(8)}${proto.padEnd(10)}` +
-      `0%    0%       0          0`);
+    rows.push({ nom: huaweiDisplayInterfaceName(name), phys, proto });
   }
-  return rows.join('\n');
+  return [
+    'PHY: Physical   *down: administratively down',
+    ...renderTable(rows, [
+      { header: 'Interface', width: 28, value: (r) => r.nom },
+      { header: 'PHY', width: 6, value: (r) => r.phys },
+      { header: 'Protocol', width: 10, value: (r) => r.proto },
+      { header: 'InUti', width: 5, align: 'right', value: () => '0%' },
+      { header: 'OutUti', width: 7, align: 'right', value: () => '0%' },
+      { header: 'inErrors', width: 11, align: 'right', value: () => '0' },
+      { header: 'outErrors', width: 11, align: 'right', value: () => '0' },
+    ], FIXED_TABLE),
+  ].join('\n');
 }
 
 /** `display interface description` — real description table. */

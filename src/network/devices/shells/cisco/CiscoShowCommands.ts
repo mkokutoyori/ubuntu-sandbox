@@ -17,6 +17,7 @@ import { renderSecretField, renderPasswordField, type SecretAlgo } from './cisco
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import { IPv6Address } from '@/network/core/types';
+import { renderCounterTable, renderTable, type TableColumn } from '../cli/TextTable';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
@@ -930,10 +931,14 @@ export function showInterfaceAccounting(router: Router, ifName: string): string 
   const port = router._getPortsInternal().get(ifName);
   if (!port) return `% Invalid interface ${ifName}`;
   const c = port.getCounters();
+  // L'en-tête et la ligne étaient deux chaînes indépendantes, comptées
+  // chacune de son côté : toutes les colonnes de données finissaient un
+  // caractère avant leur intitulé (22/34/46/58/70 contre 24/35/47/59/71).
   return [
     `${ifName}`,
-    `                Protocol    Pkts In    Chars In    Pkts Out   Chars Out`,
-    `                    IP    ${String(c.framesIn).padStart(8)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
+    ...renderCounterTable('Protocol', ['Pkts In', 'Chars In', 'Pkts Out', 'Chars Out'], [
+      { label: 'IP', cells: [String(c.framesIn), String(c.bytesIn), String(c.framesOut), String(c.bytesOut)] },
+    ]),
   ].join('\n');
 }
 
@@ -941,13 +946,18 @@ export function showInterfaceStats(router: Router, ifName: string): string {
   const port = router._getPortsInternal().get(ifName);
   if (!port) return `% Invalid interface ${ifName}`;
   const c = port.getCounters();
+  // `Distributed cache` et `Total` finissaient un caractère avant les
+  // deux autres lignes, chacune ayant son propre décompte d'espaces.
+  const compteurs = [String(c.framesIn), String(c.bytesIn), String(c.framesOut), String(c.bytesOut)];
+  const zeros = ['0', '0', '0', '0'];
   return [
     `${ifName}`,
-    `          Switching path    Pkts In    Chars In    Pkts Out   Chars Out`,
-    `               Processor ${String(c.framesIn).padStart(10)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
-    `             Route cache          0           0           0           0`,
-    `      Distributed cache          0           0           0           0`,
-    `                  Total ${String(c.framesIn).padStart(10)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
+    ...renderCounterTable('Switching path', ['Pkts In', 'Chars In', 'Pkts Out', 'Chars Out'], [
+      { label: 'Processor', cells: compteurs },
+      { label: 'Route cache', cells: zeros },
+      { label: 'Distributed cache', cells: zeros },
+      { label: 'Total', cells: compteurs },
+    ]),
   ].join('\n');
 }
 
@@ -1070,32 +1080,49 @@ export function showInterfacesDescription(router: Router): string {
   return rows.join('\n');
 }
 
-/** `show interfaces status` — real connected/notconnect/disabled table. */
-export function showInterfacesStatus(router: Router): string {
-  const rows = ['Port      Name               Status       Vlan       Duplex  Speed Type'];
-  for (const [name, port] of router._getPortsInternal()) {
-    const view = iosInterfaceStatus(port, name, router._getPortsInternal());
-    const status = !view.adminUp ? 'disabled'
-      : view.protocol === 'up' ? 'connected' : 'notconnect';
-    const desc = (router.getInterfaceDescription(name) || '').slice(0, 17);
-    rows.push(
-      `${iosShortInterfaceName(name).padEnd(10)}${desc.padEnd(19)}${status.padEnd(13)}` +
-      `${'routed'.padEnd(11)}${String(port.getDuplex()).padEnd(8)}` +
-      `${String(port.getSpeed()).padEnd(6)}${name.startsWith('Gig') ? '1000BASE-T' : '10/100BaseTX'}`);
-  }
-  return rows.join('\n');
-}
+/**
+ * Note sur `show interfaces status` : la commande n'existe PAS sur un
+ * routeur IOS, qui répond `% Invalid input detected at '^' marker.` —
+ * ce que ce simulateur fait déjà. Ce fichier en portait pourtant un
+ * rendu complet, que rien n'appelait ; il est supprimé plutôt que
+ * conservé, une seconde réponse possible à une question étant
+ * exactement le défaut que le module de tableaux referme. La mise en
+ * page réelle vit désormais dans `ciscoTableLayouts.ts` et sert au
+ * commutateur, qui, lui, a la commande.
+ */
 
-/** `show interfaces summary` — real per-port queue summary. */
+/**
+ * `show interfaces summary` — real per-port queue summary.
+ *
+ * L'en-tête et les lignes étaient deux chaînes indépendantes : les neuf
+ * compteurs finissaient tous un caractère AVANT leur intitulé, et
+ * chaque ligne traînait deux blancs de fin. Les largeurs ci-dessous
+ * reproduisent au caractère près l'en-tête que cette commande écrivait
+ * déjà — lui était juste, seules les données s'en écartaient — et
+ * placent les compteurs à droite, comme IOS le fait pour des nombres.
+ */
 export function showInterfacesSummary(router: Router): string {
-  const rows = [
-    ' Interface                IHQ   IQD  OHQ   OQD  RXBS RXPS  TXBS  TXPS  TRTL',
-    '--------------------------------------------------------------------------',
+  const noms = [...router._getPortsInternal().keys()];
+  const compteur = (w: number): TableColumn<string> =>
+    ({ header: '', width: w, align: 'right', value: () => '0' });
+  const colonnes: Array<TableColumn<string>> = [
+    { header: 'Interface', width: 24, value: (n) => n },
+    { ...compteur(4), header: 'IHQ' },
+    { ...compteur(6), header: 'IQD' },
+    { ...compteur(5), header: 'OHQ' },
+    { ...compteur(6), header: 'OQD' },
+    { ...compteur(6), header: 'RXBS' },
+    { ...compteur(5), header: 'RXPS' },
+    { ...compteur(6), header: 'TXBS' },
+    { ...compteur(6), header: 'TXPS' },
+    { ...compteur(6), header: 'TRTL' },
   ];
-  for (const name of router._getPortsInternal().keys()) {
-    rows.push(` ${name.padEnd(24)}  0     0    0     0     0    0     0     0     0`);
-  }
-  return rows.join('\n');
+  const lignes = renderTable(noms, colonnes, { gap: 0, rule: false, indent: ' ' });
+  // Le filet d'IOS part de la colonne 0, donc AVANT le retrait d'un
+  // blanc que porte le reste du tableau : il n'est pas rendu par le
+  // style `rule`, qui suivrait ce retrait.
+  lignes.splice(1, 0, '-'.repeat(74));
+  return lignes.join('\n');
 }
 
 /** `show ip interface` (all, verbose) — real per-port L3 state. */
