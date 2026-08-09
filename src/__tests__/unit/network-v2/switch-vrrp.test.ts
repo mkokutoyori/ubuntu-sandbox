@@ -134,7 +134,11 @@ describe('Huawei L3 switch — VRRP on Vlanif SVI', () => {
     expect(out).toMatch(/Vlanif10 \| Virtual Router 1/);
     expect(out).toMatch(/State : Master/);
     expect(out).toMatch(/Virtual IP : 10\.0\.10\.1/);
-    expect(out).toMatch(/Virtual MAC : 00:00:5e:00:01:01/);
+    // Lot V15 : ce cas fixait la MAC virtuelle au format IEEE sur une
+    // machine VRP. VRP l'ecrit en trois groupes de quatre (lot V14) ;
+    // c'est bien l'assertion qui portait l'hypothese fausse. Le cache
+    // ARP du PC, plus bas, garde sa forme IEEE — elle y est juste.
+    expect(out).toMatch(/Virtual MAC : 0000-5e00-0101/);
   });
 
   it('PC1 ping VIP : le cache ARP porte le virtual MAC', async () => {

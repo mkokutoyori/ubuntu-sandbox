@@ -167,7 +167,12 @@ describe('Batch 3: display current-configuration interface', () => {
     r.configureInterface('GE0/0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
 
     const output = await r.executeCommand('display current-configuration interface GE0/0/0');
-    expect(output).toContain('interface GE0/0/0');
+    // Lot V15 : `GE0/0/0` est le nom court INTERNE, que ces deux cas
+    // fixaient dans un bloc de configuration. VRP rend le nom canonique
+    // (lots V3/V11), et la configuration complete de la meme machine le
+    // faisait deja — c'est cette vue-ci qui divergeait. L'abreviation
+    // reste acceptee en ENTREE, ce que la commande ci-dessus verifie.
+    expect(output).toContain('interface GigabitEthernet0/0/0');
     expect(output).toContain('192.168.1.1');
     expect(output).toContain('255.255.255.0');
   });
@@ -175,7 +180,7 @@ describe('Batch 3: display current-configuration interface', () => {
   it('should show unconfigured interface', async () => {
     const r = new HuaweiRouter('R1');
     const output = await r.executeCommand('display current-configuration interface GE0/0/1');
-    expect(output).toContain('interface GE0/0/1');
+    expect(output).toContain('interface GigabitEthernet0/0/1');
     expect(output).toContain('shutdown');
   });
 

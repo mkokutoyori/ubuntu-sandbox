@@ -67,6 +67,73 @@ vertes (2 174 cas).
 
 ---
 
+### VRP — lot V15 : VRRP, un magasin, une grammaire, une vue — LIVRÉ
+
+**Agent** : session « CLI Huawei VRP ». Suite du lot V14, même méthode :
+comparer les deux plateformes entre elles pour le même objet. Détail
+complet dans `PRD-CLI-Fidelite-VRP.md` §24.
+
+**Périmètre traité** : tout ce qui touche VRRP côté Huawei — la
+grammaire `vrrp vrid …`, les vues `display vrrp [brief|statistics|
+interface X]`, et le rendu des lignes `vrrp` dans la configuration, sur
+le **routeur** comme sur le **commutateur**.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `shells/huawei/huaweiVrrpViews.ts` | **Nouveau** — la grammaire et les vues, une fois pour les deux |
+| `devices/router/redundancy/HuaweiVrrpService.ts` | **Supprimé** — un écrivain, zéro lecteur |
+| `devices/Router.ts`, `equipment/RouterServiceCapabilities.ts` | Le câblage de la façade retiré |
+| `shells/huawei/HuaweiDisplayCommands.ts` | Les vues et le rendu de configuration du routeur |
+| `shells/HuaweiVRPShell.ts` | L'analyse de `vrrp` en vue d'interface, et `admin-vrrp` |
+| `shells/HuaweiSwitchShell.ts` | Idem côté commutateur, et ses vues |
+| `network/vrrp/types.ts` | Les champs de configuration que l'agent ne portait pas |
+
+**Ce que j'ai mesuré avant de toucher** (tout est reproductible avec les
+commandes citées) :
+**Trois tests existants portaient une hypothèse fausse** et sont
+corrigés, jamais le code — comme le dépôt l'a déjà fait pour
+`vtp-md5-password.test.ts` : `switch-vrrp.test.ts` (MAC virtuelle au
+format IEEE sur une machine VRP), `switch-fhrp-track.test.ts` (`Track
+IF : 1`, un compte là où VRP nomme l'interface suivie) et
+`huawei-parity.test.ts` (2 cas fixant `interface GE0/0/0`, le nom court
+interne, dans un bloc de **configuration**). Le tableau du §24.5 dit
+pour chacun pourquoi. Les cas Cisco voisins gardent leur forme IEEE, qui
+est celle d'IOS ; `CiscoSwitchShell.ts:4299` n'est pas touché.
+
+**Ce qui vous concerne peut-être** :
+
+- **`network/vrrp/types.ts` est partagé avec Cisco.** `VrrpGroupRuntime`
+  gagne quatre champs optionnels (`preemptDelaySec`, `description`,
+  `authMode`, `authKey`), initialisés dans `defaultGroupRuntime`.
+  Ajout pur : aucune vue Cisco ne les lit, rien ne change de ce côté.
+- **`getHuaweiVrrpService` n'existe plus** sur `Router` ni dans
+  `RouterServiceCapabilities`. Si vous aviez du travail en cours dessus,
+  l'agent (`getVrrpAgent`) porte désormais tout, champs de configuration
+  compris.
+- **Si vous rendez un bloc VRRP quelque part**, `huaweiVrrpViews.ts`
+  exporte `rendreDisplayVrrp`, `rendreDisplayVrrpBrief`,
+  `rendreDisplayVrrpStatistics` et `lignesConfigVrrp`. Je n'ai converti
+  que les vues Huawei.
+
+**Reste ouvert, et nommé plutôt que tu** : le moteur ne diffère aucune
+prise de rôle (`preempt-mode timer delay`) et n'authentifie rien
+(`authentication-mode`) — les deux valeurs sont portées et rejouées, pas
+agies ; les compteurs d'annonces de `display vrrp statistics` sont à
+zéro parce que rien ne les compte ; et le mVRRP (`admin-vrrp`) est
+refusé en nommant la brique absente. Tout cela est du travail de
+protocole, pas de CLI.
+
+**Mesures.** 131 suites connexes vertes (2 224 cas), dont toute la
+famille FHRP (14 suites, 133 cas). Un échec préexistant et sans rapport
+(`probe-debug-02-collecte.test.ts`, SPAN), vérifié identique sur `HEAD`.
+`huawei-vrrp-un-magasin.test.ts` (20 cas) discriminé par `git stash` :
+**17 tombent** avant. Typecheck : jeu d'erreurs identique (212). Lint :
+172 avant, **172 après**.
+
+---
+
 ### mDNS/LLMNR sur leurs groupes IPv6 — LIVRÉ
 
 **Agent** : session « logging ». Suite directe du lot précédent : le
@@ -2046,7 +2113,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V13 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
