@@ -37,6 +37,9 @@ import { analyserAcl } from './huawei/HuaweiAclGrammar';
 import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
 import { resolveHuaweiInterfaceName } from './cli-utils';
 import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
+import {
+  type LigneIpBrief, protocoleVrp, rendreIpInterfaceBrief,
+} from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import {
   registerHuaweiNATInterfaceCommands,
@@ -2137,34 +2140,39 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // management Ethernet placeholder. Each row reflects the live
     // admin/protocol state so the operator can see at a glance which
     // SVI is up.
-    trie.register('display ip interface brief', 'Display IP interface brief', () => {
+    trie.registerGreedy('display ip interface brief', 'Display IP interface brief', (args) => {
       if (!this.swRef) return '';
-      const svis = this.swRef.getSvis();
-      const lines: string[] = [
-        `*down: administratively down`,
-        `^down: standby`,
-        `(l): loopback`,
-        `(s): spoofing`,
-        `Interface                   IP Address/Mask      Physical   Protocol`,
-      ];
-      for (const svi of svis) {
-        const name = `Vlanif${svi.vlan}`;
-        const addr = svi.ip && svi.mask
-          ? `${svi.ip}/${svi.mask.toCIDR()}`
-          : 'unassigned';
+      const lignes: LigneIpBrief[] = [];
+      for (const svi of this.swRef.getSvis()) {
+        const nom = `Vlanif${svi.vlan}`;
         const lineUp = this.swRef.isSviLineUp(svi);
-        const phys = svi.adminUp ? (lineUp ? 'up' : 'down') : '*down';
-        const proto = lineUp ? 'up' : 'down';
-        lines.push(`${name.padEnd(28)}${addr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+        lignes.push({
+          nom,
+          adresse: svi.ip && svi.mask ? `${svi.ip}/${svi.mask.toCIDR()}` : 'unassigned',
+          physique: svi.adminUp ? (lineUp ? 'up' : 'down') : '*down',
+          protocole: lineUp ? 'up' : 'down',
+        });
       }
       for (const lb of this.swRef.getLoopbacks()) {
-        const addr = lb.ip && lb.mask ? `${lb.ip}/${lb.mask.toCIDR()}` : 'unassigned';
-        // Une loopback est up des deux côtés dès qu'elle existe — elle
-        // ne dépend d'aucun câble, c'est tout son intérêt.
-        lines.push(`${lb.name.padEnd(28)}${addr.padEnd(21)}${'up'.padEnd(11)}up(s)`);
+        // Une loopback est up des deux cotes des qu'elle existe — elle
+        // ne depend d'aucun cable, c'est tout son interet.
+        lignes.push({
+          nom: lb.name,
+          adresse: lb.ip && lb.mask ? `${lb.ip}/${lb.mask.toCIDR()}` : 'unassigned',
+          physique: 'up',
+          protocole: protocoleVrp(lb.name, 'up'),
+        });
       }
-      lines.push(`MEth0/0/1                   unassigned           down       down`);
-      return lines.join('\n');
+      lignes.push({
+        nom: 'MEth0/0/1', adresse: 'unassigned', physique: 'down', protocole: 'down',
+      });
+      const filtre = args.join(' ').trim();
+      if (filtre) {
+        const cible = this.resolveInterfaceName(filtre);
+        if (!cible) return `Error: Wrong parameter found at '^' position.`;
+        return rendreIpInterfaceBrief(lignes.filter((l) => l.nom === cible));
+      }
+      return rendreIpInterfaceBrief(lignes);
     });
 
     // `display ip interface <nom>` — la forme longue manquait

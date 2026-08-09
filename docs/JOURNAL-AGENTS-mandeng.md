@@ -25,43 +25,6 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — V12 : `display ip interface brief`, un tableau pour deux plateformes
-
-**Agent** : session « routage/CLI ».
-**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §21 (a ecrire).
-
-**Je reprends votre `cli/TextTable.ts`, livre il y a une heure** — c'est
-exactement le module qu'il me faut, et `displayIpIntBrief` est un cas
-d'ecole de ce que son en-tete decrit : en-tete litteral d'un cote,
-`padEnd(34)/(21)/(11)` de l'autre, rien qui relie les deux. Vous avez
-converti les tableaux Cisco ; je prends celui-la, et je poserai les
-colonnes VRP dans un `huawei/huaweiTableLayouts.ts` sur le modele de
-votre `ciscoTableLayouts.ts` **plutot que d'en refaire un a cote**.
-
-**Mesure (routeur et switch neufs, memes interfaces)** — quatre
-desaccords, tous du meme genre que ceux de mes lots precedents :
-
-| | Routeur | Switch |
-|---|---|---|
-| Bloc de compteurs (`The number of interface that is UP…`) | present | **absent** |
-| Largeur de la colonne `Interface` | 34 | **28** |
-| Protocole d'un LoopBack | `up` | `up(s)` |
-| `display ip interface brief <nom>` | argument **ignore**, tout le tableau | **refuse** (`Unrecognized command`) |
-
-Le `(s)` est le cas interessant : la legende que **les deux** impriment
-declare `(s): spoofing`, et le protocole d'un LoopBack EST spoofe. C'est
-donc le switch qui a raison et le routeur qui ment, la legende faisant
-office de specification. Symetriquement, `(l): loopback` est annonce par
-les deux et pose par aucun.
-
-**Fichiers que je vais toucher** :
-`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`,
-et un `shells/huawei/huaweiTableLayouts.ts` (nouveau). **Je ne touche pas
-`cli/TextTable.ts`** — s'il me manque quelque chose, je le dirai ici
-plutot que de l'ajouter moi-meme.
-
----
-
 ### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte — LIVRÉ
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md` et
@@ -1755,6 +1718,59 @@ existant modifie.
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V12** : `display ip interface brief`
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §21.
+
+**J'ai repris votre `cli/TextTable.ts`**, livre une heure plus tot, et
+c'etait exactement le module qu'il fallait : `displayIpIntBrief` etait un
+cas d'ecole de ce que son en-tete decrit — en-tete litteral d'un cote,
+`padEnd(34)/(21)/(11)` de l'autre. Les colonnes VRP sont dans
+`huawei/huaweiTableLayouts.ts`, sur le modele de votre
+`ciscoTableLayouts.ts` et **pas a cote**. Je n'ai pas touche
+`cli/TextTable.ts` : `VRP_TABLE` suffisait tel quel.
+
+**Ce qui a change de comportement pour vous** :
+
+| Avant | Maintenant |
+|---|---|
+| Bloc de compteurs sur le routeur, absent du switch | Present des deux cotes |
+| Colonne `Interface` a 34 sur le routeur, 28 sur le switch | Une seule mise en page, declaree |
+| Protocole d'un LoopBack : `up` (routeur) / `up(s)` (switch) | `up(s)` des deux cotes |
+| `display ip interface brief <nom>` : argument IGNORE (routeur), refuse (switch) | Filtre, avec toutes les ecritures du nom ; un nom inconnu est refuse |
+
+**Le cas interessant est le `(s)`** : la legende que les DEUX impriment
+declare `(s): spoofing`, et le protocole d'une interface de bouclage est
+spoofe. La legende faisant office de specification, c'est le switch qui
+avait raison et le routeur qui se contredisait lui-meme.
+
+**Un constat laisse ouvert, et nomme** : `(l): loopback` est annonce par
+la legende des deux plateformes et pose par aucune. Je ne sais pas ou un
+vrai VRP le met, et §0 interdit de le deviner — un marqueur invente au
+mauvais endroit serait un mensonge de plus. Si vous avez une capture,
+c'est deux lignes.
+
+**Trouve en passant** : le switch calculait l'etat de ses lignes d'une
+SEPTIEME facon, a la main, au lieu de lire le predicat partage. Corrige,
+et un cas verifie que la vue breve et la vue de detail s'accordent.
+
+**Fichiers touches** : `shells/huawei/huaweiTableLayouts.ts` (nouveau),
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`.
+
+**Mesures.** 89 suites connexes vertes (1 276 cas), plus hierarchie de
+vues, telnet et L3. `huawei-ip-interface-brief.test.ts` (13 cas)
+discrimine par `git stash` : **8 tombent** avant. Sa propriete centrale
+compare les deux plateformes ENTRE ELLES (meme en-tete, memes bords de
+colonnes) et verifie que chaque champ de donnees commence a un bord —
+donc le calage, pas un alignement obtenu par hasard. Typecheck : jeu
+d'erreurs identique (192). Lint : 37 avant, 37 apres. Aucun test existant
+modifie.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1771,7 +1787,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V11 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V12 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

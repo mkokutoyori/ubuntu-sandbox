@@ -21,6 +21,9 @@ import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName } from '../cli-utils';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import { renderTable, FIXED_TABLE } from '../cli/TextTable';
+import {
+  type LigneIpBrief, protocoleVrp, rendreIpInterfaceBrief,
+} from './huaweiTableLayouts';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
 import {
@@ -284,34 +287,31 @@ export function displayIpRoutingTableForDest(router: Router, dest: string): stri
   return [...head, ...renderHuaweiRouteRows(router, matches)].join('\n');
 }
 
-export function displayIpIntBrief(router: Router): string {
+export function displayIpIntBrief(router: Router, filtre?: string): string {
   const ports = router._getPortsInternal();
-  let upPhys = 0, downPhys = 0, upProto = 0, downProto = 0;
-  const rows: string[] = [];
+  const lignes: LigneIpBrief[] = [];
   for (const [name, port] of ports) {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
     const { phys, proto } = vrpEtatPort(port, name, router._getPortsInternal());
-    if (phys === 'up') upPhys++; else downPhys++;
-    if (proto === 'up') upProto++; else downProto++;
-    const renderedName = huaweiDisplayInterfaceName(name);
-    rows.push(`${renderedName.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+    const nom = huaweiDisplayInterfaceName(name);
+    lignes.push({
+      nom,
+      adresse: ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned',
+      physique: phys,
+      protocole: protocoleVrp(nom, proto),
+    });
   }
-  const lines = [
-    '*down: administratively down',
-    '^down: standby',
-    '(l): loopback',
-    '(s): spoofing',
-    `The number of interface that is UP in Physical is ${upPhys}`,
-    `The number of interface that is DOWN in Physical is ${downPhys}`,
-    `The number of interface that is UP in Protocol is ${upProto}`,
-    `The number of interface that is DOWN in Protocol is ${downProto}`,
-    '',
-    'Interface                         IP Address/Mask      Physical   Protocol',
-    ...rows,
-  ];
-  return lines.join('\n');
+  if (filtre !== undefined) {
+    // L'argument etait LU puis jete : `display ip interface brief
+    // GigabitEthernet0/0/0` rendait tout le tableau, et un nom qui
+    // n'existe pas aussi.
+    const cible = resolveHuaweiInterfaceName(router, filtre);
+    if (!cible) return `Error: Wrong parameter found at '^' position.`;
+    const attendu = huaweiDisplayInterfaceName(cible);
+    return rendreIpInterfaceBrief(lignes.filter((l) => l.nom === attendu));
+  }
+  return rendreIpInterfaceBrief(lignes);
 }
 
 export function displayIpInterface(router: Router, ifName: string): string {
@@ -1713,7 +1713,10 @@ export function registerDisplayCommands(
   trie.registerGreedy('display ip interface', 'Display IP interface details', (args) => {
     if (args.length === 0) return displayIpIntBrief(getRouter());
     const first = args[0].toLowerCase();
-    if ('brief'.startsWith(first)) return displayIpIntBrief(getRouter());
+    if ('brief'.startsWith(first)) {
+      const reste = args.slice(1).join(' ');
+      return displayIpIntBrief(getRouter(), reste ? reste : undefined);
+    }
     return displayIpInterface(getRouter(), args.join(' '));
   });
 

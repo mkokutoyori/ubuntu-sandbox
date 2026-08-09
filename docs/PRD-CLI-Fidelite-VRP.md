@@ -304,6 +304,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V9** | Le typage du shell (agent « logging ») | **Livré, §18** |
 | **V10** | Le typage de `HuaweiSwitchShell` | **Livré, §19** |
 | **V11** | Deux vues d'un même port en disent la même chose | **Livré, §20** |
+| **V12** | `display ip interface brief`, un tableau pour deux plateformes | **Livré, §21** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1663,3 +1664,87 @@ Discrimination par `git stash` : **9 des 10 tombent** avant.
 d'interface, de parité et de routage inter-VLAN. Typecheck : jeu
 d'erreurs identique avant/après (187). Lint sur les trois fichiers : 37
 problèmes avant, 37 après. Aucun test existant modifié.
+
+---
+
+## 21. V12 — Livré : `display ip interface brief`, un tableau pour deux plateformes
+
+### 21.1 Ce que la mesure a trouvé
+
+Le routeur et le commutateur rendaient **le même tableau chacun de son
+côté**, avec des littéraux séparés. Quatre désaccords, mesurés sur deux
+machines neuves portant les mêmes interfaces :
+
+| | Routeur | Switch |
+|---|---|---|
+| Bloc de compteurs (`The number of interface that is UP…`) | présent | **absent** |
+| Largeur de la colonne `Interface` | 34 | **28** |
+| Protocole d'un LoopBack | `up` | `up(s)` |
+| `display ip interface brief <nom>` | argument **ignoré**, tout le tableau | **refusé** |
+
+Le troisième est le plus instructif : **la légende est la
+spécification**. Les deux plateformes impriment `(s): spoofing` en tête,
+et le protocole d'une interface de bouclage EST spoofé. C'est donc le
+commutateur qui avait raison et le routeur qui contredisait sa propre
+légende, pour le même type d'objet.
+
+Le quatrième est le défaut de fond : l'argument était **lu puis jeté** —
+`display ip interface brief GigabitEthernet0/0/0` rendait tout le
+tableau, et un nom qui n'existe pas aussi. Un opérateur qui filtre et
+obtient tout ne peut pas savoir que son filtre n'a pas été lu.
+
+### 21.2 Le correctif, et une reprise plutôt qu'une copie
+
+La cause de la divergence de largeur est celle que l'autre agent venait
+de fermer ailleurs (`cli/TextTable.ts`, « un tableau se déclare, il ne se
+dessine plus à la main ») : en-tête littéral d'un côté,
+`padEnd(34)/(21)/(11)` de l'autre, rien qui relie les deux.
+`huawei/huaweiTableLayouts.ts` **reprend ce module** — sur le modèle de
+leur `ciscoTableLayouts.ts`, et non à côté — et porte les colonnes VRP,
+la légende, le marqueur `(s)` et le bloc de compteurs. Les deux
+plateformes appellent la même fonction ; une divergence de mise en page
+n'est plus possible, elle est devenue impossible à écrire.
+
+Le filtre est résolu par le résolveur unifié du lot V11, donc toute
+écriture légitime du nom fait le même filtre (`gi0/0/0`,
+`GigabitEthernet 0/0/0`, `vlanif10`) et un nom qui n'existe pas est
+refusé au lieu d'être ignoré.
+
+**Trouvé en passant** : le commutateur calculait l'état de ses lignes
+d'une **septième** façon, à la main, au lieu de lire le prédicat partagé.
+Il rend maintenant les mêmes valeurs que sa propre vue de détail, ce
+qu'un cas du fichier de test vérifie en comparant les deux.
+
+### 21.3 Refusé, et pourquoi
+
+**`(l): loopback` reste annoncé et jamais posé.** La légende le déclare
+sur les deux plateformes, et aucune ne marque quoi que ce soit avec. Je
+ne sais pas où un vrai VRP le pose — sur le nom, sur le protocole, ou
+seulement dans certaines versions — et §0 interdit de le deviner : un
+marqueur inventé au mauvais endroit serait un mensonge de plus, pas un
+progrès. Le constat est écrit ici et la légende reste telle quelle,
+puisque c'est elle que les deux machines impriment aujourd'hui.
+
+**Les compteurs comptent le tableau rendu, filtre compris.** Filtrer sur
+une interface donne `UP … is 0 / DOWN … is 1` plutôt que le compte de
+toute la machine. C'est cohérent avec ce que la vue montre ; je n'ai pas
+de mesure d'un vrai VRP pour trancher l'autre lecture, et un test le fixe
+pour que le choix soit su.
+
+### 21.4 Tests et mesures
+
+`huawei-ip-interface-brief.test.ts` (13 cas). Sa propriété centrale
+compare **les deux plateformes entre elles** — même en-tête, mêmes bords
+de colonnes — plutôt que chacune contre une maquette recopiée à la main,
+qui aurait pu recopier la mauvaise. Un cas mesure en plus que **chaque
+champ de données commence à un bord de colonne**, ce qui vérifie le
+calage plutôt qu'un alignement obtenu par hasard ; un autre que les
+compteurs comptent bien les lignes rendues ; un dernier que la vue brève
+et la vue de détail donnent la même adresse et le même état.
+
+Discrimination par `git stash` : **8 des 13 tombent** avant.
+
+**Mesures.** 89 suites connexes vertes (1 276 cas), plus les scénarios de
+hiérarchie de vues, telnet et L3. Typecheck : jeu d'erreurs identique
+avant/après (192). Lint sur les fichiers touchés : 37 problèmes avant, 37
+après — le nouveau module n'en ajoute aucun. Aucun test existant modifié.
