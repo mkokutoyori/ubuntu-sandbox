@@ -132,7 +132,6 @@ import { NetflowService } from './router/netflow/NetflowService';
 import { ArchiveService } from './router/archive/ArchiveService';
 import { KeypairService } from './router/security/KeypairService';
 import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
-import { HuaweiVrrpService } from './router/redundancy/HuaweiVrrpService';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
@@ -992,6 +991,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.syncRouteDebug();
         if (state === 'up') {
           this._ospfAutoConverge();
+          // Le câble arrive souvent APRÈS la configuration d'adresse :
+          // sans cette annonce, l'hôte du lien ne verrait jamais le
+          // préfixe, celle de `configureInterface` ayant été émise dans
+          // le vide.
+          this.ipv6Engine.annoncerSurInterface(name);
         } else {
           this.ipsecEngine?.onPortDown(name);
           this.ospfIntegration.onPortDown(name);
@@ -2760,6 +2764,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ═══════════════════════════════════════════════════════════════════
 
   configureRA(ifName: string, config: Partial<import('./router/IPv6DataPlane').RAConfig>) { this.ipv6Engine.configureRA(ifName, config); }
+  /** Régler les paramètres d'annonce ND d'une interface (`ipv6 nd …`). */
+  setRaParams(ifName: string, params: Partial<import('./router/IPv6DataPlane').RAConfig>): void {
+    this.ipv6Engine.setRaParams(ifName, params);
+  }
+
+  getRaParams(ifName: string) { return this.ipv6Engine.getRaParams(ifName); }
+
   addRAPrefix(ifName: string, prefix: IPv6Address, prefixLength: number, options?: {
     onLink?: boolean; autonomous?: boolean; validLifetime?: number; preferredLifetime?: number;
   }) { this.ipv6Engine.addRAPrefix(ifName, prefix, prefixLength, options); }
@@ -3618,12 +3629,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getHuaweiRoutingExtras(): HuaweiRoutingExtras {
     if (!this._huaweiRoutingExtras) this._huaweiRoutingExtras = new HuaweiRoutingExtras();
     return this._huaweiRoutingExtras;
-  }
-
-  private _huaweiVrrpService: HuaweiVrrpService | null = null;
-  getHuaweiVrrpService(): HuaweiVrrpService {
-    if (!this._huaweiVrrpService) this._huaweiVrrpService = new HuaweiVrrpService();
-    return this._huaweiVrrpService;
   }
 
   private _huaweiBfdService: HuaweiBfdService | null = null;

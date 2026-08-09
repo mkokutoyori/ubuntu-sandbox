@@ -18,6 +18,8 @@ export interface VrrpPacket extends NetworkPdu {
 
 export type VrrpTrackEntry = FhrpTrackEntry;
 
+export type VrrpAuthMode = 'simple' | 'md5' | 'none';
+
 export interface VrrpGroupRuntime {
   iface: string;
   vrid: number;
@@ -31,6 +33,19 @@ export interface VrrpGroupRuntime {
   lastHeardMasterMs: number;
   lastTransitionMs: number;
   tracks: VrrpTrackEntry[];
+  /**
+   * Les trois champs que VRP configure, rend et rejoue sans que ce
+   * moteur les fasse agir : il ne differe aucune prise de role et
+   * n'authentifie rien. Ils vivent ICI plutot que dans la facade
+   * separee du routeur (`HuaweiVrrpService`, lot V15) parce qu'un
+   * second magasin donne deux reponses a une question — le
+   * commutateur, lui, les PERDAIT. Les porter est un progres sur les
+   * perdre ; les faire agir reste un travail de protocole.
+   */
+  preemptDelaySec: number;
+  description: string;
+  authMode: VrrpAuthMode;
+  authKey?: string;
 }
 
 export function effectivePriority(g: VrrpGroupRuntime): number {
@@ -55,6 +70,7 @@ export function defaultGroupRuntime(iface: string, vrid: number): VrrpGroupRunti
     masterIp: null, masterPriority: 0,
     lastHeardMasterMs: 0, lastTransitionMs: Date.now(),
     tracks: [],
+    preemptDelaySec: 0, description: '', authMode: 'none',
   };
 }
 

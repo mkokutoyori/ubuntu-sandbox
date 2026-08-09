@@ -304,7 +304,12 @@ describe('VRRP Huawei VRP — vrrp vrid <n> track interface sur Vlanif', () => {
     const out = await swA.executeCommand('display vrrp');
     expect(out).toMatch(/PriorityRun : 120/);
     expect(out).toMatch(/PriorityConfig : 200/);
-    expect(out).toMatch(/Track IF : 1/);
-    expect(out).toMatch(/GigabitEthernet0\/0\/3 Priority reduced : 80 State : Down/);
+    // Lot V15 : la piste etait annoncee par un COMPTE (`Track IF : 1`)
+    // puis detaillee sur une ligne a la mise en page propre a ce
+    // simulateur. VRP nomme l'interface suivie a la place du compte et
+    // met son etat sur la ligne suivante ; les deux plateformes rendent
+    // desormais ce bloc-la, par le meme code.
+    expect(out).toMatch(/Track IF : GigabitEthernet0\/0\/3 {3}Priority reduced : 80/);
+    expect(out).toMatch(/IF state : DOWN/);
   });
 });

@@ -2002,6 +2002,34 @@ export abstract class LinuxMachine extends EndHost
     if (dns[0]) this.dnsResolverIP = dns[0];
   }
 
+  /**
+   * Les serveurs de noms appris en DHCPv6 REJOIGNENT ceux qui sont deja
+   * la, au lieu de les remplacer.
+   *
+   * Le chemin v4 reecrit le fichier entier, ce qui lui suffit puisqu'il
+   * est seul ; une machine a double pile prend ses deux baux, et si le
+   * v6 reecrivait de meme, le second bail effacerait silencieusement le
+   * resolveur du premier. Un vrai systemd-resolved tient les deux
+   * familles pour le meme lien.
+   */
+  protected override onDhcpv6LeaseConfigured(
+    iface: string, dnsServers: readonly string[], domainName: string | null,
+  ): void {
+    void iface;
+    if (dnsServers.length === 0) return;
+    const existant = (this.executor.readFile('/etc/resolv.conf') ?? '')
+      .split('\n').filter((l) => l.trim() !== '');
+    const lignes = [...existant];
+    if (domainName && !lignes.some((l) => l.trim() === `search ${domainName}`)) {
+      lignes.unshift(`search ${domainName}`);
+    }
+    for (const ip of dnsServers) {
+      if (!lignes.some((l) => l.trim() === `nameserver ${ip}`)) lignes.push(`nameserver ${ip}`);
+    }
+    this.executor.vfs.writeFile('/etc/resolv.conf', lignes.join('\n') + '\n', 0, 0, 0o022);
+    if (!this.dnsResolverIP && dnsServers[0]) this.dnsResolverIP = dnsServers[0];
+  }
+
   protected override onDhcpLeaseReleased(iface: string): void {
     void iface;
     this.executor.vfs.writeFile('/etc/resolv.conf', '', 0, 0, 0o022);

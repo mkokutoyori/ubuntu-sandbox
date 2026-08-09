@@ -35,7 +35,8 @@ import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
 import { huaweiIrreversibleCipher, huaweiCipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
-import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres } from './cli-utils';
+import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
+import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
@@ -2616,64 +2617,42 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerOSPFDisplayCommands(this.ospfAreaTrie, getRouter);
     buildOSPFAreaViewCommands(this.ospfAreaTrie, this, () => this.ospfArea);
 
-    this.interfaceTrie.registerGreedy('vrrp', 'VRRP configuration', (args) => {
+    // La grammaire et le magasin sont ceux du commutateur (lot V15) :
+    // cette vue-ci acceptait tout — `vrid 999`, `priority 300`, une
+    // adresse qui n'en est pas une — et rangeait meme un mot inconnu
+    // dans la configuration rendue, donc rejoue a l'import.
+    this.interfaceTrie.registerGreedy('vrrp', 'VRRP configuration', (args, raw) => {
       const ifName = this.selectedInterface;
       if (!ifName) return 'Error: No interface selected';
-      const vridIdx = args[0]?.toLowerCase() === 'vrid' ? 1 : -1;
-      const vrid = parseInt(args[vridIdx] ?? '', 10);
-      if (isNaN(vrid)) return 'Error: Invalid VRID';
-      const svc = this.r().getHuaweiVrrpService();
-      const g = svc.ensure(ifName, vrid);
       const agent = getVrrpAgent(this.r());
-      agent?.ensureGroup(ifName, vrid);
-      const i = vridIdx + 1;
-      const sub = args[i]?.toLowerCase();
-      if (sub === 'virtual-ip' && args[i + 1]) {
-        if (!g.virtualIps.includes(args[i + 1])) g.virtualIps.push(args[i + 1]);
-        agent?.setVip(ifName, vrid, g.virtualIps[0]);
-      } else if (sub === 'priority' && args[i + 1]) {
-        g.priority = parseInt(args[i + 1], 10);
-        agent?.setPriority(ifName, vrid, g.priority);
-      } else if (sub === 'preempt-mode') {
-        if (args[i + 1] === 'timer' && args[i + 2] === 'delay' && args[i + 3]) {
-          g.preemptMode = true;
-          g.preemptDelaySec = parseInt(args[i + 3], 10);
-        } else g.preemptMode = true;
-        agent?.setPreempt(ifName, vrid, g.preemptMode);
-      } else if (sub === 'description') {
-        g.description = args.slice(i + 1).join(' ');
-      } else if (sub === 'timer' && args[i + 1] === 'advertise' && args[i + 2]) {
-        g.advertiseTimerSec = parseInt(args[i + 2], 10);
-        agent?.setAdvertiseSec(ifName, vrid, g.advertiseTimerSec);
-      } else if (sub === 'authentication-mode' && args[i + 1]) {
-        const mode = args[i + 1].toLowerCase();
-        if (mode === 'md5' || mode === 'simple' || mode === 'none') g.authMode = mode;
-        if (args[i + 2] === 'cipher' && args[i + 3]) g.authKey = args[i + 3];
-        else if (args[i + 2]) g.authKey = args[i + 2];
-      } else if (sub === 'track' && args[i + 1] === 'interface' && args[i + 2]) {
-        const reducedIdx = args.indexOf('reduced', i + 2);
-        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
-        g.trackEntries.push({ kind: 'interface', target: args[i + 2], reduced });
-      } else if (sub === 'track' && args[i + 1] === 'ip' && args[i + 2] === 'route' && args[i + 3]) {
-        const reducedIdx = args.indexOf('reduced', i + 3);
-        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
-        g.trackEntries.push({ kind: 'route', target: `${args[i + 3]} ${args[i + 4] ?? ''}`, reduced });
-      } else if (sub === 'track' && args[i + 1] === 'bfd-session' && args[i + 2]) {
-        const reducedIdx = args.indexOf('reduced', i + 2);
-        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
-        g.trackEntries.push({ kind: 'bfd', target: args[i + 2], reduced });
-      } else {
-        g.rawLines.push(`vrrp ${args.join(' ')}`);
+      if (!agent) return 'Error: VRRP is not available on this device.';
+      const a = analyserVrrp(args);
+      if (a.statut === 'refus') return rendreErreurVrp(a.err, raw ?? `vrrp ${args.join(' ')}`);
+      appliquerVrrp(agent, ifName, a.vrid, a.action,
+        (nom) => resolveHuaweiInterfaceName(this.r(), nom) || nom);
+      return '';
+    });
+    this.interfaceTrie.registerGreedy('undo vrrp', 'Remove a VRRP group', (args) => {
+      const ifName = this.selectedInterface;
+      const agent = getVrrpAgent(this.r());
+      if (!ifName || !agent) return '';
+      const a = analyserVrrp(args);
+      if (a.statut === 'refus') return '';
+      if (a.action.quoi === 'groupe') agent.removeGroup(ifName, a.vrid);
+      else if (a.action.quoi === 'preempt-mode') agent.setPreempt(ifName, a.vrid, false);
+      else if (a.action.quoi === 'track') {
+        agent.removeTrack(ifName, a.vrid,
+          resolveHuaweiInterfaceName(this.r(), a.action.cible) || a.action.cible);
       }
       return '';
     });
-    this.interfaceTrie.registerGreedy('admin-vrrp', 'Admin VRRP', (args) => {
-      if (args[0]?.toLowerCase() === 'vrid' && args[1]) {
-        const vrid = parseInt(args[1], 10);
-        if (!isNaN(vrid)) this.r().getHuaweiVrrpService().ensureAdmin(vrid).ifName = this.selectedInterface ?? '';
-      }
-      return '';
-    });
+    // VRP a bien cette commande, ce simulateur n'a pas le mVRRP qu'elle
+    // declare : aucun groupe membre ne peut s'y lier, et la facade qui
+    // rangeait le numero n'etait lue par personne (lot V15). Un refus
+    // qui NOMME la brique absente vaut mieux qu'une acceptation sans
+    // effet, comme partout ailleurs dans ce depot.
+    this.interfaceTrie.registerGreedy('admin-vrrp', 'Admin VRRP', () =>
+      'Error: Administrative VRRP (mVRRP) is not implemented in this simulator.');
   }
 
   // ─── RIP View ([hostname-rip-1]) ────────────────────────────────

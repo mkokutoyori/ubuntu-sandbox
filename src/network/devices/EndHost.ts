@@ -965,6 +965,18 @@ export abstract class EndHost extends Equipment {
 
   protected onDhcpLeaseConfigured(_iface: string): void {}
 
+  /**
+   * Le pendant v6 du crochet ci-dessus. Il n'existait pas, et le client
+   * DHCPv6 ne lisait de sa REPLY que l'adresse : les serveurs de noms et
+   * le nom de domaine y voyageaient — le pool les porte, le paquet les
+   * transporte — et etaient jetes a l'arrivee. Un `dns-server` configure
+   * sous `ipv6 dhcp pool` n'atteignait donc jamais l'hote, alors que son
+   * homologue IPv4 ecrit bien `/etc/resolv.conf`.
+   */
+  protected onDhcpv6LeaseConfigured(
+    _iface: string, _dnsServers: readonly string[], _domainName: string | null,
+  ): void {}
+
   private sendWireDhcpFrame(iface: string, pkt: DHCPPacket): void {
     const port = this.ports.get(iface);
     if (!port) return;
@@ -1022,6 +1034,21 @@ export abstract class EndHost extends Equipment {
     });
   }
 
+  /**
+   * Aller chercher un bail DHCPv6 parce qu'une annonce l'a demandé.
+   *
+   * Ne redemande pas si l'interface porte déjà un bail : une annonce
+   * arrive à chaque sollicitation et à chaque lien qui monte, et une
+   * demande par annonce ferait tourner l'échange en boucle pour un
+   * résultat déjà obtenu.
+   */
+  private demanderBailDhcpv6(iface: string): void {
+    const port = this.ports.get(iface);
+    if (!port) return;
+    if (port.getIPv6Addresses().some((e) => e.origin === 'dhcpv6')) return;
+    try { this.requestDhcpv6Lease(iface); } catch { /* pas de serveur : on reste sans bail */ }
+  }
+
   /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY. Returns a verbose transcript, or '' on failure/no verbose. */
   requestDhcpv6Lease(iface: string, verbose = false): string {
     const port = this.ports.get(iface);
@@ -1053,6 +1080,8 @@ export abstract class EndHost extends Equipment {
     const lease = reply.ia!.addresses[0];
     port.addDHCPv6Address(new IPv6Address(lease.address), 64);
     if (verbose) lines.push(`DHCPv6 REPLY of ${lease.address}`);
+    this.onDhcpv6LeaseConfigured(
+      iface, reply.dnsServers ?? [], reply.domainList?.[0] ?? null);
     return lines.join('\n');
   }
 
@@ -2475,8 +2504,26 @@ export abstract class EndHost extends Equipment {
   protected addPort(port: Port): void {
     super.addPort(port);
     port.onLinkChange((state) => {
-      if (state === 'down') this.abortSessionsBrokenByLinkLoss();
+      if (state === 'down') { this.abortSessionsBrokenByLinkLoss(); return; }
+      this.soliciterRouteurs(port);
     });
+  }
+
+  /**
+   * RFC 4861 §6.3.7 : une interface qui s'active sollicite les routeurs
+   * du lien au lieu d'attendre la prochaine annonce non sollicitée, qui
+   * peut être à plusieurs centaines de secondes.
+   *
+   * `sendRouterSolicitation` existait, complet et correct, et n'avait
+   * qu'un seul appelant dans tout le dépôt : `ipconfig /renew6` sous
+   * Windows. Aucun hôte ne sollicitait donc jamais de lui-même, et comme
+   * le routeur n'annonçait pas non plus, l'autoconfiguration ne pouvait
+   * pas avoir lieu : la réception SLAAC était écrite et n'était jamais
+   * atteinte.
+   */
+  private soliciterRouteurs(port: Port): void {
+    if (!port.isIPv6Enabled() || !port.getLinkLocalIPv6()) return;
+    this.sendRouterSolicitation(port.getName());
   }
 
   /** True when a peer address still has a usable egress interface. */
@@ -4237,7 +4284,13 @@ export abstract class EndHost extends Equipment {
 
     // If router lifetime > 0, consider as default router
     if (ra.routerLifetime > 0 && !this.defaultGateway6) {
-      this.setDefaultGateway6(ipv6.sourceIP);
+      // L'indice de zone n'est PAS sur le fil : il ne fait pas partie
+      // des 128 bits, et il ne veut rien dire chez le voisin. Adopter
+      // tel quel le `%GigabitEthernet0/0` du routeur donnait à l'hôte
+      // une route par défaut désignant une interface qu'il n'a pas.
+      // Un vrai récepteur note l'interface par laquelle il a entendu.
+      this.setDefaultGateway6(
+        new IPv6Address(ipv6.sourceIP.getHextets(), portName));
     }
 
     // Process prefix information for SLAAC
@@ -4272,6 +4325,18 @@ export abstract class EndHost extends Equipment {
         }
       }
     }
+
+    // RFC 4861 §4.2 / RFC 8415 §5 : le drapeau M dit à l'hôte d'aller
+    // chercher une adresse en DHCPv6. Le client existe, complet, et
+    // n'était déclenché que par un `dhclient -6` tapé à la main : le bit
+    // voyageait sans que personne l'exécute, de sorte qu'un routeur
+    // configuré en `managed` ne servait aucune adresse tant qu'on ne
+    // demandait pas soi-même.
+    //
+    // Le drapeau A du préfixe reste indépendant (RFC 4862 §5.5.3) :
+    // un hôte peut légitimement porter les deux adresses, et c'est ce
+    // que fait un vrai hôte sous une annonce qui pose M et A ensemble.
+    if (ra.managedFlag) this.demanderBailDhcpv6(portName);
   }
 
   // ─── NDP Resolution (IPv6 equivalent of ARP) ────────────────────

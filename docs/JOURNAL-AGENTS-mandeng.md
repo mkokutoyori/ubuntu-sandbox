@@ -25,6 +25,227 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### DHCPv6 : le resolveur appris par le bail — LIVRÉ
+
+**Agent** : session « logging ». Suite du lot précédent, même famille.
+
+**Le défaut, établi contre un témoin** : un `dns-server` configuré sous
+`ipv6 dhcp pool` est porté par le pool, transporté par le paquet
+(`DHCPv6Packet.dnsServers` existe et le serveur le remplit) et **jeté à
+l'arrivée** — `requestDhcpv6Lease` ne lisait de sa REPLY que l'adresse.
+`/etc/resolv.conf` restait vide. Le témoin IPv4, monté dans le même
+laboratoire, l'écrit bien : sans lui, « resolv.conf est vide » ne
+distingue pas un client v6 défaillant d'un simulateur qui n'écrirait ce
+fichier pour personne.
+
+**Un crochet manquait** : `onDhcpLeaseConfigured` n'avait pas de jumeau
+v6. `onDhcpv6LeaseConfigured` porte l'information jusqu'à
+`LinuxMachine`, seul détenteur du VFS.
+
+**Les serveurs v6 rejoignent ceux qui sont déjà là** au lieu de les
+remplacer : le chemin v4 réécrit le fichier entier, ce qui lui suffit
+puisqu'il est seul, mais une machine à double pile prend ses deux baux
+et le second effacerait silencieusement le résolveur du premier.
+
+**Reste ouvert** : le drapeau O (`INFORMATION-REQUEST`), que
+`DHCPv6Server` ne traite pas.
+
+**Fichiers touchés** : `devices/EndHost.ts`, `devices/LinuxMachine.ts`.
+
+**Mesures.** `dhcpv6-dns-resolv.test.ts` (6 cas) discriminé par
+`git stash` : **4 tombent** avant ; les 2 autres sont le témoin IPv4 et
+le garde-fou du pool sans DNS. 103 suites DHCP/DNS/IPv6/NSS vertes
+(1 134 cas).
+
+---
+
+### Le drapeau M déclenche DHCPv6 — LIVRÉ
+
+**Agent** : session « logging ».
+
+**Correction d'abord** : j'ai écrit dans l'entrée précédente que ce dépôt
+n'avait pas de client DHCPv6. C'est faux, et si vous l'avez lu, ignorez-le
+— `EndHost.requestDhcpv6Lease` est un client complet et il fonctionne.
+Mon `grep` cherchait un fichier ; c'est une méthode.
+
+**Le manquement réel, plus étroit** : le client n'était déclenché que par
+un `dhclient -6` tapé à la main. Le drapeau M d'une annonce de routeur —
+« va chercher ton adresse en DHCPv6 », RFC 4861 §4.2 — voyageait sur le
+fil sans que personne l'exécute, de sorte qu'un routeur configuré en
+`managed` ne servait aucune adresse tant que l'opérateur ne la demandait
+pas lui-même. `handleRouterAdvertisement` le déclenche désormais, et ne
+redemande pas quand l'interface porte déjà un bail : une annonce arrive
+à chaque sollicitation et à chaque lien qui monte, donc une demande par
+annonce viderait le pool toute seule.
+
+Le drapeau A du préfixe reste indépendant (RFC 4862 §5.5.3) : un hôte
+porte légitimement les deux adresses, et c'est ce qu'on observe.
+
+**Reste ouvert, et c'est le vrai manquement de la famille** : le drapeau
+O n'a aucun consommateur. Il demande une configuration ANNEXE (DNS, NTP)
+par `INFORMATION-REQUEST`, un message que `DHCPv6Server` ne traite pas.
+
+**Fichiers touchés** : `devices/EndHost.ts` seulement.
+
+**Mesures.** `dhcpv6-drapeau-managed.test.ts` (6 cas) discriminé par
+`git stash` : **2 tombent** avant — les deux qui prouvent la fonction ;
+les 4 autres sont les gardes-fous négatifs et la non-régression de
+`dhclient -6`, qui passent des deux côtés par construction.
+
+---
+
+### Commandes `ipv6 nd` — LIVRÉ
+
+**Agent** : session « logging ». Suite immédiate du lot SLAAC : une fois
+l'annonce de routeur rendue réelle, j'ai mesuré les commandes censées la
+gouverner. La moitié était un décor.
+
+| Commande | État mesuré |
+|---|---|
+| `ipv6 nd managed-config-flag` | rangée sur `(port as any).ipv6NdManagedFlag`, **lue par personne** — le bit partait toujours à 0 |
+| `ipv6 nd other-config-flag` | idem |
+| `ipv6 nd ra suppress` | **n'existait pas** (`% Invalid input detected`) |
+| durée de vie du routeur | figée à 1800 s, aucune commande pour la régler |
+
+La cause des deux premières est un magasin de trop : l'annonce se
+construit depuis `raConfig`, jamais depuis la propriété du port.
+
+**`suppress` et `suppress all` sont distingués comme IOS les distingue**,
+et la différence est observable : sous `suppress` seul, l'annonce
+spontanée se tait mais la réponse à une sollicitation demeure — un hôte
+qui arrive s'autoconfigure quand même. Sous `suppress all`, rien ne part.
+
+**Une durée de vie nulle ne coupe pas l'autoconfiguration** (RFC 4861
+§4.2) : l'hôte garde son adresse et ne pose pas de route par défaut.
+
+**CORRECTION — ce que j'ai écrit ici d'abord était faux.** J'avais
+annoncé « serveur DHCPv6 sans aucun client », sur la foi d'un `grep` qui
+ne trouvait pas de fichier client. Il n'y a pas de fichier : il y a une
+méthode, `EndHost.requestDhcpv6Lease`, et c'est un vrai
+SOLICIT / ADVERTISE / REQUEST / REPLY qui fonctionne de bout en bout.
+Le manquement réel était plus étroit — le client n'était déclenché que
+par un `dhclient -6` tapé à la main, donc le drapeau M voyageait sans
+que personne l'exécute. C'est corrigé dans le lot suivant.
+
+**Fichiers touchés** : `devices/router/IPv6DataPlane.ts`,
+`devices/Router.ts`, `shells/cisco/CiscoConfigCommands.ts`.
+
+**Mesures.** `ipv6-nd-ra-controles.test.ts` (11 cas) : **5 tombent**
+avant correctif ; les 6 autres passent des deux côtés pour une raison
+écrite dans son en-tête plutôt que passée sous silence. 81 suites
+IPv6/ND/OSPF/config vertes (1 173 cas).
+
+---
+
+### SLAAC / Router Advertisement IPv6 — LIVRÉ
+
+**Agent** : session « logging ». Troisième lot de la série « ce qui
+devrait traverser le fil et ne le traverse pas ».
+
+**Mesuré d'abord** : un hôte Linux câblé à un routeur portant
+`ipv6 address 2001:db8::1/64` et `ipv6 unicast-routing` n'obtenait que
+son adresse de lien-local. Une seule trame passait — un CDP.
+
+**Toute la chaîne était pourtant écrite** — sollicitation, réponse,
+annonce, et la réception SLAAC complète (adresse EUI-64, route on-link,
+routeur par défaut). Il manquait exactement les **deux déclencheurs** :
+`sendRouterSolicitation` n'avait qu'un appelant dans tout le dépôt
+(`ipconfig /renew6` sous Windows), et le minuteur d'annonce n'est armé
+par personne. L'hôte sollicite désormais à l'activation du lien
+(RFC 4861 §6.3.7) et le routeur annonce quand une interface prend un
+préfixe global et quand son lien s'active (§6.2.4) — le câble arrivant
+souvent après la configuration d'adresse.
+
+**Trouvé parce que le chemin s'est mis à fonctionner** : l'hôte adoptait
+le routeur par défaut avec l'indice de zone de l'ÉMETTEUR
+(`%GigabitEthernet0/0`), donc une route désignant une interface qu'il
+n'a pas. L'indice de zone n'est jamais sur le fil.
+
+**Trois protocoles soupçonnés à tort, et innocentés par mesure** : CDP
+et STP (mon abonnement au bus était posé APRÈS le câblage, donc la
+rafale de mise en service était déjà passée — ils émettent bien, 9 et 4
+trames) et NTP (scrutation à 64 s ; sous horloge virtuelle avancée
+d'autant, `show ntp status` répond `Clock is synchronized, stratum 4`).
+LACP, DTP, VTP, VRRP, HSRP, LLDP et BGP échangent aussi de vraies
+trames. **Je le signale parce que la première lecture était fausse** :
+si vous mesurez le fil, abonnez-vous AVANT de câbler.
+
+**Fichiers touchés** : `devices/EndHost.ts`,
+`devices/router/IPv6DataPlane.ts`, `devices/Router.ts` (une ligne).
+
+**Mesures.** `slaac-ra-vrais-paquets.test.ts` (9 cas) discriminé par
+`git stash` : **7 tombent** avant. 148 suites IPv6/NDP/DNS/routage
+vertes (2 174 cas).
+
+---
+
+### VRP — lot V15 : VRRP, un magasin, une grammaire, une vue — LIVRÉ
+
+**Agent** : session « CLI Huawei VRP ». Suite du lot V14, même méthode :
+comparer les deux plateformes entre elles pour le même objet. Détail
+complet dans `PRD-CLI-Fidelite-VRP.md` §24.
+
+**Périmètre traité** : tout ce qui touche VRRP côté Huawei — la
+grammaire `vrrp vrid …`, les vues `display vrrp [brief|statistics|
+interface X]`, et le rendu des lignes `vrrp` dans la configuration, sur
+le **routeur** comme sur le **commutateur**.
+
+**Fichiers touchés** :
+
+| Fichier | Nature |
+|---|---|
+| `shells/huawei/huaweiVrrpViews.ts` | **Nouveau** — la grammaire et les vues, une fois pour les deux |
+| `devices/router/redundancy/HuaweiVrrpService.ts` | **Supprimé** — un écrivain, zéro lecteur |
+| `devices/Router.ts`, `equipment/RouterServiceCapabilities.ts` | Le câblage de la façade retiré |
+| `shells/huawei/HuaweiDisplayCommands.ts` | Les vues et le rendu de configuration du routeur |
+| `shells/HuaweiVRPShell.ts` | L'analyse de `vrrp` en vue d'interface, et `admin-vrrp` |
+| `shells/HuaweiSwitchShell.ts` | Idem côté commutateur, et ses vues |
+| `network/vrrp/types.ts` | Les champs de configuration que l'agent ne portait pas |
+
+**Ce que j'ai mesuré avant de toucher** (tout est reproductible avec les
+commandes citées) :
+**Trois tests existants portaient une hypothèse fausse** et sont
+corrigés, jamais le code — comme le dépôt l'a déjà fait pour
+`vtp-md5-password.test.ts` : `switch-vrrp.test.ts` (MAC virtuelle au
+format IEEE sur une machine VRP), `switch-fhrp-track.test.ts` (`Track
+IF : 1`, un compte là où VRP nomme l'interface suivie) et
+`huawei-parity.test.ts` (2 cas fixant `interface GE0/0/0`, le nom court
+interne, dans un bloc de **configuration**). Le tableau du §24.5 dit
+pour chacun pourquoi. Les cas Cisco voisins gardent leur forme IEEE, qui
+est celle d'IOS ; `CiscoSwitchShell.ts:4299` n'est pas touché.
+
+**Ce qui vous concerne peut-être** :
+
+- **`network/vrrp/types.ts` est partagé avec Cisco.** `VrrpGroupRuntime`
+  gagne quatre champs optionnels (`preemptDelaySec`, `description`,
+  `authMode`, `authKey`), initialisés dans `defaultGroupRuntime`.
+  Ajout pur : aucune vue Cisco ne les lit, rien ne change de ce côté.
+- **`getHuaweiVrrpService` n'existe plus** sur `Router` ni dans
+  `RouterServiceCapabilities`. Si vous aviez du travail en cours dessus,
+  l'agent (`getVrrpAgent`) porte désormais tout, champs de configuration
+  compris.
+- **Si vous rendez un bloc VRRP quelque part**, `huaweiVrrpViews.ts`
+  exporte `rendreDisplayVrrp`, `rendreDisplayVrrpBrief`,
+  `rendreDisplayVrrpStatistics` et `lignesConfigVrrp`. Je n'ai converti
+  que les vues Huawei.
+
+**Reste ouvert, et nommé plutôt que tu** : le moteur ne diffère aucune
+prise de rôle (`preempt-mode timer delay`) et n'authentifie rien
+(`authentication-mode`) — les deux valeurs sont portées et rejouées, pas
+agies ; les compteurs d'annonces de `display vrrp statistics` sont à
+zéro parce que rien ne les compte ; et le mVRRP (`admin-vrrp`) est
+refusé en nommant la brique absente. Tout cela est du travail de
+protocole, pas de CLI.
+
+**Mesures.** 131 suites connexes vertes (2 224 cas), dont toute la
+famille FHRP (14 suites, 133 cas). Un échec préexistant et sans rapport
+(`probe-debug-02-collecte.test.ts`, SPAN), vérifié identique sur `HEAD`.
+`huawei-vrrp-un-magasin.test.ts` (20 cas) discriminé par `git stash` :
+**17 tombent** avant. Typecheck : jeu d'erreurs identique (212). Lint :
+172 avant, **172 après**.
+
+---
+
 ### mDNS/LLMNR sur leurs groupes IPv6 — LIVRÉ
 
 **Agent** : session « logging ». Suite directe du lot précédent : le
@@ -1988,60 +2209,6 @@ deux imports morts, retires. Aucun test existant modifie.
 
 ---
 
-## Livré
-
-### CLI Huawei VRP — **V14** : une adresse MAC s'ecrit comme VRP l'ecrit
-
-**Agent** : session « routage/CLI ».
-**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §23.
-
-Trouve en poursuivant la famille des tableaux, avec de VRAIES entrees —
-c'est ce qui l'a rendu visible, un tableau vide ne debordant jamais.
-
-```
-[switch] display arp
-10.0.10.2       02:00:00:00:00:1120        dynamicGigabitEthernet0/0/1
-[switch] display mac-address
-02:00:00:00:00:1110         GigabitEthernet0/0/1dynamic
-```
-
-**Trois champs colles**, la ligne illisible — et c'est la ligne que tout
-exercice d'ARP fait afficher.
-
-Les colonnes sont taillees pour une MAC de QUATORZE caracteres, comme le
-reste de ces tableaux qui reproduit VRP ; le rendu en produisait
-DIX-SEPT, au format IEEE.
-
-**Ce qui rend le diagnostic certain sans reference exterieure** : la
-machine ACCEPTAIT deja l'ecriture a tirets. `arp static 192.168.1.50
-aaaa-bbbb-cccc` passe depuis toujours et la configuration rendue la
-reecrit a l'identique — mais la vue affichait `aa:aa:bb:bb:cc:cc`. Elle
-lisait une ecriture qu'elle n'imprimait jamais. C'est cette
-contradiction que la suite verifie, plutot que le format lui-meme.
-
-**Deux colonnes trop etroites, trouvees avec** : `TYPE` faisait sept
-caracteres sur le commutateur, soit exactement la longueur de `dynamic` ;
-`Learned-From` en faisait quinze pour un nom de vingt. Les deux tables
-rejoignent `huaweiTableLayouts.ts` — donc toujours VOTRE `TextTable`.
-
-**Trouve avec** : `display arp` du routeur rendait `GE0/0/0`, le nom
-court interne. La regle des lots V3 et V11 n'avait pas atteint cette vue.
-
-**Fichiers touches** : `shells/huawei/huaweiTableLayouts.ts`,
-`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`.
-
-**Si vous imprimez une MAC quelque part cote VRP**, `huaweiMacAddress()`
-est exporte du module de mises en page. Je n'ai converti que les vues
-ARP et la table MAC : les autres sites, s'il y en a, sont a vous ou a un
-lot suivant.
-
-**Mesures.** 91 suites connexes vertes (1 299 cas), suites ARP et table
-MAC comprises. `huawei-adresse-mac.test.ts` (10 cas) discrimine par
-`git stash` : **8 tombent** avant. Typecheck : jeu d'erreurs identique
-(192). Lint : 37 avant, **36 apres**. Aucun test existant modifie.
-
----
-
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -2058,7 +2225,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V14 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

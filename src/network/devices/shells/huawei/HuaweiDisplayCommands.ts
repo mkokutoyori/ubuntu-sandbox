@@ -12,13 +12,17 @@ import type { CommandTrie } from '../CommandTrie';
 import { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
 import { nqaRunningConfigLines } from './HuaweiNqaCommands';
 import {
-  getHuaweiRoutingExtras, getHuaweiVrrpService, getSwitchSecurityService,
+  getHuaweiRoutingExtras, getSwitchSecurityService,
 } from '../../../equipment/RouterServiceCapabilities';
 import { IPAddress } from '../../../core/types';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
-import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName } from '../cli-utils';
+import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName, HUAWEI_ERRORS } from '../cli-utils';
+import {
+  AUCUN_GROUPE, groupesDeLInterface, lignesConfigVrrp,
+  rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
+} from './huaweiVrrpViews';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import {
   type LigneIpBrief, type LigneInterface, type LigneArp,
@@ -1075,7 +1079,10 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
   const desc = router.getInterfaceDescription(portName);
   const lines = [
     '#',
-    `interface ${portName}`,
+    // Le nom canonique, comme la configuration complete le rend deja :
+    // cette vue-ci ecrivait `interface GE0/0/0`, le nom court interne,
+    // dans un bloc de CONFIGURATION (lots V3/V11, puis V15).
+    `interface ${huaweiDisplayInterfaceName(portName)}`,
   ];
   if (desc) lines.push(` description ${desc}`);
   if (ip && mask) {
@@ -1086,15 +1093,21 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
 
   lines.push(...renderHuaweiInterfaceExtras(router, port, portName));
 
-  const vrrp = getHuaweiVrrpService(router);
-  if (vrrp) lines.push(...vrrp.asInterfaceRunningConfigLines(portName));
-
   lines.push('#');
   return lines.join('\n');
 }
 
+/**
+ * Ce que les deux rendus de configuration ajoutent apres l'adresse.
+ *
+ * Les lignes `vrrp` y entrent au lot V15 parce que les deux chemins qui
+ * rendaient une configuration se contredisaient : le complet n'en
+ * rendait AUCUNE, celui par interface les rendait toutes. Les mettre ici
+ * est ce qui rend le desaccord impossible plutot que rattrape.
+ */
 export function renderHuaweiInterfaceExtras(router: Router, port: any, portName: string): string[] {
   const lines: string[] = [];
+  lines.push(...lignesConfigVrrp(huaweiVrrpAgent(router)?.listGroups() ?? [], portName));
   const extra = router._getOSPFExtraConfig();
   const pending = extra.pendingIfConfig?.get(portName) as any;
   if (pending?.tunnelProtocol) lines.push(` tunnel-protocol ${pending.tunnelProtocol}`);
@@ -1130,18 +1143,6 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
 
 function huaweiVrrpAgent(router: Router): import('../../../vrrp/VrrpAgent').VrrpAgent | undefined {
   return (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
-}
-
-function huaweiVrrpLiveState(
-  router: Router,
-  ifName: string,
-  vrid: number,
-): 'Initialize' | 'Backup' | 'Master' | undefined {
-  const live = huaweiVrrpAgent(router)?.getGroup(ifName, vrid);
-  if (!live) return undefined;
-  if (live.state === 'master') return 'Master';
-  if (live.state === 'backup') return 'Backup';
-  return 'Initialize';
 }
 
 /**
@@ -1370,34 +1371,23 @@ export function registerDisplayCommands(
     return [...pools.values()].map(p => `${p.name}: ${p.startIP} - ${p.endIP}`).join('\n');
   });
 
-  trie.register('display vrrp', 'Display VRRP groups', () => {
-    const svc = getHuaweiVrrpService(getRouter());
-    const groups = svc?.list() ?? [];
-    if (groups.length === 0) return 'Info: No VRRP backup group is configured.';
-    return groups.map(g => [
-      `${g.ifName} | Virtual Router ${g.vrid}`,
-      `    State : ${huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state}`,
-      `    Virtual IP : ${g.virtualIps.join(', ') || '<none>'}`,
-      `    Priority : ${g.priority}`,
-      `    Advertisement timer : ${g.advertiseTimerSec} seconds`,
-      `    Preempt mode : ${g.preemptMode ? 'Yes' : 'No'}${g.preemptDelaySec > 0 ? ' (delay ' + g.preemptDelaySec + 's)' : ''}`,
-      `    Authentication : ${g.authMode}`,
-      g.description ? `    Description : ${g.description}` : '',
-    ].filter(Boolean).join('\n')).join('\n');
-  });
+  // Lot V15 : ces vues lisaient la facade `HuaweiVrrpService` — un
+  // second magasin — et rendaient donc une priorite que le `track`
+  // n'avait jamais fait bouger, sous le nom court interne de
+  // l'interface. Elles lisent l'agent, par le rendu partage avec le
+  // commutateur.
+  trie.register('display vrrp', 'Display VRRP groups', () =>
+    rendreDisplayVrrp(huaweiVrrpAgent(getRouter())?.listGroups() ?? []));
   trie.registerGreedy('display vrrp interface', 'Display VRRP on interface', (args) => {
-    const svc = getHuaweiVrrpService(getRouter());
-    const ifName = args.join(' ');
-    const groups = svc?.list().filter(g => g.ifName === ifName) ?? [];
-    if (groups.length === 0) return `Info: No VRRP group on ${ifName}`;
-    return groups.map(g => `VRID ${g.vrid}: state=${huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state} virtual-ip=${g.virtualIps.join(',')}`).join('\n');
+    const demande = args.join(' ');
+    const ifName = resolveHuaweiInterfaceName(getRouter(), demande);
+    if (!ifName) return HUAWEI_ERRORS.WRONG(`display vrrp interface ${demande}`, 'display vrrp interface '.length);
+    const groups = groupesDeLInterface(huaweiVrrpAgent(getRouter()), ifName);
+    if (groups.length === 0) return AUCUN_GROUPE;
+    return rendreDisplayVrrp(groups);
   });
-  trie.register('display vrrp statistics', 'Display VRRP statistics', () => {
-    const svc = getHuaweiVrrpService(getRouter());
-    const groups = svc?.list() ?? [];
-    if (groups.length === 0) return 'Info: No VRRP groups';
-    return groups.map(g => `${g.ifName} | VRID ${g.vrid} | Adv sent: 0 received: 0 | Track triggers: ${g.trackEntries.length}`).join('\n');
-  });
+  trie.register('display vrrp statistics', 'Display VRRP statistics', () =>
+    rendreDisplayVrrpStatistics(huaweiVrrpAgent(getRouter())?.listGroups() ?? []));
 
   trie.register('display bfd configuration all', 'Display BFD configuration', () => {
     const svc = (getRouter() as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();
@@ -1438,20 +1428,8 @@ export function registerDisplayCommands(
   trie.registerGreedy('display traffic behavior', 'Display traffic behaviors', () => 'Info: No traffic behaviors configured');
   trie.registerGreedy('display traffic policy', 'Display traffic policies', () => 'Info: No traffic policies configured');
 
-  trie.register('display vrrp brief', 'Display VRRP brief', () => {
-    const svc = getHuaweiVrrpService(getRouter());
-    const groups = svc?.list() ?? [];
-    const states = groups.map(g => huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state);
-    const master = states.filter(s => s === 'Master').length;
-    const backup = states.filter(s => s === 'Backup').length;
-    const total = groups.length;
-    const lines = [
-      `Total: ${total}     Master: ${master}     Backup: ${backup}     Non-active: ${total - master - backup}`,
-      'VRID  State        Interface                Type     Virtual IP',
-    ];
-    groups.forEach((g, idx) => lines.push(`${String(g.vrid).padEnd(6)}${states[idx].padEnd(13)}${g.ifName.padEnd(25)}Normal   ${g.virtualIps.join(',')}`));
-    return lines.join('\n');
-  });
+  trie.register('display vrrp brief', 'Display VRRP brief', () =>
+    rendreDisplayVrrpBrief(huaweiVrrpAgent(getRouter())?.listGroups() ?? []));
 
   trie.register('display ssh server status', 'Display SSH server status', () => {
     const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
