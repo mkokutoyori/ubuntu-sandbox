@@ -124,6 +124,15 @@ import { DmvpnService } from './router/nhrp/DmvpnService';
 import { NhrpEngine } from '../nhrp/NhrpEngine';
 import { IP_PROTO_NHRP, type NhrpPacket } from '../nhrp/types';
 import { RouterManagementService } from './router/management/RouterManagementService';
+import { CiscoHttpService } from './router/management/CiscoHttpService';
+import { CiscoHttpUi } from './router/management/CiscoHttpUi';
+import { Http1ServerSession } from '../http/http1/Http1ServerSession';
+import { HttpsServerSession } from '../http/https/HttpsServerSession';
+import type { HttpMessage } from '../http/semantics/types';
+import { generateSelfSignedCertificate } from '../pki/SelfSignedCertificate';
+import type { X509Certificate } from '../pki/X509Certificate';
+import type { PkiPrivateKey } from '../pki/PkiKeyPair';
+import { synthTcpPacket } from './router/vty/VtyIncomingPolicy';
 import { SnmpService } from './router/management/SnmpService';
 import { EemService } from './router/eem/EemService';
 import { EemEngine, type EemHost } from './router/eem/EemEngine';
@@ -3604,6 +3613,156 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getManagementService(): RouterManagementService {
     if (!this._managementService) this._managementService = new RouterManagementService();
     return this._managementService;
+  }
+
+  /**
+   * Le serveur HTTP d'IOS (`docs/PRD-Serveur-HTTP-Cisco.md`). Il vit sur
+   * l'ÉQUIPEMENT et non sur le shell, pour la raison que `PRD-IP-SLA.md`
+   * a déjà rencontrée : `createVtyShell()` fabrique un shell par session,
+   * donc un `ip http server` tapé en SSH serait invisible depuis la
+   * console de la même machine, et la configuration rendue — qui décrit
+   * l'équipement — ne pourrait pas le voir.
+   */
+  private _httpService: CiscoHttpService | null = null;
+  getHttpService(): CiscoHttpService {
+    if (!this._httpService) this._httpService = new CiscoHttpService();
+    return this._httpService;
+  }
+
+  /**
+   * Ouvre ou ferme les ports du serveur web pour qu'ils reflètent la
+   * configuration. Appelé par CHAQUE commande `ip http` — y compris
+   * celles qui changent le port — parce qu'un serveur qui resterait sur
+   * l'ancien port après `ip http port 8080` afficherait une configuration
+   * que la machine ne respecte pas.
+   */
+  _refreshHttpListeners(): void {
+    const svc = this.getHttpService();
+    const bound = new Set(this.tcpv2.listListeners().map((l) => l.localPort));
+
+    for (const port of [...this._httpBoundPorts]) {
+      const wanted = (svc.enabled && port === svc.port)
+        || (svc.secureEnabled && port === svc.securePort);
+      if (wanted) continue;
+      if (bound.has(port)) this._httpSessions.get(port)?.stop();
+      this._httpSessions.delete(port);
+      this._httpBoundPorts.delete(port);
+    }
+
+    if (svc.enabled && !this._httpBoundPorts.has(svc.port)) {
+      this.bindHttpListener(svc.port, false);
+    }
+    if (svc.secureEnabled && !this._httpBoundPorts.has(svc.securePort)) {
+      this.bindHttpListener(svc.securePort, true);
+    }
+  }
+
+  private readonly _httpBoundPorts = new Set<number>();
+  private readonly _httpSessions = new Map<number, { stop(): void }>();
+  private _httpUi: CiscoHttpUi | null = null;
+  private _httpTlsMaterial: ReturnType<typeof generateSelfSignedCertificate> | null = null;
+
+  private buildHttpUi(): CiscoHttpUi {
+    if (this._httpUi) return this._httpUi;
+    const svc = this.getHttpService();
+    this._httpUi = new CiscoHttpUi({
+      hostname: () => this.hostname,
+      authMethod: () => svc.authMethod,
+      permitted: (ip) => this.httpAccessPermitted(ip),
+      authenticate: (method, user, password) => this.authenticateHttp(method, user, password),
+      runExec: (command, level, user) => this.runHttpExec(command, level, user),
+    });
+    return this._httpUi;
+  }
+
+  /**
+   * Le serveur en clair et le serveur chiffré servent la MÊME interface :
+   * `ip http secure-server` change le transport, pas ce qu'on obtient.
+   * `identity` nomme le processus pour que `show tcp brief` et un scan de
+   * ports désignent un propriétaire, comme pour les autres écouteurs.
+   */
+  private bindHttpListener(port: number, secure: boolean): void {
+    const ui = this.buildHttpUi();
+    const handler = (request: HttpMessage, peer?: { ip: string; port: number }) =>
+      ui.handle(request, peer?.ip ?? '0.0.0.0');
+    const identity = { processName: secure ? 'HTTPS CORE' : 'HTTP CORE', pid: 1 };
+
+    const session = secure
+      ? new HttpsServerSession(this.tcpv2, port, this.httpTlsConfig(), handler, this.getBus())
+      : new Http1ServerSession(this.tcpv2, port, handler, this.getBus());
+    session.start(identity);
+    this._httpSessions.set(port, session);
+    this._httpBoundPorts.add(port);
+  }
+
+  /**
+   * IOS fabrique un certificat auto-signé la première fois que le
+   * serveur sécurisé démarre. Il est gardé pour que deux démarrages
+   * successifs présentent le MÊME certificat — en présenter un nouveau à
+   * chaque `no ip http secure-server`/`ip http secure-server` se lirait,
+   * chez le client, comme une usurpation.
+   */
+  private httpTlsConfig(): { serverCert: X509Certificate; serverPrivateKey: PkiPrivateKey } {
+    if (!this._httpTlsMaterial) {
+      this._httpTlsMaterial = generateSelfSignedCertificate(
+        `CN = ${this.hostname}`, { now: Date.now(), subjectAltName: [`DNS:${this.hostname}`] });
+    }
+    return {
+      serverCert: this._httpTlsMaterial.cert,
+      serverPrivateKey: this._httpTlsMaterial.privateKey,
+    };
+  }
+
+  private httpAccessPermitted(sourceIp: string): boolean {
+    const acl = this.getHttpService().accessClass;
+    if (!acl) return true;
+    const src = IPAddress.tryParse(sourceIp);
+    if (!src) return true;
+    const dst = IPAddress.tryParse(
+      this.getPorts().map((p) => p.getIPAddress()?.toString())
+        .find((ip): ip is string => !!ip) ?? '0.0.0.0') ?? new IPAddress('0.0.0.0');
+    const verdict = this.aclEngine.evaluateACLByName(acl, synthTcpPacket(src, dst));
+    // Une ACL qui n'existe pas ne filtre rien : IOS accepte la référence
+    // avant la liste (même règle que `ip nat inside source list`), donc
+    // un serveur muet le temps qu'on écrive l'ACL serait un piège.
+    return verdict === null || verdict === 'permit';
+  }
+
+  private async authenticateHttp(
+    method: 'enable' | 'local' | 'aaa' | 'tacacs', user: string, password: string,
+  ): Promise<{ ok: boolean; privilege: number }> {
+    if (method === 'enable') {
+      // `enable` ignore le nom d'utilisateur : le mot de passe EST le
+      // secret d'activation, et l'accès obtenu est de niveau 15.
+      const secret = this.getEnableSecret();
+      const ok = secret !== null && password.length > 0 && secret.value === password;
+      return { ok, privilege: ok ? 15 : 1 };
+    }
+    if (method === 'local') {
+      const ok = this.getCredentialStore().authenticate(user, password);
+      return { ok, privilege: ok ? (this.getCredentialStore().lookup(user)?.privilege ?? 1) : 1 };
+    }
+    const ok = await this.authenticateViaAaa(user, password);
+    return { ok, privilege: ok ? (this.getCredentialStore().lookup(user)?.privilege ?? 15) : 1 };
+  }
+
+  /**
+   * L'exec derrière l'URL passe par le MÊME shell que la console : une
+   * machine dont `show version` répondrait deux textes selon la porte
+   * serait pire qu'une machine sans serveur web.
+   */
+  private async runHttpExec(command: string, level: number, user: string): Promise<string> {
+    if (!command) return '';
+    const shell = this.createVtyShell(user);
+    try {
+      const shellAtLevel = shell as unknown as {
+        beginExecSession?: (lvl: number, u?: string) => void;
+      };
+      shellAtLevel.beginExecSession?.(level, user);
+      return String(await shell.execute(command));
+    } finally {
+      shell.dispose();
+    }
   }
 
   private _snmpService: import('./router/management/SnmpService').SnmpService | null = null;

@@ -300,3 +300,119 @@ Discrimination par `git stash` : **23 des 27 tombent** avant.
 
 **Mesures.** 131 suites connexes vertes (2 874 cas). Typecheck : jeu
 d'erreurs identique (213). Aucun test existant modifié.
+
+---
+
+## 5. N4 — Livré : Windows (W32Time)
+
+### 5.1 Le point de départ
+
+`w32tm` était un talon **d'une seule branche** : toute sous-commande
+autre que `/query /status` renvoyait la **chaîne littérale**
+`w32tm /query /status`.
+
+```
+C:\> w32tm /query /peers
+w32tm /query /status
+C:\> w32tm /resync /force
+w32tm /query /status
+```
+
+Et `/query /status` lui-même était un bloc fixe de quatre lignes :
+`Stratum: 3` **écrit en dur** sur une machine qui n'interrogeait
+personne, et `Source` valant le PDC du domaine quoi qu'ait configuré
+l'opérateur — donc `w32tm /config /manualpeerlist` n'avait **aucun**
+effet observable. `Get-TimeZone`/`Set-TimeZone` n'existaient ni en cmd
+ni en PowerShell : le §6.3 du tutoriel ne pouvait pas se suivre.
+
+### 5.2 Ce qui est fait
+
+**Pas de troisième moteur.** W32Time pilote le `NtpAgent`, comme
+chronyd. Ce qu'il apporte est ce que W32Time apporte vraiment : la liste
+de pairs, les drapeaux de synchronisation, et la notion de « source
+fiable » qui structure toute la hiérarchie AD du §6.1.
+
+Les huit sous-commandes du tutoriel sont réelles : `/query
+{status|peers|configuration|source}`, `/config`, `/resync`,
+`/stripchart`, `/monitor`.
+
+### 5.3 Quatre décisions, et leur raison
+
+**Les drapeaux choisissent vraiment le mode.** `0x8` crée un client,
+`0x1` un pair symétrique — les bits se cumulent (`0x9` =
+SpecialInterval|Client), donc c'est le **bit de mode** qui décide, pas
+la valeur entière. `0x2` (broadcast) est **refusé** plutôt que rangé
+sans effet : ce simulateur n'a pas de mode broadcast NTP, et l'accepter
+ferait croire à une écoute qui n'existe pas.
+
+**`/syncfromflags:domhier` ignore la liste manuelle.** C'est la règle
+que le §6.1 énonce — seul le PDC Emulator pointe vers l'extérieur — et
+la faire agir est ce qui rend le lab **vérifiable** au lieu d'être une
+phrase.
+
+**`/config` sans `/update` enregistre sans appliquer.** C'est la raison
+d'être du drapeau ; l'ignorer ferait croire qu'un `w32tm /config` a pris
+effet.
+
+**`/stripchart` mesure vraiment** : chaque échantillon est une
+interrogation, l'écart imprimé est celui que l'agent vient de calculer,
+et une cible muette rend l'erreur `0x800705B4` du vrai outil — le seul
+résultat utile d'un test de connectivité. Il ne laisse **pas** de pair
+derrière lui : il mesure, il ne configure pas.
+
+### 5.4 Le fuseau, partagé avec Linux
+
+`Get-TimeZone`/`Set-TimeZone` lisent et écrivent la `SystemIdentity` que
+`EndHost` portait **déjà** — pas un second magasin — et le décalage se
+résout par la **même** table que `timedatectl` (`TimezoneDatabase`).
+Sans cela, une machine Windows et une machine Linux du même laboratoire
+donneraient deux décalages différents pour `WAT`. Windows nommant ses
+fuseaux autrement que tzdata (`W. Central Africa Standard Time` contre
+`Africa/Douala`), la correspondance est **explicite** plutôt que devinée,
+et un identifiant inconnu est refusé comme le vrai applet le refuse.
+
+### 5.5 Tests
+
+`tuto-ntp-windows.test.ts` (23 cas) suit le §6 du tutoriel. Un cas
+vérifie que les quatre `/query` **ne se répètent pas** — c'est
+exactement ce que le talon faisait. Le dernier branche un Windows et un
+Cisco sur le même maître et vérifie qu'ils atteignent la **même
+strate** : la propriété se contrôle sans connaître W32Time.
+
+Discrimination par `git stash` : **22 des 23 tombent** avant.
+
+**Mesures.** 124 suites connexes vertes (1 807 cas) plus les 61 suites
+PowerShell (1 912 cas). Typecheck : jeu d'erreurs identique (213).
+Aucun test existant modifié.
+
+---
+
+## 6. État du chantier
+
+| Lot | Plateforme | État |
+|---|---|---|
+| N1 | Cisco IOS | **Livré** |
+| N2 | Huawei VRP | **Livré** |
+| N3 | Linux (chrony) | **Livré** |
+| N4 | Windows (W32Time) | **Livré** |
+
+Le tutoriel se suit de bout en bout : **97 cas** répartis en quatre
+suites reproduisent ses labs, et **78** d'entre eux tombent sans les
+correctifs.
+
+### Ce qui reste ouvert, nommé plutôt que tu
+
+- **Les compteurs de paquets** (`show ntp packets`, les statistiques
+  d'émission/réception) : rien ne les compte dans le moteur. Zéro serait
+  une mesure fausse, la commande est donc refusée.
+- **L'authentification NTP ne signe pas** : la clé est portée, comparée
+  et rendue, mais aucun condensé MD5 ne circule sur le paquet — le
+  moteur compare des identifiants de clé. Un lab « les clés diffèrent,
+  la synchronisation échoue » n'est donc pas reproductible aujourd'hui.
+- **`ntp access-group` est stocké et rendu, et ne filtre rien** : aucune
+  ACL n'est consultée à la réception d'un paquet NTP.
+- **Le `slewing` et le `stepping` du §2 ne sont pas modélisés** :
+  l'offset est appliqué d'un coup. La distinction — et le `panic mode` —
+  demanderait une horloge disciplinée que ce simulateur n'a pas.
+- **`ntp broadcast`/`multicast`, PTP, et les horloges matérielles**
+  (`refclock`) : hors périmètre, faute de brique.

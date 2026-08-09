@@ -3047,6 +3047,9 @@ export function createWindowsPSProviders(
     eventLog:       new WindowsEventLogAdapter(log, pc),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(pc, vpn),
+    // Le fuseau vit sur l'identite de la machine, la meme que
+    // `timedatectl` lit cote Linux (`PRD-NTP-Tutoriel.md` §5).
+    identity: (pc as unknown as { getTimezoneStore?: () => { timezone: string; setTimezone(n: string): void } }).getTimezoneStore?.() ?? null,
     scheduledTasks: new WindowsScheduledTaskAdapter(pc),
     disks:          new WindowsDiskAdapter(pc),
     environment:    new WindowsEnvironmentAdapter(pc),

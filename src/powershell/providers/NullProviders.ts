@@ -12,6 +12,7 @@ import { SimulatedFileSystem } from './SimulatedFileSystem';
 import { JobProvider } from './JobProvider';
 
 export const NULL_PROVIDERS: PSProviders = {
+  identity: null,
   filesystem:     new SimulatedFileSystem(),
   registry:       null,
   services:       null,

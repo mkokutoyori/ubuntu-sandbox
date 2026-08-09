@@ -14,6 +14,7 @@
 
 import type { Equipment } from './Equipment';
 import type { RouterManagementService } from '../devices/router/management/RouterManagementService';
+import type { CiscoHttpService } from '../devices/router/management/CiscoHttpService';
 import type { SnmpService } from '../devices/router/management/SnmpService';
 import type { SnmpAgent } from '../snmp/SnmpAgent';
 import type { NtpAgent } from '../ntp/NtpAgent';
@@ -24,6 +25,7 @@ import type { HuaweiRoutingExtras } from '../devices/router/routing/HuaweiRoutin
 import type { SwitchSecurityService } from '../devices/switch/SwitchSecurityService';
 
 export interface ManagementServiceHost { getManagementService(): RouterManagementService; }
+export interface CiscoHttpServiceHost { getHttpService(): CiscoHttpService; }
 export interface SnmpServiceHost { getSnmpService(): SnmpService; }
 export interface SnmpAgentHost { getSnmpAgent(): SnmpAgent; }
 export interface NtpAgentHost { getNtpAgent(): NtpAgent; }
@@ -35,7 +37,8 @@ export interface SwitchSecurityServiceHost { getSecurityService(): SwitchSecurit
 
 /** An `Equipment` that MAY expose any of the optional services above. */
 export type ServiceCapableDevice = Equipment & Partial<
-  ManagementServiceHost & SnmpServiceHost & SnmpAgentHost & NtpAgentHost &
+  ManagementServiceHost & CiscoHttpServiceHost &
+  SnmpServiceHost & SnmpAgentHost & NtpAgentHost &
   HsrpAgentHost & GlbpAgentHost & VrrpAgentHost &
   HuaweiRoutingExtrasHost & SwitchSecurityServiceHost
 >;
@@ -48,6 +51,8 @@ function call<T>(dev: unknown, name: string): T | undefined {
 
 export const getManagementService = (dev: unknown): RouterManagementService | undefined =>
   call(dev, 'getManagementService');
+export const getHttpService = (dev: unknown): CiscoHttpService | undefined =>
+  call(dev, 'getHttpService');
 export const getSnmpService = (dev: unknown): SnmpService | undefined =>
   call(dev, 'getSnmpService');
 export const getSnmpAgent = (dev: unknown): SnmpAgent | undefined =>

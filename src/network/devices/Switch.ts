@@ -65,6 +65,7 @@ import { ArpRateLimiter } from '../arp/ArpRateLimiter';
 import { ArpStats } from '../arp/ArpStats';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
+import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
 import { ACLEngine } from './router/ACLEngine';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
@@ -212,6 +213,25 @@ export abstract class Switch extends Equipment {
   getSecurityService(): SwitchSecurityService {
     if (!this._securityService) this._securityService = new SwitchSecurityService();
     return this._securityService;
+  }
+
+  /**
+   * Un Catalyst connaît `ip http server` — c'est même la commande que
+   * tout guide de durcissement fait désactiver en premier. Le magasin est
+   * donc le MÊME que celui du routeur, pour que les deux plateformes ne
+   * puissent pas décrire différemment la même configuration.
+   *
+   * Limite assumée et écrite plutôt que tue : ce commutateur-ci n'a AUCUNE
+   * pile TCP (pas de `tcpv2`, donc pas davantage de serveur SSH), si bien
+   * que la configuration est gardée et rendue mais qu'aucun port ne
+   * s'ouvre. C'est déjà ce qui vaut pour tout serveur sur un commutateur
+   * ici, et c'est strictement mieux qu'avant, où la commande était rangée
+   * dans une table sans rendu et disparaissait à l'enregistrement.
+   */
+  private _httpService: CiscoHttpService | null = null;
+  getHttpService(): CiscoHttpService {
+    if (!this._httpService) this._httpService = new CiscoHttpService();
+    return this._httpService;
   }
 
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"

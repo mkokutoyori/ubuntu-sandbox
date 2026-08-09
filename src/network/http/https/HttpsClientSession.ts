@@ -149,6 +149,65 @@ export class HttpsClientSession {
     return { ok: true, response: parsed.message, alpnProtocol: tls.negotiatedAlpnProtocol };
   }
 
+  /**
+   * Le pendant chiffré de `Http1ClientSession.sendAsync` : même raison,
+   * même borne. Un serveur qui doit authentifier par AAA avant de
+   * répondre chiffre sa réponse un tour de micro-tâches plus tard, et le
+   * contrat synchrone la manquait — le client rendait alors « wrong
+   * version number », c'est-à-dire un diagnostic de TLS pour un problème
+   * qui n'en était pas un.
+   */
+  async sendAsync(request: HttpMessage, opts?: Http1EncodeOptions): Promise<HttpsSendResult> {
+    const requestId = randomRequestId();
+    const method = request.method ?? 'GET';
+    const target = request.target ?? '';
+    this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
+
+    const fail = (error: string): HttpsSendResult => {
+      this.eventBus?.publish({ topic: 'http.request.failed', payload: { requestId, method, target, error } });
+      return { ok: false, error };
+    };
+
+    if (!this.connectIfNeeded() || !this.socket || !this.tls) {
+      return fail(`TLS handshake with ${this.targetIp} port ${this.port} failed`);
+    }
+    const socket = this.socket;
+    const tls = this.tls;
+
+    const requestBytes = encoder.encode(encodeRequest(request, opts));
+    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientApplicationTrafficSecret!, this.clientSeq, requestBytes);
+
+    let responseRecords: TlsRecord[] | null = null;
+    const unsubscribe = socket.onData((data) => {
+      responseRecords = decodeRecords(binaryStringToBytes(String(data)));
+    });
+    socket.write(bytesToBinaryString(encodeRecords(records)));
+    for (let tour = 0; responseRecords === null && tour < TLS_MICROTASK_BUDGET; tour++) {
+      await Promise.resolve();
+    }
+    unsubscribe();
+    this.clientSeq = clientNextSeq;
+
+    if (!responseRecords) return fail('Empty reply from server');
+
+    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverApplicationTrafficSecret!, this.serverSeq, responseRecords);
+    this.serverSeq = serverNextSeq;
+
+    const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
+    if (parsed.ok === false) return fail(parsed.reason);
+
+    const hsts = parsed.message.headers.get('Strict-Transport-Security');
+    if (hsts) this.hstsStore.record(this.targetIp, hsts, Date.now());
+
+    if (parsed.message.headers.get('Connection')?.toLowerCase() === 'close') {
+      socket.close();
+      this.socket = null;
+      this.tls = null;
+    }
+    this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: parsed.message.statusCode ?? 0 } });
+    return { ok: true, response: parsed.message, alpnProtocol: tls.negotiatedAlpnProtocol };
+  }
+
   close(): void {
     this.socket?.close();
     this.socket = null;
@@ -159,3 +218,6 @@ export class HttpsClientSession {
     return this.tls?.peerCertificate ?? null;
   }
 }
+
+/** Même budget que le chemin en clair — voir `Http1ClientSession`. */
+const TLS_MICROTASK_BUDGET = 64;

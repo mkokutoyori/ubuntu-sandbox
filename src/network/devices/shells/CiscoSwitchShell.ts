@@ -3384,6 +3384,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (al.length > 0) { lines.push('!'); lines.push(...al); }
     }
 
+    // Le serveur web, rendu par le MEME magasin que sur le routeur. Un
+    // Catalyst connait `ip http server`, et jusqu'ici la commande etait
+    // acceptee puis perdue a l'enregistrement.
+    const httpLines = sw.getHttpService().runningConfigLines();
+    if (httpLines.length > 0) lines.push(...httpLines);
+
     const unhandled = (sw as unknown as { getUnhandledConfigLines?: () => readonly string[] }).getUnhandledConfigLines?.() ?? [];
     if (unhandled.length > 0) {
       lines.push('!');

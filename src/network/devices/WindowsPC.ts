@@ -15,6 +15,8 @@
  */
 
 import { EndHost, PingResult } from './EndHost';
+import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
+import { W32TimeService } from './windows/W32TimeService';
 import { WindowsDnsCache } from './windows/WinDnsCache';
 import { RRType } from '../dns/wire/RRType';
 import type { ARecordData } from '../dns/wire/ResourceRecord';
@@ -214,6 +216,18 @@ function parseFindstrFilter(filter: string): { patterns: string[]; ignoreCase: b
 
 /** Le pas du planificateur de tâches — la minute, comme sous Windows. */
 const TASK_TICK_MS = 60_000;
+
+/**
+ * `ReferenceId` a la mode Windows : l'adresse en hexadecimal suivie de
+ * sa forme pointee — la meme adresse ecrite deux fois, pas deux faits.
+ */
+function w32ReferenceId(ref: string): string {
+  if (!ref || ref === '.INIT.') return '0x00000000 (unspecified)';
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(ref)) return `0x00000000 (${ref})`;
+  const hex = ref.split('.')
+    .map((o) => parseInt(o, 10).toString(16).toUpperCase().padStart(2, '0')).join('');
+  return `0x${hex} (source IP:  ${ref})`;
+}
 
 export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
@@ -4723,25 +4737,228 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /**
-   * `w32tm /query /status` — real Windows time hierarchy has every
-   * non-PDCe domain member/DC sync to its domain's PDC Emulator (NT5DS);
-   * this simulator reports that same PDC Emulator FQDN as `Source`
-   * regardless of who's asking (including the PDCe itself), rather than
-   * modeling the forest-root-syncs-externally special case.
+   * Le fuseau de la machine, pour `Get-TimeZone`/`Set-TimeZone`.
+   *
+   * Il n'y a PAS de second magasin : `EndHost` porte deja une
+   * `SystemIdentity` qui tient le fuseau, et c'est celle que
+   * `timedatectl` lit cote Linux. Cet accesseur ne fait que l'exposer,
+   * parce que le champ est protege — sans quoi une machine Windows et
+   * une machine Linux du meme laboratoire donneraient deux fuseaux
+   * differents pour la meme configuration.
+   */
+  getTimezoneStore(): { readonly timezone: string; setTimezone(n: string): void } {
+    return this.identity;
+  }
+
+  /** L'agent NTP de cette machine — le MEME moteur que Cisco et Linux. */
+  private _ntpAgent: NtpAgent | null = null;
+  getNtpAgent(): NtpAgent {
+    if (!this._ntpAgent) {
+      this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus());
+    }
+    return this._ntpAgent;
+  }
+
+  /** Le service W32Time de cette machine (`PRD-NTP-Tutoriel.md` §5). */
+  private _w32time: W32TimeService | null = null;
+  getW32Time(): W32TimeService {
+    if (!this._w32time) {
+      this._w32time = new W32TimeService({
+        ntp: () => this.getNtpAgent(),
+        sourceDomaine: () => {
+          const store = this.getDirectoryStore();
+          const pdc = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+          return store && pdc ? `${pdc}.${store.dnsName}` : null;
+        },
+      });
+    }
+    return this._w32time;
+  }
+
+  /** Le nom de la source affichee : une adresse, un FQDN, ou l'horloge locale. */
+  private w32Source(): string {
+    const cfg = this.getNtpAgent().getConfig();
+    if (cfg.refIdentifier && cfg.refIdentifier !== '.INIT.' && this.getNtpAgent().isSynced()) {
+      return cfg.refIdentifier;
+    }
+    const w32 = this.getW32Time();
+    if (w32.getFlags() === 'domhier') {
+      const store = this.getDirectoryStore();
+      const pdc = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+      if (store && pdc) return `${pdc}.${store.dnsName},0x9`;
+    }
+    const premier = w32.getPeers()[0];
+    return premier ? `${premier.hote},${premier.drapeau}` : 'Local CMOS Clock';
+  }
+
+  /**
+   * `w32tm` (`docs/PRD-NTP-Tutoriel.md` §5).
+   *
+   * La commande etait un talon d'une seule branche : toute sous-commande
+   * autre que `/query /status` renvoyait la CHAINE LITTERALE
+   * `w32tm /query /status`, et `/query /status` lui-meme etait un bloc
+   * fixe ou `Stratum: 3` etait ecrit en dur sur une machine
+   * n'interrogeant personne.
    */
   private cmdW32tm(args: string[]): string {
-    if (args[0]?.toLowerCase() !== '/query' || args[1]?.toLowerCase() !== '/status') {
-      return 'w32tm /query /status';
+    const bas = args.map((a) => a.toLowerCase());
+    const w32 = this.getW32Time();
+    const agent = this.getNtpAgent();
+
+    if (bas[0] === '/query') return this.cmdW32tmQuery(bas.slice(1));
+
+    if (bas[0] === '/config') {
+      const lire = (nom: string): string | undefined => {
+        const a = args.find((x) => x.toLowerCase().startsWith(`/${nom}:`));
+        return a?.slice(nom.length + 2).replace(/^"|"$/g, '');
+      };
+      const r = w32.configure({
+        manualpeerlist: lire('manualpeerlist'),
+        syncfromflags: lire('syncfromflags'),
+        reliable: lire('reliable'),
+        update: bas.includes('/update'),
+      });
+      if (r.ok === false) return `${r.erreur}\n\nThe command failed to complete successfully.`;
+      return 'The command completed successfully.';
     }
-    const store = this.getDirectoryStore();
-    const pdcShort = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-    const source = store && pdcShort ? `${pdcShort}.${store.dnsName}` : 'Local CMOS Clock';
+
+    if (bas[0] === '/resync') {
+      const r = w32.resync();
+      if (r.ok === false) return `${r.erreur}\n\nThe command failed to complete successfully.`;
+      return 'Sending resync command to local computer\nThe command completed successfully.';
+    }
+
+    if (bas[0] === '/stripchart') {
+      const cible = args.find((a) => a.toLowerCase().startsWith('/computer:'))?.slice(10);
+      if (!cible) return 'The parameter is incorrect.';
+      const nEch = parseInt(
+        args.find((a) => a.toLowerCase().startsWith('/samples:'))?.slice(9) ?? '5', 10);
+      return this.w32Stripchart(cible, Number.isFinite(nEch) ? nEch : 5);
+    }
+
+    if (bas[0] === '/monitor') {
+      // Elle interroge TOUS les controleurs du domaine : sans domaine,
+      // le vrai outil le dit plutot que de rendre une liste vide.
+      const store = this.getDirectoryStore();
+      if (!store) return 'Error: 0x800706BA - The RPC server is unavailable.';
+      const pdc = store.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+      return [
+        `${pdc}.${store.dnsName} *** PDC ***[${'127.0.0.1'}:123]:`,
+        `    ICMP: 0ms delay`,
+        `    NTP: +0.0000000s offset from ${pdc}.${store.dnsName}`,
+        `        RefID: ${agent.getConfig().refIdentifier || 'LOCL'}`,
+        `        Stratum: ${agent.getStratum()}`,
+      ].join('\n');
+    }
+
     return [
-      'Leap Indicator: 0(no warning)',
-      'Stratum: 3 (secondary reference - syncd by (S)NTP)',
-      `Source: ${source}${store ? ',0x9' : ''}`,
-      'Poll Interval: 10 (1024s)',
+      'w32tm [/? | /register | /unregister ]',
+      '      /query [/computer:<target>] {/source | /configuration | /peers | /status}',
+      '      /config [/computer:<target>] [/update] [/manualpeerlist:<peers>]',
+      '              [/syncfromflags:<source>] [/reliable:(YES|NO)]',
+      '      /resync [/computer:<target>] [/nowait] [/rediscover] [/force]',
+      '      /stripchart /computer:<target> [/samples:<count>]',
+      '      /monitor [/domain:<domain>]',
     ].join('\n');
+  }
+
+  /** Les quatre formes de `w32tm /query`, chacune une vue distincte. */
+  private cmdW32tmQuery(sous: string[]): string {
+    const agent = this.getNtpAgent();
+    const w32 = this.getW32Time();
+    const cfg = agent.getConfig();
+    const quoi = sous.find((s) => s.startsWith('/')) ?? '';
+
+    if (quoi === '/source') return this.w32Source();
+
+    if (quoi === '/peers') {
+      const pairs = w32.getPeers();
+      if (pairs.length === 0) return '#Peers: 0';
+      const blocs = pairs.map((p) => {
+        const a = agent.getAssociation(p.hote);
+        const joignable = (a?.reach ?? 0) !== 0;
+        return [
+          `Peer: ${p.hote},${p.drapeau}`,
+          `State: ${joignable ? 'Active' : 'Pending'}`,
+          `Time Remaining: ${(a?.pollSec ?? 64).toFixed(7)}s`,
+          `Mode: ${p.mode === 'peer' ? '1 (Symmetric Active)' : '3 (Client)'}`,
+          `Stratum: ${a && joignable ? `${a.stratum} (secondary reference - syncd by (S)NTP)` : '0 (unspecified)'}`,
+          `PeerPoll Interval: ${Math.round(Math.log2(a?.pollSec ?? 64))} (${a?.pollSec ?? 64}s)`,
+          `HostPoll Interval: ${Math.round(Math.log2(a?.pollSec ?? 64))} (${a?.pollSec ?? 64}s)`,
+        ].join('\n');
+      });
+      return [`#Peers: ${pairs.length}`, '', ...blocs].join('\n');
+    }
+
+    if (quoi === '/configuration') {
+      return [
+        '[Configuration]',
+        '',
+        `EventLogFlags: 2 (Local)`,
+        `AnnounceFlags: ${w32.isReliable() ? '5' : '10'} (Local)`,
+        `TimeJumpAuditOffset: 28800 (Local)`,
+        `MinPollInterval: 6 (Local)`,
+        `MaxPollInterval: 10 (Local)`,
+        '',
+        '[TimeProviders]',
+        '',
+        'NtpClient (Local)',
+        `DllName: C:\\WINDOWS\\SYSTEM32\\w32time.DLL (Local)`,
+        `Enabled: 1 (Local)`,
+        `InputProvider: 1 (Local)`,
+        `NtpServer: ${w32.getPeers().map((p) => `${p.hote},${p.drapeau}`).join(' ') || '(none)'} (Local)`,
+        `Type: ${w32.getFlags().toUpperCase() === 'MANUAL' ? 'NTP' : 'NT5DS'} (Local)`,
+      ].join('\n');
+    }
+
+    // `/status`, et le defaut.
+    const best = [...cfg.associations.values()].find((a) => a.preferred);
+    const synced = agent.isSynced();
+    return [
+      `Leap Indicator: 0(no warning)`,
+      `Stratum: ${synced ? cfg.localStratum : 0} (${synced ? 'secondary reference - syncd by (S)NTP' : 'unspecified'})`,
+      `Precision: -23 (119.209ns per tick)`,
+      `Root Delay: ${((best ? Math.abs(best.delayMs) : 0) / 1000).toFixed(7)}s`,
+      `Root Dispersion: ${((best ? best.dispersionMs : 0) / 1000).toFixed(7)}s`,
+      `ReferenceId: ${w32ReferenceId(cfg.refIdentifier)}`,
+      `Last Successful Sync Time: ${cfg.lastSyncMs ? new Date(cfg.lastSyncMs).toUTCString() : 'unspecified'}`,
+      `Source: ${this.w32Source()}`,
+      `Poll Interval: ${Math.round(Math.log2(best?.pollSec ?? 64))} (${best?.pollSec ?? 64}s)`,
+    ].join('\n');
+  }
+
+  /**
+   * `w32tm /stripchart` — mesurer l'ecart en direct.
+   *
+   * Chaque echantillon est une VRAIE interrogation : l'ecart imprime est
+   * celui que l'agent vient de calculer, pas une suite de nombres
+   * plausibles. Une cible injoignable donne la ligne d'erreur du vrai
+   * outil, ce qui est le seul resultat utile d'un test de connectivite.
+   */
+  private w32Stripchart(cible: string, nEchantillons: number): string {
+    const agent = this.getNtpAgent();
+    const deja = agent.getAssociation(cible) !== undefined;
+    if (!deja) agent.addServer(cible);
+    const lignes = [
+      `Tracking ${cible} [${cible}:123].`,
+      `Collecting ${nEchantillons} samples.`,
+      `The current time is ${new Date().toUTCString()}.`,
+    ];
+    for (let i = 0; i < nEchantillons; i++) {
+      agent.pollAll();
+      const a = agent.getAssociation(cible);
+      const h = new Date();
+      const p = (n: number) => String(n).padStart(2, '0');
+      const heure = `${p(h.getUTCHours())}:${p(h.getUTCMinutes())}:${p(h.getUTCSeconds())}`;
+      if (!a || a.reach === 0) {
+        lignes.push(`${heure}, error: 0x800705B4 - This operation returned because the timeout period expired.`);
+      } else {
+        const s = a.offsetMs / 1000;
+        lignes.push(`${heure}, ${s >= 0 ? '+' : '-'}${Math.abs(s).toFixed(7)}s`);
+      }
+    }
+    if (!deja) agent.removeServer(cible);
+    return lignes.join('\n');
   }
 
   /**

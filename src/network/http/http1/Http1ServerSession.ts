@@ -17,9 +17,17 @@ export interface Http1Peer {
   readonly port: number;
 }
 
+/**
+ * Le gestionnaire peut rendre une promesse : l'authentification d'un
+ * serveur peut être un vrai échange sur le fil (AAA/TACACS+ pour le
+ * serveur web d'IOS), et un contrat synchrone obligerait ce serveur-là à
+ * réimplémenter HTTP pour lui seul — un second moteur, donc deux
+ * réponses possibles à la même requête. Les gestionnaires synchrones
+ * (nginx, Apache, IIS) restent inchangés.
+ */
 export type Http1RequestHandler = (
   request: HttpMessage, peer?: Http1Peer,
-) => HttpMessage;
+) => HttpMessage | Promise<HttpMessage>;
 
 /**
  * RFC 9112 §9.3 — accepts connections and keeps each one open across
@@ -54,32 +62,41 @@ export class Http1ServerSession {
     const unsubscribe = socket.onData((data) => {
       const requestId = randomRequestId();
       const parsed = parseRequest(String(data));
-      let response: HttpMessage;
-      let shouldClose: boolean;
 
       if (parsed.ok === false) {
         this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method: 'GET', target: '' } });
         this.eventBus?.publish({ topic: 'http.request.failed', payload: { requestId, method: 'GET', target: '', error: parsed.reason } });
-        response = createResponse(400, 'Bad Request');
+        const response = createResponse(400, 'Bad Request');
         response.headers.set('Connection', 'close');
-        shouldClose = true;
-      } else {
-        const method = parsed.message.method ?? 'GET';
-        const target = parsed.message.target ?? '';
-        this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
-        response = this.handler(parsed.message, { ip: socket.remoteIp, port: socket.remotePort });
-        this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: response.statusCode ?? 0 } });
-        shouldClose =
-          parsed.message.headers.get('Connection')?.toLowerCase() === 'close' ||
-          response.headers.get('Connection')?.toLowerCase() === 'close';
+        this.writeResponse(socket, unsubscribe, response, true);
+        return;
       }
 
-      const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
-      socket.write(encodeResponse(response, { chunked }));
-      if (shouldClose) {
-        unsubscribe();
-        socket.close();
-      }
+      const method = parsed.message.method ?? 'GET';
+      const target = parsed.message.target ?? '';
+      this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
+      const produced = this.handler(parsed.message, { ip: socket.remoteIp, port: socket.remotePort });
+      const settle = (response: HttpMessage): void => {
+        this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: response.statusCode ?? 0 } });
+        const shouldClose =
+          parsed.message.headers.get('Connection')?.toLowerCase() === 'close' ||
+          response.headers.get('Connection')?.toLowerCase() === 'close';
+        this.writeResponse(socket, unsubscribe, response, shouldClose);
+      };
+      if (produced instanceof Promise) void produced.then(settle);
+      else settle(produced);
     });
+  }
+
+  private writeResponse(
+    socket: TcpSocket, unsubscribe: () => void,
+    response: HttpMessage, shouldClose: boolean,
+  ): void {
+    const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
+    socket.write(encodeResponse(response, { chunked }));
+    if (shouldClose) {
+      unsubscribe();
+      socket.close();
+    }
   }
 }

@@ -175,18 +175,30 @@ manqué au premier jet et que le typage a rattrapé.
 Deux parties du tutoriel ne se rejouent pas, et c'est dit ici plutôt
 que découvert :
 
-**§9 — `test aaa group … new-code`.** Absent. La commande interroge le
-serveur AAA sans se déconnecter ; elle suppose un serveur TACACS+ qui
-réponde, et ce simulateur stocke la déclaration du serveur sans en
-implémenter le protocole (TCP/49, chiffrement du paquet entier).
-L'accepter rendrait un succès qu'aucun échange n'appuie.
+**Les deux points ci-dessous sont FERMÉS** — voir
+`docs/PRD-Serveur-HTTP-Cisco.md`. Ce qui était écrit ici est conservé
+sous sa forme d'origine, avec sa correction, parce que la mesure a montré
+que les deux affirmations étaient fausses et que c'est la mesure qui
+tranche, pas la note de la fois d'avant.
 
-**§13 — `ip http server`.** Acceptée et rendue nulle part, dans les deux
-sens. Sur un IOS 15 réel le serveur HTTP est actif par défaut, donc
-`no ip http server` devrait apparaître dans la configuration. Il n'y a
-aucun serveur HTTP sur le routeur simulé auquel rattacher le drapeau ;
-le rendre demanderait d'en modéliser un, ou d'assumer un drapeau que
-rien ne lit — le choix reste ouvert.
+**§9 — `test aaa group … new-code`.** ~~Absent. La commande suppose un
+serveur TACACS+ qui réponde, et ce simulateur stocke la déclaration du
+serveur sans en implémenter le protocole (TCP/49, chiffrement du paquet
+entier).~~ **Faux sur les deux moitiés.** Le protocole TACACS+ est réel
+(vraie connexion TCP/49, corps chiffré, délai de garde), et la commande
+n'était pas absente : elle existait dans `CiscoTerminalSession`, donc
+dans le terminal graphique et nulle part ailleurs, tandis que
+`AaaAuthenticator.testGroupAuthentication()` était écrite pour elle. Ce
+qui manquait était une des deux portes.
+
+**§13 — `ip http server`.** ~~Acceptée et rendue nulle part, dans les
+deux sens. Sur un IOS 15 réel le serveur HTTP est actif par défaut, donc
+`no ip http server` devrait apparaître dans la configuration.~~ Le
+constat était exact, sa cause plus large (toute la table
+`CiscoConfigState` a un rendu mort) et **le défaut était l'inverse** : la
+documentation Cisco de la série 15 écrit que le serveur est ARRÊTÉ par
+défaut, ce que la table du dépôt disait déjà. C'est donc `ip http server`
+qui doit paraître, et le serveur écoute désormais vraiment.
 
 ## 10. Vérification
 

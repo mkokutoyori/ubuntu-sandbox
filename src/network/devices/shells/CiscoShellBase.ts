@@ -56,8 +56,14 @@ import {
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
 import {
-  getManagementService, getSnmpService, getSnmpAgent, getNtpAgent,
+  getManagementService, getSnmpService, getSnmpAgent, getNtpAgent, getHttpService,
 } from '../../equipment/RouterServiceCapabilities';
+import {
+  HTTP_AUTH_METHODS, HTTP_MAX_CONNECTIONS_MIN, HTTP_MAX_CONNECTIONS_MAX,
+  type HttpAuthMethod,
+} from '../router/management/CiscoHttpService';
+import { runTestAaaGroup } from '../router/aaa/TestAaaGroup';
+import type { AaaAuthenticator } from '../router/aaa/AaaAuthenticator';
 import type {
   CommandInteractionPlan,
   InteractionPlanContext,
@@ -2121,11 +2127,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       for (const v of sec.parserViews.values()) lignes.push(`  ${v.name}  `);
       return lignes.join('\n');
     });
+    // Le nœud intermédiaire porte sa description, APRÈS l'enregistrement
+    // qui le crée : `describeNode` sort en silence sur un nœud absent.
+    trie.describeNode('show parser', 'Display parser information');
 
     trie.register('show ip ssh', 'Display SSH server status', () => {
       const sec = getSecurityConfig(this.d());
       return showIpSsh(sec.ssh, sec.cryptoKeys.length > 0 ? sec.cryptoKeys[0].modulus : null);
     });
+
+    /*
+     * `show ip http server status` et `... all` LISENT le service, elles
+     * ne récitent pas un texte : le port, la méthode d'authentification
+     * et les limites affichées sont ceux que la machine applique. Sur
+     * IOS, `all` est la réunion des vues de la famille ; ici les deux
+     * autres (`connection`, `session-module`) n'ont pas de matière —
+     * aucune connexion n'est retenue, aucun module n'est déclaré — donc
+     * `all` rend l'état et le dit, plutôt que d'inventer deux tableaux.
+     */
+    trie.register('show ip http server status', 'Display HTTP server status', () =>
+      getHttpService(this.d())?.statusLines().join('\n') ?? '');
+    trie.register('show ip http server all', 'Display all HTTP server information', () =>
+      getHttpService(this.d())?.statusLines().join('\n') ?? '');
     trie.register('show ip ssh known-hosts', 'Display learned SSH host keys', () => {
       const dev = this.d() as unknown as { _getSshKnownHosts?: () => { renderCisco: () => string } };
       return dev._getSshKnownHosts?.().renderCisco() ?? '';
@@ -2387,6 +2410,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonPrivilegedCommands(): void {
+    this.registerTestAaaCommand();
     this.privilegedTrie.register('enable', 'Turn on privileged commands', () => '');
     this.privilegedTrie.registerGreedy('enable view', 'Enter a CLI view', (args) =>
       this.entrerDansUneVue(args));
@@ -3182,8 +3206,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     flag('ip cef', 'ip cef', 'CEF');
-    flag('ip http server', 'ip http server', 'HTTP server');
-    flag('ip http secure-server', 'ip http secure-server', 'HTTPS server');
+    this.registerHttpServerCommands();
     flag('ip source-route', 'ip source-route', 'IP source-route');
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
@@ -3372,6 +3395,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       getSecurityConfig(this.d()).parserViews.delete(args[0]);
       return '';
     });
+    // Après les deux enregistrements, qui créent les nœuds : sans cela
+    // `?` proposerait `parser` et `no parser` nus.
+    this.configTrie.describeNode('parser', 'Configure parser');
+    this.configTrie.describeNode('no parser', 'Negate a parser command');
 
     this.configTrie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
       const mode = args[0]?.toLowerCase();
@@ -4074,6 +4101,159 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // ARP config commands (shared between router and switch)
     registerArpConfigCommands(this.configTrie, () => this.d());
+  }
+
+  /**
+   * `test aaa group <nom> <user> <mot de passe> {legacy | new-code}`
+   * (`docs/PRD-Serveur-HTTP-Cisco.md` §5).
+   *
+   * Elle existait dans `CiscoTerminalSession` — donc dans le terminal
+   * graphique et nulle part ailleurs : la même machine y répondait par un
+   * onglet et l'ignorait par le shell, en SSH comme dans un script. Le
+   * motif invoqué là-bas (« un gestionnaire du trie doit rendre une
+   * chaîne synchrone ») ne tient pas : `_pendingAsync` est précisément
+   * l'écoutille que `ping` emprunte, et c'est celle-ci.
+   */
+  private registerTestAaaCommand(): void {
+    this.privilegedTrie.registerGreedy('test aaa group',
+      'Test AAA server-group authentication', (args) => {
+        const [groupName, username, password, mode] = args;
+        if (!groupName || !username || password === undefined) throw new CliIncomplete();
+        // `legacy` et `new-code` désignent deux versions du code d'appel
+        // interne d'IOS, pas deux protocoles : le dialogue sur le fil est
+        // le même, donc les deux mots sont acceptés.
+        if (mode === undefined) throw new CliIncomplete();
+        if (mode !== 'legacy' && mode !== 'new-code') throw new CliInvalidInput({ token: mode });
+
+        const dev = this.d() as unknown as { getAaaAuthenticator?: () => AaaAuthenticator };
+        const authenticator = dev.getAaaAuthenticator?.();
+        if (!authenticator) throw new CliInvalidInput({ token: 'aaa' });
+
+        this._pendingAsync = runTestAaaGroup(authenticator, groupName, username, password)
+          .then((lines) => lines.join('\n'));
+        return '';
+      });
+    // Le nœud intermédiaire porte sa description, sans quoi `?` le
+    // proposerait nu — ce que le garde-fou
+    // `cisco-help-every-keyword-described` attrape.
+    this.privilegedTrie.describeNode('test', 'Test subsystems, memory, and interfaces');
+    this.privilegedTrie.describeNode('test aaa', 'Test AAA subsystem');
+  }
+
+  /**
+   * La famille `ip http` (`docs/PRD-Serveur-HTTP-Cisco.md` §2). Les deux
+   * drapeaux étaient rangés dans une table dont le rendu est mort, et
+   * les cinq commandes qui les accompagnent étaient refusées — donc un
+   * serveur qu'on ne pouvait ni déplacer de port, ni authentifier, ni
+   * restreindre, et dont l'état ne survivait pas à un enregistrement.
+   *
+   * Une valeur hors bornes est REFUSÉE plutôt que rognée : la ranger
+   * silencieusement ferait mentir la configuration relue.
+   */
+  private registerHttpServerCommands(): void {
+    const svc = () => getHttpService(this.d());
+    const sync = () => {
+      const dev = this.d() as unknown as { _refreshHttpListeners?: () => void };
+      dev._refreshHttpListeners?.();
+    };
+
+    this.configTrie.register('ip http server', 'Enable HTTP server', () => {
+      svc()?.setEnabled(true); sync(); return '';
+    });
+    this.configTrie.register('no ip http server', 'Disable HTTP server', () => {
+      svc()?.setEnabled(false); sync(); return '';
+    });
+    this.configTrie.register('ip http secure-server', 'Enable HTTPS server', () => {
+      svc()?.setSecureEnabled(true, this.d().getHostname()); sync(); return '';
+    });
+    this.configTrie.register('no ip http secure-server', 'Disable HTTPS server', () => {
+      svc()?.setSecureEnabled(false); sync(); return '';
+    });
+
+    this.configTrie.registerGreedy('ip http port', 'HTTP server port', (args) => {
+      const port = Number(args[0]);
+      if (args.length === 0) throw new CliIncomplete();
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new CliInvalidInput({ token: args[0] });
+      }
+      svc()?.setPort(port); sync(); return '';
+    });
+    this.configTrie.registerGreedy('no ip http port', 'Restore default HTTP port', () => {
+      svc()?.setPort(80); sync(); return '';
+    });
+    this.configTrie.registerGreedy('ip http secure-port', 'HTTPS server port', (args) => {
+      const port = Number(args[0]);
+      if (args.length === 0) throw new CliIncomplete();
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new CliInvalidInput({ token: args[0] });
+      }
+      svc()?.setSecurePort(port); sync(); return '';
+    });
+
+    this.configTrie.registerGreedy('ip http authentication',
+      'Set HTTP server authentication method', (args) => {
+        if (args.length === 0) throw new CliIncomplete();
+        const method = args[0].toLowerCase();
+        if (!HTTP_AUTH_METHODS.includes(method as HttpAuthMethod)) {
+          throw new CliInvalidInput({ token: args[0] });
+        }
+        svc()?.setAuthMethod(method as HttpAuthMethod, args[1]);
+        return '';
+      });
+    this.configTrie.registerGreedy('no ip http authentication',
+      'Restore default authentication', () => { svc()?.resetAuthMethod(); return ''; });
+
+    this.configTrie.registerGreedy('ip http max-connections',
+      'Set maximum concurrent connections', (args) => {
+        if (args.length === 0) throw new CliIncomplete();
+        const n = Number(args[0]);
+        if (!Number.isInteger(n)
+          || n < HTTP_MAX_CONNECTIONS_MIN || n > HTTP_MAX_CONNECTIONS_MAX) {
+          throw new CliInvalidInput({ token: args[0] });
+        }
+        svc()?.setMaxConnections(n);
+        return '';
+      });
+    this.configTrie.registerGreedy('no ip http max-connections',
+      'Restore default connection limit', () => { svc()?.setMaxConnections(5); return ''; });
+
+    this.configTrie.registerGreedy('ip http access-class',
+      'Restrict HTTP server access by ACL', (args) => {
+        if (args.length === 0) throw new CliIncomplete();
+        // `ipv4 <nom>` est la forme longue d'IOS ; le premier mot seul est
+        // la forme numérotée historique.
+        const acl = args[0].toLowerCase() === 'ipv4' ? args[1] : args[0];
+        if (!acl) throw new CliIncomplete();
+        svc()?.setAccessClass(acl);
+        return '';
+      });
+    this.configTrie.registerGreedy('no ip http access-class',
+      'Remove HTTP access restriction', () => { svc()?.setAccessClass(null); return ''; });
+
+    this.configTrie.registerGreedy('ip http timeout-policy',
+      'Set HTTP server timeout policy', (args) => {
+        if (args.length === 0) throw new CliIncomplete();
+        // Les trois mots-clés sont obligatoires sur IOS et dans cet
+        // ordre : la commande décrit une politique entière, pas trois
+        // réglages indépendants.
+        const wanted = ['idle', 'life', 'requests'];
+        const values: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          if (args[i * 2] === undefined || args[i * 2 + 1] === undefined) {
+            throw new CliIncomplete();
+          }
+          if (args[i * 2].toLowerCase() !== wanted[i]) {
+            throw new CliInvalidInput({ token: args[i * 2] });
+          }
+          const v = Number(args[i * 2 + 1]);
+          if (!Number.isInteger(v) || v < 1) throw new CliInvalidInput({ token: args[i * 2 + 1] });
+          values.push(v);
+        }
+        svc()?.setTimeoutPolicy({ idleSec: values[0], lifeSec: values[1], requests: values[2] });
+        return '';
+      });
+    this.configTrie.registerGreedy('no ip http timeout-policy',
+      'Restore default timeout policy', () => { svc()?.resetTimeoutPolicy(); return ''; });
   }
 }
 

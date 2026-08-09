@@ -11,6 +11,7 @@ import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
+import { testAaaAttemptLine, testAaaVerdictLine } from '@/network/devices/router/aaa/TestAaaGroup';
 import { Switch } from '@/network/devices/Switch';
 import { IPAddress } from '@/network/core/types';
 import {
@@ -655,7 +656,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
     const toks = commandLine.trim().split(/\s+/);
     if (toks[0] !== 'test' || toks[1] !== 'aaa' || toks[2] !== 'group') return false;
     const [, , , groupName, username, password, method] = toks;
-    if (!groupName || !username || password === undefined || method !== 'legacy') return false;
+    // `legacy` et `new-code` designent deux versions du code d'appel
+    // interne d'IOS, pas deux protocoles : le dialogue sur le fil est le
+    // meme. N'accepter que `legacy` refusait la moitie de la syntaxe.
+    if (!groupName || !username || password === undefined) return false;
+    if (method !== 'legacy' && method !== 'new-code') return false;
 
     const job = this.startAsyncCommand({
       mode: 'foreground',
@@ -663,14 +668,16 @@ export class CiscoTerminalSession extends CLITerminalSession {
       command: commandLine,
       label: `test aaa group ${groupName}`,
       run: async (ctx) => {
+        // Le rendu vit dans `TestAaaGroup.ts`, lu aussi par le shell de
+        // l'equipement : deux copies finiraient par ne plus dire la meme
+        // chose de la meme situation. Les lignes restent emises une a une
+        // parce que la premiere annonce l'echange et doit paraitre AVANT
+        // qu'il ait lieu — c'est ce que ce chemin apporte de plus.
         const authenticator = dev.getAaaAuthenticator();
-        const kind = authenticator.groupKind(groupName) === 'radius' ? 'radius' : 'TACACS+';
-        ctx.sink.line(`Attempting authentication test to server-group ${groupName} using ${kind}`);
+        ctx.sink.line(testAaaAttemptLine(authenticator, groupName));
         const verdict = await authenticator.testGroupAuthentication(groupName, username, password);
         if (ctx.cancelled()) return;
-        ctx.sink.line(verdict === 'accept'
-          ? 'User was successfully authenticated.'
-          : 'User was NOT successfully authenticated.');
+        ctx.sink.line(testAaaVerdictLine(verdict));
       },
     });
     return job !== null;
