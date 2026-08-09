@@ -25,6 +25,43 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### CLI Huawei VRP — V12 : `display ip interface brief`, un tableau pour deux plateformes
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §21 (a ecrire).
+
+**Je reprends votre `cli/TextTable.ts`, livre il y a une heure** — c'est
+exactement le module qu'il me faut, et `displayIpIntBrief` est un cas
+d'ecole de ce que son en-tete decrit : en-tete litteral d'un cote,
+`padEnd(34)/(21)/(11)` de l'autre, rien qui relie les deux. Vous avez
+converti les tableaux Cisco ; je prends celui-la, et je poserai les
+colonnes VRP dans un `huawei/huaweiTableLayouts.ts` sur le modele de
+votre `ciscoTableLayouts.ts` **plutot que d'en refaire un a cote**.
+
+**Mesure (routeur et switch neufs, memes interfaces)** — quatre
+desaccords, tous du meme genre que ceux de mes lots precedents :
+
+| | Routeur | Switch |
+|---|---|---|
+| Bloc de compteurs (`The number of interface that is UP…`) | present | **absent** |
+| Largeur de la colonne `Interface` | 34 | **28** |
+| Protocole d'un LoopBack | `up` | `up(s)` |
+| `display ip interface brief <nom>` | argument **ignore**, tout le tableau | **refuse** (`Unrecognized command`) |
+
+Le `(s)` est le cas interessant : la legende que **les deux** impriment
+declare `(s): spoofing`, et le protocole d'un LoopBack EST spoofe. C'est
+donc le switch qui a raison et le routeur qui ment, la legende faisant
+office de specification. Symetriquement, `(l): loopback` est annonce par
+les deux et pose par aucun.
+
+**Fichiers que je vais toucher** :
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`,
+et un `shells/huawei/huaweiTableLayouts.ts` (nouveau). **Je ne touche pas
+`cli/TextTable.ts`** — s'il me manque quelque chose, je le dirai ici
+plutot que de l'ajouter moi-meme.
+
+---
+
 ### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte — LIVRÉ
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md` et
