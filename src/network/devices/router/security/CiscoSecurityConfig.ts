@@ -98,6 +98,18 @@ export interface SshConfig {
   sourceInterface?: string;
   dhMinBits: number;
   loggingEvents: boolean;
+  /**
+   * Les listes d'algorithmes de `ip ssh server algorithm {mac|encryption
+   * |kex}`. Vides = « les valeurs par defaut », ce qu'IOS n'ecrit pas.
+   *
+   * Ce simulateur ne NEGOCIE pas ces algorithmes — sa pile choisit les
+   * siens — mais une commande de durcissement qui disparait de la
+   * configuration est pire qu'une commande refusee : au rechargement
+   * d'une topologie le durcissement n'est plus la et rien ne le dit.
+   */
+  macAlgorithms: string[];
+  encryptionAlgorithms: string[];
+  kexAlgorithms: string[];
 }
 
 export interface LoginControl {
@@ -312,7 +324,10 @@ export class CiscoSecurityConfig {
   aaaGroups: Map<string, AaaServerGroup> = new Map();
   legacyHosts: AaaLegacyServerHost[] = [];
 
-  ssh: SshConfig = { version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false };
+  ssh: SshConfig = {
+    version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false,
+    macAlgorithms: [], encryptionAlgorithms: [], kexAlgorithms: [],
+  };
   cryptoKeys: CryptoRsaKey[] = [];
   enableSecret?: string;
   servicePasswordEncryption = false;
@@ -421,6 +436,15 @@ export class CiscoSecurityConfig {
     if (this.ssh.sourceInterface) lines.push(`ip ssh source-interface ${this.ssh.sourceInterface}`);
     if (this.ssh.dhMinBits !== 1024) lines.push(`ip ssh dh min size ${this.ssh.dhMinBits}`);
     if (this.ssh.loggingEvents) lines.push('ip ssh logging events');
+    if (this.ssh.macAlgorithms.length) {
+      lines.push(`ip ssh server algorithm mac ${this.ssh.macAlgorithms.join(' ')}`);
+    }
+    if (this.ssh.encryptionAlgorithms.length) {
+      lines.push(`ip ssh server algorithm encryption ${this.ssh.encryptionAlgorithms.join(' ')}`);
+    }
+    if (this.ssh.kexAlgorithms.length) {
+      lines.push(`ip ssh server algorithm kex ${this.ssh.kexAlgorithms.join(' ')}`);
+    }
     for (const k of this.cryptoKeys) {
       if (k.general) lines.push(`crypto key generate rsa general-keys modulus ${k.modulus} label ${k.label}`);
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);
