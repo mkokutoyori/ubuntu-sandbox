@@ -616,17 +616,112 @@ export function showSnmpEngineId(dev?: ShowStateDevice): string {
   return `Local SNMP engineID: ${svc.getEngineId()}`;
 }
 
+/**
+ * `show ntp status`.
+ *
+ * Le bloc n'avait que quatre lignes sur huit, et les quatre absentes
+ * sont exactement celles qu'un audit lit : `root delay` et
+ * `root dispersion` disent la QUALITE du chemin jusqu'a la source,
+ * `loopfilter state` si la boucle de discipline tourne, `last update`
+ * depuis combien de temps la mesure date. Une vue de diagnostic qui
+ * n'imprime pas de quoi diagnostiquer est une vue de decor.
+ *
+ * Chaque valeur est LUE et non inventee : la frequence reelle derive de
+ * l'ecart mesure (`getDriftPpm`), la dispersion racine de celle de
+ * l'association retenue, l'age de la derniere mise a jour de son
+ * horodatage de reponse. Sans synchronisation, IOS ecrit
+ * `no reference clock` et une frequence nominale -- ce que fait la
+ * branche non synchronisee ci-dessous.
+ */
 export function showNtpStatus(dev?: ShowStateDevice): string {
   const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
   if (!ntp) return 'Clock is unsynchronized, stratum 16, no reference clock';
   const cfg = ntp.getConfig();
   const synced = ntp.isSynced();
+  const best = [...cfg.associations.values()].find((a) => a.preferred);
+  const driftPpm = ntp.getDriftPpm();
+  const nominalHz = 250;
+  const actualHz = nominalHz * (1 + driftPpm / 1e6);
+  // Une reference LOCALE (`ntp master`) n'a ni delai ni dispersion vers
+  // une source : il n'y a pas de source. Rendre 16000 ms -- la valeur
+  // « aucune mesure » -- sur une machine que la vue declare synchronisee
+  // etait contradictoire dans le meme bloc.
+  const localMaster = synced && !best;
+  const rootDelay = best ? Math.abs(best.delayMs) : 0;
+  const rootDisp = best ? best.dispersionMs : localMaster ? 0 : 16000;
+  const peerDisp = best ? best.dispersionMs / 2 : localMaster ? 0 : 16000;
+  const pollSec = best?.pollSec ?? 64;
+  const lastUpdateSec = best?.lastReplyMs
+    ? Math.max(0, Math.floor((Date.now() - best.lastReplyMs) / 1000))
+    : null;
+  const tete = synced
+    ? `Clock is synchronized, stratum ${cfg.localStratum}, reference is ${cfg.refIdentifier || '.INIT.'}`
+    : 'Clock is unsynchronized, stratum 16, no reference clock';
   return [
-    `Clock is ${synced ? 'synchronized' : 'unsynchronized'}, stratum ${cfg.localStratum}, reference is ${cfg.refIdentifier || '.INIT.'}`,
-    `nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18`,
+    tete,
+    `nominal freq is ${nominalHz.toFixed(4)} Hz, actual freq is ${actualHz.toFixed(4)} Hz, precision is 2**18`,
+    `ntp uptime is ${ntp.getUptimeSec() * 100} (1/100 of seconds), resolution is 4001`,
     `reference time is ${formatNtpReferenceTime(cfg.lastSyncMs || Date.now())}`,
-    `clock offset is ${cfg.offsetMs.toFixed(2)} msec`,
+    `clock offset is ${cfg.offsetMs.toFixed(4)} msec, root delay is ${rootDelay.toFixed(2)} msec`,
+    `root dispersion is ${rootDisp.toFixed(2)} msec, peer dispersion is ${peerDisp.toFixed(2)} msec`,
+    `loopfilter state is '${synced ? 'CTRL' : 'FSET'}' (${synced ? 'Normal Controlled Loop' : 'Drift set from file'}), drift is ${(driftPpm / 1e6).toFixed(9)} s/s`,
+    `system poll interval is ${pollSec}, ${lastUpdateSec === null ? 'never updated' : `last update was ${lastUpdateSec} sec ago`}.`,
   ].join('\n');
+}
+
+/**
+ * `show ntp associations detail`.
+ *
+ * La commande n'existait pas : le greedy `show ntp` rendait le TABLEAU
+ * pour toute queue, `detail` comprise. Or c'est ici que se lisent les
+ * huit dernieres mesures (`filtdelay`/`filtoffset`), donc la stabilite
+ * de la source -- le tableau ne donne que la derniere.
+ *
+ * Les huit colonnes ne sont pas un historique invente : ce moteur ne
+ * garde qu'une mesure par association, donc les huit cases repetent la
+ * mesure courante et `filterror` croit avec l'anciennete, comme sur IOS
+ * ou l'erreur estimee augmente a chaque rang. Inventer huit valeurs
+ * differentes ferait croire a un historique qui n'existe pas.
+ */
+export function showNtpAssociationsDetail(dev?: ShowStateDevice): string {
+  const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
+  if (!ntp || ntp.getConfig().associations.size === 0) return '';
+  const blocs: string[] = [];
+  for (const [, a] of ntp.getConfig().associations) {
+    const joignable = a.reach !== 0;
+    const role = a.preferred && joignable ? 'our_master' : joignable ? 'selected' : 'unsynced';
+    const notreMode = a.mode === 'symmetric-active' ? 'active' : 'client';
+    const sonMode = a.mode === 'symmetric-active' ? 'passive' : 'server';
+    const syncDist = Math.abs(a.delayMs) / 2 + a.dispersionMs;
+    const filt = (v: number) => Array(8).fill(v.toFixed(2)).join('  ');
+    blocs.push([
+      `${a.serverIp} configured, ${role}, sane, valid, stratum ${a.stratum}`,
+      `ref ID ${a.stratum < 16 ? a.serverIp : '.INIT.'}, time ${formatNtpReferenceTime(a.lastReplyMs || Date.now())}`,
+      `our mode ${notreMode}, peer mode ${sonMode}, our poll intvl ${a.pollSec}, peer poll intvl ${a.pollSec}`,
+      `root delay ${Math.abs(a.delayMs).toFixed(2)} msec, root disp ${a.dispersionMs.toFixed(2)}, reach ${a.reach.toString(8).padStart(3, '0')}, sync dist ${syncDist.toFixed(2)}`,
+      `delay ${Math.abs(a.delayMs).toFixed(2)} msec, offset ${a.offsetMs.toFixed(4)} msec, dispersion ${a.dispersionMs.toFixed(2)}`,
+      `precision 2**18, version 4`,
+      `filtdelay =  ${filt(Math.abs(a.delayMs))}`,
+      `filtoffset = ${filt(a.offsetMs)}`,
+      `filterror =  ${Array.from({ length: 8 }, (_, i) => (a.dispersionMs + i * 0.45).toFixed(2)).join('  ')}`,
+    ].join('\n'));
+  }
+  return blocs.join('\n');
+}
+
+/**
+ * `show ntp authentication-keys`. Elle rendait le tableau des
+ * associations, comme tout ce qui suivait `show ntp`. La cle elle-meme
+ * est imprimee parce qu'IOS l'imprime ici -- c'est precisement pourquoi
+ * la vue est reservee a l'EXEC privilegie.
+ */
+export function showNtpAuthenticationKeys(dev?: ShowStateDevice): string {
+  const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
+  const entete = 'Key  Algorithm  Md5 Key';
+  if (!ntp || ntp.getConfig().authKeys.size === 0) return entete;
+  const lignes = [...ntp.getConfig().authKeys.values()].map(
+    (k) => `${String(k.id).padEnd(5)}${k.algo.padEnd(11)}${k.key}`);
+  return [entete, ...lignes].join('\n');
 }
 
 const NTP_EPOCH_OFFSET_SEC = 2208988800;

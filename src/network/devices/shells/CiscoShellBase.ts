@@ -34,7 +34,7 @@ import {
   showMemoryStatistics, showPrivilege,
   showCdp, showLldp, showSnmp, showSnmpCommunity, showSnmpHost,
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
-  showNtpStatus, showNtpAssociations,
+  showNtpStatus, showNtpAssociations, showNtpAssociationsDetail, showNtpAuthenticationKeys,
   showLine, showIpSsh, showSshSessions, showHosts, showVrf,
   showVrfDetail, showVrfInterfaces, showAdjacency,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
@@ -346,6 +346,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected configIfTrie = new CommandTrie();
   /** Shared `line …` sub-mode trie (switch + router). */
   protected configLineTrie = new CommandTrie();
+  /** `parser view <nom>` — le sous-mode qui declare une vue CLI. */
+  protected configViewTrie = new CommandTrie();
+  /** La vue en cours de declaration sous `parser view …`. */
+  protected selectedParserView: string | null = null;
+  /**
+   * La vue ACTIVE de cette session, ou null pour la vue racine.
+   *
+   * C'est une propriete de la SESSION et non de l'equipement : deux vty
+   * peuvent etre dans deux vues differentes au meme instant, et une vue
+   * posee sur l'une ne doit rien changer a l'autre. C'est la meme lecon
+   * que `terminal monitor`, qui etait a tort un booleen d'equipement.
+   */
+  protected activeParserView: string | null = null;
   /** Currently-selected VTY range under `line vty <first> [last]`. */
   protected selectedVtyRange: { first: number; last: number } | null = null;
 
@@ -1284,6 +1297,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     'config-if': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-subif': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-line': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-view': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router-af': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-router-ospf': CiscoShellBase.COMMON_GLOBAL_NAV,
@@ -1329,6 +1343,74 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * matching real IOS: a command outside your privilege level simply
    * isn't in your visible command tree.
    */
+  /**
+   * `enable view [<nom>]` — basculer dans une vue, ou revenir a la racine.
+   *
+   * Sans nom, on entre dans la vue RACINE : c'est la condition qu'IOS
+   * pose pour declarer ou modifier une vue, et c'est aussi la sortie
+   * d'une vue restreinte. Avec un nom, la vue doit exister — sinon on
+   * annoncerait un role qui n'a jamais ete decrit.
+   *
+   * Le mot de passe de la vue n'est PAS demande ici : comme pour
+   * `enable`, l'authentification interactive se joue dans le plan
+   * d'interaction, et un appelant non interactif (un test, un script)
+   * ne pourrait de toute facon pas y repondre.
+   */
+  protected entrerDansUneVue(args: string[]): string {
+    const sec = getSecurityConfig(this.d());
+    if (args.length === 0) {
+      this.activeParserView = null;
+      this.mode = 'privileged';
+      this.currentPrivilegeLevel = 15;
+      return '';
+    }
+    const nom = args[0];
+    if (!sec.parserViews.has(nom)) {
+      return `%Error: View ${nom} is not present in the system`;
+    }
+    this.activeParserView = nom;
+    this.mode = 'privileged';
+    this.currentPrivilegeLevel = 15;
+    return '';
+  }
+
+  /** La vue que `parser view <nom>` est en train de declarer. */
+  protected vueEnCours(): import('../router/security/CiscoSecurityConfig').ParserView | undefined {
+    if (!this.selectedParserView) return undefined;
+    return getSecurityConfig(this.d()).parserViews.get(this.selectedParserView);
+  }
+
+  /**
+   * La porte d'une vue CLI : une commande exec passe-t-elle ?
+   *
+   * La difference avec les niveaux de privilege est le tout du
+   * mecanisme : un niveau AJOUTE des commandes au socle du niveau 1, une
+   * vue REMPLACE l'arbre visible. Hors d'une vue (le cas courant, et le
+   * seul jusqu'ici), cette fonction rend `true` sans rien consulter.
+   *
+   * Trois commandes passent toujours, et ce n'est pas une commodite :
+   * sans elles on ne pourrait plus ni quitter la vue, ni savoir dans
+   * laquelle on est — une vue dont on ne peut pas sortir n'est plus un
+   * role, c'est une souriciere.
+   */
+  private readonly VUE_TOUJOURS_PERMIS = ['exit', 'end', 'logout', 'disable', 'enable', 'show parser view'];
+
+  protected commandeAutoriseeParLaVue(cmdPart: string): boolean {
+    if (this.activeParserView === null) return true;
+    const vue = getSecurityConfig(this.d()).parserViews.get(this.activeParserView);
+    if (!vue) return true;
+    const ligne = cmdPart.trim().toLowerCase();
+    if (this.VUE_TOUJOURS_PERMIS.some((c) => ligne === c || ligne.startsWith(c + ' '))) return true;
+    // `exclude` l'emporte : il sert precisement a retirer une commande
+    // d'un prefixe qu'on vient d'inclure.
+    if (vue.execExclude.some((c) => ligne === c || ligne.startsWith(c + ' '))) return false;
+    return vue.execInclude.some((c) => ligne === c || ligne.startsWith(c + ' ')
+      // Un prefixe inclus autorise ce qui le complete (`show ip` couvre
+      // `show ip route`), et une commande incluse plus longue que ce qui
+      // est tape reste invisible : c'est l'arbre d'IOS, pas une egalite.
+      || c.startsWith(ligne + ' '));
+  }
+
   private tryGrantedPrivilegeCommand(cmdPart: string): string | null {
     if (this.mode !== 'user' || this.currentPrivilegeLevel <= 1 || this.currentPrivilegeLevel >= 15) return null;
     const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
@@ -1436,6 +1518,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const granted = this.tryGrantedPrivilegeCommand(cmdPart);
       if (granted !== null) return granted;
       if (this.isPrivilegedOnlyShowCommand(cmdPart)) return CISCO_ERRORS.INVALID_INPUT;
+    }
+
+    // Une vue active remplace l'arbre visible : ce qu'elle n'inclut pas
+    // repond comme une commande qui n'existe pas, ce qui est exactement
+    // ce que fait IOS -- une commande hors de votre vue n'est pas
+    // "refusee", elle est absente.
+    if ((this.mode === 'user' || this.mode === 'privileged')
+      && !this.commandeAutoriseeParLaVue(cmdPart)) {
+      return CISCO_ERRORS.INVALID_INPUT;
     }
 
     const trie = this.getActiveTrie();
@@ -1971,11 +2062,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
+    // Un greedy sur `show ntp` AVALAIT toute sa queue : `show ntp
+    // associations detail`, `show ntp authentication-keys`, `show ntp
+    // config` et meme `show ntp packets` -- qui n'existe pas -- rendaient
+    // tous le tableau des associations. Chaque sous-commande est
+    // desormais un chemin reel, et ce que la plateforme n'a pas est
+    // refuse comme IOS refuse (meme defaut que `display vrrp`, lot V15).
     trie.register('show ntp status', 'Display NTP status', () => showNtpStatus(this.cs()));
-    trie.registerGreedy('show ntp', 'Display NTP associations', () =>
-      showNtpAssociations(this.cs()), [
-      { keyword: 'associations', description: 'NTP associations' },
-    ]);
+    trie.register('show ntp authentication-keys', 'Display NTP authentication keys',
+      () => showNtpAuthenticationKeys(this.cs()));
+    trie.register('show ntp associations detail', 'Detailed NTP association state',
+      () => showNtpAssociationsDetail(this.cs()));
+    trie.register('show ntp associations', 'NTP associations',
+      () => showNtpAssociations(this.cs()));
+    // Pas de greedy de repli : sans lui, l'arbre lui-meme refuse
+    // `show ntp packets` avec le curseur d'IOS, ce qu'un repli maison
+    // ne saurait pas placer aussi bien.
     trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
       showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')), [
       { keyword: 'neighbors', description: 'CDP neighbor entries' },
@@ -2001,6 +2103,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showEnvironment());
     trie.registerGreedy('show line', 'Display TTY lines', (a) =>
       showLine(this.cs(), a));
+    /**
+     * `show parser view [all]`.
+     *
+     * Sans argument : la vue COURANTE de cette session. Avec `all` : les
+     * vues declarees sur l'equipement. Deux questions differentes, deux
+     * reponses -- c'est le defaut qu'on vient de refermer sur `show aaa`.
+     */
+    trie.registerGreedy('show parser view', 'Display CLI view information', (args) => {
+      const sec = getSecurityConfig(this.d());
+      if (args.length === 0) {
+        return `Current view is '${this.activeParserView ?? 'root'}'`;
+      }
+      if (args[0].toLowerCase() !== 'all') throw new CliInvalidInput({ token: args[0] });
+      if (sec.parserViews.size === 0) return 'No views are configured';
+      const lignes = ['Views/Superviews Present in System:'];
+      for (const v of sec.parserViews.values()) lignes.push(`  ${v.name}  `);
+      return lignes.join('\n');
+    });
+
     trie.register('show ip ssh', 'Display SSH server status', () => {
       const sec = getSecurityConfig(this.d());
       return showIpSsh(sec.ssh, sec.cryptoKeys.length > 0 ? sec.cryptoKeys[0].modulus : null);
@@ -2230,6 +2351,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private registerCommonUserCommands(): void {
     this.userTrie.registerGreedy('enable', 'Enter privileged EXEC at a specific level', (args) => {
+      if (args[0]?.toLowerCase() === 'view') return this.entrerDansUneVue(args.slice(1));
       const lvl = args[0] ? parseInt(args[0], 10) : 15;
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
         return "% Invalid input detected at '^' marker.";
@@ -2266,6 +2388,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private registerCommonPrivilegedCommands(): void {
     this.privilegedTrie.register('enable', 'Turn on privileged commands', () => '');
+    this.privilegedTrie.registerGreedy('enable view', 'Enter a CLI view', (args) =>
+      this.entrerDansUneVue(args));
 
     this.privilegedTrie.register('configure terminal', 'Enter configuration mode', () => {
       this.mode = 'config';
@@ -3217,6 +3341,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       recorder._recordUnhandledConfigLine?.(raw ?? `privilege ${args.join(' ')}`);
       return '';
     });
+    /**
+     * `parser view <nom>` — declarer une vue CLI (le RBAC d'IOS).
+     *
+     * Deux conditions d'IOS, et ce ne sont pas des formalites : il faut
+     * `aaa new-model` (une vue est un mecanisme d'autorisation, il vit
+     * dans AAA) et il faut etre dans la vue RACINE (sans quoi une vue
+     * restreinte pourrait s'octroyer des commandes, ce qui viderait le
+     * mecanisme de son sens).
+     */
+    this.configTrie.registerGreedy('parser view', 'Define a CLI view', (args) => {
+      if (args.length === 0) throw new CliIncomplete();
+      const sec = getSecurityConfig(this.d());
+      if (!sec.aaaNewModel) {
+        return '%Parser view commands are not available. AAA must be enabled first';
+      }
+      if (this.activeParserView !== null) {
+        return '%Currently in view mode. Please exit to root view first';
+      }
+      const nom = args[0];
+      if (!sec.parserViews.has(nom)) {
+        sec.parserViews.set(nom, { name: nom, execInclude: [], execExclude: [] });
+      }
+      this.selectedParserView = nom;
+      this.mode = 'config-view';
+      return '';
+    });
+    this.configTrie.registerGreedy('no parser view', 'Remove a CLI view', (args) => {
+      if (args.length === 0) throw new CliIncomplete();
+      getSecurityConfig(this.d()).parserViews.delete(args[0]);
+      return '';
+    });
+
     this.configTrie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
       const mode = args[0]?.toLowerCase();
       if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
@@ -3342,15 +3498,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         agent.setServerMode(true);
         if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
       } else if (a[0] === 'source' && a[1]) {
-        (agent as unknown as { setSourceInterface?: (n: string) => void }).setSourceInterface?.(a[1]);
+        // `args` et non `a` : un nom d'interface et un mot de passe sont
+        // des DONNEES, pas des mots-cles. La ligne du dessus met toute la
+        // commande en minuscules pour comparer, et ce qui en sortait
+        // etait rangé tel quel -- `Loopback0` devenait `loopback0`, et
+        // `ClefNTP2024Secret` devenait `clefntp2024secret`, donc une
+        // AUTRE clé. Une configuration relue ne refaisait pas la machine.
+        agent.setSourceInterface(args[1]);
       } else if (a[0] === 'authenticate') {
-        (agent as unknown as { setAuthenticate?: (e: boolean) => void }).setAuthenticate?.(true);
-      } else if (a[0] === 'authentication-key' && a[1] && a[2] === 'md5' && a[3]) {
-        (agent as unknown as { addAuthKey?: (id: number, algo: string, key: string) => void }).addAuthKey?.(parseInt(a[1], 10), 'md5', a[3]);
+        agent.setAuthenticate(true);
+      } else if (a[0] === 'authentication-key' && a[1] && a[2] === 'md5' && args[3]) {
+        agent.addAuthKey(parseInt(a[1], 10), 'md5', args[3]);
       } else if (a[0] === 'trusted-key' && a[1]) {
-        (agent as unknown as { addTrustedKey?: (id: number) => void }).addTrustedKey?.(parseInt(a[1], 10));
+        agent.addTrustedKey(parseInt(a[1], 10));
       } else if (a[0] === 'access-group' && a[1] && a[2]) {
-        (agent as unknown as { setAccessGroup?: (kind: string, acl: string) => void }).setAccessGroup?.(a[1], a[2]);
+        agent.setAccessGroup(a[1], a[2]);
+      } else if (a[0] === 'update-calendar') {
+        agent.setUpdateCalendar(true);
+      } else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
+        agent.setAllowModeControl(true);
       }
       return '';
     });
@@ -3358,8 +3524,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const a = args.map(s => s.toLowerCase());
       const agent = getNtpAgent(this.d());
       if (!agent) return '';
-      if (a[0] === 'server' && a[1]) agent.removeServer(a[1]);
+      if ((a[0] === 'server' || a[0] === 'peer') && a[1]) agent.removeServer(a[1]);
       else if (a[0] === 'master') { agent.setServerMode(false); agent.setLocalStratum(16); }
+      else if (a[0] === 'authenticate') agent.setAuthenticate(false);
+      else if (a[0] === 'authentication-key' && a[1]) agent.removeAuthKey(parseInt(a[1], 10));
+      else if (a[0] === 'trusted-key' && a[1]) agent.removeTrustedKey(parseInt(a[1], 10));
+      else if (a[0] === 'access-group' && a[1]) agent.removeAccessGroup(a[1]);
+      else if (a[0] === 'source') agent.setSourceInterface('');
+      else if (a[0] === 'update-calendar') agent.setUpdateCalendar(false);
+      // Le durcissement du §9 : fermer le mode 6, celui de `monlist`.
+      else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
+        agent.setAllowModeControl(false);
+      }
       return '';
     });
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {
@@ -3757,6 +3933,58 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
+    // ─── Sous-mode `config-view` ────────────────────────────────────
+    this.configViewTrie.registerGreedy('secret', 'Set the view password', (args) => {
+      if (args.length === 0) throw new CliIncomplete();
+      const vue = this.vueEnCours();
+      if (!vue) return '';
+      // Meme forme que `username … secret` : un chiffre en tete decrit un
+      // condense deja calcule, sinon on hache.
+      const chiffre = args[0];
+      const map: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
+        '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
+      };
+      if (map[chiffre] !== undefined && args.length > 1) {
+        vue.secretAlgo = map[chiffre];
+        vue.secret = args.slice(1).join(' ');
+      } else {
+        vue.secretAlgo = 'md5';
+        vue.secret = args.join(' ');
+      }
+      return '';
+    });
+    this.configViewTrie.registerGreedy('commands', 'Configure the commands of a view', (args) => {
+      // `commands exec {include|exclude} <commande>`
+      if (args.length < 3) throw new CliIncomplete();
+      const vue = this.vueEnCours();
+      if (!vue) return '';
+      if (args[0].toLowerCase() !== 'exec') {
+        // IOS connait d'autres modes (`configure`, `interface`…) ; ce
+        // simulateur ne filtre que le mode exec, et le dire vaut mieux
+        // que ranger une regle que la porte ne consultera jamais.
+        throw new CliInvalidInput({ token: args[0] });
+      }
+      const sens = args[1].toLowerCase();
+      const commande = args.slice(2).join(' ').toLowerCase();
+      // Une commande qui n'existe pas n'accorderait rien : l'accepter
+      // ferait d'une faute de frappe une vue silencieusement vide, ce
+      // qui est le defaut que ce mecanisme est cense refermer. IOS
+      // refuse aussi. On interroge l'arbre PRIVILEGIE, le seul qui
+      // contienne l'ensemble des commandes exec.
+      const essai = this.privilegedTrie.match(commande);
+      if (essai.status !== 'ok' && essai.status !== 'incomplete') {
+        return '%Command not found';
+      }
+      if (sens === 'include' || sens === 'include-exclusive') {
+        if (!vue.execInclude.includes(commande)) vue.execInclude.push(commande);
+      } else if (sens === 'exclude') {
+        if (!vue.execExclude.includes(commande)) vue.execExclude.push(commande);
+      } else {
+        throw new CliInvalidInput({ token: args[1] });
+      }
+      return '';
+    });
+
     this.configLineTrie.setCompletionFilter((path, keyword) =>
       this.lineKeywordAllowed(path.length > 0 ? path[0] : keyword));
     // `login-timeout <secondes>` : le delai laisse pour s'identifier,

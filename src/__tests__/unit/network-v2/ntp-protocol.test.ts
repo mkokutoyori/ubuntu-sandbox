@@ -180,14 +180,18 @@ describe('NTP — show commands', () => {
     expect(status).toMatch(/stratum 9/);
   });
 
-  it('show ntp lists the configured association', async () => {
+  it('show ntp associations lists the configured association', async () => {
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('ntp server 10.0.0.1');
     await r.executeCommand('end');
-    const out = await r.executeCommand('show ntp');
-    expect(out).toMatch(/10\.0\.0\.1/);
+    // Lot N1 : ce cas tapait `show ntp` tout court, qui ne rendait le
+    // tableau que parce qu'un greedy avalait toute la queue de la
+    // commande -- le meme greedy qui faisait repondre la meme chose a
+    // `show ntp packets`. IOS veut une sous-commande.
+    expect(await r.executeCommand('show ntp associations')).toMatch(/10\.0\.0\.1/);
+    expect(await r.executeCommand('show ntp')).toMatch(/% Incomplete command|% Invalid input/);
   });
 
   it('running-config emits ntp server lines', async () => {
@@ -197,9 +201,14 @@ describe('NTP — show commands', () => {
     await r.executeCommand('ntp server 10.0.0.1 prefer');
     await r.executeCommand('ntp master 5');
     await r.executeCommand('end');
-    const cfg = r.getNtpAgent().runningConfigLines();
+    // Lot N1 : ce cas lisait `runningConfigLines()`, un SECOND rendu de
+    // configuration que rien n'appelait et qui contredisait celui que la
+    // machine rend vraiment (`ntp master` sans son stratum). Il est
+    // supprime ; l'assertion porte desormais sur le rendu reel, celui
+    // que `show running-config` traverse.
+    const cfg = r.getNtpAgent().asRunningConfigLines();
     expect(cfg).toContain('ntp server 10.0.0.1 prefer');
-    expect(cfg).toContain('ntp master');
+    expect(cfg).toContain('ntp master 5');
   });
 });
 

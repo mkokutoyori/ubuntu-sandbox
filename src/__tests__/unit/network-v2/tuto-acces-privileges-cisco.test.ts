@@ -64,7 +64,7 @@ async function ligneConfig(r: CiscoRouter, prefixe: string): Promise<string | un
 
 describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', () => {
   it('`show ip ssh` lit ce que l\'opérateur a configuré', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'ip domain-name ma-banque.local',
       'crypto key generate rsa modulus 2048',
@@ -84,24 +84,24 @@ describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', ()
    * c'est ainsi qu'un opérateur voit que `ip ssh version 2` manque.
    */
   it('sans configuration, la version annoncée est 1.99, pas 2.0', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     expect(await ios(r, ['show ip ssh'])).toContain('SSH Enabled - version 1.99');
   });
 
   it('la taille de clé n\'est annoncée que s\'il y a une clé', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     expect(await ios(r, ['show ip ssh'])).not.toContain('Hostkey RSA key size');
   });
 
   it('`ip ssh dh min size` est lu par la même vue', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['ip ssh dh min size 2048']);
     expect(await ios(r, ['show ip ssh']))
       .toContain('Minimum expected Diffie Hellman key size : 2048 bits');
   });
 
   it('les listes d\'algorithmes se relisent comme elles ont été écrites', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'ip ssh server algorithm mac hmac-sha2-256 hmac-sha2-512',
       'ip ssh server algorithm encryption aes256-ctr aes192-ctr aes128-ctr',
@@ -118,7 +118,7 @@ describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', ()
   });
 
   it('une famille d\'algorithmes inconnue est refusée, pas rangée', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     expect(await config(r, ['ip ssh server algorithm bidon aes256-ctr']))
       .toContain('% Invalid input detected');
   });
@@ -129,7 +129,7 @@ describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', ()
    * et qu'un import rejouerait deux fois.
    */
   it('la configuration ne contient qu\'UNE ligne par directive `ip ssh`', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['ip ssh version 2', 'ip ssh time-out 45', 'ip ssh authentication-retries 2']);
     const cfg = await ios(r, ['show running-config']);
     for (const directive of ['ip ssh version', 'ip ssh time-out', 'ip ssh authentication-retries']) {
@@ -143,13 +143,13 @@ describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', ()
 
 describe('§2-§3 : les types de stockage des mots de passe', () => {
   it('`enable secret` produit un type 5, le défaut d\'IOS', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['enable secret MonMotDePasseComplexe2024!']);
     expect(await ligneConfig(r, 'enable secret')).toMatch(/^enable secret 5 \$1\$/);
   });
 
   it('`enable algorithm-type scrypt secret` produit un type 9', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['enable algorithm-type scrypt secret MonMotDePasse2024!']);
     expect(await ligneConfig(r, 'enable secret')).toMatch(/^enable secret 9 \$9\$/);
   });
@@ -159,7 +159,7 @@ describe('§2-§3 : les types de stockage des mots de passe', () => {
    * en scrypt partait en MD5 — l'inverse de ce que la commande promet.
    */
   it('`username … algorithm-type sha256|scrypt` produit un type 8 ou 9', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'username u8 algorithm-type sha256 secret Sha@2024Long!',
       'username u9 algorithm-type scrypt secret Scr@2024Long!',
@@ -172,25 +172,25 @@ describe('§2-§3 : les types de stockage des mots de passe', () => {
   });
 
   it('un chiffre explicite décrit un condensé déjà calculé et l\'emporte', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['username uX algorithm-type scrypt secret 5 $1$abc$deja']);
     expect(await ligneConfig(r, 'username uX')).toContain('secret 5 $1$abc$deja');
   });
 
   it('un algorithme inconnu est refusé, pas silencieusement ignoré', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     expect(await config(r, ['username uY algorithm-type bidon secret Quelque@Chose1']))
       .toContain('% Invalid input detected');
   });
 
   it('`service password-encryption` transforme le type 0 en type 7', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['service password-encryption', 'enable password MonMotDePasse']);
     expect(await ligneConfig(r, 'enable password')).toMatch(/^enable password 7 /);
   });
 
   it('`security passwords min-length` refuse et le dit', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     const refus = await config(r, [
       'security passwords min-length 12',
       'username court secret abc',
@@ -204,7 +204,7 @@ describe('§2-§3 : les types de stockage des mots de passe', () => {
 
 describe('§4 : les niveaux de privilège', () => {
   it('`privilege exec level N <commande>` se configure et se relit', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'privilege exec level 5 show running-config',
       'privilege exec level 5 ping',
@@ -217,7 +217,7 @@ describe('§4 : les niveaux de privilège', () => {
   });
 
   it('`enable secret level 5` cohabite avec le secret de niveau 15', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'enable secret MotDePasse15Complexe!',
       'enable secret level 5 NOCEnable2024!',
@@ -228,7 +228,7 @@ describe('§4 : les niveaux de privilège', () => {
   });
 
   it('`show privilege` rapporte le niveau courant', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await ios(r, ['enable']);
     expect(await ios(r, ['show privilege'])).toContain('Current privilege level is 15');
   });
@@ -238,7 +238,7 @@ describe('§4 : les niveaux de privilège', () => {
 
 describe('§6-§7 : protection contre la force brute et filtrage VTY', () => {
   it('`login block-for … attempts … within …` est lu par `show login`', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['login block-for 120 attempts 3 within 30', 'login delay 3']);
     const vue = await ios(r, ['show login']);
     expect(vue).toContain('A login delay of 3 seconds is applied.');
@@ -247,7 +247,7 @@ describe('§6-§7 : protection contre la force brute et filtrage VTY', () => {
   });
 
   it('`login quiet-mode access-class` est retenu et rapporté', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'ip access-list standard LOGIN_WHITELIST', 'permit 192.168.100.0 0.0.0.255', 'exit',
       'login block-for 120 attempts 3 within 30',
@@ -259,7 +259,7 @@ describe('§6-§7 : protection contre la force brute et filtrage VTY', () => {
 
   /** `login-timeout` compte la SAISIE ; `exec-timeout` compte l'inactivité. */
   it('`login-timeout` est accepté sur une ligne et se relit', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['line vty 0 4', 'exec-timeout 15 0', 'login-timeout 30']);
     const cfg = await ios(r, ['show running-config']);
     expect(cfg).toContain(' login-timeout 30');
@@ -267,13 +267,13 @@ describe('§6-§7 : protection contre la force brute et filtrage VTY', () => {
   });
 
   it('une valeur hors bornes de `login-timeout` est refusée', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     expect(await config(r, ['line vty 0 4', 'login-timeout 999']))
       .toContain('% Invalid input detected');
   });
 
   it('`access-class … in` sur les VTY se configure et se relit', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'ip access-list standard SSH_ALLOWED', 'permit 192.168.100.0 0.0.0.255', 'exit',
       'line vty 0 4', 'access-class SSH_ALLOWED in', 'transport input ssh',
@@ -293,7 +293,7 @@ describe('§8-§9 : AAA et TACACS+', () => {
    * sessions. Ce sont deux questions.
    */
   it('`show aaa` décrit le sous-système, pas les sessions', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     expect(await ios(r, ['show aaa'])).toBe('AAA is disabled.');
 
     await config(r, [
@@ -318,13 +318,13 @@ describe('§8-§9 : AAA et TACACS+', () => {
   });
 
   it('`show aaa sessions` répond bien à sa propre question', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, ['aaa new-model']);
     expect(await ios(r, ['show aaa sessions'])).toContain('Total sessions since last reload');
   });
 
   it('la séquence sûre du tutoriel se configure entièrement', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'username admin privilege 15 secret SecretAdmin2024!',
       'username emergency privilege 15 secret Emergency@2024!',
@@ -339,7 +339,7 @@ describe('§8-§9 : AAA et TACACS+', () => {
   });
 
   it('un serveur TACACS+ nommé se déclare et se relit', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'tacacs server TACACS_PRIMAIRE',
       'address ipv4 192.168.100.10',
@@ -357,7 +357,7 @@ describe('§8-§9 : AAA et TACACS+', () => {
   });
 
   it('un profil d\'authentification nommé pour la console se configure', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'aaa new-model',
       'aaa authentication login CONSOLE_AUTH local',
@@ -372,7 +372,7 @@ describe('§8-§9 : AAA et TACACS+', () => {
 
 describe('§5 : les trois bannières', () => {
   it('les trois se configurent et se relisent', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1');
     await config(r, [
       'banner motd #ACCES RESTREINT ET SURVEILLE#',
       'banner login #Authentification requise.#',

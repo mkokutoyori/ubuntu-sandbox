@@ -535,6 +535,10 @@ export function showRunningConfig(router: Router): string {
       lines.push(' no ip split-horizon');
     }
     if (!port.getIsUp()) lines.push(` shutdown`);
+    // Le durcissement d'une interface se REJOUE : sans cette ligne, un
+    // `ntp disable` posé sur un lien exterieur disparaissait a l'import
+    // de la topologie et l'interface revenait servante.
+    if (ntpAgentOf(router)?.isInterfaceDisabled(name)) lines.push(` ntp disable`);
     if (!port.isNegotiationAuto?.()) {
       const sp = port.getSpeed?.();
       if (sp) lines.push(` speed ${sp}`);
@@ -649,6 +653,10 @@ export function showRunningConfig(router: Router): string {
           ? `password ${renderPasswordField(u.secret, algo, serviceEncryption, true, `username:${u.name}`)}`
           : `secret ${renderSecretField(u.secret, algo, `username:${u.name}`)}`;
         lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
+        // IOS ecrit la vue sur une ligne SEPAREE : c'est une commande a
+        // part, et la fondre dans la precedente donnerait une ligne
+        // qu'un import ne saurait pas rejouer.
+        if (u.view) lines.push(`username ${u.name} view ${u.view}`);
       }
     }
   }
@@ -1185,6 +1193,11 @@ export function showInterfacesSummary(router: Router): string {
  * `show running-config` et nié par cette vue, sur la même machine au
  * même instant.
  */
+/** L'agent NTP d'un routeur, quand il en a un. */
+function ntpAgentOf(router: Router): import('@/network/ntp/NtpAgent').NtpAgent | undefined {
+  return (router as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+}
+
 function ipInterfaceBlock(router: Router, name: string, port: Port): string {
   const view = iosInterfaceStatus(port, name, router._getPortsInternal());
   const nat = router._getNATEngine();

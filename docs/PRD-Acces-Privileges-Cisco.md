@@ -116,19 +116,64 @@ Un défaut **pré-existant**, attrapé par le garde-fou
 `ipv6 nd ra` n'avait pas de description alors que ses enfants en ont, si
 bien que `?` le proposait nu.
 
-## 8. Ce qui reste, et pourquoi
+## 8. §11 — les CLI Views, livrées
 
-Trois parties du tutoriel ne se rejouent pas, et c'est dit ici plutôt
-que découvert :
-
-**§11 — CLI Views (RBAC).** Entièrement absent : `parser view`,
+Le sous-système était entièrement absent : `parser view`,
 `commands exec include`, `enable view`, `show parser view`,
-`username X view Y`. Ce n'est pas une commande manquante mais un
-sous-système : une vue est un filtre sur les commandes exec disponibles,
-donc un second mécanisme d'autorisation à côté des niveaux de privilège
-(qui, eux, fonctionnent). Le faire à moitié — accepter `parser view` et
-ne filtrer personne — serait précisément le défaut que ce travail
-referme.
+`username X view Y` répondaient tous `% Invalid input detected`. Ce
+n'était pas une commande manquante mais un second mécanisme
+d'autorisation à côté des niveaux de privilège, et l'accepter sans
+filtrer aurait été exactement le défaut que ce travail referme.
+
+**Ce qui distingue une vue d'un niveau de privilège EST le mécanisme,
+et c'est la seule chose qu'il ne fallait pas rater.** Un niveau AJOUTE
+des commandes au socle du niveau 1 ; une vue REMPLACE l'arbre visible
+par ce qu'elle inclut, et rien d'autre. C'est ce qui la rend utilisable
+pour décrire un rôle : on énonce ce que le rôle a le droit de faire, au
+lieu de l'ajouter par-dessus un socle qu'on n'a pas choisi. La
+conséquence observable est qu'une commande hors de la vue n'est pas
+« refusée » mais **absente** — IOS répond `% Invalid input detected`,
+le même texte que pour une commande qui n'existe pas.
+
+La porte est branchée là où le filtrage par niveau l'était déjà, dans
+`executeOnTrie`, et **hors d'une vue elle rend `true` sans rien
+consulter** : le cas courant — aucune vue, c'est-à-dire tout le reste du
+dépôt — ne traverse aucune logique nouvelle, ce que deux cas de
+non-régression vérifient.
+
+Quatre décisions valent d'être écrites, chacune parce que l'inverse
+était possible :
+
+- **`parser view` exige `aaa new-model`**, comme IOS. Une vue vit dans
+  AAA ; l'accepter sans lui donnerait un mécanisme d'autorisation sans
+  le sous-système qui l'autorise.
+- **Une commande inconnue est refusée à l'inclusion** (`%Command not
+  found`), validée contre le trie privilégié. Sans ce contrôle, une
+  faute de frappe produirait une vue silencieusement vide — le rôle
+  existerait, ne donnerait droit à rien, et rien ne le dirait.
+- **On ne déclare pas une vue depuis une vue.** Sans cette garde, une
+  vue restreinte pourrait s'octroyer des commandes et le mécanisme se
+  viderait de son sens.
+- **On sort toujours d'une vue** : `exit`, `end`, `logout`, `disable`,
+  `enable` et `show parser view` sont hors du filtre. Une vue dont on
+  ne peut pas sortir n'est plus un rôle, c'est une souricière ; et
+  `show parser view` doit répondre depuis l'intérieur, sans quoi on ne
+  saurait pas où l'on est.
+
+`username X view NOM` est rendue sur une **ligne séparée**, comme IOS :
+c'est une commande à part, et la fondre dans la précédente donnerait une
+ligne qu'un import ne saurait pas rejouer. La vue référencée doit
+exister (`%Error: View NOM is not present in the system`).
+
+`NetworkOsAccount.view` est porté par le modèle immuable et traverse
+`snapshot()`/`mutate()` comme les autres champs — un champ oublié là se
+perdrait en silence au patch suivant, ce que `create()` a d'ailleurs
+manqué au premier jet et que le typage a rattrapé.
+
+## 9. Ce qui reste, et pourquoi
+
+Deux parties du tutoriel ne se rejouent pas, et c'est dit ici plutôt
+que découvert :
 
 **§9 — `test aaa group … new-code`.** Absent. La commande interroge le
 serveur AAA sans se déconnecter ; elle suppose un serveur TACACS+ qui
@@ -143,7 +188,7 @@ aucun serveur HTTP sur le routeur simulé auquel rattacher le drapeau ;
 le rendre demanderait d'en modéliser un, ou d'assumer un drapeau que
 rien ne lit — le choix reste ouvert.
 
-## 9. Vérification
+## 10. Vérification
 
 `tuto-acces-privileges-cisco.test.ts` (28 cas), discriminé par remise en
 état des fichiers produit : **9 échouent** authentiquement. Les 19 qui
@@ -151,4 +196,17 @@ passent des deux côtés portent sur ce qui était déjà correct — c'est ce
 qu'on attend d'eux, et c'est ce qui distingue une correction d'une
 réécriture.
 
-Non-régression : 90 fichiers touchant ces sorties, 1 825 cas, verts.
+`tuto-cli-views-cisco.test.ts` (18 cas), discriminé de la même façon sur
+les dix fichiers touchés : **14 échouent** avant correctif. Les 4 qui
+passent des deux côtés sont nommés dans l'en-tête du fichier plutôt que
+laissés à découvrir — deux sont les cas de non-régression, dont c'est
+l'objet même ; les deux autres passaient avant pour une raison qui ne
+prouve rien du mécanisme (« un mode autre qu'exec est refusé » passait
+parce que `parser view` l'était déjà ; « ce qu'elle inclut fonctionne »
+parce qu'`enable view` ne faisait rien et qu'on restait à la racine, où
+tout fonctionne).
+
+Non-régression : 90 fichiers touchant ces sorties, 1 825 cas, verts pour
+la première tranche ; 14 fichiers CLI/AAA/privilèges, 624 cas, verts
+pour les vues. Lint identique au relevé d'avant sur les douze fichiers
+touchés (75 problèmes, aucun ajouté).

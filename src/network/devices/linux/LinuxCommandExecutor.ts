@@ -410,6 +410,12 @@ export class LinuxCommandExecutor {
 
   /** Le nginx de cette machine, pour la commande `nginx` (docs/PRD-Nginx.md §P2). */
   nginxService: NginxControl | null = null;
+
+  /** L'agent NTP de la machine — le MEME moteur que Cisco et Huawei. */
+  ntpAgent: (() => import('../../ntp/NtpAgent').NtpAgent) | null = null;
+
+  /** Le demon chrony de cette machine (`PRD-NTP-Tutoriel.md` §4). */
+  chronyService: import('./time/LinuxChronyService').LinuxChronyService | null = null;
   /** The apache2 server, for the `apachectl` command (§M4a). */
   apacheService: ApacheControl | null = null;
   /** Records port bind / release activity into the system log, reactively. */

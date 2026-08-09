@@ -3769,7 +3769,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _upsertCiscoUsername(name: string, kv: {
     privilege?: number; secret?: string;
     secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-    autocommand?: string; nopassword?: boolean; description?: string;
+    autocommand?: string; nopassword?: boolean; description?: string; view?: string;
   }): void {
     this.getSecurityAuditLog();
     const store = this.getCredentialStore();
@@ -3778,6 +3778,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (kv.nopassword) account = account.withSecret('', 'plain');
     else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
     if (kv.description) account = account.withDescription(kv.description);
+    if (kv.view !== undefined) account = account.withView(kv.view);
     if (account.factoryDefault) account = account.asOperatorOwned();
     store.upsert(account);
   }
@@ -3789,10 +3790,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const a = this.getCredentialStore().get(name);
     return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
   }
-  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean; serviceTypes: readonly string[] }> {
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; view?: string; factoryDefault: boolean; serviceTypes: readonly string[] }> {
     return this.getCredentialStore().list().map(a => ({
       name: a.name, privilege: a.privilege, secret: a.secret,
       secretAlgo: a.passwordHashAlgorithm,
+      view: a.view ?? undefined,
       factoryDefault: a.factoryDefault,
       // Le `service-type` etait stocke par `withServiceTypes()` et
       // laisse de cote par cette projection, si bien que le rendu

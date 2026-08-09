@@ -109,6 +109,7 @@ import { uptimeCommand } from './system/Uptime';
 import { unameCommand } from './system/Uname';
 import { hostnamectlCommand } from './system/Hostnamectl';
 import { timedatectlCommand } from './system/Timedatectl';
+import { chronycCommand } from './system/Chronyc';
 import { nprocCommand } from './system/Nproc';
 import { anacronCommand } from './system/Anacron';
 import { systemdAnalyzeCommand } from './system/SystemdAnalyze';
@@ -231,6 +232,7 @@ export {
   unameCommand,
   hostnamectlCommand,
   timedatectlCommand,
+  chronycCommand,
   nprocCommand,
   anacronCommand,
   systemdAnalyzeCommand,
@@ -364,6 +366,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   unameCommand,
   hostnamectlCommand,
   timedatectlCommand,
+  chronycCommand,
   nprocCommand,
   anacronCommand,
   systemdAnalyzeCommand,

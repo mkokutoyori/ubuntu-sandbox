@@ -19,6 +19,7 @@ import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName, HUAWEI_ERRORS } from '../cli-utils';
+import { displayNtpServiceStatus, displayNtpServiceSessions, lignesConfigNtpVrp } from './huaweiNtpCommands';
 import {
   AUCUN_GROUPE, groupesDeLInterface, lignesConfigVrrp,
   rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
@@ -1014,21 +1015,15 @@ function appendManagementConfig(lines: string[], router: Router): void {
     }
     for (const r of mgmt.getRawEntries('snmp')) lines.push(`snmp-agent ${r.line}`);
   }
-  const ntp = mgmt.getNtp();
-  const ntpRaw = mgmt.getRawEntries('ntp');
-  if (ntpRaw.length > 0 || ntp.sourceInterface || ntp.authentication || ntp.masterStratum) {
+  // Lot N2 : ces lignes sortaient d'un sac de chaines brutes, donc elles
+  // reproduisaient la saisie sans decrire l'etat — deux lignes pour une
+  // adresse configuree deux fois, et un `authentication-mode` ecrit deux
+  // fois avec la cle perdue. Elles decrivent l'agent, donc elles se
+  // relisent.
+  const ntpLignes = lignesConfigNtpVrp(huaweiNtpAgent(router));
+  if (ntpLignes.length > 0) {
     lines.push('#');
-    if (ntp.sourceInterface) lines.push(`ntp-service source-interface ${ntp.sourceInterface}`);
-    if (ntp.authentication) lines.push('ntp-service authentication enable');
-    for (const [id, k] of ntp.authKeys) {
-      lines.push(`ntp-service authentication-keyid ${id} authentication-mode ${k.algo} ${k.key}`);
-    }
-    for (const id of ntp.trustedKeys) {
-      lines.push(`ntp-service reliable authentication-keyid ${id}`);
-    }
-    if (ntp.accessAcl) lines.push(`ntp-service access-acl ${ntp.accessAcl}`);
-    if (ntp.masterStratum !== undefined) lines.push(`ntp-service refclock-master ${ntp.masterStratum}`);
-    for (const r of ntpRaw) lines.push(`ntp-service ${r.line}`);
+    lines.push(...ntpLignes);
   }
   const clock = mgmt.getClock();
   if (clock.timezone !== 'UTC' || clock.summerTimezone) {
@@ -1140,6 +1135,10 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
 }
 
 // ─── Trie Registration ──────────────────────────────────────────────
+
+function huaweiNtpAgent(router: Router): import('../../../ntp/NtpAgent').NtpAgent | undefined {
+  return (router as unknown as { getNtpAgent?: () => import('../../../ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+}
 
 function huaweiVrrpAgent(router: Router): import('../../../vrrp/VrrpAgent').VrrpAgent | undefined {
   return (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
@@ -1472,29 +1471,16 @@ export function registerDisplayCommands(
     ].join('\n');
   });
 
-  trie.register('display ntp-service status', 'Display NTP service status', () => {
-    const ntp = (getRouter() as unknown as { getNtpAgent?: () => { isSynced: () => boolean; getConfig: () => { localStratum: number; sourceInterface: string; refIdentifier: string } } }).getNtpAgent?.();
-    if (!ntp) return 'Clock is unsynchronized';
-    const synced = ntp.isSynced();
-    const cfg = ntp.getConfig();
-    return [
-      `Clock status: ${synced ? 'synchronized' : 'unsynchronized'}`,
-      `Clock stratum: ${cfg.localStratum}`,
-      `Reference clock ID: ${cfg.refIdentifier || '.INIT.'}`,
-      cfg.sourceInterface ? `Source interface: ${cfg.sourceInterface}` : '',
-    ].filter(Boolean).join('\n');
-  });
-
-  trie.register('display ntp-service sessions', 'Display NTP sessions', () => {
-    const ntp = (getRouter() as unknown as { getNtpAgent?: () => { getConfig: () => { associations: Map<string, { serverIp: string; stratum: number; pollSec: number; preferred: boolean }> } } }).getNtpAgent?.();
-    const assocs = ntp?.getConfig().associations;
-    if (!assocs || assocs.size === 0) return 'No NTP associations';
-    const lines = ['  address         stratum poll reach   delay   offset    disp'];
-    for (const [, a] of assocs) {
-      lines.push(`  ${a.serverIp.padEnd(15)} ${String(a.stratum).padEnd(7)} ${String(a.pollSec).padEnd(4)} 377     0.0     0.0       0.0${a.preferred ? '  *' : ''}`);
-    }
-    return lines.join('\n');
-  });
+  // Lot N2 : ces deux vues lisaient l'agent, ce qui etait juste — mais
+  // le CLI ecrivait ailleurs, si bien que `sessions` repondait
+  // `No NTP associations` sur une machine dont la configuration listait
+  // quatre serveurs. Le rendu est partage et le magasin unique.
+  trie.register('display ntp-service status', 'Display NTP service status',
+    () => displayNtpServiceStatus(huaweiNtpAgent(getRouter())));
+  trie.register('display ntp-service sessions verbose', 'Detailed NTP sessions',
+    () => displayNtpServiceSessions(huaweiNtpAgent(getRouter()), true));
+  trie.register('display ntp-service sessions', 'Display NTP sessions',
+    () => displayNtpServiceSessions(huaweiNtpAgent(getRouter())));
 
   trie.register('display info-center', 'Display info-center configuration', () => {
     const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
@@ -1743,7 +1729,12 @@ export function registerDisplayCommands(
     displayIpPoolAll(getRouter()));
 
   // ── Common VRP display commands (shared with the switch, DRY) ──
-  trie.register('display clock', 'Display system clock', () => commonDisplayClock());
+  trie.register('display clock', 'Display system clock', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const c = mgmt?.getClock();
+    return commonDisplayClock(new Date(),
+      c ? { timezone: c.timezone, offsetMin: c.offsetMin } : undefined);
+  });
   trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
   trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());
   trie.register('display users', 'Display user sessions', () => commonDisplayUsers());

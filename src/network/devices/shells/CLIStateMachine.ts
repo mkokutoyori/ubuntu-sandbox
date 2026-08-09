@@ -108,6 +108,10 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-if':                 { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-subif':              { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-line':               { parent: 'config' },
+  // La vue en cours de declaration est oubliee en sortant, comme le pool
+  // DHCP ou l'ACL selectionnee : sans quoi un `secret` tape plus tard
+  // atterrirait dans une vue qu'on croyait avoir quittee.
+  'config-view':               { parent: 'config', clearOnExit: ['selectedParserView'] },
   'config-dhcp':               { parent: 'config', clearOnExit: ['selectedDHCPPool'] },
   'config-router':             { parent: 'config', clearOnExit: ['selectedRoutingProto'] },
   'config-router-af':          { parent: 'config-router' },
@@ -179,6 +183,10 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-vlan': { parent: 'config', clearOnExit: ['selectedVlan'] },
   'config-mst':  { parent: 'config' },
   'config-line': { parent: 'config' },
+  // La vue en cours de declaration est oubliee en sortant, comme le pool
+  // DHCP ou l'ACL selectionnee : sans quoi un `secret` tape plus tard
+  // atterrirait dans une vue qu'on croyait avoir quittee.
+  'config-view': { parent: 'config', clearOnExit: ['selectedParserView'] },
   'config-acl':  { parent: 'config', clearOnExit: ['selectedAcl'] },
   'config-dhcp': { parent: 'config', clearOnExit: ['selectedDhcpPool'] },
   'config-access-map': { parent: 'config', clearOnExit: ['selectedAccessMap'] },
