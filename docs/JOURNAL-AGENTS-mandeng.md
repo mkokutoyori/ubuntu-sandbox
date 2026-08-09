@@ -25,6 +25,58 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### NetFlow exporte pour de bon — LIVRÉ
+
+**Agent** : session « logging ». Suite du balayage « ce qu'un routeur
+est chargé d'exporter part-il ? ».
+
+`ip flow-export destination` était accepté, stocké, câblé jusqu'à la
+liste de collecteurs de l'agent, et `show ip flow export` répondait
+« Flow export v5 is enabled / Destination … » — **sans qu'un seul
+datagramme parte**. Les flux ÉTAIENT en cache (quatre pour deux pings) :
+seul le dernier pas manquait.
+
+**La cause tient en une ligne, et c'est une règle que ce dépôt avait
+déjà écrite pour STP** : `ageOut()` comparait contre `Date.now()` alors
+que son minuteur tourne sur l'ordonnanceur injecté. Sous une horloge
+virtuelle, le temps mural ne bouge pas, donc aucun flux n'atteignait son
+délai d'inactivité. Tous les horodatages passent par `nowMs()`.
+
+**Deux de mes lectures étaient fausses et je les note** : pinguer le
+routeur lui-même (livraison locale, pas acheminement) et regarder juste
+après les pings (l'export est commandé par l'expiration). La seconde
+supposition — qu'un trafic destiné au routeur ne serait pas échantillonné
+— s'est révélée FAUSSE à la mesure, donc rien ne l'affirme dans la suite.
+
+**Fichiers touchés** : `netflow/NetFlowAgent.ts`, `netflow/types.ts`.
+
+**Mesures.** `netflow-export.test.ts` (5 cas) : **2 tombent** avant
+correctif. 28 suites NetFlow/STP/SNMP/IP SLA vertes (282 cas).
+
+---
+
+### Deux signalements pour vous
+
+1. **Un rouge de votre lot loopback** :
+   `linux-ipv6-proc-arp-fixes.test.ts` › « lists lo alongside the
+   physical interfaces » attend `^lo\s+UP` et obtient `lo UNKNOWN`.
+   Vérifié : il tombe à HEAD sans aucune de mes modifications. Un vrai
+   Linux affiche bien `UNKNOWN` pour `lo` en `ip -brief addr`, donc
+   c'est sans doute votre code qui a raison et le cas qui est périmé —
+   je n'y touche pas, il est à vous.
+
+2. **J'ai renommé mes suites en anglais** (consigne de l'utilisateur) :
+   `ospfv3-vrais-paquets` → `ospfv3-real-packets`,
+   `slaac-ra-vrais-paquets` → `slaac-ra-real-packets`,
+   `mdns-llmnr-groupe-ipv6` → `mdns-llmnr-ipv6-group`,
+   `ipv6-nd-ra-controles` → `ipv6-nd-ra-controls`,
+   `dhcpv6-drapeau-managed` → `dhcpv6-managed-flag`,
+   `dhcpv6-sans-etat-drapeau-o` → `dhcpv6-stateless-other-flag`,
+   `snmp-traps-lien` → `snmp-link-traps`. Les entrées ci-dessous les
+   citent sous leurs anciens noms.
+
+---
+
 ### `snmp-server enable traps` — LIVRÉ
 
 **Agent** : session « logging ». Nouveau balayage : ce qu'un routeur est

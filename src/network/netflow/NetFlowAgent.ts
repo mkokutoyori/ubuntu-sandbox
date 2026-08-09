@@ -39,7 +39,7 @@ export interface NetFlowRecordInput {
 export class NetFlowAgent {
   private config: NetFlowConfig = createDefaultNetFlowConfig();
   private activeFlows = new Map<string, ActiveFlow>();
-  private startedAtMs = Date.now();
+  private startedAtMs = 0;
   private flowSequence = 0;
   private samplingCounter = 0;
   private exportTimer: TimerHandle | null = null;
@@ -56,7 +56,7 @@ export class NetFlowAgent {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.startedAtMs = Date.now();
+    this.startedAtMs = this.nowMs();
     if (this.config.enabled) this.startTimers();
   }
 
@@ -124,13 +124,13 @@ export class NetFlowAgent {
       this.samplingCounter = (this.samplingCounter + 1) % this.config.samplingInterval;
       if (this.samplingCounter !== 0) return;
     }
-    const r = newRecord(input);
+    const r = newRecord(input, this.nowMs());
     const key = flowKey(r);
     const existing = this.activeFlows.get(key);
     if (existing) {
       existing.packets += r.packets;
       existing.octets += r.octets;
-      existing.lastSwitchedMs = Date.now();
+      existing.lastSwitchedMs = this.nowMs();
       existing.tcpFlags |= r.tcpFlags;
       this.getBus().publish({
         topic: 'netflow.flow.recorded',
@@ -209,9 +209,9 @@ export class NetFlowAgent {
     const header: NetFlowV5Header = {
       version: NETFLOW_V5_VERSION,
       count: chunk.length,
-      sysUptimeMs: Date.now() - this.startedAtMs,
-      unixSecs: Math.floor(Date.now() / 1000),
-      unixNsecs: (Date.now() % 1000) * 1_000_000,
+      sysUptimeMs: this.nowMs() - this.startedAtMs,
+      unixSecs: Math.floor(this.nowMs() / 1000),
+      unixNsecs: (this.nowMs() % 1000) * 1_000_000,
       flowSequence: this.flowSequence,
       engineType: this.config.engineType,
       engineId: this.config.engineId,
@@ -247,7 +247,7 @@ export class NetFlowAgent {
     }
     collector.exportedPackets++;
     collector.exportedFlows += chunk.length;
-    collector.lastExportMs = Date.now();
+    collector.lastExportMs = this.nowMs();
     this.getBus().publish({
       topic: 'netflow.packet.exported',
       payload: {
@@ -259,6 +259,15 @@ export class NetFlowAgent {
     Logger.info(this.host.id, 'netflow:export',
       `${this.host.name}: ${chunk.length} flows → ${collector.ip}:${collector.port}`);
   }
+
+  /**
+   * The clock flows age against. It has to be the scheduler's, not the
+   * wall clock: the ageing timer runs on the injected scheduler, so
+   * under a virtual one wall time never moves and a `Date.now()` stamp
+   * compared on a scheduler tick never elapses — no flow ever expired
+   * and nothing was ever exported. Same rule `StpAgent.nowMs()` states.
+   */
+  private nowMs(): number { return this.getScheduler().now(); }
 
   private startTimers(): void {
     const s = this.getScheduler();
@@ -287,7 +296,7 @@ export class NetFlowAgent {
   }
 
   private ageOut(): void {
-    const now = Date.now();
+    const now = this.nowMs();
     const inactiveMs = this.config.inactiveTimeoutSec * 1000;
     const activeMs = this.config.activeTimeoutSec * 1000;
     const expired: ActiveFlow[] = [];
