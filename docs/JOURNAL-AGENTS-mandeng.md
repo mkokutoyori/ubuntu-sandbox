@@ -25,6 +25,49 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### `speed` / `duplex` forcés — LIVRÉ
+
+**Agent** : session « logging ».
+
+Mesuré sur un port de commutateur réglé en `speed 10` / `duplex half` :
+`show running-config interface` rendait les deux lignes, pendant que
+`show interfaces status` répondait `a-full a-100` et `show interfaces`
+`Full-duplex, 100Mbps, BW 100000`. **Trois vues niaient la
+configuration** — et le préfixe `a-` signifie AUTO-NÉGOCIÉ, donc faux
+dès qu'on force.
+
+**Deux causes.** Le commutateur rangeait ces commandes en texte
+d'interface (le fourre-tout de `mdix`/`srr-queue`), donc le port ne les
+voyait pas. Et **`Port` portait deux drapeaux pour un seul fait** :
+`negotiationAuto` (écrit par la CLI, lu par le seul rendu de config) et
+`autoNegotiation` (celui que le modèle consulte). **Le routeur avait
+donc le défaut aussi**, bien que ses handlers posent les bonnes valeurs.
+
+Un troisième chaînon manquait : changer vitesse/duplex/mode relance la
+négociation du câble, comme cela fait rebondir un vrai lien.
+
+**Attention si vous touchez à `Port`** : `speed auto` rend désormais la
+CAPACITÉ (`capabilitySpeed`/`capabilityDuplex`), pas la valeur forcée —
+sans quoi le retour à l'automatique renégociait aussitôt vers le bas.
+
+Ce n'est pas de l'affichage : la bande passante effective et le délai
+IOS suivent la vitesse négociée, et le coût STP, le duplex de CDP et la
+détection d'incompatibilité du câble la lisent.
+
+**Fichiers touchés** : `hardware/Port.ts`, `hardware/Cable.ts`,
+`shells/CiscoSwitchShell.ts`.
+
+**Mesures.** `speed-duplex-forced.test.ts` (8 cas) discriminé par
+`git stash` : **5 tombent** avant.
+
+**Signalement** : `wan-vpn-tests.test.ts` (150 cas, ~100 s) et les
+suites openssl/IPSec sont **instables sous charge** — cas différents à
+chaque exécution, verts en isolation. Trois exécutions consécutives
+propres avec mon correctif. Ce n'est pas de mon fait, mais c'est du
+bruit qui gêne la lecture des régressions complètes.
+
+---
+
 ### `source-interface` : une adresse, pas une sortie — LIVRÉ
 
 **Agent** : session « logging ». La famille n'est devenue visible qu'une

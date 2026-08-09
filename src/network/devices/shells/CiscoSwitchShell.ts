@@ -2943,10 +2943,58 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return recordIf(`switchport trunk encapsulation ${args.join(' ')}`.trim());
     });
+    // `speed` and `duplex` drive the real port, as the router's own
+    // handlers already did. Stored as raw text here, they left three
+    // views contradicting the configuration on the same machine, and
+    // STP cost, CDP's reported duplex and cable negotiation — all of
+    // which read the port — never saw the operator's choice.
+    const targetPorts = (): Array<import('../../hardware/Port').Port> => {
+      const names = this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange;
+      return names
+        .map((n) => this.d().getPort(n))
+        .filter((p): p is import('../../hardware/Port').Port => !!p);
+    };
+    // An SVI is a virtual L3 interface and rejects these, as real IOS
+    // does. The refusal is signalled rather than worded: the diagnostic
+    // renderer is the single place that puts it into English.
+    const rejectOnSvi = (): void => {
+      if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
+        throw new CliInvalidInput();
+      }
+    };
+    this.configIfTrie.registerGreedy('duplex', 'Set interface duplex', (args) => {
+      rejectOnSvi();
+      const a = (args[0] ?? '').toLowerCase();
+      if (a !== 'full' && a !== 'half' && a !== 'auto') {
+        throw new CliInvalidInput({ argIndex: 0, token: args[0] });
+      }
+      for (const port of targetPorts()) {
+        if (a === 'auto') { port.setNegotiationAuto(true); continue; }
+        port.setDuplex(a === 'half' ? 'half' : 'full');
+        port.setNegotiationAuto(false);
+      }
+      return recordIf(`duplex ${a}`);
+    });
+    this.configIfTrie.registerGreedy('speed', 'Set interface speed', (args) => {
+      rejectOnSvi();
+      const a = (args[0] ?? '').toLowerCase();
+      if (a === 'auto') {
+        for (const port of targetPorts()) port.setNegotiationAuto(true);
+        return recordIf('speed auto');
+      }
+      if (!/^\d+$/.test(a)) throw new CliInvalidInput({ argIndex: 0, token: args[0] });
+      const n = parseInt(a, 10);
+      for (const port of targetPorts()) {
+        try { port.setSpeed(n); } catch { throw new CliInvalidInput({ argIndex: 0, token: args[0] }); }
+        port.setNegotiationAuto(false);
+      }
+      return recordIf(`speed ${n}`);
+    });
     for (const sub of [
       'switchport voice',
       'channel-protocol', 'storm-control',
-      'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
+      'mdix', 'power', 'srr-queue', 'load-interval',
     ]) {
       this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         // These are physical-port-only; an SVI is a virtual L3 interface and
@@ -3674,8 +3722,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         name: (sw.getInterfaceDescription(portName) || '').slice(0, 17),
         status: port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled',
         vlan: cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1),
-        duplex: connected ? 'a-full' : 'auto',
-        speed: connected ? (portName.startsWith('Gi') ? 'a-1000' : 'a-100') : 'auto',
+        // Read the port rather than guess from its name. The `a-`
+        // prefix is IOS's way of saying the value was AUTO-NEGOTIATED,
+        // so it is wrong the moment an operator forces speed or duplex —
+        // and the hardcoded `a-full`/`a-100` denied the configuration
+        // outright on a port set to `duplex half` / `speed 10`.
+        duplex: !connected ? 'auto'
+          : (port.isAutoNegotiation() ? 'a-' : '') + port.getNegotiatedDuplex(),
+        speed: !connected ? 'auto'
+          : (port.isAutoNegotiation() ? 'a-' : '') + String(port.getNegotiatedSpeed()),
         type: portName.startsWith('Gi') ? '1000BASE-T' : '10/100BaseTX',
       });
     }
