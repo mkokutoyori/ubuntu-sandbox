@@ -382,6 +382,17 @@ export class IPv6DataPlane {
     } else if (pkt.msgType === 'RELEASE') {
       server.processRelease({ clientDuid: pkt.clientDuid!, iaid, address: pkt.ia?.addresses[0]?.address ?? '' });
       return;
+    } else if (pkt.msgType === 'INFORMATION-REQUEST') {
+      // Service sans etat (RFC 8415 §18.3.5) : la reponse ne porte que
+      // la configuration annexe, et rien n'est attribue ni retenu.
+      const info = server.processInformationRequest(
+        { transactionId: pkt.transactionId }, poolName, clientAddr.toString());
+      if (!info) return;
+      this.sendDhcpv6Reply(inPort, clientAddr, DHCPv6Packet.createInformationReply(
+        pkt.clientDuid!, server.getServerDuid(), pkt.transactionId,
+        info.pool.dnsServers, info.pool.domainName,
+      ), dstMAC);
+      return;
     } else {
       return;
     }

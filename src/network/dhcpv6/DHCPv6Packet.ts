@@ -109,6 +109,42 @@ export class DHCPv6Packet {
     return DHCPv6Packet.createServerReply('REPLY', clientDuid, serverDuid, transactionId, iaid, address, preferredLifetime, validLifetime, dnsServers, domainName);
   }
 
+  /**
+   * INFORMATION-REQUEST (RFC 8415 §18.2.6) : la demande d'un client qui
+   * ne veut PAS d'adresse, seulement la configuration annexe — serveurs
+   * de noms, domaine de recherche. C'est ce que demande le drapeau O
+   * d'une annonce de routeur.
+   *
+   * Elle ne porte donc aucune IA, et le client n'a pas a se nommer
+   * autrement que par son DUID : il n'y a rien a lier.
+   */
+  static createInformationRequest(clientDuid: string, transactionId: number): DHCPv6Packet {
+    const pkt = new DHCPv6Packet();
+    pkt.msgType = 'INFORMATION-REQUEST';
+    pkt.transactionId = transactionId;
+    pkt.clientDuid = clientDuid;
+    return pkt;
+  }
+
+  /**
+   * La REPLY a une INFORMATION-REQUEST : mêmes options de configuration
+   * qu'un bail ordinaire, et pas d'IA — le serveur n'a rien attribué et
+   * ne retient rien.
+   */
+  static createInformationReply(
+    clientDuid: string, serverDuid: string, transactionId: number,
+    dnsServers: string[] = [], domainName: string | null = null,
+  ): DHCPv6Packet {
+    const pkt = new DHCPv6Packet();
+    pkt.msgType = 'REPLY';
+    pkt.transactionId = transactionId;
+    pkt.clientDuid = clientDuid;
+    pkt.serverDuid = serverDuid;
+    pkt.dnsServers = dnsServers;
+    if (domainName) pkt.domainList = [domainName];
+    return pkt;
+  }
+
   static createRelayForw(linkAddress: string, peerAddress: string, hopCount: number, interfaceId: string | null, relayedMessage: DHCPv6Packet): DHCPv6Packet {
     const pkt = new DHCPv6Packet();
     pkt.msgType = 'RELAY-FORW';

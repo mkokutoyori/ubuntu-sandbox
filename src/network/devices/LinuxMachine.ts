@@ -3254,6 +3254,9 @@ export abstract class LinuxMachine extends EndHost
       requestDhcpv6Lease: (iface: string, verbose?: boolean): string => {
         return this.requestDhcpv6Lease(iface, verbose);
       },
+      requestDhcpv6Information: (iface: string, verbose?: boolean): string => {
+        return this.requestDhcpv6Information(iface, verbose);
+      },
       setIpForward: (enabled: boolean): void => {
         this.ipForwardEnabled = enabled;
       },
