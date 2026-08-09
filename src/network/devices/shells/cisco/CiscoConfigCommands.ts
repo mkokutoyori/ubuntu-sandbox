@@ -572,16 +572,24 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     else if (args[0].toLowerCase() === 'output') port.setOutputServicePolicy(args[1]);
     return '';
   });
+  // `ipv6 enable` DÉRIVE l'adresse de lien EUI-64 : c'est tout ce que la
+  // commande fait. Elle écrivait le champ privé du port à travers un
+  // cast, donc l'interface se déclarait active sans adresse, sans
+  // événement et sans trace — `enableIPv6()` fait les trois.
   trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {
     if (!ctx.getSelectedInterface()) return '';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) (port as unknown as { ipv6Enabled?: boolean }).ipv6Enabled = true;
+    ctx.r().getPort(ctx.getSelectedInterface()!)?.enableIPv6();
     return '';
   });
+  // Une adresse configurée implique l'activation : sur IOS, `no ipv6
+  // enable` ne l'annule pas et n'efface rien. Ne désactiver qu'une
+  // interface qui ne tenait qu'à cette commande.
   trie.register('no ipv6 enable', 'Disable IPv6 on interface', () => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) (port as unknown as { ipv6Enabled?: boolean }).ipv6Enabled = false;
+    if (port && !port.getIPv6Addresses().some((e) => e.origin === 'static')) {
+      port.disableIPv6();
+    }
     return '';
   });
   trie.registerGreedy('ip mtu', 'Set IP MTU', (args) => {
@@ -910,6 +918,24 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
       const ipsecEngine = (ctx.r() as any)._getIPSecEngineInternal?.();
       if (ipsecEngine) ipsecEngine.clearSAsForInterface(ifName);
     }
+    return '';
+  });
+
+  // Le horizon partage se regle par interface, et le moteur RIP lisait
+  // le seul reglage du processus. Cote Huawei la commande existait et
+  // ecrivait dans une table (`_huaweiRipIfExtras`) que personne ne
+  // lisait ; ici elle n'existait pas du tout. Meme fonction, deux
+  // facons de ne rien faire.
+  trie.register('ip split-horizon', 'Enable RIP split horizon on this interface', () => {
+    const iface = ctx.getSelectedInterface();
+    if (!iface) return '% No interface selected';
+    ctx.r().ripSetInterfaceSplitHorizon(iface, true);
+    return '';
+  });
+  trie.register('no ip split-horizon', 'Disable RIP split horizon on this interface', () => {
+    const iface = ctx.getSelectedInterface();
+    if (!iface) return '% No interface selected';
+    ctx.r().ripSetInterfaceSplitHorizon(iface, false);
     return '';
   });
 

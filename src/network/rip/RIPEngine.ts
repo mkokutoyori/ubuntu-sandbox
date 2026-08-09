@@ -78,6 +78,14 @@ export interface RIPConfig {
    * the interface keeps learning routes, it just stays silent.
    */
   passiveInterfaces: Set<string>;
+  /**
+   * Le horizon partage se regle PAR INTERFACE sur les deux constructeurs
+   * (`ip split-horizon` / `rip split-horizon`), alors que `splitHorizon`
+   * ci-dessus est le reglage du processus. Cette table ne porte que les
+   * interfaces ou l'operateur a dit autre chose que lui ; une interface
+   * absente suit le processus.
+   */
+  splitHorizonByInterface: Map<string, boolean>;
   redistribute: Map<RIPRedistSource, { metric?: number; routePolicy?: string }>;
   defaultMetric: number | null;
   defaultInformationOriginate: boolean;
@@ -127,6 +135,7 @@ function createDefaultConfig(): RIPConfig {
     splitHorizon: true,
     poisonedReverse: true,
     passiveInterfaces: new Set(),
+    splitHorizonByInterface: new Map(),
     redistribute: new Map(),
     defaultMetric: null,
     defaultInformationOriginate: false,
@@ -483,6 +492,16 @@ export class RIPEngine implements IProtocolEngine {
     return this.callbacks.evaluateRoutePolicy(routePolicy, route.network, route.mask) === 'deny';
   }
 
+  /** Le reglage de l'interface s'il existe, celui du processus sinon. */
+  splitHorizonOn(iface: string): boolean {
+    return this.config.splitHorizonByInterface.get(iface) ?? this.config.splitHorizon;
+  }
+
+  setInterfaceSplitHorizon(iface: string, on: boolean | null): void {
+    if (on === null) this.config.splitHorizonByInterface.delete(iface);
+    else this.config.splitHorizonByInterface.set(iface, on);
+  }
+
   private sendUpdate(outIface: string): void {
     const entries: RIPRouteEntry[] = [];
     const routingTable = this.callbacks.getRoutingTable();
@@ -491,7 +510,7 @@ export class RIPEngine implements IProtocolEngine {
       const metric = this.advertisableMetric(route);
       if (metric === null) continue;
 
-      if (this.config.splitHorizon && route.iface === outIface) {
+      if (this.splitHorizonOn(outIface) && route.iface === outIface) {
         if (this.config.poisonedReverse && route.type === 'rip') {
           entries.push(this.routeToRIPEntry(route, RIP_METRIC_INFINITY));
         }
@@ -554,7 +573,7 @@ export class RIPEngine implements IProtocolEngine {
       if (this.isPassiveInterface(portName)) continue;
       const entries: RIPRouteEntry[] = [];
       for (const route of changed) {
-        if (this.config.splitHorizon && route.iface === portName) {
+        if (this.splitHorizonOn(portName) && route.iface === portName) {
           if (this.config.poisonedReverse) {
             entries.push(this.routeToRIPEntry(route, RIP_METRIC_INFINITY));
           }

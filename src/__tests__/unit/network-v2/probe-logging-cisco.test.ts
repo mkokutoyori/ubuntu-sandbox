@@ -328,7 +328,7 @@ describe('show logging history est sa propre table', () => {
   it('un message sous le niveau est compté ignoré, pas gardé', () => {
     const l = new LoggingConfig();
     l.applyLogging(['history', 'errors'], false);
-    l.append('informational', 'sys', 'trop bas');
+    l.append('informational', 'sys', 'trop bas', true, 'CONFIG_I');
     expect(l.renderHistory()).toMatch(/1 messages ignored/);
     expect(l.renderHistory()).not.toContain('trop bas');
   });
@@ -391,7 +391,7 @@ describe('le limiteur borne ce qu\'IOS borne', () => {
     l.subscribeConsole(c => console.push(c));
     l.applyLogging(['buffered'], false);
     l.applyLogging(['rate-limit', '3'], false);
-    for (let i = 0; i < 20; i++) l.append('warnings', 'sys', `rafale ${i}`);
+    for (let i = 0; i < 20; i++) l.append('warnings', 'sys', `rafale ${i}`, true, 'CONFIG_I');
     expect(console.filter(c => c.includes('rafale')).length).toBe(3);
     expect(l.render().split('\n').filter(c => c.includes('rafale')).length).toBe(20);
   });
@@ -400,7 +400,7 @@ describe('le limiteur borne ce qu\'IOS borne', () => {
     const l = new LoggingConfig();
     l.applyLogging(['buffered'], false);
     l.applyLogging(['rate-limit', 'all', '3'], false);
-    for (let i = 0; i < 20; i++) l.append('warnings', 'sys', `rafale ${i}`);
+    for (let i = 0; i < 20; i++) l.append('warnings', 'sys', `rafale ${i}`, true, 'CONFIG_I');
     expect(l.render().split('\n').filter(c => c.includes('rafale')).length).toBe(3);
   });
 
@@ -409,7 +409,7 @@ describe('le limiteur borne ce qu\'IOS borne', () => {
     const console: string[] = [];
     l.subscribeConsole(c => console.push(c));
     l.applyLogging(['rate-limit', '1', 'except', 'errors'], false);
-    for (let i = 0; i < 10; i++) l.append('critical', 'sys', `grave ${i}`);
+    for (let i = 0; i < 10; i++) l.append('critical', 'sys', `grave ${i}`, true, 'CONFIG_I');
     expect(console.filter(c => c.includes('grave')).length).toBe(10);
   });
 });
@@ -453,8 +453,8 @@ describe('un discriminateur filtre pour de vrai', () => {
     l.applyLogging(['buffered'], false);
     l.applyLogging(['discriminator', 'MD1', 'severity', 'includes', '0-3'], false);
     l.applyLogging(['buffered', 'discriminator', 'MD1'], false);
-    l.append('errors', 'link', 'grave');
-    l.append('informational', 'sys', 'anodin');
+    l.append('errors', 'link', 'grave', true, 'UPDOWN');
+    l.append('informational', 'sys', 'anodin', true, 'CONFIG_I');
     expect(l.render()).toContain('grave');
     expect(l.render()).not.toContain('anodin');
   });
@@ -464,8 +464,8 @@ describe('un discriminateur filtre pour de vrai', () => {
     l.applyLogging(['buffered'], false);
     l.applyLogging(['discriminator', 'MD1', 'msg-body', 'drops', 'changed', 'state'], false);
     l.applyLogging(['buffered', 'discriminator', 'MD1'], false);
-    l.append('errors', 'link', 'Interface Gi0/0, changed state to up');
-    l.append('errors', 'link', 'Cable disconnected from Gi0/0');
+    l.append('errors', 'link', 'Interface Gi0/0, changed state to up', true, 'UPDOWN');
+    l.append('errors', 'link', 'Cable disconnected from Gi0/0', true, 'UPDOWN');
     // Le motif figure aussi dans la section des discriminateurs de
     // `show logging` : c'est le TAMPON qu'on regarde, pas la vue entière.
     const rendu = l.render();
@@ -479,8 +479,8 @@ describe('un discriminateur filtre pour de vrai', () => {
     l.applyLogging(['buffered'], false);
     l.applyLogging(['discriminator', 'MD1', 'facility', 'drops', 'OSPF'], false);
     l.applyLogging(['buffered', 'discriminator', 'MD1'], false);
-    l.append('notifications', 'ospf', 'adjacence');
-    l.append('notifications', 'bgp', 'voisin');
+    l.append('notifications', 'ospf', 'adjacence', true, 'ADJCHG');
+    l.append('notifications', 'bgp', 'voisin', true, 'ADJCHANGE');
     expect(l.render()).not.toContain('adjacence');
     expect(l.render()).toContain('voisin');
   });

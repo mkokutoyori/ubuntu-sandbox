@@ -89,6 +89,36 @@ export class CookieJar {
     return this.store.filter((e) => this.isLive(e, now)).map((e) => e.cookie);
   }
 
+  /**
+   * Insère un témoin déjà constitué — celui que l'on relit d'un bocal
+   * persistant (`curl -b fichier`), et non celui qu'un serveur envoie.
+   *
+   * `setFromHeader` ne convient pas pour cela : il rejette un `Domain`
+   * qui ne correspond pas à l'hôte qui pose le témoin (RFC 6265 §5.3
+   * étape 6), et en relisant un fichier il n'y a pas d'hôte qui pose
+   * quoi que ce soit. Le contrôle a déjà eu lieu à l'écriture.
+   */
+  add(cookie: Cookie, now = Date.now()): void {
+    const expiryMs = cookie.maxAge !== undefined
+      ? now + cookie.maxAge * 1000
+      : cookie.expires ?? null;
+    this.removeMatching(cookie.name, cookie.domain, cookie.path);
+    if (expiryMs !== null && expiryMs <= now) return;
+    this.store.push({ cookie, expiryMs });
+  }
+
+  /**
+   * Les témoins vivants AVEC leur échéance effective.
+   *
+   * `all()` ne suffit pas pour écrire un bocal : un témoin posé par
+   * `Max-Age` porte son échéance dans `expiryMs` et non dans
+   * `Cookie.expires`, si bien que le sérialiser depuis `all()` le
+   * rendrait témoin de SESSION — il disparaîtrait à la relecture.
+   */
+  entries(now = Date.now()): Array<{ cookie: Cookie; expiryMs: number | null }> {
+    return this.store.filter((e) => this.isLive(e, now)).map((e) => ({ ...e }));
+  }
+
   clear(): void {
     this.store = [];
   }

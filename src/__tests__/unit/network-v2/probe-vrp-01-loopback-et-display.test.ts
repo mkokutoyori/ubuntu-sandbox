@@ -80,7 +80,13 @@ describe('Scénario 1 — `ip address` sur LoopBack est accepté', () => {
   it('une adresse invalide est refusée sur LoopBack comme ailleurs', async () => {
     const sw = await switchEnSysteme();
     await sw.executeCommand('interface LoopBack0');
-    expect(await sw.executeCommand('ip address 999.1.1.1 32')).toContain('Invalid IP address');
+    // VRP n'a que quatre messages positionnels ; `Invalid IP address`
+    // etait un message maison (PRD-CLI-Fidelite-VRP §1.7, lot V4).
+    // L'intention — l'adresse est refusee, et le curseur la designe —
+    // est conservee.
+    const refus = await sw.executeCommand('ip address 999.1.1.1 32');
+    expect(refus).toContain("Error: Wrong parameter found at '^' position.");
+    expect(refus.split('\n')[2].indexOf('^')).toBe(refus.split('\n')[1].indexOf('999.1.1.1'));
   });
 
   it('`undo ip address` retire l\'adresse sans supprimer l\'interface', async () => {

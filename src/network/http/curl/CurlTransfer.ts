@@ -9,6 +9,10 @@ import { pemToCertChain } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { createRequest, type HttpMessage, type HttpMethod } from '../semantics/types';
 import { encodeBasicCredentials } from '../auth/BasicAuth';
+import type { CookieJar } from '../cookies/CookieJar';
+import { serializeCookieHeader } from '../cookies/SetCookie';
+import { jarFromArgument, serializeNetscapeCookies } from './CurlCookies';
+import { buildMultipart } from './CurlForm';
 import { isKnownMethod } from '../semantics/methods';
 import type { CurlOptions } from './CurlArgs';
 import type { CurlHost } from './CurlHost';
@@ -114,7 +118,8 @@ function applyCustomHeaders(request: HttpMessage, specs: readonly string[]): voi
   }
 }
 
-function bodyFor(opts: CurlOptions): string | null {
+function bodyFor(opts: CurlOptions, host: CurlHost): string | null {
+  if (opts.uploadFile !== null) return host.readFile(opts.uploadFile);
   if (opts.data.length === 0) return null;
   return opts.data.join('&');
 }
@@ -122,11 +127,18 @@ function bodyFor(opts: CurlOptions): string | null {
 function methodFor(opts: CurlOptions): string {
   if (opts.method) return opts.method;
   if (opts.head) return 'HEAD';
+  if (opts.form.length > 0) return 'POST';
+  // `-T` fait un PUT, pas un POST : c'est un TÉLÉVERSEMENT, et le
+  // confondre changerait la sémantique côté serveur.
+  if (opts.uploadFile !== null) return 'PUT';
   if (opts.data.length > 0) return 'POST';
   return 'GET';
 }
 
-function buildRequest(url: CurlUrl, method: string, opts: CurlOptions, body: string | null): HttpMessage {
+function buildRequest(
+  url: CurlUrl, method: string, opts: CurlOptions, body: string | null,
+  jar?: CookieJar, formContentType?: string,
+): HttpMessage {
   const verb: HttpMethod = isKnownMethod(method) ? method : 'GET';
   const request = createRequest(verb, url.path);
   const authority = (url.scheme === 'https' && url.port === 443) || (url.scheme === 'http' && url.port === 80)
@@ -135,6 +147,7 @@ function buildRequest(url: CurlUrl, method: string, opts: CurlOptions, body: str
   request.headers.set('Host', authority);
   request.headers.set('User-Agent', opts.userAgent);
   request.headers.set('Accept', '*/*');
+  if (opts.referer !== null) request.headers.set('Referer', opts.referer);
   if (opts.user) {
     const colon = opts.user.indexOf(':');
     const name = colon === -1 ? opts.user : opts.user.slice(0, colon);
@@ -142,8 +155,24 @@ function buildRequest(url: CurlUrl, method: string, opts: CurlOptions, body: str
     request.headers.set('Authorization', encodeBasicCredentials(name, secret));
   }
   if (body !== null) {
-    request.headers.set('Content-Type', 'application/x-www-form-urlencoded');
+    // Un téléversement n'est pas un formulaire : curl n'impose alors
+    // aucun type et laisse le serveur décider. Un `-F`, lui, porte sa
+    // frontière dans le type, sans quoi le serveur ne saurait pas où
+    // coupent les parties.
+    if (formContentType) request.headers.set('Content-Type', formContentType);
+    else if (opts.uploadFile === null) {
+      request.headers.set('Content-Type', 'application/x-www-form-urlencoded');
+    }
     request.body = binaryStringToBytes(body);
+  }
+  if (jar) {
+    // Le bocal décide seul de ce qui part : domaine, chemin, `Secure`.
+    // C'est ce filtrage qui rend l'option utile — envoyer tout le bocal
+    // à tout le monde serait une chaîne d'en-tête, pas un témoin.
+    const envoyes = jar.cookiesFor(url.host, url.path.split('?')[0], {
+      secure: url.scheme === 'https',
+    });
+    if (envoyes.length > 0) request.headers.set('Cookie', serializeCookieHeader(envoyes));
   }
   applyCustomHeaders(request, opts.headers);
   return request;
@@ -192,12 +221,42 @@ export async function performCurlRequest(
   opts: CurlOptions,
 ): Promise<CurlOutcome> {
   const trace: string[] = [];
-  const body = bodyFor(opts);
+  const body = bodyFor(opts, host);
+  // `-T` sur un fichier absent est une erreur AVANT toute connexion :
+  // curl ne va pas ouvrir une socket pour découvrir qu'il n'a rien à
+  // envoyer.
+  if (opts.uploadFile !== null && body === null) {
+    return {
+      ok: false, code: 26,
+      message: `curl: (26) Failed to open/read local data from file/application`,
+      url: first, remoteIp: '', method: 'PUT', numRedirects: 0, trace: [],
+    };
+  }
+  // Le corps multipart est construit AVANT toute connexion : un
+  // fichier de partie absent doit échouer comme `-T`, sans ouvrir de
+  // socket pour rien.
+  let formContentType: string | undefined;
+  let corpsForm: string | null = null;
+  if (opts.form.length > 0) {
+    const forme = buildMultipart(opts.form, (p) => host.readFile(p));
+    if (forme.ok === false) {
+      return {
+        ok: false, code: forme.code, message: forme.message,
+        url: first, remoteIp: '', method: 'POST', numRedirects: 0, trace: [],
+      };
+    }
+    formContentType = forme.contentType;
+    corpsForm = forme.body;
+  }
   let url = first;
   let method = methodFor(opts);
-  let sendBody = body !== null;
+  let sendBody = body !== null || opts.form.length > 0;
   let redirects = 0;
   let remoteIp = '';
+  // Le bocal vit pour tout le transfert, redirections comprises — et
+  // c'est là qu'il sert vraiment : une session s'ouvre par un `302` qui
+  // pose le témoin, et la requête suivante doit le porter.
+  const jar = jarFromArgument(opts.cookie, first.host, (p) => host.readFile(p));
 
   // `--cacert` REPLACES the machine's trust store, it does not add to it.
   // That is the whole reason a lab uses it: the operator's own root has to
@@ -235,7 +294,8 @@ export async function performCurlRequest(
     remoteIp = address;
     trace.push(`*   Trying ${address}:${url.port}...`);
 
-    const request = buildRequest(url, method, opts, sendBody ? body : null);
+    const request = buildRequest(
+      url, method, opts, sendBody ? (corpsForm ?? body) : null, jar, formContentType);
 
     let response: HttpMessage | null = null;
     let failure: CurlFailure | null = null;
@@ -321,6 +381,15 @@ export async function performCurlRequest(
     traceRequest(trace, request, url);
     traceResponse(trace, response);
 
+    // Récolté AVANT de décider d'une redirection : un `302` qui pose un
+    // témoin de session est le cas d'usage même de cette option, et
+    // attendre la réponse finale le perdrait.
+    for (const [nom, valeur] of response.headers.entries()) {
+      if (nom.toLowerCase() === 'set-cookie') {
+        jar.setFromHeader(valeur, url.host, url.path.split('?')[0]);
+      }
+    }
+
     const status = response.statusCode ?? 0;
     const location = response.headers.get('Location');
     if (opts.location && isRedirect(status) && location) {
@@ -348,6 +417,12 @@ export async function performCurlRequest(
     }
 
     trace.push(`* Connection #0 to host ${url.host} left intact`);
+    // `-c` écrit le bocal à la FIN du transfert, comme curl : ce qu'il
+    // garde est l'état après la dernière réponse, redirections
+    // comprises.
+    if (opts.cookieJar !== null) {
+      host.writeFile(opts.cookieJar, serializeNetscapeCookies(jar.entries()));
+    }
     return {
       ok: true,
       url,

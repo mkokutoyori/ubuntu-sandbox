@@ -457,7 +457,7 @@ describe('§6 — sshd process killed directly: supervisor brings it back', () =
       },
       on: l => l.pc2,
       cmd: 'systemctl status ssh',
-      contains: [/Active:\s+active \(running\)/],
+      contains: [/Active:.*active \(running\)/],
       excludes: [/failed/],
     },
     {
@@ -965,14 +965,14 @@ describe('§14 — systemctl list-units / status output', () => {
       name: 'systemctl status ssh shows Loaded / Active / Main PID',
       on: l => l.pc1,
       cmd: 'systemctl status ssh',
-      contains: [/Loaded:.*\/lib\/systemd\/system\/ssh\.service/, /Active:\s+active \(running\)/, /Main PID:\s+\d+/],
+      contains: [/Loaded:.*\/lib\/systemd\/system\/ssh\.service/, /Active:.*active \(running\)/, /Main PID:\s+\d+/],
     },
     {
       name: 'systemctl status of a stopped service shows inactive (dead)',
       setup: (l) => { void l.pc1.executeCommand('systemctl stop cron'); },
       on: l => l.pc1,
       cmd: 'systemctl status cron',
-      contains: [/Active:\s+inactive \(dead\)/],
+      contains: [/Active:.*inactive \(dead\)/],
       excludes: [/active \(running\)/],
     },
     {
@@ -1056,7 +1056,7 @@ describe('§15 — service ↔ process table reactive coherence', () => {
       },
       on: l => l.pc1,
       cmd: 'systemctl status ssh',
-      contains: [/Active:\s+(active \(running\)|failed)/],
+      contains: [/Active:.*(active \(running\)|failed)/],
     },
     {
       name: 'systemctl reset-failed clears the failure counter',

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-08-04T11:16:01.722Z
+Generated: 2026-08-08T00:31:32.432Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -314,7 +314,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 51
+           Destinations : 48        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -360,12 +360,10 @@ Total steps: 300
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
   192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
-  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
@@ -373,11 +371,10 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Table : Public
-  Summary Count : 3
+  Summary Count : 2
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
 
 
@@ -950,22 +947,14 @@ Total steps: 300
 <empty>
 
 [188/300] r1 <R1> display nqa results test-instance admin test1
-  NQA entry(admin, test1) :
-    Send operation times: 0             Receive response times: 0
-    Completion: active                  RTD OverThresholds number: 0
-    Attempts number: 0    Drop operation number: 0
-    Disconnect operation number: 0              Operation timeout number: 0
-    System busy operation number: 0             Connection fail number: 0
-    Operation sequence errors number: 0         RTT Stats errors number: 0
-    Destination ip address: 10.0.0.2
-    Min/Max/Avg RTT: 0/0/0 ms
-    Packet loss: 0.0%
+  NQA entry(admin, test1) :testflag is active ,testtype is icmp
+    No result.
 
 [189/300] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 51
+           Destinations : 48        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1011,12 +1000,10 @@ Total steps: 300
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
   192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
-  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
@@ -1024,7 +1011,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Public routing table : STATIC
-           Destinations : 47        Routes : 49
+           Destinations : 46        Routes : 47
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
@@ -1068,12 +1055,10 @@ Total steps: 300
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
   192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
-  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
@@ -1091,7 +1076,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 51
+           Destinations : 48        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1137,12 +1122,10 @@ Total steps: 300
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
   192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
-  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
@@ -1150,7 +1133,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 51
+           Destinations : 48        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1196,12 +1179,10 @@ Total steps: 300
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
   192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
-  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
@@ -1304,6 +1285,28 @@ Total steps: 300
   ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
+  #
+  nqa test-instance admin test1
+   test-type icmp
+   destination-address ipv4 10.0.0.2
+   frequency 10
+   datasize 28
+   start now
+   #
   #
 
 [199/300] r1 <R1> display saved-configuration
@@ -1355,7 +1358,7 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 49        Routes : 51
+           Destinations : 48        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1401,12 +1404,10 @@ Total steps: 300
   172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
   0.0.0.0/0           Static  60   0     RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0           Static  200  0     RD    10.0.0.6        
   0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
   192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
   192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
-  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
   192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
@@ -1522,8 +1523,8 @@ Total steps: 300
   No NTP associations
 
 [231/300] r1 <R1> display clock
-  2026-08-04 11:16:01
-  Tuesday
+  2026-08-08 00:31:32
+  Saturday
   Time Zone(UTC) : UTC
 
 [232/300] r1 <R1> display lldp neighbor
@@ -1535,13 +1536,13 @@ Total steps: 300
 [234/300] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-04 11:16:01
+  CPU Usage Stat. Time : 2026-08-08 00:31:32
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-04 11:16:01
+  Memory utilization statistics at 2026-08-08 00:31:32
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1577,24 +1578,16 @@ Total steps: 300
 
 [239/300] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 12
-  2026-08-04 11:16:01 %01SYS/6/INFORMATIONAL: User account 'alice' created (priv 15)
-  2026-08-04 11:16:01 %01SYS/6/INFORMATIONAL: User account 'bob' created (priv 15)
-  2026-08-04 11:16:01 %01SYS/6/INFORMATIONAL: User account 'carl' created (priv 15)
-  2026-08-04 11:16:01 %01SYS/6/INFORMATIONAL: User account 'dave' created (priv 15)
-  2026-08-04 11:16:01 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  2026-08-04 11:16:01 %01SYS/5/NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  2026-08-04 11:16:01 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-04 11:16:01 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-04 11:16:01 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-04 11:16:01 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-04 11:16:01 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 192.168.1.1/255.255.255.0 assigned
-  2026-08-04 11:16:01 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
+  Current messages : 4
+  2026-08-08 00:31:32 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-08 00:31:32 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-08 00:31:32 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-08 00:31:32 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [240/300] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1740,6 +1733,28 @@ Total steps: 300
   ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
+  #
+  nqa test-instance admin test1
+   test-type icmp
+   destination-address ipv4 10.0.0.2
+   frequency 10
+   datasize 28
+   start now
+   #
   #
 
 [250/300] r1 <R1> display diagnostic-information
@@ -1858,6 +1873,28 @@ Total steps: 300
   ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
+  #
+  nqa test-instance admin test1
+   test-type icmp
+   destination-address ipv4 10.0.0.2
+   frequency 10
+   datasize 28
+   start now
+   #
   #
 
 [259/300] r1 <R1> display current-configuration | exclude #
@@ -1923,6 +1960,25 @@ Total steps: 300
   ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
   ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  nqa test-instance admin test1
+   test-type icmp
+   destination-address ipv4 10.0.0.2
+   frequency 10
+   datasize 28
+   start now
 
 [260/300] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -2022,6 +2078,19 @@ Total steps: 300
   #
   ospf 1
    router-id 192.168.1.1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
 
 [290/300] r1 [Huawei-ospf-1] quit
@@ -2047,45 +2116,47 @@ Total steps: 300
 
 [296/300] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
     routing-table  
 
 [297/300] r1 [Huawei] undo ?
-    terminal       
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
+    debugging      Disable debugging
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
     ip             Internet Protocol
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    multicast      Disable multicast routing
-    ike            Internet Key Exchange
-    ipsec          IP Security
-    ikev2          Internet Key Exchange version 2
-    acl            Delete Access Control List
-    nat            Network Address Translation
     route-policy   Remove a route-policy
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
     traffic        Display traffic statistics
-    nqa            Network Quality Analysis
-    firewall       Firewall configuration
     <cr>           
 
 [298/300] r1 [Huawei] acl ?
     advanced  
     basic     
     ipv6      Internet Protocol version 6
-    name      
+    name      Name
     <cr>      
 
 [299/300] r1 [Huawei] return

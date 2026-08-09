@@ -94,7 +94,12 @@ describe('§B — Huawei local-user database is queryable and persistent', () =>
     await lab.hwR1.executeCommand('quit');
     const u = lab.hwR1._getLocalUser('admin');
     expect(u?.privilege).toBe(15);
-    expect(u?.secret).toBe('Admin@123');
+    // Le magasin range desormais la valeur SOUS SA FORME RENDUE — un
+    // `password cipher` y met le chiffre, pas le clair, faute de quoi la
+    // configuration echouerait a se rejouer (PRD-CLI-Fidelite-VRP §10).
+    // Ce qui compte est que le compte s'ouvre avec le mot de passe pose.
+    expect(u?.secret).not.toBe('Admin@123');
+    expect(lab.hwR1.getCredentialStore().get('admin')?.authenticate('Admin@123')).toBe(true);
   });
 
   test('multiple local-users are stored', async () => {

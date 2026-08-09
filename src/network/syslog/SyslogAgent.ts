@@ -6,7 +6,7 @@ import {
   type SyslogSeverityName, type SyslogFacilityName,
   createDefaultSyslogConfig, defaultServer,
   severityFromLogLevel, shouldForward, bsdTimestamp, syslogSeverityFromNum,
-  SYSLOG_SEVERITY, SYSLOG_FACILITY,
+  SYSLOG_SEVERITY, SYSLOG_FACILITY, syslogTagOf,
 } from './types';
 import {
   MACAddress, IPAddress,
@@ -240,8 +240,9 @@ export class SyslogAgent {
     // même agent (`onLog`, via `tagFor`) en construisait un complet :
     // deux messages issus de la même machine arrivaient au collecteur
     // sous deux formes, selon le bus interne qui les avait portés.
-    const tag = `%${p.tag.toUpperCase()}-${SYSLOG_SEVERITY[p.severity]}-`
-      + (p.mnemonic ?? p.severity).toUpperCase();
+    const tag = syslogTagOf({
+      tag: p.tag, severityNum: SYSLOG_SEVERITY[p.severity], mnemonic: p.mnemonic, message: p.message,
+    });
     for (const s of this.config.servers.values()) {
       if (!shouldForward(s.severityThreshold, p.severity)) {
         this.dropped(s.ip, 'threshold');

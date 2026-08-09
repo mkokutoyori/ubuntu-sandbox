@@ -1234,15 +1234,6 @@ export function registerHuaweiIPSecDisplayCommands(
     return 'Info: IPSec debugging is off.';
   });
 
-  trie.register('undo debugging all', 'Disable all debugging', () => {
-    const e = engOrNull(getRouter());
-    if (e) {
-      e.setDebug('isakmp', false);
-      e.setDebug('ipsec', false);
-      e.setDebug('ikev2', false);
-    }
-    return 'Info: All debugging turned off.';
-  });
 
   // ── IKEv2 display commands ────────────────────────────────────
 

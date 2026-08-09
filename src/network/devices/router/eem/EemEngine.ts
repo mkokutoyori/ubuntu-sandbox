@@ -3,6 +3,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { CronSchedule } from '../../linux/LinuxCronManager';
 import type { SnmpAgent } from '../../../snmp/SnmpAgent';
 import { EemService, type EemAction, type EemApplet, type EemTrigger } from './EemService';
+import { syslogFullLine } from '@/network/syslog/types';
 
 const SYSLOG_SEVERITY_NAMES = [
   'emergencies', 'alerts', 'critical', 'errors',
@@ -16,6 +17,20 @@ export interface EemHost {
   getHostname(): string;
   executeCommand(command: string): Promise<string>;
   getSnmpAgent?(): SnmpAgent | undefined;
+  /**
+   * Écrire un message dans le journal de la machine — celui que
+   * `show logging` montre.
+   *
+   * `action syslog msg "…"` ne faisait que PUBLIER sur le bus, sans
+   * jamais toucher le tampon : l'applet se déclenchait, son compteur
+   * montait, et le message n'était nulle part. Or c'est tout l'intérêt
+   * de l'action — on écrit un log pour le relire.
+   *
+   * Optionnel pour que l'hôte qui n'a pas de journal (un test, un
+   * équipement sans coquille) garde l'ancien chemin plutôt que de
+   * perdre l'événement.
+   */
+  logSyslog?(severityNum: number, tag: string, mnemonic: string, message: string): void;
 }
 
 interface TimerTriggerState {
@@ -58,7 +73,11 @@ export class EemEngine {
       bus.subscribeWhere(
         'device.syslog.entry',
         (p) => p.deviceId === this.host.id,
-        (e) => this.onSyslogEntry(e.payload.message),
+        // La ligne ENTIÈRE, préfixe compris : un motif EEM s'écrit sur
+        // le mnémonique (`SYS-5-CONFIG_I`, `UPDOWN.*down`), qui n'existe
+        // que là. Comparé au seul corps du message, aucun déclencheur
+        // écrit normalement ne pouvait tirer.
+        (e) => this.onSyslogEntry(syslogFullLine(e.payload)),
       ),
     );
     this.subs.push(
@@ -111,11 +130,34 @@ export class EemEngine {
       for (const trig of applet.triggers) {
         if (trig.kind !== 'syslog') continue;
         if (this.matchesPattern(trig.pattern, message)) {
+          this.derniereLigneSyslog = message;
           void this.runApplet(applet);
           break;
         }
       }
     }
+  }
+
+  /**
+   * La ligne qui a déclenché le dernier applet syslog, pour `$_syslog_msg`.
+   */
+  private derniereLigneSyslog = '';
+
+  /**
+   * Les variables intégrées d'EEM dans le texte d'une action.
+   *
+   * Une variable qu'on ne sait pas résoudre est laissée TELLE QUELLE,
+   * et c'est ce que fait le vrai EEM : `$_cli_username` n'est défini
+   * que pour un déclencheur `event cli`, donc derrière un `event
+   * syslog` il reste littéral sur une vraie machine aussi. Inventer une
+   * valeur ferait passer pour résolu ce qui ne l'est pas.
+   */
+  private substituerVariables(texte: string, applet: EemApplet): string {
+    const pub = applet.lastTriggeredAtMs ?? Date.now();
+    return texte
+      .replace(/\$_event_pub_time\b/g, String(Math.floor(pub / 1000)))
+      .replace(/\$_event_type_string\b/g, 'syslog')
+      .replace(/\$_syslog_msg\b/g, this.derniereLigneSyslog);
   }
 
   private onSnmpTrapSent(trapOid: string): void {
@@ -237,10 +279,12 @@ export class EemEngine {
         await this.host.executeCommand(action.command);
         break;
       case 'syslog':
-        this.publishSyslog(action.severity, applet.name, action.message);
+        this.publishSyslog(action.severity, applet.name,
+          this.substituerVariables(action.message, applet));
         break;
       case 'puts':
-        this.publishSyslog(undefined, applet.name, action.message);
+        this.publishSyslog(undefined, applet.name,
+          this.substituerVariables(action.message, applet));
         break;
       case 'wait':
         await this.getScheduler().delay(action.seconds * 1000);
@@ -254,7 +298,21 @@ export class EemEngine {
     }
   }
 
+  /**
+   * IOS écrit `%HA_EM-<sev>-LOG: <applet>: <message>` — le nom de
+   * l'applet est dans le CORPS, pas dans l'étiquette. La forme compte
+   * ici plus qu'ailleurs : le tutoriel enchaîne un applet qui écrit un
+   * log et un `show logging | include`, donc ce qui est écrit doit
+   * être ce qui se relit.
+   */
   private publishSyslog(severityNum: number | undefined, tag: string, message: string): void {
+    const sev = severityNum !== undefined && severityNum >= 0 && severityNum <= 7 ? severityNum : 6;
+    if (this.host.logSyslog) {
+      // Le journal republie lui-même sur le bus : passer par lui donne
+      // les deux, alors que publier ici n'en donnait qu'un.
+      this.host.logSyslog(sev, 'HA_EM', 'LOG', `${tag}: ${message}`);
+      return;
+    }
     this.getBus().publish({
       topic: 'device.syslog.entry',
       payload: {

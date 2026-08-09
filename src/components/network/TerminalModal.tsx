@@ -60,6 +60,28 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
   const resizeRef = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number; direction: string } | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Rendre le focus à l'élément qui a ouvert le terminal.
+   *
+   * Sans cela, fermer une fenêtre renvoyait le focus au `<body>` : un
+   * utilisateur au clavier repartait du début de la page à chaque
+   * fermeture, et perdait l'équipement qu'il venait de configurer.
+   *
+   * Ce qui n'est délibérément PAS fait ici : fermer sur Escape. Le
+   * rapport le réclame pour tout modal, mais Escape appartient au
+   * SHELL — c'est la touche qui sort du mode insertion de vim. La
+   * détourner casserait l'éditeur que ce terminal héberge. Un terminal
+   * se ferme par son bouton, par `exit`, ou par le raccourci de
+   * tuilage ; pas par une touche dont le programme invité a besoin.
+   */
+  useEffect(() => {
+    if (embedded) return;
+    const ouvrant = document.activeElement as HTMLElement | null;
+    return () => {
+      if (ouvrant && document.contains(ouvrant)) ouvrant.focus({ preventScroll: true });
+    };
+  }, [embedded]);
+
   // Handle resize start
   const handleResizeStart = useCallback((e: React.MouseEvent, direction: string) => {
     e.preventDefault();
@@ -262,6 +284,16 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
         ref={modalRef}
         data-testid="terminal-modal"
         data-device-id={device.getId()}
+        /*
+          Sémantique de dialogue. L'overlay se comportait comme un modal
+          — il couvre l'écran et capte l'attention — sans le dire : ni
+          `role`, ni `aria-modal`, ni nom accessible. Un lecteur d'écran
+          annonçait un groupe anonyme, et rien n'indiquait que le reste
+          de la page était hors d'atteinte.
+        */
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Terminal — ${deviceName}`}
         className={cn("flex flex-col relative", "bg-[#0c0c0c] overflow-hidden", "border border-[#3f3f3f] shadow-2xl shadow-black/70", "animate-in zoom-in-95 fade-in duration-200", isResizing && "select-none")}
         style={isFullscreen ? { width: '100vw', height: '100vh', borderRadius: 0 } : { width: `${dimensions.width}px`, height: `${dimensions.height}px` }}
       >

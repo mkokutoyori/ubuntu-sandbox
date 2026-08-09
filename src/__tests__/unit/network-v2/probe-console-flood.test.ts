@@ -104,7 +104,7 @@ describe('logging rate-limit really limits', () => {
 
   it('caps the console at N messages per second', () => {
     const { cfg, lines } = configured(3);
-    for (let i = 0; i < 40; i++) cfg.append('warnings', 'sys', `burst ${i}`);
+    for (let i = 0; i < 40; i++) cfg.append('warnings', 'sys', `burst ${i}`, true, 'CONFIG_I');
     expect(lines.filter((l) => l.includes('burst')).length).toBe(3);
   });
 
@@ -114,11 +114,11 @@ describe('logging rate-limit really limits', () => {
     try {
       const base = realNow();
       Date.now = () => base;
-      for (let i = 0; i < 10; i++) cfg.append('warnings', 'sys', `burst ${i}`);
+      for (let i = 0; i < 10; i++) cfg.append('warnings', 'sys', `burst ${i}`, true, 'CONFIG_I');
       lines.length = 0;
       // Une seconde plus tard, la premiere ligne qui passe porte le compte.
       Date.now = () => base + 2000;
-      cfg.append('warnings', 'sys', 'apres');
+      cfg.append('warnings', 'sys', 'apres', true, 'CONFIG_I');
     } finally {
       Date.now = realNow;
     }
@@ -127,25 +127,30 @@ describe('logging rate-limit really limits', () => {
 
   it('with no rate-limit configured, nothing is dropped', () => {
     const { cfg, lines } = configured(null);
-    for (let i = 0; i < 40; i++) cfg.append('warnings', 'sys', `burst ${i}`);
+    for (let i = 0; i < 40; i++) cfg.append('warnings', 'sys', `burst ${i}`, true, 'CONFIG_I');
     expect(lines.filter((l) => l.includes('burst')).length).toBe(40);
   });
 
   it('the buffer keeps every message, limited or not', () => {
     const { cfg } = configured(2);
     cfg.apply(['buffered'], false);
-    for (let i = 0; i < 20; i++) cfg.append('warnings', 'sys', `burst ${i}`);
+    for (let i = 0; i < 20; i++) cfg.append('warnings', 'sys', `burst ${i}`, true, 'CONFIG_I');
     expect(cfg.render().split('\n').filter((l) => l.includes('burst')).length)
       .toBeGreaterThan(2);
   });
 });
 
 describe('uptime is written the way IOS writes it', () => {
+  // La seconde n'est PAS une unité de cette ligne. Le constructeur
+  // d'uptime d'IOS ne connaît que semaines, jours, heures et minutes,
+  // donc un routeur démarré depuis vingt secondes écrit « 0 minutes » —
+  // ce qui a l'air étrange et qui est ce qu'il écrit. Afficher des
+  // secondes trahissait un compteur interne qu'IOS n'expose pas ici.
   it.each([
-    [0, '0 seconds'],
-    [1_000, '1 second'],
-    [12_000, '12 seconds'],
-    [59_000, '59 seconds'],
+    [0, '0 minutes'],
+    [1_000, '0 minutes'],
+    [12_000, '0 minutes'],
+    [59_000, '0 minutes'],
     [60_000, '1 minute'],
     [180_000, '3 minutes'],
     [3_840_000, '1 hour, 4 minutes'],
@@ -156,11 +161,11 @@ describe('uptime is written the way IOS writes it', () => {
     expect(formatIosUptime(ms)).toBe(expected);
   });
 
-  it('show version never says 0 minutes on a freshly booted router', async () => {
+  it('show version compte en minutes, jamais en secondes', async () => {
     const r = new CiscoRouter('Router1');
     await r.executeCommand('enable');
     const out = await r.executeCommand('show version');
-    expect(out).toMatch(/uptime is \d+ seconds?/);
-    expect(out).not.toContain('uptime is 0 minutes');
+    expect(out).toMatch(/uptime is \d+ (minute|hour|day|week)/);
+    expect(out).not.toMatch(/uptime is \d+ seconds?/);
   });
 });

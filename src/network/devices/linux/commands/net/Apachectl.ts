@@ -25,7 +25,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 import {
-  parseApacheConfig, apacheWarnings, selectVirtualHost,
+  parseApacheConfig, apacheWarnings, selectVirtualHost, loadedApacheModules,
 } from '../../http/apache/ApacheConfig';
 import {
   APACHE_VERSION, APACHE_CTL, APACHE_BUILD_DATE, APACHE_PORTS_PATH,
@@ -46,14 +46,24 @@ function fileSource(ctx: LinuxCommandContext) {
 }
 
 function readConfig(ctx: LinuxCommandContext) {
+  const src = fileSource(ctx);
   return parseApacheConfig(
-    fileSource(ctx), APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
+    src, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
+    loadedApacheModules(src, APACHE_MODS_ENABLED),
   );
 }
 
 function configtest(ctx: LinuxCommandContext): Outcome {
   const { config, error } = readConfig(ctx);
-  if (error) return { output: error.message, exitCode: 1 };
+  if (error) {
+    // Le vrai `apachectl configtest` ne s'arrête pas au message
+    // d'analyse : il dit ensuite que l'action a échoué et où chercher.
+    return {
+      output: [error.message, "Action 'configtest' failed.",
+        'The Apache error log may have more information.'].join('\n'),
+      exitCode: 1,
+    };
+  }
   // Apache reads the certificates at configtest too — a vhost pointing at
   // an unreadable one fails the test rather than passing and refusing to
   // bind later.

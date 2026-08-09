@@ -548,11 +548,23 @@ export function NetworkDesigner() {
 
       {/* ── Terminal tile overlay (hidden while peeking at the desktop) ── */}
       {hasVisibleTerminals && !desktopPeek && (
-        <div className={cn(
-          "fixed inset-0 z-50",
-          "bg-black/60 backdrop-blur-sm",
-          hasOpenTerminals && "bottom-10"
-        )}>
+        <div
+          /*
+            La zone de tuilage couvre l'écran et prend la main : elle est
+            annoncée comme telle. `aria-modal` n'est PAS posé, et c'est
+            volontaire — contrairement à une fenêtre unique, cette zone
+            n'exclut pas le reste de l'application : la barre des tâches
+            en dessous reste utilisable, et le prétendre inaccessible
+            tromperait un lecteur d'écran.
+          */
+          role="region"
+          aria-label="Tiled terminals"
+          className={cn(
+            "fixed inset-0 z-50",
+            "bg-black/60 backdrop-blur-sm",
+            hasOpenTerminals && "bottom-10"
+          )}
+        >
           <div className="w-full h-full p-1">
             {renderTiledTerminals()}
           </div>

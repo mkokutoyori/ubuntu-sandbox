@@ -14,6 +14,85 @@ const SEVERITIES = [
 type Severity = typeof SEVERITIES[number];
 
 /**
+ * Le mnémonique d'une ligne de `debug`, c'est-à-dire aucun : la sortie
+ * de `debug` n'est PAS du syslog et ne porte pas de
+ * `%FACILITÉ-N-MNÉMONIQUE`. Il vaut la chaîne vide plutôt que
+ * `undefined` parce qu'`append` exige désormais un mnémonique — une
+ * ligne verbatim est un choix qu'on écrit, pas un argument qu'on omet.
+ */
+export const DEBUG_VERBATIM = '';
+
+/**
+ * Le pont générique `log` porte un nom d'événement interne, pas un
+ * mnémonique. Cette table dit lequel IOS écrirait, et `null` dit qu'il
+ * n'écrirait rien du tout — un compteur de paquet malformé ou une
+ * erreur d'émission interne ne produisent aucune ligne de syslog sur un
+ * vrai équipement.
+ */
+const EVENT_MNEMONICS: Readonly<Record<string, string | null>> = {
+  'cable:duplex-mismatch': 'DUPLEX_MISMATCH',
+  'cable:loop-guard': 'LOOPGUARD_BLOCK',
+  'dhcp:pool-exhausted': 'POOL_EXHAUSTED',
+  'eigrp:goodbye': 'NBRCHANGE',
+  'eigrp:hold-expired': 'NBRCHANGE',
+  'eigrp:iface-down': 'NBRCHANGE',
+  'eigrp:k-mismatch': 'NBRCHANGE',
+  'equipment:frame-dropped': null,
+  'equipment:send-blocked': null,
+  'equipment:send-error': null,
+  'host:route-add-fail': null,
+  'ipsec:anti-replay': 'PKT_REPLAY_ERR',
+  'ipsec:cert-revoked': 'IKMP_INVAL_CERT',
+  'ipsec:cert-verify-failed': 'IKMP_INVAL_CERT',
+  'ipsec:mcast-invalid': 'RECVD_PKT_INV_SPI',
+  'ipsec:mcast-no-sa': 'RECVD_PKT_INV_SPI',
+  'ipsec:mcast-unknown-spi': 'RECVD_PKT_INV_SPI',
+  'ipsec:overlap': 'IKMP_BAD_MESSAGE',
+  'ipsec:unknown-spi': 'RECVD_PKT_INV_SPI',
+  'ipv4:checksum-fail': null,
+  'nat:debug': null,
+  'ospf:auth-fail': 'ERRRCV',
+  'port:security-shutdown': 'ERR_DISABLE',
+  'port:security-violation': 'PSECURE_VIOLATION',
+  'radius:acct-timeout': 'RADIUS_DEAD',
+  'radius:bad-accounting-authenticator': 'RESP_AUTHENTICATOR',
+  'radius:bad-coa-authenticator': 'RESP_AUTHENTICATOR',
+  'radius:bad-message-authenticator': 'RESP_AUTHENTICATOR',
+  'radius:bad-response-authenticator': 'RESP_AUTHENTICATOR',
+  'radius:missing-message-authenticator': 'RESP_AUTHENTICATOR',
+  'radius:server-dead': 'RADIUS_DEAD',
+  'router:checksum-fail': null,
+  'router:ihl-fail': null,
+  'router:length-fail': null,
+  'router:routing-table-limit': 'ROUTELIMITWARNING',
+  'router:version-fail': null,
+  'stp:bpdu-guard': 'BLOCK_BPDUGUARD',
+  'stp:bpduguard': 'BLOCK_BPDUGUARD',
+  'stp:loop-guard': 'LOOPGUARD_BLOCK',
+  'stp:portfast-lost': 'PORTFAST_BPDU_RX',
+  'stp:root-guard': 'ROOTGUARD_BLOCK',
+  'switch:arp-errdisable': 'ERR_DISABLE',
+  'switch:arp-inspection': 'DHCP_SNOOPING_DENY',
+  'switch:dhcp-snooping-drop': 'DHCP_SNOOPING_UNTRUSTED_PORT',
+  'switch:dhcp-snooping-mac-mismatch': 'DHCP_SNOOPING_MATCH_MAC_FAIL',
+  'switch:dhcp-snooping-rate-limit': 'DHCP_SNOOPING_RATE_LIMIT_EXCEEDED',
+  'switch:mac-move': 'MACFLAP_NOTIF',
+  'udp:checksum-fail': null,
+  'vtp:orphan-mst-subset': null,
+  'vtp:orphan-subset': null,
+};
+
+/**
+ * Un événement absent de la table est inconnu, et un inconnu ne
+ * s'invente pas : il ne produit pas de ligne. C'est la même règle que
+ * pour les familles retirées des abonnements — mieux vaut le silence
+ * qu'un mnémonique fabriqué.
+ */
+export function mnemonicFromEvent(event: string): string | null {
+  return EVENT_MNEMONICS[event] ?? null;
+}
+
+/**
  * Une sévérité par son nom, son ABRÉGÉ ou son numéro.
  *
  * L'abrégé n'est pas une facilité : c'est la règle de toute la CLI d'IOS,
@@ -482,7 +561,7 @@ export class LoggingConfig {
    */
   private readonly messages: Array<{
     ts: number; severity: Severity;
-    tag: string; text: string; mnemonic?: string; rendu: string;
+    tag: string; text: string; mnemonic: string; rendu: string;
   }> = [];
 
   attachClockSource(source: LoggingClockSource): void { this.clock = source; }
@@ -537,7 +616,7 @@ export class LoggingConfig {
 
   private formatEntry(
     severity: Severity, tag: string, text: string,
-    ts: number, mnemonic?: string, uptimeMs?: number, seq?: number,
+    ts: number, mnemonic: string, uptimeMs?: number, seq?: number,
   ): string {
     const spec = this.horodatage[severity === 'debugging' ? 'debug' : 'log'];
     // Le numéro précède l'horodatage : c'est l'ordre d'IOS, et celui qui
@@ -546,10 +625,9 @@ export class LoggingConfig {
     const prefix = numero + (spec.enabled
       ? `${this.formatTimestamp(spec, ts, uptimeMs ?? this.uptimeNow())}: `
       : '');
-    if (severity === 'debugging' && !mnemonic) return `${prefix}${text}`;
+    if (mnemonic === DEBUG_VERBATIM) return `${prefix}${text}`;
     const sevNum = this.SEVERITY_ORDER[severity];
-    const mnem = (mnemonic ?? severity).toUpperCase();
-    return `${prefix}%${tag.toUpperCase()}-${sevNum}-${mnem}: ${text}`;
+    return `${prefix}%${tag.toUpperCase()}-${sevNum}-${mnemonic.toUpperCase()}: ${text}`;
   }
 
   private uptimeNow(): number { return this.clock?.uptimeMs() ?? 0; }
@@ -768,9 +846,10 @@ export class LoggingConfig {
   recordDebugLine(text: string): string {
     const ts = this.clock?.epochMs() ?? Date.now();
     const rendu = this.formatEntry(
-      'debugging', 'debug', text, ts, undefined, this.uptimeNow(), this.nextSequence());
+      'debugging', 'debug', text, ts, DEBUG_VERBATIM, this.uptimeNow(), this.nextSequence());
     if (!this.enabled) return rendu;
-    this.messages.push({ ts, severity: 'debugging', tag: 'debug', text, rendu });
+    this.messages.push({
+      ts, severity: 'debugging', tag: 'debug', text, mnemonic: DEBUG_VERBATIM, rendu });
     this.logged.buffer++;
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
@@ -796,7 +875,10 @@ export class LoggingConfig {
     }
   }
 
-  append(severity: Severity, tag: string, text: string, republish: boolean = true, mnemonic?: string): void {
+  append(
+    severity: Severity, tag: string, text: string,
+    republish: boolean, mnemonic: string,
+  ): void {
     if (!this.enabled) return;
     if (severity === 'debugging' && !this.debugAllowed(tag)) return;
     if (!this.redemarrageAccepte(severity)) return;
@@ -805,7 +887,7 @@ export class LoggingConfig {
     const ts = this.clock?.epochMs() ?? Date.now();
     const rendu = this.formatEntry(
       severity, tag, text, ts, mnemonic, this.uptimeNow(), this.nextSequence());
-    const mnem = (mnemonic ?? severity).toUpperCase();
+    const mnem = mnemonic.toUpperCase();
     const passeMd = (d: LoggingDestination): boolean =>
       this.destinationAllows(d, severity, tag, mnem, text, ts);
     const wantsMonitor = this.monitorEnabled
@@ -821,7 +903,7 @@ export class LoggingConfig {
     const passe = !borne || this.rateLimitAllows(ts);
     if (!passe) this.rateLimitedTotal++;
     if (passe || !tousBornes) {
-      this.recordHistory(severity, tag, (mnemonic ?? severity).toUpperCase(), text, ts);
+      this.recordHistory(severity, tag, mnem, text, ts);
       if (this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.trapSeverity]) {
         this.logged.trap++;
         for (const h of this.hostConfigs) {
@@ -874,27 +956,12 @@ export class LoggingConfig {
       bus.subscribeWhere('tcp.connection.opened', isOurs, (e) => {
         const p = e.payload;
         if (!p.passive) return;
-        const tag = p.localPort === 22 ? 'ssh' : 'sec_login';
-        const msg = p.localPort === 22
+        const ssh = p.localPort === 22;
+        const tag = ssh ? 'ssh' : 'sec_login';
+        const msg = ssh
           ? `AUTHENTICATION: SSH connection from ${p.remoteIp}:${p.remotePort} accepted on port 22 (stelnet)`
           : `Login accepted: connection from ${p.remoteIp}:${p.remotePort} accepted on port ${p.localPort}`;
-        this.append('notifications', tag, msg);
-      }),
-      bus.subscribeWhere('tcp.connection.closed', isOurs, (e) => {
-        const p = e.payload;
-        // Only connections this device ACCEPTED, mirroring the `passive`
-        // filter on `tcp.connection.opened` just above. A socket we
-        // dialled out ourselves is not a "Connection from" anybody, and
-        // logging it printed a server-shaped line on the console of the
-        // client whose own telnet had just been refused.
-        if (!p.passive) return;
-        this.append('informational', 'sys',
-          `Connection from ${p.remoteIp}:${p.remotePort} closed (${p.reason})`);
-      }),
-      bus.subscribeWhere('tcp.segment.dropped', isOurs, (e) => {
-        const p = e.payload;
-        this.append('warnings', 'tcp',
-          `Segment dropped (${p.reason}) from ${p.sourceIp}:${p.sourcePort} to ${p.destinationIp}:${p.destinationPort}`);
+        this.append('notifications', tag, msg, true, ssh ? 'SSH2_SESSION' : 'LOGIN_SUCCESS');
       }),
       bus.subscribeWhere('port.link.up', isOurs, (e) => {
         const p = e.payload;
@@ -924,11 +991,12 @@ export class LoggingConfig {
           helloReceived: number; helloConfigured: number;
           maskReceived: string; maskConfigured: string;
         };
-        this.append('debugging', 'ospf', `OSPF: Mismatched hello parameters from ${p.from}`);
+        this.append('debugging', 'ospf',
+          `OSPF: Mismatched hello parameters from ${p.from}`, true, DEBUG_VERBATIM);
         this.append('debugging', 'ospf',
           `OSPF: Dead R ${p.deadReceived} C ${p.deadConfigured}, `
           + `Hello R ${p.helloReceived} C ${p.helloConfigured}, `
-          + `Mask R ${p.maskReceived} C ${p.maskConfigured}`);
+          + `Mask R ${p.maskReceived} C ${p.maskConfigured}`, true, DEBUG_VERBATIM);
       }),
       bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload;
@@ -942,77 +1010,22 @@ export class LoggingConfig {
       bus.subscribeWhere('hsrp.active.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; group?: number; activeIp?: string; activePriority?: number };
         this.append('informational', 'hsrp',
-          `${p.iface ?? 'iface'} Grp ${p.group ?? 0} Active router is ${p.activeIp ?? '?'} (priority ${p.activePriority ?? 0})`);
+          `${p.iface ?? 'iface'} Grp ${p.group ?? 0} Active router is ${p.activeIp ?? '?'} (priority ${p.activePriority ?? 0})`, true, 'STATECHANGE');
       }),
       bus.subscribeWhere('hsrp.state.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; group?: number; oldState?: string; newState?: string };
         this.append('notifications', 'hsrp',
-          `${p.iface ?? '?'} Grp ${p.group ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
-      }),
-      bus.subscribeWhere('lldp.config.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { enabled?: boolean };
-        this.append('informational', 'lldp',
-          `LLDP ${p.enabled ? 'enabled' : 'disabled'}`);
-      }),
-      bus.subscribeWhere('cdp.config.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { enabled?: boolean };
-        this.append('informational', 'cdp',
-          `CDP ${p.enabled ? 'enabled' : 'disabled'}`);
-      }),
-      bus.subscribeWhere('host.icmp.echo-failed', isOurs, (e) => {
-        const p = e.payload as unknown as { toIp?: string; reason?: string };
-        this.append('warnings', 'icmp',
-          `Echo to ${p.toIp ?? '?'} failed: ${p.reason ?? 'no response'}`);
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`, true, 'STATECHANGE');
       }),
       bus.subscribeWhere('lacp.port.bundled', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; groupId?: number };
         this.append('notifications', 'etherchannel',
-          `Interface ${p.port ?? '?'} joined port-channel Port-channel${p.groupId ?? 0}`);
+          `Interface ${p.port ?? '?'} joined port-channel Port-channel${p.groupId ?? 0}`, true, 'BUNDLE');
       }),
       bus.subscribeWhere('lacp.port.unbundled', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; groupId?: number; cause?: string };
         this.append('notifications', 'etherchannel',
-          `Interface ${p.port ?? '?'} left port-channel Port-channel${p.groupId ?? 0}${p.cause ? ` (${p.cause})` : ''}`);
-      }),
-      bus.subscribeWhere('lacp.port.state-changed', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; oldState?: string; newState?: string };
-        this.append('informational', 'lacp',
-          `Port ${p.port ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
-      }),
-      bus.subscribeWhere('igmp.snooping.member.joined', isOurs, (e) => {
-        const p = e.payload as unknown as { vlan?: number; groupAddress?: string; port?: string };
-        this.append('informational', 'igmp_snoop',
-          `Group ${p.groupAddress ?? '?'} VLAN ${p.vlan ?? 1} member joined on ${p.port ?? '?'}`);
-      }),
-      bus.subscribeWhere('igmp.snooping.member.left', isOurs, (e) => {
-        const p = e.payload as unknown as { vlan?: number; groupAddress?: string; port?: string };
-        this.append('informational', 'igmp_snoop',
-          `Group ${p.groupAddress ?? '?'} VLAN ${p.vlan ?? 1} member left on ${p.port ?? '?'}`);
-      }),
-      bus.subscribeWhere('igmp.querier.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; querierIp?: string; newState?: string };
-        this.append('notifications', 'igmp_snoop',
-          `Querier on ${p.iface ?? '?'} is ${p.querierIp ?? '?'} (${p.newState ?? '?'})`);
-      }),
-      bus.subscribeWhere('vtp.db.synced', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; newRevision?: number; vlansAdded?: number; vlansRemoved?: number };
-        this.append('notifications', 'vtp',
-          `Database synced from ${p.port ?? '?'} (revision ${p.newRevision ?? 0}, +${p.vlansAdded ?? 0}/-${p.vlansRemoved ?? 0} VLANs)`);
-      }),
-      bus.subscribeWhere('udld.state.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; oldState?: string; newState?: string };
-        this.append('informational', 'udld',
-          `Port ${p.port ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
-      }),
-      bus.subscribeWhere('tacacs.acct.completed', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; status?: string; flags?: string };
-        this.append('informational', 'tacacs',
-          `Accounting ${p.flags ?? ''} ${p.status ?? '?'} for ${p.username ?? '?'}`);
-      }),
-      bus.subscribeWhere('glbp.avf.assigned', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; group?: number; forwarderNumber?: number; vmac?: string };
-        this.append('informational', 'glbp',
-          `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarderNumber ?? 0} assigned MAC ${p.vmac ?? '?'}`);
+          `Interface ${p.port ?? '?'} left port-channel Port-channel${p.groupId ?? 0}${p.cause ? ` (${p.cause})` : ''}`, true, 'UNBUNDLE');
       }),
       bus.subscribeWhere('bgp.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload as unknown as { neighborIp?: string; oldState?: string; newState?: string };
@@ -1030,27 +1043,27 @@ export class LoggingConfig {
       bus.subscribeWhere('eigrp.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload as unknown as { neighbor?: string; iface?: string; oldState?: string; newState?: string; asn?: number };
         this.append('notifications', 'eigrp',
-          `${p.asn ?? '?'}: Neighbor ${p.neighbor ?? '?'} (${p.iface ?? '?'}) is ${p.newState ?? '?'}`);
+          `${p.asn ?? '?'}: Neighbor ${p.neighbor ?? '?'} (${p.iface ?? '?'}) is ${p.newState ?? '?'}`, true, 'NBRCHANGE');
       }),
       bus.subscribeWhere('port.security.violation', isOurs, (e) => {
         const p = e.payload;
         this.append('critical', 'port_security',
-          `Security violation occurred, caused by MAC address ${p.mac} on port ${p.portName}.`);
+          `Security violation occurred, caused by MAC address ${p.mac} on port ${p.portName}.`, true, 'PSECURE_VIOLATION');
       }),
       bus.subscribeWhere('port.security.errdisable.set', isOurs, (e) => {
         const p = e.payload;
         this.append('critical', 'pm',
-          `Interface ${p.portName} is err-disabled: psecure-violation`);
+          `Interface ${p.portName} is err-disabled: psecure-violation`, true, 'ERR_DISABLE');
       }),
       bus.subscribeWhere('bfd.session.changed', isOurs, (e) => {
         const p = e.payload as unknown as { neighborIp?: string; iface?: string; oldState?: string; newState?: string };
         this.append('notifications', 'bfd',
-          `Session to neighbor ${p.neighborIp ?? '?'} on ${p.iface ?? '?'} changed state from ${p.oldState ?? '?'} to ${p.newState ?? '?'}`);
+          `Session to neighbor ${p.neighborIp ?? '?'} on ${p.iface ?? '?'} changed state from ${p.oldState ?? '?'} to ${p.newState ?? '?'}`, true, 'BFD_SESS_STATE');
       }),
       bus.subscribeWhere('arp.violation', isOurs, (e) => {
         const p = e.payload as unknown as { ingressPort?: string; senderIp?: string; senderMac?: string; reason?: string };
         this.append('warnings', 'dai',
-          `DAI: ${p.ingressPort ?? '?'}: Invalid ARP ${p.reason ?? ''} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
+          `DAI: ${p.ingressPort ?? '?'}: Invalid ARP ${p.reason ?? ''} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`, true, 'DHCP_SNOOPING_DENY');
       }),
       // Aucun abonnement ici sur `port.config.ip-changed`,
       // `mtu/speed/duplex-changed` ni `tcp.listener.changed` : IOS
@@ -1059,65 +1072,40 @@ export class LoggingConfig {
       // assigned` et `%SYS-5-NOTIFICATIONS: TCP listener bound` qui s'y
       // trouvaient étaient inventés — et le premier mélangeait en plus
       // la notation CIDR et le masque pointé.
-      bus.subscribeWhere('rip.route.added', isOurs, (e) => {
-        const p = e.payload as unknown as { network?: string; mask?: string; nextHop?: string; metric?: number };
-        this.append('informational', 'rip',
-          `Route added ${p.network}/${p.mask} via ${p.nextHop} metric ${p.metric}`);
-      }),
-      bus.subscribeWhere('rip.route.timed-out', isOurs, (e) => {
-        const p = e.payload as unknown as { network?: string; mask?: string };
-        this.append('warnings', 'rip',
-          `Route timed out ${p.network ?? '?'}/${p.mask ?? '?'}`);
-      }),
       bus.subscribeWhere('ipsec.ike.sa-installed', isOurs, (e) => {
         const p = e.payload as unknown as { peerIp?: string; spiInitiator?: number };
         this.append('notifications', 'crypto',
-          `IKE SA installed with peer ${p.peerIp ?? '?'} (SPI 0x${(p.spiInitiator ?? 0).toString(16)})`);
+          `IKE SA installed with peer ${p.peerIp ?? '?'} (SPI 0x${(p.spiInitiator ?? 0).toString(16)})`, true, 'IKMP_SA_AUTH');
       }),
       bus.subscribeWhere('ipsec.ike.sa-deleted', isOurs, (e) => {
         const p = e.payload as unknown as { peerIp?: string; reason?: string };
         this.append('notifications', 'crypto',
-          `IKE SA deleted with peer ${p.peerIp ?? '?'} (${p.reason ?? 'deleted'})`);
-      }),
-      bus.subscribeWhere('ipsec.sa.installed', isOurs, (e) => {
-        const p = e.payload as unknown as { peerIp?: string; spiOutbound?: number; protocol?: string };
-        this.append('notifications', 'crypto',
-          `IPSEC: ${p.protocol ?? 'ESP'} SA installed with ${p.peerIp ?? '?'} (SPI 0x${(p.spiOutbound ?? 0).toString(16)})`);
+          `IKE SA deleted with peer ${p.peerIp ?? '?'} (${p.reason ?? 'deleted'})`, true, 'IKMP_SA_NOT_AUTH');
       }),
       bus.subscribeWhere('ipsec.dpd.peer-down', isOurs, (e) => {
         const p = e.payload as unknown as { peerIp?: string };
         this.append('warnings', 'crypto',
-          `DPD: peer ${p.peerIp ?? '?'} declared dead`);
+          `DPD: peer ${p.peerIp ?? '?'} declared dead`, true, 'IKE_DPD_TIMEOUT');
       }),
       bus.subscribeWhere('ntp.synced', isOurs, (e) => {
         const p = e.payload as unknown as { serverIp?: string; newStratum?: number; offsetMs?: number };
         this.append('notifications', 'ntp',
-          `System clock synchronized to ${p.serverIp ?? '?'} stratum ${p.newStratum ?? '?'} offset ${p.offsetMs ?? 0}ms`);
+          `System clock synchronized to ${p.serverIp ?? '?'} stratum ${p.newStratum ?? '?'} offset ${p.offsetMs ?? 0}ms`, true, 'PEERSYNC');
       }),
       bus.subscribeWhere('ntp.unsynced', isOurs, (e) => {
         const p = e.payload as unknown as { reason?: string };
         this.append('warnings', 'ntp',
-          `System clock unsynchronized (${p.reason ?? 'no reachable server'})`);
+          `System clock unsynchronized (${p.reason ?? 'no reachable server'})`, true, 'PEERUNSYNC');
       }),
       bus.subscribeWhere('snmp.auth.rejected', isOurs, (e) => {
         const p = e.payload as unknown as { fromIp?: string; community?: string; reason?: string };
         this.append('warnings', 'snmp',
-          `Authentication failure for SNMP request from ${p.fromIp ?? '?'} (community '${p.community ?? '?'}', ${p.reason ?? '?'})`);
-      }),
-      bus.subscribeWhere('snmp.trap.sent', isOurs, (e) => {
-        const p = e.payload as unknown as { destinationIp?: string; trapOid?: string };
-        this.append('informational', 'snmp',
-          `Trap sent to ${p.destinationIp ?? '?'} oid=${p.trapOid ?? '?'}`);
+          `Authentication failure for SNMP request from ${p.fromIp ?? '?'} (community '${p.community ?? '?'}', ${p.reason ?? '?'})`, true, 'AUTHFAIL');
       }),
       bus.subscribeWhere('stp.root.changed', isOurs, (e) => {
         const p = e.payload as unknown as { oldRootMac?: string; newRootMac?: string; rootPort?: string };
         this.append('notifications', 'spantree',
-          `New root ${p.newRootMac ?? '?'} (was ${p.oldRootMac ?? '?'}), root port ${p.rootPort ?? 'none'}`);
-      }),
-      bus.subscribeWhere('stp.role.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; oldRole?: string; newRole?: string };
-        this.append('informational', 'spantree',
-          `Port ${p.port ?? '?'} role changed ${p.oldRole ?? '?'} -> ${p.newRole ?? '?'}`);
+          `New root ${p.newRootMac ?? '?'} (was ${p.oldRootMac ?? '?'}), root port ${p.rootPort ?? 'none'}`, true, 'ROOTCHANGE');
       }),
       bus.subscribeWhere('stp.bpdu-guard.violation', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string };
@@ -1131,67 +1119,22 @@ export class LoggingConfig {
       bus.subscribeWhere('stp.topology.change', isOurs, (e) => {
         const p = e.payload as unknown as { origin?: string; port?: string };
         this.append('notifications', 'spantree',
-          `Topology change (${p.origin ?? '?'})${p.port ? ` on port ${p.port}` : ''}`);
-      }),
-      bus.subscribeWhere('lldp.neighbor.discovered', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteSystem?: string; remotePort?: string };
-        this.append('informational', 'lldp',
-          `Neighbor ${p.remoteSystem ?? '?'} (${p.remotePort ?? '?'}) discovered on ${p.localPort ?? '?'}`);
-      }),
-      bus.subscribeWhere('lldp.neighbor.expired', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteSystem?: string };
-        this.append('notifications', 'lldp',
-          `Neighbor ${p.remoteSystem ?? '?'} expired on ${p.localPort ?? '?'}`);
-      }),
-      bus.subscribeWhere('igmp.group.joined', isOurs, (e) => {
-        const p = e.payload as unknown as { groupAddress?: string; iface?: string };
-        this.append('informational', 'igmp',
-          `Membership report received for group ${p.groupAddress ?? '?'} on ${p.iface ?? '?'}`);
-      }),
-      bus.subscribeWhere('igmp.group.left', isOurs, (e) => {
-        const p = e.payload as unknown as { groupAddress?: string; iface?: string };
-        this.append('informational', 'igmp',
-          `Leave received for group ${p.groupAddress ?? '?'} on ${p.iface ?? '?'}`);
+          `Topology change (${p.origin ?? '?'})${p.port ? ` on port ${p.port}` : ''}`, true, 'TOPOTRAP');
       }),
       bus.subscribeWhere('arp.rate-limit-exceeded', isOurs, (e) => {
         const p = e.payload as unknown as { ingressPort?: string; observedPps?: number };
         this.append('warnings', 'dai',
-          `ARP rate-limit exceeded on ${p.ingressPort ?? '?'} (${p.observedPps ?? 0} pkts/s)`);
-      }),
-      bus.subscribeWhere('dhcp.pool.lease-allocated', isOurs, (e) => {
-        const p = e.payload as unknown as { ip?: string; clientMac?: string; pool?: string };
-        this.append('informational', 'dhcpd',
-          `Assigned ${p.ip ?? '?'} to ${p.clientMac ?? '?'} from pool ${p.pool ?? '?'}`);
-      }),
-      bus.subscribeWhere('dhcp.pool.lease-released', isOurs, (e) => {
-        const p = e.payload as unknown as { ip?: string; pool?: string; reason?: string };
-        this.append('informational', 'dhcpd',
-          `Released ${p.ip ?? '?'} to pool ${p.pool ?? '?'} (${p.reason ?? '?'})`);
+          `ARP rate-limit exceeded on ${p.ingressPort ?? '?'} (${p.observedPps ?? 0} pkts/s)`, true, 'PACKET_RATE_EXCEEDED');
       }),
       bus.subscribeWhere('dhcp.address-conflict', isOurs, (e) => {
         const p = e.payload as unknown as { ip?: string };
         this.append('warnings', 'dhcp',
-          `Address conflict detected for ${p.ip ?? '?'} — sending DECLINE`);
-      }),
-      bus.subscribeWhere('dhcp.nak.received', isOurs, (e) => {
-        const p = e.payload as unknown as { serverIp?: string };
-        this.append('warnings', 'dhcp',
-          `DHCPNAK received from ${p.serverIp ?? '?'}`);
+          `Address conflict detected for ${p.ip ?? '?'} — sending DECLINE`, true, 'DECLINE_CONFLICT');
       }),
       bus.subscribeWhere('dhcp.lease.expired', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; ip?: string };
         this.append('warnings', 'dhcp',
-          `Lease on ${p.iface ?? '?'} expired (${p.ip ?? '?'})`);
-      }),
-      bus.subscribeWhere('cdp.neighbor.discovered', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteHost?: string; remotePort?: string };
-        this.append('informational', 'cdp',
-          `Neighbor ${p.remoteHost ?? '?'} (${p.remotePort ?? '?'}) discovered on ${p.localPort ?? '?'}`);
-      }),
-      bus.subscribeWhere('cdp.neighbor.expired', isOurs, (e) => {
-        const p = e.payload as unknown as { localPort?: string; remoteHost?: string };
-        this.append('notifications', 'cdp',
-          `Neighbor ${p.remoteHost ?? '?'} expired on ${p.localPort ?? '?'}`);
+          `Lease on ${p.iface ?? '?'} expired (${p.ip ?? '?'})`, true, 'LEASE_EXPIRED');
       }),
       bus.subscribeWhere('cdp.native-vlan.mismatch', isOurs, (e) => {
         const p = e.payload as unknown as {
@@ -1206,211 +1149,94 @@ export class LoggingConfig {
       bus.subscribeWhere('vrrp.state.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; vrid?: number; oldState?: string; newState?: string };
         this.append('notifications', 'vrrp',
-          `${p.iface ?? '?'} VRID ${p.vrid ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `${p.iface ?? '?'} VRID ${p.vrid ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`, true, 'STATECHANGE');
       }),
       bus.subscribeWhere('vrrp.master.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; vrid?: number; masterIp?: string };
         this.append('notifications', 'vrrp',
-          `${p.iface ?? '?'} VRID ${p.vrid ?? 0} new master ${p.masterIp ?? '?'}`);
+          `${p.iface ?? '?'} VRID ${p.vrid ?? 0} new master ${p.masterIp ?? '?'}`, true, 'STATECHANGE');
       }),
       bus.subscribeWhere('glbp.avg.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; group?: number; oldState?: string; newState?: string };
         this.append('notifications', 'glbp',
-          `${p.iface ?? '?'} Grp ${p.group ?? 0} AVG state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
-      }),
-      bus.subscribeWhere('glbp.avf.state.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { iface?: string; group?: number; forwarderNumber?: number; oldState?: string; newState?: string };
-        this.append('informational', 'glbp',
-          `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarderNumber ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} AVG state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`, true, 'STATECHANGE');
       }),
       bus.subscribeWhere('router.aaa.account.login.success', isOurs, (e) => {
         const p = e.payload as unknown as { account?: { name?: string }; from?: string };
         this.append('notifications', 'sec_login',
-          `Login Success [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}]`);
+          `Login Success [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}]`, true, 'LOGIN_SUCCESS');
       }),
       bus.subscribeWhere('router.aaa.account.login.failure', isOurs, (e) => {
         const p = e.payload as unknown as { account?: { name?: string }; from?: string; reason?: string };
         this.append('warnings', 'sec_login',
-          `Login Failed [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}] (${p.reason ?? 'invalid credentials'})`);
+          `Login Failed [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}] (${p.reason ?? 'invalid credentials'})`, true, 'LOGIN_FAILED');
       }),
       bus.subscribeWhere('router.aaa.account.locked', isOurs, (e) => {
         const p = e.payload as unknown as { account?: { name?: string; lockReason?: string | null } };
         this.append('critical', 'sec',
-          `Account ${p.account?.name ?? '?'} locked (${p.account?.lockReason ?? 'repeated failures'})`);
+          `Account ${p.account?.name ?? '?'} locked (${p.account?.lockReason ?? 'repeated failures'})`, true, 'USER_LOCKED');
       }),
       bus.subscribeWhere('router.ssh.session.opened', isOurs, (e) => {
         const p = e.payload as unknown as { session?: { user?: string; line?: string; fromIp?: string } };
         this.append('informational', 'ssh',
-          `Session opened for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'} from ${p.session?.fromIp ?? '?'}`);
+          `Session opened for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'} from ${p.session?.fromIp ?? '?'}`, true, 'SSH2_SESSION');
       }),
       bus.subscribeWhere('router.ssh.session.closed', isOurs, (e) => {
         const p = e.payload as unknown as { session?: { user?: string; line?: string; closeReason?: string | null } };
         this.append('informational', 'ssh',
-          `Session closed for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'}${p.session?.closeReason ? ` (${p.session.closeReason})` : ''}`);
-      }),
-      bus.subscribeWhere('dtp.mode.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; oldOperationalMode?: string; newOperationalMode?: string };
-        this.append('informational', 'dtp',
-          `${p.port ?? '?'}: trunk negotiation mode ${p.oldOperationalMode ?? '?'} -> ${p.newOperationalMode ?? '?'}`);
-      }),
-      bus.subscribeWhere('stp.port-state.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; vlan?: number; oldState?: string; newState?: string };
-        this.append('informational', 'spantree',
-          `Port ${p.port ?? '?'} VLAN ${p.vlan ?? 1} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `Session closed for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'}${p.session?.closeReason ? ` (${p.session.closeReason})` : ''}`, true, 'SSH2_CLOSE');
       }),
       bus.subscribeWhere('stp.root-guard.changed', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; state?: string };
         this.append('warnings', 'spantree',
-          `Root-guard ${p.state ?? '?'} on ${p.port ?? '?'}`);
-      }),
-      bus.subscribeWhere('netflow.collector.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { collectorIp?: string; added?: boolean };
-        this.append('informational', 'netflow',
-          p.added
-            ? `Collector ${p.collectorIp ?? '?'} added`
-            : `Collector ${p.collectorIp ?? '?'} removed`);
-      }),
-      bus.subscribeWhere('vxlan.vtep.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { vni?: number; remoteVtepIp?: string; added?: boolean };
-        this.append('informational', 'vxlan',
-          p.added
-            ? `VTEP ${p.remoteVtepIp ?? '?'} added to VNI ${p.vni ?? 0}`
-            : `VTEP ${p.remoteVtepIp ?? '?'} removed from VNI ${p.vni ?? 0}`);
-      }),
-      bus.subscribeWhere('vxlan.packet.dropped', isOurs, (e) => {
-        const p = e.payload as unknown as { vni?: number; reason?: string };
-        this.append('warnings', 'vxlan',
-          `Dropped VXLAN packet on VNI ${p.vni ?? 0} (${p.reason ?? '?'})`);
-      }),
-      bus.subscribeWhere('ipsec.engine.started', isOurs, () => {
-        this.append('notifications', 'crypto', 'IPSec engine started');
-      }),
-      bus.subscribeWhere('ipsec.engine.stopped', isOurs, () => {
-        this.append('notifications', 'crypto', 'IPSec engine stopped');
-      }),
-      bus.subscribeWhere('rip.engine.started', isOurs, () => {
-        this.append('notifications', 'rip', 'RIP routing process started');
-      }),
-      bus.subscribeWhere('rip.engine.stopped', isOurs, () => {
-        this.append('notifications', 'rip', 'RIP routing process stopped');
+          `Root-guard ${p.state ?? '?'} on ${p.port ?? '?'}`, true, 'ROOTGUARD_CONFIG_CHANGE');
       }),
       bus.subscribeWhere('pim.neighbor.added', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; neighborIp?: string };
         this.append('notifications', 'pim',
-          `Neighbor ${p.neighborIp ?? '?'} discovered on ${p.iface ?? '?'}`);
+          `Neighbor ${p.neighborIp ?? '?'} discovered on ${p.iface ?? '?'}`, true, 'NBRCHG');
       }),
       bus.subscribeWhere('pim.neighbor.lost', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; neighborIp?: string };
         this.append('warnings', 'pim',
-          `Neighbor ${p.neighborIp ?? '?'} on ${p.iface ?? '?'} timed out`);
-      }),
-      bus.subscribeWhere('pim.rp.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { group?: string; rpAddress?: string };
-        this.append('notifications', 'pim',
-          `RP for ${p.group ?? '*'} is now ${p.rpAddress ?? '?'}`);
+          `Neighbor ${p.neighborIp ?? '?'} on ${p.iface ?? '?'} timed out`, true, 'NBRCHG');
       }),
       bus.subscribeWhere('dot1x.auth.outcome', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; accepted?: boolean; identity?: string; reason?: string };
         const sev = p.accepted ? 'informational' : 'warnings';
         this.append(sev, 'dot1x',
-          `Authentication ${p.accepted ? 'success' : 'failure'} on ${p.port ?? '?'} for ${p.identity ?? '?'}`);
-      }),
-      bus.subscribeWhere('dot1x.port.state.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; oldState?: string; newState?: string };
-        this.append('informational', 'dot1x',
-          `Port ${p.port ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+          `Authentication ${p.accepted ? 'success' : 'failure'} on ${p.port ?? '?'} for ${p.identity ?? '?'}`,
+          true, p.accepted ? 'SUCCESS' : 'FAIL');
       }),
       bus.subscribeWhere('udld.err-disable', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string };
         this.append('errors', 'udld',
-          `Port ${p.port ?? '?'} err-disabled by UDLD`);
-      }),
-      bus.subscribeWhere('udld.neighbor.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { port?: string; remoteDeviceId?: string };
-        this.append('informational', 'udld',
-          `Neighbor change on ${p.port ?? '?'} (id ${p.remoteDeviceId ?? '?'})`);
-      }),
-      bus.subscribeWhere('vtp.domain.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { newDomain?: string };
-        this.append('informational', 'vtp',
-          `VTP domain changed to '${p.newDomain ?? '?'}'`);
-      }),
-      bus.subscribeWhere('vtp.mode.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { newMode?: string };
-        this.append('informational', 'vtp',
-          `VTP mode changed to ${p.newMode ?? '?'}`);
+          `Port ${p.port ?? '?'} err-disabled by UDLD`, true, 'UDLD_PORT_DISABLED');
       }),
       bus.subscribeWhere('radius.auth.rejected', isOurs, (e) => {
         const p = e.payload as unknown as { username?: string; fromIp?: string; reason?: string };
         this.append('warnings', 'radius',
-          `Authentication rejected for ${p.username ?? '?'} from ${p.fromIp ?? '?'} (${p.reason ?? '?'})`);
-      }),
-      bus.subscribeWhere('radius.auth.completed', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; accepted?: boolean };
-        this.append('informational', 'radius',
-          `Authentication ${p.accepted ? 'accepted' : 'rejected'} for ${p.username ?? '?'}`);
-      }),
-      bus.subscribeWhere('tacacs.authen.completed', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; status?: string };
-        this.append('informational', 'tacacs',
-          `Authentication ${p.status ?? '?'} for ${p.username ?? '?'}`);
-      }),
-      bus.subscribeWhere('tacacs.author.completed', isOurs, (e) => {
-        const p = e.payload as unknown as { username?: string; command?: string; status?: string };
-        this.append('informational', 'tacacs',
-          `Authorization ${p.status ?? '?'} for ${p.username ?? '?'} cmd='${p.command ?? '?'}'`);
-      }),
-      bus.subscribeWhere('gre.tunnel.changed', isOurs, (e) => {
-        const p = e.payload as unknown as { tunnelId?: string; added?: boolean; sourceIp?: string; destinationIp?: string };
-        this.append('notifications', 'gre',
-          `Tunnel ${p.tunnelId ?? '?'} ${p.added ? 'up' : 'down'} (${p.sourceIp ?? '?'} -> ${p.destinationIp ?? '?'})`);
+          `Authentication rejected for ${p.username ?? '?'} from ${p.fromIp ?? '?'} (${p.reason ?? '?'})`, true, 'AUTHFAIL');
       }),
       bus.subscribeWhere('port.security.errdisable.cleared', isOurs, (e) => {
         const p = e.payload as unknown as { portName?: string };
         this.append('informational', 'pm',
-          `Interface ${p.portName ?? '?'} recovered from err-disabled state`);
-      }),
-      bus.subscribeWhere('port.security.sticky-saved', isOurs, (e) => {
-        const p = e.payload as unknown as { portName?: string; mac?: string };
-        this.append('informational', 'port_security',
-          `Sticky MAC ${p.mac ?? '?'} saved on ${p.portName ?? '?'}`);
+          `Interface ${p.portName ?? '?'} recovered from err-disabled state`, true, 'ERR_RECOVER');
       }),
       bus.subscribeWhere('arp.errdisable.set', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; cause?: string };
         this.append('errors', 'dai',
-          `Port ${p.port ?? '?'} err-disabled (${p.cause ?? 'DAI violation'})`);
+          `Port ${p.port ?? '?'} err-disabled (${p.cause ?? 'DAI violation'})`, true, 'ERR_DISABLE');
       }),
       bus.subscribeWhere('arp.errdisable.cleared', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string };
         this.append('informational', 'dai',
-          `Port ${p.port ?? '?'} cleared from err-disabled`);
+          `Port ${p.port ?? '?'} cleared from err-disabled`, true, 'ERR_RECOVER');
       }),
       bus.subscribeWhere('pim.dr.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; newDrIp?: string };
         this.append('notifications', 'pim',
-          `Designated Router on ${p.iface ?? '?'} is now ${p.newDrIp ?? '?'}`);
-      }),
-      bus.subscribeWhere('gre.packet.dropped', isOurs, (e) => {
-        const p = e.payload as unknown as { sourceIp?: string; destinationIp?: string; reason?: string };
-        this.append('warnings', 'gre',
-          `Dropped packet on tunnel ${p.sourceIp ?? '?'} -> ${p.destinationIp ?? '?'} (${p.reason ?? '?'})`);
-      }),
-      bus.subscribeWhere('dhcp.reservation.added', isOurs, (e) => {
-        const p = e.payload as unknown as { ip?: string; clientMac?: string; pool?: string };
-        this.append('informational', 'dhcpd',
-          `Reservation added: ${p.ip ?? '?'} for ${p.clientMac ?? '?'} (pool ${p.pool ?? '?'})`);
-      }),
-      bus.subscribe('cable.disconnected', (e) => {
-        const p = e.payload as unknown as {
-          portA?: { deviceId?: string; portName?: string };
-          portB?: { deviceId?: string; portName?: string };
-        };
-        const sideA = p.portA?.deviceId === deviceId ? p.portA?.portName : null;
-        const sideB = p.portB?.deviceId === deviceId ? p.portB?.portName : null;
-        const ours = sideA ?? sideB;
-        if (!ours) return;
-        this.append('errors', 'link',
-          `Cable disconnected from ${ours}`);
+          `Designated Router on ${p.iface ?? '?'} is now ${p.newDrIp ?? '?'}`, true, 'DRCHG');
       }),
       bus.subscribe('cable.duplex-mismatch', (e) => {
         const p = e.payload as unknown as {
@@ -1421,21 +1247,23 @@ export class LoggingConfig {
         const sideB = p.portB?.deviceId === deviceId ? p.portB?.portName : null;
         const ours = sideA ?? sideB;
         if (!ours) return;
-        this.append('warnings', 'cdp', `Duplex mismatch detected on ${ours}`);
+        this.append('warnings', 'cdp', `Duplex mismatch detected on ${ours}`, true, 'DUPLEX_MISMATCH');
       }),
     ];
     const logHandler = (e: { payload: unknown }): void => {
       const p = e.payload as unknown as { source: string; level: string; event: string; message: string };
       if (p.source !== deviceId) return;
       if (p.event.startsWith('router:acl-deny')) {
-        this.append('warnings', 'sec', p.message, false);
+        this.append('warnings', 'sec', p.message, false, 'IPACCESSLOGP');
         return;
       }
       if (p.event === 'cdp:native-vlan-mismatch') return;
+      const mnemonic = mnemonicFromEvent(p.event);
+      if (!mnemonic) return;
       if (p.level === 'error') {
-        this.append('errors', this.tagFromEvent(p.event), p.message, false);
+        this.append('errors', this.tagFromEvent(p.event), p.message, false, mnemonic);
       } else if (p.level === 'warn') {
-        this.append('warnings', this.tagFromEvent(p.event), p.message, false);
+        this.append('warnings', this.tagFromEvent(p.event), p.message, false, mnemonic);
       }
     };
     unsubs.push(bus.subscribe('log', logHandler));
@@ -1975,7 +1803,7 @@ export class LoggingConfig {
     for (const m of this.messages) {
       if (!this.compteCeMessage(m.severity)) continue;
       const sevNum = this.SEVERITY_ORDER[m.severity];
-      const key = `${m.tag.toUpperCase()}-${sevNum}-${(m.mnemonic ?? m.severity).toUpperCase()}`;
+      const key = `${m.tag.toUpperCase()}-${sevNum}-${m.mnemonic.toUpperCase()}`;
       const prev = tally.get(key);
       if (prev) { prev.count++; prev.last = m.ts; }
       else tally.set(key, { count: 1, last: m.ts });
@@ -2008,7 +1836,12 @@ export class LoggingConfig {
    * valeur d'un équipement ordinaire, et l'afficher est plus fidèle que
    * de la taire.
    */
-  render(): string {
+  /**
+   * `options.last` ne coupe QUE la liste des messages, pas l'en-tête :
+   * `show logging last 5` sur un vrai IOS affiche toujours les compteurs
+   * et les niveaux, puis les cinq dernières lignes.
+   */
+  render(options?: { last?: number }): string {
     // IOS aligne les niveaux entre eux : « Buffer » est plus court que
     // « Console » et « Monitor », donc son deux-points est suivi de deux
     // espaces.
@@ -2065,7 +1898,10 @@ export class LoggingConfig {
       lines.push('');
       lines.push('Log Buffer (' + this.bufferedSize + ' bytes):');
       lines.push('');
-      for (const m of this.messages) lines.push(m.rendu);
+      const derniers = options?.last !== undefined
+        ? this.messages.slice(-options.last)
+        : this.messages;
+      for (const m of derniers) lines.push(m.rendu);
     }
     return lines.join('\n');
   }
@@ -2259,13 +2095,25 @@ export class LoggingConfig {
     }).join(', ');
   }
 
-  renderHuawei(): string {
+  /**
+   * `display logbuffer`.
+   *
+   * La taille et le canal viennent d'`info-center`, quand la machine en
+   * a un : `info-center logbuffer size 512` était accepté et cette vue
+   * continuait d'annoncer la taille du tampon d'IOS, qui n'a rien à voir.
+   * Le numéro de canal était écrit en dur, donc juste par coïncidence —
+   * un `info-center logbuffer channel 6` ne le changeait pas.
+   */
+  renderHuawei(vrp?: { size: number; channel: number; channelName: string }): string {
     const pad2 = (n: number) => String(n).padStart(2, '0');
+    const taille = vrp?.size ?? this.bufferedSize;
+    const canal = vrp?.channel ?? 4;
+    const nomCanal = vrp?.channelName ?? 'logbuffer';
     const lines = [
       `Logging buffer configuration and contents: ${this.enabled ? 'enabled' : 'disabled'}`,
-      `Allowed max buffer size : ${this.bufferedSize}`,
-      `Actual buffer size : ${this.bufferedSize}`,
-      'Channel number : 4 , Channel name : logbuffer',
+      `Allowed max buffer size : ${taille}`,
+      `Actual buffer size : ${taille}`,
+      `Channel number : ${canal} , Channel name : ${nomCanal}`,
       'Dropped messages : 0',
       'Overwritten messages : 0',
       `Current messages : ${this.messages.length}`,

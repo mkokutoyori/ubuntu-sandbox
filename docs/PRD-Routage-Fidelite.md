@@ -499,9 +499,9 @@ triviaux et partent tout de suite (marqués ⚡).
 | **R2** | Chantier A : magasin typé, clé de processus, aller-retour | — |
 | **R3** | Chantier B : refus des identifiants et des sous-modes absents | R2 |
 | **R4** | Chantier C : RIB, FIB, Null0, passerelle, résumé | — |
-| **R5** | Chantier C : OSPF et IGMP sur la vue commune | R4 |
-| **R6** | Chantier D, le reste | R2, R4 |
-| **R7** | Commandes manquantes (§1.11), au cas par cas | R3 |
+| **R5** | Chantier C : OSPF et IGMP sur la vue commune (**livré, §12**) | R4 |
+| **R6** | Chantier D, le reste (**livré, §13**) | R2, R4 |
+| **R7** | Commandes manquantes (§1.11), au cas par cas (**livré, §14**) | R3 |
 
 R1, R2 et R4 sont indépendants. R1 part en premier parce qu'il répare ce
 que j'ai cassé.
@@ -732,3 +732,345 @@ minimum dépend de laquelle de deux formes positionnelles a été tapée.
 Le signal `% Incomplete command.` n'existait pas — seul `CliInvalidInput`
 l'était — donc le gestionnaire n'avait pas d'autre choix que d'écrire le
 message. Il existe maintenant, et c'est le cliquet qui l'a fait écrire.
+
+---
+
+## 12. R5 — Livré
+
+**La règle**, §4.2 : une route connectée, une entrée de FIB, une
+adjacence OSPF et une interface IGMP existent si et seulement si
+`iosInterfaceStatus(port).protocol === 'up'`. R4 a posé la RIB et la
+FIB ; R5 pose OSPF et IGMP.
+
+**Ce qui était mesuré.** Un lien coupé à l'AUTRE bout — le cas le plus
+fréquent en salle de TP, et celui qu'aucune des trois vues ne traitait
+pareil :
+
+| Vue | Ce qu'elle disait |
+|---|---|
+| `show ip interface brief` | `down / down` |
+| `show ip ospf interface` | `down / down`, **mais `DR: 10.0.12.1`** |
+| `show ip igmp interface` | **`up, line protocol is up`** |
+
+**IGMP calculait son propre état** : `port.getIsUp() && port.isConnected()`.
+Ce prédicat maison se trompe de trois façons distinctes, et chacune est
+mesurée plutôt que supposée :
+
+1. **Perte de porteuse à distance** — le câble est branché
+   (`isConnected()` vrai) et le port local n'est pas tombé, donc IGMP
+   voyait `up` là où tout le reste voyait `down`. C'est la ligne du
+   tableau ci-dessus.
+2. **`administratively down` aplati en `down`** — le prédicat ne rend
+   qu'un booléen, donc il ne pouvait pas dire les trois états d'IOS. Or
+   la distinction est **toute l'information** : `administratively down`
+   dit que personne n'a débranché quoi que ce soit, c'est l'opérateur
+   qui a tapé `shutdown`.
+3. **Une interface virtuelle** (Loopback, Vlan, Tunnel) n'est jamais
+   `isConnected()`. Une Loopback avec IGMP activé aurait donc été
+   rapportée morte par cette vue et vivante par les quatre autres.
+
+Le cas **câble débranché** était juste — par coïncidence, `isConnected()`
+devenant faux — et c'est justement ce qui rendait le défaut difficile à
+voir : le premier test qu'on écrit est celui-là.
+
+**Un lien mort n'élit personne.** `ospfIfaceOperUp()` existait déjà, avec
+son commentaire au-dessus de la ligne — « A dead link elects nobody: IOS
+reports State DOWN there, never DR » — et n'était appliqué qu'à **une
+ligne sur les trois qu'il gouverne** : l'état passait bien à `DOWN`, et
+les deux lignes suivantes annonçaient `DR: 10.0.12.1`. Le routeur se
+déclarait routeur désigné d'un lien mort. `DR`/`BDR` rendent `0.0.0.0`
+quand la porteuse est tombée, ce que le commentaire disait déjà.
+
+**Les deux vues OSPF ne s'accordaient pas entre elles non plus.**
+`show ip ospf interface brief` lit `iface.state` brut, sans passer par le
+même garde-fou : la même interface, au même instant, était `DOWN` dans la
+vue détaillée et `DR` dans la vue brève. Deux vues d'un même protocole
+qui se contredisent sont pires qu'une vue fausse, parce que l'opérateur
+qui croise les deux conclut que l'une est en retard.
+
+**IGMP ne se déclare plus routeur interrogateur** sur une interface qui
+n'est pas opérationnelle : un interrogateur est élu par des requêtes
+échangées sur un lien vivant, exactement comme un DR.
+
+**Vérifié plutôt que supposé** : `show ip pim interface` rend déjà `none`
+dans sa colonne `DR` sur un lien tombé — le runtime efface le DR avec le
+voisin — donc rien à corriger là, et cette vue ne porte pas de ligne
+d'état, donc elle n'ajoutait pas de quatrième vérité. Mesuré avant de
+toucher, pas déduit.
+
+**Laissé en place et signalé** :
+
+- `Hello due in 00:00:10` s'affiche encore sur une interface en état
+  `DOWN`, alors qu'aucun Hello n'y est programmé. Je ne trouve pas de
+  confirmation de ce qu'IOS imprime exactement là, et §0 interdit de
+  faire reposer une correction sur un point non confirmé seul.
+- L'**ordre** des interfaces dans `show ip ospf interface` change quand
+  l'une tombe (la morte passe en fin de liste), parce que le moteur
+  reconstruit sa `Map`. C'est de la mécanique du moteur, pas de la vue,
+  et hors du périmètre de R5.
+
+**Tests.** `cisco-interface-state-one-truth.test.ts` (13 cas) compare les
+vues **entre elles**, jamais à une chaîne écrite à la main, et balaie les
+**trois** façons de tomber plutôt qu'une. Discrimination par `git stash` :
+**10 des 13 tombent** avant. Les 3 qui passent des deux côtés sont des
+gardes de non-régression, et l'une d'elles — le câble débranché — est
+précisément le cas qui était juste par coïncidence.
+
+Trois assertions passaient d'abord **à vide**, et les corriger a fait
+gagner trois cas de discrimination : `/DR: 0\.0\.0\.0/` **filtre à
+l'intérieur de `BDR: 0.0.0.0`**, donc elle réussissait sur un routeur qui
+annonçait `DR: 10.0.12.1` juste au-dessus. Ancrées en début de ligne.
+C'est la même famille de piège que le `/0% packet loss/` qui filtrait
+dans `100% packet loss` (`CLAUDE.md`, ordre NAT/ACL).
+
+**Mesures.** 69 suites connexes vertes (863 cas) : OSPF, IGMP, PIM,
+multicast, vues d'interface, `show ip route`, RIB/FIB. Typecheck
+`tsc -p tsconfig.app.json` à 164, inchangé. Lint identique au baseline
+sur les deux fichiers touchés (58 problèmes avant, 58 après).
+
+---
+
+## 13. R6 — Livré
+
+Le chantier D compte neuf lignes non-⚡. **Mesurer d'abord a changé le
+lot** : quatre étaient déjà correctes, une appartient à un autre agent, et
+la mesure d'une sixième a fait remonter un défaut plus lourd que toute la
+liste.
+
+### 13.1 Ce qui était déjà correct, et n'a pas été touché
+
+Une sonde vaut mieux qu'une supposition, y compris contre ce PRD :
+
+- **`% Network not in table`** n'est émis par **aucune** commande sans
+  préfixe — 17 balayées (`show ip nat translations`, `nat statistics`,
+  `mroute`, `pim neighbor`, `igmp groups`, `protocols`, `rip database`,
+  `ospf neighbor`, `ospf database`, `cef`, `arp`, `route summary`,
+  `policy`, `nhrp`, `sla summary`…). Chacune rend son en-tête ou son
+  message propre.
+- **Un identifiant OSPF inexistant** rend déjà le vide : `show ip ospf
+  99`, `… 99 interface`, `… 99 neighbor`, `… 99 database` répondent tous
+  la chaîne vide là où `show ip ospf 1` rend son bloc.
+- **La légende de `show ip route connected|static`** est déjà celle,
+  entière, de `show ip route`.
+- **`show ip rip database`** lit déjà `auto-summary` : la ligne apparaît
+  par défaut et disparaît après `no auto-summary`.
+
+Les quatre sont désormais **tenues par un test** (§13.5), pour qu'une
+correction future ne les défasse pas en silence.
+
+### 13.2 Le défaut le plus lourd : l'IPv6 ne survivait pas à un enregistrement
+
+En mesurant la ligne « `ipv6 address … link-local` : accepter la forme
+sans préfixe » — qui, elle aussi, s'avère déjà acceptée, `% Invalid
+link-local address` compris — la sonde a montré autre chose : **la
+running-config ne rendait aucune ligne IPv6**. Ni `ipv6 address … link-local`,
+ni `ipv6 address …/64`, ni `ipv6 enable`. Comme c'est ce texte que
+l'import de topologie rejoue, **un routeur Cisco enregistré puis rouvert
+perdait tout son IPv6, en silence.** C'est le test n°1 du §6, et il ne
+portait pas sur IPv6.
+
+En le réparant, deux causes plus profondes sont apparues, et aucune n'est
+d'affichage :
+
+**`configureIPv6` rangeait toute adresse en `origin: 'static'`**, y
+compris une adresse de lien. Or `getLinkLocalIPv6()` cherche
+`origin === 'link-local'` : sur une interface dont l'opérateur avait posé
+`fe80::1`, cet accesseur rendait **`null`** — et il est lu par une
+quarantaine d'endroits, dont tout le plan de données IPv6, la découverte
+de voisins, OSPFv3 et `ipconfig` de Windows. Pire, l'entrée dérivée de la
+MAC était supprimée au passage : l'interface se retrouvait sans adresse
+de lien du tout, du point de vue de tout ce qui la demande par ce nom.
+L'origine dit **ce qu'est** l'adresse, pas qui l'a posée.
+
+**`ipv6 enable` écrivait le champ privé du port à travers un cast**
+(`(port as unknown as { ipv6Enabled?: boolean }).ipv6Enabled = true`) au
+lieu d'appeler `enableIPv6()`. Or dériver l'adresse de lien EUI-64 est
+tout ce que cette commande fait : l'interface se déclarait donc active
+en IPv6, sans adresse, sans événement sur le bus et sans trace. C'est
+exactement le motif que `CLAUDE.md` proscrit — un cast au site d'appel
+plutôt qu'une méthode. `no ipv6 enable` passait par le même chemin ;
+il appelle maintenant `disableIPv6()`, et **seulement** si aucune adresse
+configurée ne reste, une adresse impliquant l'activation sur IOS.
+
+Rendu, enfin : une adresse de lien s'écrit `fe80::1`, sans zone `%iface`
+— qu'IOS n'imprime jamais — et sans longueur de préfixe. Elle sortait
+`fe80::1%GigabitEthernet0/1/64` dans `show ipv6 interface brief` comme
+dans la configuration.
+
+### 13.3 Une vue filtrée ne répond que sur ce qu'on lui demande
+
+`show ip cef <préfixe>` filtrait bien ses entrées, mais poussait
+`0.0.0.0/0            no route` **avant** la boucle : la ligne traversait
+le filtre, donc `show ip cef 172.16.0.0` répondait sur deux préfixes dont
+un que personne n'avait demandé. Cette ligne décrit l'absence de route
+par défaut — un fait de la table entière, pas de l'entrée interrogée.
+
+Trouvée en passant et supprimée : **`showIpCef()` dans
+`CiscoShowCommands.ts`**, un second rendu de la même vue, branché sur
+aucune commande, lisant la table brute (`getRoutingTable()`) là où la
+vue réelle lit `installedRoutes()`. Deux réponses possibles à une même
+question est le défaut que ce dépôt passe son temps à retirer.
+
+### 13.4 Un en-tête surmonte la colonne qu'il nomme
+
+`show ip pim interface` porte un en-tête sur **deux** lignes et ses
+données sur une : les trois se déduisent maintenant des mêmes largeurs.
+`Nbr` / `Count` était annoncé une colonne à droite du compte qu'il
+surmonte. `show ip ospf interface brief` cadrait son état sur 5 caractères
+sous un `State ` de 6, décalant `Nbrs F/C` d'un cran.
+
+### 13.5 Refusé, et pourquoi
+
+**Le `!` de fin de bloc dans `| section`** reste. Ce PRD demande de le
+retirer ; le code porte la position inverse, écrite (« IOS includes the
+block-terminating ! in | section output »), et une suite entière —
+`scenario-cisco-pipe-filters.test.ts` — l'exige dans son titre, son
+en-tête et trois assertions. Ma lecture des sorties documentées par Cisco
+(`show running-config | section line`) va dans le sens du PRD, mais §0
+interdit de faire reposer un chantier sur un point non confirmé seul, et
+renverser une décision délibérée et testée sur un souvenir serait pire
+que la garder. C'est le même arbitrage que pour `debug interface <nom>`
+(`PRD-Debug-Fidelite-Cisco.md` §14). **L'autre moitié de la ligne** —
+« trouver les sections absentes » — est traitée : les sections
+d'interface étaient bel et bien amputées, de leurs lignes IPv6 (§13.2).
+
+**Les messages inventés sur le canal syslog** (`fault`, `rip`, `pim`)
+relèvent de `PRD-Logging-Cisco.md`, tenu par un autre agent. La mesure
+lui a été transmise dans `JOURNAL-AGENTS-mandeng.md` plutôt qu'appliquée :
+le défaut est **générique** et non ligne par ligne — le mnémonique y est
+fabriqué à partir du NOM de la sévérité (`NOTIFICATIONS` pour 5,
+`WARNINGS` pour 4, `INFORMATIONAL` pour 6), là où IOS écrit
+`%PIM-5-DRCHG`, `%PIM-5-NBRCHG`, `%SEC_LOGIN-5-LOGIN_SUCCESS` — et
+n'écrit rien du tout quand CDP découvre un voisin.
+
+**Non traité et signalé** : `show ip pim interface GigabitEthernet9/9`
+rend son en-tête pour une interface inexistante quand `show ip igmp
+interface` sur la même rend le vide — deux commandes sœurs, deux réponses
+à la même situation. Trop mince pour ce lot, assez réel pour être écrit.
+
+### 13.6 Tests et mesures
+
+`cisco-views-and-round-trip.test.ts` (15 cas) vérifie trois propriétés :
+une configuration acceptée se relit (jusqu'à **rejouer** la
+configuration sur un routeur neuf et comparer), une vue filtrée ne répond
+que sur ce qu'on lui demande, et un en-tête surmonte sa colonne — vérifié
+en comparant des **positions**, jamais en figeant une chaîne espace par
+espace, sans quoi le test casserait au premier changement de largeur sans
+rien dire de l'alignement. Les quatre lignes déjà correctes du §13.1 y
+sont tenues comme gardes de non-régression.
+
+Discrimination par `git stash` : **10 des 15 tombent** avant. Des 5 qui
+passent des deux côtés, 4 sont les gardes du §13.1, et la cinquième — le
+rejeu sur un routeur neuf — ne discrimine pas parce que les deux routeurs
+rendaient la même chose fausse ; elle teste l'accord entre deux machines,
+ce qui reste utile, et je le note plutôt que de la présenter comme une
+preuve.
+
+**Mesures.** 427 suites connexes vertes (6 631 cas) : IPv6, NDP, SLAAC,
+DHCPv6, OSPF, PIM, IGMP, CEF, routage, RIP, vues d'interface,
+sérialisation, Linux et Windows — ces deux derniers parce que le
+changement d'`origin` dans `Port.ts` est lu par `ip addr`, `LinkState` et
+`ipconfig`. Typecheck `tsc -p tsconfig.app.json` à 164, inchangé ; lint
+identique au baseline (120 problèmes avant, 120 après).
+
+---
+
+## 14. R7 — Livré
+
+« Au cas par cas » : ce PRD compte quatorze commandes manquantes sans les
+énumérer, alors le lot commence par un balayage.
+
+### 14.1 Le balayage, et une erreur de méthode corrigée en route
+
+Le premier balayage enchaînait les commandes sur une seule machine. Il
+était **faux** : `route-map RM permit 10` et `ip access-list standard STD`
+entrent dans un sous-mode, donc tout ce qui suivait était jugé ailleurs
+qu'où il se tape, et `ip domain-lookup` ou `key chain` — qui existent
+pourtant, `CiscoShellBase.ts:3001` et `CiscoKeyChainCommands.ts` — sont
+sortis « refusés ». Le second balayage juge **chaque commande sur une
+machine neuve, dans son propre contexte**. La liste des refus est passée
+de 21 à 20, mais ce ne sont plus les mêmes, et surtout plus les bonnes.
+
+### 14.2 Le cas qui avait un moteur derrière lui
+
+**Le horizon partagé se règle par interface, et le moteur n'en savait
+rien.** `RIPConfig.splitHorizon` est un réglage de PROCESSUS, lu à deux
+endroits (`sendUpdate`, la mise à jour déclenchée), alors que la commande
+est per-interface chez les deux constructeurs. Résultat, **la même
+fonction manquait de deux façons différentes** :
+
+- Cisco : `ip split-horizon` / `no ip split-horizon` n'existaient pas.
+- Huawei : `rip split-horizon` existait, écrivait dans
+  `_huaweiRipIfExtras` — une table que **rien ne lit dans tout le dépôt**
+  — et n'avait donc aucun effet non plus. `undo rip split-horizon`
+  n'existait pas du tout.
+
+`RIPConfig.splitHorizonByInterface` porte les interfaces où l'opérateur a
+dit autre chose que le processus, sur le modèle de `passiveInterfaces`
+déjà là ; `splitHorizonOn(iface)` est le prédicat unique que les deux
+points d'émission consultent. Une seule table sert les deux
+constructeurs : le moteur RIP est le même, et deux réglages pour un seul
+comportement finiraient par se contredire.
+
+**Vérifié sur le fil, pas sur l'acceptation.** Une commande acceptée qui
+ne fait rien est exactement le défaut d'avant ; le test capture donc ce
+que le routeur ÉMET, à la couture d'émission du moteur, en avançant une
+horloge virtuelle de 31 s pour déclencher la mise à jour périodique :
+
+| Réglage sur Gi0/0 | A annonce sur Gi0/0 |
+|---|---|
+| par défaut | `1.1.1.0` |
+| `no ip split-horizon` | `10.0.12.0`, `1.1.1.0` |
+
+`10.0.12.0` est la route apprise SUR Gi0/0 : c'est précisément celle que
+le horizon partagé retient, donc la seule dont la présence distingue les
+deux réglages. Le rendu `no ip split-horizon` dans la configuration suit,
+sans quoi le réglage ne survivrait pas à un enregistrement — et seul
+l'écart au défaut est rendu, comme le fait IOS.
+
+### 14.3 Le cas où ne rien faire EST le comportement
+
+`ip classless` et `ip subnet-zero` sont acceptées. Elles décrivent le
+comportement par défaut d'IOS depuis la 12.0 : un vrai routeur les prend
+et ne fait rien, et ne les rend pas dans sa configuration puisqu'elles ne
+s'en écartent pas. Les refuser cassait le rejeu d'une configuration
+ancienne, où elles figurent presque toujours. **La distinction avec le
+défaut du §14.2 est le cœur du lot** : là, la commande fait quelque chose
+sur le matériel et ne faisait rien ici ; ici, elle ne fait rien nulle
+part. Accepter sans effet n'est une faute que dans le premier cas.
+
+### 14.4 Refusé, et pourquoi — la liste
+
+Chacune de ces commandes est réelle sur IOS et reste refusée, parce
+qu'aucun moteur ne pourrait en lire le réglage. Les accepter les rangerait
+dans la catégorie du §14.2, pas du §14.3.
+
+| Commande | Brique manquante |
+|---|---|
+| `ip default-gateway` | n'a de sens qu'avec `no ip routing`, qui ne coupe pas le transfert ici |
+| `ip forward-protocol nd` | le relais UDP n'a pas de liste de ports à filtrer |
+| `ip tcp synwait-time` | la pile TCP n'a pas de temporisation de connexion réglable |
+| `ip scp server enable` | SCP existe mais n'est gardé par rien ; poser la porte suppose de décider ce qu'elle ferme |
+| `carrier-delay`, `keepalive` | aucun délai n'existe entre l'état du câble et celui du protocole de ligne |
+| `ip route-cache`, `no ip mroute-cache` | il n'y a pas de cache de commutation à vider |
+| `input-queue`, `traffic-share` | pas de file d'attente ni de répartition par métrique |
+| `nsf ietf|cisco helper` | OSPF n'a pas de redémarrage gracieux |
+| `ipv6 rip … enable` | RIPng n'existe pas |
+
+### 14.5 Tests et mesures
+
+`cisco-split-horizon-per-interface.test.ts` (10 cas) : ce que A annonce
+sur le fil dans les deux réglages et au retour, le fait que le réglage
+soit propre à l'interface et non au processus, sa survie à un
+enregistrement et à un rejeu, l'équivalence VRP — y compris que le
+réglage soit rangé **sous le nom de port que le moteur parcourt**, un
+piège réel puisque les ports Huawei sont nommés `GE0/0/0` alors que la
+commande se tape sur `GigabitEthernet0/0/0` — et l'acceptation sans rendu
+du §14.3. Discrimination par `git stash` : **8 des 10 tombent** avant.
+
+**Mesures.** 135 suites connexes vertes (2 055 cas) : RIP, routage,
+OSPF, Huawei, sérialisation, vues d'interface. Typecheck
+`tsc -p tsconfig.app.json` à 163, inchangé ; lint identique au baseline
+(192 problèmes avant, 192 après).
+
+**Le PRD est clos** : R1 à R7 livrés.

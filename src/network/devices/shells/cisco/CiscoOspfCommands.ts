@@ -107,6 +107,18 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
     r._setIpRoutingEnabled?.(false);
     return '';
   });
+
+  // `ip classless` et `ip subnet-zero` sont le comportement PAR DEFAUT
+  // depuis IOS 12.0 : un vrai routeur les accepte et ne fait rien, et ne
+  // les rend pas dans sa configuration puisqu'elles ne s'en ecartent
+  // pas. Les refuser cassait le rejeu d'une configuration ancienne, ou
+  // elles figurent presque toujours. Accepter sans effet est ici la
+  // fidelite meme — a la difference d'une commande qui, sur le materiel,
+  // ferait quelque chose.
+  for (const mot of ['ip classless', 'no ip classless',
+    'ip subnet-zero', 'no ip subnet-zero']) {
+    configTrie.register(mot, 'Accepted, default behaviour on IOS 12.0 and later', () => '');
+  }
 }
 
 // ─── Config-Router Mode: OSPF sub-commands ───────────────────────────
@@ -1712,8 +1724,8 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
     lines.push(`  Process ID ${ospf.getProcessId()}, Router ID ${ospf.getRouterId()}, Network Type ${iface.networkType.toUpperCase()}, Cost: ${iface.cost}`);
     // A dead link elects nobody: IOS reports State DOWN there, never DR.
     lines.push(`  Transmit Delay is ${iface.transmitDelay} sec, State ${operUp ? iface.state : 'DOWN'}, Priority ${iface.priority}`);
-    lines.push(`  DR: ${iface.dr}`);
-    lines.push(`  BDR: ${iface.bdr}`);
+    lines.push(`  DR: ${operUp ? iface.dr : '0.0.0.0'}`);
+    lines.push(`  BDR: ${operUp ? iface.bdr : '0.0.0.0'}`);
     lines.push(`  Timer intervals configured, Hello ${iface.helloInterval}, Dead ${iface.deadInterval}, Wait ${iface.deadInterval}, Retransmit ${iface.retransmitInterval}`);
     lines.push(`  Hello due in 00:00:${String(iface.helloInterval).padStart(2, '0')}`);
     lines.push(`  Neighbor Count is ${iface.neighbors.size}, Adjacent neighbor count is ${countFullNeighbors(iface)}`);
@@ -1749,12 +1761,12 @@ function showIpOspfInterfaceBrief(router: Router): string {
     const area = iface.areaId;
     const ipMask = `${iface.ipAddress}/${maskToCIDR(iface.mask)}`;
     const cost = iface.cost;
-    const state = ospfIfStateAbbr(iface.state);
+    const state = ospfIfStateAbbr(ospfIfaceOperUp(router, name) ? iface.state : 'Down');
     const fullCount = countFullNeighbors(iface);
     const totalCount = iface.neighbors.size;
     lines.push(
       `${iosShortInterfaceName(name).padEnd(13)}${String(pid).padEnd(6)}${area.padEnd(16)}`
-      + `${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(5)}${totalCount}/${fullCount}`
+      + `${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(6)}${totalCount}/${fullCount}`
     );
   }
 
@@ -2491,9 +2503,14 @@ function showIpRouteSummary(router: Router): string {
     counts[t].overhead += 152;
     counts[t].memory += 360;
   }
+  // 4 est la valeur par défaut d'IOS ; 32 est le MAXIMUM configurable,
+  // pas ce que la table applique. Aucun `maximum-paths` de RIB n'existe
+  // ici (le réglage est par protocole), donc la constante est celle
+  // d'un routeur non configuré — et le dire vaut mieux que lire un
+  // accesseur que personne n'implémente.
   const lines = [
     'IP routing table name is Default-IP-Routing-Table(0)',
-    'IP routing table maximum-paths is 32',
+    'IP routing table maximum-paths is 4',
     'Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)',
   ];
   let totN = 0, totS = 0, totR = 0, totO = 0, totM = 0;

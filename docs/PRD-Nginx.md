@@ -373,7 +373,7 @@ serveurs partagent désormais la règle, chacun avec ses propres codes
 `ss -ltnp` aurait montré un `:443` sans propriétaire à côté d'un `:80`
 qui en a un — les deux vues de la même machine en désaccord.
 
-### P6 — Proxy inverse
+### P6 — Proxy inverse — **livré** (et la prémisse ci-dessous était fausse)
 
 `proxy_pass http://<amont>;`, plus `proxy_set_header`. C'est l'usage
 moderne majoritaire de nginx et le plus intéressant en TP (nginx devant
@@ -382,6 +382,11 @@ que serveur — donc qu'il réutilise `Http1ClientSession` sur sa propre
 pile, ce qui fait passer sa requête sortante sur le vrai réseau. C'est
 un chantier à part entière, à traiter après P2 et seulement si un TP le
 demande.
+
+> **Ce paragraphe est conservé pour ce qu'il a d'instructif : il est
+> faux.** « Un chantier à part entière » reposait sur l'idée qu'un
+> serveur devenu client doit attendre, donc être asynchrone. La mesure
+> dit le contraire — voir §9.
 
 ## 5. Hors périmètre, et dit d'emblée
 
@@ -394,7 +399,8 @@ demande.
   `WindowsIisRole` a la même limite assumée pour ASP.NET.
 - **HTTP/2, HTTP/3.** `listen 443 ssl http2;` doit être **refusé par
   `nginx -t`** tant que la couche HTTP ne les sert pas, pas accepté en
-  silence.
+  silence. **Exigence tenue depuis §P6 — voir §9.7** ; elle ne l'était
+  pas quand cette ligne a été écrite.
 - **Limitation de débit, cache, `upstream` avec équilibrage.** Après P6,
   s'il y a une demande.
 - **`worker_processes` / `worker_connections` : la seule exception à P1
@@ -463,9 +469,12 @@ en place.
   `TcpStack.listen(1521)`. Il n'est pas assaini parce qu'un sous-système
   entier en dépend (la bannière, `lsnrctl`, la détection Oracle de
   `nmap`) ; la dette est écrite au point de liaison.
-- **Un listener posé directement sur `TcpStack` n'apparaît pas dans
-  `ss`.** L'erreur symétrique de celle que P0 corrige. `systemd-resolved`
-  y échappe en déclarant son serveur ; les autres non.
+- ~~**Un listener posé directement sur `TcpStack` n'apparaît pas dans
+  `ss`.**~~ **Remesuré lors de §P6 : c'est faux aujourd'hui.** Un
+  `Http1ServerSession.start()` posé à la main sur la pile apparaît bien
+  dans `ss -ltn` et dans `netstat -ltn`. La dette est levée ; la ligne
+  est barrée plutôt que supprimée pour qu'on ne la rouvre pas sur la
+  foi de ce document.
 - **apache2 n'est pas traité**, comme annoncé au §5.
 
 ### 8.3 Ce que le chantier a révélé ailleurs
@@ -504,5 +513,378 @@ avec le chemin cherché et l'errno, et pour les refus de démarrage.
 ### 8.6 Non fait
 
 P5 (HTTPS) est livré : le chemin `openssl req` → PEM existe désormais
-sous Linux, et c'est celui que le TP emprunte. P6 (`proxy_pass`) reste
-refusé par `nginx -t` avec le message qui le dit, pas avalé.
+sous Linux, et c'est celui que le TP emprunte.
+
+**P6 est livré depuis** — voir §9. La phrase qui suivait ici
+(« `proxy_pass` reste refusé par `nginx -t` ») n'est plus vraie et est
+conservée sous cette forme pour ne pas laisser deux réponses à la même
+question : `proxy_pass` est désormais MIS EN ŒUVRE, et ce que `nginx -t`
+refuse est une URL illisible ou la directive écrite hors d'une
+`location` — deux refus qui ont changé de raison, pas disparu.
+
+---
+
+## 9. P6 — Le mandataire inverse, livré
+
+### 9.1 La prémisse du PRD était fausse, et c'est la mesure qui l'a dit
+
+§P6 différait ce chantier au motif qu'il « suppose que nginx soit client
+HTTP autant que serveur ». C'est vrai, et ce n'était pas le problème :
+le raisonnement implicite était qu'un serveur qui attend une réponse
+doit être **asynchrone**, et que rendre asynchrone
+`Http1ServerSession.handler` — partagé avec Apache et IIS — était le
+vrai coût.
+
+Mesuré avant d'écrire une ligne : **la livraison des trames est
+synchrone dans ce simulateur**. `Http1ClientSession.send()` écrit,
+l'`onData` du pair se déclenche dans le même tour, et la réponse est là
+avant que `send()` ne revienne. Un gestionnaire de requête peut donc
+appeler l'amont **en ligne** et écrire sa réponse dans la foulée. La
+vérification a été faite avec deux `Http1ServerSession` nus, avant de
+toucher à nginx.
+
+Rien n'est devenu asynchrone. La signature du gestionnaire a bien été
+élargie, mais pour une tout autre raison (§9.4).
+
+### 9.2 Ce qui est livré
+
+* **`proxy_pass http://hôte[:port][/chemin]`** dans une `location`. La
+  réécriture du chemin suit la règle de nginx, qui est la plus mal
+  comprise de cette directive : c'est la **présence** d'un chemin dans
+  l'URI qui décide, pas sa valeur.
+
+  | écrit | `/api/v1` devient |
+  |---|---|
+  | `proxy_pass http://amont;` | `/api/v1` (inchangé) |
+  | `proxy_pass http://amont/;` | `/v1` (le préfixe de la `location` est REMPLACÉ) |
+  | `proxy_pass http://amont/backend;` | `/backend/v1` |
+
+  D'où `NginxProxyPass.path?: string` et non une chaîne : `undefined` et
+  `''` sont deux configurations différentes, et les confondre casserait
+  la première ligne du tableau.
+
+* **Les blocs `upstream`**, avec `server <hôte>[:<port>] [down]`. Un
+  membre `down` est sauté. Le groupe est consulté **avant** la
+  résolution de nom, comme chez nginx : un `upstream` masque un hôte du
+  même nom.
+
+* **`proxy_set_header`**, avec `$host`, `$http_host`, `$proxy_host`,
+  `$remote_addr`, `$scheme`, `$request_uri` et
+  `$proxy_add_x_forwarded_for` — la seule qui AJOUTE, en empilant le
+  client derrière la chaîne déjà reçue. Par défaut `Host` prend
+  l'autorité de l'amont ; `proxy_set_header Host $host` est précisément
+  ce qu'on écrit pour l'en empêcher, donc l'ordre compte.
+
+* **Les en-têtes saut-par-saut** (RFC 9110 §7.6.1) ne sont relayés dans
+  aucun sens.
+
+* **La résolution passe par la MACHINE** qui exécute nginx — son
+  `/etc/hosts`, son `/etc/resolv.conf`, via le même NSS que `ping` sur
+  la même machine. Un service qui ne résoudrait pas comme le reste de la
+  machine serait un piège.
+
+* **Les pannes, qui sont l'objet du TP** : amont éteint, nom
+  introuvable, amont `https`, boucle de mandat — toutes rendent `502
+  Bad Gateway` avec la page de nginx, et la **raison** dans `error.log`,
+  jamais dans la page. C'est là que le vrai nginx la met, et c'est ce
+  qu'un opérateur doit apprendre à lire.
+
+* **`nginx -t` juge** : `invalid URL prefix in "…"` pour une URL
+  illisible, `"proxy_pass" directive is not allowed here` hors d'une
+  `location`, `"server" directive is not allowed here` hors d'un
+  `upstream`.
+
+### 9.3 La boucle de mandat, et pourquoi elle est bornée explicitement
+
+nginx qui se mandate lui-même est une configuration qu'un apprenant
+écrit par accident. La livraison étant synchrone, c'est une **récursion
+infinie** : l'onglet se fige, sans message. Un vrai nginx boucle aussi,
+mais il finit par épuiser ses connexions de travail et répond une
+erreur ; ici il n'y a rien à épuiser.
+
+`MAX_PROXY_DEPTH` borne donc la profondeur, et au-delà le mandataire
+rend `502` en écrivant `proxy loop detected after N hops`. La divergence
+est assumée et écrite : le vrai nginx ne dit pas cela. Un onglet figé
+n'apprend rien du tout.
+
+### 9.4 Trois manquements trouvés AILLEURS, et corrigés
+
+Aucun des trois n'était dans nginx, et aucun n'aurait été visible sans
+ce chantier.
+
+1. **Le gestionnaire de requête HTTP ignorait qui l'appelait.**
+   `Http1RequestHandler` ne recevait que la requête ; la socket, elle,
+   porte l'adresse du pair depuis toujours. Conséquence :
+   `$remote_addr` ne pouvait valoir qu'un espace réservé — un
+   `X-Real-IP: 0.0.0.0` n'apprend rien de ce que cet en-tête existe
+   pour — et le journal d'accès commençait par `-` là où le format
+   combiné veut l'adresse du client. Un `Http1Peer` optionnel est
+   maintenant passé aux deux sessions (claire et TLS) ; les
+   gestionnaires qui l'ignorent sont inchangés, et **Apache et IIS en
+   bénéficient sans modification**.
+
+2. **nginx écrivait une ligne `open() … failed` pour tout état ≥ 400.**
+   Avant P6 c'était équivalent, puisque tout ce qui dépassait 400 venait
+   d'une recherche de fichier. Un `502` de mandataire n'ouvre aucun
+   fichier et a déjà écrit sa vraie raison : la ligne produisait une
+   seconde explication, fausse. La condition est désormais `403 || 404`,
+   les deux seuls états qui viennent réellement d'un `open()`.
+
+3. **Une machine ne s'atteignait pas par sa PROPRE adresse.** Le plus
+   lourd des trois, et sans rapport avec HTTP. `curl http://127.0.0.1/`
+   répondait, `curl http://10.0.0.2/` sur la machine qui PORTE
+   `10.0.0.2` restait sur `Trying…` indéfiniment. Sur un vrai Linux la
+   table de routage `local` contient une entrée `local <adresse> dev lo`
+   pour **chaque** adresse configurée, si bien qu'un paquet qui lui est
+   destiné ne sort jamais sur le fil ; ici seule la boucle locale était
+   traitée. `TcpStack.isLocalDestination()` couvre maintenant les deux,
+   en v4 comme en v6, et il est consulté **avant** la recherche de route
+   — c'est l'ordre du noyau. Cela vaut pour tout service, pas seulement
+   nginx : un serveur joignable de toute la topologie ne l'était pas
+   depuis la machine qui l'exécute.
+
+### 9.5 Limites assumées
+
+* ~~**Un seul membre d'`upstream` est utilisé**~~ — **levé au §9.10.**
+  La raison invoquée ici (« une répartition suppose de mesurer, et rien
+  ici ne mesure encore ») était la bonne, et c'est précisément ce que ce
+  lot a fait : mesurer. `least_conn` reste refusée, elle, et pour la
+  même raison, qui tient toujours.
+* **Les délais de `proxy_*_timeout` sont acceptés et inertes**, comme
+  les autres réglages temporels : la livraison étant synchrone, aucun
+  délai ne peut expirer. Ils sont dans `ACCEPTED_INERT` et non refusés,
+  parce qu'ils figurent dans toute configuration réelle.
+* **`proxy_pass https://` est refusé** plutôt qu'ouvert en clair. Tout
+  ce qui lit `https` attend du chiffré ; parler en clair sur cette foi
+  serait la pire réponse disponible — la même règle que
+  `tlsMaterialFor` applique déjà à un `listen … ssl` dont le certificat
+  est illisible.
+* **Un hôte d'amont introuvable donne `502` à la requête** et non un
+  refus au démarrage. Le vrai nginx échoue au démarrage
+  (`host not found in upstream`) ; ici la résolution dépend de l'état du
+  réseau au moment de la requête, et la panne visible à l'exécution est
+  celle que le TP cherche à montrer.
+* **`proxy_redirect` n'est pas appliqué** : un `Location` renvoyé par
+  l'amont traverse tel quel.
+
+### 9.6 Mesures
+
+`nginx-prd-p6-proxy.test.ts` (23 cas), **22 tombent par `git stash`**
+des fichiers touchés. Le vingt-troisième est le cas « un 502 n'écrit pas
+de ligne `open()` » : sa première rédaction ne portait que
+l'assertion négative et passait des deux côtés — sans mandataire, aucune
+ligne n'est écrite et le `not.toContain` était satisfait sans rien
+prouver. L'assertion positive qui l'accompagne désormais l'en empêche.
+
+Un piège de rédaction, noté parce qu'il a produit une fausse
+conclusion : `printf` passe par le shell, qui mange un `$` non protégé.
+Le premier jet écrivait `proxy_set_header Host ;` dans le fichier et
+concluait que `proxy_set_header` n'était pas appliqué — alors que
+l'analyseur était correct depuis le début.
+
+### 9.7 Les paramètres de `listen`, rangés en trois familles
+
+Trouvé en vérifiant l'exigence du §5 (« `listen 443 ssl http2;` doit
+être refusé ») : elle n'était pas tenue. `parseListen` ne cherchait que
+`default_server` et `ssl` et **ignorait tout le reste**, si bien que
+`listen 443 ssl http2;` était accepté, le serveur démarrait, et il
+servait du HTTP/1.1. C'est le cas de décor le plus trompeur de tout ce
+document — un opérateur qui a écrit `http2` croit tenir du HTTP/2, et
+rien dans la machine ne le détrompe.
+
+Les paramètres suivent désormais la règle des trois familles que ce
+dépôt applique déjà aux options de `curl` et d'`openssl` :
+
+| famille | exemples | réponse |
+|---|---|---|
+| appliqués | `default_server`, `ssl` | agissent |
+| connus, sans effet ici | `backlog=`, `deferred`, `reuseport`, `ipv6only=`, `so_keepalive`, `rcvbuf=`, `sndbuf=`, `bind`, `setfib=`, `fastopen=`, `accept_filter=` | acceptés |
+| connus, effet non produit | `http2`, `http3`, `quic`, `spdy`, `proxy_protocol` | **refusés** en le disant |
+| inexistants | `zorglub`, `backlog` sans valeur | `invalid parameter "…"`, le message de nginx |
+
+`proxy_protocol` est dans la troisième et non la deuxième, et la
+distinction est réelle : il change le format sur le fil ET la
+provenance de l'adresse du client. L'accepter sans le produire
+fausserait `$remote_addr`, que §9.4 vient précisément de rendre exact.
+
+Les réglages de socket restent acceptés parce qu'ils figurent dans des
+configurations réelles et ne décrivent rien d'observable ici — la même
+exception, explicitement bornée, que `worker_processes`.
+
+### 9.8 `a2ensite` / `a2enmod` : les commandes que le document décrivait sans les écrire
+
+Trouvé en cherchant si Apache souffrait du même défaut qu'nginx (une
+directive acceptée sans effet). Le vrai manquement était ailleurs et
+plus simple : **les quatre commandes n'existaient pas**.
+`a2ensite default-ssl` répondait `command not found`, à la deuxième
+ligne de n'importe quel tutoriel Apache.
+
+Le module entier les nommait pourtant — « `a2ensite` is only an
+`ln -s` », « `a2enmod` is only an `ln -s` and `a2dismod` only an `rm` ».
+L'observation est juste, et elle a servi de raison de ne pas les
+écrire : faire marcher `ln -s` à la main n'exige pourtant pas que la
+commande soit absente.
+
+Elles restent **exactement** ce lien : un lien posé à la main vaut
+autant, et `a2dissite` le retire tout de même — les deux gestes portent
+sur le même objet, sans registre à part (c'est un cas de test). Deux
+différences réelles sont reproduites parce qu'elles enseignent : un site
+se **recharge**, un module se **redémarre** — charger du code dans le
+serveur n'est pas relire un fichier ; et « déjà désactivé » n'est pas
+« n'existe pas », l'un étant un état et l'autre une faute de frappe.
+
+**`mods-available` n'existait pas non plus**, seul `mods-enabled` était
+semé. `a2enmod ssl` n'aurait donc eu aucun fichier à lier — et c'est
+précisément la distinction disponible/activé qui porte la leçon :
+Debian livre `ssl`, `proxy`, `rewrite`, `headers` **éteints**, et les
+allumer est la première ligne du TP. Les modules livrés actifs sont
+désormais des LIENS et non des copies, sans quoi `a2dismod dir`
+supprimerait un fichier que rien ne pourrait recréer.
+
+`apache-a2ensite-a2enmod.test.ts` (13 cas), **les 13 tombent par
+`git stash`**.
+
+**Ce qui restait ouvert du côté d'Apache** — `apachectl configtest`
+répondant `Syntax OK` à tout — **est traité au §9.9**, avec de quoi être
+écrit correctement grâce à `mods-enabled` devenu manipulable.
+
+### 9.9 `apachectl configtest` juge, et il juge par les MODULES
+
+`apachectl configtest` répondait `Syntax OK` à **tout** : à
+`Zorglub on`, à `ProxyPass`, à `Protocols h2`. Le parseur finissait
+littéralement par `default: break; // the rest of the grammar is read
+and ignored` — le jumeau exact du défaut que §P2 avait corrigé côté
+nginx.
+
+**La forme du contrôle n'est pas une liste de mots interdits**, et c'est
+tout l'intérêt de ce lot. Apache ne dit jamais « directive inconnue » ;
+il dit :
+
+```
+Invalid command 'ProxyPass', perhaps misspelled or defined by
+a module not included in the server configuration
+```
+
+Son propre message reconnaît qu'il ne sait pas distinguer une faute de
+frappe d'un module éteint, **parce que sa grammaire est définie par les
+modules chargés**. Refuser `ProxyPass` en dur aurait donc énoncé quelque
+chose de faux : ce qui cloche n'est pas la directive, c'est que
+`mod_proxy` n'est pas allumé — et `a2enmod proxy` est la réponse. Ce lot
+n'était écrivable qu'après §9.8, qui a rendu `mods-enabled`
+manipulable.
+
+D'où quatre issues, et non deux :
+
+| situation | réponse |
+|---|---|
+| module chargé, directive appliquée | acceptée |
+| module chargé, directive descriptive | acceptée (inerte) |
+| module chargé, effet non produit ici | `the 'X' directive is not supported by this simulator` |
+| module éteint **ou** directive inexistante | `Invalid command 'X', perhaps misspelled…` — le message d'Apache, le même pour les deux, comme chez lui |
+
+La séquence que cela produit est celle d'un vrai serveur :
+`ProxyPass` → *module absent* ; `a2enmod proxy` ; `ProxyPass` → *non
+produit par ce simulateur*. Deux manques différents, deux messages
+différents, et l'ordre enseigne.
+
+**`<IfModule>` est honoré**, ce qui était la moitié manquante. Le bloc
+était traité comme une ligne quelconque, si bien que le
+`default-ssl.conf` de Debian — entièrement enveloppé dans
+`<IfModule mod_ssl.c>` — était lu même sans `mod_ssl`. Apache SAUTE le
+bloc. La différence porte tout le TP TLS :
+
+* `a2ensite default-ssl` sans `a2enmod ssl` → `Syntax OK`, et **rien sur
+  443**. C'est la confusion classique, reproduite plutôt qu'évitée.
+* `a2enmod ssl` ensuite → le bloc est lu, et bute sur le certificat
+  « snakeoil » que Debian nomme et que cette image ne fabrique pas.
+  C'est la vraie première marche.
+
+La forme niée (`<IfModule !mod_ssl.c>`) et l'imbrication sont traitées :
+un bloc sauté ne fait pas juger ses directives, sans quoi un
+`RewriteEngine` placé dans une garde serait refusé bien qu'Apache n'y
+entre jamais.
+
+**Une seule lecture des modules** (`loadedApacheModules`) sert
+`apachectl -M` et `configtest`, et le nom vient de la ligne
+`LoadModule` du fichier plutôt que du nom du lien — c'est `LoadModule`
+qui nomme le module. Deux vues en désaccord sur ce qui est chargé
+seraient la contradiction la plus déroutante possible ; un cas de test
+les compare au même instant.
+
+**Sept cas d'`apache2-https.test.ts` sont tombés, et c'était le
+défaut** : ils montaient du TLS **sans jamais activer `mod_ssl`**, ce
+qu'aucun Debian ne permet. Ils passaient parce que le simulateur
+ignorait `<IfModule>` et ne jugeait aucune directive. Ils appellent
+désormais `a2enmod ssl` en premier — le geste réel, devenu possible au
+§9.8 — plutôt que d'affaiblir l'assertion.
+
+**Limite assumée** : le contrôle ne porte que sur les directives lues
+dans `sites-enabled`, à l'intérieur d'un `<VirtualHost>`. `apache2.conf`
+et ses blocs `<Directory>` ne sont pas analysés — ils ne le sont pas
+davantage aujourd'hui pour en extraire quoi que ce soit, et les juger
+sans les lire n'aurait aucun sens.
+
+`apache-configtest-juge.test.ts` (17 cas), **12 tombent par
+`git stash`**. Les 5 qui passent des deux côtés sont les garde-fous de
+non-régression, dont le plus important : **la configuration livrée par
+Debian doit rester valide** — un contrôle qui refuserait le fichier que
+la distribution installe coûterait plus de vérité qu'il n'en apporte.
+
+### 9.10 L'équilibrage d'un `upstream`, mesuré
+
+§9.5 nommait la limite plutôt que de la taire : un seul membre servait,
+« le premier qui n'est pas `down` », et `weight=2` était un mot que rien
+ne lisait. Le refus d'annoncer un tour de rôle sans en faire était juste ;
+ce lot fait le tour de rôle.
+
+**Le principe qui gouverne les tests, et donc la conception** :
+l'équilibrage doit être OBSERVABLE. Chaque amont rend son propre port
+dans le corps de la réponse, si bien qu'une suite de requêtes se lit à
+l'œil — `amont-9001 amont-9002 amont-9001 …`. C'est aussi pourquoi le
+cycle pondéré est DÉVELOPPÉ (un membre `weight=3` figure trois fois dans
+la liste) plutôt que parcouru avec un compteur : le résultat est alors
+vérifiable sans reproduire l'algorithme dans le test.
+
+Livré : tour de rôle pondéré, `down`, `backup`, `ip_hash`, et la
+**détection passive de panne** (`max_fails`, `fail_timeout`).
+
+**« Passive » est le mot important, et il coûte une requête.** nginx
+n'interroge pas ses amonts : il apprend en servant du trafic réel. Le
+premier client qui tombe sur un membre mort reçoit donc un `502`, et
+seulement ensuite le membre sort du cycle. Le cacher aurait été plus
+joli et faux ; un cas l'affirme, et un second cas mesure ce qui se
+passerait sans détection du tout — un `502` une requête sur deux,
+indéfiniment. `max_fails=0` produit exactement cela, puisque c'est ce
+que cette valeur veut dire.
+
+**Un rechargement remet les compteurs à zéro**, et ce détail a été
+corrigé APRÈS mesure : la première version gardait l'état, si bien qu'un
+membre de secours servait dès la première requête suivant un
+rechargement, sur la foi d'une panne constatée avant. Chez nginx un
+rechargement fait naître de nouveaux processus de travail, et sans
+`zone` chacun part avec des compteurs vierges.
+
+**`least_conn` est refusée**, comme `http2` au §9.7 et pour la même
+raison : elle choisit le membre ayant le moins de connexions EN COURS, et
+rien ici n'en tient — la livraison est synchrone, il n'y a jamais deux
+requêtes en vol. L'accepter reviendrait à faire du tour de rôle en
+l'appelant autrement. `hash`, `random` et `least_time` suivent.
+
+**Les paramètres de `server` sont jugés** comme ceux de `listen` :
+`weight`, `max_fails`, `fail_timeout`, `max_conns`, `slow_start` sont
+connus ; `down`, `backup`, `resolve` sont des drapeaux ; tout le reste
+reçoit `invalid parameter "…"`, et `weight=zero` aussi. C'était le
+défaut d'origine — un paramètre accepté sans effet fait croire à un
+réglage qui n'existe pas.
+
+`nginx-upstream-equilibrage.test.ts` (16 cas), **12 tombent par
+`git stash`**.
+
+**Limites assumées** : `max_conns` et `slow_start` sont acceptés et
+inertes (le premier borne des connexions simultanées qui n'existent pas,
+le second lisse une montée en charge dans un temps qui ne s'écoule pas
+entre deux requêtes) ; il n'y a pas de contrôle de santé ACTIF
+(`health_check` est une directive de nginx Plus, absente de la version
+libre que ce simulateur imite) ; et `ip_hash` répartit sur le cycle des
+membres vivants, si bien qu'une panne redistribue les clients — comme
+chez nginx sans `zone`.

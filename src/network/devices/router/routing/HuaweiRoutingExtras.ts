@@ -15,6 +15,21 @@ export interface HuaweiBgpGroupCfg {
   rawLines: string[];
 }
 
+/**
+ * Les champs ci-dessous étaient ÉCRITS sans être déclarés, par un
+ * `(b as any).champ = …` dans `HuaweiVRPShell`. Les déclarer ne les
+ * rend pas vivants — aucun n'est lu, ici ni ailleurs, ce que le
+ * commentaire dit plutôt que de le laisser découvrir — mais cela rend
+ * la chose GREPPABLE : une configuration morte cachée derrière un `any`
+ * est invisible, la même déclarée se voit et se compte.
+ *
+ * C'est la catégorie que `CLAUDE.md` suit déjà pour
+ * `HuaweiRoutingExtras.importedRoutes` et `BGPEngine.redistribute`.
+ * Deux de ces commandes n'écrivent d'ailleurs même pas dans `rawLines`
+ * (`maximum load-balancing`, `ipv4-family`/`ipv6-family` côté BGP) :
+ * elles n'ont donc aucun effet observable, ce qui est un défaut distinct
+ * et plus grave que le typage, et qui reste ouvert.
+ */
 export interface HuaweiBgpProcess {
   asn: number;
   routerId?: string;
@@ -23,6 +38,14 @@ export interface HuaweiBgpProcess {
   peers: Map<string, HuaweiBgpPeerCfg>;
   groups: Map<string, HuaweiBgpGroupCfg>;
   rawLines: string[];
+  /** `timer keepalive <s> hold <s>` — stocké, lu par personne. */
+  keepaliveSec?: number;
+  holdSec?: number;
+  /** `maximum load-balancing <n>` — stocké, lu par personne. */
+  maximumPaths?: number;
+  /** `ipv4-family` / `ipv6-family` — stockés, lus par personne. */
+  ipv4Family?: boolean;
+  ipv6Family?: boolean;
 }
 
 export interface HuaweiIsisProcess {
@@ -35,6 +58,16 @@ export interface HuaweiIsisProcess {
   importedRoutes: string[];
   gracefulRestart?: boolean;
   rawLines: string[];
+  /** `is-name` — le nom dynamique IS-IS. Stocké, lu par personne. */
+  hostname?: string;
+  /** `timer lsp-refresh <s>` — stocké, lu par personne. */
+  lspRefreshSec?: number;
+  /** `set-overload` / `undo set-overload` — stocké, lu par personne. */
+  overload?: boolean;
+  /** `maximum load-balancing <n>` — stocké, lu par personne. */
+  maximumPaths?: number;
+  /** `preference <n>` — stocké, lu par personne. */
+  preference?: number;
 }
 
 export class HuaweiRoutingExtras {

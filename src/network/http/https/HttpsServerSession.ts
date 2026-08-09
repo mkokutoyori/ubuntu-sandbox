@@ -109,7 +109,7 @@ export class HttpsServerSession {
         const method = parsed.message.method ?? 'GET';
         const target = parsed.message.target ?? '';
         this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
-        response = this.handler(parsed.message);
+        response = this.handler(parsed.message, { ip: socket.remoteIp, port: socket.remotePort });
         this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: response.statusCode ?? 0 } });
         shouldClose =
           parsed.message.headers.get('Connection')?.toLowerCase() === 'close' ||

@@ -370,8 +370,8 @@ Total steps: 401
   ------- --------- ----------------- ------------------------------------------
 
 [100/401] swdc SW-DC> vlan 10
-               ^
-  % Invalid input detected at '^' marker.
+  Translating "vlan"...domain server (255.255.255.255)
+  % Unknown command or computer name, or unable to find computer address
 
 [101/401] swdc SW-DC> show vlan brief
   VLAN Name                             Status    Ports
@@ -850,12 +850,12 @@ Total steps: 401
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.348 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.764 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.326 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.627 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.348/0.556/0.764/0.208 ms
+  rtt min/avg/max/mdev = 0.326/0.476/0.627/0.151 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -966,10 +966,10 @@ Total steps: 401
 
 [224/401] rhq R-HQ# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         unassigned      YES manual up                    up
+  GigabitEthernet0/0         unassigned      YES unset  up                    up
   GigabitEthernet0/1         172.16.12.1     YES manual up                    up
   GigabitEthernet0/2         172.16.13.1     YES manual up                    up
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   GigabitEthernet0/0.10      10.1.1.1        YES manual up                    up
   GigabitEthernet0/0.20      10.1.20.1       YES manual up                    up
 
@@ -1015,31 +1015,31 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.379 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.641 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.425 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.619 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.379/0.510/0.641/0.131 ms
+  rtt min/avg/max/mdev = 0.425/0.522/0.619/0.097 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.403 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.652 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.385 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.619 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.403/0.527/0.652/0.125 ms
+  rtt min/avg/max/mdev = 0.385/0.502/0.619/0.117 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.642 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.908 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=1.211 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.533 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.776 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.905 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.908/1.254/1.642/0.301 ms
+  rtt min/avg/max/mdev = 0.776/1.072/1.533/0.331 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
@@ -1051,7 +1051,7 @@ Total steps: 401
   Ping statistics for 10.1.1.10:
       Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
 
 [234/401] whq whq$ ping -n 2 10.1.20.1
   
@@ -1066,21 +1066,32 @@ Total steps: 401
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.719 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.644 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.750 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.948 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.719/1.182/1.644/0.463 ms
+  rtt min/avg/max/mdev = 0.750/0.849/0.948/0.099 ms
 
 [236/401] rhq R-HQ# show ip route connected
-  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
+  Gateway of last resort is not set
   
-  C    172.16.12.0/30 is directly connected, GigabitEthernet0/1
-  C    172.16.13.0/30 is directly connected, GigabitEthernet0/2
-  C    10.1.1.0/24 is directly connected, GigabitEthernet0/0.10
-  C    10.1.20.0/24 is directly connected, GigabitEthernet0/0.20
+        10.0.0.0/8 is variably subnetted, 6 subnets, 2 masks
+  C        10.1.1.0/24 is directly connected, GigabitEthernet0/0.10
+  C        10.1.20.0/24 is directly connected, GigabitEthernet0/0.20
+        172.16.0.0/16 is variably subnetted, 5 subnets, 2 masks
+  C        172.16.12.0/30 is directly connected, GigabitEthernet0/1
+  C        172.16.13.0/30 is directly connected, GigabitEthernet0/2
 
 [237/401] rhq R-HQ# show ip arp
   Protocol  Address          Age (min)   Hardware Addr   Type   Interface
@@ -2094,29 +2105,29 @@ Total steps: 401
 
 [340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.214 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.289 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.214/0.214/0.214/0.000 ms
+  rtt min/avg/max/mdev = 0.289/0.289/0.289/0.000 ms
 
 [341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.516 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.573 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.516/0.516/0.516/0.000 ms
+  rtt min/avg/max/mdev = 0.573/0.573/0.573/0.000 ms
 
 [342/401] whq whq$ ping -n 1 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
+  Reply from 10.1.1.10: bytes=32 time=3ms TTL=63
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 3ms, Maximum = 3ms, Average = 3ms
 
 [343/401] lhq lhq$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -2378,8 +2389,8 @@ Total steps: 401
 <empty>
 
 [375/401] swdc SW-DC> vlan 99999
-       ^
-  % Invalid input detected at '^' marker.
+  Translating "vlan"...domain server (255.255.255.255)
+  % Unknown command or computer name, or unable to find computer address
 
 
 --- [376] § VLAN — état final & connectivité ---
@@ -2503,10 +2514,10 @@ Total steps: 401
 
 [382/401] rhq R-HQ# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         unassigned      YES manual up                    up
+  GigabitEthernet0/0         unassigned      YES unset  up                    up
   GigabitEthernet0/1         172.16.12.1     YES manual up                    up
   GigabitEthernet0/2         172.16.13.1     YES manual up                    up
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   GigabitEthernet0/0.10      10.1.1.1        YES manual up                    up
   GigabitEthernet0/0.20      10.1.20.1       YES manual up                    up
 
@@ -2515,19 +2526,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.142 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.681 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.142/1.142/1.142/0.000 ms
+  rtt min/avg/max/mdev = 0.681/0.681/0.681/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.105 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.655 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.105/1.105/1.105/0.000 ms
+  rtt min/avg/max/mdev = 0.655/0.655/0.655/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2615,13 +2626,24 @@ Total steps: 401
   99       VLAN0099                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
 
 [394/401] rhq R-HQ# show ip route connected
-  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
+  Gateway of last resort is not set
   
-  C    172.16.12.0/30 is directly connected, GigabitEthernet0/1
-  C    172.16.13.0/30 is directly connected, GigabitEthernet0/2
-  C    10.1.1.0/24 is directly connected, GigabitEthernet0/0.10
-  C    10.1.20.0/24 is directly connected, GigabitEthernet0/0.20
+        10.0.0.0/8 is variably subnetted, 6 subnets, 2 masks
+  C        10.1.1.0/24 is directly connected, GigabitEthernet0/0.10
+  C        10.1.20.0/24 is directly connected, GigabitEthernet0/0.20
+        172.16.0.0/16 is variably subnetted, 5 subnets, 2 masks
+  C        172.16.12.0/30 is directly connected, GigabitEthernet0/1
+  C        172.16.13.0/30 is directly connected, GigabitEthernet0/2
 
 [395/401] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -2656,11 +2678,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.733 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.510 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.733/0.733/0.733/0.000 ms
+  rtt min/avg/max/mdev = 0.510/0.510/0.510/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   
@@ -2670,7 +2692,7 @@ Total steps: 401
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [399/401] swhq SW-HQ# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan

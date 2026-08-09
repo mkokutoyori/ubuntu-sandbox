@@ -38,7 +38,7 @@
 import { Equipment } from '../equipment/Equipment';
 import type { TaggedEthernetFrame } from './Switch';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
-import { deviceClockSource } from './inspection/config/LoggingConfig';
+import { deviceClockSource, SEVERITY_NAMES } from './inspection/config/LoggingConfig';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
@@ -332,7 +332,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getDhcpv6RelayDestinations(iface: string): string[] { return this.dhcpv6RelayDestinations.get(iface) ?? []; }
 
   // ── OSPF Integration (RFC 2328 / RFC 5340) — delegated to RouterOSPFIntegration ──
-  private ospfIntegration!: RouterOSPFIntegration;
+  // `protected` et non `private` : `CiscoRouter` comme `HuaweiRouter`
+  // l'appellent depuis leur abonnement `bfd.session.changed`, ce que le
+  // typage refusait des deux côtés.
+  protected ospfIntegration!: RouterOSPFIntegration;
   private dynamicRouting!: RouterDynamicRouting;
 
   // ── IPSec Engine ─────────────────────────────────────────────
@@ -1623,6 +1626,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
   ripSetPassiveInterface(iface: string) { this.ripEngine.setPassiveInterface(iface); }
   ripRemovePassiveInterface(iface: string) { this.ripEngine.removePassiveInterface(iface); }
+  ripSetInterfaceSplitHorizon(iface: string, on: boolean | null) { this.ripEngine.setInterfaceSplitHorizon(iface, on); }
+  ripSplitHorizonOn(iface: string) { return this.ripEngine.splitHorizonOn(iface); }
   ripSetRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg, metric?: number, routePolicy?: string) { this.ripEngine.setRedistribution(source, metric, routePolicy); }
   ripRemoveRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg) { this.ripEngine.removeRedistribution(source); }
   ripSetDefaultMetric(metric: number | null) { this.ripEngine.setDefaultMetric(metric); }
@@ -3577,6 +3582,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         getHostname: () => this.getHostname(),
         executeCommand: (command: string) => this.executeCommand(command),
         getSnmpAgent: () => (this as unknown as { getSnmpAgent?: () => SnmpAgent }).getSnmpAgent?.(),
+        logSyslog: (severityNum, tag, mnemonic, message) => {
+          const journal = this.shell.getLoggingConfig?.();
+          if (!journal) return;
+          journal.append(SEVERITY_NAMES[severityNum] ?? 'informational', tag, message, true, mnemonic);
+        },
       };
       this._eemEngine = new EemEngine(host, this.getEemService(), () => this.getBus(), () => this.getRouterScheduler());
       this._eemEngine.start();
@@ -3730,11 +3740,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const a = this.getCredentialStore().get(name);
     return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
   }
-  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean }> {
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean; serviceTypes: readonly string[] }> {
     return this.getCredentialStore().list().map(a => ({
       name: a.name, privilege: a.privilege, secret: a.secret,
       secretAlgo: a.passwordHashAlgorithm,
       factoryDefault: a.factoryDefault,
+      // Le `service-type` etait stocke par `withServiceTypes()` et
+      // laisse de cote par cette projection, si bien que le rendu
+      // ecrivait `ssh` en dur : un compte configure `telnet` revenait
+      // `ssh` apres rechargement.
+      serviceTypes: a.serviceTypes,
     }));
   }
 
@@ -3971,10 +3986,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       shouldStop?: () => boolean;
     },
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
+    // 127.0.0.0/8 est TOUJOURS local (RFC 1122 §3.2.1.3) : il n'a pas
+    // besoin d'être configuré sur une interface pour répondre, et il
+    // n'a pas de route. Sans ce cas, `ping 127.0.0.1` — le premier
+    // réflexe pour vérifier qu'une pile IP est vivante — échouait à
+    // 100 % sur une machine parfaitement saine.
+    const boucleLocale = targetIP.toString().startsWith('127.');
     // Self-ping: check all interface IPs
     for (const [, port] of this.ports) {
       const myIP = port.getIPAddress();
-      if (myIP && myIP.equals(targetIP)) {
+      if (boucleLocale || (myIP && myIP.equals(targetIP))) {
         const results = [];
         for (let seq = 1; seq <= count; seq++) {
           if (hooks?.shouldStop?.()) break;

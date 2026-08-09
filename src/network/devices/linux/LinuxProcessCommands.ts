@@ -388,20 +388,34 @@ const ACTIVE_SUBSTATE: Record<ReturnType<typeof unitSuffix>, string> = {
   timer: 'waiting',
 };
 
-function unitActiveLine(u: ServiceUnit): string {
+/**
+ * La ligne `Active:` en DEUX morceaux, parce que la couleur ne les couvre
+ * pas tous les deux.
+ *
+ * systemd imprime `printf("     Active: %s%s (%s)%s", on, state, sub, off)`
+ * puis, EN DEHORS de la couleur, le `(Result: …)` et le ` since …`. La
+ * distinction ne se voit pas sur une capture d'écran, elle se lit dans
+ * `systemctl-show.c` : `état (sous-état)` est colorié, la date ne l'est
+ * jamais. Rendre la ligne entière verte serait plus voyant et faux.
+ */
+function unitActiveParts(u: ServiceUnit): { head: string; tail: string } {
   switch (u.state) {
     case 'active':
-      return `active (${ACTIVE_SUBSTATE[unitSuffix(u.name)]}) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`;
+      return {
+        head: `active (${ACTIVE_SUBSTATE[unitSuffix(u.name)]})`,
+        tail: ` since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`,
+      };
     case 'activating':
-      return u.autoRestartPending ? 'activating (auto-restart)' : 'activating (start)';
+      return { head: u.autoRestartPending ? 'activating (auto-restart)' : 'activating (start)', tail: '' };
     case 'deactivating':
-      return 'deactivating (stop)';
+      return { head: 'deactivating (stop)', tail: '' };
     case 'failed':
-      return `failed (Result: ${unitFailedResult(u)})`;
+      return { head: 'failed', tail: ` (Result: ${unitFailedResult(u)})` };
     default:
-      return 'inactive (dead)';
+      return { head: 'inactive (dead)', tail: '' };
   }
 }
+
 
 function unitProcessLine(u: ServiceUnit): string | null {
   const exit = u.lastExit;
@@ -446,14 +460,47 @@ function mainProcessName(u: ServiceUnit): string {
   return base && base.length > 0 ? base : u.name;
 }
 
-/** Render the multi-line `systemctl status NAME` block for one unit. */
-function renderUnitStatus(u: ServiceUnit): string {
+/**
+ * Les deux séquences que systemd emploie ici, telles que les définit
+ * `basic/terminal-util.h` : `ANSI_HIGHLIGHT_RED` et `ANSI_HIGHLIGHT_GREEN`
+ * — un `0` de remise à zéro AVANT le gras et la teinte, ce qui rend la
+ * séquence indépendante de ce qui la précède. Le rouge est mesuré sur le
+ * vrai binaire (son message « Failed to connect to bus » sort en
+ * `\e[0;1;31m`) ; le vert est son jumeau dans la même famille de macros.
+ */
+const SD_RED = '[0;1;31m';
+const SD_GREEN = '[0;1;32m';
+const SD_NORMAL = '[0m';
+
+/**
+ * Ce que systemd appelle `active_on`/`active_off` : la couleur de l'état,
+ * qui habille à la fois la pastille et le mot d'état. Rien d'autre que
+ * `failed` et `active` n'est colorié — `activating` et `inactive` sortent
+ * nus, ce qui est un fait de systemd et non un oubli ici.
+ */
+function unitStateColor(u: ServiceUnit, color: boolean): { on: string; off: string } {
+  if (!color) return { on: '', off: '' };
+  if (u.state === 'failed') return { on: SD_RED, off: SD_NORMAL };
+  if (u.state === 'active') return { on: SD_GREEN, off: SD_NORMAL };
+  return { on: '', off: '' };
+}
+
+/**
+ * Render the multi-line `systemctl status NAME` block for one unit.
+ *
+ * `color` suit la règle de systemd lui-même : il ne colorie que si sa
+ * sortie standard est un terminal, donc `systemctl status ssh | grep`
+ * reçoit du texte nu — sans quoi les séquences entreraient dans le tube.
+ */
+function renderUnitStatus(u: ServiceUnit, color: boolean): string {
   const dot = u.state === 'active' ? '●' : u.state === 'failed' ? '×' : '○';
+  const { on, off } = unitStateColor(u, color);
+  const active = unitActiveParts(u);
   const loadedLine = `     Loaded: loaded (${u.loadedFrom}; ${u.enabled}; vendor preset: enabled)`;
   const lines = [
-    `${dot} ${fullUnitName(u.name)} - ${u.description}`,
+    `${on}${dot}${off} ${fullUnitName(u.name)} - ${u.description}`,
     loadedLine,
-    `     Active: ${unitActiveLine(u)}`,
+    `     Active: ${on}${active.head}${off}${active.tail}`,
   ];
   const processLine = u.state !== 'active' ? unitProcessLine(u) : null;
   if (processLine) lines.push(processLine);
@@ -504,7 +551,7 @@ function resolveUnitAlias(name: string): string {
   return UNIT_ALIASES[name] ?? name;
 }
 
-export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlResult {
+export function cmdSystemctl(args: string[], sm: LinuxServiceManager, color = false): SysCtlResult {
   let sub = (args[0] || '').toLowerCase();
   // Bare option invocations (`systemctl --failed`, `--type=service`,
   // `-t service`) are listing requests in real systemd.
@@ -545,7 +592,7 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       }
       const u = sm.status(unit);
       if (!u) return { output: `Unit ${fullUnitName(unit)} could not be found.`, exitCode: 4 };
-      return { output: renderUnitStatus(u), exitCode: u.state === 'active' ? 0 : 3 };
+      return { output: renderUnitStatus(u, color), exitCode: u.state === 'active' ? 0 : 3 };
     }
 
     case 'start':

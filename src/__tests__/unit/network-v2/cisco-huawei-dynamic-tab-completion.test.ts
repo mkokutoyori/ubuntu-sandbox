@@ -22,13 +22,26 @@ type CliSessionHandle = {
 };
 
 describe('Dynamic Tab candidates — Cisco (PRD item 2)', () => {
-  it('cliTabCandidates lists the real ports of the device after "interface"', async () => {
+  /**
+   * Un mot-clé et une valeur ne se disputent pas la même place.
+   *
+   * Ce cas attendait `interface Fa` → les huit ports. Un vrai Catalyst
+   * complète le TYPE à cet endroit (`interface FastEthernet`) et ne
+   * propose les ports qu'une fois le type écrit : le type et son numéro
+   * sont deux jetons pour l'analyseur, même collés. Mélanger les deux
+   * rendait huit candidats, donc Tab ne faisait RIEN là où la machine
+   * réelle écrit le type d'un coup — la complétion était perdue, pas
+   * gagnée. Les ports restent atteignables, et le deuxième `expect` le
+   * vérifie plutôt que de le supposer.
+   */
+  it('cliTabCandidates complète le type, puis les ports réels', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    const candidates = sw.cliTabCandidates('interface Fa');
-    expect(candidates).toContain('interface FastEthernet0/1');
-    expect(candidates).toContain('interface FastEthernet0/8');
+    expect(sw.cliTabCandidates('interface Fa')).toEqual(['interface FastEthernet']);
+    const ports = sw.cliTabCandidates('interface FastEthernet0/');
+    expect(ports).toContain('interface FastEthernet0/1');
+    expect(ports).toContain('interface FastEthernet0/8');
   });
 
   it('a unique real interface completes via Tab at the session level', async () => {
@@ -108,6 +121,18 @@ describe('Dynamic Tab candidates — Cisco (PRD item 2)', () => {
 });
 
 describe('Dynamic Tab candidates — Huawei (PRD items 2 et 3)', () => {
+  /**
+   * Ce cas NE suit PAS son jumeau Cisco, et c'est délibéré.
+   *
+   * Côté IOS, replier les ports sur le type fait gagner une frappe,
+   * parce qu'une ambiguïté y rend Tab muet. Sur VRP la tabulation est
+   * CYCLIQUE : proposer les huit ports les rend tous atteignables l'un
+   * après l'autre, et les replier sur le type en supprimerait sept.
+   * `huaweiInterfaceHelp.ts` marque donc ses types `helpOnly` — ils
+   * nomment la position dans `?` sans concourir avec les valeurs. La
+   * règle « un mot-clé d'abord » est la même des deux côtés ; c'est la
+   * politique de tabulation de la plateforme qui décide du résultat.
+   */
   it('cliTabCandidates lists the real ports after "interface"', () => {
     const sw = new HuaweiSwitch('switch-huawei', 'SW1', 8);
     sw.executeCommand('system-view');

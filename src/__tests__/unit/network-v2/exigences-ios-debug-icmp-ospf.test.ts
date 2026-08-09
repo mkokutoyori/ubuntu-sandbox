@@ -11,6 +11,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Cable } from '@/network/hardware/Cable';
+import { DEBUG_VERBATIM } from '@/network/devices/inspection/config/LoggingConfig';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
@@ -78,7 +79,7 @@ describe('Exigence 1 — le debug ne quitte la console que sur `terminal monitor
     const vues: string[] = [];
     journal.subscribeMonitor((l) => vues.push(l));
 
-    journal.append('notifications', 'test', 'avant');
+    journal.append('notifications', 'test', 'avant', true, 'CONFIG_I');
     expect(vues.join('\n')).toContain('avant');
 
     // Celle-là est bien une décision d'équipement, contrairement à
@@ -87,7 +88,7 @@ describe('Exigence 1 — le debug ne quitte la console que sur `terminal monitor
     await run(r, 'no logging monitor');
     await run(r, 'end');
     const compte = vues.length;
-    journal.append('notifications', 'test', 'apres');
+    journal.append('notifications', 'test', 'apres', true, 'CONFIG_I');
     expect(vues).toHaveLength(compte);
   });
 
@@ -96,7 +97,7 @@ describe('Exigence 1 — le debug ne quitte la console que sur `terminal monitor
     const journal = r.getLoggingConfig()!;
     const vues: string[] = [];
     journal.subscribeConsole((l) => vues.push(l));
-    journal.append('notifications', 'test', 'vers la console');
+    journal.append('notifications', 'test', 'vers la console', true, 'CONFIG_I');
     expect(vues.join('\n')).toContain('vers la console');
   });
 
@@ -109,9 +110,9 @@ describe('Exigence 1 — le debug ne quitte la console que sur `terminal monitor
     await run(r, 'configure terminal');
     await run(r, 'logging monitor errors');
     await run(r, 'end');
-    journal.append('notifications', 'test', 'trop bas');
+    journal.append('notifications', 'test', 'trop bas', true, 'CONFIG_I');
     expect(vues).toHaveLength(0);
-    journal.append('errors', 'test', 'assez grave');
+    journal.append('errors', 'test', 'assez grave', true, 'CONFIG_I');
     expect(vues.join('\n')).toContain('assez grave');
   });
 });
@@ -160,7 +161,7 @@ describe('Exigence 2 — arrêt global du debug et état courant', () => {
     await run(r, 'debug ip ospf events');
     await run(r, 'undebug all');
     const avant = vues.length;
-    journal.append('debugging', 'ospf', 'ne doit pas sortir');
+    journal.append('debugging', 'ospf', 'ne doit pas sortir', true, DEBUG_VERBATIM);
     expect(vues).toHaveLength(avant);
   });
 });
@@ -194,7 +195,7 @@ describe('Exigence 3 — horodatage standardisé des logs', () => {
     await run(r, 'end');
     await run(r, 'debug ip ospf events');
 
-    journal.append('debugging', 'ospf', 'OSPF-1 HELLO Gi0/0: Send hello');
+    journal.append('debugging', 'ospf', 'OSPF-1 HELLO Gi0/0: Send hello', true, DEBUG_VERBATIM);
     expect(vues.at(-1)).toMatch(HORODATAGE);
   });
 });

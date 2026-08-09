@@ -18,6 +18,8 @@ import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import type { PortOperator, PortSpec } from '../../router/ACLEngine';
 import { formatHuaweiAclEntry } from '../../router/ACLEngine';
+import { rendreErreurVrp } from '../cli-utils';
+import { analyserAcl } from './HuaweiAclGrammar';
 
 const normalizeWildcard = (w: string): string => (w === '0' ? '0.0.0.0' : w);
 
@@ -60,53 +62,31 @@ export function registerHuaweiACLSystemCommands(
 ): void {
   const getRouter = () => ctx.r();
 
-  trie.registerGreedy('acl', 'Configure Access Control List', (args) => {
-    if (args.length < 1) return 'Error: Incomplete command.';
-
-    if (args[0].toLowerCase() === 'name') {
-      if (args.length < 2) return 'Error: Incomplete command.';
-      const name = args[1];
-      const typeTok = args[2]?.toLowerCase();
-      const isAdvanced = typeTok === 'advanced' || typeTok === 'advance';
-      const isBasic = typeTok === 'basic';
-      if (typeTok && !isAdvanced && !isBasic) return 'Error: Expected basic or advance.';
-      const mode = isAdvanced ? 'acl-advanced' : 'acl-basic';
-      ctx.setSelectedACLName(name);
+  trie.registerGreedy('acl', 'Configure Access Control List', (args, ligne) => {
+    const a = analyserAcl(args);
+    if (a.statut === 'refus') return rendreErreurVrp(a.err, ligne ?? `acl ${args.join(' ')}`);
+    const mode = a.cmd.type === 'advanced' ? 'acl-advanced' : 'acl-basic';
+    if (a.cmd.kind === 'nom') {
+      ctx.setSelectedACLName(a.cmd.nom);
       ctx.setSelectedACLNumber(null);
-      ctx.setSelectedACLMode(mode);
-      ctx.setMode(mode);
-      return '';
-    }
-
-    if (args[0].toLowerCase() === 'ipv6') {
-      if (args.length < 3 || args[1].toLowerCase() !== 'name') return 'Error: Incomplete command.';
-      const name = args[2];
-      ctx.setSelectedACLName(name);
-      ctx.setSelectedACLNumber(null);
-      ctx.setSelectedACLMode('acl-advanced');
-      ctx.setMode('acl-advanced');
-      return '';
-    }
-
-    const numTok = args[0].toLowerCase() === 'number' ? args[1] : args[0];
-    const num = parseInt(numTok ?? '', 10);
-    if (isNaN(num)) return 'Error: Invalid ACL number.';
-    if (num >= 2000 && num <= 2999) {
-      ctx.setSelectedACLNumber(num);
+    } else {
+      ctx.setSelectedACLNumber(a.cmd.numero);
       ctx.setSelectedACLName(null);
-      ctx.setSelectedACLMode('acl-basic');
-      ctx.setMode('acl-basic');
-      return '';
     }
-    if (num >= 3000 && num <= 3999) {
-      ctx.setSelectedACLNumber(num);
-      ctx.setSelectedACLName(null);
-      ctx.setSelectedACLMode('acl-advanced');
-      ctx.setMode('acl-advanced');
-      return '';
-    }
-    return 'Error: ACL number must be 2000-2999 (basic) or 3000-3999 (advanced).';
+    ctx.setSelectedACLMode(mode);
+    ctx.setMode(mode);
+    return '';
   });
+  // `advanced` et `basic` étaient extraits du texte de ce handler par
+  // `autoContinuations`, qui ne trouve pas de description pour eux dans
+  // son dictionnaire global : `acl ?` listait deux mots nus. Les
+  // curater les fait sortir de l'extraction avec leur libellé.
+  trie.addCompletionKeywords('acl', [
+    { keyword: 'advanced', description: 'Advanced ACL (3000-3999)' },
+    { keyword: 'basic', description: 'Basic ACL (2000-2999)' },
+    { keyword: 'name', description: 'Named ACL' },
+    { keyword: 'number', description: 'ACL number' },
+  ]);
 
   trie.registerGreedy('undo acl', 'Delete Access Control List', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
@@ -149,8 +129,13 @@ export function buildHuaweiBasicACLCommands(
   const getRouter = () => ctx.r();
   registerAclCommonExtras(trie, ctx);
 
+  // Le numero de regle etait consomme DEUX fois : cette ligne le retirait
+  // avant que la lecture de `ruleId` plus bas puisse le voir, si bien
+  // qu'il etait toujours perdu. Or il decide de l'ordre d'evaluation et
+  // sert a supprimer la regle : une ACL rechargee sous un autre numero
+  // n'est pas la meme ACL.
   trie.registerGreedy('rule', 'Add ACL rule', (rawArgs) => {
-    const args = /^\d+$/.test(rawArgs[0] ?? '') ? rawArgs.slice(1) : rawArgs;
+    const args = rawArgs;
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
     const aclName = ctx.getSelectedACLName();
@@ -177,11 +162,17 @@ export function buildHuaweiBasicACLCommands(
       } else { i++; }
     }
 
-    const opts: { srcIP: IPAddress; srcWildcard: SubnetMask; sequence?: number } = {
+    const opts: {
+      srcIP: IPAddress; srcWildcard: SubnetMask;
+      sequence?: number; sequenceConfigured?: boolean;
+    } = {
       srcIP: new IPAddress(srcIP),
       srcWildcard: new SubnetMask(srcWild),
     };
-    if (ruleId !== undefined) opts.sequence = ruleId;
+    // `sequenceConfigured` distingue le numero ECRIT par l'operateur de
+    // celui que la machine attribue : seul le premier doit etre rendu
+    // tel quel, sinon l'auto-numerotation figerait ses propres valeurs.
+    if (ruleId !== undefined) { opts.sequence = ruleId; opts.sequenceConfigured = true; }
     if (aclName) {
       getRouter().addNamedAccessListEntry(aclName, 'standard', action as 'permit' | 'deny', opts);
     } else {
@@ -198,8 +189,13 @@ export function buildHuaweiAdvancedACLCommands(
   const getRouter = () => ctx.r();
   registerAclCommonExtras(trie, ctx);
 
+  // Le numero de regle etait consomme DEUX fois : cette ligne le retirait
+  // avant que la lecture de `ruleId` plus bas puisse le voir, si bien
+  // qu'il etait toujours perdu. Or il decide de l'ordre d'evaluation et
+  // sert a supprimer la regle : une ACL rechargee sous un autre numero
+  // n'est pas la meme ACL.
   trie.registerGreedy('rule', 'Add ACL rule', (rawArgs) => {
-    const args = /^\d+$/.test(rawArgs[0] ?? '') ? rawArgs.slice(1) : rawArgs;
+    const args = rawArgs;
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
     const aclName = ctx.getSelectedACLName();
@@ -258,7 +254,7 @@ export function buildHuaweiAdvancedACLCommands(
       dstIP: new IPAddress(dstIP),
       dstWildcard: new SubnetMask(dstWild),
     };
-    if (ruleId !== undefined) opts.sequence = ruleId;
+    if (ruleId !== undefined) { opts.sequence = ruleId; opts.sequenceConfigured = true; }
     if (srcPortSpec) { opts.srcPortSpec = srcPortSpec; if (srcPortSpec.op === 'eq') opts.srcPort = srcPortSpec.port; }
     if (dstPortSpec) { opts.dstPortSpec = dstPortSpec; if (dstPortSpec.op === 'eq') opts.dstPort = dstPortSpec.port; }
 
@@ -327,7 +323,7 @@ export function registerHuaweiACLDisplayCommands(
       const type = acl.type === 'extended' ? 'Advanced' : 'Basic';
       const lines = [`${type} ACL ${name}, ${acl.entries.length} rule(s)`, `ACL's step is 5`];
       acl.entries.forEach((entry, idx) => {
-        lines.push(` rule ${idx * 5} ${formatHuaweiAclEntry(entry)}`);
+        lines.push(` rule ${entry.sequenceConfigured ? entry.sequence! : idx * 5} ${formatHuaweiAclEntry(entry)}`);
       });
       return lines.join('\n');
     }
@@ -349,7 +345,7 @@ export function registerHuaweiACLDisplayCommands(
     ];
 
     acl.entries.forEach((entry, idx) => {
-      const ruleNum = idx * 5;
+      const ruleNum = entry.sequenceConfigured ? entry.sequence! : idx * 5;
       lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry)}`);
     });
 
@@ -368,7 +364,7 @@ function formatAllACLs(router: Router): string {
     lines.push(`${label}, ${acl.entries.length} rule(s)`);
     lines.push(`ACL's step is 5`);
     acl.entries.forEach((entry, idx) => {
-      const ruleNum = idx * 5;
+      const ruleNum = entry.sequenceConfigured ? entry.sequence! : idx * 5;
       lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry)}`);
     });
   }
@@ -390,7 +386,7 @@ export function runningConfigACL(router: Router): string[] {
       continue;
     }
     acl.entries.forEach((entry, idx) => {
-      const ruleNum = idx * 5;
+      const ruleNum = entry.sequenceConfigured ? entry.sequence! : idx * 5;
       lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry, { showCounts: false })}`);
     });
   }

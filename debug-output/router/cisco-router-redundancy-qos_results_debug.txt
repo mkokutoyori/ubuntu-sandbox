@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-08-04T11:16:25.857Z
+Generated: 2026-08-08T00:34:30.980Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -266,10 +266,10 @@ Total steps: 413
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
-  GigabitEthe 1    110 P Active   local           unknown         192.168.1.1
-  GigabitEthe 2    120 P Active   local           unknown         192.168.1.2
-  GigabitEthe 3    130 P Active   local           unknown         192.168.1.3
-  GigabitEthe 4    140 P Active   local           unknown         192.168.1.4
+  Gi0/0       1    110 P Active   local           unknown         192.168.1.1
+  Gi0/0       2    120 P Active   local           unknown         192.168.1.2
+  Gi0/0       3    130 P Active   local           unknown         192.168.1.3
+  Gi0/0       4    140 P Active   local           unknown         192.168.1.4
 
 [69/413] r1 R1# show standby GigabitEthernet0/0
   GigabitEthernet0/0 - Group 1 (version 2)
@@ -761,60 +761,105 @@ Total steps: 413
 [156/413] r1 R1# show track
   Track 1
     Interface GigabitEthernet0/1 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 2
     Interface GigabitEthernet0/0 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 3
     Interface GigabitEthernet0/1 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 4
     Interface GigabitEthernet0/0 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 5
     Interface GigabitEthernet0/1 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 10
-    IP route 10.0.0.0 reachability
-    State is Up
+    IP route 10.0.0.0 255.0.0.0 reachability
+    Reachability is Down
+      0 changes, last change never
+    Tracked by:
+      Nobody
   Track 11
     IP SLA 1 reachability
-    State is Down
+    Reachability is Down
+      0 changes, last change never
+    Latest operation return code: Unknown
+    Tracked by:
+      Nobody
   Track 12
     IP SLA 1 state
     State is Down
+      0 changes, last change never
+    Latest operation return code: Unknown
+    Tracked by:
+      Nobody
   Track 20
     List boolean and
-    State is Up
+    State is Down
+      0 changes, last change never
       1 Up
-      10 Up
+      10 Down
+    Tracked by:
+      Nobody
   Track 21
     List threshold weight
-    State is Up
+    State is Down
+      0 changes, last change never
+    Threshold weight is 10
       1 weight 10 Up
-      10 weight 20 Up
+      10 weight 20 Down
+    Tracked by:
+      Nobody
   Track 22
     Stub object
     State is Down
+      0 changes, last change never
+    Tracked by:
+      Nobody
 
 [157/413] r1 R1# show track brief
-  Track  Type                     State
-  1      interface-line           Up
-  2      interface-line           Up
-  3      interface-line           Up
-  4      interface-line           Up
-  5      interface-line           Up
-  10     route                    Up
-  11     ipsla-reach              Down
-  12     ipsla-state              Down
-  20     list-boolean             Up
-  21     list-threshold           Up
-  22     stub                     Down
+  Track   Object                         Parameter        Value      Last Change
+  1       interface GigabitEthernet0/1   line-protocol    Up         never
+  2       interface GigabitEthernet0/0   line-protocol    Up         never
+  3       interface GigabitEthernet0/1   line-protocol    Up         never
+  4       interface GigabitEthernet0/0   line-protocol    Up         never
+  5       interface GigabitEthernet0/1   line-protocol    Up         never
+  10      ip route 10.0.0.0              reachability     Down       never
+  11      ip sla 1                       reachability     Down       never
+  12      ip sla 1                       state            Down       never
+  20      list-boolean                   boolean          Down       never
+  21      list-threshold                 threshold        Down       never
+  22      stub                           stub             Down       never
 
 [158/413] r1 R1# show track 1
   Track 1
     Interface GigabitEthernet0/1 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
 
 
 --- [159] § IP SLA + responder ---
@@ -827,22 +872,22 @@ Total steps: 413
 [161/413] r1 R1(config-ip-sla)# icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
 <empty>
 
-[162/413] r1 R1(config-ip-sla)# frequency 5
+[162/413] r1 R1(config-ip-sla-echo)# frequency 5
 <empty>
 
-[163/413] r1 R1(config-ip-sla)# threshold 200
+[163/413] r1 R1(config-ip-sla-echo)# threshold 200
 <empty>
 
-[164/413] r1 R1(config-ip-sla)# timeout 1000
+[164/413] r1 R1(config-ip-sla-echo)# timeout 1000
 <empty>
 
-[165/413] r1 R1(config-ip-sla)# tag WAN-PROBE
+[165/413] r1 R1(config-ip-sla-echo)# tag WAN-PROBE
 <empty>
 
-[166/413] r1 R1(config-ip-sla)# history enhanced interval 900 buckets 4
+[166/413] r1 R1(config-ip-sla-echo)# history enhanced interval 900 buckets 4
 <empty>
 
-[167/413] r1 R1(config-ip-sla)# exit
+[167/413] r1 R1(config-ip-sla-echo)# exit
 <empty>
 
 [168/413] r1 R1(config)# ip sla 2
@@ -851,10 +896,10 @@ Total steps: 413
 [169/413] r1 R1(config-ip-sla)# udp-jitter 10.0.0.2 16384 codec g711alaw
 <empty>
 
-[170/413] r1 R1(config-ip-sla)# frequency 10
+[170/413] r1 R1(config-ip-sla-jitter)# frequency 10
 <empty>
 
-[171/413] r1 R1(config-ip-sla)# exit
+[171/413] r1 R1(config-ip-sla-jitter)# exit
 <empty>
 
 [172/413] r1 R1(config)# ip sla 3
@@ -863,7 +908,7 @@ Total steps: 413
 [173/413] r1 R1(config-ip-sla)# tcp-connect 10.0.0.2 80
 <empty>
 
-[174/413] r1 R1(config-ip-sla)# exit
+[174/413] r1 R1(config-ip-sla-tcp)# exit
 <empty>
 
 [175/413] r1 R1(config)# ip sla 4
@@ -872,7 +917,7 @@ Total steps: 413
 [176/413] r1 R1(config-ip-sla)# http get http://10.0.0.2
 <empty>
 
-[177/413] r1 R1(config-ip-sla)# exit
+[177/413] r1 R1(config-ip-sla-http)# exit
 <empty>
 
 [178/413] r1 R1(config)# ip sla 5
@@ -881,7 +926,7 @@ Total steps: 413
 [179/413] r1 R1(config-ip-sla)# dns lab.local name-server 8.8.8.8
 <empty>
 
-[180/413] r1 R1(config-ip-sla)# exit
+[180/413] r1 R1(config-ip-sla-dns)# exit
 <empty>
 
 [181/413] r1 R1(config)# ip sla schedule 1 life forever start-time now
@@ -912,109 +957,257 @@ Total steps: 413
 <empty>
 
 [190/413] r1 R1# show ip sla configuration
-  IP SLA global state: enabled
-  IP SLA logging traps: enabled
-  IP SLA Operation 1
-    Type of operation: icmp-echo
-    Target: 10.0.0.2
-    Frequency: 5 sec
-    Schedule: Active
-    Threshold: 200ms
-    Timeout: 1000ms
-    Tag: WAN-PROBE
-  IP SLA Operation 2
-    Type of operation: udp-jitter
-    Target: 10.0.0.2
-    Frequency: 10 sec
-    Schedule: Active
-  IP SLA Operation 3
-    Type of operation: tcp-connect
-    Target: 10.0.0.2
-    Frequency: 60 sec
-    Schedule: Active
-  IP SLA Operation 4
-    Type of operation: http
-    Target: http://10.0.0.2
-    Frequency: 60 sec
-    Schedule: Pending
-  IP SLA Operation 5
-    Type of operation: dns
-    Target: 8.8.8.8
-    Frequency: 60 sec
-    Schedule: Pending
-  Reactions:
-    Op 1 react=timeout thresh-type=immediate thresh=--- action=trapAndTrigger
+  IP SLAs Infrastructure Engine-III
+  Entry number: 1
+  Owner: 
+  Tag: WAN-PROBE
+  Operation timeout (milliseconds): 1000
+  Type of operation to perform: icmp-echo
+  Target address/Source address: 10.0.0.2/0.0.0.0
+  Type Of Service parameter: 0x0
+  Request size (ARR data portion): 28
+  Verify data: No
+  Vrf Name: 
+  Schedule:
+     Operation frequency (seconds): 5  (not considered if randomly scheduled)
+     Next Scheduled Start Time: Start Time already passed
+     Group Scheduled : TRUE
+     Randomly Scheduled : FALSE
+     Life (seconds): Forever
+     Entry Ageout (seconds): never
+     Recurring (Starting Everyday): FALSE
+     Status of entry (SNMP RowStatus): Active
+  Threshold (milliseconds): 200
+  Distribution Statistics:
+     Number of statistic hours kept: 2
+     Number of statistic distribution buckets kept: 1
+     Statistic distribution interval (milliseconds): 20
+  History Statistics:
+     Number of history Lives kept: 0
+     Number of history Buckets kept: 15
+     History Filter Type: None
+  Enhanced History:
+  Entry number: 2
+  Owner: 
+  Tag: 
+  Operation timeout (milliseconds): 5000
+  Type of operation to perform: udp-jitter
+  Target address/Source address: 10.0.0.2/0.0.0.0
+  Target port/Source port: 16384/0
+  Number of packets: 1000
+  Packet Interval (milliseconds): 20
+  Codec Type: g711alaw
+  Advantage Factor: 0
+  Control Packets: enabled
+  Type Of Service parameter: 0x0
+  Request size (ARR data portion): 172
+  Verify data: No
+  Vrf Name: 
+  Schedule:
+     Operation frequency (seconds): 10  (not considered if randomly scheduled)
+     Next Scheduled Start Time: Pending scheduled start
+     Group Scheduled : TRUE
+     Randomly Scheduled : FALSE
+     Life (seconds): 3600
+     Entry Ageout (seconds): never
+     Recurring (Starting Everyday): FALSE
+     Status of entry (SNMP RowStatus): Pending
+  Threshold (milliseconds): 5000
+  Distribution Statistics:
+     Number of statistic hours kept: 2
+     Number of statistic distribution buckets kept: 1
+     Statistic distribution interval (milliseconds): 20
+  History Statistics:
+     Number of history Lives kept: 0
+     Number of history Buckets kept: 15
+     History Filter Type: None
+  Enhanced History:
+  Entry number: 3
+  Owner: 
+  Tag: 
+  Operation timeout (milliseconds): 5000
+  Type of operation to perform: tcp-connect
+  Target address/Source address: 10.0.0.2/0.0.0.0
+  Target port/Source port: 80/0
+  Type Of Service parameter: 0x0
+  Request size (ARR data portion): 0
+  Verify data: No
+  Vrf Name: 
+  Schedule:
+     Operation frequency (seconds): 60  (not considered if randomly scheduled)
+     Next Scheduled Start Time: Start Time already passed
+     Group Scheduled : TRUE
+     Randomly Scheduled : FALSE
+     Life (seconds): 3600
+     Entry Ageout (seconds): never
+     Recurring (Starting Everyday): FALSE
+     Status of entry (SNMP RowStatus): Active
+  Threshold (milliseconds): 5000
+  Distribution Statistics:
+     Number of statistic hours kept: 2
+     Number of statistic distribution buckets kept: 1
+     Statistic distribution interval (milliseconds): 20
+  History Statistics:
+     Number of history Lives kept: 0
+     Number of history Buckets kept: 15
+     History Filter Type: None
+  Enhanced History:
+  Entry number: 4
+  Owner: 
+  Tag: 
+  Operation timeout (milliseconds): 60000
+  Type of operation to perform: http
+  Target address/Source address: 10.0.0.2/0.0.0.0
+  URL: http://10.0.0.2
+  HTTP Operation: get
+  HTTP Version: 1.0
+  Type Of Service parameter: 0x0
+  Request size (ARR data portion): 0
+  Verify data: No
+  Vrf Name: 
+  Schedule:
+     Operation frequency (seconds): 60  (not considered if randomly scheduled)
+     Next Scheduled Start Time: Start Time not configured
+     Group Scheduled : FALSE
+     Randomly Scheduled : FALSE
+     Life (seconds): 3600
+     Entry Ageout (seconds): never
+     Recurring (Starting Everyday): FALSE
+     Status of entry (SNMP RowStatus): Pending
+  Threshold (milliseconds): 5000
+  Distribution Statistics:
+     Number of statistic hours kept: 2
+     Number of statistic distribution buckets kept: 1
+     Statistic distribution interval (milliseconds): 20
+  History Statistics:
+     Number of history Lives kept: 0
+     Number of history Buckets kept: 15
+     History Filter Type: None
+  Enhanced History:
+  Entry number: 5
+  Owner: 
+  Tag: 
+  Operation timeout (milliseconds): 5000
+  Type of operation to perform: dns
+  Target Address: lab.local
+  Name Server: 8.8.8.8
+  Type Of Service parameter: 0x0
+  Request size (ARR data portion): 0
+  Verify data: No
+  Vrf Name: 
+  Schedule:
+     Operation frequency (seconds): 60  (not considered if randomly scheduled)
+     Next Scheduled Start Time: Start Time not configured
+     Group Scheduled : FALSE
+     Randomly Scheduled : FALSE
+     Life (seconds): 3600
+     Entry Ageout (seconds): never
+     Recurring (Starting Everyday): FALSE
+     Status of entry (SNMP RowStatus): Pending
+  Threshold (milliseconds): 5000
+  Distribution Statistics:
+     Number of statistic hours kept: 2
+     Number of statistic distribution buckets kept: 1
+     Statistic distribution interval (milliseconds): 20
+  History Statistics:
+     Number of history Lives kept: 0
+     Number of history Buckets kept: 15
+     History Filter Type: None
+  Enhanced History:
 
 [191/413] r1 R1# show ip sla statistics
+  IPSLAs Latest Operation Statistics
+  
   IPSLA operation id: 1
-    Type of operation: icmp-echo
-    Latest operation state: Active (reachable)
+  	No statistics gathered
+  Operational state of entry: Active
+  
   IPSLA operation id: 2
-    Type of operation: udp-jitter
-    Latest operation state: Active (reachable)
+  	No statistics gathered
+  Operational state of entry: Pending
+  
   IPSLA operation id: 3
-    Type of operation: tcp-connect
-    Latest operation state: Active (reachable)
+  	No statistics gathered
+  Operational state of entry: Active
+  
   IPSLA operation id: 4
-    Type of operation: http
-    Latest operation state: Pending (unreachable)
+  	No statistics gathered
+  Operational state of entry: Pending
+  
   IPSLA operation id: 5
-    Type of operation: dns
-    Latest operation state: Pending (unreachable)
+  	No statistics gathered
+  Operational state of entry: Pending
 
 [192/413] r1 R1# show ip sla statistics aggregated
+  IPSLAs aggregated statistics
+  
+  Round Trip Time (RTT) for       Index 1
+  Type of operation: icmp-echo
+  RTT Values:
+  	Number Of RTT: 0		RTT Min/Avg/Max: 0/0/0 milliseconds
+  Number of successes: 0
+  Number of failures: 0
   IPSLA operation id: 1
-    Type of operation: icmp-echo
-    Latest operation state: Active (reachable)
+  	Bucket 0-... ms: Completions 0  Sum of RTT 0
+  Round Trip Time (RTT) for       Index 2
+  Type of operation: udp-jitter
+  RTT Values:
+  	Number Of RTT: 0		RTT Min/Avg/Max: 0/0/0 milliseconds
+  Number of successes: 0
+  Number of failures: 0
   IPSLA operation id: 2
-    Type of operation: udp-jitter
-    Latest operation state: Active (reachable)
+  	Bucket 0-... ms: Completions 0  Sum of RTT 0
+  Round Trip Time (RTT) for       Index 3
+  Type of operation: tcp-connect
+  RTT Values:
+  	Number Of RTT: 0		RTT Min/Avg/Max: 0/0/0 milliseconds
+  Number of successes: 0
+  Number of failures: 0
   IPSLA operation id: 3
-    Type of operation: tcp-connect
-    Latest operation state: Active (reachable)
+  	Bucket 0-... ms: Completions 0  Sum of RTT 0
+  Round Trip Time (RTT) for       Index 4
+  Type of operation: http
+  RTT Values:
+  	Number Of RTT: 0		RTT Min/Avg/Max: 0/0/0 milliseconds
+  Number of successes: 0
+  Number of failures: 0
   IPSLA operation id: 4
-    Type of operation: http
-    Latest operation state: Pending (unreachable)
+  	Bucket 0-... ms: Completions 0  Sum of RTT 0
+  Round Trip Time (RTT) for       Index 5
+  Type of operation: dns
+  RTT Values:
+  	Number Of RTT: 0		RTT Min/Avg/Max: 0/0/0 milliseconds
+  Number of successes: 0
+  Number of failures: 0
   IPSLA operation id: 5
-    Type of operation: dns
-    Latest operation state: Pending (unreachable)
+  	Bucket 0-... ms: Completions 0  Sum of RTT 0
 
 [193/413] r1 R1# show ip sla responder
-  IP SLA Responder is: Enabled
+  IP SLAs Responder is: Enabled
+  Permanent Port:
+  	udp-echo port 5000 ipaddress 10.0.0.1
+  Recent sources:
 
 [194/413] r1 R1# show ip sla application
-  IP SLA global state: enabled
-  IP SLA logging traps: enabled
-  IP SLA Operation 1
-    Type of operation: icmp-echo
-    Target: 10.0.0.2
-    Frequency: 5 sec
-    Schedule: Active
-    Threshold: 200ms
-    Timeout: 1000ms
-    Tag: WAN-PROBE
-  IP SLA Operation 2
-    Type of operation: udp-jitter
-    Target: 10.0.0.2
-    Frequency: 10 sec
-    Schedule: Active
-  IP SLA Operation 3
-    Type of operation: tcp-connect
-    Target: 10.0.0.2
-    Frequency: 60 sec
-    Schedule: Active
-  IP SLA Operation 4
-    Type of operation: http
-    Target: http://10.0.0.2
-    Frequency: 60 sec
-    Schedule: Pending
-  IP SLA Operation 5
-    Type of operation: dns
-    Target: 8.8.8.8
-    Frequency: 60 sec
-    Schedule: Pending
-  Reactions:
-    Op 1 react=timeout thresh-type=immediate thresh=--- action=trapAndTrigger
+  IP Service Level Agreements
+  Version: 2.2.0 Round Trip Time MIB, Infrastructure Engine-III
+  
+  Supported Operation Types:
+  	icmpEcho, icmpJitter, pathEcho, udpEcho, udpJitter, tcpConnect
+  	http, dns
+  Supported Features:
+  	IPSLAs Event Publisher
+  
+  IP SLAs low memory water mark: 21563
+  Estimated system max number of entries: 15801
+  
+  Estimated number of configurable operations: 15800
+  Number of Entries configured  : 5
+  Number of active Entries      : 2
+  Number of pending Entries     : 3
+  Number of inactive Entries    : 0
+  
+  Supported Hardware Timestamp Modes: None
 
 
 --- [195] § BFD ---
@@ -1423,22 +1616,69 @@ Total steps: 413
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
   Processor board ID FTX1234567A
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
 
 [306/413] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1345 bytes
+  Current configuration : 3048 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  !
+  track 1 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 2 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  !
+  track 3 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 4 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  !
+  track 5 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 10 ip route 10.0.0.0 255.0.0.0 reachability
+  track 11 ip sla 1 reachability
+  track 12 ip sla 1 state
+  !
+  track 20 list boolean and
+   object 1
+   object 10
+  !
+  track 21 list threshold weight
+   object 1 weight 10
+   object 10 weight 20
+   threshold weight up 25 down 10
+  !
+  track 22 stub-object
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
@@ -1449,19 +1689,48 @@ Total steps: 413
    bfd echo
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
-  !
-  ip access-list extended VOICE
-   10 permit udp any any range 16384 32767
-  ip access-list extended VIDEO
-   10 permit tcp any any eq 1720
-  !
-  ip route 192.168.9.0 255.255.255.0 10.0.0.2
+   no ip address
   !
   router ospf 1
    router-id 192.168.1.2
   !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
+  !
+  ip sla 1
+   icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+   frequency 5
+   timeout 1000
+   threshold 200
+   tag WAN-PROBE
+  !
+  ip sla 2
+   udp-jitter 10.0.0.2 16384 codec g711alaw
+   frequency 10
+  !
+  ip sla 3
+   tcp-connect 10.0.0.2 80
+  !
+  ip sla 4
+   http get http://10.0.0.2
+  !
+  ip sla 5
+   dns lab.local name-server 8.8.8.8
+  !
+  ip sla schedule 1 life forever start-time now
+  ip sla schedule 2 life 3600 start-time after 00:01:00
+  ip sla schedule 3 life 3600 start-time now
+  ip sla reaction-configuration 1 react timeout threshold-type immediate threshold-value 5000 3000 action-type trapAndTrigger
+  ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
+  ip sla logging traps
+  !
+  ip access-list extended VOICE
+   permit udp any any range 16384 32767
+  !
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
   !
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
@@ -1469,14 +1738,18 @@ Total steps: 413
   class-map match-any CM-VOICE
    match access-group name VOICE
    match protocol rtp
+  !
   class-map match-all CM-VIDEO
    match access-group name VIDEO
+  !
   class-map match-any CM-CRITICAL
    match protocol bgp
    match protocol ospf
+  !
   class-map match-any CM-SCAVENGER
    match protocol bittorrent
    match protocol napster
+  !
   policy-map PM-WAN-OUT
    class CM-VOICE
     set dscp ef
@@ -1486,8 +1759,10 @@ Total steps: 413
    class CM-SCAVENGER
     set dscp cs1
    class class-default
+  !
   policy-map PM-SHAPER
    class class-default
+  !
   policy-map PM-POLICE-IN
    class CM-SCAVENGER
     police 1000000 conform-action transmit exceed-action drop
@@ -1503,8 +1778,8 @@ Total steps: 413
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.2     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
 
 [309/413] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1544,7 +1819,7 @@ Total steps: 413
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       6 packets output, 404 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1587,18 +1862,30 @@ Total steps: 413
        0 input drops, 0 output drops
 
 [310/413] r1 R1# show ip route
-  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
-         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
   Gateway of last resort is not set
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  S    192.168.9.0/24 [1/0] via 10.0.0.2
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.2/32 is directly connected, GigabitEthernet0/0
+        192.168.9.0/24 is subnetted, 1 subnets
+  S        192.168.9.0/24 [1/0] via 10.0.0.2
 
 [311/413] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
-  IP routing table maximum-paths is 32
+  IP routing table maximum-paths is 4
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
   connected       2           2           0           304         720
   static          1           1           0           152         360
@@ -1610,7 +1897,17 @@ Total steps: 413
   Total           3           3           0           456         1080
 
 [312/413] r1 R1# show ip protocols
-  No routing protocol is configured.
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 192.168.1.2
+    Number of areas in this router is 0. 0 normal 0 stub 0 nssa
+    Reference bandwidth unit is 100 mbps
+    Maximum path: 4
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
 
 [313/413] r1 R1# show ip arp
   No ARP entries.
@@ -1668,7 +1965,7 @@ Total steps: 413
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  Application Layer Gateways: none
 
 [326/413] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1679,15 +1976,15 @@ Total steps: 413
 
 [328/413] r1 R1# show access-lists
   Extended IP access list VOICE
-      10 permit udp any any range 16384 32767 (0 matches)
+      10 permit udp any any range 16384 32767
   Extended IP access list VIDEO
-      10 permit tcp any any eq 1720 (0 matches)
+      10 permit tcp any any eq 1720
 
 [329/413] r1 R1# show ip access-lists
   Extended IP access list VOICE
-      10 permit udp any any range 16384 32767 (0 matches)
+      10 permit udp any any range 16384 32767
   Extended IP access list VIDEO
-      10 permit tcp any any eq 1720 (0 matches)
+      10 permit tcp any any eq 1720
 
 [330/413] r1 R1# show crypto isakmp sa
   IPSec not configured.
@@ -1705,10 +2002,10 @@ Total steps: 413
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
-  GigabitEthe 1    110 P Active   local           unknown         192.168.1.1
-  GigabitEthe 2    120 P Active   local           unknown         192.168.1.2
-  GigabitEthe 3    130 P Active   local           unknown         192.168.1.3
-  GigabitEthe 4    140 P Active   local           unknown         192.168.1.4
+  Gi0/0       1    110 P Active   local           unknown         192.168.1.1
+  Gi0/0       2    120 P Active   local           unknown         192.168.1.2
+  Gi0/0       3    130 P Active   local           unknown         192.168.1.3
+  Gi0/0       4    140 P Active   local           unknown         192.168.1.4
 
 [335/413] r1 R1# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
@@ -1719,107 +2016,166 @@ Total steps: 413
 [336/413] r1 R1# show track
   Track 1
     Interface GigabitEthernet0/1 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 2
     Interface GigabitEthernet0/0 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 3
     Interface GigabitEthernet0/1 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 4
     Interface GigabitEthernet0/0 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 5
     Interface GigabitEthernet0/1 line-protocol
-    State is Up
+    Line protocol is Up
+      0 changes, last change never
+    Delay up 10 secs, down 20 secs
+    Tracked by:
+      Nobody
   Track 10
-    IP route 10.0.0.0 reachability
-    State is Up
+    IP route 10.0.0.0 255.0.0.0 reachability
+    Reachability is Down
+      0 changes, last change never
+    Tracked by:
+      Nobody
   Track 11
     IP SLA 1 reachability
-    State is Up
+    Reachability is Down
+      0 changes, last change never
+    Latest operation return code: Unknown
+    Tracked by:
+      Nobody
   Track 12
     IP SLA 1 state
-    State is Up
+    State is Down
+      0 changes, last change never
+    Latest operation return code: Unknown
+    Tracked by:
+      Nobody
   Track 20
     List boolean and
-    State is Up
+    State is Down
+      0 changes, last change never
       1 Up
-      10 Up
+      10 Down
+    Tracked by:
+      Nobody
   Track 21
     List threshold weight
-    State is Up
+    State is Down
+      0 changes, last change never
+    Threshold weight is 10
       1 weight 10 Up
-      10 weight 20 Up
+      10 weight 20 Down
+    Tracked by:
+      Nobody
   Track 22
     Stub object
     State is Down
+      0 changes, last change never
+    Tracked by:
+      Nobody
 
 [337/413] r1 R1# show ip sla statistics
+  IPSLAs Latest Operation Statistics
+  
   IPSLA operation id: 1
-    Type of operation: icmp-echo
-    Latest operation state: Active (reachable)
+  	No statistics gathered
+  Operational state of entry: Active
+  
   IPSLA operation id: 2
-    Type of operation: udp-jitter
-    Latest operation state: Active (reachable)
+  	No statistics gathered
+  Operational state of entry: Pending
+  
   IPSLA operation id: 3
-    Type of operation: tcp-connect
-    Latest operation state: Active (reachable)
+  	No statistics gathered
+  Operational state of entry: Active
+  
   IPSLA operation id: 4
-    Type of operation: http
-    Latest operation state: Pending (unreachable)
+  	No statistics gathered
+  Operational state of entry: Pending
+  
   IPSLA operation id: 5
-    Type of operation: dns
-    Latest operation state: Pending (unreachable)
+  	No statistics gathered
+  Operational state of entry: Pending
 
 [338/413] r1 R1# show policy-map interface
 <empty>
 
 [339/413] r1 R1# show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 31 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 31 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 31 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 31 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.2/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state init -> speak
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state speak -> active
-  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state init -> speak
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state speak -> active
-  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state init -> speak
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state speak -> active
-  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state init -> speak
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state speak -> active
-  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
-  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 1 state init -> master
-  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 2 state init -> master
-  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 3 state init -> master
-  %GLBP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Fwd 1 assigned MAC 00:07:b4:00:01:01
-  %GLBP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Aug  8 00:34:30.974: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:30.974: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:30.976: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:30.977: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:30.978: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:30.986: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:30.988: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state init -> speak
+  *Aug  8 00:34:30.989: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state speak -> active
+  *Aug  8 00:34:30.997: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  *Aug  8 00:34:31.000: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state init -> speak
+  *Aug  8 00:34:31.000: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state speak -> active
+  *Aug  8 00:34:31.000: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  *Aug  8 00:34:31.002: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state init -> speak
+  *Aug  8 00:34:31.002: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state speak -> active
+  *Aug  8 00:34:31.002: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  *Aug  8 00:34:31.003: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state init -> speak
+  *Aug  8 00:34:31.003: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state speak -> active
+  *Aug  8 00:34:31.003: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  *Aug  8 00:34:31.004: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.006: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 1 state init -> master
+  *Aug  8 00:34:31.007: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 2 state init -> master
+  *Aug  8 00:34:31.008: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 3 state init -> master
+  *Aug  8 00:34:31.008: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.010: %GLBP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Fwd 1 assigned MAC 00:07:b4:00:01:01
+  *Aug  8 00:34:31.010: %GLBP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Aug  8 00:34:31.015: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.017: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.028: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.032: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.036: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.038: %SYS-5-CONFIG_I: Configured from console by console
 
 [340/413] r1 R1# show snmp
+  Chassis: FTX1234567A
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
@@ -1827,23 +2183,22 @@ Total steps: 413
 [341/413] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE1C4889.E8F5C28F (11:16:25.910 UTC Tue Aug 4 2026)
+  reference time is EE20F817.174BC6A7 (00:34:31.091 UTC Sat Aug 8 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *11:16:25.000 UTC Tue Aug 4 2026
+  *00:34:31.000 UTC Sat Aug 8 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1870,8 +2225,8 @@ Total steps: 413
 
 [347/413] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
-  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
+  Processor    1A2B3C4    503316480    150994944    352321536    334705459    341751889
+  I/O          5D6E7F8     33554432     8388608    25165824    23907532    24410849
 
 [348/413] r1 R1# show flash
   Directory of flash:/
@@ -1956,7 +2311,7 @@ Total steps: 413
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       6 packets output, 404 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1978,7 +2333,7 @@ Total steps: 413
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       6 packets output, 404 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2010,22 +2365,69 @@ Total steps: 413
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
   Processor board ID FTX1234567A
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
   
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 1345 bytes
+  Current configuration : 3048 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  !
+  track 1 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 2 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  !
+  track 3 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 4 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  !
+  track 5 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 10 ip route 10.0.0.0 255.0.0.0 reachability
+  track 11 ip sla 1 reachability
+  track 12 ip sla 1 state
+  !
+  track 20 list boolean and
+   object 1
+   object 10
+  !
+  track 21 list threshold weight
+   object 1 weight 10
+   object 10 weight 20
+   threshold weight up 25 down 10
+  !
+  track 22 stub-object
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
@@ -2036,19 +2438,48 @@ Total steps: 413
    bfd echo
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
-  !
-  ip access-list extended VOICE
-   10 permit udp any any range 16384 32767
-  ip access-list extended VIDEO
-   10 permit tcp any any eq 1720
-  !
-  ip route 192.168.9.0 255.255.255.0 10.0.0.2
+   no ip address
   !
   router ospf 1
    router-id 192.168.1.2
   !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
+  !
+  ip sla 1
+   icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+   frequency 5
+   timeout 1000
+   threshold 200
+   tag WAN-PROBE
+  !
+  ip sla 2
+   udp-jitter 10.0.0.2 16384 codec g711alaw
+   frequency 10
+  !
+  ip sla 3
+   tcp-connect 10.0.0.2 80
+  !
+  ip sla 4
+   http get http://10.0.0.2
+  !
+  ip sla 5
+   dns lab.local name-server 8.8.8.8
+  !
+  ip sla schedule 1 life forever start-time now
+  ip sla schedule 2 life 3600 start-time after 00:01:00
+  ip sla schedule 3 life 3600 start-time now
+  ip sla reaction-configuration 1 react timeout threshold-type immediate threshold-value 5000 3000 action-type trapAndTrigger
+  ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
+  ip sla logging traps
+  !
+  ip access-list extended VOICE
+   permit udp any any range 16384 32767
+  !
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
   !
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
@@ -2056,14 +2487,18 @@ Total steps: 413
   class-map match-any CM-VOICE
    match access-group name VOICE
    match protocol rtp
+  !
   class-map match-all CM-VIDEO
    match access-group name VIDEO
+  !
   class-map match-any CM-CRITICAL
    match protocol bgp
    match protocol ospf
+  !
   class-map match-any CM-SCAVENGER
    match protocol bittorrent
    match protocol napster
+  !
   policy-map PM-WAN-OUT
    class CM-VOICE
     set dscp ef
@@ -2073,8 +2508,10 @@ Total steps: 413
    class CM-SCAVENGER
     set dscp cs1
    class class-default
+  !
   policy-map PM-SHAPER
    class class-default
+  !
   policy-map PM-POLICE-IN
    class CM-SCAVENGER
     police 1000000 conform-action transmit exceed-action drop
@@ -2087,17 +2524,30 @@ Total steps: 413
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.2     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   
   ------------------ show ip route ------------------
-  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
   Gateway of last resort is not set
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  S    192.168.9.0/24 via 10.0.0.2, GigabitEthernet0/1
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.2/32 is directly connected, GigabitEthernet0/0
+        192.168.9.0/24 is subnetted, 1 subnets
+  S        192.168.9.0/24 [1/0] via 10.0.0.2
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -2137,7 +2587,7 @@ Total steps: 413
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       6 packets output, 404 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2184,8 +2634,9 @@ Total steps: 413
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
     Router ID 192.168.1.2
-    Number of areas in this router is 0
+    Number of areas in this router is 0. 0 normal 0 stub 0 nssa
     Reference bandwidth unit is 100 mbps
+    Maximum path: 4
     Routing for Networks:
     Routing Information Sources:
       Gateway         Distance      Last Update
@@ -2222,7 +2673,7 @@ Total steps: 413
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
+  Application Layer Gateways: none
   
   ------------------ show ip ospf neighbor ------------------
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -2232,62 +2683,72 @@ Total steps: 413
                    Hardware address
   
   ------------------ show logging ------------------
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: level debugging, 4096 bytes
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 31 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 31 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 31 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 31 message lines logged
+          No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  %SYS-6-INFORMATIONAL: User account 'alice' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'bob' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'carl' created (priv 15)
-  %SYS-6-INFORMATIONAL: User account 'dave' created (priv 15)
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:23
-  %SYS-5-NOTIFICATIONS: TCP listener bound to 0.0.0.0:1812
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 192.168.1.2/255.255.255.0 assigned
-  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 10.0.0.1/255.255.255.252 assigned
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state init -> speak
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state speak -> active
-  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state init -> speak
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state speak -> active
-  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state init -> speak
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state speak -> active
-  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state init -> speak
-  %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state speak -> active
-  %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
-  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 1 state init -> master
-  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 2 state init -> master
-  %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 3 state init -> master
-  %GLBP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Fwd 1 assigned MAC 00:07:b4:00:01:01
-  %GLBP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Aug  8 00:34:30.974: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:30.974: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug  8 00:34:30.976: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:30.977: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug  8 00:34:30.978: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug  8 00:34:30.986: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:30.988: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state init -> speak
+  *Aug  8 00:34:30.989: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state speak -> active
+  *Aug  8 00:34:30.997: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  *Aug  8 00:34:31.000: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state init -> speak
+  *Aug  8 00:34:31.000: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state speak -> active
+  *Aug  8 00:34:31.000: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  *Aug  8 00:34:31.002: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state init -> speak
+  *Aug  8 00:34:31.002: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state speak -> active
+  *Aug  8 00:34:31.002: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  *Aug  8 00:34:31.003: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state init -> speak
+  *Aug  8 00:34:31.003: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state speak -> active
+  *Aug  8 00:34:31.003: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  *Aug  8 00:34:31.004: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.006: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 1 state init -> master
+  *Aug  8 00:34:31.007: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 2 state init -> master
+  *Aug  8 00:34:31.008: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 3 state init -> master
+  *Aug  8 00:34:31.008: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.010: %GLBP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Fwd 1 assigned MAC 00:07:b4:00:01:01
+  *Aug  8 00:34:31.010: %GLBP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Aug  8 00:34:31.015: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.017: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.028: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.032: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.036: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug  8 00:34:31.038: %SYS-5-CONFIG_I: Configured from console by console
 
 [357/413] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
   PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [358/413] r1 R1# show environment
-  Environmental monitoring is not instrumented on this platform.
+  Number of Critical alarms:  0
+  Number of Major alarms:     0
+  Number of Minor alarms:     0
 
 [359/413] r1 R1# show redundancy
-  Redundant System Information :
-         Configured Redundancy Mode = Simplex
-  Current Processor Information :
-         Active Location = slot 0
-         Current Software state = ACTIVE
+          ^
+  % Invalid input detected at '^' marker.
 
 [360/413] r1 R1# show ip vrf
     Name                             Default RD            Protocols   Interfaces
@@ -2297,8 +2758,11 @@ Total steps: 413
 
 [362/413] r1 R1# show hosts
   Default domain is not set
+  Name/address lookup uses static mappings
   Name servers are 255.255.255.255
-  Name/address lookup uses static table only (recursive resolver not simulated)
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+         temp - temporary, perm - permanent
+         NA - Not Applicable None - Not defined
   
   Host                      Port  Flags      Age Type   Address(es)
 
@@ -2307,13 +2771,14 @@ Total steps: 413
   Authentication timeout: 120 secs; Authentication retries: 3
 
 [364/413] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+     Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 VTY               -    -    -    -      0     0   0/0       -
+       1    1 AUX               -    -    -    -      0     0   0/0       -
        2    2 VTY               -    -    -    -      0     0   0/0       -
        3    3 VTY               -    -    -    -      0     0   0/0       -
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
+       6    6 VTY               -    -    -    -      0     0   0/0       -
 
 [365/413] r1 R1# show terminal
   Line 0, Location: "", Type: ""
@@ -2340,6 +2805,21 @@ Total steps: 413
    router-id 192.168.1.2
 
 [368/413] r1 R1# show running-config | section interface
+  track 1 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 2 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  !
+  track 3 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 4 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  !
+  track 5 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
   !
@@ -2349,19 +2829,166 @@ Total steps: 413
    bfd echo
   !
   interface GigabitEthernet0/2
+   no ip address
   !
   interface GigabitEthernet0/3
+   no ip address
   !
 
 [369/413] r1 R1# show running-config | begin line
-<empty>
+  track 1 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 2 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  !
+  track 3 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 4 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  !
+  track 5 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  !
+  track 10 ip route 10.0.0.0 255.0.0.0 reachability
+  track 11 ip sla 1 reachability
+  track 12 ip sla 1 state
+  !
+  track 20 list boolean and
+   object 1
+   object 10
+  !
+  track 21 list threshold weight
+   object 1 weight 10
+   object 10 weight 20
+   threshold weight up 25 down 10
+  !
+  track 22 stub-object
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+   bfd echo
+  !
+  interface GigabitEthernet0/2
+   no ip address
+  !
+  interface GigabitEthernet0/3
+   no ip address
+  !
+  router ospf 1
+   router-id 192.168.1.2
+  !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
+  !
+  ip sla 1
+   icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+   frequency 5
+   timeout 1000
+   threshold 200
+   tag WAN-PROBE
+  !
+  ip sla 2
+   udp-jitter 10.0.0.2 16384 codec g711alaw
+   frequency 10
+  !
+  ip sla 3
+   tcp-connect 10.0.0.2 80
+  !
+  ip sla 4
+   http get http://10.0.0.2
+  !
+  ip sla 5
+   dns lab.local name-server 8.8.8.8
+  !
+  ip sla schedule 1 life forever start-time now
+  ip sla schedule 2 life 3600 start-time after 00:01:00
+  ip sla schedule 3 life 3600 start-time now
+  ip sla reaction-configuration 1 react timeout threshold-type immediate threshold-value 5000 3000 action-type trapAndTrigger
+  ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
+  ip sla logging traps
+  !
+  ip access-list extended VOICE
+   permit udp any any range 16384 32767
+  !
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  !
+  priority-list 1 protocol ip high tcp telnet
+  queue-list 1 protocol ip 1 tcp www
+  !
+  class-map match-any CM-VOICE
+   match access-group name VOICE
+   match protocol rtp
+  !
+  class-map match-all CM-VIDEO
+   match access-group name VIDEO
+  !
+  class-map match-any CM-CRITICAL
+   match protocol bgp
+   match protocol ospf
+  !
+  class-map match-any CM-SCAVENGER
+   match protocol bittorrent
+   match protocol napster
+  !
+  policy-map PM-WAN-OUT
+   class CM-VOICE
+    set dscp ef
+   class CM-VIDEO
+    set dscp af41
+   class CM-CRITICAL
+   class CM-SCAVENGER
+    set dscp cs1
+   class class-default
+  !
+  policy-map PM-SHAPER
+   class class-default
+  !
+  policy-map PM-POLICE-IN
+   class CM-SCAVENGER
+    police 1000000 conform-action transmit exceed-action drop
+   class class-default
+    police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
+  !
+  end
 
 [370/413] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1345 bytes
+  Current configuration : 3048 bytes
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   hostname R1
-  service dhcp
+  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  track 1 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  track 2 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  track 3 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  track 4 interface GigabitEthernet0/0 line-protocol
+   delay up 10 down 20
+  track 5 interface GigabitEthernet0/1 line-protocol
+   delay up 10 down 20
+  track 10 ip route 10.0.0.0 255.0.0.0 reachability
+  track 11 ip sla 1 reachability
+  track 12 ip sla 1 state
+  track 20 list boolean and
+   object 1
+   object 10
+  track 21 list threshold weight
+   object 1 weight 10
+   object 10 weight 20
+   threshold weight up 25 down 10
+  track 22 stub-object
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
   interface GigabitEthernet0/1
@@ -2369,14 +2996,37 @@ Total steps: 413
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
    bfd echo
   interface GigabitEthernet0/2
+   no ip address
   interface GigabitEthernet0/3
-  ip access-list extended VOICE
-   10 permit udp any any range 16384 32767
-  ip access-list extended VIDEO
-   10 permit tcp any any eq 1720
-  ip route 192.168.9.0 255.255.255.0 10.0.0.2
+   no ip address
   router ospf 1
    router-id 192.168.1.2
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
+  ip sla 1
+   icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+   frequency 5
+   timeout 1000
+   threshold 200
+   tag WAN-PROBE
+  ip sla 2
+   udp-jitter 10.0.0.2 16384 codec g711alaw
+   frequency 10
+  ip sla 3
+   tcp-connect 10.0.0.2 80
+  ip sla 4
+   http get http://10.0.0.2
+  ip sla 5
+   dns lab.local name-server 8.8.8.8
+  ip sla schedule 1 life forever start-time now
+  ip sla schedule 2 life 3600 start-time after 00:01:00
+  ip sla schedule 3 life 3600 start-time now
+  ip sla reaction-configuration 1 react timeout threshold-type immediate threshold-value 5000 3000 action-type trapAndTrigger
+  ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
+  ip sla logging traps
+  ip access-list extended VOICE
+   permit udp any any range 16384 32767
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
   class-map match-any CM-VOICE
@@ -2409,7 +3059,7 @@ Total steps: 413
   end
 
 [371/413] r1 R1# show ip route | include via
-  S    192.168.9.0/24 [1/0] via 10.0.0.2
+  S        192.168.9.0/24 [1/0] via 10.0.0.2
 
 [372/413] r1 R1# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -2488,8 +3138,8 @@ Total steps: 413
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.2     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
 
 [396/413] r1 R1(config-if)# shutdown
 <empty>
@@ -2504,7 +3154,17 @@ Total steps: 413
 <empty>
 
 [400/413] r1 R1(config-router)# do show ip protocols
-  No routing protocol is configured.
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 192.168.1.2
+    Number of areas in this router is 0. 0 normal 0 stub 0 nssa
+    Reference bandwidth unit is 100 mbps
+    Maximum path: 4
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
 
 [401/413] r1 R1(config-router)# exit
 <empty>
@@ -2524,100 +3184,98 @@ Total steps: 413
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [406/413] r1 R1(config)# interface ?
-    GigabitEthernet     GigabitEthernet IEEE 802.3z
-    FastEthernet        FastEthernet IEEE 802.3u
-    Ethernet            IEEE 802.3
-    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
-    Loopback            Loopback interface
-    Serial              Serial
-    Tunnel              Tunnel interface
-    Vlan                Catalyst VLANs
-    Port-channel        Ethernet Channel of interfaces
-    BVI                 Bridge-Group Virtual Interface
-    <cr>                
+    BVI              Bridge-Group Virtual Interface
+    Ethernet         IEEE 802.3
+    FastEthernet     FastEthernet IEEE 802.3u
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
+    Loopback         Loopback interface
+    Port-channel     Ethernet Channel of interfaces
+    Serial           Serial
+    Tunnel           Tunnel interface
 
 [407/413] r1 R1(config)# ip ?
-    cef              Enable CEF
-    http             Hypertext Transfer Protocol
-    source-route     IP source-route
-    name-server      Configure DNS name servers
-    domain-lookup    Enable DNS lookups
-    bootp            Bootstrap Protocol
-    finger           Enable finger service
-    gratuitous-arps  Enable gratuitous ARP
-    community-list   Define BGP community list
-    as-path          BGP autonomous-system path filter
-    domain-name      Set domain name
-    domain           IP domain configuration
-    host             Configure a static host entry
-    ssh              SSH config
-    dhcp             Dynamic Host Configuration Protocol
-    route            Establish static routes
-    default-network  Configure default-network
-    local            Local settings
-    pim              Protocol Independent Multicast
-    prefix-list      Build a prefix list
-    sla              Configure an IP SLA operation
-    access-list      
-    nat              Network Address Translation
-    vrf              Define a VRF instance
-    routing          Enable IP routing
-    flow-export      Legacy NetFlow export
-    flow-cache       NetFlow cache timeout
-    route-cache      
+    access-list        Add an access list entry
+    as-path            BGP autonomous-system path filter
+    bootp              Bootstrap Protocol
+    cef                Enable CEF
+    classless          Accepted, default behaviour on IOS 12.0 and later
+    community-list     Define BGP community list
+    default-network    Configure default-network
+    dhcp               Dynamic Host Configuration Protocol
+    domain             IP domain configuration
+    domain-lookup      Enable DNS lookups
+    domain-name        Set domain name
+    finger             Enable finger service
+    flow-cache         NetFlow cache timeout
+    flow-export        Legacy NetFlow export
+    gratuitous-arps    Enable gratuitous ARP
+    host               Configure a static host entry
+    http               Hypertext Transfer Protocol
+    local              Local settings
+    multicast-routing  Enable IP multicast routing
+    name-server        Configure DNS name servers
+    nat                Network Address Translation
+    pim                Protocol Independent Multicast
+    prefix-list        Build a prefix list
+    route              Establish static routes
+    route-cache        Route cache
+    routing            Enable IP routing
+    sla                Configure an IP SLAs operation
+    source-route       IP source-route
+    ssh                SSH config
+    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    vrf                Define a VRF instance
 
 [408/413] r1 R1(config)# router ?
-    rip    Enter RIP routing protocol configuration
-    eigrp  Enter EIGRP configuration
     bgp    Enter BGP configuration
+    eigrp  Enter EIGRP configuration
     ospf   Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
 
 [409/413] r1 R1(config)# crypto ?
-    isakmp       Internet Security Association and Key Management Protocol
+    dynamic-map  Define a dynamic crypto map
+    gdoi         Group Domain of Interpretation
+    ikev2        Internet Key Exchange version 2
     ipsec        IP Security
+    isakmp       Internet Security Association and Key Management Protocol
+    key          Key management
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
-    dynamic-map  Define a dynamic crypto map
-    ikev2        Internet Key Exchange version 2
-    gdoi         Group Domain of Interpretation
-    key          Key management
     pki          Public Key Infrastructure
     <cr>         
 
 [410/413] r1 R1(config)# no ?
-    sntp         Configure SNTP
-    boot         
-    hostname     Reset hostname
+    access-list  Remove an access list
     alias        Remove a command alias
+    arp          Remove ARP entry
+    banner       Remove a banner
+    boot         Boot Commands
     cdp          CDP global configuration
-    lldp         LLDP global configuration
+    crypto       Encryption and key management
+    enable       Modify enable password parameters
+    event        Embedded Event Manager
+    hostname     Reset hostname
+    interface    Remove a virtual interface
     ip           Global IP configuration subcommands
     ipv6         Global IPv6 configuration subcommands
-    banner       Remove a banner
-    privilege    Remove privilege command rule
-    logging      Disable logging
-    service      Disable a service
-    ntp          Remove NTP config
-    enable       Modify enable password parameters
-    username     Remove a local user
-    arp          Remove ARP entry
-    interface    Remove a virtual interface
-    router       Enable a routing protocol
-    shutdown     Enable (no-op in global config)
-    route-map    Remove a route-map
-    track        Remove a tracked object
-    access-list  Remove an access list
     key          Key management
-    crypto       Encryption and key management
-    event        Embedded Event Manager
-    vlan         Remove a VLAN
     line         Remove line configuration
+    lldp         LLDP global configuration
+    logging      Modify message logging facilities
+    ntp          Remove NTP config
+    privilege    Remove privilege command rule
+    route-map    Remove a route-map
+    router       Enable a routing protocol
+    service      Disable a service
+    sntp         Configure SNTP
+    track        Remove a tracked object
+    username     Remove a local user
 
 [411/413] r1 R1(config)# end
 <empty>
 
 [412/413] r1 R1# show running-config | count !
-  15
+  36
 
 [413/413] r1 R1# write memory
   Building configuration...

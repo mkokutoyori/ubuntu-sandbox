@@ -17,6 +17,7 @@
  */
 
 import type { Router } from '../../Router';
+import { estAdresseIPv4, refuseMotInattenduVrp } from '../cli-utils';
 import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
 // ─── Types for Huawei Shell Context ──────────────────────────────────
@@ -37,15 +38,35 @@ export function registerOSPFSystemCommands(
   ctx: HuaweiOSPFShellContext,
   setOSPFArea: (area: string | null) => void,
 ): void {
-  systemTrie.registerGreedy('ospf', 'Configure OSPF protocol', (args) => {
+  systemTrie.registerGreedy('ospf', 'Configure OSPF protocol', (args, raw) => {
     const processId = args.length >= 1 ? parseInt(args[0], 10) : 1;
     if (isNaN(processId) || processId < 1 || processId > 65535) {
       return 'Error: Invalid OSPF process ID.';
     }
     const router = ctx.r();
+    // La queue de `ospf <id>` n'admet que deux mots-cles. Tout le reste
+    // etait jete : `ospf 1 zzz` entrait en vue OSPF sans un mot.
+    //
+    // Elle est lue AVANT d'activer le processus : un refus ne doit rien
+    // poser, or `_enableOSPF` etait appele en premier et la commande
+    // refusee laissait un `ospf 1` dans la configuration.
+    let routerId: string | null = null;
+    for (let i = 1; i < args.length; i++) {
+      const tok = args[i];
+      if (tok === 'router-id') {
+        const rid = args[++i];
+        if (!rid || !estAdresseIPv4(rid)) return 'Error: Wrong parameter.';
+        routerId = rid;
+      } else if (tok === 'vpn-instance') {
+        if (!args[++i]) return 'Error: Incomplete command.';
+      } else {
+        return refuseMotInattenduVrp(raw ?? `ospf ${args.join(' ')}`, tok);
+      }
+    }
     if (!router._getOSPFEngineInternal()) {
       router._enableOSPF(processId);
     }
+    if (routerId) router._getOSPFEngineInternal()?.setRouterId(routerId);
     ctx.setMode('ospf');
     return '';
   });
@@ -84,6 +105,11 @@ export function buildOSPFViewCommands(
 ): void {
   trie.registerGreedy('router-id', 'Set OSPF router ID', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+    // Un router-id EST une adresse IPv4 en notation pointee. N'importe
+    // quel mot etait accepte, `pasuneadresse` compris.
+    // Le message nu suffit : la normalisation du point de sortie (V4)
+    // lui donne l'echo de la ligne et le curseur.
+    if (!estAdresseIPv4(args[0])) return 'Error: Wrong parameter.';
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
     ospf.setRouterId(args[0]);
@@ -98,6 +124,8 @@ export function buildOSPFViewCommands(
     ctx.setMode('ospf-area');
     return '';
   });
+  // `area <id>` : forme close.
+  trie.allowArgs('area', 1);
 
   trie.registerGreedy('silent-interface', 'Set interface as silent (passive)', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
@@ -342,6 +370,8 @@ export function buildOSPFAreaViewCommands(
     ospf.addNetwork(network, wildcard, areaId);
     return '';
   });
+  // `network <adresse> <masque-generique>` : forme close.
+  trie.allowArgs('network', 2);
 
   trie.registerGreedy('stub', 'Configure area as stub', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
@@ -772,26 +802,6 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
   trie.registerGreedy('reset ospf', 'Reset OSPF data (counters/process)', (args) => {
     if (args.includes('counters')) return 'OSPF counters reset.';
     if (args.includes('process')) return 'OSPF process reset.';
-    return '';
-  });
-  trie.register('debugging ospf event', 'Enable OSPF event debugging', () => {
-    const svc = (getRouter() as any).getHuaweiDebugService?.();
-    if (svc) svc.enable('ospf-event');
-    return '';
-  });
-  trie.register('debugging ospf packet', 'Enable OSPF packet debugging', () => {
-    const svc = (getRouter() as any).getHuaweiDebugService?.();
-    if (svc) svc.enable('ospf-packet');
-    return '';
-  });
-  trie.register('undo debugging ospf event', 'Disable OSPF event debugging', () => {
-    const svc = (getRouter() as any).getHuaweiDebugService?.();
-    if (svc) svc.disable('ospf-event');
-    return '';
-  });
-  trie.register('undo debugging ospf packet', 'Disable OSPF packet debugging', () => {
-    const svc = (getRouter() as any).getHuaweiDebugService?.();
-    if (svc) svc.disable('ospf-packet');
     return '';
   });
 }

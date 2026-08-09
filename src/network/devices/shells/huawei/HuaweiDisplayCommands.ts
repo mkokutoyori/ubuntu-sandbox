@@ -17,7 +17,13 @@ import {
 import { IPAddress } from '../../../core/types';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
-import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
+import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName } from '../cli-utils';
+import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
+import { renderTable, FIXED_TABLE } from '../cli/TextTable';
+import {
+  type LigneIpBrief, protocoleVrp, rendreIpInterfaceBrief,
+} from './huaweiTableLayouts';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
 import {
@@ -63,19 +69,21 @@ export function displayInterface(router: Router, ifName: string): string {
 
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  const isUp = port.getIsUp();
-  const isConn = port.isConnected();
-  const isVirtual = /^(LoopBack|Tunnel)/i.test(portName);
-
+  // Une sixieme facon de calculer l'etat, et une liste d'interfaces
+  // virtuelles ecrite a la main qui oubliait `Vlanif` et `NULL`.
+  const st = iosInterfaceStatus(port, portName, router._getPortsInternal());
   const lines = [
-    `${portName} current state : ${isUp ? (isConn || isVirtual ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
-    `Line protocol current state : ${isConn || isVirtual ? 'UP' : 'DOWN'}`,
+    `${huaweiDisplayInterfaceName(portName)} current state : `
+      + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
+    `Line protocol current state : ${st.protocol.toUpperCase()}`,
   ];
 
   const desc = router.getInterfaceDescription(portName);
   if (desc) lines.push(`Description: ${desc}`);
 
-  lines.push(`Internet Address is ${ip && mask ? `${ip}/${mask}` : 'not configured'}`);
+  // VRP ecrit le masque en longueur de prefixe, ici comme dans
+  // `display ip interface` : les deux vues divergeaient.
+  lines.push(`Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'not configured'}`);
 
   // Tunnel-specific info
   const isTunnel = /^Tunnel/i.test(portName);
@@ -279,50 +287,47 @@ export function displayIpRoutingTableForDest(router: Router, dest: string): stri
   return [...head, ...renderHuaweiRouteRows(router, matches)].join('\n');
 }
 
-export function displayIpIntBrief(router: Router): string {
+export function displayIpIntBrief(router: Router, filtre?: string): string {
   const ports = router._getPortsInternal();
-  let upPhys = 0, downPhys = 0, upProto = 0, downProto = 0;
-  const rows: string[] = [];
+  const lignes: LigneIpBrief[] = [];
   for (const [name, port] of ports) {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
-    const phys = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
-    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
-    if (phys === 'up') upPhys++; else downPhys++;
-    if (proto === 'up') upProto++; else downProto++;
-    const renderedName = name.startsWith('GE') ? name.replace(/^GE/, 'GigabitEthernet') : name;
-    rows.push(`${renderedName.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+    const { phys, proto } = vrpEtatPort(port, name, router._getPortsInternal());
+    const nom = huaweiDisplayInterfaceName(name);
+    lignes.push({
+      nom,
+      adresse: ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned',
+      physique: phys,
+      protocole: protocoleVrp(nom, proto),
+    });
   }
-  const lines = [
-    '*down: administratively down',
-    '^down: standby',
-    '(l): loopback',
-    '(s): spoofing',
-    `The number of interface that is UP in Physical is ${upPhys}`,
-    `The number of interface that is DOWN in Physical is ${downPhys}`,
-    `The number of interface that is UP in Protocol is ${upProto}`,
-    `The number of interface that is DOWN in Protocol is ${downProto}`,
-    '',
-    'Interface                         IP Address/Mask      Physical   Protocol',
-    ...rows,
-  ];
-  return lines.join('\n');
+  if (filtre !== undefined) {
+    // L'argument etait LU puis jete : `display ip interface brief
+    // GigabitEthernet0/0/0` rendait tout le tableau, et un nom qui
+    // n'existe pas aussi.
+    const cible = resolveHuaweiInterfaceName(router, filtre);
+    if (!cible) return `Error: Wrong parameter found at '^' position.`;
+    const attendu = huaweiDisplayInterfaceName(cible);
+    return rendreIpInterfaceBrief(lignes.filter((l) => l.nom === attendu));
+  }
+  return rendreIpInterfaceBrief(lignes);
 }
 
 export function displayIpInterface(router: Router, ifName: string): string {
-  const portName = resolveHuaweiInterfaceName(router, ifName) || ifName;
-  const port = router.getPort(portName);
-  if (!port) return `Error: Wrong parameter found at '^' position.`;
+  const portName = resolveHuaweiInterfaceName(router, ifName);
+  const port = portName ? router.getPort(portName) : null;
+  if (!port || !portName) return `Error: Wrong parameter found at '^' position.`;
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  const isUp = port.getIsUp();
-  const conn = port.isConnected();
-  const phys = (isUp ? (conn ? 'up' : 'down') : 'administratively down');
-  const proto = (isUp && conn ? 'up' : 'down');
+  // Cette vue calculait l'etat a sa facon (`getIsUp()`/`isConnected()`),
+  // d'ou un LoopBack rendu DOWN ici et UP par `display interface` sur la
+  // meme machine au meme instant. Un objet, un etat, une source.
+  const st = iosInterfaceStatus(port, portName, router._getPortsInternal());
   const lines = [
-    `${portName} current state : ${phys.toUpperCase()}`,
-    `Line protocol current state : ${proto.toUpperCase()}`,
+    `${huaweiDisplayInterfaceName(portName)} current state : `
+      + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
+    `Line protocol current state : ${st.protocol.toUpperCase()}`,
     `Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned'}`,
     `Broadcast address : ${ip && mask ? ip.toString() : '0.0.0.0'}`,
     `The Maximum Transmit Unit : 1500 bytes`,
@@ -343,29 +348,76 @@ export function displayInterfaceAll(router: Router): string {
   return names.map((n) => displayInterface(router, n)).join('\n');
 }
 
-/** `display interface brief` — real status table. */
+
+/**
+ * L'etat d'un port pour les vues VRP.
+ *
+ * Chaque vue calculait le sien (`getIsUp() && isConnected()`), ce qui se
+ * trompe de trois facons : une porteuse tombee a l'autre bout n'est pas
+ * vue, `administratively down` est aplati, et une interface VIRTUELLE —
+ * qui n'a pas de porteuse — est declaree morte alors que sa route est
+ * installee. `iosInterfaceStatus` decrit l'etat d'un PORT, pas un modele
+ * par constructeur : les deux CLI le lisent maintenant, chacun avec ses
+ * mots.
+ */
+function vrpEtatPort(port: import('../../../hardware/Port').Port, nom: string,
+  ports?: ReadonlyMap<string, import('../../../hardware/Port').Port>): { phys: string; proto: string } {
+  const st = iosInterfaceStatus(port, nom, ports);
+  return {
+    phys: st.status === 'administratively down' ? '*down' : st.status,
+    proto: st.protocol,
+  };
+}
+
+/**
+ * `display interface brief`.
+ *
+ * Mise en page relevée sur du texte capturé sur de vraies machines (jeu
+ * de référence `huawei_vrp/display_interface_brief` de
+ * `ntc-templates`) :
+ *
+ * ```
+ * Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+ * Aux0/0/1                    down  down         0%     0%          0          0
+ * Eth-Trunk4                  up    down      0.69% 13.57%       4625          0
+ * ```
+ *
+ * Deux écarts que la mesure a montrés et que l'œil ne voyait pas : la
+ * colonne `PHY` était large de huit caractères au lieu de six — donc
+ * TOUT ce qui suit était décalé de deux — et les quatre colonnes de
+ * droite étaient écrites à la main, chacune avec son propre décompte,
+ * si bien que `outErrors` finissait un caractère après son intitulé.
+ * Les quatre compteurs sont alignés à DROITE sur la vraie machine.
+ */
 export function displayInterfaceBrief(router: Router): string {
-  const rows = [
-    'PHY: Physical   *down: administratively down',
-    'Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors',
-  ];
-  for (const [name, port] of router._getPortsInternal()) {
-    const phy = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
-    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
-    rows.push(`${name.padEnd(28)}${phy.padEnd(8)}${proto.padEnd(10)}` +
-      `0%    0%       0          0`);
+  const ports = router._getPortsInternal();
+  const rows: Array<{ nom: string; phys: string; proto: string }> = [];
+  for (const [name, port] of ports) {
+    const { phys, proto } = vrpEtatPort(port, name, ports);
+    rows.push({ nom: huaweiDisplayInterfaceName(name), phys, proto });
   }
-  return rows.join('\n');
+  return [
+    'PHY: Physical   *down: administratively down',
+    ...renderTable(rows, [
+      { header: 'Interface', width: 28, value: (r) => r.nom },
+      { header: 'PHY', width: 6, value: (r) => r.phys },
+      { header: 'Protocol', width: 10, value: (r) => r.proto },
+      { header: 'InUti', width: 5, align: 'right', value: () => '0%' },
+      { header: 'OutUti', width: 7, align: 'right', value: () => '0%' },
+      { header: 'inErrors', width: 11, align: 'right', value: () => '0' },
+      { header: 'outErrors', width: 11, align: 'right', value: () => '0' },
+    ], FIXED_TABLE),
+  ].join('\n');
 }
 
 /** `display interface description` — real description table. */
 export function displayInterfaceDescription(router: Router): string {
   const rows = ['Interface                     PHY     Protocol Description'];
-  for (const [name, port] of router._getPortsInternal()) {
-    const phy = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
-    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
+  const ports = router._getPortsInternal();
+  for (const [name, port] of ports) {
+    const { phys, proto } = vrpEtatPort(port, name, ports);
     const desc = router.getInterfaceDescription(name) || '';
-    rows.push(`${name.padEnd(30)}${phy.padEnd(8)}${proto.padEnd(9)}${desc}`);
+    rows.push(`${huaweiDisplayInterfaceName(name).padEnd(30)}${phys.padEnd(8)}${proto.padEnd(9)}${desc}`);
   }
   return rows.join('\n');
 }
@@ -518,7 +570,7 @@ export function displayCurrentConfig(
     const mask = port.getSubnetMask();
     // Real VRP renders the canonical interface name (GigabitEthernet*)
     // rather than the abbreviated 'GE*' device label.
-    const renderedName = name.startsWith('GE') ? name.replace(/^GE/, 'GigabitEthernet') : name;
+    const renderedName = huaweiDisplayInterfaceName(name);
     lines.push(`interface ${renderedName}`);
     const desc = descs.get(name);
     if (desc) lines.push(` description ${desc}`);
@@ -569,7 +621,10 @@ export function displayCurrentConfig(
   if (router.isRIPEnabled()) {
     lines.push('#');
     lines.push('rip 1');
-    lines.push(' version 2');
+    // La version etait ecrite en dur : un routeur en `version 1`
+    // revenait en `version 2` apres rechargement.
+    lines.push(` version ${(router as unknown as { _ripVersion?: number })._ripVersion ?? 2}`);
+    if (huaweiRipExtras(router).autoSummary === false) lines.push(' undo summary');
     const cfg = router.getRIPConfig();
     for (const net of cfg.networks) {
       lines.push(` network ${net.network}`);
@@ -658,7 +713,7 @@ export function displayCurrentConfig(
   }
 
   const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean }>;
+    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean; serviceTypes?: readonly string[] }>;
   })._listLocalUsers;
   if (listUsers) {
     const users = listUsers.call(router);
@@ -674,12 +729,16 @@ export function displayCurrentConfig(
       for (const u of users) {
         // Real VRP never echoes the cleartext: 'cipher' is reversible
         // (AES), everything else is hashed one-way (irreversible-cipher).
+        // Le secret RANGE est deja sous sa forme rendue depuis que le
+        // parseur reconnait la valeur transformee ; le re-transformer
+        // ici donnait un texte que le rejeu ne pouvait pas reproduire.
         const field = u.secretAlgo === 'cipher'
-          ? `password cipher ${huaweiCipher(u.secret)}`
-          : `password irreversible-cipher ${huaweiIrreversibleCipher(u.secret)}`;
+          ? `password cipher ${looksLikeReversibleCipher(u.secret) ? u.secret : huaweiCipher(u.secret)}`
+          : `password irreversible-cipher ${looksLikeIrreversibleCipher(u.secret) ? u.secret : huaweiIrreversibleCipher(u.secret)}`;
         lines.push(` local-user ${u.name} ${field}`);
         lines.push(` local-user ${u.name} privilege level ${u.privilege}`);
-        lines.push(` local-user ${u.name} service-type ssh`);
+        const types = u.serviceTypes && u.serviceTypes.length > 0 ? u.serviceTypes : ['ssh'];
+        lines.push(` local-user ${u.name} service-type ${types.join(' ')}`);
       }
       lines.push('#');
     }
@@ -706,7 +765,7 @@ export function displayCurrentConfig(
   appendManagementConfig(lines, router);
 
   lines.push('#');
-  return lines.join('\n');
+  return normaliserBlocsVrp(lines).join('\n');
 }
 
 export function displayCounters(router: Router): string {
@@ -864,31 +923,10 @@ export function displayIpv6InterfaceBrief(router: Router): string {
 }
 
 export function displayDebugging(router: Router): string {
-  const lines: string[] = [];
-  const flags = (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags;
-  if (flags) for (const f of [...flags].sort()) lines.push(f);
   const debugSvc = (router as unknown as {
     getHuaweiDebugService?: () => HuaweiDebugService;
   }).getHuaweiDebugService?.();
-  if (debugSvc?.hasAnyFlag()) {
-    for (const f of debugSvc.list()) {
-      lines.push(`${HuaweiDebugService.label(f.category)} debugging is on`);
-    }
-  }
-  const dhcp = router._getDHCPServerInternal();
-  const dhcpDebug = dhcp.formatDebugShow();
-  if (!dhcpDebug.includes('No')) {
-    lines.push('DHCP debugging:');
-    lines.push(dhcpDebug);
-  }
-  const ipsecEng = (router as any)._getIPSecEngineInternal?.();
-  if (ipsecEng) {
-    if (ipsecEng.isDebugEnabled?.('isakmp')) lines.push('IKE debugging is on');
-    if (ipsecEng.isDebugEnabled?.('ipsec')) lines.push('IPSec debugging is on');
-    if (ipsecEng.isDebugEnabled?.('ikev2')) lines.push('IKEv2 debugging is on');
-  }
-  if (lines.length === 0) return 'No debugging is enabled.';
-  return lines.join('\n');
+  return debugSvc ? debugSvc.format() : 'No debugging is on';
 }
 
 export function displayIpProtocols(router: Router): string {
@@ -992,13 +1030,13 @@ function appendManagementConfig(lines: string[], router: Router): void {
       lines.push(`clock daylight-saving-time ${clock.summerTimezone} repeating ${clock.daylightStart} ${clock.daylightEnd}`);
     }
   }
-  const info = mgmt.getInfoCenter();
-  if (info.enabled && (info.sources.length > 0 || info.loghosts.length > 0)) {
+  // La configuration est REJOUÉE à l'import : elle rend maintenant ce
+  // qui a été tapé, transport, port, précision d'horodatage et type
+  // d'enregistrement compris. Ce qui vaut l'usine n'est pas rendu.
+  const infoLines = mgmt.getInfoCenter().toRunningConfig();
+  if (infoLines.length > 0) {
     lines.push('#');
-    lines.push(`info-center enable`);
-    if (info.timestamp !== 'date') lines.push(`info-center timestamp ${info.timestamp}`);
-    for (const s of info.sources) lines.push(`info-center source ${s.source} channel ${s.channel} level ${s.severity}`);
-    for (const h of info.loghosts) lines.push(`info-center loghost ${h.ip} channel ${h.channel} facility ${h.facility}`);
+    lines.push(...infoLines);
   }
   const sflow = mgmt.getSflow();
   if (sflow.enabled) {
@@ -1279,6 +1317,12 @@ export function registerDisplayCommands(
     }
     return lines.join('\n');
   });
+  // `source` et `check` ne sont créés qu'en CHEMIN par la ligne
+  // ci-dessus : ils naissaient donc avec leur propre mot pour
+  // description, que le rendu blanchit — `display ip ?` répondait
+  // « source  Source », qui n'apprend rien.
+  trie.describeNode('display ip source', 'IP source guard information');
+  trie.describeNode('display ip source check', 'IP source check information');
 
   trie.register('display dhcp server statistics', 'Display DHCP server statistics', () => {
     const dhcp = getRouter()._getDHCPServerInternal();
@@ -1470,9 +1514,14 @@ export function registerDisplayCommands(
     const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
     const ic = mgmt?.getInfoCenter();
     if (!ic) return 'Info-center: Disabled';
+    const t = ic.timestamps;
     return [
       `Info-center: ${ic.enabled ? 'Enabled' : 'Disabled'}`,
-      `Timestamp format: ${ic.timestamp}`,
+      `Log host: ${ic.loghosts.length ? ic.loghosts.map(h => h.ip).join(', ') : '(none)'}`,
+      `Log host source interface: ${ic.loghostSource ?? '(none)'}`,
+      `Log buffer size: ${ic.logbufferSize}`,
+      `Trap buffer size: ${ic.trapbufferSize}`,
+      `Timestamp: log ${t.log.format}, trap ${t.trap.format}, debug ${t.debug.format}`,
       `Configured sources: ${ic.sources.length}`,
       `Configured loghosts: ${ic.loghosts.length}`,
     ].join('\n');
@@ -1664,7 +1713,10 @@ export function registerDisplayCommands(
   trie.registerGreedy('display ip interface', 'Display IP interface details', (args) => {
     if (args.length === 0) return displayIpIntBrief(getRouter());
     const first = args[0].toLowerCase();
-    if ('brief'.startsWith(first)) return displayIpIntBrief(getRouter());
+    if ('brief'.startsWith(first)) {
+      const reste = args.slice(1).join(' ');
+      return displayIpIntBrief(getRouter(), reste ? reste : undefined);
+    }
     return displayIpInterface(getRouter(), args.join(' '));
   });
 
@@ -1717,7 +1769,15 @@ export function registerDisplayCommands(
   trie.register('display logbuffer', 'Display log buffer', () =>
     getState().renderLogbuffer?.() ?? commonDisplayLogbuffer(),
   );
-  trie.register('display trapbuffer', 'Display trap buffer', () => commonDisplayTrapbuffer());
+  trie.register('display trapbuffer', 'Display trap buffer', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const ic = mgmt?.getInfoCenter();
+    if (!ic) return commonDisplayTrapbuffer();
+    const canal = ic.destinationChannel.trapbuffer;
+    return commonDisplayTrapbuffer({
+      size: ic.trapbufferSize, channel: canal, channelName: ic.channelNames[canal],
+    });
+  });
   trie.register('display patch-information', 'Display patch information', () =>
     commonDisplayPatchInformation());
   trie.register('display diagnostic-information', 'Collect diagnostic information', () =>

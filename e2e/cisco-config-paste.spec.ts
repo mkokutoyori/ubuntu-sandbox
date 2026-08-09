@@ -58,7 +58,12 @@ test.describe('Scénario 4 (e2e) — copy-paste de configuration avec !', () => 
     await typeCmd(page, 'hostname R-PASTE');
     await typeCmd(page, 'end');
     await waitForText(page, /R-PASTE#/);
+    // En EXEC, IOS traite un mot inconnu comme un nom d'hôte à joindre —
+    // il ne pointe pas le caret, il essaie de résoudre le nom. C'est
+    // exactement ce que le jumeau unitaire de ce scénario attend
+    // (`scenario-cisco-config-paste.test.ts`), et cette spec encodait
+    // l'erreur du mode CONFIGURATION pour une saisie en mode EXEC.
     await typeCmd(page, 'ip domain-name mandeng.lan');
-    await waitForText(page, "% Invalid input detected at '^' marker.");
+    await waitForText(page, '% Unknown command or computer name, or unable to find computer address');
   });
 });

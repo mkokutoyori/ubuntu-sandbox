@@ -22,10 +22,54 @@ import type { SchemaValidator } from '../schema/SchemaValidator';
 export interface EntryReplMeta {
   readonly originatingInvocationId: string;
   readonly originatingUsn: number;
-  readonly timestamp: number; // epoch seconds — last-writer-wins tiebreak across invocationIds
+  readonly timestamp: number; // epoch seconds — comme l'« originating time » d'AD
+  /**
+   * Le nombre de fois que cette entrée a été écrite, en comptant les
+   * écritures venues d'un partenaire : c'est la VERSION d'AD, et c'est
+   * le premier critère de résolution de conflit.
+   *
+   * Elle manquait, et la comparaison se faisait sur l'heure seule — or
+   * l'heure d'origine d'AD est en SECONDES (ici comme là-bas). Deux
+   * écritures séparées de moins d'une seconde étaient donc départagées
+   * au hasard du découpage des secondes, ce qui a produit un défaut
+   * intermittent bien réel : pendant `Install-ADDSDomainController`, le
+   * contrôleur promu crée une racine locale vide puis tire celle de son
+   * partenaire ; quand les deux créations tombaient dans deux secondes
+   * différentes, la racine locale — plus « récente » — l'emportait et
+   * les attributs FSMO n'arrivaient jamais. Le laboratoire échouait
+   * environ une fois sur vingt, selon l'endroit où tombait la seconde.
+   *
+   * Optionnelle pour que des données antérieures restent lisibles : une
+   * entrée sans version compte pour 0.
+   */
+  readonly version?: number;
 }
 
 /** Supplied by a replicating `DirectoryStore` so every local write is auto-stamped; absent (`undefined`) for any `DirectoryTree` that doesn't participate in replication (e.g. the LDAP wire-protocol unit tests), which never touch `replMeta`. */
+/**
+ * La résolution de conflit d'Active Directory, dans son ordre réel :
+ * **version**, puis **heure d'origine**, puis **DSA d'origine**.
+ *
+ * Rend vrai quand la copie LOCALE l'emporte sur celle qui arrive — donc
+ * quand il faut refuser l'entrée entrante.
+ *
+ * L'ordre compte, et il n'était pas respecté : seule l'heure était
+ * comparée, alors que l'heure d'origine d'AD a une résolution d'UNE
+ * SECONDE. Deux écritures rapprochées se départageaient donc selon le
+ * découpage des secondes, c'est-à-dire au hasard. La version est le
+ * critère principal chez Microsoft précisément pour cela ; le DSA
+ * d'origine ne sert qu'à trancher une égalité parfaite, arbitrairement
+ * mais de façon STABLE — ce qui est le point, une égalité doit se
+ * résoudre pareil sur les deux contrôleurs, sinon ils divergent.
+ */
+function localWins(local: EntryReplMeta, entrant: EntryReplMeta): boolean {
+  const vLocal = local.version ?? 0;
+  const vEntrant = entrant.version ?? 0;
+  if (vLocal !== vEntrant) return vLocal > vEntrant;
+  if (local.timestamp !== entrant.timestamp) return local.timestamp > entrant.timestamp;
+  return local.originatingInvocationId > entrant.originatingInvocationId;
+}
+
 export interface ReplicationIdentity {
   readonly invocationId: string;
   nextUsn(): number;
@@ -80,9 +124,14 @@ export class DirectoryTree {
     this.byDn.set(this.dnIndexKey(dn), this.root);
   }
 
-  private stampFor(): EntryReplMeta | null {
+  private stampFor(precedent?: EntryReplMeta | null): EntryReplMeta | null {
     if (!this.replication) return null;
-    return { originatingInvocationId: this.replication.invocationId, originatingUsn: this.replication.nextUsn(), timestamp: Math.floor(Date.now() / 1000) };
+    return {
+      originatingInvocationId: this.replication.invocationId,
+      originatingUsn: this.replication.nextUsn(),
+      timestamp: Math.floor(Date.now() / 1000),
+      version: (precedent?.version ?? 0) + 1,
+    };
   }
 
   /** Canonical index key: each RDN's AVAs sorted+lowercased, so order-independent multi-valued RDNs (RFC 4514 §2.3) index identically — matches `dnEquals`. */
@@ -146,7 +195,7 @@ export class DirectoryTree {
         else entry.attributes.set(key, remaining);
       }
     }
-    if (this.replication) entry.replMeta = this.stampFor();
+    if (this.replication) entry.replMeta = this.stampFor(entry.replMeta);
     return { ok: true, message: '' };
   }
 
@@ -170,7 +219,7 @@ export class DirectoryTree {
   applyReplicatedEntry(dn: DistinguishedName, attributes: Record<string, string[]>, stamp: EntryReplMeta): void {
     const existing = this.getByDn(dn);
     if (existing) {
-      if (existing.replMeta && existing.replMeta.timestamp > stamp.timestamp) return;
+      if (existing.replMeta && localWins(existing.replMeta, stamp)) return;
       existing.attributes.clear();
       for (const [k, v] of toAttrMap(attributes)) existing.attributes.set(k, v);
       existing.replMeta = stamp;
@@ -230,7 +279,7 @@ export class DirectoryTree {
     oldParent.children.delete(rdnKey(dn));
     this.reindexSubtree(entry, dn, newDn);
     targetParent.children.set(rdnKey(newDn), entry);
-    if (this.replication) entry.replMeta = this.stampFor();
+    if (this.replication) entry.replMeta = this.stampFor(entry.replMeta);
     return { ok: true, message: '' };
   }
 

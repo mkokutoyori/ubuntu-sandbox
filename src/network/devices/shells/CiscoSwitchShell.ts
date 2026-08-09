@@ -40,6 +40,8 @@ import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
+import { renderTableText, FIXED_TABLE } from './cli/TextTable';
+import { INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, type InterfaceStatusRow } from './cisco/ciscoTableLayouts';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -69,6 +71,11 @@ function isUnsupportedOnThisSwitch(e: unknown): boolean {
 }
 
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
+  /** Ce shell rend la table avec ses filtres — la base ne doit pas la masquer. */
+  protected providesOwnMacAddressTableView(): boolean {
+    return true;
+  }
+
   /** A `require*` refusal is a signal for `execute` below, not a crash. */
   protected override isControlFlowError(err: unknown): boolean {
     return isUnsupportedOnThisSwitch(err);
@@ -3613,17 +3620,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showInterfacesCounters(name: string | null): string {
     const sw = this.d();
-    const rows = ['Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts'];
+    // Toutes les colonnes de données finissaient un caractère APRÈS leur
+    // intitulé : l'en-tête et les lignes étaient comptés séparément.
+    const rows: Array<{ port: string; bytesIn: number; framesIn: number; bytesOut: number; framesOut: number }> = [];
     for (const [pn, port] of sw._getPortsInternal()) {
       if (name && pn !== name) continue;
       const c = port.getCounters();
-      rows.push(
-        `${this.abbreviateInterface(pn).padEnd(15)} ${String(c.bytesIn).padStart(9)} ` +
-        `${String(c.framesIn).padStart(13)} ${String(c.bytesOut).padStart(11)} ${String(c.framesOut).padStart(13)}`,
-      );
+      rows.push({ port: this.abbreviateInterface(pn), bytesIn: c.bytesIn, framesIn: c.framesIn, bytesOut: c.bytesOut, framesOut: c.framesOut });
     }
-    if (name && rows.length === 1) return `% Invalid input detected at '^' marker.`;
-    return rows.join('\n');
+    if (name && rows.length === 0) return `% Invalid input detected at '^' marker.`;
+    // Largeurs pleines, blancs de séparation compris : elles reproduisent
+    // au caractère près l'en-tête que cette commande écrivait déjà
+    // (bords 4/24/38/50/64), qui lui était juste — seules les données
+    // s'en écartaient.
+    return renderTableText(rows, [
+      { header: 'Port', width: 16, value: (r) => r.port },
+      { header: 'InOctets', width: 8, align: 'right', value: (r) => String(r.bytesIn) },
+      { header: 'InUcastPkts', width: 14, align: 'right', value: (r) => String(r.framesIn) },
+      { header: 'OutOctets', width: 12, align: 'right', value: (r) => String(r.bytesOut) },
+      { header: 'OutUcastPkts', width: 14, align: 'right', value: (r) => String(r.framesOut) },
+    ], FIXED_TABLE);
   }
 
   private showInterfacesDescriptionTable(): string {
@@ -3641,30 +3657,29 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showInterfacesStatus(sw: CiscoSwitch, only?: string): string {
     const configs = sw._getSwitchportConfigs();
-    const lines = [
-      'Port        Name               Status       Vlan       Duplex  Speed Type',
-      '----------  -----------------  -----------  ---------  ------  ----- ----',
-    ];
-
     const entries = only
       ? ([[only, sw.getPort(only)]] as Array<[string, ReturnType<CiscoSwitch['getPort']>]>)
       : [...sw._getPortsInternal().entries()];
 
+    // La mise en page mesurée sur de vraies machines : `Duplex` et
+    // `Speed` à DROITE, ce que le tableau dessiné à la main ici mettait
+    // à gauche, et sa dernière colonne un caractère trop loin.
+    const rows: InterfaceStatusRow[] = [];
     for (const [portName, port] of entries) {
       if (!port) continue;
       const cfg = configs.get(portName);
-      const shortName = this.abbreviateInterface(portName).padEnd(12);
-      const desc = (sw.getInterfaceDescription(portName) || '').slice(0, 17).padEnd(19);
       const connected = port.getIsUp() && port.hasCarrier();
-      const status = (port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled').padEnd(13);
-      const vlanStr = cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1);
-      const duplex = connected ? 'a-full' : 'auto';
-      const speed = connected ? (portName.startsWith('Gi') ? 'a-1000' : 'a-100') : 'auto';
-      const type = portName.startsWith('Gi') ? '1000BASE-T' : '10/100BaseTX';
-      lines.push(`${shortName}${desc}${status}${vlanStr.padEnd(11)}${duplex.padEnd(8)}${speed.padEnd(7)}${type}`);
+      rows.push({
+        port: this.abbreviateInterface(portName),
+        name: (sw.getInterfaceDescription(portName) || '').slice(0, 17),
+        status: port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled',
+        vlan: cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1),
+        duplex: connected ? 'a-full' : 'auto',
+        speed: connected ? (portName.startsWith('Gi') ? 'a-1000' : 'a-100') : 'auto',
+        type: portName.startsWith('Gi') ? '1000BASE-T' : '10/100BaseTX',
+      });
     }
-
-    return lines.join('\n');
+    return renderTableText(rows, INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE);
   }
 
   private showSpanningTree(sw: CiscoSwitch, vlanId = 1): string {

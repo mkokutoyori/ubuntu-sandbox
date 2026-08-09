@@ -57,6 +57,25 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
  */
 const LINE_ID_WRAP = 2_000_000_000;
 
+/**
+ * Durée maximale pendant laquelle un collage garde la main avant de
+ * rendre un tour au navigateur. Une trame à 60 Hz dure 16 ms : au-delà,
+ * l'onglet cesse de peindre et de répondre. Découper par le TEMPS et
+ * non par un nombre de lignes est ce qui garde le coût nul sur un petit
+ * collage tout en bornant le gel sur un gros.
+ */
+const PASTE_SLICE_MS = 12;
+
+/**
+ * Rendre la main à la boucle d'événements — vraiment. `await
+ * Promise.resolve()` ne suffit pas : c'est une micro-tâche, et le
+ * navigateur les épuise toutes avant de peindre quoi que ce soit.
+ * Seule une macro-tâche laisse passer un rendu et les entrées.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
 // ─── Shared types ─────────────────────────────────────────────────
 
 export interface OutputLine {
@@ -771,29 +790,110 @@ export abstract class TerminalSession {
   async pasteText(raw: string): Promise<void> {
     if (this.disposed) return;
     const normalized = raw.replace(/\r\n?/g, '\n');
+    // Un mot de passe est UNE ligne. Aplatir un bloc collé par erreur
+    // dans le buffer secret en faisait un mot de passe de quatre cents
+    // lignes, sans que rien ne le montre — l'écho est masqué. On ne
+    // garde que la première ligne, et on le DIT : ni corruption
+    // silencieuse, ni exécution silencieuse de la suite.
+    if (this.currentInputMode.type === 'password' && normalized.includes('\n')) {
+      const [premiere, ...reste] = normalized.split('\n');
+      this.insertText(premiere);
+      const ignorees = reste.filter((l) => l.trim() !== '').length;
+      if (ignorees > 0) {
+        this.addLine('% Multi-line paste into a password prompt — '
+          + `${ignorees} further line${ignorees === 1 ? '' : 's'} ignored`);
+      }
+      return;
+    }
     if (!normalized.includes('\n') || this.currentInputMode.type !== 'normal') {
       this.insertText(normalized);
       return;
     }
     const lines = normalized.split('\n');
     const trailing = lines.pop() ?? '';
-    for (let i = 0; i < lines.length; i++) {
-      if (this.disposed) return;
-      // A previously executed line may have opened a prompt (e.g. `ssh`
-      // asking for a password) or a pager: stop auto-executing and hand
-      // the remainder to the active buffer instead of blindly submitting.
-      if (this.currentInputMode.type !== 'normal') {
-        this.insertText([lines[i], ...lines.slice(i + 1), trailing].join(' '));
-        return;
+    this._pasteAborted = false;
+    this._pasteRunning = true;
+    let tranche = Date.now();
+    try {
+      for (let i = 0; i < lines.length; i++) {
+        if (this.disposed) return;
+        if (this._pasteAborted) { this.reportPasteAborted(lines.length - i); return; }
+        // A previously executed line may have opened a prompt (e.g. `ssh`
+        // asking for a password) or a pager: stop auto-executing and hand
+        // the remainder to the active buffer instead of blindly submitting.
+        if (this.currentInputMode.type !== 'normal') {
+          this.insertText([lines[i], ...lines.slice(i + 1), trailing].join(' '));
+          return;
+        }
+        this.setInput(this.input + lines[i]);
+        await this.submitPastedLine();
+        // Rendre la main au navigateur quand la tranche est épuisée.
+        // Sans cela, un collage n'obtenait AUCUN tour de boucle
+        // d'événements : `await` sur une promesse déjà résolue ne
+        // produit qu'une micro-tâche, et les micro-tâches s'exécutent
+        // jusqu'à épuisement avant le moindre rendu. L'onglet restait
+        // donc figé du début à la fin du collage — rien ne s'affichait
+        // au fur et à mesure, aucun clic ne passait, et le Ctrl-C
+        // censé l'interrompre n'était jamais lu.
+        if (Date.now() - tranche >= PASTE_SLICE_MS) {
+          await yieldToEventLoop();
+          tranche = Date.now();
+        }
       }
-      this.setInput(this.input + lines[i]);
-      await this.submitPastedLine();
+      if (!this.disposed && this.currentInputMode.type === 'normal') {
+        this.setInput(this.input + trailing);
+      } else {
+        this.insertText(trailing);
+      }
+    } finally {
+      this._pasteRunning = false;
     }
-    if (!this.disposed && this.currentInputMode.type === 'normal') {
-      this.setInput(this.input + trailing);
-    } else {
-      this.insertText(trailing);
+  }
+
+  private _pasteRunning = false;
+  private _pasteAborted = false;
+
+  /**
+   * Un collage est-il en cours ? Lu par le Ctrl-C du terminal.
+   *
+   * La question porte sur la CHAÎNE entière, pas sur une session
+   * précise. `pasteText` est appelé sur la session que la vue tient —
+   * l'hôte — et y pose son drapeau, tandis que les premières versions
+   * de ces deux accesseurs déléguaient au sous-shell le plus profond :
+   * le drapeau était donc posé à un endroit et lu à un autre, et le
+   * Ctrl-C d'interruption échouait en silence dès qu'un `ssh` était
+   * ouvert. Chercher dans toute la chaîne rend la réponse indépendante
+   * de la session sur laquelle le collage a commencé.
+   */
+  isPasteRunning(): boolean {
+    return this.pastingSession() !== null;
+  }
+
+  /**
+   * Interrompre le collage en cours. Un vrai terminal laisse toujours
+   * reprendre la main sur un bloc collé par erreur ; ici la boucle ne
+   * rendait jamais la main, donc la touche n'était même pas lue.
+   */
+  abortPaste(): boolean {
+    const cible = this.pastingSession();
+    if (!cible) return false;
+    cible._pasteAborted = true;
+    return true;
+  }
+
+  /** La session de la chaîne qui colle, la plus proche d'abord. */
+  private pastingSession(): TerminalSession | null {
+    let s: TerminalSession | undefined = this;
+    while (s) {
+      if (s._pasteRunning) return s;
+      s = s._children[s._children.length - 1];
     }
+    return null;
+  }
+
+  private reportPasteAborted(restantes: number): void {
+    this.setInput('');
+    this.addLine(`% Paste aborted — ${restantes} line${restantes === 1 ? '' : 's'} not executed`);
   }
 
   /** Submit the current line and await its execution (paste serialisation). */

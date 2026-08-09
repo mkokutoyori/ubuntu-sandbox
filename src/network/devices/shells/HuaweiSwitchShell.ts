@@ -14,13 +14,17 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import {
+  withVrpCommonHelp, withVrpCommonCandidates,
+  type VrpViewKind,
+} from './huawei/vrpCommonCommands';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp, rendreErreurVrp } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -28,6 +32,15 @@ import {
   displayPatchInformation, displayDiagnosticInformation,
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
+import { analyserAcl } from './huawei/HuaweiAclGrammar';
+import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
+import { resolveHuaweiInterfaceName } from './cli-utils';
+import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
+import {
+  type LigneIpBrief, protocoleVrp, rendreIpInterfaceBrief,
+} from './huawei/huaweiTableLayouts';
+import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import {
   registerHuaweiNATInterfaceCommands,
   registerHuaweiNATSystemCommands,
@@ -35,7 +48,6 @@ import {
   runningConfigNATHuawei,
 } from './huawei/HuaweiNATCommands';
 import type { HuaweiShellContext } from './huawei/HuaweiConfigCommands';
-import type { Router } from '../Router';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
@@ -43,11 +55,29 @@ import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { parseHuaweiPortSpec } from './huawei/HuaweiAclCommands';
 import { formatHuaweiAclEntry } from '../router/ACLEngine';
 import { vrrpVirtualMac, effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
+import {
+  describeHuaweiInterfaceArg, wordArg,
+  STP_SYSTEM_KEYWORDS, STP_INTERFACE_KEYWORDS,
+} from './huawei/huaweiInterfaceHelp';
 
-type VRPSwitchMode =
-  | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
-  | 'aaa' | 'user-interface' | 'acl' | 'dhcp-pool'
-  | 'traffic-classifier' | 'traffic-behavior' | 'traffic-policy';
+const VUES_SWITCH = [
+  'user', 'system', 'interface', 'vlan', 'mst-region', 'port-group',
+  'aaa', 'user-interface', 'acl', 'dhcp-pool',
+  'traffic-classifier', 'traffic-behavior', 'traffic-policy',
+] as const;
+
+type VRPSwitchMode = typeof VUES_SWITCH[number];
+
+/**
+ * Le NUMERO d'une saisie `<type><n>` ou `<type> <n>`, quand le type
+ * designe bien `attendu` — par son nom entier ou par n'importe quel
+ * prefixe non ambigu, comme VRP l'admet.
+ */
+function numeroDInterface(saisie: string, attendu: string): number | null {
+  const m = saisie.replace(/\s+/g, '').match(/^([a-z-]+)(\d+)$/i);
+  if (!m || huaweiTypeInterface(m[1]) !== attendu) return null;
+  return parseInt(m[2], 10);
+}
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -79,10 +109,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private selectedAcl: string | null = null;
   private acls = new Map<string, {
     key: string; type: 'basic' | 'adv'; rules: string[];
+    // Ecrits par `description` et `step` en vue ACL, et lus par
+    // personne — ni ici ni ailleurs. Les declarer ne les rend pas
+    // vivants ; cela les rend greppables, ce que le cast empechait.
+    description?: string; step?: number;
   }>();
   private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
-  private swRef: Switch | null = null;
+  private swRef: HuaweiSwitchDevice | null = null;
+
+  /** Le magasin unique de l'etat `debugging` de ce switch. */
+  private debugService(): HuaweiDebugService | null {
+    return this.swRef?.getHuaweiDebugService?.() ?? null;
+  }
 
   private applyToStpAgent(fn: (a: import('@/network/stp/StpAgent').StpAgent) => void): void {
     const ag = this.stpAgent();
@@ -90,21 +129,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   private stpAgent(): import('@/network/stp/StpAgent').StpAgent | undefined {
-    return (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent } | null)?.getStpAgent?.();
+    return this.swRef?.getStpAgent?.();
   }
 
   private applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
-    const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent } | null)?.getLldpAgent?.();
+    const ag = this.swRef?.getLldpAgent?.();
     if (ag) fn(ag);
   }
 
   private applyToDot1xAgent(fn: (a: import('@/network/dot1x/Dot1xAgent').Dot1xAgent) => void): void {
-    const ag = (this.swRef as unknown as { getDot1xAgent?: () => import('@/network/dot1x/Dot1xAgent').Dot1xAgent } | null)?.getDot1xAgent?.();
+    const ag = this.swRef?.getDot1xAgent?.();
     if (ag) fn(ag);
   }
 
   private applyToLacpAgent(fn: (a: import('@/network/lacp/LacpAgent').LacpAgent) => void): void {
-    const ag = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+    const ag = this.swRef?.getLacpAgent?.();
     if (ag) fn(ag);
   }
   private history: string[] = [];
@@ -155,7 +194,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private natContext(): HuaweiShellContext {
     return {
-      r: () => this.swRef as unknown as Router,
+      r: () => commeRouteur(this.swRef),
       setMode: () => { /* switch NAT does not enter dedicated submodes */ },
       getSelectedInterface: () => this.selectedInterface,
       setSelectedInterface: (i) => { this.selectedInterface = i; },
@@ -168,8 +207,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** Context handed to the shared Huawei DHCP pool builder. */
   private dhcpContext(): HuaweiShellContext {
     return {
-      r: () => this.swRef as unknown as Router,
-      setMode: (m) => { this.mode = m as VRPSwitchMode; },
+      r: () => commeRouteur(this.swRef),
+      setMode: (m) => { this.entrerVue(m); },
       getSelectedInterface: () => this.selectedInterface,
       setSelectedInterface: (i) => { this.selectedInterface = i; },
       getSelectedPool: () => this.selectedPool,
@@ -185,6 +224,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private buildDhcpCommands(): void {
     // `ip pool <name>` enters the DHCP pool view.
+    this.systemTrie.describeArgs('ip pool', [wordArg('DHCP address pool name', 'pool-name')]);
     this.systemTrie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       const dhcp = this.swRef._getDHCPServerInternal();
@@ -337,7 +377,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private wireHuaweiNAT(): void {
     const ctx = this.natContext();
-    const getRouter = () => this.swRef as unknown as Router;
+    const getRouter = () => commeRouteur(this.swRef);
     registerHuaweiNATSystemCommands(this.systemTrie, ctx);
     registerHuaweiNATInterfaceCommands(this.interfaceTrie, ctx);
     registerHuaweiNATDisplayCommands(this.userTrie, getRouter);
@@ -399,7 +439,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
-    this.mode = s.mode as VRPSwitchMode;
+    // Une session restauree porte la vue sous forme de chaine : la
+    // meme garde que pour les aides partagees, sinon une session
+    // corrompue rendrait le shell muet au lieu de le ramener en vue
+    // utilisateur.
+    this.mode = 'user';
+    this.entrerVue(s.mode);
     this.selectedInterface = s.selectedInterface;
     this.selectedVlan = s.selectedVlan;
     this.selectedMqcName = s.selectedMqcName;
@@ -476,9 +521,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     let output: string;
     switch (result.status) {
-      case 'ok':
-        output = result.node?.action ? result.node.action(result.args, cmd) : '';
+      case 'ok': {
+        const trop = tropDeParametres(result, cmd);
+        output = trop ?? (result.node?.action
+          ? normaliserErreurVrp(result.node.action(result.args, cmd), cmd, result.matchedKeywords.length)
+          : '');
         break;
+      }
 
       case 'ambiguous':
         // Not `result.error` — CommandTrie's own `.error` is pre-formatted
@@ -512,7 +561,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(sw ? new EquipmentParamResolver(sw) : null);
     try {
-      const completions = trie.getCompletions(input);
+      const completions = withVrpCommonHelp(this.vrpView(), input, trie.getCompletions(input));
       if (completions.length === 0) return 'Error: Unrecognized command';
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -532,10 +581,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(new EquipmentParamResolver(sw));
     try {
-      return trie.tabCandidates(input);
+      return withVrpCommonCandidates(this.vrpView(), input, trie.tabCandidates(input));
     } finally {
       trie.setDynamicResolver(null);
     }
+  }
+
+  /**
+   * La vue utilisateur n'a rien à remonter : `return` n'y est pas
+   * proposé, comme sur un vrai VRP.
+   */
+  private vrpView(): VrpViewKind {
+    return this.mode === 'user' ? 'user' : 'other';
   }
 
   // ─── FSM Transitions ─────────────────────────────────────────────
@@ -582,6 +639,20 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       default:
         return '';
+    }
+  }
+
+  /**
+   * Les aides partagees sont ecrites pour le routeur et connaissent des
+   * vues que le switch n'a pas. `this.mode = m as VRPSwitchMode`
+   * ANNULAIT l'union : une vue inconnue passait, `getActiveTrie()`
+   * retombait sur `default` et le shell devenait muet sans un mot.
+   * Une vue que cette plateforme n'a pas ne change donc plus la vue
+   * courante.
+   */
+  private entrerVue(m: unknown): void {
+    if (typeof m === 'string' && (VUES_SWITCH as readonly string[]).includes(m)) {
+      this.mode = m as VRPSwitchMode;
     }
   }
 
@@ -665,10 +736,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef._setHostnameInternal(args[0]);
       return '';
     });
+    this.systemTrie.allowArgs('sysname', 1);
 
     // vlan <id> or vlan batch <id> <id> ...
-    this.systemTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
+    this.systemTrie.describeArgs('vlan', [{
+      name: 'vlan-id', type: 'INT', description: 'VLAN ID', range: [1, 4094],
+    }]);
+    this.systemTrie.addCompletionKeywords('vlan', [
+      { keyword: 'batch', description: 'Create several VLANs at once' },
+    ]);
+    this.systemTrie.registerGreedy('vlan', 'VLAN configuration', (args, ligne) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+
+      // `vlan batch` prend une liste, `vlan <id>` prend UN identifiant :
+      // le second mot etait jete, `vlan 10 zzz` entrait en vue VLAN
+      // sans un mot.
+      if (args[0].toLowerCase() !== 'batch' && args.length > 1) {
+        return refuseMotInattenduVrp(ligne ?? `vlan ${args.join(' ')}`, args[1]);
+      }
 
       // vlan batch <id> <id> ...
       if (args[0].toLowerCase() === 'batch') {
@@ -698,15 +783,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const macHex = args[0].replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(0, 12);
       const maskHex = args[2].replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(0, 12);
       const description = args[3]?.toLowerCase() === 'description' ? args.slice(4).join(' ') : undefined;
-      (this.swRef as unknown as { addVoiceVlanOui?: (m: string, k: string, d?: string) => void })
-        .addVoiceVlanOui?.(macHex, maskHex, description);
+      this.swRef?.addVoiceVlanOui?.(macHex, maskHex, description);
       return '';
     });
 
     // undo <subcommand>
-    this.systemTrie.registerGreedy('undo', 'Undo configuration', (args) => {
+    this.systemTrie.registerGreedy('undo', 'Undo configuration', (args, raw) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
-      return this.cmdUndo(args);
+      return refuseUnknownUndo(this.systemTrie, args, raw) ?? this.cmdUndo(args);
     });
 
     // port-group {group-member <a> [to <b>] | <name>} → bulk-config view
@@ -723,27 +807,30 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // acl {<number> | name <name> [number] | number <number>} → ACL view
-    this.systemTrie.registerGreedy('acl', 'Configure an ACL', (args) => {
-      if (args.length < 1) return 'Error: Incomplete command.';
-      let key: string;
-      let num = NaN;
-      if (args[0].toLowerCase() === 'name') {
-        key = args[1] ?? '';
-        num = parseInt(args[2] ?? '', 10);
-      } else if (args[0].toLowerCase() === 'number') {
-        num = parseInt(args[1] ?? '', 10);
-        key = String(num);
-      } else {
-        num = parseInt(args[0], 10);
-        key = String(num);
-      }
-      if (!key) return 'Error: Wrong parameter found at \'^\' position.';
-      const type: 'basic' | 'adv' = (!isNaN(num) && num >= 3000) ? 'adv' : 'basic';
-      if (!this.acls.has(key)) this.acls.set(key, { key, type, rules: [] });
+    this.systemTrie.registerGreedy('acl', 'Configure an ACL', (args, ligne) => {
+      // Meme grammaire que le routeur : sans elle, `acl 42` ouvrait une
+      // vue pour un numero qui n'existe pas et `acl abc` une vue nommee
+      // `NaN`, sur la meme branche que le routeur qui les refusait.
+      const a = analyserAcl(args);
+      if (a.statut === 'refus') return rendreErreurVrp(a.err, ligne ?? `acl ${args.join(' ')}`);
+      const key = a.cmd.kind === 'nom' ? a.cmd.nom : String(a.cmd.numero);
+      const type: 'basic' | 'adv' = a.cmd.type === 'advanced' ? 'adv' : 'basic';
+      const existant = this.acls.get(key);
+      if (!existant) this.acls.set(key, { key, type, rules: [] });
       this.selectedAcl = key;
       this.mode = 'acl';
       return '';
     });
+    // `name` naissait en chemin avec son propre mot pour description
+    // (« name  Name »), qui est vrai et n'apprend rien ; `basic` et
+    // `advanced` étaient extraits du texte du handler sans description
+    // du tout. Les curater règle les deux.
+    this.systemTrie.addCompletionKeywords('acl', [
+      { keyword: 'advanced', description: 'Advanced ACL (3000-3999)' },
+      { keyword: 'basic', description: 'Basic ACL (2000-2999)' },
+      { keyword: 'name', description: 'Named ACL' },
+      { keyword: 'number', description: 'ACL number' },
+    ]);
 
     this.systemTrie.registerGreedy('traffic classifier', 'Configure a traffic classifier', (args) => {
       if (!args[0] || !this.swRef) return 'Error: Incomplete command.';
@@ -790,6 +877,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // user-interface {console <n> | vty <first> [last] | maxvty …} → UI view
+    this.systemTrie.describeArgs('user-interface', [{
+      name: 'type', type: 'ENUM', description: 'User-interface type',
+      validator: () => true,
+      values: [
+        { keyword: 'console', description: 'Primary terminal line' },
+        { keyword: 'maxvty', description: 'Maximum number of VTY lines' },
+        { keyword: 'vty', description: 'Virtual terminal line' },
+      ],
+    }, {
+      name: 'first-ui-number', type: 'INT',
+      description: 'First user-interface number', optional: true, range: [0, 20],
+    }, {
+      name: 'last-ui-number', type: 'INT',
+      description: 'Last user-interface number', optional: true, range: [0, 20],
+    }]);
     this.systemTrie.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
       if (args.length === 0) return 'Error: Incomplete command.';
       if (args[0].toLowerCase() === 'maxvty') return ''; // global setting, no view
@@ -878,6 +980,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // interface <name>  (incl. virtual Eth-Trunk; L3 types stay rejected)
+    describeHuaweiInterfaceArg(this.systemTrie);
+    this.systemTrie.addCompletionKeywords('interface', [
+      { keyword: 'range', description: 'Configure a range of interfaces' },
+    ]);
     this.systemTrie.registerGreedy('interface', 'Enter interface view', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       // Eth-Trunk <id>  /  Eth-TrunkN  → link-aggregation virtual interface
@@ -900,9 +1006,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'port-group';
         return '';
       }
-      const vlanIfMatch = args.join(' ').match(/^vlanif\s*(\d+)$/i);
-      if (vlanIfMatch) {
-        const vlan = parseInt(vlanIfMatch[1], 10);
+      const vlanIfMatch = numeroDInterface(args.join(' '), 'Vlanif');
+      if (vlanIfMatch !== null) {
+        const vlan = vlanIfMatch;
         if (vlan < 1 || vlan > 4094) return `Error: Wrong parameter found at '^' position.`;
         this.swRef.ensureSvi(vlan);
         this.swRef.setSviAdminUp(vlan, true);
@@ -911,9 +1017,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       }
 
-      const loopMatch = args.join(' ').match(/^loopback\s*(\d+)$/i);
-      if (loopMatch) {
-        this.selectedInterface = `LoopBack${loopMatch[1]}`;
+      const loopMatch = numeroDInterface(args.join(' '), 'LoopBack');
+      if (loopMatch !== null) {
+        this.selectedInterface = `LoopBack${loopMatch}`;
         // Matérialise l'interface : sans ça, entrer dans la vue ne
         // créait rien et l'interface restait invisible partout.
         this.swRef.ensureLoopback(this.selectedInterface);
@@ -1014,10 +1120,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // Generic `undo <…>` fallback (specific undo forms below still win).
-    this.interfaceTrie.registerGreedy('undo', 'Undo configuration', (args) =>
-      this.cmdUndo(args));
-    this.vlanTrie.registerGreedy('undo', 'Undo configuration', (args) =>
-      this.cmdUndo(args));
+    this.interfaceTrie.registerGreedy('undo', 'Undo configuration', (args, raw) =>
+      refuseUnknownUndo(this.interfaceTrie, args, raw) ?? this.cmdUndo(args));
+    this.vlanTrie.registerGreedy('undo', 'Undo configuration', (args, raw) =>
+      refuseUnknownUndo(this.vlanTrie, args, raw) ?? this.cmdUndo(args));
 
     // undo shutdown
     this.interfaceTrie.register('undo shutdown', 'Bring up interface', () => {
@@ -1344,6 +1450,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef.setSwitchportAccessVlan(this.selectedInterface, vlanId);
       return '';
     });
+    this.interfaceTrie.allowArgs('port default vlan', 1);
 
     // port trunk allow-pass vlan <id> [<id>...] | all | none
     this.interfaceTrie.registerGreedy('port trunk allow-pass vlan', 'Set trunk allowed VLANs', (args) => {
@@ -1416,6 +1523,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef.renameVLAN(this.selectedVlan, args[0]);
       return '';
     });
+    // Un nom de VLAN VRP est un seul mot.
+    this.vlanTrie.allowArgs('name', 1);
 
     // description <text> — stored per-VLAN.
     this.vlanTrie.registerGreedy('description', 'Set VLAN description', (args) => {
@@ -1428,12 +1537,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (this.selectedVlan === null) return '';
       const v = this.swRef.getVLAN(this.selectedVlan);
       if (!v) return '';
-      const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
-      const line = raw ?? `igmp-snooping ${args.join(' ')}`.trim();
-      if (!extra['igmp-snooping']) extra['igmp-snooping'] = [];
-      extra['igmp-snooping'].push(line);
-      (v as unknown as { extras: Record<string, string[]> }).extras = extra;
-      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+      ajouterLigneVlan(v, 'igmp-snooping', raw ?? `igmp-snooping ${args.join(' ')}`.trim());
+      const agent = this.swRef?.getIgmpSnoopingAgent?.();
       if (!agent) return '';
       if (args[0] === 'enable') agent.setVlanEnabled(this.selectedVlan, true);
       else if (args[0] === 'fast-leave') agent.setImmediateLeave(this.selectedVlan, true);
@@ -1446,12 +1551,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (this.selectedVlan === null) return '';
       const v = this.swRef.getVLAN(this.selectedVlan);
       if (!v) return '';
-      const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
-      const line = raw ?? `undo igmp-snooping ${args.join(' ')}`.trim();
-      if (!extra['igmp-snooping']) extra['igmp-snooping'] = [];
-      extra['igmp-snooping'].push(line);
-      (v as unknown as { extras: Record<string, string[]> }).extras = extra;
-      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+      ajouterLigneVlan(v, 'igmp-snooping', raw ?? `undo igmp-snooping ${args.join(' ')}`.trim());
+      const agent = this.swRef?.getIgmpSnoopingAgent?.();
       if (!agent) return '';
       if (args.length === 0 || args[0] === 'enable') agent.setVlanEnabled(this.selectedVlan, false);
       else if (args[0] === 'fast-leave') agent.setImmediateLeave(this.selectedVlan, false);
@@ -1525,11 +1626,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         if (this.selectedVlan === null) return '';
         const v = this.swRef.getVLAN(this.selectedVlan);
         if (!v) return '';
-        const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
-        const line = raw ?? `${kw} ${args.join(' ')}`.trim();
-        if (!extra[kw]) extra[kw] = [];
-        extra[kw].push(line);
-        (v as unknown as { extras: Record<string, string[]> }).extras = extra;
+        ajouterLigneVlan(v, kw, raw ?? `${kw} ${args.join(' ')}`.trim());
         return '';
       });
     }
@@ -1644,9 +1741,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // setter so CrossVendorSshHost.evaluate() sees the change.
     t.registerGreedy('protocol', 'user-interface protocol', (args) => {
       if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
-      const dev = this.swRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const dev = this.swRef;
       const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
-      if (dev._setVtyTransportInput && ['ssh', 'telnet', 'all', 'none'].includes(proto)) {
+      if (dev?._setVtyTransportInput && ['ssh', 'telnet', 'all', 'none'].includes(proto)) {
         dev._setVtyTransportInput(proto);
       }
       return '';
@@ -1655,9 +1752,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // listed transports leaves the others. With no arg it disables both.
     t.registerGreedy('undo', 'user-interface undo', (args) => {
       if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
-      const dev = this.swRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const dev = this.swRef;
       const removed = (args[2] ?? '').toLowerCase();
-      if (!dev._setVtyTransportInput) return '';
+      if (!dev?._setVtyTransportInput) return '';
       if (removed === 'ssh') dev._setVtyTransportInput('telnet');
       else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
       else dev._setVtyTransportInput('none');
@@ -1680,13 +1777,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     t.registerGreedy('description', 'ACL description', (args) => {
       if (!this.selectedAcl) return '';
       const acl = this.acls.get(this.selectedAcl);
-      if (acl) (acl as unknown as { description?: string }).description = args.join(' ');
+      if (acl) acl.description = args.join(' ');
       return '';
     });
     t.registerGreedy('step', 'Set ACL rule step', (args) => {
       if (!this.selectedAcl) return '';
       const acl = this.acls.get(this.selectedAcl);
-      if (acl) (acl as unknown as { step?: number }).step = parseInt(args[0] ?? '5', 10);
+      if (acl) acl.step = parseInt(args[0] ?? '5', 10);
       return '';
     });
     t.registerGreedy('undo', 'ACL undo', (args) => {
@@ -1874,6 +1971,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // `display port` seul répondait « Incomplete command » alors que
     // VRP l'accepte : c'est la vue d'ensemble des ports, dont
     // `display port vlan` n'est qu'une colonne (audit 11, §5).
+    trie.register('display debugging', 'Display active debugging flags', () =>
+      this.debugService()?.format() ?? 'No debugging is on');
     trie.register('display port', 'Display port summary', () => {
       if (!this.swRef) return '';
       const rows = ['Interface                   Status     Link Type  PVID  Speed  Duplex'];
@@ -2041,34 +2140,39 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // management Ethernet placeholder. Each row reflects the live
     // admin/protocol state so the operator can see at a glance which
     // SVI is up.
-    trie.register('display ip interface brief', 'Display IP interface brief', () => {
+    trie.registerGreedy('display ip interface brief', 'Display IP interface brief', (args) => {
       if (!this.swRef) return '';
-      const svis = this.swRef.getSvis();
-      const lines: string[] = [
-        `*down: administratively down`,
-        `^down: standby`,
-        `(l): loopback`,
-        `(s): spoofing`,
-        `Interface                   IP Address/Mask      Physical   Protocol`,
-      ];
-      for (const svi of svis) {
-        const name = `Vlanif${svi.vlan}`;
-        const addr = svi.ip && svi.mask
-          ? `${svi.ip}/${svi.mask.toCIDR()}`
-          : 'unassigned';
+      const lignes: LigneIpBrief[] = [];
+      for (const svi of this.swRef.getSvis()) {
+        const nom = `Vlanif${svi.vlan}`;
         const lineUp = this.swRef.isSviLineUp(svi);
-        const phys = svi.adminUp ? (lineUp ? 'up' : 'down') : '*down';
-        const proto = lineUp ? 'up' : 'down';
-        lines.push(`${name.padEnd(28)}${addr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+        lignes.push({
+          nom,
+          adresse: svi.ip && svi.mask ? `${svi.ip}/${svi.mask.toCIDR()}` : 'unassigned',
+          physique: svi.adminUp ? (lineUp ? 'up' : 'down') : '*down',
+          protocole: lineUp ? 'up' : 'down',
+        });
       }
       for (const lb of this.swRef.getLoopbacks()) {
-        const addr = lb.ip && lb.mask ? `${lb.ip}/${lb.mask.toCIDR()}` : 'unassigned';
-        // Une loopback est up des deux côtés dès qu'elle existe — elle
-        // ne dépend d'aucun câble, c'est tout son intérêt.
-        lines.push(`${lb.name.padEnd(28)}${addr.padEnd(21)}${'up'.padEnd(11)}up(s)`);
+        // Une loopback est up des deux cotes des qu'elle existe — elle
+        // ne depend d'aucun cable, c'est tout son interet.
+        lignes.push({
+          nom: lb.name,
+          adresse: lb.ip && lb.mask ? `${lb.ip}/${lb.mask.toCIDR()}` : 'unassigned',
+          physique: 'up',
+          protocole: protocoleVrp(lb.name, 'up'),
+        });
       }
-      lines.push(`MEth0/0/1                   unassigned           down       down`);
-      return lines.join('\n');
+      lignes.push({
+        nom: 'MEth0/0/1', adresse: 'unassigned', physique: 'down', protocole: 'down',
+      });
+      const filtre = args.join(' ').trim();
+      if (filtre) {
+        const cible = this.resolveInterfaceName(filtre);
+        if (!cible) return `Error: Wrong parameter found at '^' position.`;
+        return rendreIpInterfaceBrief(lignes.filter((l) => l.nom === cible));
+      }
+      return rendreIpInterfaceBrief(lignes);
     });
 
     // `display ip interface <nom>` — la forme longue manquait
@@ -2076,7 +2180,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // rendait déjà. Même bloc, mêmes libellés que sur le routeur.
     trie.registerGreedy('display ip interface', 'Display IP interface detail', (args) => {
       if (!this.swRef) return '';
-      const nom = this.resolveL3InterfaceName(args.join(' '));
+      // Un port physique etait refuse ici alors que le routeur repondait
+      // pour le meme port : `display ip interface` d'un port sans adresse
+      // n'est pas une erreur, c'est un port sans adresse.
+      const nom = this.resolveInterfaceName(args.join(' '));
       if (!nom) return `Error: Wrong parameter found at '^' position.`;
       return this.renderL3Interface(nom);
     });
@@ -2160,15 +2267,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       displayHistoryCommand(this.history));
 
     // `display this` — running config of the CURRENT view only.
-    trie.register('display this', 'Display active view configuration', () => {
-      if (!this.swRef) return '';
-      if (this.mode === 'interface' && this.selectedInterface) {
-        const etm = this.selectedInterface.match(/^Eth-Trunk(\d+)$/);
-        if (etm) return this.displayEthTrunkConfig(parseInt(etm[1], 10));
-        return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
-      }
-      return this.displayCurrentConfig(this.swRef);
-    });
+    trie.register('display this', 'Display active view configuration', () => this.renderDisplayThis());
+    // La vue de VLAN n'avait pas la commande du tout : `display this` y
+    // repondait `Unrecognized command`, alors que c'est justement une
+    // vue ou l'on veut voir ce qu'on vient de poser.
+    this.vlanTrie.register('display this', 'Display active view configuration', () => this.renderDisplayThis());
+
 
     // `display saved-configuration` — real semantics: render the snapshot
     // captured by `save`, never a mirror of the running configuration.
@@ -2249,7 +2353,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Eth-Trunk + counters.
     trie.registerGreedy('display igmp-snooping', 'Display IGMP snooping state', (args) => {
-      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent } | null)?.getIgmpSnoopingAgent?.();
+      const agent = this.swRef?.getIgmpSnoopingAgent?.();
       if (!agent) return '';
       const vlans = agent.listVlans();
       if (args[0] === 'group') {
@@ -2321,7 +2425,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     trie.registerGreedy('display lacp statistics', 'Display LACP statistics', (args) => {
       if (!this.swRef) return '';
-      const agent = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+      const agent = this.swRef?.getLacpAgent?.();
       if (!agent) return 'Info: LACP is not running.';
       const filterArg = args.join(' ');
       const filterPort = filterArg ? this.resolveInterfaceName(filterArg) : null;
@@ -2374,7 +2478,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private registerCommonMgmt(trie: CommandTrie): void {
     registerHuaweiCommonMgmt(
       trie,
-      undefined,
+      { service: () => this.debugService(), platform: 'switch' },
       () => { if (this.swRef) this.swRef._captureStartupConfig(this.displayCurrentConfig(this.swRef)); },
       () => { this.swRef?._eraseStartupConfig(); },
     );
@@ -2384,58 +2488,46 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   /** System-view `stp …` configuration commands. */
   private registerStpSystemCommands(trie: CommandTrie): void {
-    trie.registerGreedy('stp', 'Spanning Tree Protocol configuration', (args) => {
-      const a = args.map(s => s.toLowerCase());
-      if (a.length === 0) return 'Error: Incomplete command.';
+    trie.describeArgs('stp', [{
+      name: 'option', type: 'ENUM', description: 'Spanning tree parameter',
+      validator: () => true,
+      values: STP_SYSTEM_KEYWORDS.map(k => ({ ...k })),
+    }]);
+    trie.registerGreedy('stp', 'Spanning Tree Protocol configuration', (args, ligne) => {
+      const g = analyserStp(args, STP_SYSTEME);
+      if (g.statut === 'refus') return rendreErreurVrp(g.err, ligne ?? `stp ${args.join(' ')}`);
+      const a = g.args.map(x => x.toLowerCase());
 
-      switch (a[0]) {
+      switch (g.mot) {
         case 'enable':
-          this.stp.enabled = true;
-          this.applyToStpAgent(ag => ag.setEnabled(true));
+        case 'disable': {
+          const on = g.mot === 'enable';
+          this.stp.enabled = on;
+          this.applyToStpAgent(ag => ag.setEnabled(on));
           return '';
-        case 'disable':
-          this.stp.enabled = false;
-          this.applyToStpAgent(ag => ag.setEnabled(false));
-          return '';
+        }
         case 'mode': {
-          const m = a[1];
-          if (m !== 'stp' && m !== 'rstp' && m !== 'mstp') {
-            return 'Error: Wrong parameter found at \'^\' position.';
-          }
+          const m = a[0] as 'stp' | 'rstp' | 'mstp';
           this.stp.mode = m;
           this.applyToStpAgent(ag => ag.setMode(m));
           return '';
         }
         case 'priority': {
-          const p = parseInt(a[1], 10);
-          if (isNaN(p) || p < 0 || p > 61440 || p % 4096 !== 0) {
-            return 'Error: Wrong parameter found at \'^\' position.';
-          }
+          const p = parseInt(a[0], 10);
           this.stp.priority = p;
           this.applyToStpAgent(ag => ag.setBridgePriority(p));
           return '';
         }
-        case 'root':
-          if (a[1] === 'primary') {
-            this.stp.root = 'primary'; this.stp.priority = 0;
-            this.applyToStpAgent(ag => ag.setBridgePriority(0));
-            return '';
-          }
-          if (a[1] === 'secondary') {
-            this.stp.root = 'secondary'; this.stp.priority = 4096;
-            this.applyToStpAgent(ag => ag.setBridgePriority(4096));
-            return '';
-          }
-          return 'Error: Wrong parameter found at \'^\' position.';
+        case 'root': {
+          const p = a[0] === 'primary' ? 0 : 4096;
+          this.stp.root = a[0] as 'primary' | 'secondary';
+          this.stp.priority = p;
+          this.applyToStpAgent(ag => ag.setBridgePriority(p));
+          return '';
+        }
         case 'instance': {
-          const instId = parseInt(a[1], 10);
-          if (isNaN(instId) || a[2] !== 'priority') {
-            return 'Error: Wrong parameter found at \'^\' position.';
-          }
-          const p = parseInt(a[3], 10);
-          if (isNaN(p) || p < 0 || p > 61440 || p % 4096 !== 0) {
-            return 'Error: Wrong parameter found at \'^\' position.';
-          }
+          const instId = parseInt(a[0], 10);
+          const p = parseInt(a[2], 10);
           this.applyToStpAgent(ag => ag.setMstInstancePriority(instId, p));
           return '';
         }
@@ -2443,72 +2535,103 @@ export class HuaweiSwitchShell implements ISwitchShell {
           this.stp.bpduProtection = true;
           return '';
         case 'edged-port':
-          if (a[1] !== 'default') return 'Error: Wrong parameter found at \'^\' position.';
           this.stp.edgedPortDefault = true;
           return '';
         case 'pathcost-standard':
+          // Le moteur porte deja ce reglage ; la commande l'ecartait.
+          this.applyToStpAgent(ag => ag.setPathcostMethod(a[0] === 'dot1t' ? 'long' : 'short'));
+          return '';
+        case 'timer': {
+          // VRP compte ces trois temporisateurs en CENTIEMES de seconde ;
+          // le moteur les tient en secondes. La valeur etait jetee alors
+          // que les trois accesseurs existaient.
+          const borne = borneTimerStp(a[0]);
+          if (!borne) return rendreErreurVrp({ kind: 'wrong', token: g.args[0] }, ligne ?? '');
+          const cs = parseInt(a[1], 10);
+          if (cs < borne[0] || cs > borne[1]) {
+            return rendreErreurVrp({ kind: 'wrong', token: g.args[1] }, ligne ?? '');
+          }
+          const sec = Math.round(cs / 100);
+          this.applyToStpAgent(ag => {
+            if (a[0] === 'hello') ag.setHelloSec(sec);
+            else if (a[0] === 'forward-delay') ag.setForwardDelaySec(sec);
+            else ag.setMaxAgeSec(sec);
+          });
+          return '';
+        }
         case 'tc-protection':
         case 'converge':
-        case 'timer':
-          return ''; // accepted, no behavioural effect in the sim
+          // Acceptes et sans effet : aucun modele derriere. Nomme dans le
+          // PRD plutot que masque par un refus qui serait faux.
+          return '';
         case 'region-configuration':
           this.mode = 'mst-region';
           return '';
         default:
-          return `Error: Unrecognized command "stp ${args.join(' ')}"`;
+          return '';
       }
     });
   }
 
   /** Interface-view `stp …` configuration commands. */
   private registerStpInterfaceCommands(trie: CommandTrie): void {
-    trie.registerGreedy('stp', 'Interface STP configuration', (args) => {
+    trie.describeArgs('stp', [{
+      name: 'option', type: 'ENUM', description: 'Spanning tree parameter',
+      validator: () => true,
+      values: STP_INTERFACE_KEYWORDS.map(k => ({ ...k })),
+    }]);
+    trie.registerGreedy('stp', 'Interface STP configuration', (args, ligne) => {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
-      const a = args.map(s => s.toLowerCase());
-      if (a.length === 0) return 'Error: Incomplete command.';
-      const valid = new Set(['edged-port', 'bpdu-protection', 'cost', 'instance',
-        'port', 'disable', 'enable', 'bpdu-filter', 'loop-protection',
-        'root-protection', 'tc-restriction']);
-      if (!valid.has(a[0])) {
-        return `Error: Unrecognized command "stp ${args.join(' ')}"`;
-      }
-      // Persist a normalised line for `display this`.
-      const list = this.ifStp.get(this.selectedInterface) ?? [];
-      list.push(`stp ${args.join(' ')}`);
-      this.ifStp.set(this.selectedInterface, list);
+      const g = analyserStp(args, STP_INTERFACE);
+      if (g.statut === 'refus') return rendreErreurVrp(g.err, ligne ?? `stp ${args.join(' ')}`);
+      const a = g.args.map(x => x.toLowerCase());
       const port = this.selectedInterface;
-      if (a[0] === 'edged-port' && a[1] === 'enable') {
-        this.applyToStpAgent(ag => ag.setPortFast(port, true));
-      } else if (a[0] === 'edged-port' && a[1] === 'disable') {
-        this.applyToStpAgent(ag => ag.setPortFast(port, false));
-      } else if (a[0] === 'bpdu-protection' && a[1] === 'enable') {
-        this.applyToStpAgent(ag => ag.setPortBpduGuard(port, true));
-      } else if (a[0] === 'bpdu-protection' && a[1] === 'disable') {
-        this.applyToStpAgent(ag => ag.setPortBpduGuard(port, false));
-      } else if (a[0] === 'bpdu-filter' && a[1] === 'enable') {
-        this.applyToStpAgent(ag => ag.setPortBpduFilter(port, true));
-      } else if (a[0] === 'bpdu-filter' && a[1] === 'disable') {
-        this.applyToStpAgent(ag => ag.setPortBpduFilter(port, false));
-      } else if (a[0] === 'root-protection') {
-        this.applyToStpAgent(ag => ag.setPortRootGuard(port, true));
-      } else if (a[0] === 'loop-protection') {
-        this.applyToStpAgent(ag => ag.setPortLoopGuard(port, true));
-      } else if (a[0] === 'cost') {
-        // `stp [instance <n>] cost <m>` — VRP's spelling of the same knob
-        // Cisco writes `spanning-tree [vlan <v>] cost <m>`.
-        const cost = parseInt(a[1], 10);
-        if (!Number.isNaN(cost)) this.applyToStpAgent(ag => ag.setPortCost(port, cost));
-      } else if (a[0] === 'instance' && a[2] === 'cost') {
-        const inst = parseInt(a[1], 10);
-        const cost = parseInt(a[3], 10);
-        if (!Number.isNaN(inst) && !Number.isNaN(cost)) {
-          this.applyToStpAgent(ag => ag.setPortCost(port, cost, inst));
+
+      // La ligne n'est conservee pour `display this` qu'une fois la
+      // grammaire admise : elle est REJOUEE a l'import, donc y ranger
+      // une forme refusee la ferait tomber au rechargement.
+      const list = this.ifStp.get(port) ?? [];
+      list.push(`stp ${args.join(' ')}`);
+      this.ifStp.set(port, list);
+
+      const actif = a[0] === 'enable' || a[a.length - 1] === 'enable';
+      switch (g.mot) {
+        case 'edged-port':
+          this.applyToStpAgent(ag => ag.setPortFast(port, actif));
+          return '';
+        case 'bpdu-protection':
+          this.applyToStpAgent(ag => ag.setPortBpduGuard(port, actif));
+          return '';
+        case 'bpdu-filter':
+          this.applyToStpAgent(ag => ag.setPortBpduFilter(port, actif));
+          return '';
+        case 'root-protection':
+          this.applyToStpAgent(ag => ag.setPortRootGuard(port, true));
+          return '';
+        case 'loop-protection':
+          this.applyToStpAgent(ag => ag.setPortLoopGuard(port, true));
+          return '';
+        case 'cost': {
+          // `stp [instance <n>] cost <m>` — VRP's spelling of the same knob
+          // Cisco writes `spanning-tree [vlan <v>] cost <m>`.
+          const cost = parseInt(a[0], 10);
+          this.applyToStpAgent(ag => ag.setPortCost(port, cost));
+          return '';
         }
-      } else if (a[0] === 'port' && a[1] === 'priority') {
-        const priority = parseInt(a[2], 10);
-        if (!Number.isNaN(priority)) this.applyToStpAgent(ag => ag.setPortPriority(port, priority));
+        case 'instance': {
+          const inst = parseInt(a[0], 10);
+          const cost = parseInt(a[2], 10);
+          this.applyToStpAgent(ag => ag.setPortCost(port, cost, inst));
+          return '';
+        }
+        case 'port': {
+          const priority = parseInt(a[1], 10);
+          this.applyToStpAgent(ag => ag.setPortPriority(port, priority));
+          return '';
+        }
+        default:
+          return '';
       }
-      return '';
     });
   }
 
@@ -2644,7 +2767,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     trie.registerGreedy('display lldp neighbor', 'Display LLDP neighbours', (args) => {
       if (!this.swRef) return '';
-      const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+      const ag = this.swRef?.getLldpAgent?.();
       if (!ag) return '';
       const ns = ag.getNeighbors();
       const brief = args.some(a => a.toLowerCase() === 'brief');
@@ -2678,7 +2801,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     trie.register('display lldp local', 'Display LLDP local info', () => {
       if (!this.swRef) return '';
-      const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+      const ag = this.swRef?.getLldpAgent?.();
       const cfg = ag?.getConfig();
       return [
         'Local LLDP information:',
@@ -2706,7 +2829,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private displayStp(): string {
     const modeName = this.stp.mode.toUpperCase();
-    const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent } | undefined)?.getStpAgent?.();
+    const ag = this.swRef?.getStpAgent?.();
     const root = ag?.getRootBridge();
     const cfg = ag?.getConfig();
     const rootPort = ag?.getRootPort();
@@ -2755,15 +2878,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const names = this.swRef?.getPortNames() ?? [];
     const port = names.find(n => n.toLowerCase() === spec.toLowerCase());
     if (!port) return 'Error: Wrong parameter found at \'^\' position.';
-    const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+    const agent = this.swRef?.getIgmpSnoopingAgent?.();
     agent?.setStaticRouterPort(vlan, port, on);
     return '';
   }
 
   private pimSnoopingAgentOrNull(): import('@/network/pim-snooping/PimSnoopingAgent').PimSnoopingAgent | null {
-    return (this.swRef as unknown as {
-      getPimSnoopingAgent?: () => import('@/network/pim-snooping/PimSnoopingAgent').PimSnoopingAgent;
-    } | null)?.getPimSnoopingAgent?.() ?? null;
+    return this.swRef?.getPimSnoopingAgent?.() ?? null;
   }
 
   private huaweiPortId(portName: string): string {
@@ -2940,6 +3061,35 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   /** `display this` body for an Eth-Trunk interface view. */
+
+  /**
+   * La configuration de la vue COURANTE. En vue systeme la vue courante
+   * est la machine, donc tout rendre y est juste ; ailleurs il faut le
+   * bloc, et la marche s'arrete sur `#` comme sur toute ligne de premier
+   * niveau pour ne pas deborder.
+   */
+  private renderDisplayThis(): string {
+    if (!this.swRef) return '';
+    if (this.mode === 'interface' && this.selectedInterface) {
+      const etm = this.selectedInterface.match(/^Eth-Trunk(\d+)$/);
+      if (etm) return this.displayEthTrunkConfig(parseInt(etm[1], 10));
+      return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
+    }
+    if (this.mode === 'vlan' && this.selectedVlan !== null) {
+      const tete = `vlan ${this.selectedVlan}`;
+      const out: string[] = ['#'];
+      let dedans = false;
+      for (const l of this.displayCurrentConfig(this.swRef).split('\n')) {
+        if (!dedans) { if (l === tete) { dedans = true; out.push(l); } continue; }
+        if (l === '#' || (l.length > 0 && !/^\s/.test(l))) break;
+        out.push(l);
+      }
+      out.push('#');
+      return out.join('\n');
+    }
+    return this.displayCurrentConfig(this.swRef);
+  }
+
   private displayEthTrunkConfig(id: number): string {
     const t = this.ethTrunks.get(id);
     if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
@@ -2952,7 +3102,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private displayEthTrunk(id: number): string {
     const t = this.ethTrunks.get(id);
     if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
-    const agent = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+    const agent = this.swRef?.getLacpAgent?.();
     const liveMembers = agent ? agent.getGroupMembers(id) : [];
     const liveByPort = new Map(liveMembers.map(m => [m.portName, m] as const));
     const upCount = liveMembers.filter(m => m.bundled).length;
@@ -3078,7 +3228,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   private displayInterface(sw: Switch, ifName: string): string {
-    const portName = this.resolveInterfaceName(ifName) || ifName;
+    // Le repli `|| ifName` renvoyait la saisie TELLE QUELLE : d'ou
+    // `vlanif10 current state` sur une machine ou toutes les autres vues
+    // ecrivent `Vlanif10`, et un refus pour la forme separee.
+    const portName = this.resolveInterfaceName(ifName);
+    if (!portName) return `Error: Wrong parameter found at '^' position.`;
     const port = sw.getPort(portName);
     const vlanIfMatch = portName.match(/^Vlanif(\d+)$/i);
     const isVlanif = vlanIfMatch !== null;
@@ -3114,7 +3268,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       `Input:  0 packets, 0 bytes`,
       `Output: 0 packets, 0 bytes`,
     );
-    for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
+    for (const natLine of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(natLine);
     return lines.join('\n');
   }
 
@@ -3196,6 +3350,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (id === 1) continue;
       lines.push(`vlan ${id}`);
       lines.push(` name ${vlan.name}`);
+      // Ces lignes etaient rangees et rendues par personne : la
+      // configuration d'un VLAN les perdait, et l'import avec.
+      for (const extra of lignesDuVlan(vlan)) lines.push(` ${extra}`);
       lines.push('#');
     }
 
@@ -3230,27 +3387,26 @@ export class HuaweiSwitchShell implements ISwitchShell {
         }
       }
       if (!port.getIsUp()) lines.push(` shutdown`);
-      for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
+      for (const natLine of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(natLine);
       lines.push('#');
     }
 
     // Vlanif L3 interfaces (SVIs configured via 'interface Vlanif<N>')
-    const svis = (sw as unknown as { getSvis?: () => Array<{ vlan: number; ip?: unknown; mask?: unknown }> }).getSvis?.();
+    const svis = sw.getSvis();
     if (svis) {
       for (const svi of svis) {
         const name = `Vlanif${svi.vlan}`;
         lines.push(`interface ${name}`);
         if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
         for (const l of this.renderVlanifVrrpLines(sw, name)) lines.push(l);
-        for (const natLine of runningConfigNATHuawei(sw as unknown as Router, name)) lines.push(natLine);
+        for (const natLine of runningConfigNATHuawei(commeRouteur(sw), name)) lines.push(natLine);
         lines.push('#');
       }
     }
 
     // Global NAT block — any NAT entries not bound to a per-interface section above.
-    const router = sw as unknown as Router;
-    if ((router as any)._getNATEngine) {
-      const engine = router._getNATEngine();
+    const engine = moteurNat(sw);
+    if (engine) {
       for (const e of engine.getStaticEntries()) {
         if (e.protocol) {
           lines.push(`nat server protocol ${e.protocol} global ${e.globalIP} ${e.globalPort} inside ${e.localIP} ${e.localPort}`);
@@ -3329,33 +3485,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
       lines.push(` ${stpLine}`);
     }
     if (!port.getIsUp()) lines.push(` shutdown`);
-    for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
+    for (const natLine of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(natLine);
     lines.push('#');
     return lines.join('\n');
   }
 
   // ─── Interface Name Resolution ──────────────────────────────────
 
-  /**
-   * Résout un nom d'interface qui porte une adresse — Vlanif ou
-   * LoopBack. Distinct de `resolveInterfaceName`, qui ne connaît que les
-   * ports physiques.
-   */
-  private resolveL3InterfaceName(raw: string): string | null {
-    if (!this.swRef) return null;
-    const t = raw.trim().replace(/\s+/g, '');
-    const vlanif = t.match(/^vlanif(\d+)$/i);
-    if (vlanif) {
-      const n = parseInt(vlanif[1], 10);
-      return this.swRef.hasSvi(n) ? `Vlanif${n}` : null;
-    }
-    const loop = t.match(/^loopback(\d+)$/i);
-    if (loop) {
-      const nom = `LoopBack${parseInt(loop[1], 10)}`;
-      return this.swRef.hasLoopback(nom) ? nom : null;
-    }
-    return null;
-  }
 
   /**
    * Le bloc de `display ip interface <nom>`, mêmes libellés que sur le
@@ -3366,16 +3502,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
     if (!this.swRef) return '';
     const loop = this.swRef.getLoopback(nom);
     let etat: string;
-    let addr: string;
-    if (loop) {
+    let addr: string | null;
+    if (!/^(Vlanif|LoopBack)/i.test(nom)) {
+      // Un port physique : meme predicat d'etat que toutes les autres
+      // vues, et pas d'adresse a montrer sur un port de commutation.
+      const port = this.swRef.getPort(nom);
+      const st = port
+        ? iosInterfaceStatus(port, nom, this.swRef._getPortsInternal())
+        : null;
+      etat = st
+        ? (st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase())
+        : 'DOWN';
+      const ip = port?.getIPAddress();
+      const masque = port?.getSubnetMask();
+      addr = ip && masque ? `${ip}/${masque.toCIDR()}` : null;
+    } else if (loop) {
       etat = 'UP';
-      addr = loop.ip && loop.mask ? `${loop.ip}/${loop.mask.toCIDR()}` : null as unknown as string;
+      addr = loop.ip && loop.mask ? `${loop.ip}/${loop.mask.toCIDR()}` : null;
     } else {
       const vlan = parseInt(nom.replace(/\D/g, ''), 10);
       const svi = this.swRef.getSvi(vlan);
       const up = svi ? this.swRef.isSviLineUp(svi) : false;
       etat = svi?.adminUp ? (up ? 'UP' : 'DOWN') : 'Administratively DOWN';
-      addr = svi?.ip && svi.mask ? `${svi.ip}/${svi.mask.toCIDR()}` : null as unknown as string;
+      addr = svi?.ip && svi.mask ? `${svi.ip}/${svi.mask.toCIDR()}` : null;
     }
     const lignes = [
       `${nom} current state : ${etat}`,
@@ -3392,31 +3541,39 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lignes.join('\n');
   }
 
+  /**
+   * Le nom canonique d'une interface, quelle que soit l'ecriture — et
+   * pour TOUS les types, physique comme virtuel.
+   *
+   * Il y en avait deux ici (`resolveInterfaceName`, aveugle aux SVI et
+   * aux LoopBack, et `resolveL3InterfaceName`, qui ne connaissait
+   * qu'elles et refusait toute abreviation), et une troisieme cote
+   * routeur. D'ou trois desaccords mesures sur la meme maquette :
+   * `display interface Vlanif 10` refuse alors que `LoopBack 0` passe,
+   * `loop0` accepte par le routeur et refuse par le switch, et
+   * `display interface vlanif10` rendant `vlanif10`.
+   */
   private resolveInterfaceName(rawInput: string): string | null {
     if (!this.swRef) return null;
-    // VRP accepts both "GigabitEthernet0/0/1" and "GigabitEthernet 0/0/1"
-    // (the space form is standard syntax, not an abbreviation) — collapse
-    // whitespace before matching so both resolve identically.
-    const input = rawInput.replace(/\s+/g, '');
-
-    // Direct match
-    for (const name of this.swRef.getPortNames()) {
-      if (name.toLowerCase() === input.toLowerCase()) return name;
-    }
-
-    // Abbreviation: GE0/0/0 → GigabitEthernet0/0/0
-    const lower = input.toLowerCase();
-    const match = lower.match(/^(ge|gigabitethernet|gi)([\d/]+)$/);
-    if (match) {
-      const numbers = match[2];
-      const resolved = `GigabitEthernet${numbers}`;
-      for (const name of this.swRef.getPortNames()) {
-        if (name === resolved) return name;
-      }
-    }
-
-    return null;
+    return resolveHuaweiInterfaceName(this.nomsInterfaces(), rawInput);
   }
+
+  /** Les ports physiques, plus les interfaces virtuelles qui existent. */
+  private nomsInterfaces(): string[] {
+    if (!this.swRef) return [];
+    const noms = [...this.swRef.getPortNames()];
+    for (const svi of this.swRef.getSvis()) noms.push(`Vlanif${svi.vlan}`);
+    for (const l of this.swRef.getLoopbacks?.() ?? []) noms.push(l.name);
+    return noms;
+  }
+
+  private resolveL3InterfaceName(raw: string): string | null {
+    const nom = this.resolveInterfaceName(raw);
+    return nom && /^(Vlanif|LoopBack)/i.test(nom) ? nom : null;
+  }
+
+
+
 
   private buildPortMirroringCommands(): void {
     this.systemTrie.registerGreedy('observe-port', 'Configure SPAN observe-port', (args) =>

@@ -1,118 +1,214 @@
 /**
- * Revue itération 2, §3.1 — une interface, un état.
+ * PRD-Routage-Fidelite.md §4.2 / §6.5 — OSPF et IGMP lisent la meme vue
+ * d'interface que `show ip interface brief`.
  *
- * Le même port, au même instant, se lisait `up/up` dans
- * `show ip ospf interface` et `down/down` dans `show ip interface brief`,
- * `show interfaces` et `show ip igmp interface`. OSPF annonçait même
- * `State DR` sur un lien mort.
- *
- * Ces vues ne devinent plus : elles lisent `iosInterfaceStatus`, la même
- * source pour tout le monde. Une vue qui répond de son imagination est
- * pire qu'une vue absente — c'est celle que l'opérateur croit.
- *
- * Le test n'énumère pas des chaînes attendues : il compare les vues
- * entre elles. Il tient donc même si le format change.
+ * La regle : une adjacence OSPF et une interface IGMP existent si et
+ * seulement si `iosInterfaceStatus(port).protocol === 'up'`. Ce qui est
+ * verifie ici n'est donc pas un libelle mais un ACCORD : les vues sont
+ * comparees entre elles, jamais a une chaine ecrite a la main, et le
+ * balayage passe par les trois facons dont une interface tombe — arret
+ * administratif local, arret a l'autre bout, cable absent — parce que ce
+ * sont precisement celles que les predicats maison confondaient.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 
 beforeEach(() => {
-  EquipmentRegistry.resetInstance();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
   Logger.reset();
 });
 
-const IFACE = 'GigabitEthernet0/0';
-
-async function router(name: string): Promise<CiscoRouter> {
-  const r = new CiscoRouter(name);
-  r.powerOn?.();
-  for (const c of [
-    'enable', 'configure terminal',
-    `interface ${IFACE}`, 'ip address 10.0.12.1 255.255.255.0', 'no shutdown',
-    'ip igmp version 2', 'exit',
-    'router ospf 1', 'network 10.0.12.0 0.0.0.255 area 0', 'exit',
-    'end',
-  ]) await r.executeCommand(c);
-  return r;
+async function run(dev: CiscoRouter, cmds: string[]): Promise<void> {
+  for (const c of cmds) await dev.executeCommand(c);
 }
 
-/** `<nom> is X, line protocol is Y` → `X/Y`, quelle que soit la vue. */
-function verdict(out: string): string | null {
-  const m = new RegExp(`${IFACE} is ([a-z ]+), line protocol is ([a-z]+)`).exec(out);
-  return m ? `${m[1]}/${m[2]}` : null;
+interface Vues {
+  brief(iface: string): { status: string; protocol: string };
+  ospf(iface: string): { status: string; protocol: string } | null;
+  igmp(iface: string): { status: string; protocol: string } | null;
+  ospfBriefState(iface: string): string | null;
+  ospfBloc(iface: string): string | null;
+  igmpBloc(iface: string): string | null;
 }
 
-async function verdicts(r: CiscoRouter): Promise<Record<string, string | null>> {
+function abrege(iface: string): string {
+  return iface.replace(/^GigabitEthernet/, 'Gi').replace(/^Loopback/, 'Lo');
+}
+
+/** `<nom> is <status>, line protocol is <protocol>` — la ligne d'etat. */
+function ligneEtat(texte: string, iface: string): { status: string; protocol: string } | null {
+  const re = new RegExp(`^${iface} is ([^,]+), line protocol is (\\S+)`, 'm');
+  const m = re.exec(texte);
+  return m ? { status: m[1].trim(), protocol: m[2].trim() } : null;
+}
+
+/** Le bloc d'une interface, de sa ligne d'etat a la ligne vide suivante. */
+function bloc(texte: string, iface: string): string | null {
+  const lignes = texte.split('\n');
+  const i = lignes.findIndex((l) => l.startsWith(`${iface} is `));
+  if (i < 0) return null;
+  const out: string[] = [];
+  for (let k = i; k < lignes.length && lignes[k].trim() !== ''; k++) out.push(lignes[k]);
+  return out.join('\n');
+}
+
+async function vues(r: CiscoRouter): Promise<Vues> {
   const brief = await r.executeCommand('show ip interface brief');
-  const briefRow = brief.split('\n').find((l) => l.startsWith(IFACE)) ?? '';
-  // Interface / IP / OK? / Method / Status / Protocol. Status peut valoir
-  // « administratively down », qui contient une espace : on le prend
-  // jusqu'à la séparation en deux espaces qui précède Protocol.
-  const m = /^\S+\s+\S+\s+(?:YES|NO)\s+\S+\s+(.+?)\s{2,}(\S+)\s*$/.exec(briefRow);
+  const ospf = await r.executeCommand('show ip ospf interface');
+  const ospfBrief = await r.executeCommand('show ip ospf interface brief');
+  const igmp = await r.executeCommand('show ip igmp interface');
   return {
-    interfaces: verdict(await r.executeCommand(`show interfaces ${IFACE}`)),
-    ospf: verdict(await r.executeCommand(`show ip ospf interface ${IFACE}`)),
-    igmp: verdict(await r.executeCommand('show ip igmp interface')),
-    brief: m ? `${m[1]}/${m[2]}` : null,
+    brief(iface) {
+      const l = brief.split('\n').find((x) => x.startsWith(iface + ' '));
+      if (!l) throw new Error(`${iface} absente de show ip interface brief`);
+      const m = /\s(administratively down|up|down)\s+(up|down)\s*$/.exec(l);
+      if (!m) throw new Error(`ligne illisible : ${l}`);
+      return { status: m[1], protocol: m[2] };
+    },
+    ospf: (iface) => ligneEtat(ospf, iface),
+    igmp: (iface) => ligneEtat(igmp, iface),
+    ospfBriefState(iface) {
+      const l = ospfBrief.split('\n').find((x) => x.startsWith(abrege(iface) + ' '));
+      return l ? (l.trim().split(/\s+/).slice(-2)[0] ?? null) : null;
+    },
+    ospfBloc: (iface) => bloc(ospf, iface),
+    igmpBloc: (iface) => bloc(igmp, iface),
   };
 }
 
-describe('une interface, un seul état, quelle que soit la vue', () => {
-  it("sans câble : toutes les vues disent down", async () => {
-    const r = await router('R1');
-    const v = await verdicts(r);
-    expect(v.ospf).toBe(v.interfaces);
-    expect(v.igmp).toBe(v.interfaces);
-    expect(v.brief).toBe(v.interfaces);
-    expect(v.interfaces).toBe('down/down');
-  });
+/**
+ * A —— B, OSPF et IGMP actifs des deux cotes, plus une Loopback qui n'a
+ * pas de porteuse du tout : elle est la reference « virtuelle », celle
+ * qu'un predicat fonde sur le cablage declare morte a tort.
+ */
+async function labo(): Promise<{ a: CiscoRouter; b: CiscoRouter }> {
+  const a = new CiscoRouter('RA');
+  const b = new CiscoRouter('RB');
+  new Cable('cab').connect(a.getPorts()[0], b.getPorts()[0]);
+  for (const [d, n] of [[a, '1'], [b, '2']] as const) {
+    await run(d, [
+      'enable', 'configure terminal',
+      'interface GigabitEthernet0/0', `ip address 10.0.12.${n} 255.255.255.0`, 'no shutdown', 'exit',
+      'interface Loopback0', `ip address 1.1.1.${n} 255.255.255.255`, 'exit',
+      'ip multicast-routing',
+      'router ospf 1', 'network 0.0.0.0 255.255.255.255 area 0', 'exit',
+      'interface GigabitEthernet0/0', 'ip pim sparse-mode', 'ip igmp version 2', 'exit',
+      'interface Loopback0', 'ip pim sparse-mode', 'ip igmp version 2', 'end',
+    ]);
+  }
+  return { a, b };
+}
 
-  it('câblée et active : toutes les vues disent up', async () => {
-    const r = await router('R1');
-    const peer = new CiscoRouter('R2');
-    peer.powerOn?.();
-    for (const c of ['enable', 'configure terminal', `interface ${IFACE}`,
-      'ip address 10.0.12.2 255.255.255.0', 'no shutdown', 'end']) {
-      await peer.executeCommand(c);
+const CHUTES = [
+  ['un arret administratif local', async (a: CiscoRouter) =>
+    run(a, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end'])],
+  ['un arret a l\'autre bout', async (_a: CiscoRouter, b: CiscoRouter) =>
+    run(b, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end'])],
+  ['un cable debranche', async (_a: CiscoRouter, _b: CiscoRouter, c: Cable) => { c.disconnect(); }],
+] as const;
+
+describe('les vues d\'interface s\'accordent, quelle que soit la facon de tomber', () => {
+  it('OSPF, IGMP et `show ip interface brief` disent le meme etat sur un lien vivant', async () => {
+    const { a } = await labo();
+    const v = await vues(a);
+    for (const iface of ['GigabitEthernet0/0', 'Loopback0']) {
+      const b = v.brief(iface);
+      expect(b, iface).toEqual({ status: 'up', protocol: 'up' });
+      expect(v.ospf(iface), `OSPF/${iface}`).toEqual(b);
+      expect(v.igmp(iface), `IGMP/${iface}`).toEqual(b);
     }
-    new Cable('c1').connect(r.getPort(IFACE)!, peer.getPort(IFACE)!);
-
-    const v = await verdicts(r);
-    expect(v.ospf).toBe(v.interfaces);
-    expect(v.igmp).toBe(v.interfaces);
-    expect(v.brief).toBe(v.interfaces);
-    expect(v.interfaces).toBe('up/up');
   });
 
-  it("administrativement éteinte : toutes les vues le disent", async () => {
-    const r = await router('R1');
-    const peer = new CiscoRouter('R2');
-    peer.powerOn?.();
-    new Cable('c1').connect(r.getPort(IFACE)!, peer.getPort(IFACE)!);
-    await r.executeCommand('configure terminal');
-    await r.executeCommand(`interface ${IFACE}`);
-    await r.executeCommand('shutdown');
-    await r.executeCommand('end');
+  it.each(CHUTES)('apres %s, les trois vues tombent ensemble', async (_nom, faire) => {
+    const { a, b } = await labo();
+    const cable = a.getPorts()[0].getCable()!;
+    await faire(a, b, cable);
 
-    const v = await verdicts(r);
-    expect(v.interfaces).toContain('administratively down');
-    expect(v.ospf).toBe(v.interfaces);
+    const v = await vues(a);
+    const attendu = v.brief('GigabitEthernet0/0');
+    expect(attendu.protocol).toBe('down');
+    expect(v.ospf('GigabitEthernet0/0'), 'OSPF doit dire ce que dit brief').toEqual(attendu);
+    expect(v.igmp('GigabitEthernet0/0'), 'IGMP doit dire ce que dit brief').toEqual(attendu);
   });
 
-  it("OSPF n'élit personne sur un lien mort", async () => {
-    const r = await router('R1');
-    const out = await r.executeCommand(`show ip ospf interface ${IFACE}`);
-    // `State DR` sur une interface down/down était le symptôme le plus
-    // trompeur : il donne à croire à une adjacence.
-    expect(out).toContain('State DOWN');
-    expect(out).not.toContain('State DR');
+  it('la Loopback reste vue vivante par les trois, sans porteuse ni cable', async () => {
+    const { a, b } = await labo();
+    await run(b, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end']);
+    const v = await vues(a);
+    const attendu = v.brief('Loopback0');
+    expect(attendu).toEqual({ status: 'up', protocol: 'up' });
+    expect(v.ospf('Loopback0')).toEqual(attendu);
+    expect(v.igmp('Loopback0')).toEqual(attendu);
+  });
+
+  it('`administratively down` n\'est pas aplati en `down`', async () => {
+    const { a } = await labo();
+    await run(a, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end']);
+    const v = await vues(a);
+    for (const vue of [v.brief('GigabitEthernet0/0'), v.ospf('GigabitEthernet0/0'), v.igmp('GigabitEthernet0/0')]) {
+      expect(vue!.status).toBe('administratively down');
+    }
+  });
+});
+
+describe('un lien mort n\'elit personne', () => {
+  it.each(CHUTES)('apres %s, OSPF ne se declare plus DR', async (_nom, faire) => {
+    const { a, b } = await labo();
+    expect((await vues(a)).ospfBloc('GigabitEthernet0/0')).toMatch(/State DR,/);
+
+    await faire(a, b, a.getPorts()[0].getCable()!);
+    const bloc = (await vues(a)).ospfBloc('GigabitEthernet0/0')!;
+    expect(bloc).toMatch(/State DOWN,/);
+    expect(bloc).toMatch(/^ {2}DR: 0\.0\.0\.0$/m);
+    expect(bloc).toMatch(/^ {2}BDR: 0\.0\.0\.0$/m);
+  });
+
+  it('IGMP ne se declare plus routeur interrogateur', async () => {
+    const { a, b } = await labo();
+    expect((await vues(a)).igmpBloc('GigabitEthernet0/0')).toMatch(/IGMP querying router is 10\.0\.12\.1 \(this system\)/);
+
+    await run(b, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end']);
+    expect((await vues(a)).igmpBloc('GigabitEthernet0/0')).not.toMatch(/querying router/);
+  });
+
+  it('les deux vues OSPF s\'accordent sur l\'etat de la meme interface', async () => {
+    const { a, b } = await labo();
+    expect((await vues(a)).ospfBriefState('GigabitEthernet0/0')).toBe('DR');
+
+    await run(b, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end']);
+    const v = await vues(a);
+    expect(v.ospfBriefState('GigabitEthernet0/0')).toBe('DOWN');
+    expect(v.ospfBloc('GigabitEthernet0/0')).toMatch(/State DOWN/);
+  });
+
+  it('l\'adjacence disparait en meme temps que le lien', async () => {
+    const { a, b } = await labo();
+    expect(await a.executeCommand('show ip ospf neighbor')).toMatch(/1\.1\.1\.2/);
+    await run(b, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end']);
+    expect(await a.executeCommand('show ip ospf neighbor')).not.toMatch(/1\.1\.1\.2/);
+  });
+});
+
+describe('un lien qui revient est vu revenir par les trois', () => {
+  it('apres `no shutdown` a l\'autre bout, tout remonte ensemble', async () => {
+    const { a, b } = await labo();
+    await run(b, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end']);
+    expect((await vues(a)).brief('GigabitEthernet0/0').protocol).toBe('down');
+
+    await run(b, ['configure terminal', 'interface GigabitEthernet0/0', 'no shutdown', 'end']);
+    const v = await vues(a);
+    const attendu = v.brief('GigabitEthernet0/0');
+    expect(attendu).toEqual({ status: 'up', protocol: 'up' });
+    expect(v.ospf('GigabitEthernet0/0')).toEqual(attendu);
+    expect(v.igmp('GigabitEthernet0/0')).toEqual(attendu);
+    const bloc = v.ospfBloc('GigabitEthernet0/0')!;
+    expect(bloc).toMatch(/State (DR|Backup|DROther),/);
+    expect(bloc).toMatch(/^ {2}DR: 10\.0\.12\.[12]$/m);
   });
 });

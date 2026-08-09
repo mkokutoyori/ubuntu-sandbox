@@ -146,6 +146,14 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       return;
     }
 
+    // Ctrl+C pendant un collage : l'interrompre AVANT que la touche ne
+    // parte au shell. Un bloc collé par erreur doit pouvoir être arrêté,
+    // et c'est le geste que tout le monde fait.
+    if (e.key === 'c' && e.ctrlKey && !e.shiftKey && session.abortPaste()) {
+      e.preventDefault();
+      return;
+    }
+
     // ArrowRight at end-of-input accepts the ghost suggestion inline.
     if (e.key === 'ArrowRight' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       const el = e.currentTarget;
@@ -176,6 +184,16 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       e.preventDefault();
       session.pasteText(text);
     }
+  }, [session]);
+
+  // Les champs sans valeur contrôlée — pager, capture de flux — ne
+  // voient jamais passer un `onChange`, donc un collage y était
+  // intégralement perdu, y compris sur une seule ligne. Ils routent
+  // TOUT vers la session.
+  const handlePasteRaw = useCallback((e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text');
+    if (text) session.pasteText(text);
   }, [session]);
 
   // Global keydown for copy/paste when terminal div is focused but no input has focus
@@ -374,6 +392,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               value={session.getPasswordBuf()}
               onChange={(e) => session.setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               className="overflow-hidden"
               style={{
                 // `fixed` (not `absolute`) deliberately: this input sits
@@ -456,6 +475,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             type="text"
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
+            onPaste={handlePasteRaw}
           />
         )}
 
@@ -503,6 +523,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             ref={inputRef}
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
+            onPaste={handlePasteRaw}
           />
         )}
 

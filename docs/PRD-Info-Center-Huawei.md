@@ -185,6 +185,16 @@ le même service rendu à l'opérateur, et VRP les annote de la même façon.
   simulateur produit réellement (`OSPF`, `BGP`, `IFNET`, …) plus
   `default` : accepter n'importe quel mot ferait croire à un filtre qui
   ne filtrera jamais rien.
+* **Sur le COMMUTATEUR, la configuration `info-center` n'est pas rendue
+  dans `display current-configuration`.** `HuaweiSwitch` n'a pas de
+  service de gestion : la coquille lui donne son propre état, donc les
+  commandes sont validées et `display channel` dit vrai, mais rien ne
+  porte cet état à travers une sauvegarde. Le rendre demanderait de
+  donner au commutateur le service de gestion qu'il n'a pas, ce qui
+  dépasse ce lot. Avant, la famille entière y était acceptée et sans
+  aucun effet ; elle est maintenant validée, ce qui est un progrès mais
+  pas la fidélité complète, et c'est dit ici plutôt que laissé à
+  découvrir.
 * **`display logbuffer` reste chronologique** et ne prend pas les
   filtres `level`/`module` de VRP : le tampon partagé garde le rendu de
   chaque ligne, pas ses champs, donc filtrer dessus reviendrait à

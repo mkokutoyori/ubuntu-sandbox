@@ -178,6 +178,8 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   // `apachectl` the link; both names exist, as on the machine.
   nginx: '/usr/sbin/nginx', apache2: '/usr/sbin/apache2',
   apachectl: '/usr/sbin/apachectl', apache2ctl: '/usr/sbin/apache2ctl',
+  a2ensite: '/usr/sbin/a2ensite', a2dissite: '/usr/sbin/a2dissite',
+  a2enmod: '/usr/sbin/a2enmod', a2dismod: '/usr/sbin/a2dismod',
 };
 
 export function resolveExePath(name: string): string {

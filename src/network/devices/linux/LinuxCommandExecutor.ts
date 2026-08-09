@@ -2838,11 +2838,11 @@ export class LinuxCommandExecutor {
    * argv is not a network command and the synchronous dispatch applies.
    */
   private networkRunner:
-    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
+    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
     | null = null;
 
   setNetworkCommandRunner(
-    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
   ): void {
     this.networkRunner = runner;
   }
@@ -2899,7 +2899,7 @@ export class LinuxCommandExecutor {
       trimmed,
       'bash',
       [],
-      (argv, env, background, _outputPiped, stdin) => this.dispatchMaybeNetwork(argv, env, background, stdin),
+      (argv, env, background, outputPiped, stdin) => this.dispatchMaybeNetwork(argv, env, background, stdin, outputPiped),
       initialVars,
       io,
       { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
@@ -2928,11 +2928,12 @@ export class LinuxCommandExecutor {
     env?: Record<string, string>,
     background?: boolean,
     stdin?: string,
+    outputPiped?: boolean,
   ): { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }> {
     if (!background && this.networkRunner && argv.length > 0) {
       const viaSudo = argv[0] === 'sudo';
       const effective = viaSudo ? argv.slice(1) : argv;
-      const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo, stdin) : null;
+      const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo, stdin, outputPiped) : null;
       if (pending) return pending;
       const suPending = this.trySuNetworkCommand(argv, env);
       if (suPending) return suPending;
@@ -3138,9 +3139,9 @@ export class LinuxCommandExecutor {
     });
     const killedCode = () =>
       128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
-    const bridge = async (argv: string[], env?: Record<string, string>, background?: boolean, _outputPiped?: boolean, stdin?: string) => {
+    const bridge = async (argv: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
-      const result = await this.dispatchMaybeNetwork(argv, env, background, stdin);
+      const result = await this.dispatchMaybeNetwork(argv, env, background, stdin, outputPiped);
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
@@ -4771,7 +4772,7 @@ export class LinuxCommandExecutor {
       case 'systemctl': {
         const unit = (args[1] ?? '').replace(/\.service$/, '');
         if (unit === 'auditd' && args[0] === 'restart') this.auditRules.deleteAll();
-        const out = cmdSystemctl(args, this.serviceMgr);
+        const out = cmdSystemctl(args, this.serviceMgr, !c.isPiped);
         if (unit === 'auditd' && args[0] === 'restart' && out.exitCode === 0) {
           const warn = this.auditdRulesetWarning();
           if (warn) return { output: warn, exitCode: 0 };

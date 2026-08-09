@@ -1154,7 +1154,11 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     const installed = router.installedRoutes();
     const prefixe = args.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a));
     const lines = ['Prefix               Next Hop             Interface'];
-    if (!installed.some((r) => `${r.network}/${r.mask.toCIDR()}` === '0.0.0.0/0')) {
+    // `0.0.0.0/0 no route` décrit l'ABSENCE de route par défaut : c'est
+    // un fait de la table entière, pas de l'entrée demandée. Il
+    // traversait le filtre, si bien que `show ip cef 172.16.0.0`
+    // répondait sur deux préfixes dont un que personne n'avait demandé.
+    if (!prefixe && !installed.some((r) => `${r.network}/${r.mask.toCIDR()}` === '0.0.0.0/0')) {
       lines.push('0.0.0.0/0            no route');
     }
     for (const r of installed) {

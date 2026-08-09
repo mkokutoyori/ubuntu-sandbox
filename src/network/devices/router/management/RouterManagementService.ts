@@ -1,3 +1,5 @@
+import { InfoCenterConfig, type InfoCenterError } from './InfoCenterConfig';
+
 export interface RawConfigEntry {
   feature: string;
   index: number;
@@ -38,12 +40,7 @@ export class RouterManagementService {
     daylightEnd: '',
     daylightOffsetMin: 60,
   };
-  private readonly infoCenter = {
-    enabled: true,
-    timestamp: 'date',
-    sources: [] as Array<{ source: string; channel: number; severity: string }>,
-    loghosts: [] as Array<{ ip: string; channel: number; facility: string }>,
-  };
+  private readonly infoCenter = new InfoCenterConfig();
   private readonly sflow = {
     enabled: false,
     agentIp: '' as string,
@@ -154,30 +151,19 @@ export class RouterManagementService {
   }
   getClock(): typeof this.clockCfg { return this.clockCfg; }
 
-  configureInfoCenter(args: string[]): void {
-    const head = (args[0] ?? '').toLowerCase();
-    if (head === 'enable') this.infoCenter.enabled = true;
-    else if (head === 'disable') this.infoCenter.enabled = false;
-    else if (head === 'timestamp' && args[1]) this.infoCenter.timestamp = args[1];
-    else if (head === 'source' && args[1]) {
-      const chIdx = args.indexOf('channel');
-      const sevIdx = args.indexOf('level');
-      const channel = chIdx > -1 && args[chIdx + 1] ? parseInt(args[chIdx + 1], 10) : 0;
-      const severity = sevIdx > -1 && args[sevIdx + 1] ? args[sevIdx + 1] : 'informational';
-      this.infoCenter.sources.push({ source: args[1], channel, severity });
-    } else if (head === 'loghost' && args[1]) {
-      const chIdx = args.indexOf('channel');
-      const facIdx = args.indexOf('facility');
-      this.infoCenter.loghosts.push({
-        ip: args[1],
-        channel: chIdx > -1 && args[chIdx + 1] ? parseInt(args[chIdx + 1], 10) : 2,
-        facility: facIdx > -1 && args[facIdx + 1] ? args[facIdx + 1] : 'local7',
-      });
-    } else {
-      this.recordRaw('info-center', args.join(' '));
-    }
+  /**
+   * `info-center …` / `undo info-center …`.
+   *
+   * L'analyse vit dans `InfoCenterConfig` : ce qui tenait ici était un
+   * `if/else` qui ne validait rien, empilait les collecteurs et rangeait
+   * la ligne brute quand il ne comprenait pas. Il rend maintenant la
+   * faute, que la coquille traduit dans les mots de VRP.
+   */
+  configureInfoCenter(args: string[], undo = false): InfoCenterError | null {
+    return this.infoCenter.apply(args, undo);
   }
-  getInfoCenter(): typeof this.infoCenter { return this.infoCenter; }
+
+  getInfoCenter(): InfoCenterConfig { return this.infoCenter; }
 
   configureSflow(args: string[]): void {
     const head = (args[0] ?? '').toLowerCase();

@@ -341,10 +341,16 @@ export class Port {
       this.ipv6Addresses = this.ipv6Addresses.filter((e) => !e.address.isLinkLocal());
     }
 
+    // L'origine dit CE QU'EST l'adresse, pas qui l'a posée : une adresse
+    // de lien posée à la main reste une adresse de lien. Elle était
+    // rangée en 'static', si bien que `getLinkLocalIPv6()` — que le plan
+    // de données IPv6, la découverte de voisins, OSPFv3 et `ipconfig`
+    // consultent — rendait `null` sur une interface qui en portait une.
+    const origin = address.isLinkLocal() ? 'link-local' as const : 'static' as const;
     this.ipv6Addresses.push({
       address: addrWithScope,
       prefixLength,
-      origin: 'static',
+      origin,
     });
 
     Logger.info(this.equipmentId, 'port:ipv6-config',
@@ -355,7 +361,7 @@ export class Port {
         ...this.portRef(),
         address: addrWithScope,
         prefixLength,
-        origin: 'static',
+        origin,
       },
     });
   }
