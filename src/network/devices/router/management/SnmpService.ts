@@ -79,7 +79,19 @@ export class SnmpService {
   private readonly groups: Map<string, SnmpGroup> = new Map();
   private readonly users: Map<string, SnmpUser> = new Map();
   private readonly views: Map<string, SnmpView[]> = new Map();
-  private readonly enabledTraps: Set<string> = new Set();
+  /**
+   * `snmp-server enable traps [type [option ...]]` — un TYPE, et ses
+   * options.
+   *
+   * C'etait un `Set<string>` rempli par une boucle qui ajoutait chaque
+   * suffixe de la ligne : `enable traps snmp linkdown linkup` y mettait
+   * `snmp linkdown linkup`, `linkdown linkup` ET `linkup`, et le rendu
+   * imprimait donc TROIS lignes la ou l'operateur en avait tape une —
+   * deux d'entre elles etant des commandes que personne n'a ecrites.
+   * Cela depasse l'affichage : la configuration rendue est REJOUEE a
+   * l'import d'une topologie.
+   */
+  private readonly enabledTraps: Map<string, Set<string>> = new Map();
   private readonly stats: SnmpStats = SnmpService.zeroStats();
 
   configure(args: string[]): void {
@@ -93,8 +105,18 @@ export class SnmpService {
       case 'view': this.configView(args); break;
       case 'enable':
         if (args[1]?.toLowerCase() === 'traps') {
-          for (let i = 2; i < args.length; i++) this.enabledTraps.add(args.slice(i).join(' '));
-          if (args.length === 2) this.enabledTraps.add('all');
+          if (args.length === 2) {
+            // `snmp-server enable traps` tout court : toutes les
+            // notifications que la plateforme sait emettre.
+            this.enabledTraps.set('all', new Set());
+          } else {
+            const type = args[2].toLowerCase();
+            const options = this.enabledTraps.get(type) ?? new Set<string>();
+            // Une seconde commande sur le meme type AJOUTE ses options,
+            // comme sur un vrai IOS ou les deux lignes se fondent en une.
+            for (let i = 3; i < args.length; i++) options.add(args[i].toLowerCase());
+            this.enabledTraps.set(type, options);
+          }
           this.enable();
         }
         break;
@@ -260,7 +282,27 @@ export class SnmpService {
   getGroups(): readonly SnmpGroup[] { return [...this.groups.values()]; }
   getUsers(): readonly SnmpUser[] { return [...this.users.values()]; }
   getViews(): ReadonlyMap<string, readonly SnmpView[]> { return this.views; }
-  getEnabledTraps(): readonly string[] { return [...this.enabledTraps]; }
+  getEnabledTraps(): readonly string[] {
+    return [...this.enabledTraps].map(([type, options]) =>
+      options.size > 0 ? `${type} ${[...options].join(' ')}` : type);
+  }
+
+  /**
+   * Cette notification est-elle armee ?
+   *
+   * `enable traps` sans rien arme tout ; `enable traps snmp` arme toutes
+   * les notifications du type ; `enable traps snmp linkdown` n'arme que
+   * celle-la. C'est la regle d'IOS, et jusqu'ici PERSONNE ne posait la
+   * question — `enabledTraps` n'etait lu que par le rendu de la
+   * configuration, donc aucune trap n'etait jamais emise.
+   */
+  isTrapEnabled(type: string, option?: string): boolean {
+    if (this.enabledTraps.has('all')) return true;
+    const options = this.enabledTraps.get(type.toLowerCase());
+    if (!options) return false;
+    if (!option || options.size === 0) return true;
+    return options.has(option.toLowerCase());
+  }
   getEngineId(): string { return this.engineId; }
   getContact(): string { return this.contact; }
   getLocation(): string { return this.location; }
@@ -311,8 +353,8 @@ export class SnmpService {
       if (h.notifications.length) line += ' ' + h.notifications.join(' ');
       lines.push(line);
     }
-    for (const t of this.enabledTraps) {
-      lines.push(t === 'all' ? 'snmp-server enable traps' : `snmp-server enable traps ${t}`);
+    for (const ligne of this.getEnabledTraps()) {
+      lines.push(ligne === 'all' ? 'snmp-server enable traps' : `snmp-server enable traps ${ligne}`);
     }
     return lines;
   }

@@ -702,6 +702,47 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected isNtpSynchronized(): boolean { return false; }
 
+  /** Dernier etat de lien pour lequel une notification est partie. */
+  private readonly dernierEtatNotifie = new Map<string, boolean>();
+
+  /**
+   * linkDown / linkUp (IF-MIB, RFC 2863 — OID 1.3.6.1.6.3.1.1.5.3 et .4).
+   *
+   * `snmp-server enable traps` etait accepte, range et rendu dans la
+   * configuration, et lu par PERSONNE : `sendTrap` n'avait pour appelants
+   * qu'IP SLA et EEM, si bien qu'aucune notification standard — la plus
+   * classique de toutes comprise — ne quittait jamais la machine.
+   *
+   * La grappe de variables est celle de la RFC : l'index de
+   * l'interface, son etat administratif et son etat operationnel. Un
+   * trap qui ne dirait pas DE QUELLE interface il parle n'apprendrait
+   * rien au collecteur.
+   */
+  private emettreTrapDeLien(ifName: string, port: Port, monte: boolean): void {
+    // Un etat qui ne change pas ne se notifie pas. Mesure : sur une
+    // interface SANS cable, `shutdown` puis `no shutdown` faisaient
+    // passer deux fois par « down » — le lien restant baisse dans les
+    // deux cas — et un second linkDown partait pour une interface qui
+    // etait deja tombee. Un vrai routeur en emet un seul.
+    if (this.dernierEtatNotifie.get(ifName) === monte) return;
+    this.dernierEtatNotifie.set(ifName, monte);
+
+    const snmp = this.getSnmpService();
+    if (!snmp.isEnabled()) return;
+    if (!snmp.isTrapEnabled('snmp', monte ? 'linkup' : 'linkdown')) return;
+
+    const index = [...this.ports.keys()].indexOf(ifName) + 1;
+    const adminUp = port.getIsUp();
+    this.sendIpSlaTrap(
+      monte ? '1.3.6.1.6.3.1.1.5.4' : '1.3.6.1.6.3.1.1.5.3',
+      [
+        { oid: `1.3.6.1.2.1.2.2.1.1.${index}`, kind: 'integer', value: index },
+        { oid: `1.3.6.1.2.1.2.2.1.7.${index}`, kind: 'integer', value: adminUp ? 1 : 2 },
+        { oid: `1.3.6.1.2.1.2.2.1.8.${index}`, kind: 'integer', value: monte ? 1 : 2 },
+      ],
+    );
+  }
+
   protected sendIpSlaTrap(
     oid: string,
     varBindings: Array<{ oid: string; kind: string; value: number | string }>,
@@ -989,6 +1030,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
         this.syncRouteDebug();
+        this.emettreTrapDeLien(name, port, state === 'up');
         if (state === 'up') {
           this._ospfAutoConverge();
           // Le câble arrive souvent APRÈS la configuration d'adresse :
