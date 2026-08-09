@@ -78,7 +78,9 @@ export function displayInterface(router: Router, ifName: string): string {
   const desc = router.getInterfaceDescription(portName);
   if (desc) lines.push(`Description: ${desc}`);
 
-  lines.push(`Internet Address is ${ip && mask ? `${ip}/${mask}` : 'not configured'}`);
+  // VRP ecrit le masque en longueur de prefixe, ici comme dans
+  // `display ip interface` : les deux vues divergeaient.
+  lines.push(`Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'not configured'}`);
 
   // Tunnel-specific info
   const isTunnel = /^Tunnel/i.test(portName);
@@ -313,18 +315,19 @@ export function displayIpIntBrief(router: Router): string {
 }
 
 export function displayIpInterface(router: Router, ifName: string): string {
-  const portName = resolveHuaweiInterfaceName(router, ifName) || ifName;
-  const port = router.getPort(portName);
-  if (!port) return `Error: Wrong parameter found at '^' position.`;
+  const portName = resolveHuaweiInterfaceName(router, ifName);
+  const port = portName ? router.getPort(portName) : null;
+  if (!port || !portName) return `Error: Wrong parameter found at '^' position.`;
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  const isUp = port.getIsUp();
-  const conn = port.isConnected();
-  const phys = (isUp ? (conn ? 'up' : 'down') : 'administratively down');
-  const proto = (isUp && conn ? 'up' : 'down');
+  // Cette vue calculait l'etat a sa facon (`getIsUp()`/`isConnected()`),
+  // d'ou un LoopBack rendu DOWN ici et UP par `display interface` sur la
+  // meme machine au meme instant. Un objet, un etat, une source.
+  const st = iosInterfaceStatus(port, portName, router._getPortsInternal());
   const lines = [
-    `${portName} current state : ${phys.toUpperCase()}`,
-    `Line protocol current state : ${proto.toUpperCase()}`,
+    `${huaweiDisplayInterfaceName(portName)} current state : `
+      + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
+    `Line protocol current state : ${st.protocol.toUpperCase()}`,
     `Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned'}`,
     `Broadcast address : ${ip && mask ? ip.toString() : '0.0.0.0'}`,
     `The Maximum Transmit Unit : 1500 bytes`,
