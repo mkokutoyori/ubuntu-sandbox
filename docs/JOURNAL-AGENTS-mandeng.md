@@ -25,6 +25,40 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### DHCPv6 : le resolveur appris par le bail — LIVRÉ
+
+**Agent** : session « logging ». Suite du lot précédent, même famille.
+
+**Le défaut, établi contre un témoin** : un `dns-server` configuré sous
+`ipv6 dhcp pool` est porté par le pool, transporté par le paquet
+(`DHCPv6Packet.dnsServers` existe et le serveur le remplit) et **jeté à
+l'arrivée** — `requestDhcpv6Lease` ne lisait de sa REPLY que l'adresse.
+`/etc/resolv.conf` restait vide. Le témoin IPv4, monté dans le même
+laboratoire, l'écrit bien : sans lui, « resolv.conf est vide » ne
+distingue pas un client v6 défaillant d'un simulateur qui n'écrirait ce
+fichier pour personne.
+
+**Un crochet manquait** : `onDhcpLeaseConfigured` n'avait pas de jumeau
+v6. `onDhcpv6LeaseConfigured` porte l'information jusqu'à
+`LinuxMachine`, seul détenteur du VFS.
+
+**Les serveurs v6 rejoignent ceux qui sont déjà là** au lieu de les
+remplacer : le chemin v4 réécrit le fichier entier, ce qui lui suffit
+puisqu'il est seul, mais une machine à double pile prend ses deux baux
+et le second effacerait silencieusement le résolveur du premier.
+
+**Reste ouvert** : le drapeau O (`INFORMATION-REQUEST`), que
+`DHCPv6Server` ne traite pas.
+
+**Fichiers touchés** : `devices/EndHost.ts`, `devices/LinuxMachine.ts`.
+
+**Mesures.** `dhcpv6-dns-resolv.test.ts` (6 cas) discriminé par
+`git stash` : **4 tombent** avant ; les 2 autres sont le témoin IPv4 et
+le garde-fou du pool sans DNS. 103 suites DHCP/DNS/IPv6/NSS vertes
+(1 134 cas).
+
+---
+
 ### Le drapeau M déclenche DHCPv6 — LIVRÉ
 
 **Agent** : session « logging ».

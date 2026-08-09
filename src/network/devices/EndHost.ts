@@ -965,6 +965,18 @@ export abstract class EndHost extends Equipment {
 
   protected onDhcpLeaseConfigured(_iface: string): void {}
 
+  /**
+   * Le pendant v6 du crochet ci-dessus. Il n'existait pas, et le client
+   * DHCPv6 ne lisait de sa REPLY que l'adresse : les serveurs de noms et
+   * le nom de domaine y voyageaient — le pool les porte, le paquet les
+   * transporte — et etaient jetes a l'arrivee. Un `dns-server` configure
+   * sous `ipv6 dhcp pool` n'atteignait donc jamais l'hote, alors que son
+   * homologue IPv4 ecrit bien `/etc/resolv.conf`.
+   */
+  protected onDhcpv6LeaseConfigured(
+    _iface: string, _dnsServers: readonly string[], _domainName: string | null,
+  ): void {}
+
   private sendWireDhcpFrame(iface: string, pkt: DHCPPacket): void {
     const port = this.ports.get(iface);
     if (!port) return;
@@ -1068,6 +1080,8 @@ export abstract class EndHost extends Equipment {
     const lease = reply.ia!.addresses[0];
     port.addDHCPv6Address(new IPv6Address(lease.address), 64);
     if (verbose) lines.push(`DHCPv6 REPLY of ${lease.address}`);
+    this.onDhcpv6LeaseConfigured(
+      iface, reply.dnsServers ?? [], reply.domainList?.[0] ?? null);
     return lines.join('\n');
   }
 
