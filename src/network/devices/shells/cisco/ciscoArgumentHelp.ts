@@ -694,8 +694,20 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
       range: [0, 2147483] },
   ]);
+  tries.configLine.describeArgs('login-timeout', [
+    INT('seconds', [1, 300], 'Timeout in seconds'),
+  ]);
   tries.configLine.describeArgs('password', [
     { name: 'password', type: 'STRING', description: 'The UNENCRYPTED (cleartext) line password' },
+  ]);
+  tries.privileged.describeArgs('enable view', [
+    { ...WORD('view', 'View name'), optional: true },
+  ]);
+  tries.config.describeArgs('parser view', [
+    WORD('view', 'View name'),
+  ]);
+  tries.config.describeArgs('no parser view', [
+    WORD('view', 'View name'),
   ]);
   // `transport ?` listait `all`/`none`/`ssh`/`telnet` : ce sont les
   // MÉTHODES, un niveau trop haut. IOS n'offre ici que la direction.
@@ -847,7 +859,16 @@ export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): vo
     { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
       range: [0, 2147483] },
   ]);
+  tries.configLine.describeArgs('login-timeout', [
+    INT('seconds', [1, 300], 'Timeout in seconds'),
+  ]);
   tries.configLine.describeArgs('password', [
     LINE('password', 'The UNENCRYPTED (cleartext) line password'),
+  ]);
+  tries.config.describeArgs('parser view', [
+    WORD('view', 'View name'),
+  ]);
+  tries.config.describeArgs('no parser view', [
+    WORD('view', 'View name'),
   ]);
 }
