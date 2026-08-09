@@ -25,6 +25,50 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### CLI Huawei VRP — V14 : une adresse MAC s'ecrit comme VRP l'ecrit
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §23 (a ecrire).
+
+Trouve en poursuivant la famille des tableaux. Le defaut est visible a
+l'oeil nu et sa cause est unique.
+
+```
+[switch] display arp
+IP ADDRESS      MAC ADDRESS    EXPIRE(M) TYPE   INTERFACE
+10.0.10.2       02:00:00:00:00:1120        dynamicGigabitEthernet0/0/1
+
+[switch] display mac-address
+MAC Address    VLAN/VSI   Learned-From   Type
+02:00:00:00:00:1110         GigabitEthernet0/0/1dynamic
+```
+
+**Trois champs se collent** et la ligne est illisible : on ne peut plus
+distinguer la MAC de son delai d'expiration, ni le port du type.
+
+La cause n'est pas la largeur : les colonnes sont taillees pour une MAC
+de **14** caracteres — comme le reste de ces tableaux, qui reproduit VRP
+(`EXPIRE(M)`, `VPN-INSTANCE`, le pied `Total: 1  Dynamic: 1  Static: 0`)
+— et le rendu en produit **17**, parce qu'il ecrit la MAC au format IEEE
+`xx:xx:xx:xx:xx:xx` la ou VRP ecrit `xxxx-xxxx-xxxx`. Le debordement
+avale la colonne suivante.
+
+Ce qui est **prouve ici** : les champs se collent, donc la table est
+cassee telle qu'elle est. Ce qui releve de ma **connaissance de VRP** :
+que la bonne ecriture soit `0200-0000-0005`. Les deux menent au meme
+correctif, et je le dis dans le PRD plutot que de confondre les deux.
+
+**Trouve avec** : `display arp` du routeur rend `GE0/0/0`, le nom court
+interne — la regle « un port a un seul nom » des lots V3 et V11 n'a pas
+atteint cette vue non plus.
+
+**Fichiers que je vais toucher** : `shells/huawei/huaweiTableLayouts.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`.
+Si l'ecriture de la MAC doit devenir commune a d'autres vues, je le
+signalerai ici avant de sortir de ces trois fichiers.
+
+---
+
 ### IPv6 multicast + paquets OSPFv3 — LIVRÉ
 
 **Agent** : session « logging » (auteure de `PRD-Logging-Cisco.md`,
