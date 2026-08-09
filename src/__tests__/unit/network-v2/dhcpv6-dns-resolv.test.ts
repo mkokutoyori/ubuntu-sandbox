@@ -1,16 +1,16 @@
 /**
- * Ce qu'une REPLY DHCPv6 apprend a l'hote, en plus de son adresse.
+ * What a DHCPv6 REPLY teaches the host beyond its address.
  *
- * Le defaut, mesure contre un temoin IPv4 monte dans le meme fichier :
- * un `dns-server` configure sous `ipv6 dhcp pool` est porte par le pool,
- * transporte par le paquet (`DHCPv6Packet.dnsServers` existe et le
- * serveur le remplit) et JETE a l'arrivee — `requestDhcpv6Lease` ne
- * lisait de sa REPLY que l'adresse. `/etc/resolv.conf` restait vide,
- * alors que le meme laboratoire en IPv4 l'ecrit.
+ * The defect, established against an IPv4 witness built in the same
+ * file: a `dns-server` configured under `ipv6 dhcp pool` is carried by
+ * the pool, transported by the packet (`DHCPv6Packet.dnsServers` exists
+ * and the server fills it) and DROPPED on arrival —
+ * `requestDhcpv6Lease` read only the address from its REPLY.
+ * `/etc/resolv.conf` stayed empty while the same lab in IPv4 writes it.
  *
- * Le temoin est indispensable : sans lui, « resolv.conf est vide » ne
- * distingue pas un client v6 defaillant d'un simulateur qui n'ecrirait
- * ce fichier pour personne.
+ * The witness is indispensable: without it, "resolv.conf is empty" does
+ * not tell a broken v6 client from a simulator that writes that file
+ * for nobody.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -18,17 +18,17 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 
-const cfg = async (r: CiscoRouter, lignes: string[]): Promise<string[]> => {
+const cfg = async (r: CiscoRouter, lines: string[]): Promise<string[]> => {
   const out: string[] = [];
-  for (const l of lignes) out.push(await r.executeCommand(l));
+  for (const l of lines) out.push(await r.executeCommand(l));
   return out;
 };
 
-async function laboV6(options: { dns?: boolean } = {}): Promise<{ h: LinuxPC; sorties: string[] }> {
+async function laboV6(options: { dns?: boolean } = {}): Promise<{ h: LinuxPC; outputs: string[] }> {
   const r = new CiscoRouter('R1');
   const h = new LinuxPC('H');
   h.powerOn();
-  const sorties = await cfg(r, [
+  const outputs = await cfg(r, [
     'enable', 'configure terminal', 'ipv6 unicast-routing',
     'ipv6 dhcp pool LAB', 'address prefix 2001:db8:aa::/64',
     ...(options.dns === false ? [] : ['dns-server 2001:db8:aa::53', 'domain-name lab.local']),
@@ -37,7 +37,7 @@ async function laboV6(options: { dns?: boolean } = {}): Promise<{ h: LinuxPC; so
     'ipv6 dhcp server LAB', 'ipv6 nd managed-config-flag', 'no shutdown', 'end',
   ]);
   new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, h.getPort('eth0')!);
-  return { h, sorties };
+  return { h, outputs };
 }
 
 describe('le temoin IPv4, monte dans le meme simulateur', () => {
@@ -61,19 +61,19 @@ describe('le temoin IPv4, monte dans le meme simulateur', () => {
 });
 
 describe('un bail DHCPv6 apprend aussi le resolveur', () => {
-  it('le serveur de noms du pool atteint /etc/resolv.conf', async () => {
+  it('le server de noms du pool atteint /etc/resolv.conf', async () => {
     const { h } = await laboV6();
     const resolv = await h.executeCommand('cat /etc/resolv.conf');
     expect(resolv).toContain('nameserver 2001:db8:aa::53');
   });
 
-  it('le nom de domaine devient la ligne search', async () => {
+  it('le nom de domaine devient la line search', async () => {
     const { h } = await laboV6();
     const resolv = await h.executeCommand('cat /etc/resolv.conf');
     expect(resolv).toContain('search lab.local');
   });
 
-  it('un pool sans serveur de noms n\'ecrit rien', async () => {
+  it('un pool sans server de noms n\'ecrit rien', async () => {
     const { h } = await laboV6({ dns: false });
     const resolv = await h.executeCommand('cat /etc/resolv.conf');
     expect(resolv.trim()).toBe('');
@@ -82,8 +82,8 @@ describe('un bail DHCPv6 apprend aussi le resolveur', () => {
 
 describe('les deux familles cohabitent', () => {
   it('le bail v6 n\'efface pas le resolveur appris en v4', async () => {
-    // Le chemin v4 reecrit le fichier entier ; si le v6 faisait de meme,
-    // le second bail effacerait silencieusement le premier resolveur.
+    // The v4 path rewrites the whole file; if v6 did the same, the
+    // second lease would silently erase the first resolver.
     const r = new CiscoRouter('R1');
     const h = new LinuxPC('H');
     h.powerOn();
@@ -107,11 +107,11 @@ describe('les deux familles cohabitent', () => {
     expect(resolv).toContain('nameserver 2001:db8:aa::53');
   });
 
-  it('deux baux v6 de suite n\'ecrivent pas la ligne deux fois', async () => {
+  it('deux leases v6 de suite n\'ecrivent pas la line deux fois', async () => {
     const { h } = await laboV6();
     await h.executeCommand('dhclient -6 eth0');
     const resolv = await h.executeCommand('cat /etc/resolv.conf');
-    const lignes = resolv.split('\n').filter((l) => l.includes('2001:db8:aa::53'));
-    expect(lignes.length).toBe(1);
+    const lines = resolv.split('\n').filter((l) => l.includes('2001:db8:aa::53'));
+    expect(lines.length).toBe(1);
   });
 });
