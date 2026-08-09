@@ -135,10 +135,9 @@ diagnostic que les TP réseau cherchent à faire acquérir.
 Proxy, cookies, `--retry`, formulaires. À traiter seulement si un TP les
 demande.
 
-> **Les témoins sont livrés — voir §9.** Le calcul a changé à la mesure :
-> ce n'était pas une fonctionnalité à écrire mais une PORTE à ouvrir sur
-> un moteur qui existait déjà et que rien n'avait jamais appelé. Le
-> proxy, `--retry` et les formulaires restent hors périmètre.
+> **§P4 est livré, sauf le proxy** — témoins au §9, `--version` et
+> quatre options au §10, formulaires et `--retry` au §11. Seul `-x`
+> reste refusé, et le §11.3 dit pourquoi ce n'est pas un oubli.
 
 ## 5. Hors périmètre, et dit d'emblée
 
@@ -271,8 +270,9 @@ eux, sont discriminés par neutralisation (3 cas sur 9 tombent).
 
 ### 7.5 Limites assumées
 
-- **P4 (proxy, `--retry`, formulaires) n'est pas fait** — les témoins,
-  eux, le sont depuis §9 — comme le
+- **De P4, seul le proxy (`-x`) n'est pas fait** — témoins §9,
+  `--version` et quatre options §10, formulaires et `--retry` §11 —
+  comme le
   §4 l'annonçait : « à traiter seulement si un TP les demande ». Ces
   options sont refusées par le cas 2 du §7.3, pas ignorées.
 - **`%{time_total}` est mesuré pour de vrai** et vaut donc à peu près zéro,
@@ -434,3 +434,77 @@ redevient vrai maintenant que `--version` n'y est plus.
 
 `curl-version-et-options.test.ts` (17 cas), **13 tombent par
 `git stash`**.
+
+
+---
+
+## 11. Formulaires et `--retry` — livré
+
+### 11.1 `-F`, la seule option de §P4 qui demandait à ÉCRIRE
+
+Les précédentes branchaient un moteur existant ou posaient un en-tête.
+Celle-ci n'avait rien derrière elle : il n'existait nulle part de
+sérialiseur `multipart/form-data`. Elle ne demandait pas de brique
+nouvelle pour autant — lire un fichier et assembler des octets sont deux
+choses que ce curl fait déjà.
+
+Les trois formes de curl sont distinguées, et les confondre serait le
+défaut :
+
+| écrit | ce que la partie devient |
+|---|---|
+| `-F champ=valeur` | un champ ordinaire |
+| `-F champ=@fichier` | un TÉLÉVERSEMENT : `filename` et `Content-Type` |
+| `-F champ=<fichier` | un champ ordinaire dont la valeur vient du fichier |
+| `--form-string champ=@x` | `@` sans aucun sens — sa raison d'être |
+
+`;type=` impose le type d'une partie ; sans lui il se déduit de
+l'extension. Un fichier de partie absent échoue **avant toute
+connexion**, avec le code 26, comme `-T`.
+
+**La frontière est tirée au hasard**, comme chez curl. Une frontière
+fixe finirait par apparaître dans un contenu et couperait le corps en
+deux. Les tests s'accrochent donc à sa FORME et à sa présence des deux
+côtés — en-tête et corps — jamais à sa valeur. Le corps se termine par
+CRLF (RFC 7578 §4.1, qui renvoie à RFC 2046) : un analyseur strict
+rejette l'autre.
+
+### 11.2 `--retry`, mesuré sur ce que l'amont a COMPTÉ
+
+Un amont qui échoue deux fois puis répond prouve que la tentative a été
+refaite ; compter des lignes de trace ne prouverait que la trace. Les
+cas comptent donc les appels reçus par le serveur.
+
+`--retry N` fait **N tentatives EN PLUS de la première** — le compte de
+curl. Se tromper d'un ferait échouer un `--retry 1` que le vrai
+réussit ; un cas l'épingle.
+
+**Ce qui est transitoire est une liste courte, et c'est délibéré** :
+408, 429, 5xx, plus les échecs de connexion (7, 28, 52, 56). Un `404`
+ou un certificat invalide ne s'améliorent pas en insistant, et les
+retenter ferait perdre du temps sans rien changer. `--retry-all-errors`
+existe précisément pour passer outre, et n'a de sens que parce que le
+défaut est restrictif — les deux comportements sont mesurés.
+
+**Limite assumée** : `--retry-delay` et l'attente exponentielle de curl
+n'existent pas ici, le temps ne s'écoulant pas entre deux requêtes. Le
+message annonce donc `Will retry in 0 seconds`, ce qui est vrai de ce
+simulateur et faux du vrai curl — l'écrire autrement aurait été
+inventer une attente que rien ne subit. `--retry-delay` reste refusée
+plutôt qu'acceptée sans effet.
+
+### 11.3 `-x` reste refusée, et ce n'est pas un oubli
+
+On pourrait écrire l'option en une heure. On ne pourrait rien lui faire
+traverser : il n'existe aucun mandataire DIRECT dans ce simulateur vers
+lequel pointer — le mandataire de nginx (§9 de `PRD-Nginx.md`) est un
+mandataire INVERSE, qui ne parle pas le même dialogue. Livrer `-x`
+supposerait donc d'écrire d'abord un serveur mandataire, ce qui est un
+lot à part entière et non la fin de celui-ci.
+
+`curl-form-et-retry.test.ts` (19 cas), **17 tombent par `git stash`**.
+
+**Deux garde-fous des lots précédents sont tombés à cette occasion, et
+c'était leur rôle** : `curl-cookies.test.ts` et
+`curl-version-et-options.test.ts` épinglaient `--retry` et `-F` comme
+refusées. Ils ne couvrent plus que `-x`.

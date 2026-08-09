@@ -196,7 +196,11 @@ describe('§P4 — ce que la ligne de commande accepte', () => {
   it('les options du §P4 encore absentes restent refusées, et le disent', async () => {
     // Le garde-fou du lot : ouvrir la porte des témoins ne doit pas
     // faire croire que le reste de §P4 est là.
-    for (const option of ['-x', '--retry', '-F']) {
+    //
+    // `--retry` et `-F` ont quitté cette liste en étant IMPLÉMENTÉES
+    // (`curl-form-et-retry.test.ts`) : ce cas est tombé quand elles le
+    // sont devenues, ce qui est précisément son rôle.
+    for (const option of ['-x']) {
       expect(await cli.executeCommand(`curl -s ${option} zorglub http://10.0.0.2:8080/`), option)
         .toContain(`curl: option ${option}: is not implemented in this simulator`);
     }

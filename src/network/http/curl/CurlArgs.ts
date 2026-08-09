@@ -36,6 +36,12 @@ export interface CurlOptions {
   dumpHeader: string | null;
   /** `-T` : le fichier à téléverser, qui fait de la requête un `PUT`. */
   uploadFile: string | null;
+  /** `-F` : les parties d'un `multipart/form-data`, dans l'ordre saisi. */
+  form: string[];
+  /** `--retry` : combien de NOUVELLES tentatives après un échec transitoire. */
+  retry: number;
+  /** `--retry-all-errors` : réessayer même ce que curl juge définitif. */
+  retryAllErrors: boolean;
   urls: string[];
 }
 
@@ -47,9 +53,16 @@ export const CURL_USER_AGENT = 'curl/8.5.0';
 
 const TRY_HELP = "curl: try 'curl --help' for more information";
 
+/**
+ * Marque interne d'une valeur de `--form-string`, dont `@` et `<`
+ * doivent rester des caractères ordinaires. Elle ne peut pas apparaître
+ * dans une saisie : c'est un octet de contrôle.
+ */
+export const LITTERAL = '\u0000';
+
 const SHORT_NO_ARG = 'IksSvfLOiV';
 
-const SHORT_WITH_ARG = 'owXdHuAbceDT';
+const SHORT_WITH_ARG = 'owXdHuAbceDTF';
 
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
@@ -62,6 +75,7 @@ const LONG_NO_ARG: Record<string, string> = {
   'remote-name': 'O',
   include: 'i',
   version: 'V',
+  'retry-all-errors': 'retry-all-errors',
 };
 
 const LONG_WITH_ARG: Record<string, string> = {
@@ -84,20 +98,23 @@ const LONG_WITH_ARG: Record<string, string> = {
   'dump-header': 'D',
   'upload-file': 'T',
   'data-urlencode': 'data-urlencode',
+  form: 'F',
+  'form-string': 'form-string',
+  retry: 'retry',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
   // `b` et `c` ont quitté cette liste : ils ouvrent la porte du bocal
   // à témoins (`http/cookies/`), un moteur RFC 6265 complet qui
   // n'avait aucun appelant.
-  x: true, F: true, C: true, m: true, '#': true,
+  x: true, C: true, m: true, '#': true,
   E: true, y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
   K: true, r: true, P: true, Q: true, p: true, U: true,
 };
 
 const UNSUPPORTED_LONG: Record<string, true> = {
-  proxy: true, retry: true, 'retry-delay': true,
-  'retry-max-time': true, form: true, 'form-string': true,
+  proxy: true, 'retry-delay': true,
+  'retry-max-time': true,
   http2: true, 'http2-prior-knowledge': true, http3: true, 'http0.9': true,
   'limit-rate': true, 'continue-at': true, 'progress-bar': true, cert: true,
   // `--version` a quitté la liste des INCONNUES : curl la connaît, et
@@ -140,6 +157,9 @@ function defaults(): CurlOptions {
     referer: null,
     dumpHeader: null,
     uploadFile: null,
+    form: [],
+    retry: 0,
+    retryAllErrors: false,
     urls: [],
   };
 }
@@ -193,6 +213,25 @@ function applyValued(
     case 'e': opts.referer = value; break;
     case 'D': opts.dumpHeader = value; break;
     case 'T': opts.uploadFile = value; break;
+    case 'F': opts.form.push(value); break;
+    case 'form-string': {
+      // `--form-string` ne donne AUCUN sens à `@` ni `<` : c'est sa
+      // raison d'être, envoyer une valeur qui commence par l'un des
+      // deux sans qu'elle soit prise pour un fichier.
+      const eq = value.indexOf('=');
+      opts.form.push(eq > 0
+        ? `${value.slice(0, eq)}=${LITTERAL}${value.slice(eq + 1)}`
+        : value);
+      break;
+    }
+    case 'retry': {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 0) {
+        return { ok: false, message: `curl: (2) retry is not a valid number: ${value}`, exitCode: 2 };
+      }
+      opts.retry = n;
+      break;
+    }
     case 'data-urlencode': {
       // `nom=valeur` n'encode QUE la valeur ; une chaîne sans `=` est
       // encodée en entier. C'est la règle de curl, et la confondre
@@ -229,6 +268,7 @@ function applyFlag(opts: CurlOptions, letter: string): void {
     case 'I': opts.head = true; break;
     case 'i': opts.include = true; break;
     case 'V': opts.version = true; break;
+    case 'retry-all-errors': opts.retryAllErrors = true; break;
     case 'k': opts.insecure = true; break;
     case 's': opts.silent = true; break;
     case 'S': opts.showError = true; break;
