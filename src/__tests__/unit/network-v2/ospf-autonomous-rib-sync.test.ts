@@ -56,6 +56,10 @@ async function buildChain(): Promise<{ r1: CiscoRouter; r2: CiscoRouter }> {
   await r2.executeCommand('exit');
   await r2.executeCommand('interface Loopback1');
   await r2.executeCommand('ip address 192.168.20.1 255.255.255.0');
+  // OSPF annonce une loopback en HÔTE ISOLÉ /32 quel que soit son
+  // masque (RFC 2328 §12.4.1.1) : sans ce type de réseau, le /24 que ce
+  // laboratoire fait apprendre puis retirer n'existerait pas.
+  await r2.executeCommand('ip ospf network point-to-point');
   await r2.executeCommand('exit');
   await r2.executeCommand('router ospf 1');
   await r2.executeCommand('network 10.0.12.0 0.0.0.3 area 0');

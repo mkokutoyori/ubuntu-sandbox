@@ -876,7 +876,12 @@ export class OSPFEngine implements IProtocolEngine {
       mask,
       areaId,
       state: 'Down',
-      networkType: options?.networkType ?? 'broadcast',
+      // Une interface de bouclage naît `loopback` : OSPF le déduit du
+      // type d'interface et non d'une commande. `ip ospf network …` la
+      // fait basculer, ce qui est exactement le remède documenté quand
+      // on veut voir annoncer le préfixe configuré plutôt qu'un /32.
+      networkType: options?.networkType
+        ?? (/^Loopback/i.test(name) ? 'loopback' : 'broadcast'),
       helloInterval: options?.helloInterval ?? OSPF_DEFAULT_HELLO_INTERVAL,
       deadInterval: options?.deadInterval ?? OSPF_DEFAULT_DEAD_INTERVAL,
       retransmitInterval: OSPF_DEFAULT_RETRANSMIT_INTERVAL,
@@ -908,6 +913,29 @@ export class OSPFEngine implements IProtocolEngine {
     this.interfaceUp(name);
 
     return iface;
+  }
+
+  /**
+   * Change le type de réseau d'une interface DÉJÀ active, et relance sa
+   * machine à états.
+   *
+   * Le type était écrit directement sur l'objet par l'appelant, ce qui
+   * laissait l'état d'avant : une loopback basculée en `point-to-point`
+   * continuait d'annoncer `State Loopback`, et — plus grave — gardait
+   * ses minuteurs d'avant, donc n'émettait toujours pas de Hello. Sur
+   * une vraie machine, `ip ospf network` réinitialise l'interface.
+   */
+  setInterfaceNetworkType(name: string, type: OSPFNetworkType): void {
+    const iface = this.interfaces.get(name);
+    if (!iface || iface.networkType === type) return;
+    this.timers.clear(iface.helloTimer);
+    iface.helloTimer = null;
+    this.timers.clear(iface.waitTimer);
+    iface.waitTimer = null;
+    iface.dr = '0.0.0.0';
+    iface.bdr = '0.0.0.0';
+    iface.networkType = type;
+    this.interfaceUp(name);
   }
 
   deactivateInterface(name: string): void {
@@ -1055,7 +1083,13 @@ export class OSPFEngine implements IProtocolEngine {
 
     const oldState = iface.state;
 
-    if (iface.networkType === 'point-to-point') {
+    if (iface.networkType === 'loopback') {
+      // RFC 2328 §9.1 : une interface de bouclage entre directement en
+      // état Loopback. Elle n'élit rien et n'attend personne — la faire
+      // passer par `Waiting` puis par une élection lui faisait déclarer
+      // qu'elle était DR d'elle-même.
+      iface.state = 'Loopback';
+    } else if (iface.networkType === 'point-to-point') {
       iface.state = 'PointToPoint';
     } else {
       // Broadcast or NBMA: enter Waiting state for DR election
@@ -1066,8 +1100,10 @@ export class OSPFEngine implements IProtocolEngine {
       }, iface.deadInterval * 1000);
     }
 
-    // Start sending hellos (unless passive)
-    if (!iface.passive) {
+    // Start sending hellos (unless passive). Une interface de bouclage
+    // n'en émet jamais : il n'y a personne au bout, et un Hello qui
+    // revient à son émetteur ferait une adjacence avec soi-même.
+    if (!iface.passive && iface.networkType !== 'loopback') {
       this.startHelloTimer(iface);
     }
 
@@ -2267,7 +2303,21 @@ export class OSPFEngine implements IProtocolEngine {
       if (iface.areaId !== areaId) continue;
       if (iface.state === 'Down') continue;
 
-      if (iface.networkType === 'point-to-point') {
+      if (iface.networkType === 'loopback') {
+        // RFC 2328 §12.4.1.1 : une interface de bouclage est annoncée
+        // comme un lien de type 3 dont le LinkID est SON ADRESSE et le
+        // LinkData 255.255.255.255 — un hôte isolé, pas le sous-réseau.
+        // C'est cela que signifie « treated as a stub Host », et c'est
+        // ce qui fait qu'une loopback en /24 est vue en /32 par les
+        // voisins tant qu'on n'a pas changé son type de réseau.
+        links.push({
+          linkId: iface.ipAddress,
+          linkData: '255.255.255.255',
+          type: 3,
+          numTOS: 0,
+          metric: 0,
+        });
+      } else if (iface.networkType === 'point-to-point') {
         // Add point-to-point link for each Full neighbor
         for (const [, neighbor] of iface.neighbors) {
           if (neighbor.state === 'Full') {

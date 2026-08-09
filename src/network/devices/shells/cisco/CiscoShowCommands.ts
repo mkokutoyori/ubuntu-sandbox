@@ -6,6 +6,7 @@
  */
 
 import type { Router } from '../../Router';
+import type { Port } from '../../../hardware/Port';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
@@ -343,7 +344,34 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
       }
     }
     lines.push(`  Tunnel protocol/transport GRE/IP`);
-  } else if (!isLoopback) {
+  } else if (isLoopback) {
+    // Une loopback n'affichait que trois lignes : l'état, `Hardware is
+    // Loopback` et l'adresse. Un vrai IOS en écrit une vingtaine, et
+    // deux d'entre elles sont ce qui distingue cette interface des
+    // autres — `Encapsulation LOOPBACK` et le MTU de 1514. Bloc relevé
+    // sur du texte capturé (jeu `cisco_ios/show_interfaces` de
+    // `ntc-templates`).
+    const c = port.getCounters();
+    lines.push(`  MTU ${port.getMTU()} bytes, BW ${port.getEffectiveBandwidthKbps()} Kbit/sec, DLY ${port.getDelayUs()} usec,`);
+    lines.push(`     reliability 255/255, txload 1/255, rxload 1/255`);
+    lines.push(`  Encapsulation LOOPBACK, loopback not set`);
+    lines.push(`  Keepalive set (${port.getKeepaliveSec()} sec)`);
+    lines.push(`  Last input never, output never, output hang never`);
+    lines.push(`  Last clearing of "show interface" counters never`);
+    lines.push(`  Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0`);
+    lines.push(`  Queueing strategy: fifo`);
+    lines.push(`  Output queue: 0/0 (size/max)`);
+    lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
+    lines.push(`  5 minute output rate 0 bits/sec, 0 packets/sec`);
+    lines.push(`     ${c.framesIn} packets input, ${c.bytesIn} bytes, 0 no buffer`);
+    lines.push(`     Received 0 broadcasts (0 IP multicasts)`);
+    lines.push(`     0 runts, 0 giants, 0 throttles`);
+    lines.push(`     ${c.errorsIn} input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort`);
+    lines.push(`     ${c.framesOut} packets output, ${c.bytesOut} bytes, 0 underruns`);
+    lines.push(`     ${c.errorsOut} output errors, 0 collisions, 0 interface resets`);
+    lines.push(`     0 unknown protocol drops`);
+    lines.push(`     0 output buffer failures, 0 output buffers swapped out`);
+  } else {
     // Real port state: MTU, the `bandwidth`/`delay` overrides (or the
     // negotiated-speed defaults), duplex and ARP timeout all reflect
     // the live hardware model — not the interface name.
@@ -786,6 +814,7 @@ export function showRunningConfig(router: Router): string {
       processId: ospfCfg.processId,
       routerId: ospfCfg.routerId,
       networks: ospfCfg.networks,
+      passiveInterfaces: [...ospfCfg.passiveInterfaces],
     } : null);
     if (routingLines.length > 0) { lines.push('!'); lines.push(...routingLines); }
   }
@@ -882,6 +911,15 @@ export function showIpProtocols(router: Router): string {
       `  Routing for Networks:`,
     ];
     for (const n of cfg.networks) block.push(`    ${n.network} ${n.wildcard} area ${n.areaId}`);
+    // `passive-interface` était accepté, honoré par le moteur, et
+    // rapporté par personne : ni ici, ni dans la configuration. C'est
+    // pourtant la vue où un opérateur va vérifier qu'une interface
+    // n'émet plus, et la seule qui les liste toutes ensemble.
+    const passives = [...cfg.passiveInterfaces].sort();
+    if (passives.length > 0) {
+      block.push('  Passive Interface(s):');
+      for (const iface of passives) block.push(`    ${iface}`);
+    }
     block.push('  Routing Information Sources:', '    Gateway         Distance      Last Update');
     for (const iface of ospf.getInterfaces().values()) {
       for (const nbr of iface.neighbors.values()) {
@@ -1125,29 +1163,69 @@ export function showInterfacesSummary(router: Router): string {
   return lignes.join('\n');
 }
 
+/**
+ * Le bloc L3 d'une interface, celui que `show ip interface` rend.
+ *
+ * `show ip interface <nom>` ne l'appelait pas : il renvoyait le rendu de
+ * `show interfaces`, c'est-à-dire l'autre commande. Les deux existent
+ * précisément parce qu'elles répondent à des questions différentes — la
+ * première décrit le TRAITEMENT IP (adresse, broadcast, MTU IP, helper,
+ * proxy ARP, commutation), la seconde décrit le lien (matériel,
+ * encapsulation, compteurs de trames) — et les confondre privait la
+ * plateforme de la moitié de la réponse.
+ *
+ * Le MTU et le proxy ARP sont LUS sur le port : ils étaient écrits en
+ * dur (`MTU is 1500 bytes`, `Proxy ARP is enabled`), de sorte qu'un
+ * `ip mtu`/`no ip proxy-arp` posé sur l'interface était affiché par
+ * `show running-config` et nié par cette vue, sur la même machine au
+ * même instant.
+ */
+function ipInterfaceBlock(router: Router, name: string, port: Port): string {
+  const view = iosInterfaceStatus(port, name, router._getPortsInternal());
+  const nat = router._getNATEngine();
+  const ip = port.getIPAddress();
+  const mask = port.getSubnetMask();
+  const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
+    : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
+  const lines = [
+    `${name} is ${view.status}, line protocol is ${view.protocol}${natTag}`,
+    ip
+      ? `  Internet address is ${ip}${mask ? `/${mask.toCIDR()}` : ''}`
+      : '  Internet protocol processing disabled',
+  ];
+  if (!ip) return lines.join('\n');
+  lines.push('  Broadcast address is 255.255.255.255');
+  lines.push(`  Address determined by ${iosAddressMethod(port) === 'DHCP' ? 'DHCP' : 'non-volatile memory'}`);
+  lines.push(`  MTU is ${port.getMTU()} bytes`);
+  lines.push('  Helper address is not set');
+  lines.push('  Directed broadcast forwarding is disabled');
+  lines.push('  Outgoing access list is not set');
+  lines.push('  Inbound  access list is not set');
+  lines.push(`  Proxy ARP is ${port.isProxyArpEnabled?.() === false ? 'disabled' : 'enabled'}`);
+  lines.push('  Local Proxy ARP is disabled');
+  lines.push('  Security level is default');
+  lines.push('  Split horizon is enabled');
+  lines.push('  ICMP redirects are always sent');
+  lines.push('  ICMP unreachables are always sent');
+  lines.push('  IP fast switching is enabled');
+  lines.push('  IP CEF switching is enabled');
+  return lines.join('\n');
+}
+
 /** `show ip interface` (all, verbose) — real per-port L3 state. */
 export function showIpInterfaceAll(router: Router): string {
   const blocks: string[] = [];
-  const nat = router._getNATEngine();
   for (const [name, port] of router._getPortsInternal()) {
-    const view = iosInterfaceStatus(port, name, router._getPortsInternal());
-    const ip = port.getIPAddress();
-    const mask = port.getSubnetMask();
-    const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
-      : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
-    blocks.push([
-      `${name} is ${view.status}, ` +
-        `line protocol is ${view.protocol}${natTag}`,
-      ip
-        ? `  Internet address is ${ip}${mask ? `/${mask.toCIDR()}` : ''}`
-        : '  Internet protocol processing disabled',
-      '  Broadcast address is 255.255.255.255',
-      '  MTU is 1500 bytes',
-      '  ICMP redirects are always sent',
-      '  Proxy ARP is enabled',
-    ].join('\n'));
+    blocks.push(ipInterfaceBlock(router, name, port));
   }
   return blocks.length ? blocks.join('\n') : 'No interfaces present.';
+}
+
+/** `show ip interface <nom>` — le même bloc, pour une seule interface. */
+export function showIpInterfaceOne(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid input detected at '^' marker.`;
+  return ipInterfaceBlock(router, ifName, port);
 }
 
 /** `show ip rip database` — real RIP RIB (configured + learned). */

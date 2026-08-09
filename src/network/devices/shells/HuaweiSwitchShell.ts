@@ -39,7 +39,8 @@ import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName } from './cli-ut
 import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
 import {
   type LigneIpBrief, type LigneInterface, protocoleVrp, rendreIpInterfaceBrief,
-  rendreInterfaceBrief, rendreInterfaceDescription,
+  rendreInterfaceBrief, rendreInterfaceDescription, huaweiMacAddress,
+  type LigneArp, rendreArpSwitch, rendreMacAddress,
 } from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import {
@@ -2245,24 +2246,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.registerGreedy('display arp', 'Display ARP table', (args) => {
       if (!this.swRef) return '';
       const filter = (args[0] ?? '').toLowerCase();
-      const table = this.swRef._getArpTableInternal();
-      const rows: string[] = [
-        `IP ADDRESS      MAC ADDRESS    EXPIRE(M) TYPE   INTERFACE    VPN-INSTANCE`,
-        `                                          VLAN/CEVLAN PVC`,
-        `------------------------------------------------------------------------------`,
-      ];
-      const entries = [...table.entries()];
-      for (const [ip, e] of entries) {
+      const lignes: LigneArp[] = [];
+      for (const [ip, e] of this.swRef._getArpTableInternal()) {
         if (filter === 'static' && e.type !== 'static') continue;
         if (filter === 'dynamic' && e.type !== 'dynamic') continue;
-        const expire = e.type === 'static' ? '-' : '20';
-        rows.push(
-          `${ip.padEnd(16)}${e.mac.toString().padEnd(15)}${expire.padEnd(10)}${e.type.padEnd(7)}${e.iface}`,
-        );
+        lignes.push({
+          ip,
+          mac: huaweiMacAddress(e.mac),
+          expire: e.type === 'static' ? '-' : '20',
+          type: e.type,
+          iface: huaweiDisplayInterfaceName(e.iface),
+        });
       }
-      rows.push(`------------------------------------------------------------------------------`);
-      rows.push(`Total: ${entries.length}        Dynamic: ${entries.filter(([, e]) => e.type === 'dynamic').length}      Static: ${entries.filter(([, e]) => e.type === 'static').length}`);
-      return rows.join('\n');
+      return rendreArpSwitch(lignes);
     });
 
     // ── Common VRP display commands (shared with the router, DRY) ──
@@ -3345,7 +3341,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const lines = [
       'MAC address table of slot 0:',
       '-------------------------------------------------------------------------------',
-      'MAC Address    VLAN/VSI   Learned-From   Type',
+      rendreMacAddress([])[0],
       '-------------------------------------------------------------------------------',
     ];
 
@@ -3353,7 +3349,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       lines.push('No entries found.');
     } else {
       for (const e of entries) {
-        lines.push(`${e.mac.padEnd(15)}${String(e.vlan).padEnd(11)}${e.port.padEnd(15)}${e.type}`);
+        lines.push(...rendreMacAddress([{
+          mac: huaweiMacAddress(e.mac), vlan: String(e.vlan),
+          port: huaweiDisplayInterfaceName(e.port), type: e.type,
+        }]).slice(1));
       }
     }
 

@@ -178,7 +178,17 @@ export type OSPFNetworkType =
   | 'broadcast'
   | 'point-to-point'
   | 'nbma'
-  | 'point-to-multipoint';
+  | 'point-to-multipoint'
+  /**
+   * Le type qu'OSPF donne LUI-MÊME à une interface de bouclage, et qui
+   * manquait ici. Il n'est pas configurable : `ip ospf network` en
+   * choisit un autre, il ne choisit pas celui-ci. Ses conséquences ne
+   * sont pas cosmétiques — une interface de ce type n'élit pas de DR,
+   * n'émet pas de Hello et est annoncée comme HÔTE ISOLÉ en /32, quel
+   * que soit le masque configuré. Sans lui, une loopback était déclarée
+   * `broadcast`, donc DR d'elle-même.
+   */
+  | 'loopback';
 
 export interface OSPFInterface {
   /** Interface name (e.g., GigabitEthernet0/0) */

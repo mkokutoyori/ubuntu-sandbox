@@ -50,7 +50,7 @@ import { IpPrefixListStore } from './router/policy/IpPrefixList';
 import { RoutePolicyStore } from './router/policy/RoutePolicy';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
 import { NqaService } from '../nqa/NqaService';
-import { Port } from '../hardware/Port';
+import { Port, LOOPBACK_MTU, LOOPBACK_BW_KBPS, LOOPBACK_DELAY_US } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { TcpStack, type TcpSocket } from '../tcp/TcpStack';
@@ -1105,6 +1105,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (this.ports.has(name)) return true; // already exists
     const port = new Port(name, 'ethernet');
     port.setUp(true); // virtual interfaces are always up
+    // Une loopback n'a pas de lien dont déduire sa bande passante : IOS
+    // lui donne les siennes, et ce sont celles-là que `show interfaces`
+    // affiche. Les poser sur le port plutôt que dans le rendu laisse
+    // `bandwidth`/`delay`/`mtu` continuer de les surcharger par la voie
+    // normale — un défaut n'est pas une constante d'affichage.
+    if (/^Loopback/i.test(name)) {
+      port.setMTU(LOOPBACK_MTU);
+      port.setBandwidthKbps(LOOPBACK_BW_KBPS);
+      port.setDelayUs(LOOPBACK_DELAY_US);
+    }
     const dot = name.indexOf('.');
     if (dot > 0) {
       const parent = this.ports.get(name.slice(0, dot));

@@ -258,6 +258,30 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     return '';
   }
 
+  /**
+   * `undo interface LoopBack 0` — la commande était ACCEPTÉE et ne
+   * supprimait rien : elle tombait dans la queue générique qui rend une
+   * chaîne vide, si bien que l'interface restait dans
+   * `display ip interface brief` juste après qu'on eut demandé sa
+   * suppression. Une commande qui promet de supprimer doit supprimer.
+   *
+   * Comme chez Cisco, seule une interface VIRTUELLE peut disparaître :
+   * un port physique est soudé, et VRP le refuse aussi.
+   */
+  if (args[0] === 'interface' && args.length >= 2) {
+    const raw = args.slice(1).join('');
+    const portName = resolveHuaweiInterfaceName(router, raw);
+    if (!portName) return `Error: Wrong parameter found at '^' position.`;
+    if (!router._removeVirtualInterface(portName)) {
+      return `Error: The interface cannot be deleted.`;
+    }
+    if (ctx.getSelectedInterface() === portName) {
+      ctx.setSelectedInterface(null);
+      ctx.setMode('system');
+    }
+    return '';
+  }
+
   if (args[0] === 'dhcp' && args[1] === 'enable') {
     router._getDHCPServerInternal().disable();
     return '';
@@ -676,13 +700,32 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return '';
   });
 
+  /**
+   * L'argument de `source` sous une interface Tunnel : une adresse, ou
+   * une interface dont VRP admet que le numero soit separe du type.
+   *
+   * Une adresse est rendue telle quelle ; un nom d'interface est
+   * recolle puis resolu sur le nom que porte vraiment la machine, de
+   * sorte que `source loopback 0` et `source LoopBack0` designent le
+   * meme port et se relisent identiquement.
+   */
+  const sourceTunnelVrp = (router: Router, args: string[]): string => {
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(args[0])) return args[0];
+    const colle = args.join('');
+    return resolveHuaweiInterfaceName(router, colle) || colle;
+  };
+
   // Tunnel interface commands
   trie.registerGreedy('source', 'Set tunnel source address', (args) => {
     if (args.length < 1 || !ctx.getSelectedInterface()) return 'Error: Incomplete command.';
     const ifName = ctx.getSelectedInterface()!;
     const extra = ctx.r()._getOSPFExtraConfig();
     const pending = extra.pendingIfConfig.get(ifName) || {};
-    (pending as any).tunnelSource = args[0];
+    // VRP admet que le numero soit separe du type — `source LoopBack 0`
+    // fait deux mots. Ne lire que le premier gardait `LoopBack` sans son
+    // numero, donc la configuration rendue designait une interface qui
+    // n'existe pas, et une topologie relue la rejouait telle quelle.
+    (pending as any).tunnelSource = sourceTunnelVrp(ctx.r(), args);
     extra.pendingIfConfig.set(ifName, pending);
     return '';
   });
