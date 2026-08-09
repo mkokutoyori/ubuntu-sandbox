@@ -649,6 +649,10 @@ export function showRunningConfig(router: Router): string {
           ? `password ${renderPasswordField(u.secret, algo, serviceEncryption, true, `username:${u.name}`)}`
           : `secret ${renderSecretField(u.secret, algo, `username:${u.name}`)}`;
         lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
+        // IOS ecrit la vue sur une ligne SEPAREE : c'est une commande a
+        // part, et la fondre dans la precedente donnerait une ligne
+        // qu'un import ne saurait pas rejouer.
+        if (u.view) lines.push(`username ${u.name} view ${u.view}`);
       }
     }
   }

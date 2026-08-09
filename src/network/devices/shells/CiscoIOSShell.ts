@@ -600,6 +600,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-if': return this.configIfTrie;
       case 'config-subif': return this.configIfTrie;
       case 'config-line': return this.configLineTrie;
+      case 'config-view': return this.configViewTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-dhcp-pool-class': return this.configDhcpPoolClassTrie;
       case 'config-track': return this.configTrackTrie;
@@ -681,6 +682,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected clearFields(fields: string[]): void {
     for (const f of fields) {
       if (f === 'selectedInterface') this.selectedInterface = null;
+      if (f === 'selectedParserView') this.selectedParserView = null;
       if (f === 'selectedDHCPPool') this.selectedDHCPPool = null;
       if (f === 'selectedTrack') this.selectedTrack = null;
       if (f === 'selectedIpSla') { this.discardUnconfiguredIpSla(); this.selectedIpSla = null; }

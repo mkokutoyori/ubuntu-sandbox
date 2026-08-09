@@ -1,4 +1,5 @@
 import type { IPAddress } from '../../../core/types';
+import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 
 export type AaaMethodList = 'default' | string;
 export type AaaServiceKind = 'login' | 'enable' | 'ppp' | 'exec' | 'commands' | 'network';
@@ -313,8 +314,43 @@ export interface ParameterMapInspect {
   oneMinuteHigh?: number;
 }
 
+/**
+ * Une vue CLI (RBAC d'IOS), telle que `parser view <nom>` la declare.
+ *
+ * Une vue n'est PAS un niveau de privilege : les niveaux ajoutent des
+ * commandes au socle du niveau 1, une vue REMPLACE l'arbre visible par
+ * ce qu'elle inclut, et rien d'autre. C'est ce qui la rend utilisable
+ * pour un role — on decrit ce que le role a le droit de faire, pas ce
+ * qu'on lui ajoute par-dessus un socle qu'on n'a pas choisi.
+ */
+export interface ParserView {
+  readonly name: string;
+  /** `secret …` sous la vue — ce que `enable view <nom>` demande. */
+  secret?: string;
+  secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+  /** `commands exec include <cmd>` — les commandes exec autorisees. */
+  execInclude: string[];
+  /** `commands exec exclude <cmd>` — retirees d'un prefixe inclus. */
+  execExclude: string[];
+}
+
+/**
+ * Le secret d'une vue, rendu comme IOS le rend : hache, jamais en clair.
+ * On passe par le rendu PARTAGE des secrets Cisco plutot que d'en ecrire
+ * un second — deux facons de hacher un mot de passe sur une meme machine
+ * finiraient par ne pas donner le meme resultat pour la meme saisie.
+ */
+function renderViewSecret(v: ParserView): string {
+  return renderSecretField(v.secret ?? '', v.secretAlgo ?? 'md5', `view:${v.name}`);
+}
+
 export class CiscoSecurityConfig {
   aaaNewModel = false;
+  /**
+   * Les vues declarees. Vide = aucune vue, et le dispatch n'en sait rien :
+   * la porte ne se ferme que lorsqu'une session EST dans une vue.
+   */
+  parserViews: Map<string, ParserView> = new Map();
   aaaSessionId?: string;
   /** `aaa local authentication attempts max-fail <n>` — per-account lockout threshold. */
   localAuthMaxFailAttempts?: number;
@@ -407,6 +443,18 @@ export class CiscoSecurityConfig {
 
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
+    // Les vues viennent en tete : IOS les ecrit avant les lignes AAA qui
+    // s'y referent, et une configuration relue doit pouvoir rejouer
+    // `username X view NOC` apres que la vue existe.
+    for (const v of this.parserViews.values()) {
+      lines.push(`parser view ${v.name}`);
+      if (v.secret !== undefined) {
+        lines.push(` secret ${renderViewSecret(v)}`);
+      }
+      for (const c of v.execInclude) lines.push(` commands exec include ${c}`);
+      for (const c of v.execExclude) lines.push(` commands exec exclude ${c}`);
+      lines.push('!');
+    }
     if (this.aaaNewModel) {
       lines.push('aaa new-model');
       for (const m of this.aaaMethods) {

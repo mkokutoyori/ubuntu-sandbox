@@ -37,6 +37,14 @@ export interface NetworkOsAccountSnapshot {
   readonly homeDirectory: string | null;
   readonly publicKeys: readonly string[];
   readonly description: string | null;
+  /**
+   * La vue CLI attachee au compte (`username X view NOC_VIEW`).
+   *
+   * Elle vit sur le COMPTE et non a cote, parce que c'est le compte qui
+   * porte le role : un lien range ailleurs se perdrait a la relecture,
+   * ce qui est exactement le defaut que le mecanisme referme.
+   */
+  readonly view: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly factoryDefault: boolean;
@@ -89,12 +97,14 @@ export class NetworkOsAccount {
   readonly homeDirectory: string | null;
   readonly publicKeys: readonly string[];
   readonly description: string | null;
+  readonly view: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly factoryDefault: boolean;
 
   private constructor(s: NetworkOsAccountSnapshot) {
     this.name = s.name;
+    this.view = s.view;
     this.secret = s.secret;
     this.passwordHashAlgorithm = s.passwordHashAlgorithm;
     this.privilege = s.privilege;
@@ -128,6 +138,7 @@ export class NetworkOsAccount {
     const now = init.now ?? Date.now();
     return new NetworkOsAccount({
       name: init.name,
+      view: null,
       secret: init.secret ?? '',
       passwordHashAlgorithm: init.passwordHashAlgorithm ?? 'plain',
       privilege: init.privilege ?? 1,
@@ -179,7 +190,8 @@ export class NetworkOsAccount {
       maxConcurrentSessions: this.maxConcurrentSessions, accessClassIn: this.accessClassIn,
       accessClassOut: this.accessClassOut, ftpDirectory: this.ftpDirectory,
       homeDirectory: this.homeDirectory, publicKeys: this.publicKeys,
-      description: this.description, createdAt: this.createdAt, updatedAt: this.updatedAt,
+      description: this.description, view: this.view,
+      createdAt: this.createdAt, updatedAt: this.updatedAt,
       factoryDefault: this.factoryDefault,
     };
   }
@@ -225,6 +237,10 @@ export class NetworkOsAccount {
 
   withDescription(text: string): NetworkOsAccount {
     return this.mutate({ description: text });
+  }
+
+  withView(view: string | null): NetworkOsAccount {
+    return this.mutate({ view });
   }
 
   withIdleTimeout(seconds: number): NetworkOsAccount {

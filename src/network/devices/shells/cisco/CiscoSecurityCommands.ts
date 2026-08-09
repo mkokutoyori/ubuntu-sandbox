@@ -185,6 +185,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     // homologue `enable algorithm-type` fonctionne depuis toujours : meme
     // famille, deux comportements.
     let algoDemande: 'md5' | 'sha256' | 'scrypt' | undefined;
+    let vue: string | undefined;
     for (let i = 1; i < args.length; i++) {
       const t = args[i];
       if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
@@ -194,6 +195,14 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
           throw new CliInvalidInput({ token: args[i + 1] });
         }
         algoDemande = nom; i++;
+      }
+      else if (t === 'view' && args[i + 1]) {
+        // `username X view NOC_VIEW` — la vue attachee au compte. Le
+        // mot-cle etait avale en silence par la boucle, donc le lien
+        // entre un compte et son role disparaissait de la
+        // configuration ; refuser une vue inexistante evite d'attacher
+        // un role qui n'a jamais ete decrit.
+        vue = args[i + 1]; i++;
       }
       else if (t === 'nopassword') { nopassword = true; }
       else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
@@ -223,6 +232,9 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
         plaintextEntered = secret; type0PasswordWarning = true; break;
       }
     }
+    if (vue !== undefined && !sec().parserViews.has(vue)) {
+      return `%Error: View ${vue} is not present in the system`;
+    }
     const minLength = sec().passwords.minLength;
     if (!nopassword && plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
       return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
@@ -231,11 +243,11 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       _upsertCiscoUsername?: (n: string, kv: {
         privilege?: number; secret?: string;
         secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-        nopassword?: boolean; description?: string;
+        nopassword?: boolean; description?: string; view?: string;
       }) => void;
     };
     if (router._upsertCiscoUsername) {
-      router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description });
+      router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description, view: vue });
     }
     sec().usernames.set(name, { name, privilege: privilege ?? 1, secret, password: undefined });
     if (type0PasswordWarning) {

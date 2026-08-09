@@ -28,7 +28,7 @@ export type CiscoShellMode =
   | 'config-ipsla-echo' | 'config-ipsla-icmpjitter' | 'config-ipsla-jitter'
   | 'config-ipsla-udp' | 'config-ipsla-tcp' | 'config-ipsla-http'
   | 'config-ipsla-dns' | 'config-ipsla-pathecho'
-  | 'config-route-map' | 'config-line'
+  | 'config-route-map' | 'config-line' | 'config-view'
   | 'config-vrf' | 'config-vlan'
   | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl'
   | 'config-dhcp-pool-class'
