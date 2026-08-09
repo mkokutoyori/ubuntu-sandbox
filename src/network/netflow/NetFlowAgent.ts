@@ -204,7 +204,7 @@ export class NetFlowAgent {
   private exportTo(collector: NetFlowCollector, chunk: NetFlowV5Record[]): void {
     const egress = this.resolveEgress(collector.ip);
     if (!egress) return;
-    const srcIp = egress.port.getIPAddress();
+    const srcIp = this.sourceIpFor(egress.port);
     if (!srcIp) return;
     const header: NetFlowV5Header = {
       version: NETFLOW_V5_VERSION,
@@ -314,11 +314,24 @@ export class NetFlowAgent {
     this.shipRecords(expired);
   }
 
+  /**
+   * The source address to stamp on a management datagram.
+   *
+   * The egress interface and the source address are two different
+   * decisions: routing picks the first, `source-interface` picks the
+   * second. Returning the source interface AS the egress port sent the
+   * datagram out of a loopback, which has no cable, so nothing left the
+   * machine at all — the command silenced the very feature it
+   * configures.
+   */
+  private sourceIpFor(egressPort: import('../hardware/Port').Port): import('../core/types').IPAddress | null {
+    const named = this.config.sourceInterface
+      ? this.host.getPort(this.config.sourceInterface)?.getIPAddress() ?? null
+      : null;
+    return named ?? egressPort.getIPAddress();
+  }
+
   private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    if (this.config.sourceInterface) {
-      const p = this.host.getPort(this.config.sourceInterface);
-      if (p) return { name: this.config.sourceInterface, port: p };
-    }
     const target = targetIp.split('.').map(Number);
     for (const port of this.host.getPorts()) {
       const ip = port.getIPAddress();

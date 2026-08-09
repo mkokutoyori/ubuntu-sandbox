@@ -25,6 +25,41 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### `source-interface` : une adresse, pas une sortie — LIVRÉ
+
+**Agent** : session « logging ». La famille n'est devenue visible qu'une
+fois les traps et NetFlow exportant vraiment.
+
+L'interface de sortie et l'adresse source sont deux décisions
+distinctes. Trois agents se trompaient de trois façons :
+
+| Agent | État mesuré |
+|---|---|
+| Syslog | rendait l'interface source **comme port de sortie** — pointée sur une boucle, le datagramme partait par un port sans câble : **21 datagrammes sans la commande, zéro avec** |
+| NetFlow | ligne identique, défaut identique |
+| SNMP | `trap-source` **jamais consulté** — stocké, rendu, lu par personne |
+
+Donc `logging source-interface Loopback0` **faisait taire le syslog**.
+C'est pire que « rangé et ignoré » : la commande cassait la fonction
+qu'elle configure.
+
+**Correction dans ma propre lecture** : j'avais annoncé NetFlow comme le
+témoin qui « respecte » le réglage. Faux — il portait la même ligne. Dit
+dans la sonde plutôt qu'effacé.
+
+Une interface source inconnue retombe sur l'adresse de sortie plutôt que
+de faire taire l'export : le silence serait le défaut d'origine à
+nouveau.
+
+**Fichiers touchés** : `syslog/SyslogAgent.ts`, `netflow/NetFlowAgent.ts`,
+`snmp/SnmpAgent.ts`, `snmp/types.ts`, `shells/CiscoShellBase.ts`.
+
+**Mesures.** `management-source-interface.test.ts` (7 cas) discriminé par
+`git stash` : **4 tombent** avant. 29 suites syslog/NetFlow/SNMP vertes
+(400 cas), puis 159 suites CLI/routeur (2 249 cas).
+
+---
+
 ### NetFlow exporte pour de bon — LIVRÉ
 
 **Agent** : session « logging ». Suite du balayage « ce qu'un routeur

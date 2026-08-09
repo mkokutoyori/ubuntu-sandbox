@@ -901,6 +901,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!agent || !svc) return;
     agent.setContact(svc.getContact());
     agent.setLocation(svc.getLocation());
+    agent.setTrapSourceInterface(svc.getTrapSource() || null);
     const cfg = agent.getConfig();
     const desiredCommunities = svc.getCommunities();
     const desiredNames = new Set(desiredCommunities.map((c) => c.name));
