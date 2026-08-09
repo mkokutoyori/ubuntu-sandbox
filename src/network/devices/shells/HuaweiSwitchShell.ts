@@ -35,10 +35,11 @@ import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
 import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
-import { resolveHuaweiInterfaceName } from './cli-utils';
+import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName } from './cli-utils';
 import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
 import {
-  type LigneIpBrief, protocoleVrp, rendreIpInterfaceBrief,
+  type LigneIpBrief, type LigneInterface, protocoleVrp, rendreIpInterfaceBrief,
+  rendreInterfaceBrief, rendreInterfaceDescription,
 } from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import {
@@ -2052,9 +2053,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return rows.join('\n');
     });
 
-    trie.register('display interface brief', 'Display interface summary', () => {
+    trie.registerGreedy('display interface brief', 'Display interface summary', (args) => {
       if (!this.swRef) return '';
-      return this.displayInterfaceBrief(this.swRef);
+      return this.displayInterfaceBrief(this.swRef, args.join(' ').trim() || undefined);
+    });
+
+    // `display interface description` n'existait pas ici, alors que le
+    // routeur la rend depuis toujours et que la description est bien
+    // stockee par le commutateur.
+    trie.registerGreedy('display interface description', 'Display interface descriptions', (args) => {
+      if (!this.swRef) return '';
+      return this.displayInterfaceDescription(this.swRef, args.join(' ').trim() || undefined);
     });
 
     trie.registerGreedy('display interface', 'Display interface details', (args) => {
@@ -3215,17 +3224,53 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lines.join('\n');
   }
 
-  private displayInterfaceBrief(sw: Switch): string {
-    const ports = sw._getPortsInternal();
-
-    const lines = ['Interface                     PHY     Protocol  InUti  OutUti'];
-    for (const [portName, port] of ports) {
-      const phys = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : 'down';
-      const proto = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : 'down';
-      lines.push(`${portName.padEnd(30)}${phys.padEnd(8)}${proto.padEnd(10)}0%     0%`);
-    }
-    return lines.join('\n');
+  private displayInterfaceBrief(sw: Switch, filtre?: string): string {
+    const retenues = this.filtrerInterfaces(this.lignesInterface(sw), filtre);
+    return typeof retenues === 'string' ? retenues : rendreInterfaceBrief(retenues);
   }
+
+  private displayInterfaceDescription(sw: Switch, filtre?: string): string {
+    const retenues = this.filtrerInterfaces(this.lignesInterface(sw), filtre);
+    return typeof retenues === 'string' ? retenues : rendreInterfaceDescription(retenues);
+  }
+
+  /**
+   * Les lignes de la famille « brief ». Le commutateur calculait son
+   * etat a la main — une HUITIEME facon —, si bien que `*down` n'y
+   * existait pas : un port ferme par l'operateur s'y montrait `down`
+   * comme un port sans cable. Ses colonnes `PHY` et `Protocol` etaient
+   * de surcroit la MEME expression, donc incapables de differer.
+   *
+   * Il n'y listait pas non plus ses interfaces virtuelles, alors que sa
+   * propre vue `display ip interface brief` les liste.
+   */
+  private lignesInterface(sw: Switch): LigneInterface[] {
+    const ports = sw._getPortsInternal();
+    const out: LigneInterface[] = [];
+    for (const [nom, port] of ports) {
+      const st = iosInterfaceStatus(port, nom, ports);
+      out.push({
+        nom: huaweiDisplayInterfaceName(nom),
+        physique: st.status === 'administratively down' ? '*down' : st.status,
+        protocole: st.protocol,
+        description: sw.getInterfaceDescription(nom) || '',
+      });
+    }
+    for (const lb of sw.getLoopbacks()) {
+      out.push({ nom: lb.name, physique: 'up', protocole: 'up', description: '' });
+    }
+    return out;
+  }
+
+  private filtrerInterfaces(
+    lignes: LigneInterface[], filtre?: string,
+  ): LigneInterface[] | string {
+    if (!filtre) return lignes;
+    const cible = this.resolveInterfaceName(filtre);
+    if (!cible) return `Error: Wrong parameter found at '^' position.`;
+    return lignes.filter((l) => l.nom === huaweiDisplayInterfaceName(cible));
+  }
+
 
   private displayInterface(sw: Switch, ifName: string): string {
     // Le repli `|| ifName` renvoyait la saisie TELLE QUELLE : d'ou

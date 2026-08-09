@@ -305,6 +305,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V10** | Le typage de `HuaweiSwitchShell` | **Livré, §19** |
 | **V11** | Deux vues d'un même port en disent la même chose | **Livré, §20** |
 | **V12** | `display ip interface brief`, un tableau pour deux plateformes | **Livré, §21** |
+| **V13** | La famille « brief » des interfaces (`brief`, `description`) | **Livré, §22** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1748,3 +1749,82 @@ Discrimination par `git stash` : **8 des 13 tombent** avant.
 hiérarchie de vues, telnet et L3. Typecheck : jeu d'erreurs identique
 avant/après (192). Lint sur les fichiers touchés : 37 problèmes avant, 37
 après — le nouveau module n'en ajoute aucun. Aucun test existant modifié.
+
+---
+
+## 22. V13 — Livré : la famille « brief » des interfaces
+
+Même règle que §21, appliquée aux vues sœurs — et la mesure a montré que
+`display interface brief` n'était pas seule : `display interface
+description`, sa jumelle, portait les mêmes désaccords **plus un**, celui
+de ne pas exister du tout sur le commutateur.
+
+### 22.1 Sept désaccords pour deux commandes
+
+Deux machines neuves portant le **même** état — un port décrit, un port
+fermé par l'opérateur, une LoopBack :
+
+| | Routeur | Switch |
+|---|---|---|
+| Légende (`PHY: Physical   *down: …`) | présente | **absente** |
+| Colonnes `inErrors` / `outErrors` | présentes | **absentes** |
+| Largeurs | 28/6/10 | **30/8/10** |
+| `*down` sur un port fermé | posé | **jamais** |
+| `PHY` et `Protocol` | calculées séparément | **la même expression** |
+| Interfaces virtuelles listées | oui (LoopBack) | **non** |
+| `display interface brief <nom>` | argument **ignoré** | **refusé** |
+| `display interface description` | rendue | **inexistante** |
+
+Trois de ces lignes ne sont pas de la mise en page. **`*down` n'existait
+pas sur le commutateur** : un port que l'opérateur a fermé s'y montrait
+`down`, exactement comme un port sans câble — la distinction que la
+légende absente sert précisément à expliquer. Ses deux colonnes d'état
+étaient **la même expression**, donc structurellement incapables de
+différer. Et une LoopBack créée sur le commutateur était **invisible** de
+sa propre vue brève, alors que sa vue `display ip interface brief` la
+liste.
+
+C'était une **huitième** façon de calculer l'état d'une interface dans ce
+dépôt, écrite à la main à côté du prédicat partagé.
+
+### 22.2 Le correctif
+
+Les colonnes rejoignent `huawei/huaweiTableLayouts.ts`, à côté de celles
+du lot V12. Les largeurs retenues sont **celles du routeur**, parce
+qu'elles ne sont pas un choix : la sonde d'alignement de l'autre agent
+(`probe-alignement-tableaux-cli.test.ts`) les fixe au caractère près
+contre une sortie de vraie machine. Le commutateur les adopte, lit le
+prédicat partagé, liste ses interfaces virtuelles, et gagne
+`display interface description`, qu'il n'avait pas alors qu'il stocke les
+descriptions depuis toujours.
+
+Le filtre par interface passe par le résolveur unifié du lot V11 : toute
+écriture légitime du nom fait le même filtre, un nom inconnu est refusé
+au lieu de rendre tout le tableau.
+
+### 22.3 Ce qui n'a délibérément PAS été propagé
+
+**Le marqueur `(s)` reste hors de cette vue.** Le lot V12 l'a posé sur le
+protocole d'un LoopBack dans `display ip interface brief`, parce que la
+légende de CETTE vue-là déclare `(s): spoofing`. La légende de
+`display interface brief` ne déclare que `PHY:` et `*down:` — donc `up`
+y est juste, et y ajouter `(s)` par symétrie aurait été inventer.
+
+C'est la même discipline que §21 : la légende est la spécification, et
+elle n'est pas la même d'une vue à l'autre.
+
+### 22.4 Tests et mesures
+
+`huawei-interface-brief-famille.test.ts` (13 cas). Comme au lot
+précédent, il compare **les deux plateformes entre elles** — même
+légende, même en-tête, même comportement du filtre — et vérifie en plus
+que la vue brève et la vue de détail s'accordent sur l'état du même port,
+ce qui est la propriété que la huitième implémentation cassait.
+
+Discrimination par `git stash` : **12 des 13 tombent** avant.
+
+**Mesures.** 91 suites connexes vertes (1 471 cas), dont la sonde
+d'alignement de l'autre agent, qui reste verte — la mise en page du
+routeur est inchangée, c'est le commutateur qui l'a rejointe. Typecheck :
+jeu d'erreurs identique avant/après (192). Lint : 37 problèmes avant, 37
+après. Aucun test existant modifié.

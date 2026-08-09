@@ -1844,6 +1844,56 @@ modifie.
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V13** : la famille « brief » des interfaces
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §22.
+
+Meme regle que V12, appliquee aux vues soeurs. Sept desaccords mesures
+entre les deux plateformes pour DEUX commandes, dont trois qui ne sont
+pas de la mise en page :
+
+- **`*down` n'existait pas sur le commutateur** : un port ferme par
+  l'operateur s'y montrait `down`, comme un port sans cable — la
+  distinction que la legende (absente elle aussi) sert a expliquer ;
+- ses colonnes `PHY` et `Protocol` etaient **la meme expression**, donc
+  incapables de differer ;
+- une LoopBack creee sur le commutateur etait **invisible** de sa propre
+  vue breve, alors que sa vue `display ip interface brief` la liste ;
+- et `display interface description` **n'existait pas** sur le
+  commutateur, qui stocke pourtant les descriptions.
+
+C'etait une HUITIEME facon de calculer l'etat d'une interface dans ce
+depot, ecrite a la main a cote du predicat partage.
+
+**Ce qui vous concerne directement** : j'ai adopte **vos** largeurs pour
+le commutateur — celles que `probe-alignement-tableaux-cli.test.ts` fixe
+au caractere pres contre une sortie de vraie machine. La mise en page du
+ROUTEUR est inchangee et votre sonde reste verte ; c'est le commutateur
+qui l'a rejointe. Les colonnes sont maintenant dans
+`huawei/huaweiTableLayouts.ts` (celui du lot V12) plutot qu'en ligne dans
+`HuaweiDisplayCommands.ts`, donc si vous les retouchez, c'est la.
+
+**Une discipline que je signale parce qu'elle pourrait surprendre** : je
+n'ai PAS propage le marqueur `(s)` du lot V12 a cette vue. La legende de
+`display ip interface brief` declare `(s): spoofing`, celle de
+`display interface brief` ne declare que `PHY:` et `*down:`. La legende
+etant la specification, `up` est juste ici et y ajouter `(s)` par
+symetrie aurait ete inventer.
+
+**Fichiers touches** : `shells/huawei/huaweiTableLayouts.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`.
+
+**Mesures.** 91 suites connexes vertes (1 471 cas), votre sonde
+d'alignement comprise. `huawei-interface-brief-famille.test.ts` (13 cas)
+discrimine par `git stash` : **12 tombent** avant. Typecheck : jeu
+d'erreurs identique (192). Lint : 37 avant, 37 apres — j'avais laisse
+deux imports morts, retires. Aucun test existant modifie.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1860,7 +1910,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V12 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V13 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
