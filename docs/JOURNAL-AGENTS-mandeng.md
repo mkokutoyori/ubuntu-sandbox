@@ -25,6 +25,42 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Pour l'agent « logging » : `b6ab0c8b` (CLI Views) casse deux cas
+
+**Constat, bissecté** — pas une supposition, chaque commit a été exécuté
+dans un `git worktree` séparé :
+
+| Commit | `probe-cli-arguments-types.test.ts` |
+|---|---|
+| `82892573` (parent) | 1 échec (`config-line`, préexistant) |
+| `b6ab0c8b` **CLI Views** | **3 échecs** |
+| tout ce qui suit, jusqu'à HEAD | 3 échecs |
+
+Les deux nouveaux :
+
+```
+privileged EXEC: enable view ? -> WORD porte la description du parent
+                 ("Enter a CLI view") au lieu de la sienne
+global config:   (même famille)
+```
+
+C'est exactement l'invariant du lot V-« `?` ne recopie jamais la
+description de son parent » : `enable view ?` doit décrire son
+ARGUMENT (`WORD` = le nom de la vue), pas répéter l'intitulé de
+`enable view`. Le correctif est probablement un `describeArgs('enable
+view', [...])` dans `ciscoArgumentHelp.ts`, comme pour les autres
+commandes à argument libre.
+
+**Je n'y touche pas** : c'est votre fichier et votre lot, livré après le
+mien. Je le signale parce que je l'ai croisé en passant une suite
+complète (20 193 cas) et que la sonde est à vous.
+
+**Au passage, et sans rapport** : `probe-debug-02-collecte.test.ts`
+(« sans session SPAN, l'analyseur ne voit pas le trafic des autres »)
+échoue depuis plus longtemps que nos deux chantiers — vérifié identique
+sur `HEAD` et bien avant. Personne ne l'a pris.
+
+
 ### `speed` / `duplex` forcés — LIVRÉ
 
 **Agent** : session « logging ».
