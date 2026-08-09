@@ -11,6 +11,7 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { IPAddress, SubnetMask } from '../../core/types';
+import { WINDOWS_LOOPBACK_ROUTES, LOOPBACK_IPV4 } from './WindowsLoopbackRoutes';
 
 const ROUTE_HELP = `
 Manipulates network routing tables.
@@ -217,6 +218,14 @@ export function showRoutePrint(ctx: WinCommandContext): string {
   lines.push('===========================================================================');
   lines.push('Active Routes:');
   lines.push('Network Destination        Netmask          Gateway         Interface  Metric');
+
+  // Les routes de bouclage sont permanentes et viennent en tete, comme
+  // sur une vraie machine : `Active Routes:` sortait vide sur un poste
+  // fraichement demarre, alors que Windows en montre toujours trois.
+  for (const lo of WINDOWS_LOOPBACK_ROUTES) {
+    lines.push(`  ${lo.network.padEnd(24)} ${lo.mask.padEnd(16)} `
+      + `${'On-link        '} ${LOOPBACK_IPV4.padEnd(14)} ${lo.metric}`);
+  }
 
   for (const route of table) {
     const dest = route.network.toString().padEnd(24);

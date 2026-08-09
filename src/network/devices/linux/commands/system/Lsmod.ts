@@ -99,3 +99,53 @@ export const modinfoCommand: LinuxCommand = {
     return ctx.executor.kernelModules.list().map((m) => m.name);
   },
 };
+
+/**
+ * `modprobe` — charger et decharger un module.
+ *
+ * La commande n'existait pas : `modprobe dummy` repondait
+ * `command not found` sur une machine ou `ip link add … type dummy`
+ * fonctionne, c'est-a-dire ou le module EST disponible. Elle lit et
+ * ecrit la meme `KernelModuleTable` que `lsmod` et `modinfo`, donc un
+ * module charge ici apparait la-bas — sans quoi la commande aurait ete
+ * un accuse de reception sans effet.
+ *
+ * Ce qu'elle ne fait pas, et c'est deliberé : charger un module ne rend
+ * aucune fonction disponible. La table dit ce que cette image porte
+ * vraiment, et `modprobe` d'autre chose echoue comme sur une machine
+ * dont `/lib/modules` ne contient pas le fichier.
+ */
+export const modprobeCommand: LinuxCommand = {
+  name: 'modprobe',
+  needsNetworkContext: true,
+  usage: 'modprobe [-r] modulename ...',
+  manSection: 8,
+  binaryPath: '/usr/sbin/modprobe',
+  help: 'Add and remove modules from the Linux Kernel.',
+  options: [
+    { flag: '-r', aliases: ['--remove'], dest: 'remove', description: 'Remove modules instead of inserting them' },
+  ],
+  runWithStatusSync(ctx: LinuxCommandContext, args: string[]) {
+    let remove = false;
+    const names: string[] = [];
+    for (const a of args) {
+      if (a === '-r' || a === '--remove') { remove = true; continue; }
+      if (a.startsWith('-')) continue;
+      names.push(a);
+    }
+    if (names.length === 0) {
+      return { output: 'modprobe: FATAL: Module name is required', exitCode: 1 };
+    }
+    const table = ctx.executor.kernelModules;
+    for (const name of names) {
+      const res = remove ? table.remove(name) : table.load(name);
+      if (!res.ok) {
+        // `modprobe -r` delegue a la meme verification que `rmmod` et
+        // doit donc parler en son nom propre.
+        const msg = remove ? (res.error ?? '').replace(/^rmmod:/, 'modprobe:') : res.error;
+        return { output: msg ?? '', exitCode: 1 };
+      }
+    }
+    return { output: '', exitCode: 0 };
+  },
+};

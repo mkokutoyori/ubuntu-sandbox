@@ -205,14 +205,39 @@ export class Port {
    */
   private busOverride: IEventBus | null = null;
 
+  /**
+   * Une interface de BOUCLAGE : aucun médium derrière, donc ni porteuse
+   * à observer ni trame à encadrer. Ce n'est pas un nom réservé mais une
+   * propriété du port, parce que les plateformes ne l'appellent pas
+   * pareil (`lo` sous Linux, `Loopback0` chez Cisco).
+   */
+  private loopback = false;
+  /**
+   * Un port SANS notion de porteuse : rien n'est branché au bout et rien
+   * ne peut l'être. Linux le rend visible — l'état opérationnel d'une
+   * telle interface est `UNKNOWN`, jamais `UP` ni `DOWN`, et ses
+   * fanions ne portent ni `NO-CARRIER` ni `MULTICAST` mais `NOARP`.
+   * C'est vrai de `lo` comme d'une interface `dummy`, d'où deux
+   * propriétés distinctes : le bouclage décide du plafond de MTU,
+   * l'absence de porteuse décide de l'état rapporté.
+   */
+  private carrierless = false;
+
+  isLoopback(): boolean { return this.loopback; }
+  isCarrierless(): boolean { return this.carrierless; }
+
   constructor(
     name: string,
     type: ConnectionType = 'ethernet',
     mac?: MACAddress,
-    options?: { adminDown?: boolean },
+    options?: { adminDown?: boolean; loopback?: boolean; carrierless?: boolean },
   ) {
     this.name = name;
     this.type = type;
+    // Une boucle est carrierless par construction : il n'y a pas de
+    // bouclage AVEC porteuse.
+    if (options?.loopback) { this.loopback = true; this.carrierless = true; }
+    if (options?.carrierless) this.carrierless = true;
     this.mac = mac || MACAddress.generate();
     if (options?.adminDown) {
       this.adminDown = true;
@@ -303,6 +328,15 @@ export class Port {
   enableIPv6(): void {
     if (this.ipv6Enabled) return;
     this.ipv6Enabled = true;
+
+    // Une interface de bouclage n'a PAS d'adresse de lien : il n'y a pas
+    // de lien. Le vrai `lo` ne porte que `::1/128`, et la dériver de la
+    // MAC nulle produisait `fe80::200:ff:fe00:0` — une adresse que
+    // personne n'a demandée, sur une interface qui ne parle à personne.
+    if (this.loopback) {
+      Logger.info(this.equipmentId, 'port:ipv6-enabled', `${this.name}: IPv6 enabled`);
+      return;
+    }
 
     const linkLocal = IPv6Address.fromMAC(this.mac);
     const scoped = linkLocal.withScopeId(this.name);
@@ -560,12 +594,26 @@ export class Port {
 
   getMTU(): number { return this.mtu; }
 
+  /**
+   * Le plafond de MTU dépend du MÉDIUM, pas du port.
+   *
+   * 9216 est la taille d'une trame Ethernet jumbo : elle n'a aucun sens
+   * pour une interface de bouclage, qui n'émet pas de trame du tout. Le
+   * noyau Linux donne 65536 à `lo` pour cette raison précise, et poser
+   * ce MTU échouait ici sur un plafond emprunté à un autre médium.
+   */
+  private mtuMax(): number {
+    return this.loopback ? 65536 : 9216;
+  }
+
   setMTU(mtu: number): void {
     if (mtu < 68) {
       throw new Error(`Invalid MTU: ${mtu}. Minimum is 68 (IPv4 minimum).`);  // MTU.MIN
     }
-    if (mtu > 9216) {
-      throw new Error(`Invalid MTU: ${mtu}. Maximum is 9216 (jumbo frame).`);  // MTU.MAX
+    const plafond = this.mtuMax();
+    if (mtu > plafond) {
+      throw new Error(`Invalid MTU: ${mtu}. Maximum is ${plafond}`
+        + `${this.loopback ? ' (loopback)' : ' (jumbo frame)'}.`);  // MTU.MAX
     }
     const previous = this.mtu;
     this.mtu = mtu;
@@ -684,6 +732,11 @@ export class Port {
    * {@link isTransmitting} never consults the carrier.
    */
   hasCarrier(): boolean {
+    // Une interface sans porteuse en a toujours une, au sens où rien
+    // n'est jamais débranché : `lo` et une interface `dummy` sont
+    // opérationnelles dès qu'elles sont administrativement UP. Sans
+    // cela, la boucle apparaissait DOWN faute de câble.
+    if (this.carrierless) return true;
     if (this.cable === null || !this.cable.getIsUp()) return false;
     const peer = this.getPeerPort();
     return peer === null || peer.isTransmitting();

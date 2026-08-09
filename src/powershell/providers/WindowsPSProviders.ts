@@ -51,6 +51,7 @@ function mapV4Origin(origin: 'manual' | 'dhcp' | 'link-local'): { prefixOrigin: 
 }
 import { JobProvider } from '@/powershell/providers/JobProvider';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
+import { WINDOWS_LOOPBACK_ROUTES, LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
 import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
@@ -1594,7 +1595,16 @@ class WindowsNetworkAdapter implements INetworkProvider {
         routeMetric: r.metric,
       });
     }
-    out.push({ destinationPrefix: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', routeMetric: 306 });
+    // Troisieme copie du meme fait, trouvee en verifiant les deux
+    // autres : `route print`, `Get-NetRoute` cote cmd et ce fournisseur
+    // declaraient chacun leurs routes de bouclage, avec des metriques
+    // differentes. Une seule declaration, trois lecteurs.
+    for (const lo of WINDOWS_LOOPBACK_ROUTES) {
+      out.push({
+        destinationPrefix: `${lo.network}/${lo.prefixLength}`,
+        ifAlias: LOOPBACK_IFALIAS, nextHop: '0.0.0.0', routeMetric: lo.metric,
+      });
+    }
     // Routes New-NetRoute couldn't apply to the real table (e.g. gateway not
     // on-link) still get PS-local bookkeeping so the cmdlet stays consistent
     // with itself even though cmd never sees them.
