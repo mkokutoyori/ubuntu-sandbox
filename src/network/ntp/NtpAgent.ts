@@ -109,6 +109,36 @@ export class NtpAgent {
   }
 
   setSourceInterface(name: string): void { this.config.sourceInterface = name; }
+  setAllowModeControl(on: boolean): void { this.config.allowModeControl = on; }
+  setUpdateCalendar(on: boolean): void { this.config.updateCalendar = on; }
+  setInterfaceDisabled(iface: string, off: boolean): void {
+    if (off) this.config.disabledInterfaces.add(iface);
+    else this.config.disabledInterfaces.delete(iface);
+  }
+  isInterfaceDisabled(iface: string): boolean {
+    return this.config.disabledInterfaces.has(iface);
+  }
+  getUptimeSec(): number {
+    return Math.max(0, Math.floor((Date.now() - this.config.startedAtMs) / 1000));
+  }
+  removeAuthKey(id: number): void { this.config.authKeys.delete(id); }
+  removeTrustedKey(id: number): void { this.config.trustedKeys.delete(id); }
+  removeAccessGroup(kind: string): void { this.config.accessGroups.delete(kind); }
+  getAssociation(ip: string): NtpAssociation | undefined {
+    return this.config.associations.get(ip);
+  }
+  /**
+   * L'ecart de frequence mesure, en parties par million. Il se DEDUIT de
+   * l'offset et de l'intervalle de scrutation plutot que d'etre invente :
+   * corriger un offset de 64 ms sur une periode de 64 s demande 1000 ppm.
+   * Sans synchronisation il n'y a rien a mesurer, donc zero.
+   */
+  getDriftPpm(): number {
+    if (!this.isSynced()) return 0;
+    const best = [...this.config.associations.values()].find((a) => a.preferred);
+    if (!best || best.pollSec <= 0) return 0;
+    return (best.offsetMs / 1000 / best.pollSec) * 1e6;
+  }
   setAuthenticate(on: boolean): void { this.config.authenticate = on; }
   addAuthKey(id: number, algo: string, key: string): void { this.config.authKeys.set(id, { id, algo, key }); }
   addTrustedKey(id: number): void { this.config.trustedKeys.add(id); }
@@ -124,6 +154,8 @@ export class NtpAgent {
       lines.push(`ntp ${kind} ${ip}${a.keyId !== undefined ? ' key ' + a.keyId : ''}${a.prefer ? ' prefer' : ''}`);
     }
     if (this.config.sourceInterface) lines.push(`ntp source ${this.config.sourceInterface}`);
+    if (this.config.updateCalendar) lines.push('ntp update-calendar');
+    if (!this.config.allowModeControl) lines.push('no ntp allow mode control');
     if (this.config.authenticate) lines.push('ntp authenticate');
     for (const k of this.config.authKeys.values()) {
       lines.push(`ntp authentication-key ${k.id} ${k.algo} ${k.key}`);
@@ -146,16 +178,6 @@ export class NtpAgent {
 
   now(): number {
     return Date.now() + this.config.offsetMs;
-  }
-
-  runningConfigLines(): string[] {
-    const out: string[] = [];
-    for (const [ip, a] of this.config.associations) {
-      const kind = a.mode === 'symmetric-active' ? 'peer' : 'server';
-      out.push(`ntp ${kind} ${ip}${a.keyId !== undefined ? ' key ' + a.keyId : ''}${a.prefer ? ' prefer' : ''}`);
-    }
-    if (this.config.serverMode) out.push('ntp master');
-    return out;
   }
 
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {

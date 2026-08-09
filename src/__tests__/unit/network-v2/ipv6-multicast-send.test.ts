@@ -1,19 +1,15 @@
 /**
- * Le chemin d'émission multicast IPv6.
+ * The IPv6 multicast send path.
  *
- * Il n'existait pas, et c'est le blocage que ce dépôt avait déjà
- * rencontré deux fois sans le lever : mDNS a dû renoncer à ses groupes
- * IPv6 (`FF02::1:3`/`FF02::FB`) « faute d'un chemin d'envoi vers un
- * groupe quelconque », et OSPFv3 forme ses adjacences hors bande pour
- * la même raison.
+ * It did not exist, and this repo had already hit the wall twice
+ * without naming it: mDNS gave up its IPv6 groups "for want of a send
+ * path to any group at all", and OSPFv3 formed its adjacencies out of
+ * band for the same reason.
  *
- * La cause était précise : `sendUdpDatagram6` passait par
- * `resolveIPv6Route` puis résolvait le prochain saut par NDP. Pour
- * `ff02::5` cela ne peut PAS aboutir — un groupe n'a pas de voisin à
- * solliciter — donc tout envoi multicast échouait en silence.
- *
- * Ce qui manquait n'était pas la conversion d'adresse : `toMulticastMAC()`
- * (RFC 2464 §7) existait depuis toujours, sans un seul appelant.
+ * `sendUdpDatagram6` resolved the next hop by NDP, which can never
+ * succeed for `ff02::5`: a group has no neighbour to solicit. What was
+ * missing was not the address conversion — `toMulticastMAC()`
+ * (RFC 2464 §7) had always been there, with no caller.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -24,37 +20,37 @@ import { IPv6Address } from '@/network/core/types';
 
 let a: LinuxPC;
 let b: LinuxPC;
-/** Ce que B a réellement reçu sur le port d'écoute. */
-let recu: string[];
+/** What B actually received on the listening port. */
+let received: string[];
 
-function ecoute(hote: LinuxPC, port: number): void {
-  (hote as unknown as { udpListeners: Map<number, (d: unknown) => void> })
+function listen(host: LinuxPC, port: number): void {
+  (host as unknown as { udpListeners: Map<number, (d: unknown) => void> })
     .udpListeners.set(port, (d) => {
       const dgram = d as { udp?: { payload?: unknown } };
-      recu.push(String(dgram.udp?.payload));
+      received.push(String(dgram.udp?.payload));
     });
 }
 
-function cfg(hote: LinuxPC, iface: string, adresse: string): void {
-  (hote as unknown as {
+function cfg(host: LinuxPC, iface: string, address: string): void {
+  (host as unknown as {
     configureIPv6Interface(i: string, a: IPv6Address, p: number): boolean;
-  }).configureIPv6Interface(iface, new IPv6Address(adresse), 64);
+  }).configureIPv6Interface(iface, new IPv6Address(address), 64);
 }
 
 beforeEach(() => {
-  recu = [];
+  received = [];
   a = new LinuxPC('A');
   b = new LinuxPC('B');
   const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
   a.powerOn(); b.powerOn(); sw.powerOn();
   new Cable('x').connect(a.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   new Cable('y').connect(b.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
-  // `configureIPv6Interface` et non `Port.configureIPv6` : c'est le
-  // chemin que prend `ip -6 addr add`, et lui seul inscrit la route
-  // connectée sans laquelle l'unicast n'a aucune route à résoudre.
+  // `configureIPv6Interface`, not `Port.configureIPv6`: it is the path
+  // `ip -6 addr add` takes, and the only one that installs the connected
+  // route unicast needs.
   cfg(a, 'eth0', '2001:db8::1');
   cfg(b, 'eth0', '2001:db8::2');
-  ecoute(b, 4242);
+  listen(b, 4242);
 });
 
 const h = (d: LinuxPC) => d as unknown as {
@@ -64,64 +60,61 @@ const h = (d: LinuxPC) => d as unknown as {
   sendUdpDatagram6(dst: IPv6Address, dp: number, sp: number, p: unknown, n: number): boolean;
 };
 
-describe('un datagramme atteint un groupe IPv6', () => {
-  it('l\'hôte abonné le reçoit', () => {
+describe('a datagram reaches an IPv6 group', () => {
+  it('the joined host receives it', () => {
     expect(h(b).joinIPv6Group('eth0', 'ff02::99')).toBe(true);
     expect(h(a).sendUdpDatagram6(new IPv6Address('ff02::99'), 4242, 5000, 'coucou', 6)).toBe(true);
-    expect(recu).toEqual(['coucou']);
+    expect(received).toEqual(['coucou']);
   });
 
-  it('un hôte NON abonné ne le reçoit pas', () => {
-    // Le garde-fou du lot : sans lui, « tout livrer » passerait le cas
-    // précédent sans qu'aucun filtre n'existe.
+  it('a host that has NOT joined does not receive it', () => {
+    // The guard: without it, "deliver everything" would pass the case
+    // above with no filter in existence.
     expect(h(a).sendUdpDatagram6(new IPv6Address('ff02::77'), 4242, 5000, 'x', 1)).toBe(true);
-    expect(recu).toEqual([]);
+    expect(received).toEqual([]);
   });
 
-  it('quitter le groupe suffit à ne plus rien recevoir', () => {
+  it('leaving the group is enough to stop receiving', () => {
     h(b).joinIPv6Group('eth0', 'ff02::99');
     h(a).sendUdpDatagram6(new IPv6Address('ff02::99'), 4242, 5000, 'un', 2);
     expect(h(b).leaveIPv6Group('eth0', 'ff02::99')).toBe(true);
     h(a).sendUdpDatagram6(new IPv6Address('ff02::99'), 4242, 5000, 'deux', 4);
-    expect(recu).toEqual(['un']);
+    expect(received).toEqual(['un']);
   });
 
-  it('l\'appartenance se lit', () => {
+  it('membership can be read back', () => {
     h(b).joinIPv6Group('eth0', 'ff02::99');
-    // Pas d'égalité stricte : la machine est aussi membre des groupes
-    // de LLMNR et mDNS, que systemd-resolved rejoint au démarrage sur
-    // chaque interface.
+    // Not strict equality: the machine also belongs to the LLMNR and
+    // mDNS groups, which systemd-resolved joins at boot.
     expect(h(b).listIPv6Groups()).toContainEqual({ iface: 'eth0', group: 'ff02::99' });
     expect(h(b).listIPv6Groups('eth1')).not.toContainEqual({ iface: 'eth1', group: 'ff02::99' });
   });
 
-  it('un groupe mal formé, ou une adresse unicast, est refusé', () => {
-    expect(h(b).joinIPv6Group('eth0', 'pas-une-adresse')).toBe(false);
-    // `2001:db8::2` est SON adresse, et ce n'est pas un groupe.
+  it('a malformed group, or a unicast address, is refused', () => {
+    expect(h(b).joinIPv6Group('eth0', 'pas-une-address')).toBe(false);
+    // `2001:db8::2` is ITS address, and not a group.
     expect(h(b).joinIPv6Group('eth0', '2001:db8::2')).toBe(false);
   });
 
-  it('une interface qui n\'existe pas est refusée', () => {
+  it('an interface that does not exist is refused', () => {
     expect(h(b).joinIPv6Group('eth9', 'ff02::99')).toBe(false);
   });
 });
 
-describe('ce qui distingue un envoi multicast d\'un envoi ordinaire', () => {
-  it('l\'unicast IPv6 continue de fonctionner', async () => {
-    // La non-régression : le chemin ajouté ne doit pas détourner
-    // l'unicast, qui lui a bien une route et un voisin. L'attente est
-    // celle du voisinage — le premier paquet vers un voisin inconnu part
-    // APRÈS la sollicitation NDP, comme sur une vraie pile.
-    ecoute(b, 4243);
+describe('what tells a multicast send from an ordinary one', () => {
+  it('IPv6 unicast still works', async () => {
+    // No regression: the added path must not divert unicast, which does
+    // have a route and a neighbour. The wait is the neighbour's — the
+    // first packet to an unknown one leaves AFTER the NDP solicitation.
+    listen(b, 4243);
     expect(h(a).sendUdpDatagram6(new IPv6Address('2001:db8::2'), 4243, 5000, 'direct', 6)).toBe(true);
     await new Promise((r) => setTimeout(r, 0));
-    expect(recu).toEqual(['direct']);
+    expect(received).toEqual(['direct']);
   });
 
-  it('l\'envoi réussit même sans voisin à solliciter', () => {
-    // C'était le défaut : NDP ne peut pas résoudre un groupe, donc
-    // l'envoi échouait. Personne n'écoute ici, et l'émission doit
-    // néanmoins avoir lieu.
+  it('the send succeeds with no neighbour to solicit', () => {
+    // This was the defect: NDP cannot resolve a group, so the send
+    // failed. Nobody listens here, and it must still happen.
     expect(h(a).sendUdpDatagram6(new IPv6Address('ff02::1'), 9999, 5000, 'x', 1)).toBe(true);
   });
 });

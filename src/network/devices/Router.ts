@@ -702,30 +702,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected isNtpSynchronized(): boolean { return false; }
 
-  /** Dernier etat de lien pour lequel une notification est partie. */
-  private readonly dernierEtatNotifie = new Map<string, boolean>();
+  /** Last link state a notification was sent for. */
+  private readonly lastNotifiedLinkState = new Map<string, boolean>();
 
   /**
-   * linkDown / linkUp (IF-MIB, RFC 2863 — OID 1.3.6.1.6.3.1.1.5.3 et .4).
+   * linkDown / linkUp (IF-MIB, RFC 2863 — OIDs 1.3.6.1.6.3.1.1.5.3/.4).
    *
-   * `snmp-server enable traps` etait accepte, range et rendu dans la
-   * configuration, et lu par PERSONNE : `sendTrap` n'avait pour appelants
-   * qu'IP SLA et EEM, si bien qu'aucune notification standard — la plus
-   * classique de toutes comprise — ne quittait jamais la machine.
-   *
-   * La grappe de variables est celle de la RFC : l'index de
-   * l'interface, son etat administratif et son etat operationnel. Un
-   * trap qui ne dirait pas DE QUELLE interface il parle n'apprendrait
-   * rien au collecteur.
+   * The varbinds are the RFC's: interface index, admin status, oper
+   * status. A trap that did not say WHICH interface it is about would
+   * teach the collector nothing.
    */
-  private emettreTrapDeLien(ifName: string, port: Port, monte: boolean): void {
-    // Un etat qui ne change pas ne se notifie pas. Mesure : sur une
-    // interface SANS cable, `shutdown` puis `no shutdown` faisaient
-    // passer deux fois par « down » — le lien restant baisse dans les
-    // deux cas — et un second linkDown partait pour une interface qui
-    // etait deja tombee. Un vrai routeur en emet un seul.
-    if (this.dernierEtatNotifie.get(ifName) === monte) return;
-    this.dernierEtatNotifie.set(ifName, monte);
+  private emitLinkTrap(ifName: string, port: Port, monte: boolean): void {
+    // An unchanged state is not notified: on an uncabled interface,
+    // `shutdown` then `no shutdown` both leave the link down, and a
+    // second linkDown went out for an interface already down.
+    if (this.lastNotifiedLinkState.get(ifName) === monte) return;
+    this.lastNotifiedLinkState.set(ifName, monte);
 
     const snmp = this.getSnmpService();
     if (!snmp.isEnabled()) return;
@@ -1030,14 +1022,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
         this.syncRouteDebug();
-        this.emettreTrapDeLien(name, port, state === 'up');
+        this.emitLinkTrap(name, port, state === 'up');
         if (state === 'up') {
           this._ospfAutoConverge();
-          // Le câble arrive souvent APRÈS la configuration d'adresse :
-          // sans cette annonce, l'hôte du lien ne verrait jamais le
-          // préfixe, celle de `configureInterface` ayant été émise dans
-          // le vide.
-          this.ipv6Engine.annoncerSurInterface(name);
+          // The cable often arrives AFTER the address is configured, so
+          // the advertisement from `configureInterface` went nowhere.
+          this.ipv6Engine.advertiseOnInterface(name);
         } else {
           this.ipsecEngine?.onPortDown(name);
           this.ospfIntegration.onPortDown(name);
@@ -2806,7 +2796,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ═══════════════════════════════════════════════════════════════════
 
   configureRA(ifName: string, config: Partial<import('./router/IPv6DataPlane').RAConfig>) { this.ipv6Engine.configureRA(ifName, config); }
-  /** Régler les paramètres d'annonce ND d'une interface (`ipv6 nd …`). */
+  /** Set an interface's ND advertisement parameters (`ipv6 nd …`). */
   setRaParams(ifName: string, params: Partial<import('./router/IPv6DataPlane').RAConfig>): void {
     this.ipv6Engine.setRaParams(ifName, params);
   }

@@ -110,13 +110,9 @@ export class DHCPv6Packet {
   }
 
   /**
-   * INFORMATION-REQUEST (RFC 8415 §18.2.6) : la demande d'un client qui
-   * ne veut PAS d'adresse, seulement la configuration annexe — serveurs
-   * de noms, domaine de recherche. C'est ce que demande le drapeau O
-   * d'une annonce de routeur.
-   *
-   * Elle ne porte donc aucune IA, et le client n'a pas a se nommer
-   * autrement que par son DUID : il n'y a rien a lier.
+   * INFORMATION-REQUEST (RFC 8415 §18.2.6): a client that wants NO
+   * address, only the other configuration — name servers, search
+   * domain. It carries no IA: there is nothing to bind.
    */
   static createInformationRequest(clientDuid: string, transactionId: number): DHCPv6Packet {
     const pkt = new DHCPv6Packet();
@@ -127,9 +123,8 @@ export class DHCPv6Packet {
   }
 
   /**
-   * La REPLY a une INFORMATION-REQUEST : mêmes options de configuration
-   * qu'un bail ordinaire, et pas d'IA — le serveur n'a rien attribué et
-   * ne retient rien.
+   * The REPLY to an INFORMATION-REQUEST: the same configuration options
+   * as an ordinary lease and no IA — nothing assigned, nothing retained.
    */
   static createInformationReply(
     clientDuid: string, serverDuid: string, transactionId: number,

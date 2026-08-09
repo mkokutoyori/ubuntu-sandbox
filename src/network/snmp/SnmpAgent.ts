@@ -73,6 +73,20 @@ export class SnmpAgent {
 
   setContact(s: string): void { this.config.contact = s; }
   setLocation(s: string): void { this.config.location = s; }
+  setTrapSourceInterface(iface: string | null): void { this.config.trapSourceInterface = iface; }
+
+  /**
+   * The source address a trap carries. Routing picks the egress
+   * interface; `snmp-server trap-source` picks this, and it was read by
+   * nobody — every trap went out with the egress interface's address,
+   * so a collector filtering on a loopback saw none of them.
+   */
+  private trapSourceIp(egressPort: import('../hardware/Port').Port): IPAddress | null {
+    const named = this.config.trapSourceInterface
+      ? this.host.getPort(this.config.trapSourceInterface)?.getIPAddress() ?? null
+      : null;
+    return named ?? egressPort.getIPAddress();
+  }
 
   addCommunity(community: string, access: 'ro' | 'rw'): void {
     const existing = this.config.communities.find((c) => c.community === community);
@@ -138,7 +152,7 @@ export class SnmpAgent {
     for (const t of this.config.trapHosts) {
       const egress = this.resolveEgress(t.ip);
       if (!egress) continue;
-      const srcIp = egress.port.getIPAddress();
+      const srcIp = this.trapSourceIp(egress.port);
       if (!srcIp) continue;
       const standard: SnmpVarBinding[] = [
         vb('1.3.6.1.2.1.1.3.0', v('timeticks', this.uptimeTicks())),

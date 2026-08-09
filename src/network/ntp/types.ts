@@ -58,6 +58,20 @@ export interface NtpConfig {
   authKeys: Map<number, NtpAuthKey>;
   trustedKeys: Set<number>;
   accessGroups: Map<string, string>;
+  /**
+   * Le durcissement du §9 du tutoriel NTP, et l'horloge materielle du §8.
+   * `no ntp allow mode control` ferme le mode 6 (celui de `monlist`,
+   * CVE-2013-5211) et `ntp update-calendar` recopie l'heure NTP dans le
+   * calendrier : les deux etaient acceptees et rangees NULLE PART, donc
+   * absentes de la configuration rendue -- une machine durcie revenait
+   * ouverte apres un import de topologie.
+   */
+  allowModeControl: boolean;
+  updateCalendar: boolean;
+  /** Les interfaces ou `ntp disable` interdit de servir le temps. */
+  disabledInterfaces: Set<string>;
+  /** Depuis quand le service tourne : `show ntp status` le rend. */
+  startedAtMs: number;
 }
 
 export function createDefaultNtpConfig(): NtpConfig {
@@ -74,6 +88,10 @@ export function createDefaultNtpConfig(): NtpConfig {
     authKeys: new Map(),
     trustedKeys: new Set(),
     accessGroups: new Map(),
+    allowModeControl: true,
+    updateCalendar: false,
+    disabledInterfaces: new Set(),
+    startedAtMs: Date.now(),
   };
 }
 

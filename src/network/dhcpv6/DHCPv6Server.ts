@@ -155,18 +155,13 @@ export class DHCPv6Server {
   }
 
   /**
-   * INFORMATION-REQUEST (RFC 8415 §18.3.5) : le serveur rend la
-   * configuration ANNEXE et rien d'autre.
+   * INFORMATION-REQUEST (RFC 8415 §18.3.5): the other configuration and
+   * nothing else. No address is assigned and NO binding recorded — that
+   * is what stateless means, so this touches neither `bindings` nor
+   * `pendingOffers` and a pool queried a hundred times is not drained.
    *
-   * Il n'attribue aucune adresse et n'inscrit AUCUN bail — c'est la
-   * definition du service sans etat, et c'est pourquoi cette methode ne
-   * touche ni `bindings` ni `pendingOffers` : un pool interroge cent
-   * fois ne s'epuise pas.
-   *
-   * Un pool sans prefixe est legitime ici — un `ipv6 dhcp pool` qui ne
-   * porte qu'un `dns-server` est exactement ce qu'on configure pour du
-   * sans-etat — donc la selection ne filtre pas sur le prefixe quand le
-   * pool est nomme explicitement par l'interface.
+   * A pool with no prefix is legitimate here: an `ipv6 dhcp pool`
+   * carrying only a `dns-server` is exactly the stateless setup.
    */
   processInformationRequest(
     params: { transactionId: number }, explicitPoolName?: string, anchor?: string,

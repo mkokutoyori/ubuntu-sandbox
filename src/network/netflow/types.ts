@@ -90,8 +90,8 @@ export function newRecord(input: {
   sourcePort?: number; destinationPort?: number;
   protocol: number; bytes?: number; packets?: number; tos?: number;
   nextHopIp?: string; tcpFlags?: number;
-}): NetFlowV5Record {
-  const now = Date.now();
+}, nowMs?: number): NetFlowV5Record {
+  const now = nowMs ?? Date.now();
   return {
     sourceIp: input.sourceIp,
     destinationIp: input.destinationIp,

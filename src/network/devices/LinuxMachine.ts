@@ -2003,14 +2003,10 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /**
-   * Les serveurs de noms appris en DHCPv6 REJOIGNENT ceux qui sont deja
-   * la, au lieu de les remplacer.
-   *
-   * Le chemin v4 reecrit le fichier entier, ce qui lui suffit puisqu'il
-   * est seul ; une machine a double pile prend ses deux baux, et si le
-   * v6 reecrivait de meme, le second bail effacerait silencieusement le
-   * resolveur du premier. Un vrai systemd-resolved tient les deux
-   * familles pour le meme lien.
+   * Name servers learned by DHCPv6 JOIN those already there rather than
+   * replacing them. The v4 path rewrites the whole file, which is enough
+   * while it is alone; a dual-stack host takes both leases, and the
+   * second would silently erase the first resolver.
    */
   protected override onDhcpv6LeaseConfigured(
     iface: string, dnsServers: readonly string[], domainName: string | null,

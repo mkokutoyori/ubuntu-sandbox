@@ -264,12 +264,10 @@ export class MdnsAgent {
   }
 
   /**
-   * Les adresses IPv6 GLOBALES de l'hote. L'adresse de lien-local est
-   * ecartee : elle est ambigue hors de son lien (elle a besoin d'un
-   * indice de zone que le format d'enregistrement ne porte pas), et un
-   * pair qui la recevrait ne saurait pas par ou l'atteindre.
+   * The host's GLOBAL IPv6 addresses. Link-local is left out: it is
+   * ambiguous off its link and the record carries no zone index.
    */
-  private ownAddresses6(): string[] {
+  private ownIpv6Addresses(): string[] {
     const out: string[] = [];
     for (const port of this.host.getPorts()) {
       if (port.getName() === 'lo') continue;
@@ -421,10 +419,9 @@ export class MdnsAgent {
       ...this.ownAddresses().map((ip) => ({
         name, type: 'A' as const, value: ip, ttl,
       })),
-      // Sans AAAA, un lien purement IPv6 verrait passer la question et
-      // la reponse sans jamais apprendre d'adresse : le transport
-      // traverserait le fil pour ne rien apporter.
-      ...this.ownAddresses6().map((ip) => ({
+      // Without AAAA, a v6-only link would see the question and the
+      // answer cross and never learn an address.
+      ...this.ownIpv6Addresses().map((ip) => ({
         name, type: 'AAAA' as const, value: ip, ttl,
       })),
     ];

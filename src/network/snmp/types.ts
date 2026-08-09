@@ -95,6 +95,8 @@ export interface SnmpAgentConfig {
   port: number;
   communities: SnmpCommunityAcl[];
   contact: string;
+  /** `snmp-server trap-source <iface>` — the address traps carry. */
+  trapSourceInterface: string | null;
   location: string;
   trapHosts: SnmpTrapHost[];
 }
@@ -103,7 +105,7 @@ export function createDefaultAgentConfig(): SnmpAgentConfig {
   return {
     enabled: true, port: UDP_PORT_SNMP,
     communities: [{ community: 'public', access: 'ro' }],
-    contact: '', location: '',
+    contact: '', location: '', trapSourceInterface: null,
     trapHosts: [],
   };
 }

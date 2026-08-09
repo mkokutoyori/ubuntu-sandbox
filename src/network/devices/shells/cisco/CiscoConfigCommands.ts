@@ -17,6 +17,7 @@ import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
+import { getNtpAgent } from '../../../equipment/RouterServiceCapabilities';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -636,6 +637,23 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (port) (port as unknown as { ipRedirects?: boolean }).ipRedirects = true;
     return '';
   });
+  // Le durcissement du §9 du tutoriel NTP : `ntp disable` interdit a une
+  // interface de SERVIR le temps, ce qui est la contre-mesure la plus
+  // simple contre un client NTP non sollicite sur un lien exterieur. La
+  // commande etait refusee (`% Invalid input detected`), donc le
+  // durcissement impossible a ecrire.
+  trie.register('ntp disable', 'Disable NTP service on this interface', () => {
+    const iface = ctx.getSelectedInterface();
+    const agent = getNtpAgent(ctx.r());
+    if (iface && agent) agent.setInterfaceDisabled(iface, true);
+    return '';
+  });
+  trie.register('no ntp disable', 'Re-enable NTP service on this interface', () => {
+    const iface = ctx.getSelectedInterface();
+    const agent = getNtpAgent(ctx.r());
+    if (iface && agent) agent.setInterfaceDisabled(iface, false);
+    return '';
+  });
   trie.register('ip accounting', 'Enable IP accounting', () => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
@@ -679,17 +697,9 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     ctx.r().addDhcpv6RelayDestination(ifName, args[0]);
     return '';
   });
-  // Ces deux drapeaux etaient ranges sur une propriete ad hoc du port
-  // (`ipv6NdManagedFlag`) que PERSONNE ne lisait : l'annonce se
-  // construit depuis `raConfig`, un autre magasin. Ils partaient donc
-  // toujours a zero sur le fil, quelle que soit la configuration. Ils
-  // vont desormais dans le magasin que lit `sendRouterAdvertisement`.
-  //
-  // Ce que le drapeau M dit — « demande ton adresse en DHCPv6 » — est
-  // porte fidelement sur le fil et n'est SUIVI par aucun hote : ce
-  // simulateur a un serveur DHCPv6 et pas de client. C'est ecrit ici
-  // plutot que tu, et le jour ou le client existera, rien ne changera
-  // de ce cote.
+  // Both flags used to be stored on an ad-hoc port property nobody
+  // read: the advertisement is built from `raConfig`, a different
+  // store, so they always went out as zero.
   trie.register('ipv6 nd managed-config-flag', 'Set IPv6 ND M flag', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
@@ -715,10 +725,9 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
 
-  // `suppress` tait l'annonce spontanee ; `suppress all` tait aussi la
-  // reponse a une sollicitation. La distinction est celle d'IOS et elle
-  // est observable : sous `suppress`, un hote qui arrive s'autoconfigure
-  // toujours puisqu'il sollicite ; sous `suppress all`, non.
+  // `suppress` silences the unsolicited advertisement; `suppress all`
+  // silences the answer to a solicitation too. IOS's own distinction,
+  // and an observable one.
   trie.registerGreedy('ipv6 nd ra suppress', 'Suppress router advertisements', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
@@ -734,10 +743,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
 
-  // Une duree de vie nulle veut dire « je ne suis pas un routeur par
-  // defaut » (RFC 4861 §4.2) : l'hote continue de s'autoconfigurer par
-  // le prefixe et ne pose PAS de route par defaut. C'est deja ce que
-  // fait la reception, la valeur n'etait simplement pas reglable.
+  // A zero lifetime means "I am not a default router" (RFC 4861 §4.2):
+  // the host still autoconfigures from the prefix and installs no
+  // default route. Reception already did this; the value was just not
+  // settable.
   trie.registerGreedy('ipv6 nd ra lifetime', 'Set router lifetime in RAs', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
@@ -747,10 +756,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
   trie.requireArgs('ipv6 nd ra lifetime', 1);
-  // Un noeud cree en chemin n'a pas de libelle a lui : `ipv6 nd ?`
-  // listerait `ra` tout nu, qui dit qu'il existe sans dire ce qu'il
-  // fait. La garde de l'autre agent (« chaque mot-cle propose porte une
-  // description ») l'a attrape, a juste titre.
+  // A node created along the way carries no label of its own, so
+  // `ipv6 nd ?` would list a bare `ra`.
   trie.describeNode('ipv6 nd ra', 'Router advertisement parameters');
   trie.registerGreedy('ip rip authentication', 'Configure RIP authentication', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
