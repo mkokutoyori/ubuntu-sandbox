@@ -1022,6 +1022,21 @@ export abstract class EndHost extends Equipment {
     });
   }
 
+  /**
+   * Aller chercher un bail DHCPv6 parce qu'une annonce l'a demandé.
+   *
+   * Ne redemande pas si l'interface porte déjà un bail : une annonce
+   * arrive à chaque sollicitation et à chaque lien qui monte, et une
+   * demande par annonce ferait tourner l'échange en boucle pour un
+   * résultat déjà obtenu.
+   */
+  private demanderBailDhcpv6(iface: string): void {
+    const port = this.ports.get(iface);
+    if (!port) return;
+    if (port.getIPv6Addresses().some((e) => e.origin === 'dhcpv6')) return;
+    try { this.requestDhcpv6Lease(iface); } catch { /* pas de serveur : on reste sans bail */ }
+  }
+
   /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY. Returns a verbose transcript, or '' on failure/no verbose. */
   requestDhcpv6Lease(iface: string, verbose = false): string {
     const port = this.ports.get(iface);
@@ -4254,6 +4269,18 @@ export abstract class EndHost extends Equipment {
         }
       }
     }
+
+    // RFC 4861 §4.2 / RFC 8415 §5 : le drapeau M dit à l'hôte d'aller
+    // chercher une adresse en DHCPv6. Le client existe, complet, et
+    // n'était déclenché que par un `dhclient -6` tapé à la main : le bit
+    // voyageait sans que personne l'exécute, de sorte qu'un routeur
+    // configuré en `managed` ne servait aucune adresse tant qu'on ne
+    // demandait pas soi-même.
+    //
+    // Le drapeau A du préfixe reste indépendant (RFC 4862 §5.5.3) :
+    // un hôte peut légitimement porter les deux adresses, et c'est ce
+    // que fait un vrai hôte sous une annonce qui pose M et A ensemble.
+    if (ra.managedFlag) this.demanderBailDhcpv6(portName);
   }
 
   // ─── NDP Resolution (IPv6 equivalent of ARP) ────────────────────

@@ -25,6 +25,41 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Le drapeau M déclenche DHCPv6 — LIVRÉ
+
+**Agent** : session « logging ».
+
+**Correction d'abord** : j'ai écrit dans l'entrée précédente que ce dépôt
+n'avait pas de client DHCPv6. C'est faux, et si vous l'avez lu, ignorez-le
+— `EndHost.requestDhcpv6Lease` est un client complet et il fonctionne.
+Mon `grep` cherchait un fichier ; c'est une méthode.
+
+**Le manquement réel, plus étroit** : le client n'était déclenché que par
+un `dhclient -6` tapé à la main. Le drapeau M d'une annonce de routeur —
+« va chercher ton adresse en DHCPv6 », RFC 4861 §4.2 — voyageait sur le
+fil sans que personne l'exécute, de sorte qu'un routeur configuré en
+`managed` ne servait aucune adresse tant que l'opérateur ne la demandait
+pas lui-même. `handleRouterAdvertisement` le déclenche désormais, et ne
+redemande pas quand l'interface porte déjà un bail : une annonce arrive
+à chaque sollicitation et à chaque lien qui monte, donc une demande par
+annonce viderait le pool toute seule.
+
+Le drapeau A du préfixe reste indépendant (RFC 4862 §5.5.3) : un hôte
+porte légitimement les deux adresses, et c'est ce qu'on observe.
+
+**Reste ouvert, et c'est le vrai manquement de la famille** : le drapeau
+O n'a aucun consommateur. Il demande une configuration ANNEXE (DNS, NTP)
+par `INFORMATION-REQUEST`, un message que `DHCPv6Server` ne traite pas.
+
+**Fichiers touchés** : `devices/EndHost.ts` seulement.
+
+**Mesures.** `dhcpv6-drapeau-managed.test.ts` (6 cas) discriminé par
+`git stash` : **2 tombent** avant — les deux qui prouvent la fonction ;
+les 4 autres sont les gardes-fous négatifs et la non-régression de
+`dhclient -6`, qui passent des deux côtés par construction.
+
+---
+
 ### Commandes `ipv6 nd` — LIVRÉ
 
 **Agent** : session « logging ». Suite immédiate du lot SLAAC : une fois
@@ -49,10 +84,14 @@ qui arrive s'autoconfigure quand même. Sous `suppress all`, rien ne part.
 **Une durée de vie nulle ne coupe pas l'autoconfiguration** (RFC 4861
 §4.2) : l'hôte garde son adresse et ne pose pas de route par défaut.
 
-**Porté fidèlement et suivi par personne, dit plutôt que tu** : le
-drapeau M signifie « demande ton adresse en DHCPv6 », et ce dépôt a un
-serveur DHCPv6 (`dhcpv6/DHCPv6Server.ts`) **sans aucun client**. Si vous
-cherchez un lot : le client DHCPv6 est le consommateur manquant.
+**CORRECTION — ce que j'ai écrit ici d'abord était faux.** J'avais
+annoncé « serveur DHCPv6 sans aucun client », sur la foi d'un `grep` qui
+ne trouvait pas de fichier client. Il n'y a pas de fichier : il y a une
+méthode, `EndHost.requestDhcpv6Lease`, et c'est un vrai
+SOLICIT / ADVERTISE / REQUEST / REPLY qui fonctionne de bout en bout.
+Le manquement réel était plus étroit — le client n'était déclenché que
+par un `dhclient -6` tapé à la main, donc le drapeau M voyageait sans
+que personne l'exécute. C'est corrigé dans le lot suivant.
 
 **Fichiers touchés** : `devices/router/IPv6DataPlane.ts`,
 `devices/Router.ts`, `shells/cisco/CiscoConfigCommands.ts`.
