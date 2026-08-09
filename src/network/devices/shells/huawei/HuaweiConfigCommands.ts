@@ -35,7 +35,14 @@ export type HuaweiShellMode =
   | 'aaa' | 'aaa-authen' | 'aaa-author' | 'aaa-accounting' | 'aaa-domain'
   | 'radius-template' | 'hwtacacs-template'
   | 'cpu-defend-policy'
-  | 'bfd-global' | 'bfd-session';
+  | 'bfd-global' | 'bfd-session'
+  // `pim` était la SEULE vue absente de cette union, et c'est elle qui
+  // avait fait élargir `HuaweiVRPShell.mode` en `HuaweiShellMode |
+  // string` — un `| string` qui annulait l'union entière et rendait
+  // `getActiveTrie` incapable de refuser une faute de frappe : elle
+  // retombait sur `default: return this.userTrie`, c'est-à-dire une vue
+  // muette au lieu d'une erreur de compilation.
+  | 'pim';
 
 export interface HuaweiShellContext {
   r(): Router;
@@ -504,7 +511,7 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
           return refuseMotInattenduVrp(raw ?? `rip ${args.join(' ')}`, args[i]);
         }
       }
-      ctx.setMode('rip' as any);
+      ctx.setMode('rip');
       return '';
     }
     return cmdRip(getRouter(), args);

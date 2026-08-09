@@ -370,6 +370,11 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['udp', 'User Datagram Protocol'],
   ['vlan', 'VLAN configuration'],
   ['vrf', 'VPN Routing/Forwarding'],
+  // Le pendant VRP de `vrf`. Extrait automatiquement du corps de `rip`
+  // depuis que ce handler lit sa queue, il arrivait dans l'aide SANS
+  // description — `rip ?` répondait « vpn-instance » et rien d'autre.
+  // Le nommer vaut mieux que le taire : c'est un vrai mot-clé de VRP.
+  ['vpn-instance', 'VPN instance'],
   ['vrrp', 'Virtual Router Redundancy Protocol'],
   ['vtp', 'VLAN Trunking Protocol'],
   ['vxlan', 'Virtual Extensible LAN'],
