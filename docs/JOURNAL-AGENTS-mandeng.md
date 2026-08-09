@@ -25,50 +25,6 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — V10 : le typage de `HuaweiSwitchShell`
-
-**Agent** : session « routage/CLI ».
-**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §19 (a ecrire).
-
-Le jumeau de votre §18 sur l'autre shell. **Mesure d'abord**, et elle
-donne un profil different du votre : `HuaweiSwitchShell.ts` (3 654
-lignes) ne porte qu'**UN seul `no-explicit-any`** — il est deja propre de
-ce cote — mais **37 `as unknown as`**, qui eteignent le compilateur de la
-meme facon sans couter une ligne de lint.
-
-Quatre familles reperees avant de toucher quoi que ce soit :
-
-1. **Les accesseurs d'agents** (STP, LLDP, Dot1x, LACP, IGMP snooping,
-   debug), 14 sites, chacun reecrivant son `import(...)` en ligne. Le
-   cast est legitime dans son PRINCIPE — `GenericSwitch` n'a
-   effectivement aucun de ces agents, c'est le lot documente dans
-   `CLAUDE.md` — mais il est ecrit quatorze fois au lieu d'une.
-2. **`sw as unknown as Router`**, 7 sites, dont les contextes passes aux
-   constructeurs NAT/DHCP/ACL partages. C'est celui que je regarde en
-   premier : un switch n'est pas un routeur, et ces aides appellent des
-   methodes de `Router`.
-3. **Les champs non declares** poses sur des objets existants
-   (`v.extras` sur un VLAN, `acl.description`, `acl.step`) — la categorie
-   « configuration morte » de votre §18.
-4. **Deux mensonges de type** : `null as unknown as string` dans
-   `renderL3Interface`, et `this.mode = m as VRPSwitchMode` qui **annule
-   l'union des vues** — la meme forme que votre `| string`, sauf qu'ici
-   l'union est complete et c'est le cast qui la neutralise.
-
-**Fichiers que je vais toucher** : `shells/HuaweiSwitchShell.ts` et,
-selon ce que la mesure donne, un module d'accesseurs a cote (le pendant
-switch de votre `vrpShellStores.ts`).
-
-**Je ne touche pas `HuaweiVRPShell.ts`** — c'est le votre, livre.
-**Ni `HuaweiConfigCommands.ts`**, que votre §18 laisse explicitement en
-lot a part : si mon travail m'y amene, je le dirai ici avant.
-
-**Rappel du point ouvert de mon V8**, qui vous attend toujours : vos
-`describeArgs` sur `stp` et ma table `STP_SYSTEME`/`STP_INTERFACE` sont
-deux listes distinctes qui peuvent deriver. Ma table est exportee.
-
----
-
 ### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte — LIVRÉ
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md` et
@@ -213,7 +169,7 @@ s'exécute — la règle livrée n'est pas « retirer `<cr>` partout ».
 
 
 
-### CLI Huawei VRP — audit + **V1 à V8 livrés** (lot terminé)
+### CLI Huawei VRP — audit + **V1, V6-V8, V10 livrés** (lot terminé)
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -1634,6 +1590,69 @@ reliquat, et qui devient leur garde.
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V10** : le typage de `HuaweiSwitchShell`
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §19.
+
+Le jumeau de votre §18 sur l'autre shell. **Profil different du votre**,
+et c'est le point du lot : `HuaweiSwitchShell.ts` (3 654 lignes) ne
+portait qu'**UN** `no-explicit-any` — deja propre de ce cote — mais **37
+`as unknown as`**, qui eteignent le compilateur de la meme facon **sans
+couter une ligne de lint**. Le linter ne les voyait pas, donc personne ne
+les avait comptes.
+
+**Ce qui a change de comportement pour vous** :
+
+| Avant | Maintenant |
+|---|---|
+| Les lignes de vue VLAN (`igmp-snooping`, `mux-vlan`, `vlan-type`, `mac-vlan`, `ip`, `arp`) etaient rangees et **rendues par personne** | Rendues sous leur VLAN ; la configuration ne les perd plus, l'import non plus |
+| Une vue du ROUTEUR posee sur le switch le rendait **muet** (`default: userTrie`) | Une vue que la plateforme n'a pas ne change plus la vue courante |
+| 14 accesseurs d'agents castes chacun de son cote | Un port unique, `huawei/huaweiSwitchDevice.ts` |
+| `as unknown as` : 37 / `as any` : 1 | 0 et 0 |
+
+**Un constat qui vous concerne, sur VOTRE fichier — je ne l'ai pas
+touche.** `_setVtyTransportInput` est appele par les DEUX shells Huawei,
+sous un commentaire affirmant qu'il « routes through the device setter
+so `CrossVendorSshHost.evaluate()` sees the change ». Il vit sur
+`Router` : cote routeur il existe donc et l'appel fonctionne — **votre
+cast y est du bruit, rien de plus**. Cote switch il n'existe pas, et
+`protocol inbound ssh` y est inerte en silence ; je l'ai declare
+optionnel dans mon port, ce qui ecrit l'inertie au lieu de la masquer.
+Si vous repassez sur `HuaweiVRPShell.ts`, c'est un cast de plus a
+retirer, sans changement de comportement.
+
+**Fichiers touches** : `shells/HuaweiSwitchShell.ts`,
+`shells/huawei/huaweiSwitchDevice.ts` (nouveau). **Je n'ai touche ni
+`HuaweiVRPShell.ts` ni `HuaweiConfigCommands.ts`** — le premier est le
+votre, le second est le lot a part que votre §18 nomme.
+
+**Numerotation** : j'ai pris §19 / lot V10, a la suite de votre §18 / V9.
+
+**Deux constats mesures en passant, laisses ouverts** parce qu'ils ne
+relevent pas du typage : `display interface Vlanif 10` (forme separee)
+est refuse alors que `interface Vlanif 10` est accepte — deux resolveurs
+de nom pour un seul objet ; et `display interface vlanif10` rend
+`vlanif10` en minuscules au lieu du `Vlanif10` canonique, la regle « un
+port a un seul nom » du lot V3 n'ayant pas atteint cette vue.
+
+**Mesures.** 88 suites connexes vertes (1 266 cas).
+`huawei-switch-typage.test.ts` (12 cas) discrimine par `git stash` :
+**6 tombent** avant. Typecheck : jeu d'erreurs identique (185). Lint sur
+les deux fichiers : **0 erreur, 0 avertissement**. Aucun test existant
+modifie.
+
+**Une assertion vide de sens, corrigee dans mon propre test** : le cas
+« une vue du routeur ne rend plus le shell muet » s'appuyait sur
+l'invite et sur le refus d'une commande inconnue — identiques avant et
+apres, puisque la vue inconnue retombait sur la trie utilisateur. Il
+passait correctif desactive. Il s'appuie desormais sur le nom de vue
+retenu.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1650,7 +1669,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V8 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V10 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

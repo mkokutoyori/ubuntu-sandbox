@@ -69,6 +69,11 @@ function isUnsupportedOnThisSwitch(e: unknown): boolean {
 }
 
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
+  /** Ce shell rend la table avec ses filtres — la base ne doit pas la masquer. */
+  protected providesOwnMacAddressTableView(): boolean {
+    return true;
+  }
+
   /** A `require*` refusal is a signal for `execute` below, not a crash. */
   protected override isControlFlowError(err: unknown): boolean {
     return isUnsupportedOnThisSwitch(err);

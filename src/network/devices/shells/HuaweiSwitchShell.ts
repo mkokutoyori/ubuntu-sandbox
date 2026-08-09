@@ -34,6 +34,7 @@ import {
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
+import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import {
   registerHuaweiNATInterfaceCommands,
@@ -42,7 +43,6 @@ import {
   runningConfigNATHuawei,
 } from './huawei/HuaweiNATCommands';
 import type { HuaweiShellContext } from './huawei/HuaweiConfigCommands';
-import type { Router } from '../Router';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
@@ -55,10 +55,13 @@ import {
   STP_SYSTEM_KEYWORDS, STP_INTERFACE_KEYWORDS,
 } from './huawei/huaweiInterfaceHelp';
 
-type VRPSwitchMode =
-  | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
-  | 'aaa' | 'user-interface' | 'acl' | 'dhcp-pool'
-  | 'traffic-classifier' | 'traffic-behavior' | 'traffic-policy';
+const VUES_SWITCH = [
+  'user', 'system', 'interface', 'vlan', 'mst-region', 'port-group',
+  'aaa', 'user-interface', 'acl', 'dhcp-pool',
+  'traffic-classifier', 'traffic-behavior', 'traffic-policy',
+] as const;
+
+type VRPSwitchMode = typeof VUES_SWITCH[number];
 
 /**
  * Le NUMERO d'une saisie `<type><n>` ou `<type> <n>`, quand le type
@@ -101,15 +104,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private selectedAcl: string | null = null;
   private acls = new Map<string, {
     key: string; type: 'basic' | 'adv'; rules: string[];
+    // Ecrits par `description` et `step` en vue ACL, et lus par
+    // personne — ni ici ni ailleurs. Les declarer ne les rend pas
+    // vivants ; cela les rend greppables, ce que le cast empechait.
+    description?: string; step?: number;
   }>();
   private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
-  private swRef: Switch | null = null;
+  private swRef: HuaweiSwitchDevice | null = null;
 
   /** Le magasin unique de l'etat `debugging` de ce switch. */
   private debugService(): HuaweiDebugService | null {
-    return (this.swRef as unknown as { getHuaweiDebugService?: () => HuaweiDebugService } | null)
-      ?.getHuaweiDebugService?.() ?? null;
+    return this.swRef?.getHuaweiDebugService?.() ?? null;
   }
 
   private applyToStpAgent(fn: (a: import('@/network/stp/StpAgent').StpAgent) => void): void {
@@ -118,21 +124,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   private stpAgent(): import('@/network/stp/StpAgent').StpAgent | undefined {
-    return (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent } | null)?.getStpAgent?.();
+    return this.swRef?.getStpAgent?.();
   }
 
   private applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
-    const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent } | null)?.getLldpAgent?.();
+    const ag = this.swRef?.getLldpAgent?.();
     if (ag) fn(ag);
   }
 
   private applyToDot1xAgent(fn: (a: import('@/network/dot1x/Dot1xAgent').Dot1xAgent) => void): void {
-    const ag = (this.swRef as unknown as { getDot1xAgent?: () => import('@/network/dot1x/Dot1xAgent').Dot1xAgent } | null)?.getDot1xAgent?.();
+    const ag = this.swRef?.getDot1xAgent?.();
     if (ag) fn(ag);
   }
 
   private applyToLacpAgent(fn: (a: import('@/network/lacp/LacpAgent').LacpAgent) => void): void {
-    const ag = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+    const ag = this.swRef?.getLacpAgent?.();
     if (ag) fn(ag);
   }
   private history: string[] = [];
@@ -183,7 +189,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private natContext(): HuaweiShellContext {
     return {
-      r: () => this.swRef as unknown as Router,
+      r: () => commeRouteur(this.swRef),
       setMode: () => { /* switch NAT does not enter dedicated submodes */ },
       getSelectedInterface: () => this.selectedInterface,
       setSelectedInterface: (i) => { this.selectedInterface = i; },
@@ -196,8 +202,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** Context handed to the shared Huawei DHCP pool builder. */
   private dhcpContext(): HuaweiShellContext {
     return {
-      r: () => this.swRef as unknown as Router,
-      setMode: (m) => { this.mode = m as VRPSwitchMode; },
+      r: () => commeRouteur(this.swRef),
+      setMode: (m) => { this.entrerVue(m); },
       getSelectedInterface: () => this.selectedInterface,
       setSelectedInterface: (i) => { this.selectedInterface = i; },
       getSelectedPool: () => this.selectedPool,
@@ -366,7 +372,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private wireHuaweiNAT(): void {
     const ctx = this.natContext();
-    const getRouter = () => this.swRef as unknown as Router;
+    const getRouter = () => commeRouteur(this.swRef);
     registerHuaweiNATSystemCommands(this.systemTrie, ctx);
     registerHuaweiNATInterfaceCommands(this.interfaceTrie, ctx);
     registerHuaweiNATDisplayCommands(this.userTrie, getRouter);
@@ -428,7 +434,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
-    this.mode = s.mode as VRPSwitchMode;
+    // Une session restauree porte la vue sous forme de chaine : la
+    // meme garde que pour les aides partagees, sinon une session
+    // corrompue rendrait le shell muet au lieu de le ramener en vue
+    // utilisateur.
+    this.mode = 'user';
+    this.entrerVue(s.mode);
     this.selectedInterface = s.selectedInterface;
     this.selectedVlan = s.selectedVlan;
     this.selectedMqcName = s.selectedMqcName;
@@ -626,6 +637,20 @@ export class HuaweiSwitchShell implements ISwitchShell {
     }
   }
 
+  /**
+   * Les aides partagees sont ecrites pour le routeur et connaissent des
+   * vues que le switch n'a pas. `this.mode = m as VRPSwitchMode`
+   * ANNULAIT l'union : une vue inconnue passait, `getActiveTrie()`
+   * retombait sur `default` et le shell devenait muet sans un mot.
+   * Une vue que cette plateforme n'a pas ne change donc plus la vue
+   * courante.
+   */
+  private entrerVue(m: unknown): void {
+    if (typeof m === 'string' && (VUES_SWITCH as readonly string[]).includes(m)) {
+      this.mode = m as VRPSwitchMode;
+    }
+  }
+
   private getActiveTrie(): CommandTrie {
     switch (this.mode) {
       case 'user':      return this.userTrie;
@@ -753,8 +778,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const macHex = args[0].replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(0, 12);
       const maskHex = args[2].replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(0, 12);
       const description = args[3]?.toLowerCase() === 'description' ? args.slice(4).join(' ') : undefined;
-      (this.swRef as unknown as { addVoiceVlanOui?: (m: string, k: string, d?: string) => void })
-        .addVoiceVlanOui?.(macHex, maskHex, description);
+      this.swRef?.addVoiceVlanOui?.(macHex, maskHex, description);
       return '';
     });
 
@@ -1508,12 +1532,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (this.selectedVlan === null) return '';
       const v = this.swRef.getVLAN(this.selectedVlan);
       if (!v) return '';
-      const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
-      const line = raw ?? `igmp-snooping ${args.join(' ')}`.trim();
-      if (!extra['igmp-snooping']) extra['igmp-snooping'] = [];
-      extra['igmp-snooping'].push(line);
-      (v as unknown as { extras: Record<string, string[]> }).extras = extra;
-      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+      ajouterLigneVlan(v, 'igmp-snooping', raw ?? `igmp-snooping ${args.join(' ')}`.trim());
+      const agent = this.swRef?.getIgmpSnoopingAgent?.();
       if (!agent) return '';
       if (args[0] === 'enable') agent.setVlanEnabled(this.selectedVlan, true);
       else if (args[0] === 'fast-leave') agent.setImmediateLeave(this.selectedVlan, true);
@@ -1526,12 +1546,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (this.selectedVlan === null) return '';
       const v = this.swRef.getVLAN(this.selectedVlan);
       if (!v) return '';
-      const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
-      const line = raw ?? `undo igmp-snooping ${args.join(' ')}`.trim();
-      if (!extra['igmp-snooping']) extra['igmp-snooping'] = [];
-      extra['igmp-snooping'].push(line);
-      (v as unknown as { extras: Record<string, string[]> }).extras = extra;
-      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+      ajouterLigneVlan(v, 'igmp-snooping', raw ?? `undo igmp-snooping ${args.join(' ')}`.trim());
+      const agent = this.swRef?.getIgmpSnoopingAgent?.();
       if (!agent) return '';
       if (args.length === 0 || args[0] === 'enable') agent.setVlanEnabled(this.selectedVlan, false);
       else if (args[0] === 'fast-leave') agent.setImmediateLeave(this.selectedVlan, false);
@@ -1605,11 +1621,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         if (this.selectedVlan === null) return '';
         const v = this.swRef.getVLAN(this.selectedVlan);
         if (!v) return '';
-        const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
-        const line = raw ?? `${kw} ${args.join(' ')}`.trim();
-        if (!extra[kw]) extra[kw] = [];
-        extra[kw].push(line);
-        (v as unknown as { extras: Record<string, string[]> }).extras = extra;
+        ajouterLigneVlan(v, kw, raw ?? `${kw} ${args.join(' ')}`.trim());
         return '';
       });
     }
@@ -1724,9 +1736,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // setter so CrossVendorSshHost.evaluate() sees the change.
     t.registerGreedy('protocol', 'user-interface protocol', (args) => {
       if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
-      const dev = this.swRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const dev = this.swRef;
       const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
-      if (dev._setVtyTransportInput && ['ssh', 'telnet', 'all', 'none'].includes(proto)) {
+      if (dev?._setVtyTransportInput && ['ssh', 'telnet', 'all', 'none'].includes(proto)) {
         dev._setVtyTransportInput(proto);
       }
       return '';
@@ -1735,9 +1747,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // listed transports leaves the others. With no arg it disables both.
     t.registerGreedy('undo', 'user-interface undo', (args) => {
       if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
-      const dev = this.swRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const dev = this.swRef;
       const removed = (args[2] ?? '').toLowerCase();
-      if (!dev._setVtyTransportInput) return '';
+      if (!dev?._setVtyTransportInput) return '';
       if (removed === 'ssh') dev._setVtyTransportInput('telnet');
       else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
       else dev._setVtyTransportInput('none');
@@ -1760,13 +1772,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     t.registerGreedy('description', 'ACL description', (args) => {
       if (!this.selectedAcl) return '';
       const acl = this.acls.get(this.selectedAcl);
-      if (acl) (acl as unknown as { description?: string }).description = args.join(' ');
+      if (acl) acl.description = args.join(' ');
       return '';
     });
     t.registerGreedy('step', 'Set ACL rule step', (args) => {
       if (!this.selectedAcl) return '';
       const acl = this.acls.get(this.selectedAcl);
-      if (acl) (acl as unknown as { step?: number }).step = parseInt(args[0] ?? '5', 10);
+      if (acl) acl.step = parseInt(args[0] ?? '5', 10);
       return '';
     });
     t.registerGreedy('undo', 'ACL undo', (args) => {
@@ -2328,7 +2340,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Eth-Trunk + counters.
     trie.registerGreedy('display igmp-snooping', 'Display IGMP snooping state', (args) => {
-      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent } | null)?.getIgmpSnoopingAgent?.();
+      const agent = this.swRef?.getIgmpSnoopingAgent?.();
       if (!agent) return '';
       const vlans = agent.listVlans();
       if (args[0] === 'group') {
@@ -2400,7 +2412,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     trie.registerGreedy('display lacp statistics', 'Display LACP statistics', (args) => {
       if (!this.swRef) return '';
-      const agent = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+      const agent = this.swRef?.getLacpAgent?.();
       if (!agent) return 'Info: LACP is not running.';
       const filterArg = args.join(' ');
       const filterPort = filterArg ? this.resolveInterfaceName(filterArg) : null;
@@ -2742,7 +2754,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     trie.registerGreedy('display lldp neighbor', 'Display LLDP neighbours', (args) => {
       if (!this.swRef) return '';
-      const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+      const ag = this.swRef?.getLldpAgent?.();
       if (!ag) return '';
       const ns = ag.getNeighbors();
       const brief = args.some(a => a.toLowerCase() === 'brief');
@@ -2776,7 +2788,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     trie.register('display lldp local', 'Display LLDP local info', () => {
       if (!this.swRef) return '';
-      const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+      const ag = this.swRef?.getLldpAgent?.();
       const cfg = ag?.getConfig();
       return [
         'Local LLDP information:',
@@ -2804,7 +2816,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private displayStp(): string {
     const modeName = this.stp.mode.toUpperCase();
-    const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent } | undefined)?.getStpAgent?.();
+    const ag = this.swRef?.getStpAgent?.();
     const root = ag?.getRootBridge();
     const cfg = ag?.getConfig();
     const rootPort = ag?.getRootPort();
@@ -2853,15 +2865,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const names = this.swRef?.getPortNames() ?? [];
     const port = names.find(n => n.toLowerCase() === spec.toLowerCase());
     if (!port) return 'Error: Wrong parameter found at \'^\' position.';
-    const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+    const agent = this.swRef?.getIgmpSnoopingAgent?.();
     agent?.setStaticRouterPort(vlan, port, on);
     return '';
   }
 
   private pimSnoopingAgentOrNull(): import('@/network/pim-snooping/PimSnoopingAgent').PimSnoopingAgent | null {
-    return (this.swRef as unknown as {
-      getPimSnoopingAgent?: () => import('@/network/pim-snooping/PimSnoopingAgent').PimSnoopingAgent;
-    } | null)?.getPimSnoopingAgent?.() ?? null;
+    return this.swRef?.getPimSnoopingAgent?.() ?? null;
   }
 
   private huaweiPortId(portName: string): string {
@@ -3079,7 +3089,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private displayEthTrunk(id: number): string {
     const t = this.ethTrunks.get(id);
     if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
-    const agent = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+    const agent = this.swRef?.getLacpAgent?.();
     const liveMembers = agent ? agent.getGroupMembers(id) : [];
     const liveByPort = new Map(liveMembers.map(m => [m.portName, m] as const));
     const upCount = liveMembers.filter(m => m.bundled).length;
@@ -3241,7 +3251,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       `Input:  0 packets, 0 bytes`,
       `Output: 0 packets, 0 bytes`,
     );
-    for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
+    for (const natLine of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(natLine);
     return lines.join('\n');
   }
 
@@ -3323,6 +3333,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (id === 1) continue;
       lines.push(`vlan ${id}`);
       lines.push(` name ${vlan.name}`);
+      // Ces lignes etaient rangees et rendues par personne : la
+      // configuration d'un VLAN les perdait, et l'import avec.
+      for (const extra of lignesDuVlan(vlan)) lines.push(` ${extra}`);
       lines.push('#');
     }
 
@@ -3357,27 +3370,26 @@ export class HuaweiSwitchShell implements ISwitchShell {
         }
       }
       if (!port.getIsUp()) lines.push(` shutdown`);
-      for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
+      for (const natLine of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(natLine);
       lines.push('#');
     }
 
     // Vlanif L3 interfaces (SVIs configured via 'interface Vlanif<N>')
-    const svis = (sw as unknown as { getSvis?: () => Array<{ vlan: number; ip?: unknown; mask?: unknown }> }).getSvis?.();
+    const svis = sw.getSvis();
     if (svis) {
       for (const svi of svis) {
         const name = `Vlanif${svi.vlan}`;
         lines.push(`interface ${name}`);
         if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
         for (const l of this.renderVlanifVrrpLines(sw, name)) lines.push(l);
-        for (const natLine of runningConfigNATHuawei(sw as unknown as Router, name)) lines.push(natLine);
+        for (const natLine of runningConfigNATHuawei(commeRouteur(sw), name)) lines.push(natLine);
         lines.push('#');
       }
     }
 
     // Global NAT block — any NAT entries not bound to a per-interface section above.
-    const router = sw as unknown as Router;
-    if ((router as any)._getNATEngine) {
-      const engine = router._getNATEngine();
+    const engine = moteurNat(sw);
+    if (engine) {
       for (const e of engine.getStaticEntries()) {
         if (e.protocol) {
           lines.push(`nat server protocol ${e.protocol} global ${e.globalIP} ${e.globalPort} inside ${e.localIP} ${e.localPort}`);
@@ -3456,7 +3468,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       lines.push(` ${stpLine}`);
     }
     if (!port.getIsUp()) lines.push(` shutdown`);
-    for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
+    for (const natLine of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(natLine);
     lines.push('#');
     return lines.join('\n');
   }
@@ -3493,16 +3505,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
     if (!this.swRef) return '';
     const loop = this.swRef.getLoopback(nom);
     let etat: string;
-    let addr: string;
+    let addr: string | null;
     if (loop) {
       etat = 'UP';
-      addr = loop.ip && loop.mask ? `${loop.ip}/${loop.mask.toCIDR()}` : null as unknown as string;
+      addr = loop.ip && loop.mask ? `${loop.ip}/${loop.mask.toCIDR()}` : null;
     } else {
       const vlan = parseInt(nom.replace(/\D/g, ''), 10);
       const svi = this.swRef.getSvi(vlan);
       const up = svi ? this.swRef.isSviLineUp(svi) : false;
       etat = svi?.adminUp ? (up ? 'UP' : 'DOWN') : 'Administratively DOWN';
-      addr = svi?.ip && svi.mask ? `${svi.ip}/${svi.mask.toCIDR()}` : null as unknown as string;
+      addr = svi?.ip && svi.mask ? `${svi.ip}/${svi.mask.toCIDR()}` : null;
     }
     const lignes = [
       `${nom} current state : ${etat}`,
