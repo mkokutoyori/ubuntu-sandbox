@@ -53,6 +53,12 @@ export interface VtyLineConfigInit {
   readonly screenLengthLines?: number;
   readonly historyCommandSize?: number;
   readonly loggingSynchronous?: boolean;
+  /**
+   * `login-timeout <secondes>` : le delai laisse a l'operateur pour
+   * saisir ses identifiants, distinct de `exec-timeout` qui compte
+   * l'inactivite APRES la connexion. La commande etait refusee.
+   */
+  readonly loginTimeoutSeconds?: number;
 }
 
 export class VtyLineConfig {
@@ -74,6 +80,7 @@ export class VtyLineConfig {
   readonly screenLengthLines: number | null;
   readonly historyCommandSize: number | null;
   readonly loggingSynchronous: boolean;
+  readonly loginTimeoutSeconds: number | null;
 
   constructor(init: VtyLineConfigInit) {
     this.first              = init.first;
@@ -94,6 +101,7 @@ export class VtyLineConfig {
     this.screenLengthLines  = init.screenLengthLines ?? null;
     this.historyCommandSize = init.historyCommandSize ?? null;
     this.loggingSynchronous = init.loggingSynchronous ?? false;
+    this.loginTimeoutSeconds = init.loginTimeoutSeconds ?? null;
     Object.freeze(this);
   }
 
@@ -126,6 +134,7 @@ export class VtyLineConfig {
       screenLengthLines:  patch.screenLengthLines  ?? this.screenLengthLines  ?? undefined,
       historyCommandSize: patch.historyCommandSize ?? this.historyCommandSize ?? undefined,
       loggingSynchronous: patch.loggingSynchronous ?? this.loggingSynchronous ?? undefined,
+      loginTimeoutSeconds: patch.loginTimeoutSeconds ?? this.loginTimeoutSeconds ?? undefined,
     });
   }
 
@@ -135,6 +144,7 @@ export class VtyLineConfig {
     if (this.execTimeoutMinutes !== null || this.execTimeoutSeconds !== null) {
       lines.push(` exec-timeout ${this.execTimeoutMinutes ?? 0} ${this.execTimeoutSeconds ?? 0}`);
     }
+    if (this.loginTimeoutSeconds !== null) lines.push(` login-timeout ${this.loginTimeoutSeconds}`);
     if (this.accessClassIn  !== null) lines.push(` access-class ${this.accessClassIn} in`);
     if (this.accessClassOut !== null) lines.push(` access-class ${this.accessClassOut} out`);
     if (this.linePassword) lines.push(` password ${this.linePassword}`);

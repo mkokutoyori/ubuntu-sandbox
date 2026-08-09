@@ -727,12 +727,50 @@ export function showLine(dev: ShowStateDevice, args: string[] = []): string {
   return rows.join('\n');
 }
 
-export function showIpSsh(): string {
-  return [
-    'SSH Enabled - version 2.0',
-    'Authentication timeout: 120 secs; Authentication retries: 3',
-  ].join('\n');
+/**
+ * `show ip ssh`.
+ *
+ * La fonction ne prenait AUCUN argument et rendait deux lignes
+ * constantes : un `ip ssh time-out 45` etait accepte, garde, rendu par
+ * `show running-config` et NIE ici, sur la meme machine au meme
+ * instant. Elle lit desormais le magasin que la CLI ecrit.
+ *
+ * La taille de cle est passee par l'appelant plutot que lue ici : ce
+ * module est partage par le routeur et le commutateur, et seul le
+ * premier tient une configuration cryptographique. La ligne n'est
+ * ecrite que si une paire existe — un routeur sans
+ * `crypto key generate rsa` n'a pas de cle a decrire.
+ */
+export function showIpSsh(ssh?: {
+  version: number; timeoutSec: number; authRetries: number; dhMinBits: number;
+  macAlgorithms?: string[]; encryptionAlgorithms?: string[]; kexAlgorithms?: string[];
+}, hostkeyModulus?: number | null): string {
+  // `version 1` est le defaut d'IOS et signifie « les deux versions
+  // acceptees », ce qu'IOS ecrit `1.99` et non `1.0`. Ce n'est pas une
+  // coquetterie : c'est ainsi qu'un operateur voit d'un coup d'oeil que
+  // `ip ssh version 2` n'a pas ete pose.
+  const version = !ssh || ssh.version === 1 ? '1.99' : `${ssh.version}.0`;
+  const lines = [
+    `SSH Enabled - version ${version}`,
+    `Authentication timeout: ${ssh?.timeoutSec ?? 120} secs;`
+      + ` Authentication retries: ${ssh?.authRetries ?? 3}`,
+    `Minimum expected Diffie Hellman key size : ${ssh?.dhMinBits ?? 1024} bits`,
+  ];
+  if (hostkeyModulus) lines.push(`Hostkey RSA key size is ${hostkeyModulus} bits`);
+  // IOS n'ecrit ces lignes que si l'operateur a restreint la liste : une
+  // liste vide veut dire « les algorithmes par defaut », et la remplir
+  // d'une liste inventee decrirait une negociation qui n'a pas lieu.
+  const algos: Array<[string, string[] | undefined]> = [
+    ['MAC Algorithms', ssh?.macAlgorithms],
+    ['Encryption Algorithms', ssh?.encryptionAlgorithms],
+    ['KEX Algorithms', ssh?.kexAlgorithms],
+  ];
+  for (const [nom, liste] of algos) {
+    if (liste && liste.length > 0) lines.push(`${nom}:${liste.join(',')}`);
+  }
+  return lines.join('\n');
 }
+
 export function showSshSessions(): string {
   return [
     'Connection Version Mode Encryption  Hmac  State  Username',
@@ -1030,6 +1068,24 @@ export function showAaa(sec: import('@/network/devices/router/security/CiscoSecu
       lines.push(`  Server (${g.kind === 'radius' ? 'A.B.C.D' : 'name'}): ${g.members.length ? g.members.join(', ') : '<none>'}`);
     }
     return lines.join('\n');
+  }
+  // `show aaa` seul repondait `Total sessions since last reload: 0`,
+  // c'est-a-dire la reponse de `show aaa sessions` : trois commandes
+  // (`show aaa`, `show aaa sessions`, `show aaa user all`) rendaient un
+  // seul et meme texte, donc deux d'entre elles ne repondaient pas a la
+  // question posee. `show aaa` decrit l'ETAT DU SOUS-SYSTEME.
+  if (lower === '') {
+    if (!sec.aaaNewModel) return 'AAA is disabled.';
+    // Chaque ligne est LUE sur les methodes declarees : une machine ou
+    // seule l'authentification est configuree ne doit pas annoncer une
+    // autorisation active.
+    const actif = (phase: string) =>
+      sec.aaaMethods.some((m) => m.phase === phase) ? 'enabled' : 'disabled';
+    return [
+      `Global Authentication: ${actif('authentication')}`,
+      `Global Authorization: ${actif('authorization')}`,
+      `Global Accounting: ${actif('accounting')}`,
+    ].join('\n');
   }
   return 'Total sessions since last reload: 0';
 }

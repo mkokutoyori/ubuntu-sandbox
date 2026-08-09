@@ -694,11 +694,16 @@ export function showRunningConfig(router: Router): string {
   const mgmtForSsh = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
   if (mgmtForSsh) {
     if (mgmtForSsh.domainName) lines.push(`ip domain-name ${mgmtForSsh.domainName}`);
+    // Les lignes `ip ssh version|time-out|authentication-retries` sont
+    // rendues par `CiscoSecurityConfig.runningConfigLines()`, qui lit le
+    // magasin que la CLI ECRIT vraiment. Elles etaient rendues ICI AUSSI,
+    // depuis un SECOND magasin que le gestionnaire porte et que le
+    // handler `ip ssh` du routeur n'ecrit jamais : les deux avaient des
+    // defauts contradictoires (version 1 contre 2, delai 120 contre 60)
+    // et pouvaient emettre la meme directive deux fois dans un meme
+    // fichier. Ce qui reste ici est ce que ce magasin est SEUL a porter.
     const ssh = mgmtForSsh.getSsh();
     if (ssh.enabled) {
-      if (ssh.version !== 2) lines.push(`ip ssh version ${ssh.version}`);
-      if (ssh.timeout !== 60) lines.push(`ip ssh time-out ${ssh.timeout}`);
-      if (ssh.retries !== 3) lines.push(`ip ssh authentication-retries ${ssh.retries}`);
       const port = (ssh as unknown as { port?: number }).port ?? 22;
       if (port !== 22) lines.push(`ip ssh port ${port}`);
     }

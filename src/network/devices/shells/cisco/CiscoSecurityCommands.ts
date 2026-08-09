@@ -178,9 +178,23 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     // triggers a deprecation warning as the command's own output — never
     // for `secret`, which real IOS always hashes on save.
     let type0PasswordWarning = false;
+    // `username X algorithm-type {md5|sha256|scrypt} secret <pwd>` : le
+    // mot-cle etait accepte et JETE, si bien qu'un secret demande en
+    // scrypt etait range en MD5 -- la commande de durcissement produisait
+    // exactement l'inverse de ce qu'elle promet, en silence. Son
+    // homologue `enable algorithm-type` fonctionne depuis toujours : meme
+    // famille, deux comportements.
+    let algoDemande: 'md5' | 'sha256' | 'scrypt' | undefined;
     for (let i = 1; i < args.length; i++) {
       const t = args[i];
       if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
+      else if (t === 'algorithm-type') {
+        const nom = (args[i + 1] ?? '').toLowerCase();
+        if (nom !== 'md5' && nom !== 'sha256' && nom !== 'scrypt') {
+          throw new CliInvalidInput({ token: args[i + 1] });
+        }
+        algoDemande = nom; i++;
+      }
       else if (t === 'nopassword') { nopassword = true; }
       else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
       else if (t === 'secret') {
@@ -190,8 +204,13 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
         if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
         if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'scrypt'; break; }
         if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        // Bare `secret <pwd>` is hashed (type 5) by real IOS, like CiscoShellBase.
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'md5'; plaintextEntered = secret; break;
+        // Bare `secret <pwd>` is hashed (type 5) by real IOS, unless
+        // `algorithm-type` named another one. Un chiffre explicite
+        // (`secret 5|8|9`) decrit un condense DEJA calcule et sort plus
+        // haut : l'algorithme demande ne porte que sur du clair a hacher.
+        secret = args.slice(i + 1).join(' ');
+        secretAlgo = algoDemande ?? 'md5';
+        plaintextEntered = secret; break;
       }
       else if (t === 'password') {
         const next = args[i + 1];
@@ -350,6 +369,16 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     if (args[0] === 'source-interface' && args[1]) { sec().ssh.sourceInterface = args[1]; return ''; }
     if (args[0] === 'dh' && args[1] === 'min' && args[2] === 'size' && args[3]) { sec().ssh.dhMinBits = parseInt(args[3], 10); return ''; }
     if (args[0] === 'logging' && args[1] === 'events') { sec().ssh.loggingEvents = true; return ''; }
+    // `ip ssh server algorithm {mac|encryption|kex} <liste>` etait accepte
+    // et range NULLE PART : la commande de durcissement disparaissait de
+    // la configuration relue.
+    if (args[0] === 'server' && args[1] === 'algorithm' && args[2] && args[3]) {
+      const liste = args.slice(3);
+      if (args[2] === 'mac') { sec().ssh.macAlgorithms = liste; return ''; }
+      if (args[2] === 'encryption') { sec().ssh.encryptionAlgorithms = liste; return ''; }
+      if (args[2] === 'kex') { sec().ssh.kexAlgorithms = liste; return ''; }
+      throw new CliInvalidInput({ token: args[2] });
+    }
     return '';
   });
 

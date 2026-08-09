@@ -2000,7 +2000,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showEnvironment());
     trie.registerGreedy('show line', 'Display TTY lines', (a) =>
       showLine(this.cs(), a));
-    trie.register('show ip ssh', 'Display SSH server status', () => showIpSsh());
+    trie.register('show ip ssh', 'Display SSH server status', () => {
+      const sec = getSecurityConfig(this.d());
+      return showIpSsh(sec.ssh, sec.cryptoKeys.length > 0 ? sec.cryptoKeys[0].modulus : null);
+    });
     trie.register('show ip ssh known-hosts', 'Display learned SSH host keys', () => {
       const dev = this.d() as unknown as { _getSshKnownHosts?: () => { renderCisco: () => string } };
       return dev._getSshKnownHosts?.().renderCisco() ?? '';
@@ -3512,9 +3515,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
         autocommand?: string; nopassword?: boolean; description?: string;
       } = {};
+      // `username X algorithm-type {md5|sha256|scrypt} secret <pwd>` : le
+      // mot-cle etait accepte et JETE, si bien qu'un secret demande en
+      // scrypt etait range en MD5 -- la commande de durcissement rendait
+      // exactement l'inverse de ce qu'elle promet, en silence. Son
+      // homologue `enable algorithm-type` fonctionne depuis toujours :
+      // meme famille, deux comportements.
+      let algoDemande: 'md5' | 'sha256' | 'scrypt' | undefined;
       for (let i = 1; i < args.length; i++) {
         const tok = args[i];
         if (tok === 'privilege' && /^\d+$/.test(args[i + 1] ?? '')) { kv.privilege = Number(args[++i]); continue; }
+        if (tok === 'algorithm-type') {
+          const nom = (args[i + 1] ?? '').toLowerCase();
+          if (nom !== 'md5' && nom !== 'sha256' && nom !== 'scrypt') {
+            throw new CliInvalidInput({ token: args[i + 1] });
+          }
+          algoDemande = nom;
+          i++;
+          continue;
+        }
         if (tok === 'nopassword') { kv.nopassword = true; continue; }
         if (tok === 'autocommand') { kv.autocommand = args.slice(i + 1).join(' '); i = args.length; continue; }
         if (tok === 'description') { kv.description = args.slice(i + 1).join(' '); i = args.length; continue; }
@@ -3530,7 +3549,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           else if (next === '9') { algo = 'scrypt'; value = args[i + 2] ?? ''; i += 2; }
           else { value = next ?? ''; i++; }
           kv.secret = value;
-          kv.secretAlgo = algo;
+          // Un chiffre explicite (`secret 5 $1$…`) decrit un condense
+          // DEJA calcule et l'emporte donc sur l'algorithme demande, qui
+          // ne porte que sur du clair a hacher.
+          const chiffreExplicite = ['0', '5', '7', '8', '9'].includes(next ?? '');
+          kv.secretAlgo = isSecret && algoDemande && !chiffreExplicite ? algoDemande : algo;
           continue;
         }
       }
@@ -3581,23 +3604,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-    this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', (args, raw) => {
-      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      const mgmt = getManagementService(this.d());
-      const ssh = mgmt?.getSsh();
-      const head = args[0]?.toLowerCase();
-      if (!ssh) {
-        dev._recordUnhandledConfigLine?.(raw ?? `ip ssh ${args.join(' ')}`);
-        return '';
-      }
-      if (head === 'version' && args[1]) (ssh as unknown as { version: number }).version = parseInt(args[1], 10);
-      else if (head === 'time-out' && args[1]) (ssh as unknown as { timeout: number }).timeout = parseInt(args[1], 10);
-      else if (head === 'authentication-retries' && args[1]) (ssh as unknown as { retries: number }).retries = parseInt(args[1], 10);
-      else if (head === 'port' && args[1]) (ssh as unknown as { port: number }).port = parseInt(args[1], 10);
-      else dev._recordUnhandledConfigLine?.(raw ?? `ip ssh ${args.join(' ')}`);
-      (ssh as unknown as { enabled: boolean }).enabled = true;
-      return '';
-    });
+    // `ip ssh …` : le handler qui vivait ici ecrivait un SECOND magasin
+    // (celui du gestionnaire) que rien ne lisait pour ces champs, et il
+    // etait de toute facon ombre sur le routeur par l'enregistrement plus
+    // specifique de `CiscoSecurityCommands`. Deux magasins pour un fait,
+    // avec des defauts qui se contredisaient : il n'en reste qu'un.
+    // Le commutateur garde son propre `ip ssh version`.
 
     // `line {console|vty|aux} …` → shared config-line sub-mode.
     // We remember the selected VTY range so subsequent directives
@@ -3746,6 +3758,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // so show running-config can echo it back exactly.
     this.configLineTrie.setCompletionFilter((path, keyword) =>
       this.lineKeywordAllowed(path.length > 0 ? path[0] : keyword));
+    // `login-timeout <secondes>` : le delai laisse pour s'identifier,
+    // distinct de `exec-timeout` qui compte l'inactivite APRES la
+    // connexion. La commande d'IOS etait refusee.
+    this.configLineTrie.registerGreedy('login-timeout', 'Set login timeout', (args) => {
+      if (args.length === 0) throw new CliIncomplete();
+      const secondes = Number.parseInt(args[0], 10);
+      if (!/^\d+$/.test(args[0]) || secondes < 1 || secondes > 300) {
+        throw new CliInvalidInput({ token: args[0] });
+      }
+      const range = this.selectedVtyRange;
+      if (!range) return '';
+      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+      dev._getVtyLineConfig?.().upsert({
+        first: range.first, last: range.last, loginTimeoutSeconds: secondes,
+      });
+      return '';
+    });
     this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
       if (args.length === 0) return '% Incomplete command.';
       if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {

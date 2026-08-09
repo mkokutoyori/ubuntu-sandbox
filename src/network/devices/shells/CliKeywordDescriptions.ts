@@ -134,6 +134,11 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['multiplier', 'Multiplier'],
   ['name', 'Name'],
   ['nd', 'IPv6 neighbor discovery'],
+  // Noeud intermediaire de `ipv6 nd ra {suppress|lifetime|interval|…}` :
+  // ses enfants portaient une description, lui non, donc `?` le
+  // proposait nu. (Defaut pre-existant, attrape par le garde-fou
+  // `cisco-help-every-keyword-described`.)
+  ['ra', 'Router advertisement configuration'],
   ['network-id', 'Network identifier'],
   ['new-model', 'Enable the new AAA model'],
   ['nhs', 'Next Hop Server'],

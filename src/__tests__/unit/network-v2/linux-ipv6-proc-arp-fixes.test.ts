@@ -57,7 +57,11 @@ describe('ip -brief addr show — includes the loopback interface', () => {
   it('lists lo alongside the physical interfaces', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     const out = await pc.executeCommand('ip -brief addr show');
-    expect(out).toMatch(/^lo\s+UP/m);
+    // Mesuré sur `iproute2` installé : `lo UNKNOWN 127.0.0.1/8`. L'état
+    // d'une interface dont la porteuse n'est pas une question est
+    // `UNKNOWN`, jamais `UP` — ce cas encodait le comportement d'avant,
+    // quand `lo` était synthétisé au lieu d'être un vrai port.
+    expect(out).toMatch(/^lo\s+UNKNOWN/m);
   });
 });
 

@@ -13,6 +13,13 @@ export class RouterManagementService {
   nameServers: string[] = [];
   private readonly stelnetServer = { enabled: false, port: 22, acl: undefined as string | undefined };
   private readonly telnetServer = { enabled: false, port: 23, acl: undefined as string | undefined };
+  /**
+   * Le serveur SSH, cote GESTIONNAIRE : ce qu'il porte seul, c'est-a-dire
+   * l'etat d'ecoute et le port. Le reste de la configuration `ip ssh`
+   * (version, delai, tentatives, algorithmes) vit dans
+   * `CiscoSecurityConfig.ssh`, le magasin que la CLI ecrit -- il y en
+   * avait deux, avec des defauts qui se contredisaient.
+   */
   private readonly sshServer = { enabled: false, port: 22, version: 2, timeout: 60, retries: 3 };
   private readonly snmpAgent = {
     enabled: false,
