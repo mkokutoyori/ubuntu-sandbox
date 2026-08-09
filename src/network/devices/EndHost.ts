@@ -544,6 +544,100 @@ export abstract class EndHost extends Equipment {
       .map(({ iface: i, group }) => ({ iface: i, group }));
   }
 
+  /**
+   * Les groupes IPv6 auxquels chaque interface est abonnée.
+   *
+   * IPv6 n'a pas d'IGMP : l'équivalent est MLD (RFC 2710/3810), qui
+   * n'existe pas ici. L'appartenance est donc tenue localement — ce qui
+   * suffit à la RÉCEPTION, seul rôle qu'elle joue tant qu'aucun
+   * commutateur ne fait de MLD snooping. Un routeur qui parle OSPFv3
+   * s'abonne ainsi à `ff02::5`, exactement comme un vrai.
+   */
+  private ipv6Groups = new Map<string, Set<string>>();
+
+  joinIPv6Group(iface: string, group: string): boolean {
+    let g: IPv6Address;
+    try { g = new IPv6Address(group); } catch { return false; }
+    if (!g.isMulticast()) return false;
+    if (!this.ports.has(iface)) return false;
+    const cle = g.toString();
+    const set = this.ipv6Groups.get(iface) ?? new Set<string>();
+    set.add(cle);
+    this.ipv6Groups.set(iface, set);
+    return true;
+  }
+
+  leaveIPv6Group(iface: string, group: string): boolean {
+    let g: IPv6Address;
+    try { g = new IPv6Address(group); } catch { return false; }
+    return this.ipv6Groups.get(iface)?.delete(g.toString()) ?? false;
+  }
+
+  listIPv6Groups(iface?: string): Array<{ iface: string; group: string }> {
+    const out: Array<{ iface: string; group: string }> = [];
+    for (const [i, set] of this.ipv6Groups) {
+      if (iface && i !== iface) continue;
+      for (const group of set) out.push({ iface: i, group });
+    }
+    return out;
+  }
+
+  protected isJoinedIPv6Group(iface: string, group: IPv6Address): boolean {
+    return this.ipv6Groups.get(iface)?.has(group.toString()) ?? false;
+  }
+
+  /**
+   * L'envoi vers un groupe IPv6 — ce qui manquait à cette pile.
+   *
+   * `sendUdpDatagram6` passait par `resolveIPv6Route` puis résolvait le
+   * prochain saut par NDP : pour `ff02::5` cela ne peut PAS aboutir, un
+   * groupe n'ayant pas de voisin à solliciter. La destination
+   * Ethernet se DÉDUIT de l'adresse (RFC 2464 §7, `toMulticastMAC()`,
+   * déjà présent et sans appelant), exactement comme du côté IPv4.
+   *
+   * Comme en v4, l'émission a lieu sur CHAQUE lien opérationnel portant
+   * une adresse — un groupe n'a pas de route — et la limite de sauts
+   * vaut 1 pour une portée locale au lien (`ff02::/16`), ce qui est ce
+   * que veulent OSPFv3, mDNS et NDP.
+   */
+  public sendIPv6ToGroup(
+    group: IPv6Address,
+    protocol: number,
+    payload: unknown,
+    payloadLength: number,
+    iface?: string,
+  ): boolean {
+    if (!group.isMulticast()) return false;
+    const dstMAC = group.toMulticastMAC();
+    // La portée d'un GROUPE se lit dans son second quartet (RFC 4291
+    // §2.7) et non dans le préfixe `fe80::/10` : `isLinkLocal()` vaut
+    // faux pour `ff02::5`, donc s'en servir ici donnait la limite de
+    // sauts et la source d'un envoi de portée globale à un paquet qui
+    // ne doit pas quitter le lien.
+    const surLeLien = group.isLinkLocalScopeMulticast();
+    const hopLimit = surLeLien ? 1 : this.defaultHopLimit;
+    let sent = false;
+    for (const [name, port] of this.ports) {
+      if (name === 'lo') continue;
+      if (iface && name !== iface) continue;
+      if (!port.isOperationallyUp() || !port.isIPv6Enabled()) continue;
+      // La source d'un paquet vers un groupe local au lien est
+      // l'adresse de lien-local de l'interface : c'est elle que le
+      // voisin doit voir pour répondre.
+      const srcIP = surLeLien
+        ? (port.getLinkLocalIPv6() ?? port.getGlobalIPv6())
+        : (port.getGlobalIPv6() ?? port.getLinkLocalIPv6());
+      if (!srcIP) continue;
+      const ipPkt = createIPv6Packet(srcIP, group, protocol, hopLimit, payload, payloadLength);
+      if (this.firewallFilter6(name, ipPkt, 'out') !== 'accept') continue;
+      this.sendFrame(name, {
+        srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+      sent = true;
+    }
+    return sent;
+  }
+
   /** Attach (or rebind) the host signal-refresh actor to the current bus. */
   protected attachHostActors(): void {
     this.hostSignalRefreshActor?.stop();
@@ -1596,6 +1690,12 @@ export abstract class EndHost extends Equipment {
     // All-nodes multicast (ff02::1)
     if (destIP.isAllNodesMulticast()) return true;
 
+    // Un groupe auquel CETTE interface s'est abonnée. Sans cela, un
+    // routeur qui rejoint `ff02::5` recevait bien la trame — le filtre
+    // L2 la laisse monter, la MAC étant celle du groupe — et la jetait
+    // ici faute d'être « pour lui ».
+    if (this.isJoinedIPv6Group(port.getName(), destIP)) return true;
+
     // Solicited-node multicast — check if any of our addresses match
     if (destIP.isSolicitedNodeMulticast()) {
       const destHextets = destIP.getHextets();
@@ -2630,6 +2730,13 @@ export abstract class EndHost extends Equipment {
       );
       this.deliverUDP6('lo', localPkt);
       return true;
+    }
+
+    // Un groupe n'a ni route ni voisin : le résoudre par NDP ne pouvait
+    // pas aboutir, et `sendUdpDatagram6` échouait silencieusement pour
+    // toute destination multicast.
+    if (destinationIP.isMulticast()) {
+      return this.sendIPv6ToGroup(destinationIP, IP_PROTO_UDP, udp, udp.length);
     }
 
     const route = this.resolveIPv6Route(destinationIP);
@@ -3691,21 +3798,36 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(ifName);
     if (!port) return false;
     port.enableIPv6();
-
-    // Add connected route for link-local
-    const linkLocal = port.getLinkLocalIPv6();
-    if (linkLocal) {
-      this.ipv6RoutingTable.push({
-        prefix: new IPv6Address('fe80::'),
-        prefixLength: 10,
-        nextHop: null,
-        iface: ifName,
-        type: 'connected',
-        metric: 0,
-      });
-    }
-
+    this.ensureLinkLocalRoute(ifName);
     return true;
+  }
+
+  /**
+   * La route connectée `fe80::/10` de l'interface.
+   *
+   * Deux défauts tenaient ici. Elle n'était posée que par
+   * `enableIPv6()`, jamais par `configureIPv6Interface()` — le chemin
+   * que prend `ip -6 addr add` —, si bien qu'un hôte configuré
+   * normalement ne pouvait joindre AUCUNE adresse de lien-local :
+   * `resolveIPv6Route` ne trouvait rien et l'envoi échouait en silence.
+   * C'est ce qui empêchait une réponse LLMNR/mDNS de revenir sur le
+   * groupe v6, dont la source est justement de lien-local. Et elle
+   * était empilée sans vérification, donc `enableIPv6()` appelé deux
+   * fois laissait deux routes identiques.
+   */
+  private ensureLinkLocalRoute(ifName: string): void {
+    const port = this.ports.get(ifName);
+    if (!port?.getLinkLocalIPv6()) return;
+    const prefix = new IPv6Address('fe80::');
+    const deja = this.ipv6RoutingTable.some(
+      (r) => r.type === 'connected' && r.iface === ifName
+        && r.prefixLength === 10 && r.prefix.equals(prefix),
+    );
+    if (deja) return;
+    this.ipv6RoutingTable.push({
+      prefix, prefixLength: 10, nextHop: null,
+      iface: ifName, type: 'connected', metric: 0,
+    });
   }
 
   /**
@@ -3716,6 +3838,7 @@ export abstract class EndHost extends Equipment {
     if (!port) return false;
 
     port.configureIPv6(address, prefixLength);
+    this.ensureLinkLocalRoute(ifName);
 
     // Add connected route for this prefix
     const networkPrefix = address.getNetworkPrefix(prefixLength);

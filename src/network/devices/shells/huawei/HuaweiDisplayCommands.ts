@@ -20,7 +20,12 @@ import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName } from '../cli-utils';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
-import { renderTable, FIXED_TABLE } from '../cli/TextTable';
+import {
+  type LigneIpBrief, type LigneInterface, type LigneArp,
+  protocoleVrp, protocoleSpoofe, rendreIpInterfaceBrief,
+  rendreInterfaceBrief, rendreInterfaceDescription,
+  huaweiMacAddress, rendreArp,
+} from './huaweiTableLayouts';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
 import {
@@ -72,12 +77,8 @@ export function displayInterface(router: Router, ifName: string): string {
   const lines = [
     `${huaweiDisplayInterfaceName(portName)} current state : `
       + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
-    // `UP (spoofing)` : VRP dit ainsi que l'etat du protocole de
-    // liaison est decrete et non observe. C'est ce qui garantit qu'une
-    // loopback ne tombe jamais, donc la raison meme de s'en servir
-    // comme Router ID.
     `Line protocol current state : ${st.protocol.toUpperCase()}`
-      + `${vrpProtocoleSimule(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
+      + `${protocoleSpoofe(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
   ];
 
   const desc = router.getInterfaceDescription(portName);
@@ -289,35 +290,31 @@ export function displayIpRoutingTableForDest(router: Router, dest: string): stri
   return [...head, ...renderHuaweiRouteRows(router, matches)].join('\n');
 }
 
-export function displayIpIntBrief(router: Router): string {
+export function displayIpIntBrief(router: Router, filtre?: string): string {
   const ports = router._getPortsInternal();
-  let upPhys = 0, downPhys = 0, upProto = 0, downProto = 0;
-  const rows: string[] = [];
+  const lignes: LigneIpBrief[] = [];
   for (const [name, port] of ports) {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
-    const { phys, proto, spoofing } = vrpEtatPort(port, name, router._getPortsInternal());
-    if (phys === 'up') upPhys++; else downPhys++;
-    if (proto === 'up') upProto++; else downProto++;
-    const renderedName = huaweiDisplayInterfaceName(name);
-    const protoAffiche = spoofing && proto === 'up' ? 'up(s)' : proto;
-    rows.push(`${renderedName.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${protoAffiche}`);
+    const { phys, proto } = vrpEtatPort(port, name, router._getPortsInternal());
+    const nom = huaweiDisplayInterfaceName(name);
+    lignes.push({
+      nom,
+      adresse: ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned',
+      physique: phys,
+      protocole: protocoleVrp(nom, proto),
+    });
   }
-  const lines = [
-    '*down: administratively down',
-    '^down: standby',
-    '(l): loopback',
-    '(s): spoofing',
-    `The number of interface that is UP in Physical is ${upPhys}`,
-    `The number of interface that is DOWN in Physical is ${downPhys}`,
-    `The number of interface that is UP in Protocol is ${upProto}`,
-    `The number of interface that is DOWN in Protocol is ${downProto}`,
-    '',
-    'Interface                         IP Address/Mask      Physical   Protocol',
-    ...rows,
-  ];
-  return lines.join('\n');
+  if (filtre !== undefined) {
+    // L'argument etait LU puis jete : `display ip interface brief
+    // GigabitEthernet0/0/0` rendait tout le tableau, et un nom qui
+    // n'existe pas aussi.
+    const cible = resolveHuaweiInterfaceName(router, filtre);
+    if (!cible) return `Error: Wrong parameter found at '^' position.`;
+    const attendu = huaweiDisplayInterfaceName(cible);
+    return rendreIpInterfaceBrief(lignes.filter((l) => l.nom === attendu));
+  }
+  return rendreIpInterfaceBrief(lignes);
 }
 
 export function displayIpInterface(router: Router, ifName: string): string {
@@ -334,7 +331,7 @@ export function displayIpInterface(router: Router, ifName: string): string {
     `${huaweiDisplayInterfaceName(portName)} current state : `
       + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
     `Line protocol current state : ${st.protocol.toUpperCase()}`
-      + `${vrpProtocoleSimule(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
+      + `${protocoleSpoofe(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
     `Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned'}`,
     `Broadcast address : ${ip && mask ? ip.toString() : '0.0.0.0'}`,
     `The Maximum Transmit Unit : 1500 bytes`,
@@ -368,36 +365,12 @@ export function displayInterfaceAll(router: Router): string {
  * mots.
  */
 function vrpEtatPort(port: import('../../../hardware/Port').Port, nom: string,
-  ports?: ReadonlyMap<string, import('../../../hardware/Port').Port>): { phys: string; proto: string; spoofing: boolean } {
+  ports?: ReadonlyMap<string, import('../../../hardware/Port').Port>): { phys: string; proto: string } {
   const st = iosInterfaceStatus(port, nom, ports);
   return {
     phys: st.status === 'administratively down' ? '*down' : st.status,
     proto: st.protocol,
-    spoofing: vrpProtocoleSimule(nom),
   };
-}
-
-/**
- * Les interfaces dont VRP SIMULE l'état du protocole de liaison.
- *
- * VRP appelle cela « spoofing » et l'écrit : `up(s)` dans
- * `display ip interface brief`, `UP (spoofing)` dans
- * `display interface`. Ce n'est pas une décoration — c'est la façon
- * dont la plateforme dit qu'aucun protocole ne tourne réellement sur
- * cette interface et que son état UP est décrété, ce qui est
- * exactement la propriété qui rend une loopback utilisable comme
- * Router ID. La légende `(s): spoofing` était imprimée par
- * `display ip interface brief` sans qu'aucune ligne ne porte jamais la
- * marque qu'elle explique.
- *
- * Portée assumée : LoopBack et NULL, les deux pour lesquelles la
- * documentation de VRP montre la marque. Tunnel n'y est PAS, faute de
- * référence — les sorties de Huawei pour `display interface Tunnel`
- * montrent un `UP` sec — et l'ajouter au jugé remplacerait une
- * information absente par une information fausse.
- */
-function vrpProtocoleSimule(nom: string): boolean {
-  return /^(LoopBack|NULL)/i.test(nom);
 }
 
 /**
@@ -420,84 +393,88 @@ function vrpProtocoleSimule(nom: string): boolean {
  * si bien que `outErrors` finissait un caractère après son intitulé.
  * Les quatre compteurs sont alignés à DROITE sur la vraie machine.
  */
-export function displayInterfaceBrief(router: Router): string {
+export function displayInterfaceBrief(router: Router, filtre?: string): string {
+  const lignes = lignesInterfaceVrp(router);
+  const retenues = filtrerInterfaces(router, lignes, filtre);
+  return typeof retenues === 'string' ? retenues : rendreInterfaceBrief(retenues);
+}
+
+/** Les lignes de la famille « brief », une seule fois pour ses deux vues. */
+function lignesInterfaceVrp(router: Router): LigneInterface[] {
   const ports = router._getPortsInternal();
-  const rows: Array<{ nom: string; phys: string; proto: string }> = [];
+  const out: LigneInterface[] = [];
   for (const [name, port] of ports) {
     const { phys, proto } = vrpEtatPort(port, name, ports);
-    rows.push({ nom: huaweiDisplayInterfaceName(name), phys, proto });
+    out.push({
+      nom: huaweiDisplayInterfaceName(name),
+      physique: phys,
+      protocole: proto,
+      description: router.getInterfaceDescription(name) || '',
+    });
   }
-  return [
-    'PHY: Physical   *down: administratively down',
-    ...renderTable(rows, [
-      { header: 'Interface', width: 28, value: (r) => r.nom },
-      { header: 'PHY', width: 6, value: (r) => r.phys },
-      { header: 'Protocol', width: 10, value: (r) => r.proto },
-      { header: 'InUti', width: 5, align: 'right', value: () => '0%' },
-      { header: 'OutUti', width: 7, align: 'right', value: () => '0%' },
-      { header: 'inErrors', width: 11, align: 'right', value: () => '0' },
-      { header: 'outErrors', width: 11, align: 'right', value: () => '0' },
-    ], FIXED_TABLE),
-  ].join('\n');
+  return out;
+}
+
+/**
+ * Le filtre par interface. Il etait LU puis jete : `display interface
+ * brief GigabitEthernet0/0/0` rendait tout le tableau, et un nom qui
+ * n'existe pas aussi.
+ */
+function filtrerInterfaces(
+  router: Router, lignes: LigneInterface[], filtre?: string,
+): LigneInterface[] | string {
+  if (filtre === undefined || filtre === '') return lignes;
+  const cible = resolveHuaweiInterfaceName(router, filtre);
+  if (!cible) return `Error: Wrong parameter found at '^' position.`;
+  const attendu = huaweiDisplayInterfaceName(cible);
+  return lignes.filter((l) => l.nom === attendu);
 }
 
 /** `display interface description` — real description table. */
-export function displayInterfaceDescription(router: Router): string {
-  const rows = ['Interface                     PHY     Protocol Description'];
-  const ports = router._getPortsInternal();
-  for (const [name, port] of ports) {
-    const { phys, proto } = vrpEtatPort(port, name, ports);
-    const desc = router.getInterfaceDescription(name) || '';
-    rows.push(`${huaweiDisplayInterfaceName(name).padEnd(30)}${phys.padEnd(8)}${proto.padEnd(9)}${desc}`);
-  }
-  return rows.join('\n');
+export function displayInterfaceDescription(router: Router, filtre?: string): string {
+  const retenues = filtrerInterfaces(router, lignesInterfaceVrp(router), filtre);
+  return typeof retenues === 'string' ? retenues : rendreInterfaceDescription(retenues);
 }
 
 export function displayArp(router: Router): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  if (arpTable.size === 0) {
-    lines.push('No ARP entries found.');
-  }
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
-    const type = (entry as any).type === 'static' ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    const type = (entry as { type?: string }).type === 'static' ? 'static' : 'D';
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  return lines.join('\n');
+  return rendreArp(lignes, 'No ARP entries found.');
 }
 
 export function displayArpFiltered(router: Router, filterType: 'static' | 'dynamic'): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  let found = false;
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const isStatic = (entry as any).type === 'static';
     if (filterType === 'static' && !isStatic) continue;
     if (filterType === 'dynamic' && isStatic) continue;
-    found = true;
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
     const type = isStatic ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  if (!found) lines.push(`No ${filterType} ARP entries found.`);
-  return lines.join('\n');
+  return rendreArp(lignes, `No ${filterType} ARP entries found.`);
 }
 
 export function displayArpInterface(router: Router, ifName: string): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  let found = false;
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const et = (entry as { type?: string }).type;
     if (entry.iface !== ifName && !entry.iface.endsWith(ifName)) continue;
-    found = true;
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
     const type = et === 'static' ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  if (!found) lines.push('No ARP entries found.');
-  return lines.join('\n');
+  return rendreArp(lignes, 'No ARP entries found.');
 }
 
 export function displayArpStatistics(router: Router): string {
@@ -590,7 +567,7 @@ export function displayCurrentConfig(
   const arpTable = router._getArpTableInternal();
   for (const [ip, entry] of arpTable) {
     if ((entry as any).type === 'static') {
-      lines.push(`arp static ${ip} ${entry.mac.toString()}`);
+      lines.push(`arp static ${ip} ${huaweiMacAddress(entry.mac)}`);
     }
   }
 
@@ -1744,7 +1721,10 @@ export function registerDisplayCommands(
   trie.registerGreedy('display ip interface', 'Display IP interface details', (args) => {
     if (args.length === 0) return displayIpIntBrief(getRouter());
     const first = args[0].toLowerCase();
-    if ('brief'.startsWith(first)) return displayIpIntBrief(getRouter());
+    if ('brief'.startsWith(first)) {
+      const reste = args.slice(1).join(' ');
+      return displayIpIntBrief(getRouter(), reste ? reste : undefined);
+    }
     return displayIpInterface(getRouter(), args.join(' '));
   });
 
@@ -1770,8 +1750,9 @@ export function registerDisplayCommands(
   trie.registerGreedy('display interface', 'Display interface information', (args) => {
     const sub = (args[0] || '').toLowerCase();
     if (args.length === 0) return displayInterfaceAll(getRouter());
-    if (sub === 'brief') return displayInterfaceBrief(getRouter());
-    if (sub === 'description') return displayInterfaceDescription(getRouter());
+    const reste = args.slice(1).join(' ').trim();
+    if (sub === 'brief') return displayInterfaceBrief(getRouter(), reste || undefined);
+    if (sub === 'description') return displayInterfaceDescription(getRouter(), reste || undefined);
     return displayInterface(getRouter(), args.join(' '));
   });
 

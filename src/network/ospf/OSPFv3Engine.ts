@@ -489,6 +489,12 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   // ─── Hello Protocol ───────────────────────────────────────────
 
+  /** Émettre un Hello sur une interface nommée (jumeau v3 de l'OSPFv2). */
+  sendHelloOnInterface(ifaceName: string): void {
+    const iface = this.interfaces.get(ifaceName);
+    if (iface) this.sendHello(iface);
+  }
+
   private sendHello(iface: OSPFv3Interface): void {
     if (!this.sendCallback) return;
 
@@ -521,6 +527,13 @@ export class OSPFv3Engine implements IProtocolEngine {
     this.dispatchIncoming(ifaceName, hello, srcIP);
     const iface = this.interfaces.get(ifaceName);
     if (!iface) return;
+
+    // passive-interface : un Hello n'y est ni émis ni traité (comportement
+    // IOS, et règle déjà écrite dans le moteur v2). Tant que rien
+    // n'arrivait par le fil, l'absence de cette ligne ne se voyait pas ;
+    // dès que le paquet est réel, une interface passive formait un voisin
+    // à sens unique.
+    if (iface.passive) return;
 
     // Validate timers
     if (hello.helloInterval !== iface.helloInterval) return;
@@ -626,7 +639,12 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   // ─── DR/BDR Election ──────────────────────────────────────────
 
-  private drElection(iface: OSPFv3Interface): void {
+  /**
+   * Élection DR/BDR (RFC 5340 §4.2.1). Publique comme son homologue v2 :
+   * la convergence accélère le WaitTimer plutôt que d'attendre le
+   * dead-interval, et ne peut le faire qu'en appelant cette élection.
+   */
+  drElection(iface: OSPFv3Interface): void {
     if (iface.networkType !== 'broadcast' && iface.networkType !== 'nbma') {
       this.setInterfaceState(iface, 'PointToPoint');
       return;

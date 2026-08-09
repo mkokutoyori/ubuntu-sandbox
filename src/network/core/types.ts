@@ -423,6 +423,40 @@ export class IPv6Address {
            this.hextets[7] === 2;
   }
 
+  /**
+   * Portée d'une adresse multicast (RFC 4291 §2.7) : le second quartet
+   * du second octet, 1 = interface, 2 = lien, 5 = site, e = global.
+   * Rend -1 pour une adresse qui n'est pas un groupe.
+   *
+   * Ce n'est PAS `isLinkLocal()`, qui teste `fe80::/10` et vaut donc
+   * faux pour tout groupe, `ff02::5` compris — s'en servir pour décider
+   * de la portée d'un envoi multicast donne silencieusement la mauvaise
+   * réponse dans tous les cas.
+   */
+  multicastScope(): number {
+    if (!this.isMulticast()) return -1;
+    return this.hextets[0] & 0x000f;
+  }
+
+  /** Un groupe de portée locale au lien (`ff02::/16`). */
+  isLinkLocalScopeMulticast(): boolean {
+    return this.multicastScope() === 2;
+  }
+
+  /** Check if this is AllSPFRouters (ff02::5, RFC 5340 §A.1) */
+  isAllSpfRoutersMulticast(): boolean {
+    return this.hextets[0] === 0xff02 &&
+           this.hextets.slice(1, 7).every(h => h === 0) &&
+           this.hextets[7] === 5;
+  }
+
+  /** Check if this is AllDRouters (ff02::6, RFC 5340 §A.1) */
+  isAllDRoutersMulticast(): boolean {
+    return this.hextets[0] === 0xff02 &&
+           this.hextets.slice(1, 7).every(h => h === 0) &&
+           this.hextets[7] === 6;
+  }
+
   /** Check if this is a solicited-node multicast address (ff02::1:ffXX:XXXX) */
   isSolicitedNodeMulticast(): boolean {
     return this.hextets[0] === 0xff02 &&
@@ -1070,6 +1104,15 @@ export interface IPv6Packet extends NetworkPdu {
   destinationIP: IPv6Address;
   /** Upper-layer payload (ICMPv6, UDP, TCP, etc.) */
   payload: ICMPv6Packet | UDPPacket | unknown;
+  /**
+   * Présence d'un en-tête AH/ESP protégeant ce paquet (RFC 4302/4303).
+   * Ce simulateur ne sérialise aucun octet, donc l'en-tête ne peut pas
+   * être porté autrement ; ce qui compte est qu'un récepteur sans
+   * association de sécurité correspondante le voie et rejette, ce qu'il
+   * ne pouvait pas faire tant que la protection ne quittait pas la
+   * configuration de l'émetteur. Utilisé par OSPFv3 (RFC 4552 §3).
+   */
+  ipsecProtected?: boolean;
 }
 
 /**

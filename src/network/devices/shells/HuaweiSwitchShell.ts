@@ -35,8 +35,13 @@ import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
 import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
-import { resolveHuaweiInterfaceName } from './cli-utils';
+import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName } from './cli-utils';
 import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
+import {
+  type LigneIpBrief, type LigneInterface, protocoleVrp, rendreIpInterfaceBrief,
+  rendreInterfaceBrief, rendreInterfaceDescription, huaweiMacAddress,
+  type LigneArp, rendreArpSwitch, rendreMacAddress,
+} from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import {
   registerHuaweiNATInterfaceCommands,
@@ -2049,9 +2054,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return rows.join('\n');
     });
 
-    trie.register('display interface brief', 'Display interface summary', () => {
+    trie.registerGreedy('display interface brief', 'Display interface summary', (args) => {
       if (!this.swRef) return '';
-      return this.displayInterfaceBrief(this.swRef);
+      return this.displayInterfaceBrief(this.swRef, args.join(' ').trim() || undefined);
+    });
+
+    // `display interface description` n'existait pas ici, alors que le
+    // routeur la rend depuis toujours et que la description est bien
+    // stockee par le commutateur.
+    trie.registerGreedy('display interface description', 'Display interface descriptions', (args) => {
+      if (!this.swRef) return '';
+      return this.displayInterfaceDescription(this.swRef, args.join(' ').trim() || undefined);
     });
 
     trie.registerGreedy('display interface', 'Display interface details', (args) => {
@@ -2137,34 +2150,39 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // management Ethernet placeholder. Each row reflects the live
     // admin/protocol state so the operator can see at a glance which
     // SVI is up.
-    trie.register('display ip interface brief', 'Display IP interface brief', () => {
+    trie.registerGreedy('display ip interface brief', 'Display IP interface brief', (args) => {
       if (!this.swRef) return '';
-      const svis = this.swRef.getSvis();
-      const lines: string[] = [
-        `*down: administratively down`,
-        `^down: standby`,
-        `(l): loopback`,
-        `(s): spoofing`,
-        `Interface                   IP Address/Mask      Physical   Protocol`,
-      ];
-      for (const svi of svis) {
-        const name = `Vlanif${svi.vlan}`;
-        const addr = svi.ip && svi.mask
-          ? `${svi.ip}/${svi.mask.toCIDR()}`
-          : 'unassigned';
+      const lignes: LigneIpBrief[] = [];
+      for (const svi of this.swRef.getSvis()) {
+        const nom = `Vlanif${svi.vlan}`;
         const lineUp = this.swRef.isSviLineUp(svi);
-        const phys = svi.adminUp ? (lineUp ? 'up' : 'down') : '*down';
-        const proto = lineUp ? 'up' : 'down';
-        lines.push(`${name.padEnd(28)}${addr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+        lignes.push({
+          nom,
+          adresse: svi.ip && svi.mask ? `${svi.ip}/${svi.mask.toCIDR()}` : 'unassigned',
+          physique: svi.adminUp ? (lineUp ? 'up' : 'down') : '*down',
+          protocole: lineUp ? 'up' : 'down',
+        });
       }
       for (const lb of this.swRef.getLoopbacks()) {
-        const addr = lb.ip && lb.mask ? `${lb.ip}/${lb.mask.toCIDR()}` : 'unassigned';
-        // Une loopback est up des deux côtés dès qu'elle existe — elle
-        // ne dépend d'aucun câble, c'est tout son intérêt.
-        lines.push(`${lb.name.padEnd(28)}${addr.padEnd(21)}${'up'.padEnd(11)}up(s)`);
+        // Une loopback est up des deux cotes des qu'elle existe — elle
+        // ne depend d'aucun cable, c'est tout son interet.
+        lignes.push({
+          nom: lb.name,
+          adresse: lb.ip && lb.mask ? `${lb.ip}/${lb.mask.toCIDR()}` : 'unassigned',
+          physique: 'up',
+          protocole: protocoleVrp(lb.name, 'up'),
+        });
       }
-      lines.push(`MEth0/0/1                   unassigned           down       down`);
-      return lines.join('\n');
+      lignes.push({
+        nom: 'MEth0/0/1', adresse: 'unassigned', physique: 'down', protocole: 'down',
+      });
+      const filtre = args.join(' ').trim();
+      if (filtre) {
+        const cible = this.resolveInterfaceName(filtre);
+        if (!cible) return `Error: Wrong parameter found at '^' position.`;
+        return rendreIpInterfaceBrief(lignes.filter((l) => l.nom === cible));
+      }
+      return rendreIpInterfaceBrief(lignes);
     });
 
     // `display ip interface <nom>` — la forme longue manquait
@@ -2228,24 +2246,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.registerGreedy('display arp', 'Display ARP table', (args) => {
       if (!this.swRef) return '';
       const filter = (args[0] ?? '').toLowerCase();
-      const table = this.swRef._getArpTableInternal();
-      const rows: string[] = [
-        `IP ADDRESS      MAC ADDRESS    EXPIRE(M) TYPE   INTERFACE    VPN-INSTANCE`,
-        `                                          VLAN/CEVLAN PVC`,
-        `------------------------------------------------------------------------------`,
-      ];
-      const entries = [...table.entries()];
-      for (const [ip, e] of entries) {
+      const lignes: LigneArp[] = [];
+      for (const [ip, e] of this.swRef._getArpTableInternal()) {
         if (filter === 'static' && e.type !== 'static') continue;
         if (filter === 'dynamic' && e.type !== 'dynamic') continue;
-        const expire = e.type === 'static' ? '-' : '20';
-        rows.push(
-          `${ip.padEnd(16)}${e.mac.toString().padEnd(15)}${expire.padEnd(10)}${e.type.padEnd(7)}${e.iface}`,
-        );
+        lignes.push({
+          ip,
+          mac: huaweiMacAddress(e.mac),
+          expire: e.type === 'static' ? '-' : '20',
+          type: e.type,
+          iface: huaweiDisplayInterfaceName(e.iface),
+        });
       }
-      rows.push(`------------------------------------------------------------------------------`);
-      rows.push(`Total: ${entries.length}        Dynamic: ${entries.filter(([, e]) => e.type === 'dynamic').length}      Static: ${entries.filter(([, e]) => e.type === 'static').length}`);
-      return rows.join('\n');
+      return rendreArpSwitch(lignes);
     });
 
     // ── Common VRP display commands (shared with the router, DRY) ──
@@ -3207,17 +3220,53 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lines.join('\n');
   }
 
-  private displayInterfaceBrief(sw: Switch): string {
-    const ports = sw._getPortsInternal();
-
-    const lines = ['Interface                     PHY     Protocol  InUti  OutUti'];
-    for (const [portName, port] of ports) {
-      const phys = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : 'down';
-      const proto = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : 'down';
-      lines.push(`${portName.padEnd(30)}${phys.padEnd(8)}${proto.padEnd(10)}0%     0%`);
-    }
-    return lines.join('\n');
+  private displayInterfaceBrief(sw: Switch, filtre?: string): string {
+    const retenues = this.filtrerInterfaces(this.lignesInterface(sw), filtre);
+    return typeof retenues === 'string' ? retenues : rendreInterfaceBrief(retenues);
   }
+
+  private displayInterfaceDescription(sw: Switch, filtre?: string): string {
+    const retenues = this.filtrerInterfaces(this.lignesInterface(sw), filtre);
+    return typeof retenues === 'string' ? retenues : rendreInterfaceDescription(retenues);
+  }
+
+  /**
+   * Les lignes de la famille « brief ». Le commutateur calculait son
+   * etat a la main — une HUITIEME facon —, si bien que `*down` n'y
+   * existait pas : un port ferme par l'operateur s'y montrait `down`
+   * comme un port sans cable. Ses colonnes `PHY` et `Protocol` etaient
+   * de surcroit la MEME expression, donc incapables de differer.
+   *
+   * Il n'y listait pas non plus ses interfaces virtuelles, alors que sa
+   * propre vue `display ip interface brief` les liste.
+   */
+  private lignesInterface(sw: Switch): LigneInterface[] {
+    const ports = sw._getPortsInternal();
+    const out: LigneInterface[] = [];
+    for (const [nom, port] of ports) {
+      const st = iosInterfaceStatus(port, nom, ports);
+      out.push({
+        nom: huaweiDisplayInterfaceName(nom),
+        physique: st.status === 'administratively down' ? '*down' : st.status,
+        protocole: st.protocol,
+        description: sw.getInterfaceDescription(nom) || '',
+      });
+    }
+    for (const lb of sw.getLoopbacks()) {
+      out.push({ nom: lb.name, physique: 'up', protocole: 'up', description: '' });
+    }
+    return out;
+  }
+
+  private filtrerInterfaces(
+    lignes: LigneInterface[], filtre?: string,
+  ): LigneInterface[] | string {
+    if (!filtre) return lignes;
+    const cible = this.resolveInterfaceName(filtre);
+    if (!cible) return `Error: Wrong parameter found at '^' position.`;
+    return lignes.filter((l) => l.nom === huaweiDisplayInterfaceName(cible));
+  }
+
 
   private displayInterface(sw: Switch, ifName: string): string {
     // Le repli `|| ifName` renvoyait la saisie TELLE QUELLE : d'ou
@@ -3292,7 +3341,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const lines = [
       'MAC address table of slot 0:',
       '-------------------------------------------------------------------------------',
-      'MAC Address    VLAN/VSI   Learned-From   Type',
+      rendreMacAddress([])[0],
       '-------------------------------------------------------------------------------',
     ];
 
@@ -3300,7 +3349,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       lines.push('No entries found.');
     } else {
       for (const e of entries) {
-        lines.push(`${e.mac.padEnd(15)}${String(e.vlan).padEnd(11)}${e.port.padEnd(15)}${e.type}`);
+        lines.push(...rendreMacAddress([{
+          mac: huaweiMacAddress(e.mac), vlan: String(e.vlan),
+          port: huaweiDisplayInterfaceName(e.port), type: e.type,
+        }]).slice(1));
       }
     }
 

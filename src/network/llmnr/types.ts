@@ -9,13 +9,14 @@ import type { McastDnsBinding } from '@/network/dns/transport/MulticastDnsTransp
 
 export const LLMNR_PORT = 5355;
 export const LLMNR_IPV4_GROUP = '224.0.0.252';
-/** Le groupe IPv6, pour mémoire : la pile v6 de ce simulateur ne porte
- *  pas encore l'émission vers un groupe arbitraire. */
+/** Le groupe IPv6 (RFC 4795 §2). La pile v6 porte desormais l'emission
+ *  vers un groupe quelconque, donc celui-ci sert. */
 export const LLMNR_IPV6_GROUP = 'ff02::1:3';
 
 export const LLMNR_BINDING: McastDnsBinding = {
   port: LLMNR_PORT,
   group: LLMNR_IPV4_GROUP,
+  group6: LLMNR_IPV6_GROUP,
   processName: 'systemd-resolved',
 };
 

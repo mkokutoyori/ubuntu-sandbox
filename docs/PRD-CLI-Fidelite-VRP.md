@@ -304,6 +304,9 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V9** | Le typage du shell (agent « logging ») | **Livré, §18** |
 | **V10** | Le typage de `HuaweiSwitchShell` | **Livré, §19** |
 | **V11** | Deux vues d'un même port en disent la même chose | **Livré, §20** |
+| **V12** | `display ip interface brief`, un tableau pour deux plateformes | **Livré, §21** |
+| **V13** | La famille « brief » des interfaces (`brief`, `description`) | **Livré, §22** |
+| **V14** | Une adresse MAC s'écrit comme VRP l'écrit | **Livré, §23** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1663,3 +1666,240 @@ Discrimination par `git stash` : **9 des 10 tombent** avant.
 d'interface, de parité et de routage inter-VLAN. Typecheck : jeu
 d'erreurs identique avant/après (187). Lint sur les trois fichiers : 37
 problèmes avant, 37 après. Aucun test existant modifié.
+
+---
+
+## 21. V12 — Livré : `display ip interface brief`, un tableau pour deux plateformes
+
+### 21.1 Ce que la mesure a trouvé
+
+Le routeur et le commutateur rendaient **le même tableau chacun de son
+côté**, avec des littéraux séparés. Quatre désaccords, mesurés sur deux
+machines neuves portant les mêmes interfaces :
+
+| | Routeur | Switch |
+|---|---|---|
+| Bloc de compteurs (`The number of interface that is UP…`) | présent | **absent** |
+| Largeur de la colonne `Interface` | 34 | **28** |
+| Protocole d'un LoopBack | `up` | `up(s)` |
+| `display ip interface brief <nom>` | argument **ignoré**, tout le tableau | **refusé** |
+
+Le troisième est le plus instructif : **la légende est la
+spécification**. Les deux plateformes impriment `(s): spoofing` en tête,
+et le protocole d'une interface de bouclage EST spoofé. C'est donc le
+commutateur qui avait raison et le routeur qui contredisait sa propre
+légende, pour le même type d'objet.
+
+Le quatrième est le défaut de fond : l'argument était **lu puis jeté** —
+`display ip interface brief GigabitEthernet0/0/0` rendait tout le
+tableau, et un nom qui n'existe pas aussi. Un opérateur qui filtre et
+obtient tout ne peut pas savoir que son filtre n'a pas été lu.
+
+### 21.2 Le correctif, et une reprise plutôt qu'une copie
+
+La cause de la divergence de largeur est celle que l'autre agent venait
+de fermer ailleurs (`cli/TextTable.ts`, « un tableau se déclare, il ne se
+dessine plus à la main ») : en-tête littéral d'un côté,
+`padEnd(34)/(21)/(11)` de l'autre, rien qui relie les deux.
+`huawei/huaweiTableLayouts.ts` **reprend ce module** — sur le modèle de
+leur `ciscoTableLayouts.ts`, et non à côté — et porte les colonnes VRP,
+la légende, le marqueur `(s)` et le bloc de compteurs. Les deux
+plateformes appellent la même fonction ; une divergence de mise en page
+n'est plus possible, elle est devenue impossible à écrire.
+
+Le filtre est résolu par le résolveur unifié du lot V11, donc toute
+écriture légitime du nom fait le même filtre (`gi0/0/0`,
+`GigabitEthernet 0/0/0`, `vlanif10`) et un nom qui n'existe pas est
+refusé au lieu d'être ignoré.
+
+**Trouvé en passant** : le commutateur calculait l'état de ses lignes
+d'une **septième** façon, à la main, au lieu de lire le prédicat partagé.
+Il rend maintenant les mêmes valeurs que sa propre vue de détail, ce
+qu'un cas du fichier de test vérifie en comparant les deux.
+
+### 21.3 Refusé, et pourquoi
+
+**`(l): loopback` reste annoncé et jamais posé.** La légende le déclare
+sur les deux plateformes, et aucune ne marque quoi que ce soit avec. Je
+ne sais pas où un vrai VRP le pose — sur le nom, sur le protocole, ou
+seulement dans certaines versions — et §0 interdit de le deviner : un
+marqueur inventé au mauvais endroit serait un mensonge de plus, pas un
+progrès. Le constat est écrit ici et la légende reste telle quelle,
+puisque c'est elle que les deux machines impriment aujourd'hui.
+
+**Les compteurs comptent le tableau rendu, filtre compris.** Filtrer sur
+une interface donne `UP … is 0 / DOWN … is 1` plutôt que le compte de
+toute la machine. C'est cohérent avec ce que la vue montre ; je n'ai pas
+de mesure d'un vrai VRP pour trancher l'autre lecture, et un test le fixe
+pour que le choix soit su.
+
+### 21.4 Tests et mesures
+
+`huawei-ip-interface-brief.test.ts` (13 cas). Sa propriété centrale
+compare **les deux plateformes entre elles** — même en-tête, mêmes bords
+de colonnes — plutôt que chacune contre une maquette recopiée à la main,
+qui aurait pu recopier la mauvaise. Un cas mesure en plus que **chaque
+champ de données commence à un bord de colonne**, ce qui vérifie le
+calage plutôt qu'un alignement obtenu par hasard ; un autre que les
+compteurs comptent bien les lignes rendues ; un dernier que la vue brève
+et la vue de détail donnent la même adresse et le même état.
+
+Discrimination par `git stash` : **8 des 13 tombent** avant.
+
+**Mesures.** 89 suites connexes vertes (1 276 cas), plus les scénarios de
+hiérarchie de vues, telnet et L3. Typecheck : jeu d'erreurs identique
+avant/après (192). Lint sur les fichiers touchés : 37 problèmes avant, 37
+après — le nouveau module n'en ajoute aucun. Aucun test existant modifié.
+
+---
+
+## 22. V13 — Livré : la famille « brief » des interfaces
+
+Même règle que §21, appliquée aux vues sœurs — et la mesure a montré que
+`display interface brief` n'était pas seule : `display interface
+description`, sa jumelle, portait les mêmes désaccords **plus un**, celui
+de ne pas exister du tout sur le commutateur.
+
+### 22.1 Sept désaccords pour deux commandes
+
+Deux machines neuves portant le **même** état — un port décrit, un port
+fermé par l'opérateur, une LoopBack :
+
+| | Routeur | Switch |
+|---|---|---|
+| Légende (`PHY: Physical   *down: …`) | présente | **absente** |
+| Colonnes `inErrors` / `outErrors` | présentes | **absentes** |
+| Largeurs | 28/6/10 | **30/8/10** |
+| `*down` sur un port fermé | posé | **jamais** |
+| `PHY` et `Protocol` | calculées séparément | **la même expression** |
+| Interfaces virtuelles listées | oui (LoopBack) | **non** |
+| `display interface brief <nom>` | argument **ignoré** | **refusé** |
+| `display interface description` | rendue | **inexistante** |
+
+Trois de ces lignes ne sont pas de la mise en page. **`*down` n'existait
+pas sur le commutateur** : un port que l'opérateur a fermé s'y montrait
+`down`, exactement comme un port sans câble — la distinction que la
+légende absente sert précisément à expliquer. Ses deux colonnes d'état
+étaient **la même expression**, donc structurellement incapables de
+différer. Et une LoopBack créée sur le commutateur était **invisible** de
+sa propre vue brève, alors que sa vue `display ip interface brief` la
+liste.
+
+C'était une **huitième** façon de calculer l'état d'une interface dans ce
+dépôt, écrite à la main à côté du prédicat partagé.
+
+### 22.2 Le correctif
+
+Les colonnes rejoignent `huawei/huaweiTableLayouts.ts`, à côté de celles
+du lot V12. Les largeurs retenues sont **celles du routeur**, parce
+qu'elles ne sont pas un choix : la sonde d'alignement de l'autre agent
+(`probe-alignement-tableaux-cli.test.ts`) les fixe au caractère près
+contre une sortie de vraie machine. Le commutateur les adopte, lit le
+prédicat partagé, liste ses interfaces virtuelles, et gagne
+`display interface description`, qu'il n'avait pas alors qu'il stocke les
+descriptions depuis toujours.
+
+Le filtre par interface passe par le résolveur unifié du lot V11 : toute
+écriture légitime du nom fait le même filtre, un nom inconnu est refusé
+au lieu de rendre tout le tableau.
+
+### 22.3 Ce qui n'a délibérément PAS été propagé
+
+**Le marqueur `(s)` reste hors de cette vue.** Le lot V12 l'a posé sur le
+protocole d'un LoopBack dans `display ip interface brief`, parce que la
+légende de CETTE vue-là déclare `(s): spoofing`. La légende de
+`display interface brief` ne déclare que `PHY:` et `*down:` — donc `up`
+y est juste, et y ajouter `(s)` par symétrie aurait été inventer.
+
+C'est la même discipline que §21 : la légende est la spécification, et
+elle n'est pas la même d'une vue à l'autre.
+
+### 22.4 Tests et mesures
+
+`huawei-interface-brief-famille.test.ts` (13 cas). Comme au lot
+précédent, il compare **les deux plateformes entre elles** — même
+légende, même en-tête, même comportement du filtre — et vérifie en plus
+que la vue brève et la vue de détail s'accordent sur l'état du même port,
+ce qui est la propriété que la huitième implémentation cassait.
+
+Discrimination par `git stash` : **12 des 13 tombent** avant.
+
+**Mesures.** 91 suites connexes vertes (1 471 cas), dont la sonde
+d'alignement de l'autre agent, qui reste verte — la mise en page du
+routeur est inchangée, c'est le commutateur qui l'a rejointe. Typecheck :
+jeu d'erreurs identique avant/après (192). Lint : 37 problèmes avant, 37
+après. Aucun test existant modifié.
+
+---
+
+## 23. V14 — Livré : une adresse MAC s'écrit comme VRP l'écrit
+
+### 23.1 Le constat : trois champs collés
+
+Trouvé en poursuivant la famille des tableaux, avec de vraies entrées
+plutôt qu'un lab vide — c'est ce qui l'a rendu visible, un tableau sans
+données ne débordant jamais :
+
+```
+[switch] display arp
+IP ADDRESS      MAC ADDRESS    EXPIRE(M) TYPE   INTERFACE
+10.0.10.2       02:00:00:00:00:1120        dynamicGigabitEthernet0/0/1
+
+[switch] display mac-address
+MAC Address    VLAN/VSI   Learned-From   Type
+02:00:00:00:00:1110         GigabitEthernet0/0/1dynamic
+```
+
+On ne peut plus distinguer la MAC de son délai d'expiration, ni le port
+du type. **La ligne est illisible**, et c'est la ligne que tout exercice
+d'ARP fait afficher.
+
+### 23.2 La cause, et ce qui la prouve sans référence extérieure
+
+Les colonnes sont taillées pour une MAC de **quatorze** caractères —
+comme le reste de ces tableaux, qui reproduit VRP (`EXPIRE(M)`,
+`VPN-INSTANCE`, le pied `Total: 1  Dynamic: 1  Static: 0`) — et le rendu
+en produisait **dix-sept**, au format IEEE `xx:xx:xx:xx:xx:xx`.
+
+Ce qui rend le diagnostic certain **sans connaître VRP** : la machine
+ACCEPTAIT déjà l'écriture à tirets. `arp static 192.168.1.50
+aaaa-bbbb-cccc` est une commande que ce simulateur prend depuis toujours,
+et que sa propre configuration rendue réécrit à l'identique — mais que sa
+propre vue affichait `aa:aa:bb:bb:cc:cc`. **Elle lisait une écriture
+qu'elle n'imprimait jamais.** C'est cette contradiction interne que la
+suite vérifie, plutôt que le format en lui-même.
+
+Ce qui relève de ma connaissance du constructeur, et qui est dit ici
+plutôt que confondu avec le reste : que la bonne écriture soit
+`0200-0000-0011`. Les deux raisonnements mènent au même correctif —
+l'un parce que la table est cassée telle quelle, l'autre parce que VRP
+écrit ainsi.
+
+### 23.3 Deux colonnes trop étroites, trouvées avec
+
+Le format seul ne suffisait pas : la colonne `TYPE` du commutateur
+faisait **sept** caractères, soit exactement la longueur de `dynamic`,
+donc la valeur remplissait sa colonne et se collait au nom d'interface ;
+et `Learned-From` en faisait **quinze** pour un nom qui en fait vingt.
+Les deux tables rejoignent `huaweiTableLayouts.ts`, où la largeur est
+déclarée avec l'en-tête au lieu d'être comptée à côté.
+
+**Trouvé avec** : `display arp` du routeur rendait `GE0/0/0`, le nom
+court interne. La règle « un port a un seul nom » des lots V3 et V11
+n'avait pas atteint cette vue non plus.
+
+### 23.4 Tests et mesures
+
+`huawei-adresse-mac.test.ts` (10 cas). Sa propriété centrale est le
+**round-trip** — ce que la machine lit est ce qu'elle rend — parce
+qu'elle se vérifie sans référence extérieure. Le reste balaie les six
+vues qui impriment une MAC sur les deux plateformes, vérifie que chaque
+champ commence à un bord de colonne, et pose le cas le plus direct :
+**deux champs voisins ne se touchent jamais**, qui est la forme même du
+défaut.
+
+Discrimination par `git stash` : **8 des 10 tombent** avant.
+
+**Mesures.** 91 suites connexes vertes (1 299 cas), dont les suites ARP
+et table MAC. Typecheck : jeu d'erreurs identique avant/après (192).
+Lint : 37 problèmes avant, **36 après**. Aucun test existant modifié.

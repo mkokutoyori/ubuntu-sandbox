@@ -66,6 +66,24 @@ export class LlmnrAgent {
     return out;
   }
 
+  /**
+   * Les adresses IPv6 GLOBALES. Le lien-local est ecarte : il est
+   * ambigu hors de son lien, et l'enregistrement ne porte pas l'indice
+   * de zone qui le desambiguiserait.
+   */
+  private ownAddresses6(): string[] {
+    const out: string[] = [];
+    for (const port of this.host.getPorts()) {
+      if (port.getName() === 'lo') continue;
+      for (const entree of port.getIPv6Addresses()) {
+        if (entree.address.isLinkLocal()) continue;
+        const s = entree.address.toString();
+        if (!out.includes(s)) out.push(s);
+      }
+    }
+    return out;
+  }
+
   isRunning(): boolean { return this.bound; }
 
   start(): void {
@@ -130,11 +148,21 @@ export class LlmnrAgent {
     if (!question) return null;
     const asked = question.qname.toLowerCase().replace(/\.$/, '');
     if (asked !== this.ownName()) return null;
-    if (question.qtype !== RRType.A && question.qtype !== RRType.ANY) return null;
+    const veutA = question.qtype === RRType.A || question.qtype === RRType.ANY;
+    const veutAaaa = question.qtype === RRType.AAAA || question.qtype === RRType.ANY;
+    if (!veutA && !veutAaaa) return null;
 
-    const answers: DnsRecord[] = this.ownAddresses().map((ip) => ({
-      name: question.qname, type: 'A' as const, value: ip, ttl: LLMNR_RECORD_TTL,
-    }));
+    // On repond du TYPE demande. Repondre en A a une question AAAA
+    // serait une reponse a une autre question, et le demandeur la
+    // rangerait comme telle.
+    const answers: DnsRecord[] = [
+      ...(veutA ? this.ownAddresses().map((ip) => ({
+        name: question.qname, type: 'A' as const, value: ip, ttl: LLMNR_RECORD_TTL,
+      })) : []),
+      ...(veutAaaa ? this.ownAddresses6().map((ip) => ({
+        name: question.qname, type: 'AAAA' as const, value: ip, ttl: LLMNR_RECORD_TTL,
+      })) : []),
+    ];
     if (answers.length === 0) return null;
 
     const message = buildLegacyResponseMessage(query, 'NOERROR', answers);
@@ -160,13 +188,18 @@ export class LlmnrAgent {
    * d'unicité : c'est la seule façon que les deux ne puissent pas
    * diverger sur ce qui compte comme « quelqu'un a répondu ».
    */
-  private async askLink(label: string, timeoutMs: number): Promise<string[]> {
-    const query = buildLegacyQueryMessage(nextDnsTransactionId(), label, 'A', {
+  private async askLink(
+    label: string, timeoutMs: number, qtype: 'A' | 'AAAA' = 'A',
+  ): Promise<string[]> {
+    const query = buildLegacyQueryMessage(nextDnsTransactionId(), label, qtype, {
       recursionDesired: false,
     });
     if (!query) return [];
-    return announcedAddresses(await queryMulticastDns(
-      this.host, LLMNR_BINDING, query, timeoutMs, { firstOnly: true }));
+    return announcedAddresses(
+      await queryMulticastDns(
+        this.host, LLMNR_BINDING, query, timeoutMs, { firstOnly: true }),
+      qtype === 'AAAA' ? RRType.AAAA : RRType.A,
+    );
   }
 
   /**
@@ -233,14 +266,52 @@ export class LlmnrAgent {
     }
     return addresses;
   }
+
+  /**
+   * La même question pour la famille v6. Elle n'existait pas : ce
+   * résolveur ne savait demander qu'un enregistrement A, de sorte
+   * qu'un lien purement IPv6 n'avait aucun moyen d'apprendre une
+   * adresse par LLMNR — la question elle-même n'était pas posable.
+   */
+  async resolveAaaa(name: string, timeoutMs: number = LLMNR_TIMEOUT_MS): Promise<string[]> {
+    const label = name.toLowerCase().replace(/\.$/, '');
+    if (label.includes('.') || label === '') return [];
+
+    getDefaultEventBus().publish({
+      topic: 'llmnr.query.sent',
+      payload: {
+        deviceId: this.host.getId(), hostname: this.host.getHostname(), name: label,
+      },
+    });
+    const addresses = await this.askLink(label, timeoutMs, 'AAAA');
+    if (addresses.length > 0) {
+      getDefaultEventBus().publish({
+        topic: 'llmnr.resolved',
+        payload: {
+          deviceId: this.host.getId(), hostname: this.host.getHostname(),
+          name: label, addresses, responders: addresses.length,
+        },
+      });
+    }
+    return addresses;
+  }
 }
 
-/** Les adresses annoncées par les répondeurs, sans doublon. */
-function announcedAddresses(responses: readonly DnsMessage[]): string[] {
+/**
+ * Les adresses annoncées par les répondeurs, sans doublon.
+ *
+ * Le type recherché est celui qui a été demandé : ramasser les deux
+ * familles indistinctement rendrait une adresse v6 à qui a posé une
+ * question A, et l'appelant la rangerait comme une réponse à SA
+ * question.
+ */
+function announcedAddresses(
+  responses: readonly DnsMessage[], type: number = RRType.A,
+): string[] {
   const addresses: string[] = [];
   for (const r of responses) {
     for (const rr of r.answers) {
-      if (rr.data.type !== RRType.A) continue;
+      if (rr.data.type !== type) continue;
       const ip = (rr.data as { address: { toString(): string } }).address.toString();
       if (!addresses.includes(ip)) addresses.push(ip);
     }
