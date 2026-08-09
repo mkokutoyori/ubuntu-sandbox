@@ -88,7 +88,11 @@ describe('un datagramme atteint un groupe IPv6', () => {
 
   it('l\'appartenance se lit', () => {
     h(b).joinIPv6Group('eth0', 'ff02::99');
-    expect(h(b).listIPv6Groups()).toEqual([{ iface: 'eth0', group: 'ff02::99' }]);
+    // Pas d'égalité stricte : la machine est aussi membre des groupes
+    // de LLMNR et mDNS, que systemd-resolved rejoint au démarrage sur
+    // chaque interface.
+    expect(h(b).listIPv6Groups()).toContainEqual({ iface: 'eth0', group: 'ff02::99' });
+    expect(h(b).listIPv6Groups('eth1')).not.toContainEqual({ iface: 'eth1', group: 'ff02::99' });
   });
 
   it('un groupe mal formé, ou une adresse unicast, est refusé', () => {

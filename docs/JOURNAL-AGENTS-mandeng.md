@@ -25,6 +25,56 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### mDNS/LLMNR sur leurs groupes IPv6 — LIVRÉ
+
+**Agent** : session « logging ». Suite directe du lot précédent : le
+chemin d'émission multicast IPv6 étant ouvert, le renoncement que mDNS
+et LLMNR avaient écrit dans leurs propres fichiers (« la pile v6 ne
+porte pas l'émission vers un groupe arbitraire ») n'avait plus de motif.
+
+**Ce qui change** : `McastDnsBinding` porte un `group6`, chaque point
+d'émission envoie sur les DEUX groupes, et `bindMulticastDns` rejoint le
+groupe v6 pour pouvoir entendre les réponses. Les deux agents répondent
+désormais en **AAAA**, et LLMNR sait poser la question (`resolveAaaa`) —
+un transport qui traverse un lien v6 sans jamais apprendre d'adresse
+n'aurait été qu'un décor.
+
+**Trois défauts trouvés en chemin, tous HORS mDNS/LLMNR, tous mesurés** :
+
+1. **`sendIPv6ToGroup` lisait la portée au mauvais endroit** — il testait
+   `isLinkLocal()`, qui est `fe80::/10` et vaut donc FAUX pour tout
+   groupe, `ff02::5` compris. La portée d'un groupe est son second
+   quartet (RFC 4291 §2.7). C'est un défaut de MON lot précédent, que
+   ses tests ne pouvaient pas voir : OSPFv3 passe par
+   `sendPacketV3`, qui choisit sa source et sa limite de sauts lui-même.
+2. **L'appartenance au groupe était filtrée sur `isIPv6Enabled()` au
+   moment de la liaison** — or le démon est lié au démarrage de la
+   machine, donc avant toute adresse : rien n'était joint, et une
+   adresse configurée ensuite n'ouvrait aucun groupe.
+3. **`configureIPv6Interface` n'inscrivait pas la route `fe80::/10`** —
+   seul `enableIPv6()` le faisait, et il l'empilait en double à chaque
+   appel. Conséquence large et bien au-delà de ce lot : **un hôte
+   configuré normalement ne pouvait joindre AUCUNE adresse de
+   lien-local**, l'envoi échouant en silence. C'est ce qui empêchait la
+   réponse LLMNR de revenir.
+
+**Attention si vous touchez à l'IPv6** : le point 3 vous concerne
+probablement. Si vous aviez un laboratoire v6 qui « ne répondait pas »
+sans explication, c'était peut-être cela.
+
+**Fichiers touchés** : `dns/transport/MulticastDnsTransport.ts`,
+`mdns/types.ts`, `mdns/MdnsAgent.ts`, `llmnr/types.ts`,
+`llmnr/LlmnrAgent.ts`, `core/types.ts`, `devices/EndHost.ts`.
+
+**Mesures.** `mdns-llmnr-groupe-ipv6.test.ts` (6 cas) discriminé par
+`git stash` : **5 tombent** avant, le 6e étant le garde-fou de
+non-régression sur la résolution IPv4. 137 suites DNS/mDNS/LLMNR/IPv6/
+OSPF vertes (1 999 cas). Typecheck : 192 avant comme après. La suite
+`network-v2` complète était verte au commit précédent (1 343 fichiers,
+19 882 cas).
+
+---
+
 ### IPv6 multicast + paquets OSPFv3 — LIVRÉ
 
 **Agent** : session « logging » (auteure de `PRD-Logging-Cisco.md`,
