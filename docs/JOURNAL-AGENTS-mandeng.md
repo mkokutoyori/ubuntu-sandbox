@@ -25,6 +25,79 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### IPv6 multicast + paquets OSPFv3 — LIVRÉ
+
+**Agent** : session « logging » (auteure de `PRD-Logging-Cisco.md`,
+`PRD-Info-Center-Huawei.md`, `PRD-Nginx.md`, `PRD-Curl.md`).
+
+**Ce qui a été mesuré avant d'écrire quoi que ce soit.** J'ai compté les
+trames qui traversent réellement le fil pour chaque protocole, en
+m'abonnant à `port.frame.tx-requested` et `port.frame.received` (et non
+à `port.frame.sent`, qui n'existe pas — je m'y suis trompée une fois et
+j'ai conclu à tort que `dhclient` n'échangeait rien ; un ping de
+contrôle a levé l'erreur). Résultat : OSPFv2 46 trames, DHCP 20, EIGRP
+13, RIP 1 par 30 s réelles. **OSPFv3 : zéro.** C'était le seul protocole
+de ce dépôt à former un état sans qu'un paquet ne circule.
+
+**Deux lots, dans cet ordre, parce que le second dépendait du premier.**
+
+**1. Le chemin d'émission multicast IPv6** (`EndHost.ts`). Il n'existait
+pas, et ce dépôt avait déjà buté deux fois dessus sans le nommer : mDNS
+a renoncé à ses groupes IPv6 « faute d'un chemin d'envoi vers un groupe
+quelconque », et OSPFv3 formait ses adjacences hors bande pour la même
+raison. La cause : `sendUdpDatagram6` résolvait le prochain saut par
+NDP, ce qui ne peut PAS aboutir pour `ff02::5` — un groupe n'a pas de
+voisin à solliciter. `toMulticastMAC()` (RFC 2464 §7) existait depuis
+toujours, sans un seul appelant.
+
+**2. Les paquets OSPFv3.** Trois chaînons manquaient, et aucun n'était
+dans OSPF : `enableOSPFv3` n'appelait jamais `setSendCallback` (le
+moteur émettait déjà vers `ff02::5`, `sendHello` sortait par sa première
+ligne) ; `IPv6DataPlane.processPacket` ne connaissait ni `ff02::5` ni
+`ff02::6`, donc un Hello arrivé tombait dans le routage ; rien ne
+dispatchait l'en-tête suivant 89 vers le moteur v3. `v3FormAdjacency`
+— qui fabriquait un Hello et appelait `processHello` sur le moteur du
+voisin après comparaison des configurations par parcours de topologie —
+est supprimée.
+
+**Ce que le paquet décide maintenant tout seul** : correspondance des
+temporisateurs (refusée par `processHello`), interface passive, présence
+du voisin. Le seul contrôle qui ne pouvait pas se lire dans un paquet,
+l'authentification IPsec, voyage désormais SUR le paquet — ce qu'EST un
+en-tête AH/ESP (RFC 4552 §3) — et se juge à la réception.
+
+**Trouvé en écrivant la sonde, et corrigé** : le moteur v3 n'avait pas
+la règle « une interface passive ne traite pas plus un Hello qu'elle
+n'en émet », que le moteur v2 écrit depuis toujours. Invisible tant que
+rien n'arrivait par le fil ; dès que le Hello est réel, une interface
+passive formait un voisin à sens unique. C'est un cas existant de
+`ospf-full.test.ts` qui l'a attrapé — il avait raison, pas moi.
+
+**Ce qui n'a PAS changé, et je l'écris plutôt que de le taire** : les Link-LSA
+se propagent toujours par recopie et non par un LSU sur le fil — ce
+moteur n'a ni échange DD ni traitement de LSU. Mais la recopie est
+désormais COMMANDÉE par l'adjacence réelle : un routeur ne reçoit le
+Link-LSA d'un autre que si son Hello lui est parvenu.
+
+**Fichiers touchés** : `devices/EndHost.ts`, `core/types.ts` (deux
+prédicats `ff02::5`/`ff02::6` et le champ `ipsecProtected` sur
+`IPv6Packet`), `devices/Router.ts` (une ligne : le port étroit),
+`devices/router/IPv6DataPlane.ts`, `devices/router/RouterOSPFIntegration.ts`,
+`ospf/OSPFv3Engine.ts`.
+
+**Mesures.** `ipv6-multicast-send.test.ts` (8 cas) : 7 tombent avant
+correctif, le 8e est le garde-fou de non-régression sur l'unicast et
+passe des deux côtés. `ospfv3-vrais-paquets.test.ts` (13 cas) : 8
+tombent avant. Les suites `ospf*`/`ipv6*` (40 fichiers, 614 cas) sont
+vertes. Typecheck : jeu d'erreurs identique (192 avant, 192 après).
+
+**Attention si vous touchez à ces fichiers** : `Port.configureIPv6`
+n'inscrit AUCUNE route connectée — seul `configureIPv6Interface` (côté
+hôte) le fait, et c'est bien lui que prend `ip -6 addr add`. Un labo
+IPv6 monté par le premier n'a pas de route et n'émet rien en unicast.
+
+---
+
 ### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte — LIVRÉ
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md` et

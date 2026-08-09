@@ -14,8 +14,8 @@ import type { Port } from '../../hardware/Port';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   IPv6Address,
-  ETHERTYPE_IPV4, IP_PROTO_OSPF,
-  createIPv4Packet,
+  ETHERTYPE_IPV4, ETHERTYPE_IPV6, IP_PROTO_OSPF,
+  createIPv4Packet, createIPv6Packet,
 } from '../../core/types';
 import { resolveAcrossTransparentDevices } from '../../equipment/TopologyWalk';
 import { ipv4MulticastToMac } from '../../core/ip';
@@ -58,6 +58,7 @@ export interface OSPFExtraConfig {
   pendingV3IfConfig: Map<string, {
     cost?: number; priority?: number;
     networkType?: string; ipsecAuth?: boolean;
+    helloInterval?: number; deadInterval?: number;
   }>;
   redistributeV3Static?: boolean;
   v3AreaRanges: Map<string, Array<{ prefix: string }>>;
@@ -207,6 +208,13 @@ export class RouterOSPFIntegration {
     this.ospfv3Engine = new OSPFv3Engine(processId);
     const v3Bus = this.ctx.getBus?.();
     if (v3Bus) this.ospfv3Engine.setEventBus(v3Bus);
+
+    // Le moteur v3 émettait déjà ses Hello vers ff02::5 ; personne
+    // n'avait branché le rappel, donc `sendHello` sortait par sa
+    // première ligne et l'adjacence se formait hors bande.
+    this.ospfv3Engine.setSendCallback((ifaceName, packet, destIPv6) => {
+      this.sendPacketV3(ifaceName, packet, destIPv6);
+    });
     Logger.info(this.ctx.id, 'ospfv3:enabled', `${this.ctx.name}: OSPFv3 process ${processId} enabled`);
   }
 
@@ -259,6 +267,81 @@ export class RouterOSPFIntegration {
   /** OSPF packets from the wire (proto 89) — the only path into the engine. */
   receivePacket(ifaceName: string, srcIP: string, packet: OSPFPacket): void {
     this.ospfEngine?.processPacket(ifaceName, srcIP, packet);
+  }
+
+  /**
+   * Émettre un paquet OSPFv3 (RFC 5340 §2 : en-tête suivant 89, comme
+   * OSPFv2 sur IPv4 ; il n'y a pas d'encapsulation UDP).
+   *
+   * La source est l'adresse de lien-local de l'interface — RFC 5340 §2.5
+   * l'impose, et c'est elle que le voisin inscrit comme adresse de saut
+   * suivant. La destination Ethernet se déduit du groupe (RFC 2464 §7),
+   * exactement comme `sendPacket` la déduit de `224.0.0.5`.
+   */
+  private sendPacketV3(outIface: string, ospfPkt: unknown, destIPv6: string): void {
+    const port = this.ctx.getPorts().get(outIface);
+    if (!port) return;
+    const src = port.getLinkLocalIPv6?.() ?? port.getGlobalIPv6?.();
+    if (!src) return;
+
+    const dest = new IPv6Address(destIPv6);
+    const ipPkt = createIPv6Packet(src, dest, IP_PROTO_OSPF, 1, ospfPkt, 64);
+    if (this.extraConfig.pendingV3IfConfig.get(outIface)?.ipsecAuth) {
+      ipPkt.ipsecProtected = true;
+    }
+
+    const dstMAC = dest.isMulticast()
+      ? dest.toMulticastMAC()
+      : (this.ctx.getIPv6Engine().getNeighborCache().get(destIPv6)?.mac ?? MACAddress.broadcast());
+
+    this.ctx.sendFrame(outIface, {
+      srcMAC: port.getMAC(),
+      dstMAC,
+      etherType: ETHERTYPE_IPV6,
+      payload: ipPkt,
+    });
+  }
+
+  /** Paquets OSPFv3 venus du fil — le seul chemin vers le moteur v3. */
+  receivePacketV3(
+    ifaceName: string, srcIP: string, packet: unknown, ipsecProtected = false,
+  ): void {
+    const pkt = packet as { packetType?: number };
+    if (!this.ospfv3Engine || pkt?.packetType !== 1) return;
+
+    // RFC 4552 §3 : sans association de sécurité correspondante, le
+    // paquet est écarté par IPsec avant d'atteindre OSPF — dans les deux
+    // sens, un paquet protégé sur une interface qui ne l'attend pas
+    // n'étant pas plus recevable que l'inverse.
+    const expectsIpsec = !!this.extraConfig.pendingV3IfConfig.get(ifaceName)?.ipsecAuth;
+    if (expectsIpsec !== ipsecProtected) return;
+
+    this.ospfv3Engine.processHello(
+      ifaceName, srcIP,
+      packet as import('../../ospf/types').OSPFv3HelloPacket,
+    );
+  }
+
+  /** Brancher l'émission v3 de chaque pair sur de vraies trames. */
+  private setupV3SendCallbacks(allPeers: RouterOSPFIntegration[]): void {
+    for (const peer of allPeers) {
+      if (!peer.ospfv3Engine) continue;
+      peer.ospfv3Engine.setSendCallback((ifaceName, packet, destIPv6) => {
+        peer.sendPacketV3(ifaceName, packet, destIPv6);
+      });
+    }
+  }
+
+  /** Un vrai Hello v3 par interface câblée et non passive de chaque pair. */
+  private pumpHellosV3(allPeers: RouterOSPFIntegration[]): void {
+    for (const peer of allPeers) {
+      if (!peer.ospfv3Engine) continue;
+      for (const [name, iface] of peer.ospfv3Engine.getInterfaces()) {
+        if (iface.passive) continue;
+        if (!RouterOSPFIntegration.isCabled(peer, name)) continue;
+        peer.ospfv3Engine.sendHelloOnInterface(name);
+      }
+    }
   }
 
   /**
@@ -714,60 +797,81 @@ export class RouterOSPFIntegration {
   // OSPFv3 Auto-Convergence & IPv6 Route Computation
   // ════════════════════════════════════════════════════════════════
 
-  /** OSPFv3 auto-convergence: discover IPv6 neighbors and compute IPv6 routes */
+  /**
+   * Convergence OSPFv3. L'adjacence se forme désormais sur de VRAIS
+   * Hello émis vers `ff02::5` (RFC 5340 §2, en-tête suivant 89) et non
+   * plus par appel de méthode entre deux routeurs voisins.
+   *
+   * Ce que le parcours de topologie décidait, le paquet le décide
+   * maintenant tout seul, et par le même mécanisme que le vrai
+   * protocole : la correspondance des temporisateurs est refusée par
+   * `processHello`, une interface passive n'émet rien, et un voisin
+   * n'existe que parce que son Hello est arrivé. Le seul contrôle qui
+   * ne pouvait pas se lire dans un paquet — l'authentification IPsec —
+   * voyage maintenant sur le paquet, ce qu'EST un en-tête AH/ESP
+   * (RFC 4552 §3), et se juge à la réception.
+   */
   private v3AutoConverge(): void {
     if (!this.ospfv3Engine) return;
 
-    // Collect all OSPFv3 routers via BFS
     const allPeers = this.collectOSPFv3Domain();
+    this.setupV3SendCallbacks(allPeers);
 
-    // Form adjacencies between all directly connected v3 routers
-    for (const peer1 of allPeers) {
-      if (!peer1.ospfv3Engine) continue;
-      for (const [portName, port] of peer1.ctx.getPorts()) {
-        const cable = port.getCable();
-        if (!cable) continue;
-        const localIface = peer1.ospfv3Engine.getInterface(portName);
-        if (!localIface) continue;
-        if (localIface.passive) continue;
+    // Deux tours, comme en v2 : le premier fait se découvrir les voisins
+    // (Down → Init), le second porte la liste de voisins qui fait
+    // franchir 2-Way.
+    this.pumpHellosV3(allPeers);
+    this.pumpHellosV3(allPeers);
 
-        const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
-        if (!remotePort) continue;
-
-        const candidates = this.collectV3CandidateRouters(remotePort);
-
-        for (const { ospf: peer2, port: rPort } of candidates) {
-          if (!peer2.ospfv3Engine) continue;
-          const remoteIface = peer2.ospfv3Engine.getInterface(rPort.getName());
-          if (!remoteIface) continue;
-          if (remoteIface.passive) continue;
-
-          // Timer match check
-          if (localIface.helloInterval !== remoteIface.helloInterval) continue;
-          if (localIface.deadInterval !== remoteIface.deadInterval) continue;
-
-          // IPsec auth check
-          const localV3Cfg = peer1.extraConfig.pendingV3IfConfig.get(portName);
-          const remoteV3Cfg = peer2.extraConfig.pendingV3IfConfig.get(rPort.getName());
-          const localHasIpsec = !!localV3Cfg?.ipsecAuth;
-          const remoteHasIpsec = !!remoteV3Cfg?.ipsecAuth;
-          if (localHasIpsec !== remoteHasIpsec) continue;
-
-          const localRid = peer1.ospfv3Engine.getRouterId();
-          const remoteRid = peer2.ospfv3Engine.getRouterId();
-          peer1.v3FormAdjacency(peer1.ospfv3Engine, localIface, remoteRid, rPort);
-          peer2.v3FormAdjacency(peer2.ospfv3Engine, remoteIface, localRid, port);
-
-          const localLink = peer1.ospfv3Engine.getLinkLSA(portName);
-          const remoteLink = peer2.ospfv3Engine.getLinkLSA(rPort.getName());
-          if (localLink) peer2.ospfv3Engine.installRemoteLinkLSA(rPort.getName(), localLink);
-          if (remoteLink) peer1.ospfv3Engine.installRemoteLinkLSA(portName, remoteLink);
+    // Accélérateur du WaitTimer : une interface de diffusion encore en
+    // attente élit maintenant, faute de quoi personne ne serait DR et
+    // aucune adjacence ne dépasserait 2-Way avant le dead-interval.
+    for (const peer of allPeers) {
+      if (!peer.ospfv3Engine) continue;
+      for (const [, iface] of peer.ospfv3Engine.getInterfaces()) {
+        if ((iface.networkType === 'broadcast' || iface.networkType === 'nbma')
+          && iface.state === 'Waiting') {
+          peer.ospfv3Engine.drElection(iface);
         }
       }
     }
 
-    // Compute and install IPv6 routes from OSPFv3
+    // Un troisième tour porte les déclarations DR/BDR.
+    this.pumpHellosV3(allPeers);
+
+    this.floodV3LinkLSAs(allPeers);
     this.v3ComputeRoutes(allPeers);
+  }
+
+  /**
+   * Propager les Link-LSA (RFC 5340 §4.4.3.8) entre voisins.
+   *
+   * Toujours par recopie et non par un LSU sur le fil — ce moteur n'a
+   * ni base d'échange DD ni traitement de LSU —, mais la recopie est
+   * désormais COMMANDÉE par l'adjacence réelle : un routeur ne reçoit
+   * le Link-LSA d'un autre que si son Hello lui est parvenu et l'a fait
+   * entrer dans la table de voisins.
+   */
+  private floodV3LinkLSAs(allPeers: RouterOSPFIntegration[]): void {
+    for (const peer of allPeers) {
+      if (!peer.ospfv3Engine) continue;
+      for (const [portName, port] of peer.ctx.getPorts()) {
+        const iface = peer.ospfv3Engine.getInterface(portName);
+        if (!iface || iface.neighbors.size === 0) continue;
+        const localLink = peer.ospfv3Engine.getLinkLSA(portName);
+        if (!localLink) continue;
+        const cable = port.getCable();
+        if (!cable) continue;
+        const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+        if (!remotePort) continue;
+
+        for (const { ospf: other, port: oPort } of peer.collectV3CandidateRouters(remotePort)) {
+          if (!other.ospfv3Engine) continue;
+          if (!iface.neighbors.has(other.ospfv3Engine.getRouterId())) continue;
+          other.ospfv3Engine.installRemoteLinkLSA(oPort.getName(), localLink);
+        }
+      }
+    }
   }
 
   /** Collect all OSPFv3 routers in the domain via BFS */
@@ -807,36 +911,6 @@ export class RouterOSPFIntegration {
       remotePort,
       e => !!RouterOSPFIntegration.getByEquipmentId(e.getId())?.ospfv3Engine,
     ).map(({ device, port }) => ({ ospf: RouterOSPFIntegration.getByEquipmentId(device.getId())!, port }));
-  }
-
-  /** Form OSPFv3 neighbor adjacency via the engine FSM (Down→Init→ExStart→Full) */
-  private v3FormAdjacency(engine: import('@/network/ospf/OSPFv3Engine').OSPFv3Engine, localIface: any, remoteRid: string, remotePort: Port): void {
-    if (localIface.neighbors.has(remoteRid)) return;
-
-    const remoteIPv6Addrs = remotePort.getIPv6Addresses?.();
-    const linkLocal = remoteIPv6Addrs?.find((a: any) => a.origin === 'link-local');
-    const globalAddr = remoteIPv6Addrs?.find((a: any) => a.origin !== 'link-local');
-    const remoteIP = linkLocal?.address?.toString() || globalAddr?.address?.toString() || '::';
-
-    const localRid = engine.getRouterId();
-
-    const helloPacket: import('@/network/ospf/types').OSPFv3HelloPacket = {
-      type: 'ospf',
-      version: 3,
-      packetType: 1,
-      routerId: remoteRid,
-      areaId: localIface.areaId,
-      interfaceId: localIface.interfaceId,
-      priority: localIface.priority ?? 1,
-      options: 0x13,
-      helloInterval: localIface.helloInterval,
-      deadInterval: localIface.deadInterval,
-      designatedRouter: '0.0.0.0',
-      backupDesignatedRouter: '0.0.0.0',
-      neighbors: [localRid],
-    };
-
-    engine.processHello(localIface.name, remoteIP, helloPacket);
   }
 
   /** Compute and install OSPFv3 IPv6 routes from adjacency information */

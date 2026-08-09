@@ -399,6 +399,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getDhcpv6Server: () => this.dhcpv6Server,
       getDhcpv6ServerPool: (iface) => this.dhcpv6InterfacePools.get(iface),
       getDhcpv6RelayDestinations: (iface) => this.dhcpv6RelayDestinations.get(iface) ?? [],
+      deliverOspfv3: (inPort, srcIP, packet, ipsecProtected) =>
+        this.ospfIntegration?.receivePacketV3(inPort, srcIP, packet, ipsecProtected),
     });
     this.ospfIntegration = new RouterOSPFIntegration({
       id: this.id,

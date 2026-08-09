@@ -973,6 +973,8 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
         if (updates.cost !== undefined) iface.cost = updates.cost;
         if (updates.priority !== undefined) iface.priority = updates.priority;
         if (updates.networkType !== undefined) iface.networkType = updates.networkType;
+        if (updates.helloInterval !== undefined) iface.helloInterval = updates.helloInterval;
+        if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
       }
     }
   };
@@ -992,6 +994,36 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     setPendingV3If(ifName, { priority: parseInt(args[0], 10) });
     return '';
   });
+
+  // Ces deux commandes etaient refusees tant qu'aucun Hello ne circulait :
+  // stocker une valeur que personne ne lit aurait ete un decor. Depuis que
+  // l'adjacence se forme sur de vraies trames, `processHello` refuse un
+  // voisin dont les temporisateurs different — la valeur est donc lue, et
+  // un ecart empeche vraiment l'adjacence.
+  configIfTrie.registerGreedy('ipv6 ospf hello-interval', 'Set OSPFv3 hello interval', (args) => {
+    const val = parseInt(args[0], 10);
+    if (isNaN(val) || val < 1 || val > 65535) return '% Invalid value';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    setPendingV3If(ifName, { helloInterval: val });
+    return '';
+  });
+
+  configIfTrie.registerGreedy('ipv6 ospf dead-interval', 'Set OSPFv3 dead interval', (args) => {
+    const val = parseInt(args[0], 10);
+    if (isNaN(val) || val < 1 || val > 65535) return '% Invalid value';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    setPendingV3If(ifName, { deadInterval: val });
+    return '';
+  });
+
+  // L'arite se declare sur la trie plutot que de se refuser dans le
+  // handler : c'est le mecanisme que le lot « diagnostic a sortie
+  // unique » installe, et un handler de plus qui ecrirait le message
+  // lui-meme ferait remonter son compteur.
+  configIfTrie.requireArgs('ipv6 ospf hello-interval', 1);
+  configIfTrie.requireArgs('ipv6 ospf dead-interval', 1);
 
   configIfTrie.registerGreedy('ipv6 ospf network', 'Set OSPFv3 network type', (args) => {
     if (args.length < 1) return '';
@@ -1038,6 +1070,8 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
           cost: v3Pending?.cost,
           priority: v3Pending?.priority,
           networkType: v3Pending?.networkType as any,
+          helloInterval: v3Pending?.helloInterval,
+          deadInterval: v3Pending?.deadInterval,
         });
       }
     }

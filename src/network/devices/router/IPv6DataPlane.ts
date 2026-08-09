@@ -15,7 +15,7 @@ import {
   IPv6Address, IPv6Packet, ICMPv6Packet, MACAddress, UDPPacket,
   NDPNeighborSolicitation, NDPNeighborAdvertisement, NDPRouterSolicitation,
   EthernetFrame,
-  ETHERTYPE_IPV6, IP_PROTO_ICMPV6, IP_PROTO_UDP,
+  ETHERTYPE_IPV6, IP_PROTO_ICMPV6, IP_PROTO_UDP, IP_PROTO_OSPF,
   createIPv6Packet, createNeighborSolicitation, createNeighborAdvertisement, createRouterAdvertisement,
   createICMPv6EchoReply,
   IPV6_ALL_NODES_MULTICAST,
@@ -81,6 +81,12 @@ export interface IPv6RouterContext {
   getDhcpv6ServerPool(iface: string): string | undefined;
   /** `ipv6 dhcp relay destination <addr>` targets for a relaying interface. */
   getDhcpv6RelayDestinations(iface: string): string[];
+  /**
+   * OSPFv3 tourne directement sur IPv6 (en-tête suivant 89, RFC 5340 §2).
+   * Port étroit vers l'intégration OSPF, absent d'un routeur qui ne la
+   * porte pas : sans lui le paquet arrivait et n'allait nulle part.
+   */
+  deliverOspfv3?(inPort: string, srcIP: string, packet: unknown, ipsecProtected: boolean): void;
 }
 
 // ─── IPv6 Data Plane ────────────────────────────────────────────
@@ -231,8 +237,13 @@ export class IPv6DataPlane {
     const isAllRoutersMulticast = destIP.isAllRoutersMulticast();
     const isAllDhcpMulticast = destIP.isAllDhcpRelayAgentsAndServersMulticast();
     const isSolicitedNode = destIP.isSolicitedNodeMulticast();
+    // ff02::5 / ff02::6 (RFC 5340 §A.1) : un routeur qui parle OSPFv3 est
+    // membre de ces groupes, et ils ne se routent pas — sans cette porte
+    // le paquet tombait dans forwardPacket, donc nulle part.
+    const isOspfv3Group = destIP.isAllSpfRoutersMulticast() || destIP.isAllDRoutersMulticast();
 
-    if (isForUs || isAllNodesMulticast || isAllRoutersMulticast || isAllDhcpMulticast) {
+    if (isForUs || isAllNodesMulticast || isAllRoutersMulticast || isAllDhcpMulticast
+      || isOspfv3Group) {
       this.handleLocalDelivery(inPort, ipv6, srcMAC);
       return;
     }
@@ -266,6 +277,16 @@ export class IPv6DataPlane {
   }
 
   private handleLocalDelivery(inPort: string, ipv6: IPv6Packet, srcMAC?: MACAddress): void {
+    if (ipv6.nextHeader === IP_PROTO_OSPF) {
+      const pkt = ipv6.payload as { type?: string; version?: number } | undefined;
+      if (pkt?.type === 'ospf' && pkt.version === 3) {
+        this.ctx.deliverOspfv3?.(
+          inPort, ipv6.sourceIP.toString(), ipv6.payload, !!ipv6.ipsecProtected,
+        );
+      }
+      return;
+    }
+
     if (ipv6.nextHeader === IP_PROTO_ICMPV6) {
       this.handleICMPv6(inPort, ipv6);
     } else if (ipv6.nextHeader === IP_PROTO_UDP) {

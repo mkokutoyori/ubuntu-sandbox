@@ -423,6 +423,20 @@ export class IPv6Address {
            this.hextets[7] === 2;
   }
 
+  /** Check if this is AllSPFRouters (ff02::5, RFC 5340 §A.1) */
+  isAllSpfRoutersMulticast(): boolean {
+    return this.hextets[0] === 0xff02 &&
+           this.hextets.slice(1, 7).every(h => h === 0) &&
+           this.hextets[7] === 5;
+  }
+
+  /** Check if this is AllDRouters (ff02::6, RFC 5340 §A.1) */
+  isAllDRoutersMulticast(): boolean {
+    return this.hextets[0] === 0xff02 &&
+           this.hextets.slice(1, 7).every(h => h === 0) &&
+           this.hextets[7] === 6;
+  }
+
   /** Check if this is a solicited-node multicast address (ff02::1:ffXX:XXXX) */
   isSolicitedNodeMulticast(): boolean {
     return this.hextets[0] === 0xff02 &&
@@ -1070,6 +1084,15 @@ export interface IPv6Packet extends NetworkPdu {
   destinationIP: IPv6Address;
   /** Upper-layer payload (ICMPv6, UDP, TCP, etc.) */
   payload: ICMPv6Packet | UDPPacket | unknown;
+  /**
+   * Présence d'un en-tête AH/ESP protégeant ce paquet (RFC 4302/4303).
+   * Ce simulateur ne sérialise aucun octet, donc l'en-tête ne peut pas
+   * être porté autrement ; ce qui compte est qu'un récepteur sans
+   * association de sécurité correspondante le voie et rejette, ce qu'il
+   * ne pouvait pas faire tant que la protection ne quittait pas la
+   * configuration de l'émetteur. Utilisé par OSPFv3 (RFC 4552 §3).
+   */
+  ipsecProtected?: boolean;
 }
 
 /**
