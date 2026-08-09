@@ -103,6 +103,17 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ] as const) {
     tries.privileged.describeArgs(cmd, [{ ...WORD('name', description), optional: true }]);
   }
+  // Les trois arguments des chantiers « accès/privilèges » et « CLI
+  // Views » n'avaient pas de description propre, donc `?` recopiait
+  // celle du parent : `parser view ?` répondait « Define a CLI view »,
+  // qui décrit la COMMANDE et non ce qu'il faut taper ensuite.
+  tries.privileged.describeArgs('enable view', [
+    { ...WORD('view-name', 'CLI view name'), optional: true },
+  ]);
+  tries.config.describeArgs('parser view', [WORD('view-name', 'CLI view name')]);
+  tries.configLine.describeArgs('login-timeout', [
+    INT('seconds', [0, 300], 'Timeout in seconds'),
+  ]);
   tries.privileged.describeArgs('show arp', [
     { ...IP('address', 'ARP entry address'), optional: true },
   ]);

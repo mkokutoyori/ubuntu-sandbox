@@ -94,6 +94,16 @@ export class CiscoFileSystem {
     return this.flash.has(stripFs(name));
   }
 
+  /**
+   * Le contenu d'un fichier, ou `null`. Ce système de fichiers savait
+   * ÉCRIRE et lister, jamais relire : une archive de configuration
+   * existait donc sur `flash:` sans qu'aucune vue puisse en lire le
+   * texte, ce qui rendait un diff impossible à calculer.
+   */
+  read(name: string): string | null {
+    return this.flash.get(stripFs(name))?.content ?? null;
+  }
+
   write(name: string, content: string): void {
     const n = stripFs(name);
     this.flash.set(n, { name: n, content, size: content.length, modified: this.now() });
@@ -152,13 +162,27 @@ export class CiscoFileSystem {
   // ── Rendus ──────────────────────────────────────────────────────
 
   /** `dir [flash:]` — la vue par défaut, celle qu'on tape en premier. */
+  /**
+   * `dir [flash:[<sous-répertoire>/]]`.
+   *
+   * L'argument ne servait qu'à écrire l'en-tête : `dir flash:archive/`
+   * listait la RACINE, donc l'image IOS et le fichier de configuration
+   * d'usine, qui ne sont pas dans `archive/`. Sur une séquence de
+   * collecte de preuves c'est une réponse fausse à une question précise —
+   * l'auditeur demande ce qu'il y a dans le répertoire d'archives et on
+   * lui montre autre chose. Le nom rendu est relatif au répertoire
+   * listé, comme sur une vraie machine.
+   */
   renderDir(fs = 'flash:'): string {
-    const lignes = [`Directory of ${fs}/`, ''];
+    const prefixe = sousRepertoire(fs);
+    const lignes = [`Directory of ${fs.endsWith('/') ? fs : fs + '/'}`, ''];
     let i = 1;
     for (const f of this.flash.values()) {
+      if (prefixe !== '' && !f.name.startsWith(prefixe)) continue;
+      const affiche = prefixe === '' ? f.name : f.name.slice(prefixe.length);
       const mode = f.directory ? 'drwx' : '-rwx';
       lignes.push(`${String(i).padStart(5)}  ${mode}  ${String(f.size).padStart(11)}`
-        + `  ${fmtDate(f.modified)}  ${f.name}`);
+        + `  ${fmtDate(f.modified)}  ${affiche}`);
       i++;
     }
     lignes.push('', `${this.totalBytes} bytes total (${this.freeBytes()} bytes free)`);
@@ -196,4 +220,16 @@ export class CiscoFileSystem {
 /** `flash:c2960.bin` → `c2960.bin` ; `flash:/x` → `x`. */
 function stripFs(name: string): string {
   return name.replace(/^[a-z]+:\/?/i, '');
+}
+
+/**
+ * Le sous-répertoire demandé par `dir`, terminé par `/`, ou la chaîne
+ * vide pour la racine. `flash:` et `flash:/` désignent la racine ;
+ * `flash:archive/` et `flash:/archive` désignent le même répertoire, un
+ * opérateur écrivant l'un ou l'autre indifféremment.
+ */
+function sousRepertoire(argument: string): string {
+  const reste = stripFs(argument).replace(/^\/+/, '');
+  if (reste === '') return '';
+  return reste.endsWith('/') ? reste : reste + '/';
 }

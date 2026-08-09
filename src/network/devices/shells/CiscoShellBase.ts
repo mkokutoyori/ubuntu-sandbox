@@ -1266,7 +1266,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return applyPipeFilter(output, pipeFilter);
     }
 
+    const modeAvant = this.mode;
     const output = this.executeOnTrie(cmdPart);
+    this.journaliserCommandeDeConfig(modeAvant, cmdPart, output);
 
     // Async escape hatch (e.g. ping on routers sets this)
     if (this._pendingAsync) {
@@ -1627,6 +1629,43 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected configExitLogTarget: unknown = null;
 
+  /**
+   * `archive log config` — retient la commande de configuration qui
+   * vient d'être tapée, et l'annonce en syslog
+   * (`docs/PRD-Pistes-Audit-Cisco.md` §3).
+   *
+   * C'est la seule trace de « qui a tapé quoi » qui n'exige AUCUN
+   * serveur : elle vit sur la machine, et c'est ce qui la rend utilisable
+   * dans un laboratoire comme dans un réseau dont le TACACS+ est tombé.
+   * Le sous-mode était accepté, ses réglages rangés — et rien n'était
+   * jamais retenu ni annoncé.
+   *
+   * On journalise sur le mode d'AVANT la commande, ce qui est ce que
+   * fait IOS : `configure terminal` n'est pas une commande de
+   * configuration (on n'y est pas encore), tandis qu'`interface Gi0/0`
+   * en est une bien qu'elle change de mode.
+   */
+  private journaliserCommandeDeConfig(modeAvant: string, commande: string, sortie: string): void {
+    if (!modeAvant.startsWith('config')) return;
+    // Une commande refusée n'a rien changé : la retenir ferait lire au
+    // journal d'audit une modification qui n'a pas eu lieu.
+    if (/^%|Invalid input|Incomplete command/m.test(sortie)) return;
+    const service = this.archiveService();
+    if (!service) return;
+    const record = service.logCommand(
+      this.configSessionLabel, this.configSessionLabel === 'console' ? 'console' : 'vty0',
+      commande, Date.now());
+    if (!record) return;
+    if (service.getConfigLogger().notifySyslogContent === undefined) return;
+    const device = this.configExitLogTarget as {
+      _loggingConfig?: LoggingConfig;
+      getLoggingConfig?: () => LoggingConfig | undefined;
+    } | null;
+    const cible = device?._loggingConfig ?? device?.getLoggingConfig?.() ?? this.logging;
+    cible.append('notifications', 'parser',
+      `User:${record.user} logged command:${record.command}`, true, 'CFGLOG_LOGGEDCMD');
+  }
+
   protected cmdExit(): string {
     if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
     if (this.mode === 'privileged') this.terminalMonitor = false;
@@ -1918,6 +1957,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private registerCommonShowCommands(trie: CommandTrie): void {
     trie.register('show clock', 'Display the system clock', () => showClock(this.cs()));
     trie.register('show users', 'Display active lines', () => showUsers());
+    // `show who` est le SYNONYME historique de `show users` sur IOS, et
+    // la sequence de collecte de preuves d'un auditeur les enchaine.
+    // Elle repondait `% Invalid input`. Le rendu est le meme parce que
+    // c'est la meme question : deux textes pour une question feraient
+    // douter de la machine.
+    trie.register('show who', 'Display active lines', () => showUsers());
     trie.register('show sessions', 'Display open outgoing connections', () => renderSessions(this.outgoingSessions));
     trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
     trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {

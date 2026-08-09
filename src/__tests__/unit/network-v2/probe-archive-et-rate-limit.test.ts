@@ -187,15 +187,27 @@ describe.each([
     expect(await d.executeCommand('dir flash:')).toContain('cfg-3');
   });
 
-  it('la différence entre archives demande deux archives', async () => {
+  /**
+   * Ce cas attendait « Differences between latest two archives (3 → 4) »,
+   * c'est-à-dire la PHRASE que rendait `formatShowArchiveDiff` à la place
+   * d'un diff — il encodait donc le défaut comme contrat. Il éprouve
+   * désormais ce que la commande promet : sans archive elle le dit, avec
+   * une archive et aucun changement elle le dit aussi, et après un vrai
+   * changement elle le NOMME (`docs/PRD-Pistes-Audit-Cisco.md` §4).
+   */
+  it('la différence entre archives demande une archive, puis un changement', async () => {
     const d = await fabrique();
     await configurerArchive(d);
     expect(await d.executeCommand('show archive config differences'))
       .toBe('No archive differences available.');
     await d.executeCommand('archive config');
-    await d.executeCommand('archive config');
     expect(await d.executeCommand('show archive config differences'))
-      .toContain('Differences between latest two archives');
+      .toBe('!No changes were found');
+    await d.executeCommand('configure terminal');
+    await d.executeCommand('hostname APRES-ARCHIVE');
+    await d.executeCommand('end');
+    expect(await d.executeCommand('show archive config differences'))
+      .toContain('+hostname APRES-ARCHIVE');
   });
 });
 

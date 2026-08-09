@@ -19,9 +19,28 @@
  */
 
 import type { CommandTrie } from '../CommandTrie';
-import type { ArchiveService } from '../../router/archive/ArchiveService';
+import type { ArchiveService, ConfigLogRecord } from '../../router/archive/ArchiveService';
+import { renderTable, type TableColumn, FIXED_TABLE } from '../cli/TextTable';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 
 export type ArchiveAccessor = () => ArchiveService | undefined;
+
+/**
+ * Les colonnes de `show archive log config`. La largeur porte son propre
+ * blanc (`FIXED_TABLE`) parce que la colonne de commande est precedee
+ * d'une barre qui n'appartient a aucune des deux voisines.
+ */
+const CONFIG_LOG_COLONNES: ReadonlyArray<TableColumn<ConfigLogRecord>> = [
+  { header: ' idx', width: 6, align: 'right', value: (r) => String(r.index) },
+  { header: '  sess', width: 7, align: 'right', value: (r) => String(r.session) },
+  { header: '           user@line', width: 21, value: (r) => `      ${r.user}@${r.line}` },
+  { header: '      Logged command', value: (r) => ` |  ${r.command}` },
+];
+
+function renderConfigLog(records: readonly ConfigLogRecord[]): string {
+  if (records.length === 0) return ' idx   sess           user@line      Logged command';
+  return renderTable(records, CONFIG_LOG_COLONNES, FIXED_TABLE).join('\n');
+}
 
 /**
  * Réserve d'honnêteté, écrite ici plutôt que découverte : le libellé
@@ -41,9 +60,60 @@ export function registerArchiveExecCommands(
     const s = ar();
     return s ? s.formatShowArchive() : 'No archives configured / no revisions captured.';
   });
-  trie.register('show archive config differences', 'Display archive config diff', () => {
+  /*
+   * `show archive config differences [<avant> [<apres>]]` — la commande
+   * la plus utile de tout ce sous-systeme pour un auditeur, et elle etait
+   * enregistree SANS ARGUMENT (donc la forme du tutoriel, qui en prend
+   * un, etait refusee) et rendait une PHRASE au lieu d'un diff.
+   *
+   * Sans argument, IOS compare la derniere archive a la configuration
+   * courante : c'est la question qu'on pose le plus souvent, « qu'est-ce
+   * qui a bouge depuis la derniere sauvegarde ? ».
+   */
+  trie.registerGreedy('show archive config differences', 'Display archive config diff', (args) => {
     const s = ar();
-    return s ? s.formatShowArchiveDiff() : 'No archive differences available.';
+    if (!s) return 'No archive differences available.';
+    const courant = runningConfig();
+    const lire = (ref: string): string | null => {
+      if (/^system:running-config$/i.test(ref)) return courant;
+      return s.readArchivedConfig(ref);
+    };
+    if (args.length === 0) {
+      const derniere = s.latestArchivedConfig();
+      if (derniere === null) return 'No archive differences available.';
+      return s.formatShowArchiveDiff(derniere, courant);
+    }
+    // Avec UN seul argument, IOS compare la derniere archive au fichier
+    // nomme — et non ce fichier a lui-meme, qui ne differerait jamais de
+    // rien. C'est ce qui donne un sens a la forme du tutoriel,
+    // `... differences system:running-config`.
+    if (args.length === 1) {
+      const cible = lire(args[0]);
+      if (cible === null) return `%Error opening ${args[0]} (No such file or directory)`;
+      const derniere = s.latestArchivedConfig();
+      if (derniere === null) return 'No archive differences available.';
+      return s.formatShowArchiveDiff(derniere, cible);
+    }
+    const avant = lire(args[0]);
+    if (avant === null) return `%Error opening ${args[0]} (No such file or directory)`;
+    const apres = lire(args[1]);
+    if (apres === null) return `%Error opening ${args[1]} (No such file or directory)`;
+    return s.formatShowArchiveDiff(avant, apres);
+  });
+
+  /*
+   * `show archive log config all` — la porte du journal des commandes.
+   * Il n'y en avait aucune : le sous-mode `log config` etait accepte, ses
+   * reglages ranges, et rien ne pouvait etre relu.
+   */
+  trie.registerGreedy('show archive log config', 'Display configuration log', (args) => {
+    const s = ar();
+    if (!s) return '';
+    const mot = (args[0] ?? 'all').toLowerCase();
+    if (mot !== 'all' && !/^\d+$/.test(mot)) throw new CliInvalidInput({ token: args[0] });
+    const tous = s.listConfigLog();
+    const choisis = mot === 'all' ? tous : tous.filter((r) => r.index >= Number(mot));
+    return renderConfigLog(choisis);
   });
   trie.register('archive config', 'Archive the running configuration', () => {
     const s = ar();
