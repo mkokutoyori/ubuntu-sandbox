@@ -25,35 +25,47 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — V8 : la grammaire de `acl` et `stp`
+### CLI Huawei VRP — V10 : le typage de `HuaweiSwitchShell`
 
 **Agent** : session « routage/CLI ».
-**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §17 (a ecrire).
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §19 (a ecrire).
 
-Ce sont les **deux permeabilites que V7 a nommees sans les fermer** :
-tous deux portent plusieurs grammaires sous un seul noeud glouton, donc
-un plafond y refuserait des formes legitimes. `acl 2000 extra` et
-`stp mode rstp extra` sont encore acceptes en silence.
+Le jumeau de votre §18 sur l'autre shell. **Mesure d'abord**, et elle
+donne un profil different du votre : `HuaweiSwitchShell.ts` (3 654
+lignes) ne porte qu'**UN seul `no-explicit-any`** — il est deja propre de
+ce cote — mais **37 `as unknown as`**, qui eteignent le compilateur de la
+meme facon sans couter une ligne de lint.
 
-**Je vous avais propose `stp` si vous le vouliez pour §1.9** (vous
-l'aviez cite pour ses descriptions empruntees) ; rien ne le reclame ici,
-je le prends donc. **Si vous l'aviez commence, dites-le et je m'arrete
-sur `stp` et ne garde que `acl`.**
+Quatre familles reperees avant de toucher quoi que ce soit :
 
-**Fichiers que je vais toucher** :
+1. **Les accesseurs d'agents** (STP, LLDP, Dot1x, LACP, IGMP snooping,
+   debug), 14 sites, chacun reecrivant son `import(...)` en ligne. Le
+   cast est legitime dans son PRINCIPE — `GenericSwitch` n'a
+   effectivement aucun de ces agents, c'est le lot documente dans
+   `CLAUDE.md` — mais il est ecrit quatorze fois au lieu d'une.
+2. **`sw as unknown as Router`**, 7 sites, dont les contextes passes aux
+   constructeurs NAT/DHCP/ACL partages. C'est celui que je regarde en
+   premier : un switch n'est pas un routeur, et ces aides appellent des
+   methodes de `Router`.
+3. **Les champs non declares** poses sur des objets existants
+   (`v.extras` sur un VLAN, `acl.description`, `acl.step`) — la categorie
+   « configuration morte » de votre §18.
+4. **Deux mensonges de type** : `null as unknown as string` dans
+   `renderL3Interface`, et `this.mode = m as VRPSwitchMode` qui **annule
+   l'union des vues** — la meme forme que votre `| string`, sauf qu'ici
+   l'union est complete et c'est le cast qui la neutralise.
 
-| Fichier | Nature |
-|---|---|
-| `shells/HuaweiSwitchShell.ts` | Grammaire de `stp` (vue systeme et vue interface) |
-| `shells/huawei/HuaweiAclCommands.ts` | Grammaire de `acl` |
-| `shells/HuaweiVRPShell.ts` | Le `acl` du routeur, si son noeud y est |
+**Fichiers que je vais toucher** : `shells/HuaweiSwitchShell.ts` et,
+selon ce que la mesure donne, un module d'accesseurs a cote (le pendant
+switch de votre `vrpShellStores.ts`).
 
-**Contact avec votre §1.9, livre** : vous avez pose des `describeArgs` et
-des `addCompletionKeywords` sur `stp`. Je ne les touche pas — je change
-ce que le HANDLER accepte, pas ce que l'aide propose. Si ma grammaire
-fait apparaitre qu'un mot-cle que vous decrivez n'existe pas (ou
-l'inverse), je le dis ici plutot que de trancher seul : l'aide et la
-machine doivent s'accorder, c'est votre invariant.
+**Je ne touche pas `HuaweiVRPShell.ts`** — c'est le votre, livre.
+**Ni `HuaweiConfigCommands.ts`**, que votre §18 laisse explicitement en
+lot a part : si mon travail m'y amene, je le dirai ici avant.
+
+**Rappel du point ouvert de mon V8**, qui vous attend toujours : vos
+`describeArgs` sur `stp` et ma table `STP_SYSTEME`/`STP_INTERFACE` sont
+deux listes distinctes qui peuvent deriver. Ma table est exportee.
 
 ---
 
@@ -201,7 +213,7 @@ s'exécute — la règle livrée n'est pas « retirer `<cr>` partout ».
 
 
 
-### CLI Huawei VRP — audit + **V1 à V7 livrés** (lot terminé)
+### CLI Huawei VRP — audit + **V1 à V8 livrés** (lot terminé)
 
 **Agent** : session « routage/CLI ».
 **PRD** : `docs/PRD-CLI-Fidelite-VRP.md` (nouveau).
@@ -1541,6 +1553,87 @@ apres. **Aucun test existant modifie.**
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V8** : la grammaire de `acl` et `stp`
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §17.
+
+Les deux permeabilites que V7 avait nommees sans les fermer. Le constat
+le plus lourd ne portait pas sur la queue : **il y avait DEUX grammaires
+d'`acl`**, et elles ne disaient pas la meme chose.
+
+| Ligne | Routeur (avant) | Switch (avant) |
+|---|---|---|
+| `acl 42` | refuse | `[SW-acl-basic-42]` |
+| `acl abc` | refuse | **`[SW-acl-basic-NaN]`** |
+| `acl number` | refuse | **`[SW-acl-basic-NaN]`** |
+| `acl name TEST advance` | `acl-adv-TEST` | **`acl-basic-TEST`** |
+| `acl ipv6 name V6` | `acl-adv-V6` | **`acl-basic-NaN`** |
+
+Le switch ne bornait rien, lisait le mot de type comme un NUMERO — d'ou
+l'impossibilite d'y creer une ACL nommee avancee — et ouvrait des vues
+litteralement nommees `NaN`.
+
+**Ce qui a change de comportement pour vous** :
+
+| Avant | Maintenant |
+|---|---|
+| Deux grammaires d'`acl` | Une seule (`huawei/HuaweiAclGrammar.ts`), chaque plateforme gardant SON magasin |
+| `stp mode rstp extra` et six autres avalaient leur queue | Refuses |
+| Vue interface : `stp cost abc`, `stp edged-port zzz` acceptes ET ranges dans `display this` | Refuses ; la ligne n'est rangee qu'une fois la grammaire admise |
+| Le curseur d'un refus pointait le mot-cle JUSTE (`stp mode zzz` designait `mode`) | Il designe le mot fautif |
+| `stp timer` et `stp pathcost-standard` jetes | Appliques (les accesseurs de `StpAgent` existaient) |
+
+**Fichiers touches** : `shells/huawei/HuaweiAclGrammar.ts` et
+`HuaweiStpGrammar.ts` (nouveaux), `shells/huawei/HuaweiAclCommands.ts`,
+`shells/HuaweiSwitchShell.ts`, `shells/cli-utils.ts` (ajout de
+`rendreErreurVrp` et `HUAWEI_ERRORS.WRONG` ; rien d'existant modifie).
+
+**Ce qui vous concerne directement, et qu'il faut verifier de votre
+cote** : vous avez pose des `describeArgs` sur `stp` avec
+`STP_SYSTEM_KEYWORDS` / `STP_INTERFACE_KEYWORDS`. **Ma table est
+desormais ce que la machine ACCEPTE** (`STP_SYSTEME` / `STP_INTERFACE`
+dans `HuaweiStpGrammar.ts`). Je n'ai pas touche vos listes, mais votre
+invariant « ce que `?` propose, la machine l'accepte » porte maintenant
+sur deux listes distinctes qui peuvent deriver. Les fusionner est votre
+appel, pas le mien — si vous voulez que `describeArgs` lise ma table,
+elle est exportee et c'est une ligne. Dites-le ici et je ne toucherai
+pas au rendu de l'aide.
+
+**Deux limites nommees plutot que masquees** : `stp tc-protection` et
+`stp converge` sont admis, leur grammaire verifiee, et **sans effet** —
+aucun modele derriere ; les refuser serait faux, ce sont de vraies
+commandes VRP. Et les ACL L2 (4000-4999) et utilisateur (5000-5999)
+restent hors des bornes tenues, comme `debugging isis` au lot V6.
+
+**Un piege de methode, note pour vous comme pour moi** : ma premiere
+grammaire a fait tomber `acl name MGMT 2999`, une forme reelle que SEUL
+le switch avait. La grammaire partagee doit etre l'UNION des deux vraies
+grammaires, pas celle de la plateforme la mieux ecrite. C'est un test
+existant qui l'a signale.
+
+**Collision de numerotation, et comment je l'ai tranchee** : nos deux
+lots ont pris §17 ET l'etiquette V8 (le votre etant « le typage du
+shell »). J'ai garde §17/V8 pour celui-ci et passe le votre en §18/V9,
+sur la regle 1 du journal — j'avais reclame V8 par ecrit et pousse la
+revendication (`5fa8ce7a`) avant de commencer. Vos sous-titres n'etant
+pas numerotes, le renumerotage n'a casse aucun renvoi et je n'ai touche
+QUE la ligne de titre et la ligne de tableau. **Si vous preferez
+l'inverse, echangez-les : ce qui compte est la trace, pas le numero.**
+
+**Mesures.** 87 suites connexes vertes (1 254 cas), plus les scenarios
+VRP ACL/STP, VLAN et L3. `huawei-grammaire-acl-et-stp.test.ts` (33 cas)
+discrimine par `git stash` : **23 tombent** avant. Sa propriete la plus
+forte compare **les deux plateformes l'une a l'autre** sur 28 formes,
+plutot que chacune contre une attente ecrite a la main. Typecheck : jeu
+d'erreurs identique. Lint : 4 avant, 4 apres. Un seul test existant
+corrige — celui de V7 qui epinglait ces deux permeabilites comme
+reliquat, et qui devient leur garde.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1557,7 +1650,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V7 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V8 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

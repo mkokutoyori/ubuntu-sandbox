@@ -135,10 +135,9 @@ diagnostic que les TP réseau cherchent à faire acquérir.
 Proxy, cookies, `--retry`, formulaires. À traiter seulement si un TP les
 demande.
 
-> **Les témoins sont livrés — voir §9.** Le calcul a changé à la mesure :
-> ce n'était pas une fonctionnalité à écrire mais une PORTE à ouvrir sur
-> un moteur qui existait déjà et que rien n'avait jamais appelé. Le
-> proxy, `--retry` et les formulaires restent hors périmètre.
+> **§P4 est livré, sauf le proxy** — témoins au §9, `--version` et
+> quatre options au §10, formulaires et `--retry` au §11. Seul `-x`
+> reste refusé, et le §11.3 dit pourquoi ce n'est pas un oubli.
 
 ## 5. Hors périmètre, et dit d'emblée
 
@@ -271,8 +270,9 @@ eux, sont discriminés par neutralisation (3 cas sur 9 tombent).
 
 ### 7.5 Limites assumées
 
-- **P4 (proxy, `--retry`, formulaires) n'est pas fait** — les témoins,
-  eux, le sont depuis §9 — comme le
+- **De P4, seul le proxy (`-x`) n'est pas fait** — témoins §9,
+  `--version` et quatre options §10, formulaires et `--retry` §11 —
+  comme le
   §4 l'annonçait : « à traiter seulement si un TP les demande ». Ces
   options sont refusées par le cas 2 du §7.3, pas ignorées.
 - **`%{time_total}` est mesuré pour de vrai** et vaut donc à peu près zéro,
@@ -363,3 +363,148 @@ simple `-H "Cookie: …"`, lequel serait envoyé à tout le monde.
   que les autres le sont.
 
 `curl-cookies.test.ts` (15 cas), **12 tombent par `git stash`**.
+
+
+---
+
+## 10. `--version` et quatre options — livré
+
+### 10.1 Le point de départ est un DÉFAUT, pas une absence
+
+`curl --version` répondait :
+
+```
+curl: option --version: is unknown
+```
+
+Or §3 pose trois familles d'options, et `is unknown` appartient à la
+troisième — celle des options qui **n'existent pas chez curl**.
+L'appliquer à `--version`, l'option la plus tapée de toutes, était le
+seul message de ce fichier qui mentait sur ce que curl EST. Les autres
+refus étaient honnêtes ; celui-là ne l'était pas.
+
+### 10.2 Ce que la bannière annonce, et pourquoi pas plus
+
+```
+curl 8.5.0 (x86_64-pc-linux-gnu) libcurl/8.5.0 OpenSSL/3.0.13
+Release-Date: 2023-12-06
+Protocols: http https
+Features: IPv6 SSL
+```
+
+Les deux dernières lignes sont la partie qui demandait un choix.
+Recopier celles du vrai curl (`ftp gopher imap ldap smtp telnet…`,
+`HTTPS-proxy TLS-SRP UnixSockets…`) aurait fait annoncer une vingtaine
+de schémas et une poignée de capacités que la commande refuse deux
+lignes plus bas — exactement le décor que ces PRD passent leur temps à
+retirer. Elles disent donc ce que ce curl SERT, et un cas vérifie
+l'absence des autres.
+
+`--version` n'exige pas d'URL, puisqu'elle ne transfère rien : l'exiger
+ferait répondre le mode d'emploi à la commande qu'on tape précisément
+sans URL.
+
+### 10.3 Quatre options qui n'exigeaient aucune invention
+
+Elles étaient refusées honnêtement, et chacune ne demandait qu'une
+brique déjà là : un en-tête, une lecture de fichier, une écriture, un
+encodage.
+
+* **`-e`/`--referer`** — l'en-tête `Referer`.
+* **`-T`/`--upload-file`** — un **PUT**, et non un POST : c'est un
+  téléversement, et les confondre changerait la sémantique côté
+  serveur. Aucun `Content-Type` n'est imposé, là où `-d` déclare
+  `x-www-form-urlencoded` : un fichier n'est pas un formulaire. Un
+  fichier absent échoue **avant toute connexion**, avec le code 26 de
+  curl — il n'ouvre pas une socket pour découvrir qu'il n'a rien à
+  envoyer.
+* **`--data-urlencode`** — n'encode QUE la valeur d'une paire
+  `nom=valeur`, et la chaîne entière sinon. Encoder le tout enverrait
+  `a%3Db%20c`, que rien ne sait relire.
+* **`-D`/`--dump-header`** — écrit le bloc d'en-têtes REÇUS dans un
+  fichier, sans le corps. C'est ce qui la distingue de `-i`, laquelle
+  les mêle au corps ; un cas mesure les deux fichiers séparément.
+
+### 10.4 Ce qui reste refusé
+
+`-x` (proxy), `--retry`, `-F` (formulaires) — un cas le vérifie, pour
+qu'ouvrir cinq portes ne laisse pas croire que les autres le sont. Et
+une option qui n'existe vraiment pas garde `is unknown`, ce qui
+redevient vrai maintenant que `--version` n'y est plus.
+
+`curl-version-et-options.test.ts` (17 cas), **13 tombent par
+`git stash`**.
+
+
+---
+
+## 11. Formulaires et `--retry` — livré
+
+### 11.1 `-F`, la seule option de §P4 qui demandait à ÉCRIRE
+
+Les précédentes branchaient un moteur existant ou posaient un en-tête.
+Celle-ci n'avait rien derrière elle : il n'existait nulle part de
+sérialiseur `multipart/form-data`. Elle ne demandait pas de brique
+nouvelle pour autant — lire un fichier et assembler des octets sont deux
+choses que ce curl fait déjà.
+
+Les trois formes de curl sont distinguées, et les confondre serait le
+défaut :
+
+| écrit | ce que la partie devient |
+|---|---|
+| `-F champ=valeur` | un champ ordinaire |
+| `-F champ=@fichier` | un TÉLÉVERSEMENT : `filename` et `Content-Type` |
+| `-F champ=<fichier` | un champ ordinaire dont la valeur vient du fichier |
+| `--form-string champ=@x` | `@` sans aucun sens — sa raison d'être |
+
+`;type=` impose le type d'une partie ; sans lui il se déduit de
+l'extension. Un fichier de partie absent échoue **avant toute
+connexion**, avec le code 26, comme `-T`.
+
+**La frontière est tirée au hasard**, comme chez curl. Une frontière
+fixe finirait par apparaître dans un contenu et couperait le corps en
+deux. Les tests s'accrochent donc à sa FORME et à sa présence des deux
+côtés — en-tête et corps — jamais à sa valeur. Le corps se termine par
+CRLF (RFC 7578 §4.1, qui renvoie à RFC 2046) : un analyseur strict
+rejette l'autre.
+
+### 11.2 `--retry`, mesuré sur ce que l'amont a COMPTÉ
+
+Un amont qui échoue deux fois puis répond prouve que la tentative a été
+refaite ; compter des lignes de trace ne prouverait que la trace. Les
+cas comptent donc les appels reçus par le serveur.
+
+`--retry N` fait **N tentatives EN PLUS de la première** — le compte de
+curl. Se tromper d'un ferait échouer un `--retry 1` que le vrai
+réussit ; un cas l'épingle.
+
+**Ce qui est transitoire est une liste courte, et c'est délibéré** :
+408, 429, 5xx, plus les échecs de connexion (7, 28, 52, 56). Un `404`
+ou un certificat invalide ne s'améliorent pas en insistant, et les
+retenter ferait perdre du temps sans rien changer. `--retry-all-errors`
+existe précisément pour passer outre, et n'a de sens que parce que le
+défaut est restrictif — les deux comportements sont mesurés.
+
+**Limite assumée** : `--retry-delay` et l'attente exponentielle de curl
+n'existent pas ici, le temps ne s'écoulant pas entre deux requêtes. Le
+message annonce donc `Will retry in 0 seconds`, ce qui est vrai de ce
+simulateur et faux du vrai curl — l'écrire autrement aurait été
+inventer une attente que rien ne subit. `--retry-delay` reste refusée
+plutôt qu'acceptée sans effet.
+
+### 11.3 `-x` reste refusée, et ce n'est pas un oubli
+
+On pourrait écrire l'option en une heure. On ne pourrait rien lui faire
+traverser : il n'existe aucun mandataire DIRECT dans ce simulateur vers
+lequel pointer — le mandataire de nginx (§9 de `PRD-Nginx.md`) est un
+mandataire INVERSE, qui ne parle pas le même dialogue. Livrer `-x`
+supposerait donc d'écrire d'abord un serveur mandataire, ce qui est un
+lot à part entière et non la fin de celui-ci.
+
+`curl-form-et-retry.test.ts` (19 cas), **17 tombent par `git stash`**.
+
+**Deux garde-fous des lots précédents sont tombés à cette occasion, et
+c'était leur rôle** : `curl-cookies.test.ts` et
+`curl-version-et-options.test.ts` épinglaient `--retry` et `-F` comme
+refusées. Ils ne couvrent plus que `-x`.
