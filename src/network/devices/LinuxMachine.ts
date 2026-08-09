@@ -27,6 +27,8 @@ import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equi
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
+import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
+import { LinuxChronyService, CHRONY_CONF_PATH } from './linux/time/LinuxChronyService';
 import { LinuxApacheService } from './linux/http/apache/LinuxApacheService';
 import type { LinuxCommand } from './linux/commands/LinuxCommand';
 import {
@@ -435,6 +437,7 @@ export abstract class LinuxMachine extends EndHost
     //    pre-auth Banner have realistic content.
     this.initSshFiles();
     this.initNginx();
+    this.initChrony();
     this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
@@ -1218,6 +1221,59 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le serveur nginx de cette machine — `null` avant l'amorçage. */
   nginxService: LinuxNginxService | null = null;
+
+  /** L'agent NTP de cette machine — le MÊME moteur que Cisco et Huawei. */
+  private _ntpAgent: NtpAgent | null = null;
+  getNtpAgent(): NtpAgent {
+    if (!this._ntpAgent) {
+      this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus());
+    }
+    return this._ntpAgent;
+  }
+
+  /** Le démon chrony — `null` avant l'amorçage. */
+  chronyService: LinuxChronyService | null = null;
+
+  /**
+   * chrony (`docs/PRD-NTP-Tutoriel.md` §4) — le paquet était déclaré
+   * installé et RIEN n'existait : ni binaire, ni unité, ni fichier de
+   * configuration. Une machine annonçait un logiciel qu'elle n'avait
+   * pas, tandis que `timedatectl` affirmait sur la même machine
+   * `System clock synchronized: yes` et `NTP service: active`.
+   *
+   * Le démon n'apporte pas un second moteur NTP : il pilote celui que
+   * les routeurs utilisent déjà. Ce qu'il apporte est ce que chronyd
+   * apporte vraiment — la lecture de son fichier de configuration.
+   */
+  private initChrony(): void {
+    const vfs = this.executor.vfs;
+    for (const dir of ['/etc/chrony', '/var/lib/chrony', '/var/log/chrony']) {
+      if (!vfs.exists(dir)) vfs.mkdirp(dir, 0o755, 0, 0);
+    }
+    if (!vfs.exists(CHRONY_CONF_PATH)) {
+      vfs.writeFile(CHRONY_CONF_PATH, LinuxChronyService.confParDefaut(), 0, 0, 0o022, true);
+    }
+    this.chronyService = new LinuxChronyService({
+      readFile: (p) => vfs.readFile(p),
+      ntp: () => this.getNtpAgent(),
+    });
+    this.executor.chronyService = this.chronyService;
+    this.executor.ntpAgent = () => this.getNtpAgent();
+
+    // Le fichier absent EMPÊCHE le démarrage, le fichier vide non :
+    // c'est la distinction que `CriticalFiles.ts` tient déjà pour sshd,
+    // et elle vaut pour chronyd.
+    this.executor.serviceMgr.registerConfigCheck('chrony', () => {
+      const r = this.chronyService?.start();
+      if (r && r.ok === false) return { ok: false, error: r.erreur, verbatim: true };
+      return { ok: true };
+    });
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'chrony') return;
+      if (event === 'stop') { this.chronyService?.stop(); return; }
+      if (event === 'reload') this.chronyService?.reload();
+    });
+  }
 
   /** Déclare à systemd les ports que la configuration de nginx demande. */
 

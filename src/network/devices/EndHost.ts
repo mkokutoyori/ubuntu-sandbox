@@ -2886,6 +2886,16 @@ export abstract class EndHost extends Equipment {
 
     if (this.dispatchUdpToListener(portName, udp, ipPkt.sourceIP, ipPkt.destinationIP, srcMac)) return;
 
+    // NTP (`docs/PRD-NTP-Tutoriel.md` §4). Un hote qui interroge un
+    // serveur doit pouvoir entendre sa REPONSE : sans ce point de
+    // remise, chronyd emettait ses paquets et rien ne revenait jamais,
+    // donc aucune machine Linux ne pouvait se synchroniser.
+    if (udp.destinationPort === 123) {
+      const ntp = (this as unknown as { getNtpAgent?: () => import('../ntp/NtpAgent').NtpAgent })
+        .getNtpAgent?.();
+      if (ntp) { ntp.handleUdp(portName, ipPkt.sourceIP, udp); return; }
+    }
+
     if (!wasBroadcast) {
       Logger.info(this.id, 'udp:port-unreachable',
         `${this.name}: no listener on UDP ${udp.destinationPort}, ` +

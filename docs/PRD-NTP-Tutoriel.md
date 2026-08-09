@@ -198,3 +198,105 @@ préexistant et sans rapport (`probe-cli-arguments-types.test.ts`,
 `login-timeout` en mode `line`), vérifié identique sur `HEAD`.
 Typecheck : jeu d'erreurs identique (241). Lint : 343 avant, 343 après.
 Aucun test existant modifié.
+
+---
+
+## 4. N3 — Livré : Linux (chrony)
+
+### 4.1 Le point de départ, le plus grave des quatre
+
+Le paquet `chrony` était déclaré installé par `apt-get` et `dpkg`, et
+**rien n'existait** : ni `chronyc`, ni `chronyd`, ni son unité, ni
+`/etc/chrony/chrony.conf`. Une machine annonçait un logiciel qu'elle
+n'avait pas — la forme de défaut que ce dépôt a déjà fermée pour
+`openssl`.
+
+Pire, sur cette même machine sans **aucun** démon de temps :
+
+```
+$ timedatectl
+System clock synchronized: yes
+              NTP service: active
+```
+
+Deux affirmations que rien ne soutenait. La vue écrivait aussi le
+décalage `(UTC, +0000)` **en dur** quel que soit le fuseau, et
+`timedatectl set-timezone Africa/Douala` était accepté sans rien changer
+— `list-timezones` ne rendait rien et `/etc/localtime` n'existait pas.
+
+### 4.2 Ce qui est fait
+
+**Pas de second moteur NTP.** chronyd pilote le `NtpAgent`, le même que
+Cisco et Huawei : un simulateur avec deux moteurs finirait par donner
+deux réponses à la même question — facture que ce dépôt a déjà payée
+ailleurs (deux registres Windows, deux piles SSH). Ce que le démon
+apporte est ce que chronyd apporte vraiment : la **lecture** de son
+fichier de configuration.
+
+Quatre modules : `time/TimezoneDatabase.ts` (une cinquantaine de zones
+avec décalage et abréviation), `time/ChronyConfig.ts` (l'analyseur),
+`time/LinuxChronyService.ts` (le démon), `time/ChronycViews.ts` (les
+vues du §5.3). Plus `chronyc` et un `timedatectl` réécrit.
+
+**Un chaînon manquait ailleurs, et c'est lui qui bloquait tout** :
+`EndHost.deliverUDP` ne remettait pas l'UDP/123 à un agent NTP. L'hôte
+émettait ses requêtes et **aucune réponse ne revenait jamais** — mesuré,
+pas supposé : les sources restaient `offline` alors que le fichier était
+correctement lu et les paquets correctement émis. Aucune machine Linux
+ne pouvait donc se synchroniser, quel que soit le reste.
+
+**L'unité répond à ses deux noms.** Debian la nomme `chrony`, RHEL
+`chronyd`, et le tutoriel montre les deux (`systemctl enable --now
+chronyd`) : un lecteur qui suit la colonne RHEL ne doit pas tomber sur
+un `Unit could not be found` qui ne lui apprendrait rien sur NTP.
+L'alias passe par `UNIT_ALIASES`, là où `bind9` → `named` vit déjà.
+
+### 4.3 Trois décisions, et leur raison
+
+**Un fichier de configuration MANQUANT empêche le démarrage** (`Cannot
+open configuration file`), un fichier **VIDE** ne l'empêche pas : c'est
+la distinction que `CriticalFiles.ts` tient déjà pour sshd, et elle est
+vraie de chronyd aussi.
+
+**Le quota de `makestep <seuil> <limite>` est réel** : après
+`makestep 1.0 3`, un quatrieme `chronyc makestep` est refusé — sinon la
+directive ne voudrait rien dire.
+
+**`iburst` est la seule directive dont l'effet est observable ici** :
+elle demande une rafale au démarrage, donc une convergence immédiate.
+C'est exactement ce que le tutoriel annonce, et c'est mesurable.
+
+### 4.4 Ce qui est porté sans agir, et pourquoi c'est écrit
+
+`ChronyConfig` distingue **trois** familles, jamais deux : les
+directives **lues et agissantes**, celles que chronyd connaît et que ce
+simulateur **n'applique pas** (`refclock` — aucun matériel derrière —,
+`hwtimestamp`, `leapsectz`…), et celles qu'**aucun** chronyd ne connaît,
+qui sont **signalées** avec leur numéro de ligne. Confondre les deux
+dernières ferait passer une faute de frappe pour une limitation.
+
+`TimezoneDatabase` porte un décalage **fixe** par zone : la vraie tzdata
+décrit les règles d'heure d'été sur plus d'un siècle, et inventer une
+date de bascule serait pire que de ne pas en avoir — personne ne
+pourrait la vérifier. Conséquence assumée et écrite dans le fichier :
+`Europe/Paris` vaut ici UTC+1 toute l'année.
+
+`chronyc sourcestats` rend `NP`/`NR` à 1 : ce moteur garde **une**
+mesure par source. Inventer vingt-et-un échantillons ferait croire à un
+historique qui n'existe pas.
+
+### 4.5 Tests
+
+`tuto-ntp-linux.test.ts` (27 cas) suit le §5 du tutoriel. Le premier
+bloc vérifie que la machine **se synchronise** avec un vrai serveur au
+bout d'un vrai câble ; le reste ne serait que du texte. Un cas vérifie
+que `/etc/chrony/chrony.conf` **appartient à root**, donc que le
+tutoriel a raison d'écrire `sudo`. Deux cas séparent ce que
+`timedatectl` sait de deux choses différentes : le **service** peut être
+actif et l'**horloge** non synchronisée — c'est précisément le cas qu'un
+dépannage cherche.
+
+Discrimination par `git stash` : **23 des 27 tombent** avant.
+
+**Mesures.** 131 suites connexes vertes (2 874 cas). Typecheck : jeu
+d'erreurs identique (213). Aucun test existant modifié.
