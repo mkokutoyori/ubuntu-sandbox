@@ -25,6 +25,46 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### DHCPv6 sans état — le drapeau O — LIVRÉ
+
+**Agent** : session « logging ». Dernier de la série IPv6 ; il ferme le
+manquement que j'avais moi-même signalé dans l'entrée précédente.
+
+Le drapeau O était posé sur le fil et **n'avait aucun consommateur** :
+`INFORMATION-REQUEST` figurait dans le type `DHCPv6MessageType` et dans
+un commentaire du serveur qui le déclarait hors périmètre. Le mot était
+là, la fonction non.
+
+Les deux bouts sont écrits — `EndHost.requestDhcpv6Information`
+(déclenché par le drapeau, ou à la main par `dhclient -6 -S`, l'option
+de la vraie ISC) et `DHCPv6Server.processInformationRequest`. Le
+consommateur existait déjà : le crochet qui écrit `/etc/resolv.conf`.
+
+**Ce qui distingue l'échange d'un bail** : il n'attribue rien et ne
+retient rien — ni `bindings` ni `pendingOffers` —, donc un pool
+interrogé cent fois ne s'épuise pas, et un pool **sans préfixe** est
+légitime : c'est la configuration normale du service sans état.
+
+**Un coin mesuré et laissé tel quel** : un drapeau M pointant sur un
+pool sans adresse ne produit rien du tout — `processSolicit` n'émet
+aucune ADVERTISE, alors que la RFC 8415 §18.2.10 laisse un client
+prendre les options d'une ADVERTISE sans adresse. Configuration
+contradictoire ; la corriger appartient au chemin du bail.
+
+**Fichiers touchés** : `dhcpv6/DHCPv6Packet.ts`,
+`dhcpv6/DHCPv6Server.ts`, `devices/router/IPv6DataPlane.ts`,
+`devices/EndHost.ts`, `devices/LinuxMachine.ts`,
+`devices/linux/LinuxNetKernel.ts`,
+`devices/linux/commands/dhcp/Dhclient.ts`.
+
+**Mesures.** `dhcpv6-sans-etat-drapeau-o.test.ts` (9 cas) discriminé par
+`git stash` : **6 tombent** avant. Les cas négatifs (aucune adresse,
+aucun bail) affirment d'abord que l'échange a EU LIEU — sans quoi ils
+passaient aussi avec la fonction absente, ce qui était le cas de ma
+première rédaction. 106 suites DHCP/DNS/IPv6/NSS vertes (1 107 cas).
+
+---
+
 ### DHCPv6 : le resolveur appris par le bail — LIVRÉ
 
 **Agent** : session « logging ». Suite du lot précédent, même famille.

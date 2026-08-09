@@ -154,6 +154,35 @@ export class DHCPv6Server {
     return null;
   }
 
+  /**
+   * INFORMATION-REQUEST (RFC 8415 §18.3.5) : le serveur rend la
+   * configuration ANNEXE et rien d'autre.
+   *
+   * Il n'attribue aucune adresse et n'inscrit AUCUN bail — c'est la
+   * definition du service sans etat, et c'est pourquoi cette methode ne
+   * touche ni `bindings` ni `pendingOffers` : un pool interroge cent
+   * fois ne s'epuise pas.
+   *
+   * Un pool sans prefixe est legitime ici — un `ipv6 dhcp pool` qui ne
+   * porte qu'un `dns-server` est exactement ce qu'on configure pour du
+   * sans-etat — donc la selection ne filtre pas sur le prefixe quand le
+   * pool est nomme explicitement par l'interface.
+   */
+  processInformationRequest(
+    params: { transactionId: number }, explicitPoolName?: string, anchor?: string,
+  ): { pool: DHCPv6PoolConfig; serverDuid: string; transactionId: number } | null {
+    void params;
+    const pools = explicitPoolName
+      ? this.resolvePools(undefined, explicitPoolName)
+      : [...this.pools.values()].filter((p) => {
+        if (!anchor || !p.prefix || !p.prefixLength) return true;
+        return new IPv6Address(anchor).isInSameSubnet(new IPv6Address(p.prefix), p.prefixLength);
+      });
+    const pool = pools.find((p) => p.dnsServers.length > 0 || p.domainName) ?? pools[0];
+    if (!pool) return null;
+    return { pool, serverDuid: this.serverDuid, transactionId: params.transactionId };
+  }
+
   processRelease(params: DHCPv6ReleaseParams): void {
     const binding = this.bindings.get(params.address);
     if (binding && binding.clientDuid === params.clientDuid && binding.iaid === params.iaid) {

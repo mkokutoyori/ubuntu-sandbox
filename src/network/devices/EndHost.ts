@@ -1049,6 +1049,57 @@ export abstract class EndHost extends Equipment {
     try { this.requestDhcpv6Lease(iface); } catch { /* pas de serveur : on reste sans bail */ }
   }
 
+  /**
+   * Aller chercher la configuration annexe parce qu'une annonce a posé
+   * le drapeau O, une seule fois par interface.
+   *
+   * Une annonce arrive à chaque sollicitation et à chaque lien qui
+   * monte ; sans ce garde, l'hôte reposerait la question à chacune.
+   */
+  private demanderInfosDhcpv6(iface: string): void {
+    if (this.dhcpv6InfosDemandees.has(iface)) return;
+    this.dhcpv6InfosDemandees.add(iface);
+    try { this.requestDhcpv6Information(iface); } catch { this.dhcpv6InfosDemandees.delete(iface); }
+  }
+
+  private dhcpv6InfosDemandees = new Set<string>();
+
+  /**
+   * DHCPv6 sans état : INFORMATION-REQUEST → REPLY (RFC 8415 §18.2.6).
+   *
+   * L'échange n'a ni IA ni bail — le client ne demande pas d'adresse et
+   * le serveur ne retient rien —, ce qui est exactement ce que le
+   * drapeau O d'une annonce de routeur réclame : un hôte qui tient son
+   * adresse de l'autoconfiguration et à qui il ne manque que le
+   * résolveur.
+   */
+  requestDhcpv6Information(iface: string, verbose = false): string {
+    const port = this.ports.get(iface);
+    if (!port) return verbose ? `${iface}: no such interface` : '';
+    if (!port.isIPv6Enabled()) port.enableIPv6();
+    this.ensureDhcpv6Udp546Listener();
+
+    const clientDuid = this.buildDhcpv6ClientDuid(iface);
+    const xid = (this.dhcpv6XidCounter = (this.dhcpv6XidCounter + 1) & 0xffffff);
+    const lines: string[] = [];
+
+    this.dhcpv6Inbox.set(iface, []);
+    this.sendDhcpv6Frame(iface, DHCPv6Packet.createInformationRequest(clientDuid, xid));
+    if (verbose) lines.push('DHCPv6 INFORMATION-REQUEST');
+
+    const reply = (this.dhcpv6Inbox.get(iface) ?? [])
+      .find(p => p.msgType === 'REPLY' && p.transactionId === xid);
+    if (!reply) return verbose ? [...lines, 'No DHCPv6 REPLY received'].join('\n') : '';
+
+    if (verbose) {
+      lines.push(reply.dnsServers.length > 0
+        ? `DHCPv6 REPLY with nameserver ${reply.dnsServers.join(', ')}`
+        : 'DHCPv6 REPLY with no configuration');
+    }
+    this.onDhcpv6LeaseConfigured(iface, reply.dnsServers ?? [], reply.domainList?.[0] ?? null);
+    return lines.join('\n');
+  }
+
   /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY. Returns a verbose transcript, or '' on failure/no verbose. */
   requestDhcpv6Lease(iface: string, verbose = false): string {
     const port = this.ports.get(iface);
@@ -4295,6 +4346,11 @@ export abstract class EndHost extends Equipment {
     // un hôte peut légitimement porter les deux adresses, et c'est ce
     // que fait un vrai hôte sous une annonce qui pose M et A ensemble.
     if (ra.managedFlag) this.demanderBailDhcpv6(portName);
+    // Le drapeau O seul (RFC 4861 §4.2) : l'hôte ne veut PAS d'adresse,
+    // seulement la configuration annexe. Sous M, la question ne se pose
+    // pas — le bail complet la porte déjà, et la reposer ferait un
+    // aller-retour pour la même réponse.
+    else if (ra.otherConfigFlag) this.demanderInfosDhcpv6(portName);
   }
 
   // ─── NDP Resolution (IPv6 equivalent of ARP) ────────────────────

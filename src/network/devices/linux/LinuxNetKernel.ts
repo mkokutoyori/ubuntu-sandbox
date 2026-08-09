@@ -167,6 +167,9 @@ export interface LinuxNetKernel {
   /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY exchange (RFC 8415). */
   requestDhcpv6Lease(iface: string, verbose?: boolean): string;
 
+  /** DHCPv6 sans etat : INFORMATION-REQUEST, configuration sans adresse. */
+  requestDhcpv6Information(iface: string, verbose?: boolean): string;
+
   // ─── Forwarding / NAT (router-layer) ─────────────────────────────
   setIpForward(enabled: boolean): void;
   isIpForwardEnabled(): boolean;
