@@ -695,6 +695,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /**
+   * Le shell pose-t-il sa PROPRE vue de la table d'adresses MAC ?
+   *
+   * La question est tranchée ici et non en lisant l'appareil, pour deux
+   * raisons mesurées : l'appareil n'est pas encore lié quand les
+   * commandes s'enregistrent, et l'ordre des inscriptions décidait
+   * silencieusement du gagnant — la base inscrivant sur
+   * `privilegedTrie` APRÈS le shell du commutateur, elle écrasait la
+   * vue complète de celui-ci.
+   */
+  protected providesOwnMacAddressTableView(): boolean {
+    return false;
+  }
+
+  /**
    * Aucun ISR G2 ni aucun Catalyst 3560 n'encapsule du VXLAN, quelle que
    * soit la licence : le VTEP est une fonction de plateforme, pas une
    * option. `VxlanAgent` reste entier et testé — c'est la porte CLI qui
@@ -1903,15 +1917,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         `        PCB Serial Number        : ${sn}`,
       ].join('\n');
     });
-    if (this.hasSwitchingHardware()) {
-      trie.registerGreedy('show mac address-table', 'Display MAC address table', () => {
-        const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
-        const table = dev.getMacTable?.();
-        if (!table || table.size === 0) return 'Mac Address Table\n--------------------------------\nNo entries';
-        const lines = ['Mac Address Table', '--------------------------------', 'Vlan    Mac Address       Type        Ports'];
-        for (const e of table.values()) lines.push(`${String(e.vlan ?? 1).padEnd(8)}${e.mac.padEnd(18)}${(e.type ?? 'DYNAMIC').padEnd(12)}${e.ifName}`);
-        return lines.join('\n');
-      });
+    // `getMacTable` — minuscule — n'est défini sur AUCUN appareil : celui
+    // que `Switch` porte s'appelle `getMACTable()`. Le lecteur rendait
+    // donc `undefined`, et cette vue répondait « No entries » quoi que le
+    // commutateur ait appris — y compris après un DORA et un ping
+    // réussis, avec deux entrées bien présentes dans sa table. Exactement
+    // le défaut de `_getRunningConfigText` décrit trois lignes plus bas,
+    // dans ce même fichier.
+    //
+    // Pire : cette inscription MASQUAIT celle de `CiscoSwitchShell`, qui
+    // est complète (filtres `dynamic`/`static`/`vlan`/`interface`, tri,
+    // colonnes). Un commutateur avait donc une vue juste que personne
+    // n'atteignait. Elle n'est désormais posée que si l'appareil n'en
+    // fournit pas de meilleure.
+    if (this.hasSwitchingHardware() && !this.providesOwnMacAddressTableView()) {
+      trie.registerGreedy('show mac address-table', 'Display MAC address table', () =>
+        ['Mac Address Table', '--------------------------------', 'No entries'].join('\n'));
     }
     // `_getRunningConfigText` n'est défini sur AUCUN appareil : il n'est
     // que lu, ici et à deux autres endroits. Mesuré avant correction,
