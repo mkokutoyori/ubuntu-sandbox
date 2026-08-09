@@ -303,6 +303,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V8** | La grammaire de `acl` et `stp` (reliquat de V7) | **Livré, §17** |
 | **V9** | Le typage du shell (agent « logging ») | **Livré, §18** |
 | **V10** | Le typage de `HuaweiSwitchShell` | **Livré, §19** |
+| **V11** | Deux vues d'un même port en disent la même chose | **Livré, §20** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1568,3 +1569,97 @@ Discrimination par `git stash` : **6 des 12 tombent** avant.
 **37 → 0** ; `as any` : 1 → 0. Typecheck : jeu d'erreurs identique
 avant/après (185). Lint sur les deux fichiers : **0 erreur, 0
 avertissement**. Aucun test existant modifié.
+
+---
+
+## 20. V11 — Livré : deux vues d'un même port en disent la même chose
+
+Les deux constats que §19 avait laissés ouverts. La mesure a montré
+qu'ils n'étaient pas isolés mais deux facettes d'une seule règle — celle
+que le lot V3 avait posée (« un port a un seul nom ») et qui n'avait pas
+atteint ces vues.
+
+### 20.1 Le constat : la même machine, le même instant, deux réponses
+
+```
+display interface LoopBack0                -> LoopBack0 current state : UP
+display ip interface LoopBack0             -> LoopBack0 current state : DOWN
+
+display interface GigabitEthernet0/0/0     -> GigabitEthernet0/0/0 current state : DOWN
+display ip interface GigabitEthernet0/0/0  -> GE0/0/0 current state : DOWN
+
+display interface LoopBack0                -> Internet Address is 1.1.1.1/255.255.255.255
+display ip interface LoopBack0             -> Internet Address is 1.1.1.1/32
+```
+
+Un port **UP dans une vue et DOWN dans l'autre**. Le nom interne court
+(`GE0/0/0`) rendu là où toutes les autres vues écrivent le nom complet.
+Et le masque écrit de deux façons.
+
+Chaque vue avait une moitié juste : `display interface` était passée au
+lot V3 (nom canonique, prédicat d'état partagé) mais gardait le masque
+pointé ; `display ip interface` avait le masque de VRP et **recalculait
+l'état à sa façon** — la « sixième façon de calculer l'état » que le
+commentaire de V3 nommait, toujours vivante ici.
+
+### 20.2 Et les deux plateformes n'acceptaient pas les mêmes écritures
+
+Trois résolveurs de nom coexistaient : celui du routeur
+(`resolveHuaweiInterfaceName`), et **deux** sur le switch —
+`resolveInterfaceName`, aveugle aux SVI et aux LoopBack, et
+`resolveL3InterfaceName`, qui ne connaissait qu'elles et refusait toute
+abréviation. D'où, mesuré :
+
+| Écriture | Routeur | Switch |
+|---|---|---|
+| `display interface GigabitEthernet 0/0/1` | **refusé** | accepté |
+| `display interface loop0` | accepté | **refusé** |
+| `display interface Vlanif 10` | — | **refusé** (alors que `LoopBack 0` passe) |
+| `display interface vlanif10` | — | rend **`vlanif10`**, le nom tel que tapé |
+| `display ip interface <port physique>` | accepté | **refusé** |
+
+Le `vlanif10` vient d'un repli : `resolveInterfaceName(x) || x`. Quand la
+résolution échouait, la **saisie** servait de nom — donc la casse de
+l'opérateur, et un refus seulement plus loin, quand `getPort()` ne
+trouvait rien.
+
+### 20.3 Le correctif : un résolveur, un nom, un état
+
+**Un résolveur.** `resolveHuaweiInterfaceName` collapse désormais les
+espaces — la forme séparée est une **forme** de VRP, pas une abréviation,
+et le switch la collapsait déjà dans sa copie. Le switch n'a plus de
+résolveur propre : il appelle le partagé sur la liste de ses interfaces,
+virtuelles comprises, et `resolveL3InterfaceName` n'est plus qu'un filtre
+de type au-dessus. Les trois désaccords tombent ensemble.
+
+**Un nom.** Le repli `|| ifName` est supprimé : un nom qui ne se résout
+pas est **refusé**, il ne devient pas un nom. Un nom qui se résout est
+rendu par `huaweiDisplayInterfaceName`, comme partout ailleurs.
+
+**Un état.** `display ip interface` lit `iosInterfaceStatus`, le prédicat
+unique que V3 avait posé — d'où le LoopBack UP des deux côtés. Et les
+deux vues rendent le masque en longueur de préfixe, qui est la forme de
+VRP.
+
+**Une divergence de plateforme fermée au passage** : `display ip
+interface <port physique>` répondait sur le routeur et était refusé sur
+le switch. Un port sans adresse n'est pas une erreur, c'est un port sans
+adresse ; le switch le rend maintenant avec le même prédicat d'état et
+`Internet protocol processing : disabled`.
+
+### 20.4 Tests et mesures
+
+`huawei-un-port-une-verite.test.ts` (10 cas). Sa forme suit le constat :
+il **compare les vues entre elles** et les plateformes entre elles,
+plutôt que chacune contre une attente écrite à la main — une attente
+écrite à la main peut recopier la mauvaise réponse, une comparaison ne le
+peut pas. Cinq écritures par nom, deux vues, deux plateformes, plus le
+cliquet « le nom court interne ne sort jamais à l'écran » et « un refus
+ne rend jamais la saisie comme si elle était un nom ».
+
+Discrimination par `git stash` : **9 des 10 tombent** avant.
+
+**Mesures.** 88 suites connexes vertes (1 266 cas), plus les suites
+d'interface, de parité et de routage inter-VLAN. Typecheck : jeu
+d'erreurs identique avant/après (187). Lint sur les trois fichiers : 37
+problèmes avant, 37 après. Aucun test existant modifié.

@@ -532,7 +532,11 @@ export function resolveHuaweiInterfaceName(
   portNames: Iterable<string>,
   input: string,
 ): string | null {
-  const lower = input.toLowerCase();
+  // VRP admet que le numero soit separe du type (`GigabitEthernet 0/0/0`,
+  // `LoopBack 0`) : c'est une forme, pas une abreviation. Le switch la
+  // collapsait deja dans SA copie du resolveur, le routeur non — d'ou
+  // deux plateformes qui n'acceptaient pas les memes ecritures.
+  const lower = input.replace(/\s+/g, '').toLowerCase();
 
   for (const name of portNames) {
     if (name.toLowerCase() === lower) return name;

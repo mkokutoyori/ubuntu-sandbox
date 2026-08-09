@@ -35,6 +35,8 @@ import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
 import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
+import { resolveHuaweiInterfaceName } from './cli-utils';
+import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import {
   registerHuaweiNATInterfaceCommands,
@@ -2170,7 +2172,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // rendait déjà. Même bloc, mêmes libellés que sur le routeur.
     trie.registerGreedy('display ip interface', 'Display IP interface detail', (args) => {
       if (!this.swRef) return '';
-      const nom = this.resolveL3InterfaceName(args.join(' '));
+      // Un port physique etait refuse ici alors que le routeur repondait
+      // pour le meme port : `display ip interface` d'un port sans adresse
+      // n'est pas une erreur, c'est un port sans adresse.
+      const nom = this.resolveInterfaceName(args.join(' '));
       if (!nom) return `Error: Wrong parameter found at '^' position.`;
       return this.renderL3Interface(nom);
     });
@@ -3215,7 +3220,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   private displayInterface(sw: Switch, ifName: string): string {
-    const portName = this.resolveInterfaceName(ifName) || ifName;
+    // Le repli `|| ifName` renvoyait la saisie TELLE QUELLE : d'ou
+    // `vlanif10 current state` sur une machine ou toutes les autres vues
+    // ecrivent `Vlanif10`, et un refus pour la forme separee.
+    const portName = this.resolveInterfaceName(ifName);
+    if (!portName) return `Error: Wrong parameter found at '^' position.`;
     const port = sw.getPort(portName);
     const vlanIfMatch = portName.match(/^Vlanif(\d+)$/i);
     const isVlanif = vlanIfMatch !== null;
@@ -3475,26 +3484,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Interface Name Resolution ──────────────────────────────────
 
-  /**
-   * Résout un nom d'interface qui porte une adresse — Vlanif ou
-   * LoopBack. Distinct de `resolveInterfaceName`, qui ne connaît que les
-   * ports physiques.
-   */
-  private resolveL3InterfaceName(raw: string): string | null {
-    if (!this.swRef) return null;
-    const t = raw.trim().replace(/\s+/g, '');
-    const vlanif = t.match(/^vlanif(\d+)$/i);
-    if (vlanif) {
-      const n = parseInt(vlanif[1], 10);
-      return this.swRef.hasSvi(n) ? `Vlanif${n}` : null;
-    }
-    const loop = t.match(/^loopback(\d+)$/i);
-    if (loop) {
-      const nom = `LoopBack${parseInt(loop[1], 10)}`;
-      return this.swRef.hasLoopback(nom) ? nom : null;
-    }
-    return null;
-  }
 
   /**
    * Le bloc de `display ip interface <nom>`, mêmes libellés que sur le
@@ -3506,7 +3495,20 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const loop = this.swRef.getLoopback(nom);
     let etat: string;
     let addr: string | null;
-    if (loop) {
+    if (!/^(Vlanif|LoopBack)/i.test(nom)) {
+      // Un port physique : meme predicat d'etat que toutes les autres
+      // vues, et pas d'adresse a montrer sur un port de commutation.
+      const port = this.swRef.getPort(nom);
+      const st = port
+        ? iosInterfaceStatus(port, nom, this.swRef._getPortsInternal())
+        : null;
+      etat = st
+        ? (st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase())
+        : 'DOWN';
+      const ip = port?.getIPAddress();
+      const masque = port?.getSubnetMask();
+      addr = ip && masque ? `${ip}/${masque.toCIDR()}` : null;
+    } else if (loop) {
       etat = 'UP';
       addr = loop.ip && loop.mask ? `${loop.ip}/${loop.mask.toCIDR()}` : null;
     } else {
@@ -3531,36 +3533,39 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lignes.join('\n');
   }
 
+  /**
+   * Le nom canonique d'une interface, quelle que soit l'ecriture — et
+   * pour TOUS les types, physique comme virtuel.
+   *
+   * Il y en avait deux ici (`resolveInterfaceName`, aveugle aux SVI et
+   * aux LoopBack, et `resolveL3InterfaceName`, qui ne connaissait
+   * qu'elles et refusait toute abreviation), et une troisieme cote
+   * routeur. D'ou trois desaccords mesures sur la meme maquette :
+   * `display interface Vlanif 10` refuse alors que `LoopBack 0` passe,
+   * `loop0` accepte par le routeur et refuse par le switch, et
+   * `display interface vlanif10` rendant `vlanif10`.
+   */
   private resolveInterfaceName(rawInput: string): string | null {
     if (!this.swRef) return null;
-    // VRP accepts both "GigabitEthernet0/0/1" and "GigabitEthernet 0/0/1"
-    // (the space form is standard syntax, not an abbreviation) — collapse
-    // whitespace before matching so both resolve identically.
-    const input = rawInput.replace(/\s+/g, '');
-
-    // Direct match
-    for (const name of this.swRef.getPortNames()) {
-      if (name.toLowerCase() === input.toLowerCase()) return name;
-    }
-
-    // L'abreviation de VRP est tout prefixe non ambigu du type ; une
-    // quatrieme table fermee vivait ici et n'admettait que `ge`, `gi` et
-    // le nom entier.
-    const match = input.toLowerCase().match(/^([a-z-]+)([\d/]+)$/);
-    if (match) {
-      const type = huaweiTypeInterface(match[1]);
-      if (type) {
-        for (const forme of type === 'GigabitEthernet' ? ['GigabitEthernet', 'GE'] : [type]) {
-          const resolved = `${forme}${match[2]}`;
-          for (const name of this.swRef.getPortNames()) {
-            if (name === resolved) return name;
-          }
-        }
-      }
-    }
-
-    return null;
+    return resolveHuaweiInterfaceName(this.nomsInterfaces(), rawInput);
   }
+
+  /** Les ports physiques, plus les interfaces virtuelles qui existent. */
+  private nomsInterfaces(): string[] {
+    if (!this.swRef) return [];
+    const noms = [...this.swRef.getPortNames()];
+    for (const svi of this.swRef.getSvis()) noms.push(`Vlanif${svi.vlan}`);
+    for (const l of this.swRef.getLoopbacks?.() ?? []) noms.push(l.name);
+    return noms;
+  }
+
+  private resolveL3InterfaceName(raw: string): string | null {
+    const nom = this.resolveInterfaceName(raw);
+    return nom && /^(Vlanif|LoopBack)/i.test(nom) ? nom : null;
+  }
+
+
+
 
   private buildPortMirroringCommands(): void {
     this.systemTrie.registerGreedy('observe-port', 'Configure SPAN observe-port', (args) =>

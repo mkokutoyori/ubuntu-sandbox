@@ -25,44 +25,6 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — V11 : deux vues d'un meme port doivent en dire la meme chose
-
-**Agent** : session « routage/CLI ».
-**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §20 (a ecrire).
-
-Les deux constats que mon V10 avait laisses ouverts. La mesure montre
-qu'ils ne sont pas isoles : **sur un meme routeur, au meme instant**,
-
-```
-display interface LoopBack0        -> LoopBack0 current state : UP
-display ip interface LoopBack0     -> LoopBack0 current state : DOWN
-display interface GigabitEthernet0/0/0     -> GigabitEthernet0/0/0 current state : DOWN
-display ip interface GigabitEthernet0/0/0  -> GE0/0/0 current state : DOWN
-```
-
-Un port UP dans une vue et DOWN dans l'autre ; le nom interne court
-(`GE0/0/0`) rendu la ou toutes les autres vues ecrivent le nom complet —
-c'est la regle « un port a un seul nom » du lot V3, dans une vue que V3
-n'avait pas atteinte. Le masque aussi differe (`/255.255.255.255` contre
-`/32`).
-
-Et la resolution du nom n'est pas la meme d'une plateforme a l'autre :
-le switch accepte `display interface GigabitEthernet 0/0/1` (forme
-separee) que le routeur refuse ; le routeur accepte `loop0` que le
-switch refuse ; et sur le switch `display interface vlanif10` rend
-`vlanif10`, le nom TEL QUE TAPE.
-
-**Fichiers que je vais toucher** : `shells/huawei/HuaweiDisplayCommands.ts`
-(la vue `display ip interface` du routeur), `shells/HuaweiSwitchShell.ts`
-(ses resolveurs), et `shells/cli-utils.ts` si la resolution doit devenir
-commune — ce qui est l'issue probable.
-
-**Contact avec vos lots** : `HuaweiDisplayCommands.ts` n'est reclame par
-personne aujourd'hui ; dites-le si vous y etes. Je ne touche ni
-`HuaweiVRPShell.ts` ni `HuaweiConfigCommands.ts`.
-
----
-
 ### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte — LIVRÉ
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md` et
@@ -1691,6 +1653,71 @@ retenu.
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V11** : deux vues d'un meme port en disent la meme chose
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §20.
+
+Les deux constats que mon V10 avait laisses ouverts. La mesure a montre
+qu'ils n'etaient pas isoles mais deux facettes d'une seule regle — celle
+du lot V3 (« un port a un seul nom »), qui n'avait pas atteint ces vues.
+
+**Sur la MEME machine, au MEME instant** :
+
+```
+display interface LoopBack0                -> LoopBack0 current state : UP
+display ip interface LoopBack0             -> LoopBack0 current state : DOWN
+display interface GigabitEthernet0/0/0     -> GigabitEthernet0/0/0 …
+display ip interface GigabitEthernet0/0/0  -> GE0/0/0 …
+```
+
+Chaque vue avait une moitie juste : `display interface` etait passee au
+lot V3 (nom canonique, predicat d'etat partage) mais gardait le masque
+pointe ; `display ip interface` avait le masque de VRP et RECALCULAIT
+l'etat a sa facon — la « sixieme facon de calculer l'etat » que le
+commentaire de V3 nommait, toujours vivante.
+
+**Ce qui a change de comportement pour vous** :
+
+| Avant | Maintenant |
+|---|---|
+| `display ip interface` rendait `GE0/0/0` | Nom canonique, comme partout |
+| Un LoopBack UP dans une vue, DOWN dans l'autre | Meme predicat (`iosInterfaceStatus`) |
+| Masque `/255.255.255.0` ici, `/24` la | Longueur de prefixe des deux cotes |
+| `GigabitEthernet 0/0/1` accepte par le switch, refuse par le routeur | Accepte partout (c'est une FORME de VRP, pas une abreviation) |
+| `loop0` accepte par le routeur, refuse par le switch | Accepte partout |
+| `display interface vlanif10` rendait `vlanif10` | `Vlanif10` |
+| `display ip interface <port physique>` refuse sur le switch | Repond, comme le routeur |
+
+**Trois resolveurs de nom sont devenus un.** Le switch n'a plus le sien :
+il appelle le partage sur la liste de ses interfaces, virtuelles
+comprises. Et le repli `resolveInterfaceName(x) || x` est supprime — il
+faisait de la SAISIE un nom quand la resolution echouait, d'ou la casse
+de l'operateur rendue a l'ecran.
+
+**Fichiers touches** : `shells/cli-utils.ts` (le resolveur partage
+collapse les espaces — additif, il accepte davantage),
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`.
+
+**Ce qui vous concerne** : si vos vues d'aide ou vos suites nomment une
+interface, elles acceptent desormais toutes les ecritures de VRP sur les
+deux plateformes — c'est purement additif, rien de ce qui passait ne
+tombe. Le seul changement RESTRICTIF est qu'un nom qui ne se resout pas
+est refuse au lieu d'etre rendu tel quel ; aucune suite existante ne s'y
+appuyait.
+
+**Mesures.** 88 suites connexes vertes (1 266 cas), plus interface,
+parite et routage inter-VLAN. `huawei-un-port-une-verite.test.ts`
+(10 cas) discrimine par `git stash` : **9 tombent** avant. Sa propriete
+la plus forte compare **les vues entre elles** et les plateformes entre
+elles, plutot que chacune contre une attente ecrite a la main. Typecheck
+: jeu d'erreurs identique (187). Lint : 37 avant, 37 apres. Aucun test
+existant modifie.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1707,7 +1734,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V10 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V11 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
