@@ -1235,3 +1235,83 @@ construction — et les remainders documentés.
 routage, DHCP et L3. Typecheck : **jeu d'erreurs identique** avant et
 après (168, le baseline courant). Lint sur les cinq fichiers touchés :
 125 problèmes avant, 125 après.
+
+## 17. V8 — Livré : le typage du shell, et ce qu'il cachait
+
+`HuaweiVRPShell.ts` portait **61 `no-explicit-any`**. Un `as any` ne
+coûte pas une ligne de lint : il éteint le compilateur sur tout ce qui
+suit le point. Les retirer était donc moins un nettoyage qu'une mesure —
+et la mesure a trouvé des choses.
+
+### Ce qui n'était que du bruit (40 sur 61)
+
+Le compilateur acceptait déjà la forme sans cast, et personne ne l'avait
+vérifié depuis :
+
+- `setMode('bfd-global' as any)` et ses huit jumeaux : `HuaweiShellMode`
+  contient ces vues **depuis longtemps**.
+- `this as any` passé aux cinq constructeurs OSPF : le shell satisfait
+  `HuaweiOSPFShellContext` sans aide.
+- `(entry as any).type` / `.iface` sur la table ARP : `ARPEntry` déclare
+  les deux.
+- `(port as any).resetCounters` derrière un `typeof === 'function'` :
+  `Port.resetCounters()` existe. Le garde-fou testait une méthode qui ne
+  peut pas manquer.
+
+### Le défaut que le premier cachait
+
+`HuaweiVRPShell.mode` était déclaré `HuaweiShellMode | string`. Ce
+`| string` **annule l'union entière** : `getActiveTrie()` ne pouvait
+plus refuser une faute de frappe, elle retombait sur
+`default: return this.userTrie`, c'est-à-dire une vue muette au lieu
+d'une erreur de compilation. Une seule vue manquait à l'union pour
+justifier ce `| string` : `pim`. Elle y est, le `| string` est parti, et
+une vue inconnue ne compile plus.
+
+### La configuration morte, rendue visible
+
+Onze champs étaient ÉCRITS par `(b as any).champ = …` sur les objets
+BGP et IS-IS sans être déclarés nulle part — donc lus par personne, ici
+comme ailleurs. Les déclarer ne les rend pas vivants ; cela rend la
+chose **greppable**, ce qu'un `any` empêchait. C'est la catégorie que
+`CLAUDE.md` suit déjà pour `importedRoutes` et `BGPEngine.redistribute`.
+
+Deux de ces commandes n'écrivent même pas dans `rawLines`
+(`maximum load-balancing`, `ipv4-family`/`ipv6-family` côté BGP) : elles
+n'ont **aucun effet observable**, ce qui est un défaut distinct et plus
+grave que le typage. Il reste ouvert, et il est maintenant nommé.
+
+### Les huit magasins bricolés
+
+Le shell range huit choses sur le `Router` sous des propriétés
+`_huawei*` que `Router` ne déclare pas : pare-feu, plages horaires,
+politiques CPU-defend, LLDP, profils de file, extras RIP/IS-IS/QoS par
+interface. `shells/huawei/vrpShellStores.ts` les déclare, et fait la
+conversion **une fois** au lieu de trente et une.
+
+Le `r[bucket]` dynamique méritait mieux qu'un type : `bucket` était un
+`string`, donc `ifAttr('_huaweiLdpIf')` aurait créé un neuvième magasin
+en silence, que rien n'aurait jamais lu. Le paramètre est restreint aux
+clés réelles ; la faute est devenue une erreur de compilation. La boucle
+« créer si absent puis poser l'attribut », recopiée à cinq endroits, est
+devenue une fonction.
+
+### Trouvé en passant
+
+- `let i = vridIdx + 1` jamais réassigné (`prefer-const`), antérieur.
+- **Une régression du lot V7** : `rip ?` proposait `vpn-instance` **sans
+  description**. La lecture de queue ajoutée par V7 met ce mot-clé dans
+  le corps du handler, d'où `autoContinuations` l'extrait ; VRP, à la
+  différence d'IOS, n'écarte pas un mot-clé sans description. Corrigé en
+  le NOMMANT dans `CliKeywordDescriptions` — c'est un vrai mot-clé de
+  VRP, le taire aurait été pire que le décrire.
+
+### Hors périmètre
+
+`HuaweiConfigCommands.ts` porte 39 `any` de la même famille — champs
+non déclarés sur `Port` (`flowControl`, `urpfMode`, `ipv6Enabled`…) et
+sur l'interface en attente (`tunnelSource`, `greKey`…), plus huit
+`catch (e: any)`. Les traiter demande de décider où vivent les réglages
+VRP d'un port, ce qui est la même question que ci-dessus posée sur un
+autre objet : un lot à part. Seul `setMode('rip' as any)`, rendu inutile
+par l'union réparée, a été retiré au passage.
