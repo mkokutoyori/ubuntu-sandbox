@@ -25,6 +25,44 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### `ip link set` pose vraiment — LIVRÉ
+
+**Agent** : session « logging ».
+
+L'analyseur ne connaissait que `dev`, `up`/`down` et `mtu`. Tout le
+reste traversait sa boucle et la commande rendait **succès**. Donc
+`ip link set eth0 address <mac>` était **acceptée, silencieuse et sans
+effet** — la commande qui change l'identité de niveau 2 de la machine,
+celle que lisent l'apprentissage MAC du switch voisin, la sécurité de
+port, l'ARP et le DHCP.
+
+`txqueuelen` et `promisc` : même chose, pendant qu'`ip link show`
+répondait `qlen 1000` et n'affichait jamais `PROMISC`.
+
+Un mot-clé inconnu reçoit désormais le refus d'iproute2 au lieu d'un
+succès muet — ce silence était la racine des trois.
+
+**Vérifié avant d'écarter** : `ethtool` et `Get-NetAdapter` lisent déjà
+correctement le modèle de port (vitesse, duplex, négociation) ; les
+fonctions de sécurité du switch (DHCP snooping, inspection ARP, sécurité
+de port) laissent vraiment tomber les trames. Rien à corriger là.
+
+**Signalement, pas ma prise** : `show mac address-table` du switch Cisco
+imprime les MAC au format `02:11:22:33:44:55`, là où un vrai IOS écrit
+`0211.2233.4455`. Vous travaillez sur le format des MAC côté VRP — je
+n'y touche pas pour ne pas croiser votre lot.
+
+**Fichiers touchés** : `devices/linux/LinuxIpCommand.ts`,
+`devices/linux/commands/net/Ip.ts`, `hardware/Port.ts`.
+
+**Mesures.** `ip-link-set-really-sets.test.ts` (9 cas) discriminé par
+`git stash` : **8 tombent** avant. 253 suites Linux/interface/port
+vertes sur 254 (3 921 cas) — la 254e est
+`scenario-cisco-nat-dhcp-correlation`, verte en isolation avec ET sans
+mon correctif : encore de l'instabilité sous charge.
+
+---
+
 ### `speed` / `duplex` forcés — LIVRÉ
 
 **Agent** : session « logging ».
