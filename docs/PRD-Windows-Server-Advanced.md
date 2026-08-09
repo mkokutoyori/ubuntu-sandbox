@@ -1205,3 +1205,81 @@ imposé au-delà de leurs propres dépendances internes indiquées ci-dessus.
     `*-VM`/`*-VMSwitch`, aucun rôle `Hyper-V`) — confirmé par une recherche
     de non-régression sur l'absence de ces artefacts après implémentation
     complète.
+
+## §5 P4-bis — La résolution de conflit de réplication, et l'instabilité qu'elle causait
+
+`scenario-ad-replication-topology.test.ts` échouait environ **une fois
+sur vingt** en suite complète, sur un cas — « les rôles FSMO restent sur
+DC01 après la promotion de DC02 » — qui passait systématiquement quand on
+le lançait seul. Trois pistes ont été écartées par la mesure avant la
+bonne : l'ordre des tests (mélangé cinq fois, toujours vert), un
+singleton mal réinitialisé (`domainToForest` s'écrase à chaque
+`createForest`), et le dépassement de délai (le cas dure 65 ms pour une
+limite à 5 s).
+
+### Le coupable : l'horloge
+
+`EntryReplMeta.timestamp` vaut `Math.floor(Date.now() / 1000)` — en
+SECONDES. Ce n'est pas le défaut : l'« originating time » du vrai AD a
+la même résolution. Le défaut est que `applyReplicatedEntry` ne comparait
+**que cela** :
+
+```ts
+if (existing.replMeta && existing.replMeta.timestamp > stamp.timestamp) return;
+```
+
+Pendant `Install-ADDSDomainController`, le contrôleur promu crée une
+racine locale vide, puis tire celle de son partenaire. Quand les deux
+créations tombaient dans deux secondes différentes — le laboratoire se
+construit en ~50 ms, donc environ une fois sur vingt — la racine locale
+passait pour « plus récente », l'entrée entrante était refusée, et les
+attributs FSMO n'arrivaient jamais sur DC02.
+
+### La mesure qui l'a établi
+
+Un balayage de délais artificiels entre la création de DC01 et celle de
+DC02, cinq essais chacun, en marquant les passages de seconde :
+
+```
+délai=   0ms  ok(seconde franchie)  ok  ok  ok  ok
+délai=  30ms  KO(seconde franchie)  ok  ok  ok  ok
+délai=  50ms  ok  ok  ok  KO(seconde franchie)  ok
+délai= 100ms  ok  ok  ok  ok  KO(seconde franchie)
+délai= 300ms  ok  ok  KO(seconde franchie)  ok  ok
+```
+
+Corrélation parfaite sur trente essais : **tout échec franchit une
+seconde, aucun succès n'en franchit**. Ce n'est pas le délai qui compte,
+c'est le découpage.
+
+### Le correctif : la vraie règle d'AD
+
+Documentation Microsoft à l'appui, un conflit se résout par **version**,
+puis **heure d'origine**, puis **DSA d'origine** — dans cet ordre, et la
+version est le critère principal *précisément parce que* l'heure a une
+résolution d'une seconde. Il manquait la version.
+
+`EntryReplMeta.version` compte les écritures de l'entrée et
+`localWins(local, entrant)` applique les trois critères. La racine de
+DC01 a été écrite plusieurs fois (création, puis initialisation des
+FSMO) ; celle de DC02 vient de naître. La version tranche donc, quel que
+soit l'endroit où tombe la seconde.
+
+Le troisième critère n'est pas décoratif : à égalité parfaite il faut
+trancher **de la même façon des deux côtés**, sinon les deux contrôleurs
+divergent au lieu de converger. Comparer les identifiants de DSA donne
+un résultat arbitraire mais stable, ce qu'un test vérifie dans les deux
+sens.
+
+### Ce qui n'a PAS été fait, et pourquoi
+
+Passer l'horodatage en millisecondes aurait fait disparaître le symptôme
+en divisant la fenêtre par mille, sans corriger la règle — et aurait en
+prime éloigné le simulateur du vrai AD, dont l'heure d'origine est bien
+en secondes. Le défaut n'était pas la précision de l'horloge, c'était de
+s'en remettre à elle seule.
+
+`ad-resolution-de-conflit-replication.test.ts` (7 cas) tient le
+mécanisme et non le symptôme : il impose les horodatages au lieu
+d'espérer tomber sur le bon découpage. Discriminé au git-stash, 6 des 7
+échouent avant le correctif.
