@@ -1156,9 +1156,25 @@ export class CommandTrie {
     }
 
     const awaitsDeclaredArgument = node.params.length > consumedArgs;
+    /** Des continuations existaient, mais aucune n'était descriptible. */
+    let autoIndescriptibles = false;
     if (!argumentsConsumed && !awaitsDeclaredArgument) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const auto of this.autoContinuations(node)) {
+        // Un mot EXTRAIT du corps d'un handler et qu'on ne sait pas
+        // décrire n'est probablement pas un mot-clé : c'est un nom de
+        // variable que l'extracteur a ramassé au passage. `acl ?` sur
+        // VRP proposait ainsi `nom` et `refus`, deux identifiants du
+        // code, que la machine refuse ensuite. L'aide ne peut pas
+        // annoncer ce qu'elle n'est pas capable d'expliquer.
+        //
+        // La complétion par tabulation, elle, continue de les accepter
+        // (`tabCandidates` lit `autoContinuations` directement) : un
+        // mot-clé réel qu'on n'a pas encore décrit reste complétable, et
+        // le NOMMER dans `CliKeywordDescriptions` le fait réapparaître
+        // ici — c'est la voie prise pour `vpn-instance`, un vrai mot-clé
+        // que ce même filtre aurait masqué.
+        if (!auto.description) { autoIndescriptibles = true; continue; }
         if (!seen.has(auto.keyword)) {
           seen.add(auto.keyword);
           results.push({ keyword: auto.keyword, description: auto.description });
@@ -1166,7 +1182,13 @@ export class CommandTrie {
       }
     }
 
-    if (node.greedy && !node._noArgument && results.length === 0) {
+    // Le repli de dernier recours n'a de sens que pour un nœud dont on
+    // n'a RIEN à dire. Si le filtre ci-dessus vient d'écarter des
+    // continuations faute de description, le nœud en a bien — les
+    // remplacer par un `WORD` inventé annoncerait un argument là où la
+    // commande attend un mot-clé, ce qui est un deuxième mensonge après
+    // celui qu'on vient d'éviter.
+    if (node.greedy && !node._noArgument && results.length === 0 && !autoIndescriptibles) {
       results.push({ keyword: 'WORD', description: node.description });
     }
 

@@ -38,7 +38,7 @@
 import { Equipment } from '../equipment/Equipment';
 import type { TaggedEthernetFrame } from './Switch';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
-import { deviceClockSource } from './inspection/config/LoggingConfig';
+import { deviceClockSource, SEVERITY_NAMES } from './inspection/config/LoggingConfig';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
@@ -3582,6 +3582,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         getHostname: () => this.getHostname(),
         executeCommand: (command: string) => this.executeCommand(command),
         getSnmpAgent: () => (this as unknown as { getSnmpAgent?: () => SnmpAgent }).getSnmpAgent?.(),
+        logSyslog: (severityNum, tag, mnemonic, message) => {
+          const journal = this.shell.getLoggingConfig?.();
+          if (!journal) return;
+          journal.append(SEVERITY_NAMES[severityNum] ?? 'informational', tag, message, true, mnemonic);
+        },
       };
       this._eemEngine = new EemEngine(host, this.getEemService(), () => this.getBus(), () => this.getRouterScheduler());
       this._eemEngine.start();

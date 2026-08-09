@@ -37,6 +37,45 @@ export function syslogSeverityFromNum(n: number): SyslogSeverityName {
   return SYSLOG_SEVERITY_BY_NUM[n] ?? 'informational';
 }
 
+/**
+ * Ce qu'un consommateur de `device.syslog.entry` doit reconstruire pour
+ * retrouver la ligne que `show logging` affiche.
+ *
+ * L'événement porte `tag`, `severityNum`, `mnemonic` et `message`
+ * SÉPARÉMENT — c'est justement à cela que sert le champ `mnemonic`, dont
+ * le commentaire dans `events/types.ts` dit qu'il existe « pour
+ * reconstituer le `%TAG-SEV-MNEMONIQUE` ». Chaque consommateur le
+ * reconstruisait pourtant à sa façon, ou pas du tout, et les deux
+ * conséquences ont été mesurées : l'agent syslog a déjà porté deux formes
+ * selon le bus interne emprunté (voir son propre commentaire), et le
+ * moteur EEM n'en construisait AUCUNE — il comparait le motif au seul
+ * corps du message.
+ *
+ * Or un motif EEM se écrit sur le mnémonique : `event syslog pattern
+ * "SYS-5-CONFIG_I"` ou `"UPDOWN.*FastEthernet0/0.*down"`. Ces chaînes
+ * n'existent que dans le préfixe, jamais dans le corps, si bien que la
+ * façon normale d'écrire un déclencheur ne déclenchait jamais rien.
+ *
+ * Une seule définition, donc, pour que les deux ne puissent pas diverger.
+ */
+export interface SyslogLineParts {
+  readonly tag: string;
+  readonly severityNum: number;
+  readonly mnemonic?: string;
+  readonly message: string;
+}
+
+/** `%SYS-5-CONFIG_I` — le préfixe seul, sans le corps. */
+export function syslogTagOf(p: SyslogLineParts): string {
+  const mnem = (p.mnemonic ?? syslogSeverityFromNum(p.severityNum)).toUpperCase();
+  return `%${p.tag.toUpperCase()}-${p.severityNum}-${mnem}`;
+}
+
+/** `%SYS-5-CONFIG_I: Configured from console by console` — la ligne entière. */
+export function syslogFullLine(p: SyslogLineParts): string {
+  return `${syslogTagOf(p)}: ${p.message}`;
+}
+
 export type SyslogFacilityName =
   | 'kern' | 'user' | 'mail' | 'daemon' | 'auth' | 'syslog'
   | 'lpr' | 'news' | 'uucp' | 'cron' | 'authpriv' | 'ftp'
