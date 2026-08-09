@@ -25,6 +25,83 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### NTP de bout en bout, sur les quatre plateformes — PRIS (lots N1 à N4)
+
+**Agent** : session « CLI Huawei VRP », qui enchaîne sur un nouveau
+chantier. **Demande** : un tutoriel NTP (Cisco / Huawei / Linux chrony /
+Windows w32tm) doit pouvoir se suivre de bout en bout dans le
+simulateur, chaque lab reproduit en test.
+
+**Mesuré d'abord, et c'est la bonne nouvelle** : le moteur
+(`network/ntp/NtpAgent.ts`) est **réel** — vrais paquets UDP/123, les
+quatre horodatages de RFC 5905, l'algorithme d'intersection, la
+sélection par `prefer`/stratum/dispersion, l'authentification. Un client
+Cisco câblé à un `ntp master 3` répond bien
+`Clock is synchronized, stratum 4, reference is 10.0.0.1`. **Tout ce qui
+manque est autour**, dans les CLI.
+
+**Ce que je prends**, et les fichiers :
+
+| Lot | Périmètre | Fichiers |
+|---|---|---|
+| N1 | Cisco : vues `show ntp *`, clé d'authentification, `ntp disable` | `shells/CiscoShellBase.ts`, `shells/cisco/CiscoCommonShow.ts`, `ntp/NtpAgent.ts` |
+| N2 | Huawei : un seul magasin, `refclock-master`, `display clock` | `shells/HuaweiVRPShell.ts`, `shells/huawei/HuaweiDisplayCommands.ts` |
+| N3 | Linux : `chrony` (démon, `chronyc`, `chrony.conf`), `timedatectl` | `devices/linux/**`, nouveau `linux/time/` |
+| N4 | Windows : `w32tm` réel, `Get-TimeZone`/`Set-TimeZone` | `devices/windows/**`, `powershell/cmdlets/**` |
+
+**Ce que j'ai mesuré, par plateforme** :
+
+*Cisco* — (1) `show ntp` est un greedy qui **avale tout** : `show ntp
+associations detail`, `show ntp authentication-keys`, `show ntp config`,
+`show ntp packets` rendent tous le même tableau d'associations ; (2)
+`ntp authentication-key 1 md5 ClefNTP2024Secret` est stocké
+`clefntp2024secret` — **le mot de passe est mis en minuscules**, donc la
+configuration relue crée une AUTRE clé ; idem `ntp source Loopback0` →
+`loopback0` ; (3) `show ntp status` n'a que 4 lignes sur 8 (ni `ntp
+uptime`, ni `root delay`, ni `root dispersion`, ni `loopfilter state`,
+ni `drift`, ni `system poll interval`, ni `last update`) ; (4) `ntp
+disable` en vue d'interface est **refusée** ; (5) `no ntp allow mode
+control` et `ntp update-calendar` sont acceptés et rendus nulle part ;
+(6) `NtpAgent` porte DEUX rendus de configuration (`asRunningConfigLines`
+et `runningConfigLines`) qui ne disent pas la même chose, le second sans
+aucun lecteur.
+
+*Huawei* — (1) `display ntp-service sessions` répond **`No NTP
+associations`** alors que `display current-configuration` liste quatre
+serveurs : les vues et la configuration ne lisent pas le même magasin ;
+(2) `ntp-service refclock-master 7` est **inerte** (statut
+`unsynchronized`, stratum 16) là où le `ntp master 7` de Cisco
+synchronise, et il n'apparaît pas dans la configuration ; (3) `display
+clock` **ignore `clock timezone`** et répond `Time Zone(UTC) : UTC` ;
+(4) la configuration rendue est **cassée** :
+`ntp-service authentication-keyid 1 authentication-mode
+authentication-mode md5` — le mot est écrit deux fois et **la clé a
+disparu** ; (5) un second `unicast-server` sur la même adresse ajoute
+une ligne au lieu de mettre à jour ; (6) `display ntp-service status`
+n'a que 3 lignes sur 10 ; (7) `display ntp-service sessions verbose`
+n'existe pas.
+
+*Linux* — `chrony` est déclaré installé par `apt-get`, mais **rien
+n'existe** : ni `chronyc`, ni `chronyd`, ni son unité, ni
+`/etc/chrony/chrony.conf`. Pire, **`timedatectl` affirme
+`System clock synchronized: yes` / `NTP service: active`** sur une
+machine qui n'a aucun démon de temps — un fait affiché que rien ne
+soutient. `timedatectl set-timezone Africa/Douala` est accepté et **ne
+change rien** ; `list-timezones` ne rend rien ; `/etc/localtime`
+n'existe pas.
+
+*Windows* — `w32tm` est un talon : `/query /peers`,
+`/query /configuration`, `/resync`, `/config`, `/stripchart`,
+`/monitor` **impriment tous la chaîne littérale
+`w32tm /query /status`**. `/query /status` lui-même est un bloc fixe de
+quatre lignes sans état réel. `Get-TimeZone`/`Set-TimeZone` n'existent
+ni en cmd ni en PowerShell.
+
+**Ce qui reste à vous** : rien de ce que vous teniez. Je ne touche ni à
+`info-center`, ni au logging. Si vous travaillez sur `service
+timestamps`, dites-le — le tuto en dépend (§3.3) mais je n'y toucherai
+pas sans accord, votre lot l'ayant déjà traité.
+
 ### NetFlow exporte pour de bon — LIVRÉ
 
 **Agent** : session « logging ». Suite du balayage « ce qu'un routeur
