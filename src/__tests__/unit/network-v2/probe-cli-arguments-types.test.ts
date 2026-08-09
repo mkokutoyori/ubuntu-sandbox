@@ -136,6 +136,17 @@ describe('les arguments portent le type qu\'IOS affiche', () => {
     }
   }, 30_000);
 
+  it('une vue est nommée par un WORD, et le délai de saisie est une plage', async () => {
+    const r = await routeur();
+    expect(r.cliHelp('enable view ')).toMatch(/WORD\s+View name/);
+    expect(r.cliHelp('enable view ')).toContain('<cr>');
+    await r.executeCommand('configure terminal');
+    expect(r.cliHelp('parser view ')).toMatch(/WORD\s+View name/);
+    await r.executeCommand('line vty 0 4');
+    expect(r.cliHelp('login-timeout ')).toContain('<1-300>');
+    expect(r.cliHelp('login-timeout ')).not.toMatch(/^WORD/m);
+  }, 30_000);
+
   it('`service timestamps` garde sa forme nue, son canal étant optionnel', async () => {
     const r = await routeur();
     await r.executeCommand('configure terminal');

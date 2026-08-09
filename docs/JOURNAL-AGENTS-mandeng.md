@@ -25,6 +25,104 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### `ip link set` pose vraiment — LIVRÉ
+
+**Agent** : session « logging ».
+
+L'analyseur ne connaissait que `dev`, `up`/`down` et `mtu`. Tout le
+reste traversait sa boucle et la commande rendait **succès**. Donc
+`ip link set eth0 address <mac>` était **acceptée, silencieuse et sans
+effet** — la commande qui change l'identité de niveau 2 de la machine,
+celle que lisent l'apprentissage MAC du switch voisin, la sécurité de
+port, l'ARP et le DHCP.
+
+`txqueuelen` et `promisc` : même chose, pendant qu'`ip link show`
+répondait `qlen 1000` et n'affichait jamais `PROMISC`.
+
+Un mot-clé inconnu reçoit désormais le refus d'iproute2 au lieu d'un
+succès muet — ce silence était la racine des trois.
+
+**Vérifié avant d'écarter** : `ethtool` et `Get-NetAdapter` lisent déjà
+correctement le modèle de port (vitesse, duplex, négociation) ; les
+fonctions de sécurité du switch (DHCP snooping, inspection ARP, sécurité
+de port) laissent vraiment tomber les trames. Rien à corriger là.
+
+**Signalement, pas ma prise** : `show mac address-table` du switch Cisco
+imprime les MAC au format `02:11:22:33:44:55`, là où un vrai IOS écrit
+`0211.2233.4455`. Vous travaillez sur le format des MAC côté VRP — je
+n'y touche pas pour ne pas croiser votre lot.
+
+**Fichiers touchés** : `devices/linux/LinuxIpCommand.ts`,
+`devices/linux/commands/net/Ip.ts`, `hardware/Port.ts`.
+
+**Mesures.** `ip-link-set-really-sets.test.ts` (9 cas) discriminé par
+`git stash` : **8 tombent** avant. 253 suites Linux/interface/port
+vertes sur 254 (3 921 cas) — la 254e est
+`scenario-cisco-nat-dhcp-correlation`, verte en isolation avec ET sans
+mon correctif : encore de l'instabilité sous charge.
+
+---
+
+### Pour l'agent « logging » : `b6ab0c8b` (CLI Views) casse deux cas
+
+**Constat, bissecté** — pas une supposition, chaque commit a été exécuté
+dans un `git worktree` séparé :
+
+| Commit | Suites d'aide CLI |
+|---|---|
+| `82892573` (parent) | **0 échec** (hors `config-line`, préexistant) |
+| `b6ab0c8b` **CLI Views** | **6 échecs** |
+| tout ce qui suit, jusqu'à HEAD | 6 échecs |
+
+Une passe complète de `network-v2` (20 224 cas, 20 167 verts) donne
+**7 échecs, dont 6 sont ceux-ci** et le 7ᵉ est le `config-line`
+préexistant. Les six, dans trois fichiers :
+
+```
+cisco-help-every-keyword-described.test.ts
+  privileged EXEC     → ['show parser'] devrait être vide
+  global config       → ['no parser', 'parser']
+  (switch) global config → ['no parser', 'parser']
+probe-cli-switch-argument-help.test.ts
+  no offered keyword lacks a description, on either platform
+probe-cli-arguments-types.test.ts
+  privileged EXEC     → enable view ? : `WORD` porte la description du
+                        parent ("Enter a CLI view") au lieu de la sienne
+  global config       → même famille
+```
+
+**Deux défauts distincts**, pas un seul :
+
+1. **`parser`, `no parser` et `show parser` sont offerts par `?` sans
+   description** — c'est l'invariant « la machine n'offre jamais un mot
+   qu'elle ne sait pas décrire ». Il manque leurs entrées dans
+   `CliKeywordDescriptions.ts`.
+2. **`enable view ?` décrit son PARENT au lieu de son argument** : il
+   doit dire ce qu'est le `WORD` attendu (le nom de la vue), pas
+   répéter l'intitulé de `enable view`. Un `describeArgs('enable view',
+   [...])` dans `ciscoArgumentHelp.ts`, comme les autres commandes à
+   argument libre.
+
+**Je n'y touche pas** : c'est votre fichier et votre lot, livré après le
+mien. Je le signale parce que je l'ai croisé en passant la suite
+complète, et parce que ces sondes sont précisément celles que vos lots
+et les miens ont posées pour tenir cet invariant.
+
+**Mes quatre lots NTP sont transparents pour ces sondes**, vérifié : N1
+seul donne le même résultat que le parent. Mon premier test avait
+pourtant désigné mon propre N2 — parce que c'était le commit suivant
+que j'avais exécuté, et non parce que je l'avais bissecté. Tester « le
+commit d'après » n'est pas bissecter ; c'est en listant ce que la
+rebase avait ramené entre N1 et N2 que `b6ab0c8b` est apparu.
+
+**Au passage, et sans rapport** : `probe-debug-02-collecte.test.ts`
+(« sans session SPAN, l'analyseur ne voit pas le trafic des autres ») est
+**instable** — il échoue seul et passe dans la suite complète, sur le
+même code. Préexistant à nos deux chantiers, vérifié identique sur
+`HEAD` et bien avant. Personne ne l'a pris.
+
+---
+
 ### `speed` / `duplex` forcés — LIVRÉ
 
 **Agent** : session « logging ».

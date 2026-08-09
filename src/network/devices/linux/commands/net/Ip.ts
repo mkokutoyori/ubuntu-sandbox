@@ -144,6 +144,8 @@ export function buildIpCtx(
         isConnected: port.hasCarrier(),
         isDHCP: net.isDHCPConfigured(name),
         carrierless: port.isCarrierless(),
+        txQueueLen: port.getTxQueueLen(),
+        promiscuous: port.isPromiscuous(),
         counters: {
           framesIn: counters.framesIn,
           framesOut: counters.framesOut,
@@ -361,6 +363,28 @@ export function buildIpCtx(
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
       net.setInterfaceAdmin(ifName, false);
+      return '';
+    },
+    setInterfaceMac(ifName: string, mac: string): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      try {
+        port.setMAC(new MACAddress(mac));
+      } catch {
+        return `Error: argument "${mac}" is wrong: "address" is invalid lladdr.`;
+      }
+      return '';
+    },
+    setInterfaceTxQueueLen(ifName: string, n: number): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      port.setTxQueueLen(n);
+      return '';
+    },
+    setInterfacePromiscuous(ifName: string, on: boolean): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      port.setPromiscuous(on);
       return '';
     },
     setInterfaceMTU(ifName: string, mtu: number): string {

@@ -34,6 +34,8 @@ export interface IpInterfaceInfo {
   isUp: boolean;
   isConnected: boolean;
   isDHCP: boolean;
+  txQueueLen?: number;
+  promiscuous?: boolean;
   counters: {
     framesIn: number;
     framesOut: number;
@@ -150,6 +152,9 @@ export interface IpNetworkContext {
   setInterfaceUp(ifName: string): string;
   setInterfaceDown(ifName: string): string;
   setInterfaceMTU(ifName: string, mtu: number): string;
+  setInterfaceMac(ifName: string, mac: string): string;
+  setInterfaceTxQueueLen(ifName: string, n: number): string;
+  setInterfacePromiscuous(ifName: string, on: boolean): string;
   /** Optional XFRM (IPsec) context for ip xfrm commands */
   xfrm?: IpXfrmContext;
   /** Optional GRE tunnel context for ip tunnel commands */
@@ -633,7 +638,7 @@ function formeLien(info: IpInterfaceInfo): { state: string; qdisc: string; qlen:
       : info.isUp && info.isConnected ? 'UP' : 'DOWN',
     // Pas de file sur une interface qui n'attend rien.
     qdisc: info.carrierless ? 'noqueue' : 'fq_codel',
-    qlen: ' qlen 1000',
+    qlen: ` qlen ${info.txQueueLen ?? 1000}`,
   };
 }
 
@@ -653,6 +658,9 @@ export function computeIfaceFlags(info: IpInterfaceInfo): string[] {
     if (info.carrierless) flags.push('NOARP');
   }
   if (info.isUp) flags.push('UP');
+  // PROMISC is IFF bit 8 and MULTICAST bit 12, so the kernel lists it
+  // first — that is the order iproute2 prints, not an arbitrary slot.
+  if (info.promiscuous) flags.push('PROMISC');
   if (isLoopback) {
     flags.push('UP');
   } else if (!info.carrierless) {
@@ -1112,6 +1120,9 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
   let devName: string | null = null;
   let action: string | null = null;
   let mtu: number | null = null;
+  let lladdr: string | null = null;
+  let txqueuelen: number | null = null;
+  let promisc: boolean | null = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) {
@@ -1122,8 +1133,23 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
     } else if (args[i] === 'mtu' && args[i + 1]) {
       mtu = parseInt(args[i + 1], 10);
       i++;
+    } else if ((args[i] === 'address' || args[i] === 'addr') && args[i + 1]) {
+      lladdr = args[i + 1];
+      i++;
+    } else if ((args[i] === 'txqueuelen' || args[i] === 'txqlen') && args[i + 1]) {
+      txqueuelen = parseInt(args[i + 1], 10);
+      i++;
+    } else if (args[i] === 'promisc' && args[i + 1]) {
+      promisc = args[i + 1] === 'on';
+      i++;
     } else if (!devName && !args[i].startsWith('-')) {
       devName = args[i];
+    } else {
+      // Everything unrecognised used to fall through this loop and the
+      // command returned success. `ip link set eth0 address <mac>` was
+      // therefore accepted and did nothing at all — silence on a
+      // command that changes the machine's L2 identity.
+      return `Error: either "dev" is duplicate, or "${args[i]}" is a garbage.`;
     }
   }
 
@@ -1133,6 +1159,24 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
     if (isNaN(mtu)) return 'Error: argument "mtu" is wrong: invalid numeric value';
     const mtuResult = ctx.setInterfaceMTU(devName, mtu);
     if (mtuResult) return mtuResult;
+  }
+
+  if (lladdr !== null) {
+    const macResult = ctx.setInterfaceMac(devName, lladdr);
+    if (macResult) return macResult;
+  }
+
+  if (txqueuelen !== null) {
+    if (isNaN(txqueuelen) || txqueuelen < 0) {
+      return 'Error: argument "txqueuelen" is wrong: invalid numeric value';
+    }
+    const r = ctx.setInterfaceTxQueueLen(devName, txqueuelen);
+    if (r) return r;
+  }
+
+  if (promisc !== null) {
+    const r = ctx.setInterfacePromiscuous(devName, promisc);
+    if (r) return r;
   }
 
   if (action === 'up') return ctx.setInterfaceUp(devName);

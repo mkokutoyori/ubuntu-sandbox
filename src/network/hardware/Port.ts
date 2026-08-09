@@ -284,6 +284,19 @@ export class Port {
 
   getName(): string { return this.name; }
   getMAC(): MACAddress { return this.mac; }
+
+  /**
+   * Transmit queue length and promiscuous mode, both settable from
+   * `ip link set`. They were accepted by the command and stored
+   * nowhere, so `ip link show` kept answering `qlen 1000` and never
+   * listed PROMISC on a machine that had just asked for both.
+   */
+  private txQueueLen = 1000;
+  private promiscuous = false;
+  getTxQueueLen(): number { return this.txQueueLen; }
+  setTxQueueLen(n: number): void { this.txQueueLen = n; }
+  isPromiscuous(): boolean { return this.promiscuous; }
+  setPromiscuous(on: boolean): void { this.promiscuous = on; }
   setMAC(mac: MACAddress): void { (this as unknown as { mac: MACAddress }).mac = mac; }
   getType(): ConnectionType { return this.type; }
   getEquipmentId(): string { return this.equipmentId; }
