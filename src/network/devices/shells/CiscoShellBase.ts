@@ -34,7 +34,7 @@ import {
   showMemoryStatistics, showPrivilege,
   showCdp, showLldp, showSnmp, showSnmpCommunity, showSnmpHost,
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
-  showNtpStatus, showNtpAssociations,
+  showNtpStatus, showNtpAssociations, showNtpAssociationsDetail, showNtpAuthenticationKeys,
   showLine, showIpSsh, showSshSessions, showHosts, showVrf,
   showVrfDetail, showVrfInterfaces, showAdjacency,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
@@ -1971,11 +1971,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
+    // Un greedy sur `show ntp` AVALAIT toute sa queue : `show ntp
+    // associations detail`, `show ntp authentication-keys`, `show ntp
+    // config` et meme `show ntp packets` -- qui n'existe pas -- rendaient
+    // tous le tableau des associations. Chaque sous-commande est
+    // desormais un chemin reel, et ce que la plateforme n'a pas est
+    // refuse comme IOS refuse (meme defaut que `display vrrp`, lot V15).
     trie.register('show ntp status', 'Display NTP status', () => showNtpStatus(this.cs()));
-    trie.registerGreedy('show ntp', 'Display NTP associations', () =>
-      showNtpAssociations(this.cs()), [
-      { keyword: 'associations', description: 'NTP associations' },
-    ]);
+    trie.register('show ntp authentication-keys', 'Display NTP authentication keys',
+      () => showNtpAuthenticationKeys(this.cs()));
+    trie.register('show ntp associations detail', 'Detailed NTP association state',
+      () => showNtpAssociationsDetail(this.cs()));
+    trie.register('show ntp associations', 'NTP associations',
+      () => showNtpAssociations(this.cs()));
+    // Pas de greedy de repli : sans lui, l'arbre lui-meme refuse
+    // `show ntp packets` avec le curseur d'IOS, ce qu'un repli maison
+    // ne saurait pas placer aussi bien.
     trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
       showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')), [
       { keyword: 'neighbors', description: 'CDP neighbor entries' },
@@ -3342,15 +3353,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         agent.setServerMode(true);
         if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
       } else if (a[0] === 'source' && a[1]) {
-        (agent as unknown as { setSourceInterface?: (n: string) => void }).setSourceInterface?.(a[1]);
+        // `args` et non `a` : un nom d'interface et un mot de passe sont
+        // des DONNEES, pas des mots-cles. La ligne du dessus met toute la
+        // commande en minuscules pour comparer, et ce qui en sortait
+        // etait rangé tel quel -- `Loopback0` devenait `loopback0`, et
+        // `ClefNTP2024Secret` devenait `clefntp2024secret`, donc une
+        // AUTRE clé. Une configuration relue ne refaisait pas la machine.
+        agent.setSourceInterface(args[1]);
       } else if (a[0] === 'authenticate') {
-        (agent as unknown as { setAuthenticate?: (e: boolean) => void }).setAuthenticate?.(true);
-      } else if (a[0] === 'authentication-key' && a[1] && a[2] === 'md5' && a[3]) {
-        (agent as unknown as { addAuthKey?: (id: number, algo: string, key: string) => void }).addAuthKey?.(parseInt(a[1], 10), 'md5', a[3]);
+        agent.setAuthenticate(true);
+      } else if (a[0] === 'authentication-key' && a[1] && a[2] === 'md5' && args[3]) {
+        agent.addAuthKey(parseInt(a[1], 10), 'md5', args[3]);
       } else if (a[0] === 'trusted-key' && a[1]) {
-        (agent as unknown as { addTrustedKey?: (id: number) => void }).addTrustedKey?.(parseInt(a[1], 10));
+        agent.addTrustedKey(parseInt(a[1], 10));
       } else if (a[0] === 'access-group' && a[1] && a[2]) {
-        (agent as unknown as { setAccessGroup?: (kind: string, acl: string) => void }).setAccessGroup?.(a[1], a[2]);
+        agent.setAccessGroup(a[1], a[2]);
+      } else if (a[0] === 'update-calendar') {
+        agent.setUpdateCalendar(true);
+      } else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
+        agent.setAllowModeControl(true);
       }
       return '';
     });
@@ -3358,8 +3379,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const a = args.map(s => s.toLowerCase());
       const agent = getNtpAgent(this.d());
       if (!agent) return '';
-      if (a[0] === 'server' && a[1]) agent.removeServer(a[1]);
+      if ((a[0] === 'server' || a[0] === 'peer') && a[1]) agent.removeServer(a[1]);
       else if (a[0] === 'master') { agent.setServerMode(false); agent.setLocalStratum(16); }
+      else if (a[0] === 'authenticate') agent.setAuthenticate(false);
+      else if (a[0] === 'authentication-key' && a[1]) agent.removeAuthKey(parseInt(a[1], 10));
+      else if (a[0] === 'trusted-key' && a[1]) agent.removeTrustedKey(parseInt(a[1], 10));
+      else if (a[0] === 'access-group' && a[1]) agent.removeAccessGroup(a[1]);
+      else if (a[0] === 'source') agent.setSourceInterface('');
+      else if (a[0] === 'update-calendar') agent.setUpdateCalendar(false);
+      // Le durcissement du §9 : fermer le mode 6, celui de `monlist`.
+      else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
+        agent.setAllowModeControl(false);
+      }
       return '';
     });
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {

@@ -17,6 +17,7 @@ import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
+import { getNtpAgent } from '../../../equipment/RouterServiceCapabilities';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -634,6 +635,23 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (port) (port as unknown as { ipRedirects?: boolean }).ipRedirects = true;
+    return '';
+  });
+  // Le durcissement du §9 du tutoriel NTP : `ntp disable` interdit a une
+  // interface de SERVIR le temps, ce qui est la contre-mesure la plus
+  // simple contre un client NTP non sollicite sur un lien exterieur. La
+  // commande etait refusee (`% Invalid input detected`), donc le
+  // durcissement impossible a ecrire.
+  trie.register('ntp disable', 'Disable NTP service on this interface', () => {
+    const iface = ctx.getSelectedInterface();
+    const agent = getNtpAgent(ctx.r());
+    if (iface && agent) agent.setInterfaceDisabled(iface, true);
+    return '';
+  });
+  trie.register('no ntp disable', 'Re-enable NTP service on this interface', () => {
+    const iface = ctx.getSelectedInterface();
+    const agent = getNtpAgent(ctx.r());
+    if (iface && agent) agent.setInterfaceDisabled(iface, false);
     return '';
   });
   trie.register('ip accounting', 'Enable IP accounting', () => {
