@@ -270,26 +270,60 @@ export class RouterDebugService implements TerminalDebugSource {
    * is dropped — a condition the operator asked for must not be widened
    * by our own inability to classify a line.
    */
-  private readonly conditions: Array<{ kind: 'interface' | 'vrf' | 'ip'; value: string }> = [];
+  /**
+   * Une condition porte un NUMÉRO, et pas seulement un rang.
+   *
+   * IOS annonce `Condition 1 set` et on la retire par `no debug
+   * condition 1` — le numéro est donc un identifiant, pas une position.
+   * Il était dérivé de l'index du tableau : après avoir retiré la
+   * première de trois conditions, les deux restantes se renumérotaient,
+   * et `show debug condition` désignait sous le numéro 1 une condition
+   * que l'opérateur avait vue sous le numéro 2. Le numéro est désormais
+   * attribué à la création et ne bouge plus.
+   *
+   * Le plus petit numéro libre est réutilisé, comme sur IOS où ce sont
+   * des emplacements : après avoir tout retiré, la suivante est de
+   * nouveau la 1.
+   */
+  private readonly conditions: Array<{ id: number; kind: 'interface' | 'vrf' | 'ip'; value: string }> = [];
+
+  private allocateConditionId(): number {
+    const pris = new Set(this.conditions.map((c) => c.id));
+    let n = 1;
+    while (pris.has(n)) n++;
+    return n;
+  }
 
   addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string {
-    if (!this.conditions.some((c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase())) {
-      this.conditions.push({ kind, value });
-    }
-    return `Condition ${this.conditions.length} set`;
+    const deja = this.conditions.find(
+      (c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase());
+    if (deja) return `Condition ${deja.id} set`;
+    const id = this.allocateConditionId();
+    this.conditions.push({ id, kind, value });
+    this.conditions.sort((a, b) => a.id - b.id);
+    return `Condition ${id} set`;
   }
 
   removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string {
     const i = this.conditions.findIndex(
       (c) => c.kind === kind && c.value.toLowerCase() === value.toLowerCase());
     if (i < 0) return `% Condition not found`;
+    const id = this.conditions[i].id;
     this.conditions.splice(i, 1);
-    return `Condition ${i + 1} has been removed`;
+    return `Condition ${id} has been removed`;
+  }
+
+  /** `no debug condition <n>` — par numéro, la forme que le tutoriel emploie. */
+  removeConditionById(id: number): string {
+    const i = this.conditions.findIndex((c) => c.id === id);
+    if (i < 0) return `% Condition ${id} was not set`;
+    this.conditions.splice(i, 1);
+    return `Condition ${id} has been removed`;
   }
 
   clearConditions(): void { this.conditions.length = 0; }
 
-  listConditions(): ReadonlyArray<{ kind: 'interface' | 'vrf' | 'ip'; value: string }> {
+  listConditions(): ReadonlyArray<{ id: number; kind: 'interface' | 'vrf' | 'ip'; value: string }> {
     return this.conditions;
   }
 
@@ -983,7 +1017,7 @@ export class RouterDebugService implements TerminalDebugSource {
   formatConditions(): string {
     if (this.conditions.length === 0) return 'Condition 1 is not set';
     return this.conditions
-      .map((c, i) => `Condition ${i + 1}: ${c.kind} ${c.value} (0 flags triggered)`)
+      .map((c) => `Condition ${c.id}: ${c.kind} ${c.value} (0 flags triggered)`)
       .join('\n');
   }
 

@@ -351,10 +351,30 @@ export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () 
     debugSvc().disable('ip.dhcp.server');
     return 'DHCP server debugging is off';
   });
-  trie.register('debug ip dhcp server packet', 'Debug DHCP server packets', () => {
+  // Le mot-clé d'IOS est `packets`, au PLURIEL — vérifié sur la
+  // référence de commandes Cisco, qui donne
+  // `debug ip dhcp server {events | packets | linkage}`. Il était
+  // enregistré au singulier, ce qui inversait la règle d'abréviation
+  // d'IOS : la forme complète était refusée et seule l'abrégée passait.
+  // Enregistrer la forme complète fait fonctionner les deux, `packet`
+  // devenant une abréviation non ambiguë comme n'importe quelle autre.
+  trie.register('debug ip dhcp server packets', 'Debug DHCP server packets', () => {
     getRouter()._getDHCPServerInternal().setDebugServerPacket(true);
     debugSvc().enable('ip.dhcp.server', 'packet');
     return 'DHCP server packet debugging is on';
+  });
+  // Le troisième mot-clé de la même famille. Il n'existait pas, et
+  // `debug ip dhcp server ?` promettait donc deux choix là où IOS en a
+  // trois. Ce simulateur n'a pas de notion de liaison parent-enfant
+  // entre pools, donc la commande s'active et n'écrit rien de plus —
+  // et le dit, plutôt que de laisser croire à une sortie qui viendrait.
+  trie.register('debug ip dhcp server linkage', 'Debug DHCP database linkage', () => {
+    debugSvc().enable('ip.dhcp.server', 'linkage');
+    return 'DHCP server linkage debugging is on';
+  });
+  trie.register('no debug ip dhcp server linkage', 'Disable DHCP linkage debugging', () => {
+    debugSvc().disable('ip.dhcp.server');
+    return 'DHCP server linkage debugging is off';
   });
   trie.register('debug ip dhcp server events', 'Debug DHCP server events', () => {
     getRouter()._getDHCPServerInternal().setDebugServerEvents(true);
@@ -363,7 +383,7 @@ export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () 
   });
 
   // no debug commands
-  trie.register('no debug ip dhcp server packet', 'Disable DHCP packet debugging', () => {
+  trie.register('no debug ip dhcp server packets', 'Disable DHCP packet debugging', () => {
     const s = getRouter()._getDHCPServerInternal();
     s.setDebugServerPacket(false);
     if (!s.getDebugFlags().serverEvents) debugSvc().disable('ip.dhcp.server');

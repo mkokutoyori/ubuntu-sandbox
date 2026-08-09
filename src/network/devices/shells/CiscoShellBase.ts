@@ -2527,6 +2527,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!svc) return '';
       const kind = (args[0] ?? '').toLowerCase();
       if (kind === 'all') { svc.clearConditions(); return 'All conditions have been removed'; }
+      // `no debug condition <n>` : la forme par NUMÉRO, celle qu'IOS
+      // annonce lui-même en posant la condition (`Condition 1 set`) et
+      // la seule qui soit praticable — retirer par valeur oblige à
+      // retaper l'ACL ou l'interface au caractère près.
+      if (/^\d+$/.test(kind)) return svc.removeConditionById(parseInt(kind, 10));
       const value = args.slice(1).join(' ').trim();
       if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;

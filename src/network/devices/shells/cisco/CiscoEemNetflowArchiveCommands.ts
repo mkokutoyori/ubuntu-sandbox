@@ -2,6 +2,13 @@ import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './CiscoArchiveCommands';
+import { CISCO_ERRORS } from '../cli-utils';
+
+/** Les niveaux qu'EEM accepte derrière `priority` : l'indice EST la sévérité. */
+const EEM_SEVERITES: readonly string[] = [
+  'emergencies', 'alerts', 'critical', 'errors',
+  'warnings', 'notifications', 'informational', 'debugging',
+];
 
 export interface CiscoEemNetflowArchiveContext extends CiscoShellContext {
   setApplet?(name: string | null): void;
@@ -155,8 +162,26 @@ export function buildEemAppletSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArc
     const kind = args[1]?.toLowerCase();
     if (kind === 'cli' && args[2] === 'command') {
       a.actions.push({ id, kind: 'cli', command: stripQuotes(args.slice(3).join(' ')) });
-    } else if (kind === 'syslog' && args[2] === 'msg') {
-      a.actions.push({ id, kind: 'syslog', message: stripQuotes(args.slice(3).join(' ')) });
+    } else if (kind === 'syslog') {
+      // `action <id> syslog [priority <niveau>] msg "<texte>"`.
+      //
+      // Seule la forme sans `priority` était analysée ; celle du
+      // tutoriel, avec, tombait dans le `return ''` final et l'action
+      // n'était PAS enregistrée — l'applet se déclenchait avec zéro
+      // action et n'écrivait rien. `EemAction` portait déjà le champ
+      // `severity` que personne ne remplissait.
+      let i = 2;
+      let severity: number | undefined;
+      if (args[i]?.toLowerCase() === 'priority') {
+        const niveau = EEM_SEVERITES.indexOf((args[i + 1] ?? '').toLowerCase());
+        if (niveau < 0) return CISCO_ERRORS.INVALID_INPUT;
+        severity = niveau;
+        i += 2;
+      }
+      if (args[i] !== 'msg') return CISCO_ERRORS.INVALID_INPUT;
+      const message = stripQuotes(args.slice(i + 1).join(' '));
+      if (!message) return CISCO_ERRORS.INCOMPLETE;
+      a.actions.push({ id, kind: 'syslog', severity, message });
     } else if (kind === 'mail') {
       const m: { to?: string; subject?: string; body?: string } = {};
       for (let i = 2; i < args.length; i++) {
@@ -171,6 +196,12 @@ export function buildEemAppletSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArc
       a.actions.push({ id, kind: 'wait', seconds: parseInt(args[2], 10) });
     } else if (kind === 'snmp-trap') {
       a.actions.push({ id, kind: 'snmp-trap', oid: stripQuotes(args.slice(2).join(' ')) });
+    } else {
+      // Une forme d'action qu'on ne sait pas lire était AVALÉE : la
+      // ligne répondait comme si de rien n'était, l'applet restait sans
+      // action, et rien ne le disait avant le jour où il aurait dû
+      // agir. Un refus est la seule réponse honnête.
+      return CISCO_ERRORS.INVALID_INPUT;
     }
     return '';
   });

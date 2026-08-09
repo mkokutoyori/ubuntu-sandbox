@@ -1836,7 +1836,12 @@ export class LoggingConfig {
    * valeur d'un équipement ordinaire, et l'afficher est plus fidèle que
    * de la taire.
    */
-  render(): string {
+  /**
+   * `options.last` ne coupe QUE la liste des messages, pas l'en-tête :
+   * `show logging last 5` sur un vrai IOS affiche toujours les compteurs
+   * et les niveaux, puis les cinq dernières lignes.
+   */
+  render(options?: { last?: number }): string {
     // IOS aligne les niveaux entre eux : « Buffer » est plus court que
     // « Console » et « Monitor », donc son deux-points est suivi de deux
     // espaces.
@@ -1893,7 +1898,10 @@ export class LoggingConfig {
       lines.push('');
       lines.push('Log Buffer (' + this.bufferedSize + ' bytes):');
       lines.push('');
-      for (const m of this.messages) lines.push(m.rendu);
+      const derniers = options?.last !== undefined
+        ? this.messages.slice(-options.last)
+        : this.messages;
+      for (const m of derniers) lines.push(m.rendu);
     }
     return lines.join('\n');
   }
