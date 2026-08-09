@@ -307,7 +307,7 @@ export async function performCurlRequest(
       let session: HttpsClientSession | null = null;
       try {
         session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier });
-        const result = session.send(request);
+        const result = await session.sendAsync(request);
         if (!result.ok || !result.response) {
           if (!opts.insecure) {
             failure = {
@@ -352,7 +352,11 @@ export async function performCurlRequest(
       }
     } else {
       const session = new Http1ClientSession(host.tcpStack(), address, url.port);
-      const result = session.send(request);
+      // `sendAsync` et non `send` : un serveur qui doit authentifier par
+      // AAA répond après un aller-retour, et le contrat synchrone rendait
+      // sa réponse invisible. Un serveur synchrone répond au premier tour,
+      // donc rien ne change pour nginx, Apache ou IIS.
+      const result = await session.sendAsync(request);
       session.close();
       if (!result.ok || !result.response) {
         const empty = result.error === 'Empty reply from server';

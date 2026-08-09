@@ -79,6 +79,33 @@ export class HttpsServerSession {
     const tls = new TlsServerSession({ ...this.tlsConfig, alpnProtocols: this.tlsConfig.alpnProtocols ?? ['http/1.1'] });
     let clientSeq = 0;
     let serverSeq = 0;
+    /*
+     * File des réponses de CETTE connexion. Un gestionnaire asynchrone ne
+     * doit pas pouvoir doubler le précédent : `serverSeq` est le compteur
+     * de séquence des enregistrements TLS, et deux réponses chiffrées
+     * dans le désordre seraient rejetées par le pair — la protection est
+     * authentifiée, donc l'ordre en fait partie.
+     *
+     * `pending` reste NUL tant que rien n'attend, et une réponse
+     * synchrone part alors immédiatement : la faire passer par une
+     * micro-tâche « pour l'uniformité » briserait tous les clients
+     * synchrones de ce moteur, qui lisent la réponse pendant leur propre
+     * `socket.write()` — mesuré, six cas de `https.test.ts` et
+     * `iis-https-binding.test.ts` sont tombés sur cette seule nuance.
+     */
+    let pending: Promise<void> | null = null;
+    const enqueue = (travail: () => void | Promise<void>): void => {
+      const suite = pending === null ? travail() : pending.then(travail);
+      if (!(suite instanceof Promise)) return;
+      // Seule la QUEUE de la file a le droit de la vider : sans ce
+      // contrôle, une réponse qui se termine effacerait la référence
+      // d'une réponse arrivée entre-temps, et la suivante partirait sans
+      // attendre son tour.
+      const maillon: Promise<void> = suite.then(() => {
+        if (pending === maillon) pending = null;
+      });
+      pending = maillon;
+    };
 
     const unsubscribe = socket.onData((data) => {
       const incomingBytes = binaryStringToBytes(String(data));
@@ -97,36 +124,53 @@ export class HttpsServerSession {
 
       const requestId = randomRequestId();
       const parsed = parseRequest(decoder.decode(requestBytes));
-      let response: HttpMessage;
-      let shouldClose: boolean;
+
+      const emit = (response: HttpMessage, shouldClose: boolean): void => {
+        this.applyHsts(response);
+        const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
+        const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
+        const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls.serverApplicationTrafficSecret!, serverSeq, responseBytes);
+        serverSeq = serverNextSeq;
+        socket.write(bytesToBinaryString(encodeRecords(records)));
+        if (shouldClose) {
+          unsubscribe();
+          socket.close();
+        }
+      };
+
       if (parsed.ok === false) {
         this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method: 'GET', target: '' } });
         this.eventBus?.publish({ topic: 'http.request.failed', payload: { requestId, method: 'GET', target: '', error: parsed.reason } });
-        response = createResponse(400, 'Bad Request');
+        const response = createResponse(400, 'Bad Request');
         response.headers.set('Connection', 'close');
-        shouldClose = true;
-      } else {
-        const method = parsed.message.method ?? 'GET';
-        const target = parsed.message.target ?? '';
-        this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
-        response = this.handler(parsed.message, { ip: socket.remoteIp, port: socket.remotePort });
+        // Une réponse d'erreur passe par la MÊME file que les autres,
+        // sans quoi elle doublerait une réponse encore en attente et
+        // les deux chiffrements se disputeraient le compteur de séquence.
+        enqueue(() => emit(response, true));
+        return;
+      }
+
+      const method = parsed.message.method ?? 'GET';
+      const target = parsed.message.target ?? '';
+      this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
+      const produced = this.handler(parsed.message, { ip: socket.remoteIp, port: socket.remotePort });
+      /*
+       * Un gestionnaire asynchrone ne doit pas pouvoir doubler le
+       * précédent : `serverSeq` est le compteur de séquence des
+       * enregistrements TLS, et deux réponses chiffrées dans le
+       * désordre seraient rejetées par le pair — la protection est
+       * authentifiée, donc l'ordre en fait partie. La file par connexion
+       * est ce qui garantit qu'une réponse lente ne décale pas la suite.
+       */
+      const settle = (response: HttpMessage): void => {
         this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: response.statusCode ?? 0 } });
-        shouldClose =
+        const shouldClose =
           parsed.message.headers.get('Connection')?.toLowerCase() === 'close' ||
           response.headers.get('Connection')?.toLowerCase() === 'close';
-      }
-      this.applyHsts(response);
-
-      const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
-      const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
-      const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls.serverApplicationTrafficSecret!, serverSeq, responseBytes);
-      serverSeq = serverNextSeq;
-      socket.write(bytesToBinaryString(encodeRecords(records)));
-
-      if (shouldClose) {
-        unsubscribe();
-        socket.close();
-      }
+        emit(response, shouldClose);
+      };
+      if (produced instanceof Promise) enqueue(() => produced.then(settle));
+      else enqueue(() => { settle(produced); });
     });
   }
 }

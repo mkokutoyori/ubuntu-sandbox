@@ -81,7 +81,15 @@ export class VtyIncomingPolicy {
   }
 }
 
-function synthTcpPacket(src: IPAddress, dst: IPAddress): IPv4Packet {
+/**
+ * Le paquet que l'on soumet à une ACL pour décider d'une CONNEXION
+ * entrante, faute d'en avoir un vrai sous la main : une ACL juge un
+ * paquet, alors qu'`access-class` juge une session. Exporté pour que le
+ * serveur HTTP (`ip http access-class`) pose la question de la même
+ * façon — deux synthèses différentes rendraient deux verdicts pour la
+ * même liste et la même adresse.
+ */
+export function synthTcpPacket(src: IPAddress, dst: IPAddress): IPv4Packet {
   return {
     type: 'ipv4',
     version: 4,

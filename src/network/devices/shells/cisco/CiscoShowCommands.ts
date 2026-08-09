@@ -19,6 +19,7 @@ import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import { IPv6Address } from '@/network/core/types';
 import { renderCounterTable, renderTable, type TableColumn } from '../cli/TextTable';
+import { getHttpService } from '@/network/equipment/RouterServiceCapabilities';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
@@ -715,6 +716,16 @@ export function showRunningConfig(router: Router): string {
       const port = (ssh as unknown as { port?: number }).port ?? 22;
       if (port !== 22) lines.push(`ip ssh port ${port}`);
     }
+  }
+
+  // Le serveur web. Ces lignes etaient ABSENTES dans les deux sens : les
+  // deux drapeaux vivaient dans `CiscoConfigState`, une table dont le
+  // rendu n'a aucun appelant, donc `ip http server` disparaissait a
+  // l'enregistrement et le serveur ne redemarrait pas a l'import.
+  const httpSvc = getHttpService(router);
+  if (httpSvc) {
+    const httpLines = httpSvc.runningConfigLines();
+    if (httpLines.length > 0) lines.push(...httpLines);
   }
 
   const unhandled = router.getUnhandledConfigLines();
