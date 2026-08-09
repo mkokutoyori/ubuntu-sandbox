@@ -302,6 +302,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V7** | La queue d'une commande lue jusqu'au bout (reliquat de V4/V5) | **Livré, §16** |
 | **V8** | La grammaire de `acl` et `stp` (reliquat de V7) | **Livré, §17** |
 | **V9** | Le typage du shell (agent « logging ») | **Livré, §18** |
+| **V10** | Le typage de `HuaweiSwitchShell` | **Livré, §19** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1459,3 +1460,111 @@ sur l'interface en attente (`tunnelSource`, `greKey`…), plus huit
 VRP d'un port, ce qui est la même question que ci-dessus posée sur un
 autre objet : un lot à part. Seul `setMode('rip' as any)`, rendu inutile
 par l'union réparée, a été retiré au passage.
+
+---
+
+## 19. V10 — Livré : le typage de `HuaweiSwitchShell`, et ce qu'il cachait
+
+Le jumeau du §18 sur l'autre shell, et la mesure donne un profil
+différent : `HuaweiSwitchShell.ts` (3 654 lignes) ne portait **qu'un seul
+`no-explicit-any`** — il était déjà propre de ce côté — mais **37
+`as unknown as`**, qui éteignent le compilateur exactement de la même
+façon **sans coûter une ligne de lint**. C'est le point du lot : le
+linter ne les voyait pas, donc personne ne les avait comptés.
+
+### 19.1 Quatorze fois la même affirmation
+
+Les accesseurs d'agents (STP, LLDP, Dot1x, LACP, IGMP/PIM snooping,
+debug) étaient castés **quatorze fois**, chacun réécrivant son
+`import(...)` en ligne. Le cast était légitime dans son principe —
+`swRef` est un `Switch`, ces agents vivent sur `HuaweiSwitch`, et un
+`GenericSwitch` n'en a aucun, ce que `CLAUDE.md` documente. Ce qui ne
+l'était pas, c'est de l'affirmer quatorze fois : chaque site pouvait
+écrire une signature différente de celle du voisin sans que rien ne le
+signale.
+
+`huawei/huaweiSwitchDevice.ts` déclare **ce que le shell exige de son
+équipement**, une fois. Les membres y sont optionnels parce qu'ils le
+sont réellement — et c'est cette honnêteté qui a rendu le défaut suivant
+visible.
+
+### 19.2 Un membre que le cast affirmait et que personne ne fournit
+
+`_setVtyTransportInput` est appelé par les deux shells Huawei sous un
+commentaire affirmant qu'il « route through the device setter so
+`CrossVendorSshHost.evaluate()` sees the change ». Il vit sur `Router`.
+**Un `Switch` ne l'a pas** — et n'a ni serveur SSH ni politique de vty à
+gouverner. `protocol inbound ssh` sur un switch Huawei est donc inerte,
+et l'était en silence.
+
+Le port le déclare optionnel : la commande reste acceptée, comme sur
+VRP, et son inertie est écrite plutôt que masquée. **Le routeur a le
+même appel** ; là-bas le membre existe, donc il fonctionne — c'est
+seulement le cast qui y est du bruit.
+
+### 19.3 La configuration de vue VLAN se perdait
+
+Le défaut le plus concret, et il n'aurait pas été trouvé sans retirer
+les casts. Six sites écrivaient
+`(v as unknown as { extras }).extras` sur l'entrée VLAN —
+`igmp-snooping`, `undo igmp-snooping`, `mux-vlan`, `vlan-type`,
+`mac-vlan`, `ip`, `arp` — et **rien ne lisait jamais ce magasin**.
+
+Ces lignes étaient donc absentes de `display current-configuration`,
+c'est-à-dire perdues au rechargement d'une topologie. Le magasin est
+déclaré dans le port (une conversion au lieu de six) **et il est rendu**,
+sous son VLAN, ce qui était sa seule raison d'exister.
+
+### 19.4 Un cast qui annulait l'union des vues
+
+L'union `VRPSwitchMode` est complète (treize vues, treize cas dans
+`getActiveTrie()`) — mais deux casts la neutralisaient :
+`setMode: (m) => { this.mode = m as VRPSwitchMode }` pour les aides
+partagées, et `this.mode = s.mode as VRPSwitchMode` à la restauration de
+session. Les aides partagées sont écrites pour le **routeur** et
+connaissent une trentaine de vues que le switch n'a pas ; l'une d'elles
+posée ici tombait sur `default:` et rendait le shell **muet**, sans un
+mot.
+
+Une vue que cette plateforme n'a pas ne change plus la vue courante.
+C'est la même forme que le `| string` du §18, sauf qu'ici l'union était
+juste et que c'est le cast qui la défaisait.
+
+### 19.5 Refusé, et pourquoi
+
+**`description` et `step` de la vue ACL restent morts.** Écrits, lus par
+personne, ici comme ailleurs. Les déclarer sur le type de la table ne les
+rend pas vivants ; cela les rend **greppables**, ce qu'un cast empêche —
+c'est la règle du §18 pour les onze champs BGP/IS-IS, et un test empêche
+qu'un cast les rende invisibles à nouveau.
+
+**Deux constats mesurés en passant, et laissés ouverts** parce qu'ils ne
+relèvent pas du typage : `display interface Vlanif 10` (forme séparée)
+est refusé alors que `interface Vlanif 10` est accepté — deux résolveurs
+de nom pour un seul objet ; et `display interface vlanif10` rend
+`vlanif10` en minuscules au lieu du `Vlanif10` canonique, la règle « un
+port a un seul nom » du lot V3 n'ayant pas atteint cette vue.
+
+### 19.6 Tests et mesures
+
+Le typage lui-même est gardé par le **compilateur**, pas par un test :
+`huawei-switch-typage.test.ts` (12 cas) vérifie les trois conséquences
+réelles — la configuration VLAN qui revient et se range sous son VLAN, la
+vue du routeur qui ne rend plus le shell muet, `protocol inbound` dont
+l'inertie est désormais écrite — plus deux cliquets de source (aucun
+`as unknown as` ni `as any` ne subsiste ; les magasins morts restent
+déclarés).
+
+**Une assertion qui ne discriminait rien, corrigée** : le cas « une vue
+du routeur ne devient pas la vue du switch » s'appuyait d'abord sur
+l'invite et sur le refus d'une commande inconnue — or les deux sont
+IDENTIQUES avant et après, la vue inconnue retombant sur la trie
+utilisateur. Il passait avec le correctif désactivé. Il s'appuie
+maintenant sur le nom de vue retenu, qui est ce qui diffère réellement.
+
+Discrimination par `git stash` : **6 des 12 tombent** avant.
+
+**Mesures.** 88 suites connexes vertes (1 266 cas). `as unknown as` :
+**37 → 0** ; `as any` : 1 → 0. Typecheck : jeu d'erreurs identique
+avant/après (185). Lint sur les deux fichiers : **0 erreur, 0
+avertissement**. Aucun test existant modifié.
