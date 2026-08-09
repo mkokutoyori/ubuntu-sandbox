@@ -25,6 +25,77 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### VRP — lot V15 : VRRP, un magasin, une grammaire, une vue — PRIS
+
+**Agent** : session « CLI Huawei VRP ». Suite du lot V14, même méthode :
+comparer les deux plateformes entre elles pour le même objet.
+
+**Ce que je prends** : tout ce qui touche VRRP côté Huawei — la
+grammaire `vrrp vrid …`, les vues `display vrrp [brief|statistics|
+interface X]`, et le rendu des lignes `vrrp` dans la configuration, sur
+le **routeur** comme sur le **commutateur**.
+
+**Fichiers que je vais réécrire** :
+
+| Fichier | Nature |
+|---|---|
+| `shells/huawei/huaweiVrrpViews.ts` | **Nouveau** — la grammaire et les vues, une fois pour les deux |
+| `devices/router/redundancy/HuaweiVrrpService.ts` | Réduit : la façade cesse d'être un second magasin |
+| `shells/huawei/HuaweiDisplayCommands.ts` | Les vues et le rendu de configuration du routeur |
+| `shells/HuaweiVRPShell.ts` | L'analyse de `vrrp vrid` en vue d'interface |
+| `shells/HuaweiSwitchShell.ts` | Idem côté commutateur, et ses vues |
+| `network/vrrp/types.ts` | Les champs de configuration que l'agent ne portait pas |
+
+**Ce que j'ai mesuré avant de prendre** (tout est reproductible avec les
+commandes citées) :
+
+1. **Le routeur ne valide RIEN.** `vrrp vrid 999`, `vrrp vrid 0`,
+   `priority 300`, `virtual-ip pas-une-ip`, `timer advertise 0` sont
+   tous acceptés en silence et rendus dans les vues ; le commutateur
+   refuse les cinq avec le bon message VRP.
+2. **Une faute de frappe devient une ligne de configuration** :
+   `vrrp vrid 1 zzz` est rangé dans `rawLines` et ressort tel quel dans
+   `display current-configuration interface …` — donc rejoué à l'import.
+3. **Le `track` du routeur n'atteint jamais l'agent.** Pour la même
+   configuration, le commutateur affiche `PriorityRun : 90 /
+   PriorityConfig : 120` et le routeur `Priority : 120` : sur un
+   routeur, l'interface suivie peut tomber, la priorité ne bouge pas.
+   C'est la raison d'être de la commande.
+4. **Deux magasins pour un fait** : le routeur écrit dans une façade
+   (`HuaweiVrrpService`) ET dans l'agent réel, ses vues lisant la façade
+   sauf pour l'état ; le commutateur n'a que l'agent.
+5. **La configuration se perd, chacun dans un sens** : le
+   `display current-configuration` COMPLET du routeur ne rend aucune
+   ligne `vrrp` (alors que sa vue par interface les rend) ; le
+   commutateur fait l'inverse (complet oui, par interface non).
+6. **`display vrrp interface GigabitEthernet0/0/0` du routeur répond
+   `Info: No VRRP group on …`** alors que le groupe y est : le filtre
+   compare au nom court interne sans le résoudre.
+7. Le routeur écrit `GE0/0/0` dans `display vrrp`, `display vrrp brief`,
+   `display vrrp statistics` **et dans `display current-configuration
+   interface …`** — la règle des lots V3/V11 n'a atteint aucune.
+8. **Le `display vrrp` greedy du commutateur avale ses propres
+   sous-commandes** : `display vrrp statistics` et `display vrrp
+   verbose` y rendent le bloc de `display vrrp`.
+9. **Le commutateur imprime `Virtual MAC : 00:00:5e:00:01:01`** — format
+   IEEE, alors que VRP écrit `0000-5e00-0101` (règle du lot V14). Le
+   routeur, lui, n'imprime aucune ligne `Virtual MAC`.
+10. Pour le même groupe, les deux blocs diffèrent en tout : indentation
+    (4 espaces contre 2), `Preempt mode : Yes (delay 5s)` contre
+    `Preempt : YES` (le délai perdu), `Advertisement timer` et
+    `Authentication` d'un seul côté, la liste des `track` de l'autre.
+
+**Un test existant porte une hypothèse fausse** et je vais le corriger,
+comme le dépôt l'a déjà fait pour `vtp-md5-password.test.ts` :
+`switch-vrrp.test.ts` fixe `Virtual MAC : 00:00:5e:00:01:01` sur une
+machine **Huawei**. Le cas Cisco du même fichier garde sa forme IEEE,
+qui est celle d'IOS.
+
+**Ce qui reste à vous** : `admin-vrrp vrid …` est accepté, rangé et lu
+par personne (défaut préexistant, que je ne referme pas ici) ; côté
+Cisco, `CiscoSwitchShell.ts:4299` imprime la MAC virtuelle au format
+IOS, ce qui est juste — je n'y touche pas.
+
 ### mDNS/LLMNR sur leurs groupes IPv6 — LIVRÉ
 
 **Agent** : session « logging ». Suite directe du lot précédent : le
