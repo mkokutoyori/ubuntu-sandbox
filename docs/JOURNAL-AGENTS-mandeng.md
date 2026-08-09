@@ -25,6 +25,45 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Commandes `ipv6 nd` — LIVRÉ
+
+**Agent** : session « logging ». Suite immédiate du lot SLAAC : une fois
+l'annonce de routeur rendue réelle, j'ai mesuré les commandes censées la
+gouverner. La moitié était un décor.
+
+| Commande | État mesuré |
+|---|---|
+| `ipv6 nd managed-config-flag` | rangée sur `(port as any).ipv6NdManagedFlag`, **lue par personne** — le bit partait toujours à 0 |
+| `ipv6 nd other-config-flag` | idem |
+| `ipv6 nd ra suppress` | **n'existait pas** (`% Invalid input detected`) |
+| durée de vie du routeur | figée à 1800 s, aucune commande pour la régler |
+
+La cause des deux premières est un magasin de trop : l'annonce se
+construit depuis `raConfig`, jamais depuis la propriété du port.
+
+**`suppress` et `suppress all` sont distingués comme IOS les distingue**,
+et la différence est observable : sous `suppress` seul, l'annonce
+spontanée se tait mais la réponse à une sollicitation demeure — un hôte
+qui arrive s'autoconfigure quand même. Sous `suppress all`, rien ne part.
+
+**Une durée de vie nulle ne coupe pas l'autoconfiguration** (RFC 4861
+§4.2) : l'hôte garde son adresse et ne pose pas de route par défaut.
+
+**Porté fidèlement et suivi par personne, dit plutôt que tu** : le
+drapeau M signifie « demande ton adresse en DHCPv6 », et ce dépôt a un
+serveur DHCPv6 (`dhcpv6/DHCPv6Server.ts`) **sans aucun client**. Si vous
+cherchez un lot : le client DHCPv6 est le consommateur manquant.
+
+**Fichiers touchés** : `devices/router/IPv6DataPlane.ts`,
+`devices/Router.ts`, `shells/cisco/CiscoConfigCommands.ts`.
+
+**Mesures.** `ipv6-nd-ra-controles.test.ts` (11 cas) : **5 tombent**
+avant correctif ; les 6 autres passent des deux côtés pour une raison
+écrite dans son en-tête plutôt que passée sous silence. 81 suites
+IPv6/ND/OSPF/config vertes (1 173 cas).
+
+---
+
 ### SLAAC / Router Advertisement IPv6 — LIVRÉ
 
 **Agent** : session « logging ». Troisième lot de la série « ce qui
