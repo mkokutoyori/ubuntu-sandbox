@@ -114,3 +114,87 @@ parce que le greedy avalait tout.
 et sans rapport (`probe-cli-arguments-types.test.ts`, `login-timeout` en
 mode `line`), vérifié identique sur `HEAD`. Typecheck : jeu d'erreurs
 identique (241).
+
+---
+
+## 3. N2 — Livré : Huawei
+
+### 3.1 Le défaut central : deux magasins
+
+Il n'était pas d'affichage. Sur une machine où l'on venait de taper
+quatre serveurs :
+
+```
+[R1]display ntp-service sessions
+No NTP associations
+[R1]display current-configuration | include ntp
+ntp-service unicast-server 192.168.100.5 preference
+ntp-service unicast-server 192.168.100.6
+ntp-service unicast-peer 10.0.12.2
+```
+
+Le CLI écrivait dans `RouterManagementService` — pour `unicast-server`,
+dans un simple **sac de chaînes brutes** (`recordRaw`) — tandis que les
+vues lisaient le `NtpAgent`, celui qui porte le protocole. **Aucune
+commande NTP tapée sur un Huawei n'atteignait le moteur** : ni
+association, ni synchronisation, ni authentification, alors que le même
+moteur synchronise un Cisco depuis toujours.
+
+Quatre conséquences que ce sac explique à lui seul :
+
+1. `ntp-service refclock-master 7` rangeait la chaîne `7` et laissait la
+   machine `unsynchronized`, stratum 16 ;
+2. `ntp-service authentication-keyid 1 authentication-mode md5 CLE` était
+   lu **en positions fixes**, si bien que l'algorithme retenu était le
+   mot `authentication-mode` et que **la clé était perdue** ; la
+   configuration rendue écrivait le mot deux fois de suite ;
+3. un second `unicast-server` sur la même adresse **ajoutait une ligne**
+   au lieu de mettre à jour — un sac de chaînes ne connaît pas les
+   adresses qu'il contient ;
+4. tout ce que le sac ne reconnaissait pas y entrait quand même, donc
+   une **faute de frappe ressortait dans la configuration** et était
+   rejouée à l'import.
+
+### 3.2 Le fuseau horaire, indépendamment
+
+`clock timezone WAT add 01:00:00` était accepté et **sans effet** :
+l'analyseur attendait `+01:00`, une forme que VRP n'émet jamais — le
+signe y est le mot `add`/`minus` et le décalage porte des **secondes**.
+Aucun fuseau configuré sur un Huawei n'était donc appliqué, et
+`display clock` écrivait `Time Zone(UTC) : UTC` **en dur**, sans jamais
+lire la configuration d'horloge. La même commande, côté Cisco, décalait
+bien l'affichage : deux plateformes, deux réponses, pour la même
+intention.
+
+### 3.3 Ce qui est fait
+
+`huawei/huaweiNtpCommands.ts` porte **une grammaire qui valide** (au
+lieu de lire des positions), **l'écriture dans l'agent** — le seul
+magasin, celui de Cisco — **un rendu de configuration qui décrit l'état**
+(donc qui se relit), et **les deux vues**. `display ntp-service sessions
+verbose` existe. `display clock` lit le fuseau.
+
+Deux points de fidélité VRP, tenus séparés de la mesure : VRP annonce
+`Nominal frequency: 100.0000 Hz` et `Clock precision: 2^17` là où IOS
+annonce 250 Hz et `2**18` ; et il écrit `LOCAL(0)` là où IOS écrit
+`LOCL`. L'agent étant partagé, la traduction vit dans la vue.
+
+Le `reach` était écrit **`377` en dur** pour toute association : la vue
+affirmait huit réponses sur huit d'un serveur muet. Il est lu.
+
+### 3.4 Tests
+
+`tuto-ntp-huawei.test.ts` (23 cas) suit le §4 du tutoriel. Son premier
+bloc vérifie que la machine **se synchronise**, pas qu'elle affiche
+quelque chose ; son dernier compare les **deux plateformes entre elles** —
+quelle que soit la bonne réponse, un Cisco et un Huawei branchés au même
+serveur ne peuvent pas être l'un synchronisé et l'autre non. C'est la
+propriété qui se vérifie sans connaître VRP.
+
+Discrimination par `git stash` : **19 des 23 tombent** avant.
+
+**Mesures.** 150 suites connexes vertes (2 569 cas). Le même échec
+préexistant et sans rapport (`probe-cli-arguments-types.test.ts`,
+`login-timeout` en mode `line`), vérifié identique sur `HEAD`.
+Typecheck : jeu d'erreurs identique (241). Lint : 343 avant, 343 après.
+Aucun test existant modifié.

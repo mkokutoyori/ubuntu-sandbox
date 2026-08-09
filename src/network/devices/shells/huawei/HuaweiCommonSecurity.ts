@@ -11,6 +11,9 @@ import { InfoCenterConfig } from '../../router/management/InfoCenterConfig';
  * HuaweiVRPShell don't duplicate the wiring (DRY).
  */
 import type { CommandTrie } from '../CommandTrie';
+import { getNtpAgent } from '../../../equipment/RouterServiceCapabilities';
+import { rendreErreurVrp } from '../cli-utils';
+import { analyserNtpVrp, appliquerNtpVrp, retirerNtpVrp } from './huaweiNtpCommands';
 
 export interface LocalUser {
   password?: string;
@@ -108,7 +111,25 @@ export function registerHuaweiCommonSecurity(trie: CommandTrie, getRouter?: () =
   trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
   trie.registerGreedy('snmp-agent', 'SNMP agent configuration', (args) => dispatch('snmp-agent', args));
-  trie.registerGreedy('ntp-service', 'NTP service configuration', (args) => dispatch('ntp-service', args));
+  // Lot N2 : `ntp-service` ecrivait dans le service de gestion — pour
+  // `unicast-server`, dans un simple sac de chaines brutes — tandis que
+  // les vues lisaient le `NtpAgent`. Aucune commande NTP tapee sur un
+  // Huawei n'atteignait donc le moteur. Elle l'atteint.
+  trie.registerGreedy('ntp-service', 'NTP service configuration', (args, raw) => {
+    const agent = getRouter && getNtpAgent(getRouter());
+    if (!agent) return dispatch('ntp-service', args);
+    const a = analyserNtpVrp(args);
+    if (a.statut === 'refus') return rendreErreurVrp(a.err, raw ?? `ntp-service ${args.join(' ')}`);
+    appliquerNtpVrp(agent, a.action);
+    return '';
+  });
+  trie.registerGreedy('undo ntp-service', 'Remove NTP service configuration', (args) => {
+    const agent = getRouter && getNtpAgent(getRouter());
+    if (!agent) return '';
+    const a = analyserNtpVrp(args);
+    if (a.statut === 'ok') retirerNtpVrp(agent, a.action);
+    return '';
+  });
   trie.registerGreedy('clock', 'Clock configuration', (args) => dispatch('clock', args));
   // `info-center` a maintenant son propre arbre
   // (`HuaweiInfoCenterCommands`) : un nœud glouton n'a pas de sous-arbre,
