@@ -300,6 +300,7 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V5** | Chantier D §3 et §5 : bornes, abréviation du nom d'interface (**livré, §13** ; l'aide §1.9 est passée à l'agent « logging ») | V4 |
 | **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | **Livré, §14** |
 | **V7** | La queue d'une commande lue jusqu'au bout (reliquat de V4/V5) | **Livré, §16** |
+| **V8** | La grammaire de `acl` et `stp` (reliquat de V7) | **Livré, §17** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1235,3 +1236,143 @@ construction — et les remainders documentés.
 routage, DHCP et L3. Typecheck : **jeu d'erreurs identique** avant et
 après (168, le baseline courant). Lint sur les cinq fichiers touchés :
 125 problèmes avant, 125 après.
+
+---
+
+## 17. V8 — Livré : la grammaire de `acl` et `stp`
+
+Les deux perméabilités que V8 ferme sont celles que **V7 avait nommées
+sans les fermer**, et pour une raison qui tient toujours : toutes deux
+portent plusieurs grammaires sous un seul nœud glouton, donc un plafond y
+refuserait des formes légitimes. Il fallait écrire la grammaire.
+
+### 17.1 `acl` : il y en avait DEUX, et elles ne disaient pas la même chose
+
+Le constat le plus lourd du lot, et il ne portait pas sur la queue.
+Mesuré sur un routeur et un switch neufs, même ligne, même vue :
+
+| Ligne | Routeur | Switch |
+|---|---|---|
+| `acl 42` | `Error: ACL number must be 2000-…` | `[SW-acl-basic-42]` |
+| `acl 0` | refusé | `[SW-acl-basic-0]` |
+| `acl abc` | refusé | **`[SW-acl-basic-NaN]`** |
+| `acl number` | refusé | **`[SW-acl-basic-NaN]`** |
+| `acl name TEST advance` | `[R-acl-adv-TEST]` | **`[SW-acl-basic-TEST]`** |
+| `acl ipv6 name V6` | `[R-acl-adv-V6]` | **`[SW-acl-basic-NaN]`** |
+
+Trois faits, pas un : le switch **ne bornait rien**, il lisait le mot de
+type comme un NUMÉRO — d'où l'impossibilité d'y créer une ACL nommée
+avancée — et il ouvrait des vues dont le nom était littéralement `NaN`.
+Sur la même maquette, la même commande donnait deux réponses selon
+l'équipement.
+
+`HuaweiAclGrammar.ts` porte la grammaire **une fois**, pour les deux ;
+chaque plateforme garde SON magasin, qui est légitimement différent (le
+moteur d'ACL du routeur, la table du switch). Ce qui ne doit pas
+différer, c'est ce qui est accepté.
+
+**Une forme a été sauvée plutôt que supprimée**, et c'est un test
+existant qui l'a imposé : `acl name MGMT 2999` lie un nom à un numéro,
+et c'était la seule forme que le switch avait et que le routeur
+refusait. Ma première grammaire l'a fait tomber ; la bonne lecture est
+que la grammaire partagée doit être l'**union des deux vraies
+grammaires**, pas celle du routeur seul. Le numéro y décide du type,
+comme partout ailleurs.
+
+### 17.2 `stp` : le premier mot était validé, et rien au-delà
+
+Sept formes en vue système passaient en avalant leur queue
+(`stp mode rstp extra`, `stp priority 4096 extra`, `stp root primary
+extra`, `stp enable extra`, `stp bpdu-protection extra`,
+`stp edged-port default extra`, `stp instance 1 priority 4096 extra`).
+
+La vue interface était pire : **rien** n'était vérifié au-delà du premier
+mot. `stp cost abc`, `stp edged-port zzz`, `stp port priority abc`
+étaient acceptés sans rien poser — et la ligne était **tout de même
+conservée** pour `display this`, donc écrite dans la configuration et
+**rejouée à l'import**. Elle n'est plus rangée qu'une fois la grammaire
+admise.
+
+`HuaweiStpGrammar.ts` est une **table**, pas une suite de `if` : c'est ce
+qui rend vérifiable qu'aucune forme n'est oubliée, et c'est la forme que
+le catalogue de `debugging` avait déjà prise au lot V6. Un mot-clé
+inconnu et un mot en trop y sont deux fautes distinctes, chacune
+désignant son jeton.
+
+### 17.3 Le curseur désignait le mot juste
+
+Défaut transversal aux deux commandes, et invisible tant qu'on ne lit que
+le message : le curseur se posait **toujours sur le premier argument**,
+c'est-à-dire sur le mot-clé que l'opérateur avait tapé correctement.
+
+```
+avant                       après
+stp mode zzz                stp mode zzz
+    ^                                ^
+acl name TEST zzz           acl name TEST zzz
+    ^                                     ^
+```
+
+C'est ce que `rendreErreurVrp` corrige : l'erreur **porte** son jeton
+fautif au lieu qu'il soit deviné au rendu.
+
+### 17.4 Deux réglages jetés alors que le moteur les portait
+
+Trouvés en écrivant la table, pas cherchés. `stp timer` et
+`stp pathcost-standard` étaient acceptés et **écartés**, alors que
+`StpAgent` expose `setHelloSec`, `setForwardDelaySec`, `setMaxAgeSec` et
+`setPathcostMethod` depuis toujours. Les refuser aurait été faux ; les
+brancher tenait en trois lignes. **VRP compte ces temporisateurs en
+centièmes de seconde** et le moteur en secondes, donc la conversion est
+faite ici, et les bornes de chaque temporisateur sont les siennes
+(`hello` 100-1000, `forward-delay` 400-3000, `max-age` 600-4000).
+
+Mesuré : `stp timer hello 500` fait passer `display stp` de
+`Hello 2s` à `Hello 5s`.
+
+### 17.5 Refusé, et pourquoi
+
+**`tc-protection` et `converge` restent admis et sans effet.** Leur
+grammaire est désormais vérifiée, mais aucun modèle ne les porte — il n'y
+a ni limitation de débit des changements de topologie ni convergence
+rapide dans ce simulateur. Les refuser serait faux (ce sont de vraies
+commandes VRP) et prétendre qu'elles agissent le serait aussi. Un test
+les fixe.
+
+**Les ACL L2 (4000-4999) et utilisateur (5000-5999) restent hors des
+bornes tenues.** Elles existent sur VRP ; rien ici ne sait évaluer une
+règle de ces familles, donc la vue n'est pas ouverte et la borne tenue
+est nommée. C'est la règle du lot V6 pour `debugging isis`.
+
+### 17.6 Tests et mesures
+
+`huawei-grammaire-acl-et-stp.test.ts` (33 cas). La propriété la plus
+forte du fichier n'est pas une liste d'attentes écrites à la main :
+**les deux plateformes sont comparées l'une à l'autre** sur 28 formes
+d'`acl`, sortie ET vue ouverte. Un test écrit à la main aurait pu
+recopier la mauvaise réponse ; celui-ci ne peut pas passer si les deux
+divergent.
+
+Le reste balaie les deux vues de `stp` (21 formes légitimes, 28 fautives
+en vue système ; 12 et 14 en vue interface), vérifie qu'un refus ne
+change pas le mode ni ne laisse sa ligne dans la configuration, et pointe
+le curseur mot à mot sur douze refus.
+
+**Une assertion vide de sens, corrigée** : le premier test de
+`stp timer` cherchait `/Hello.*5/`, qui matche aussi
+`Hello 2s MaxAge 20s FwDly 15s` — le `5` de `15s`. Il passait avec le
+correctif désactivé. Il compare maintenant `Hello 5s` contre un témoin
+mesuré dans le même laboratoire (`Hello 2s`, le défaut), sans quoi un
+laboratoire mal monté et une commande sans effet seraient indiscernables.
+
+Discrimination par `git stash` : **23 des 33 tombent** avant.
+
+**Mesures.** 87 suites connexes vertes (1 254 cas), plus les scénarios
+VRP ACL/STP, VLAN et L3. Typecheck : jeu d'erreurs identique avant/après
+(184). Lint : 4 problèmes avant, 4 après — les deux fichiers de grammaire
+n'en ajoutent aucun.
+
+**Un test existant corrigé, et un seul** :
+`huawei-queue-lue-jusquau-bout.test.ts` épinglait ces deux perméabilités
+comme reliquat de V7 ; le reliquat étant fermé, le cas devient sa garde
+et vérifie maintenant le refus.

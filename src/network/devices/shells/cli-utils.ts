@@ -36,6 +36,7 @@ export const HUAWEI_ERRORS = {
   AMBIGUOUS: (input: string, pos?: number) => formatVrpPositionalError('Ambiguous command', input, pos),
   INCOMPLETE: (input: string, pos?: number) => formatVrpPositionalError('Incomplete command', input, pos),
   UNRECOGNIZED: (input: string, pos?: number) => formatVrpPositionalError('Unrecognized command', input, pos),
+  WRONG: (input: string, pos?: number) => formatVrpPositionalError('Wrong parameter', input, pos),
   TOO_MANY: (input: string, pos?: number) => formatVrpPositionalError('Too many parameters', input, pos),
 } as const;
 
@@ -211,6 +212,48 @@ export function refuseMotInattenduVrp(ligne: string, token: string): string {
   const propre = ligne.trim();
   const pos = propre.toLowerCase().indexOf(token.toLowerCase());
   return HUAWEI_ERRORS.UNRECOGNIZED(propre, pos < 0 ? propre.length : pos);
+}
+
+/**
+ * Ce qu'une grammaire de commande peut reprocher a une ligne. Le mot
+ * fautif est porte par l'erreur plutot que devine au rendu : c'est ce
+ * qui permet au curseur de designer `zzz` dans `stp mode zzz` au lieu de
+ * `mode`, qui est le seul mot juste.
+ *
+ * `propre` sort du cadre des quatre familles positionnelles : c'est un
+ * message specifique a la commande, sur une ligne et sans curseur, comme
+ * `Error: OSPF is not configured.` — VRP en a, et leur en inventer une
+ * position serait faux.
+ */
+export type ErreurGrammaireVrp =
+  | { kind: 'incomplete' }
+  | { kind: 'wrong'; token: string }
+  | { kind: 'unrecognized'; token: string }
+  | { kind: 'too-many'; token: string }
+  | { kind: 'propre'; message: string };
+
+/** Le rang du mot fautif dans la ligne, en comptant les mots. */
+function positionDuMot(ligne: string, token: string): number {
+  const mots = ligne.split(/\s+/);
+  let curseur = 0;
+  for (const mot of mots) {
+    const at = ligne.indexOf(mot, curseur);
+    if (mot.toLowerCase() === token.toLowerCase()) return at;
+    curseur = at + mot.length;
+  }
+  const brut = ligne.toLowerCase().indexOf(token.toLowerCase());
+  return brut < 0 ? ligne.length : brut;
+}
+
+export function rendreErreurVrp(err: ErreurGrammaireVrp, ligne: string): string {
+  const propre = ligne.trim();
+  switch (err.kind) {
+    case 'incomplete': return HUAWEI_ERRORS.INCOMPLETE(propre);
+    case 'propre': return err.message;
+    case 'wrong': return HUAWEI_ERRORS.WRONG(propre, positionDuMot(propre, err.token));
+    case 'unrecognized': return HUAWEI_ERRORS.UNRECOGNIZED(propre, positionDuMot(propre, err.token));
+    case 'too-many': return HUAWEI_ERRORS.TOO_MANY(propre, positionDuMot(propre, err.token));
+  }
 }
 
 // ─── Pipe Filter ───────────────────────────────────────────────────

@@ -181,17 +181,14 @@ describe('ce qui est libre le reste', () => {
 });
 
 describe('ce que ce lot ne traite pas, et le dit', () => {
-  it('deux gestionnaires gloutons multi-formes acceptent encore un mot en trop', async () => {
-    // `acl` et `stp` portent PLUSIEURS grammaires sous un seul noeud
-    // (`acl 2000` / `acl number 2000` / `acl name X advance` ;
-    // `stp mode`, `stp priority`, `stp root`…). Leur poser un plafond
-    // refuserait des formes legitimes, et ecrire leur grammaire est un
-    // travail par commande, pas un plafond. Fixe ici pour que ce soit
-    // fait sciemment le jour ou ce sera fait.
+  it('`acl` et `stp` ne sont plus permeables — ferme par le lot V8', async () => {
+    // Ce cas fixait le reliquat de V7 ; la grammaire des deux commandes
+    // est ecrite depuis (PRD §17), donc le reliquat est ferme et le test
+    // devient sa garde.
     const r = await dans('R', ['system-view']);
-    expect(await r.executeCommand('acl 2000 extra')).not.toMatch(REFUS);
+    expect(await r.executeCommand('acl 2000 extra')).toMatch(REFUS);
     const s = await dans('S', ['system-view']);
-    expect(await s.executeCommand('stp mode rstp extra')).not.toMatch(REFUS);
+    expect(await s.executeCommand('stp mode rstp extra')).toMatch(REFUS);
   });
 
   it('`ip address … sub` est accepte et ne cree pas d\'adresse secondaire', async () => {

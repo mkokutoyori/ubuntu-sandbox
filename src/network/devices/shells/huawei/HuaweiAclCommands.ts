@@ -18,6 +18,8 @@ import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import type { PortOperator, PortSpec } from '../../router/ACLEngine';
 import { formatHuaweiAclEntry } from '../../router/ACLEngine';
+import { rendreErreurVrp } from '../cli-utils';
+import { analyserAcl } from './HuaweiAclGrammar';
 
 const normalizeWildcard = (w: string): string => (w === '0' ? '0.0.0.0' : w);
 
@@ -60,52 +62,20 @@ export function registerHuaweiACLSystemCommands(
 ): void {
   const getRouter = () => ctx.r();
 
-  trie.registerGreedy('acl', 'Configure Access Control List', (args) => {
-    if (args.length < 1) return 'Error: Incomplete command.';
-
-    if (args[0].toLowerCase() === 'name') {
-      if (args.length < 2) return 'Error: Incomplete command.';
-      const name = args[1];
-      const typeTok = args[2]?.toLowerCase();
-      const isAdvanced = typeTok === 'advanced' || typeTok === 'advance';
-      const isBasic = typeTok === 'basic';
-      if (typeTok && !isAdvanced && !isBasic) return 'Error: Expected basic or advance.';
-      const mode = isAdvanced ? 'acl-advanced' : 'acl-basic';
-      ctx.setSelectedACLName(name);
+  trie.registerGreedy('acl', 'Configure Access Control List', (args, ligne) => {
+    const a = analyserAcl(args);
+    if (a.statut === 'refus') return rendreErreurVrp(a.err, ligne ?? `acl ${args.join(' ')}`);
+    const mode = a.cmd.type === 'advanced' ? 'acl-advanced' : 'acl-basic';
+    if (a.cmd.kind === 'nom') {
+      ctx.setSelectedACLName(a.cmd.nom);
       ctx.setSelectedACLNumber(null);
-      ctx.setSelectedACLMode(mode);
-      ctx.setMode(mode);
-      return '';
-    }
-
-    if (args[0].toLowerCase() === 'ipv6') {
-      if (args.length < 3 || args[1].toLowerCase() !== 'name') return 'Error: Incomplete command.';
-      const name = args[2];
-      ctx.setSelectedACLName(name);
-      ctx.setSelectedACLNumber(null);
-      ctx.setSelectedACLMode('acl-advanced');
-      ctx.setMode('acl-advanced');
-      return '';
-    }
-
-    const numTok = args[0].toLowerCase() === 'number' ? args[1] : args[0];
-    const num = parseInt(numTok ?? '', 10);
-    if (isNaN(num)) return 'Error: Invalid ACL number.';
-    if (num >= 2000 && num <= 2999) {
-      ctx.setSelectedACLNumber(num);
+    } else {
+      ctx.setSelectedACLNumber(a.cmd.numero);
       ctx.setSelectedACLName(null);
-      ctx.setSelectedACLMode('acl-basic');
-      ctx.setMode('acl-basic');
-      return '';
     }
-    if (num >= 3000 && num <= 3999) {
-      ctx.setSelectedACLNumber(num);
-      ctx.setSelectedACLName(null);
-      ctx.setSelectedACLMode('acl-advanced');
-      ctx.setMode('acl-advanced');
-      return '';
-    }
-    return 'Error: ACL number must be 2000-2999 (basic) or 3000-3999 (advanced).';
+    ctx.setSelectedACLMode(mode);
+    ctx.setMode(mode);
+    return '';
   });
   // `advanced` et `basic` étaient extraits du texte de ce handler par
   // `autoContinuations`, qui ne trouve pas de description pour eux dans

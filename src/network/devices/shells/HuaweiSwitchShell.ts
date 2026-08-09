@@ -24,7 +24,7 @@ import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteract
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp, rendreErreurVrp } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -33,6 +33,8 @@ import {
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
+import { analyserAcl } from './huawei/HuaweiAclGrammar';
+import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import {
   registerHuaweiNATInterfaceCommands,
   registerHuaweiNATSystemCommands,
@@ -776,23 +778,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // acl {<number> | name <name> [number] | number <number>} → ACL view
-    this.systemTrie.registerGreedy('acl', 'Configure an ACL', (args) => {
-      if (args.length < 1) return 'Error: Incomplete command.';
-      let key: string;
-      let num = NaN;
-      if (args[0].toLowerCase() === 'name') {
-        key = args[1] ?? '';
-        num = parseInt(args[2] ?? '', 10);
-      } else if (args[0].toLowerCase() === 'number') {
-        num = parseInt(args[1] ?? '', 10);
-        key = String(num);
-      } else {
-        num = parseInt(args[0], 10);
-        key = String(num);
-      }
-      if (!key) return 'Error: Wrong parameter found at \'^\' position.';
-      const type: 'basic' | 'adv' = (!isNaN(num) && num >= 3000) ? 'adv' : 'basic';
-      if (!this.acls.has(key)) this.acls.set(key, { key, type, rules: [] });
+    this.systemTrie.registerGreedy('acl', 'Configure an ACL', (args, ligne) => {
+      // Meme grammaire que le routeur : sans elle, `acl 42` ouvrait une
+      // vue pour un numero qui n'existe pas et `acl abc` une vue nommee
+      // `NaN`, sur la meme branche que le routeur qui les refusait.
+      const a = analyserAcl(args);
+      if (a.statut === 'refus') return rendreErreurVrp(a.err, ligne ?? `acl ${args.join(' ')}`);
+      const key = a.cmd.kind === 'nom' ? a.cmd.nom : String(a.cmd.numero);
+      const type: 'basic' | 'adv' = a.cmd.type === 'advanced' ? 'adv' : 'basic';
+      const existant = this.acls.get(key);
+      if (!existant) this.acls.set(key, { key, type, rules: [] });
       this.selectedAcl = key;
       this.mode = 'acl';
       return '';
@@ -2473,58 +2468,41 @@ export class HuaweiSwitchShell implements ISwitchShell {
       validator: () => true,
       values: STP_SYSTEM_KEYWORDS.map(k => ({ ...k })),
     }]);
-    trie.registerGreedy('stp', 'Spanning Tree Protocol configuration', (args) => {
-      const a = args.map(s => s.toLowerCase());
-      if (a.length === 0) return 'Error: Incomplete command.';
+    trie.registerGreedy('stp', 'Spanning Tree Protocol configuration', (args, ligne) => {
+      const g = analyserStp(args, STP_SYSTEME);
+      if (g.statut === 'refus') return rendreErreurVrp(g.err, ligne ?? `stp ${args.join(' ')}`);
+      const a = g.args.map(x => x.toLowerCase());
 
-      switch (a[0]) {
+      switch (g.mot) {
         case 'enable':
-          this.stp.enabled = true;
-          this.applyToStpAgent(ag => ag.setEnabled(true));
+        case 'disable': {
+          const on = g.mot === 'enable';
+          this.stp.enabled = on;
+          this.applyToStpAgent(ag => ag.setEnabled(on));
           return '';
-        case 'disable':
-          this.stp.enabled = false;
-          this.applyToStpAgent(ag => ag.setEnabled(false));
-          return '';
+        }
         case 'mode': {
-          const m = a[1];
-          if (m !== 'stp' && m !== 'rstp' && m !== 'mstp') {
-            return 'Error: Wrong parameter found at \'^\' position.';
-          }
+          const m = a[0] as 'stp' | 'rstp' | 'mstp';
           this.stp.mode = m;
           this.applyToStpAgent(ag => ag.setMode(m));
           return '';
         }
         case 'priority': {
-          const p = parseInt(a[1], 10);
-          if (isNaN(p) || p < 0 || p > 61440 || p % 4096 !== 0) {
-            return 'Error: Wrong parameter found at \'^\' position.';
-          }
+          const p = parseInt(a[0], 10);
           this.stp.priority = p;
           this.applyToStpAgent(ag => ag.setBridgePriority(p));
           return '';
         }
-        case 'root':
-          if (a[1] === 'primary') {
-            this.stp.root = 'primary'; this.stp.priority = 0;
-            this.applyToStpAgent(ag => ag.setBridgePriority(0));
-            return '';
-          }
-          if (a[1] === 'secondary') {
-            this.stp.root = 'secondary'; this.stp.priority = 4096;
-            this.applyToStpAgent(ag => ag.setBridgePriority(4096));
-            return '';
-          }
-          return 'Error: Wrong parameter found at \'^\' position.';
+        case 'root': {
+          const p = a[0] === 'primary' ? 0 : 4096;
+          this.stp.root = a[0] as 'primary' | 'secondary';
+          this.stp.priority = p;
+          this.applyToStpAgent(ag => ag.setBridgePriority(p));
+          return '';
+        }
         case 'instance': {
-          const instId = parseInt(a[1], 10);
-          if (isNaN(instId) || a[2] !== 'priority') {
-            return 'Error: Wrong parameter found at \'^\' position.';
-          }
-          const p = parseInt(a[3], 10);
-          if (isNaN(p) || p < 0 || p > 61440 || p % 4096 !== 0) {
-            return 'Error: Wrong parameter found at \'^\' position.';
-          }
+          const instId = parseInt(a[0], 10);
+          const p = parseInt(a[2], 10);
           this.applyToStpAgent(ag => ag.setMstInstancePriority(instId, p));
           return '';
         }
@@ -2532,19 +2510,40 @@ export class HuaweiSwitchShell implements ISwitchShell {
           this.stp.bpduProtection = true;
           return '';
         case 'edged-port':
-          if (a[1] !== 'default') return 'Error: Wrong parameter found at \'^\' position.';
           this.stp.edgedPortDefault = true;
           return '';
         case 'pathcost-standard':
+          // Le moteur porte deja ce reglage ; la commande l'ecartait.
+          this.applyToStpAgent(ag => ag.setPathcostMethod(a[0] === 'dot1t' ? 'long' : 'short'));
+          return '';
+        case 'timer': {
+          // VRP compte ces trois temporisateurs en CENTIEMES de seconde ;
+          // le moteur les tient en secondes. La valeur etait jetee alors
+          // que les trois accesseurs existaient.
+          const borne = borneTimerStp(a[0]);
+          if (!borne) return rendreErreurVrp({ kind: 'wrong', token: g.args[0] }, ligne ?? '');
+          const cs = parseInt(a[1], 10);
+          if (cs < borne[0] || cs > borne[1]) {
+            return rendreErreurVrp({ kind: 'wrong', token: g.args[1] }, ligne ?? '');
+          }
+          const sec = Math.round(cs / 100);
+          this.applyToStpAgent(ag => {
+            if (a[0] === 'hello') ag.setHelloSec(sec);
+            else if (a[0] === 'forward-delay') ag.setForwardDelaySec(sec);
+            else ag.setMaxAgeSec(sec);
+          });
+          return '';
+        }
         case 'tc-protection':
         case 'converge':
-        case 'timer':
-          return ''; // accepted, no behavioural effect in the sim
+          // Acceptes et sans effet : aucun modele derriere. Nomme dans le
+          // PRD plutot que masque par un refus qui serait faux.
+          return '';
         case 'region-configuration':
           this.mode = 'mst-region';
           return '';
         default:
-          return `Error: Unrecognized command "stp ${args.join(' ')}"`;
+          return '';
       }
     });
   }
@@ -2556,53 +2555,58 @@ export class HuaweiSwitchShell implements ISwitchShell {
       validator: () => true,
       values: STP_INTERFACE_KEYWORDS.map(k => ({ ...k })),
     }]);
-    trie.registerGreedy('stp', 'Interface STP configuration', (args) => {
+    trie.registerGreedy('stp', 'Interface STP configuration', (args, ligne) => {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
-      const a = args.map(s => s.toLowerCase());
-      if (a.length === 0) return 'Error: Incomplete command.';
-      const valid = new Set(['edged-port', 'bpdu-protection', 'cost', 'instance',
-        'port', 'disable', 'enable', 'bpdu-filter', 'loop-protection',
-        'root-protection', 'tc-restriction']);
-      if (!valid.has(a[0])) {
-        return `Error: Unrecognized command "stp ${args.join(' ')}"`;
-      }
-      // Persist a normalised line for `display this`.
-      const list = this.ifStp.get(this.selectedInterface) ?? [];
-      list.push(`stp ${args.join(' ')}`);
-      this.ifStp.set(this.selectedInterface, list);
+      const g = analyserStp(args, STP_INTERFACE);
+      if (g.statut === 'refus') return rendreErreurVrp(g.err, ligne ?? `stp ${args.join(' ')}`);
+      const a = g.args.map(x => x.toLowerCase());
       const port = this.selectedInterface;
-      if (a[0] === 'edged-port' && a[1] === 'enable') {
-        this.applyToStpAgent(ag => ag.setPortFast(port, true));
-      } else if (a[0] === 'edged-port' && a[1] === 'disable') {
-        this.applyToStpAgent(ag => ag.setPortFast(port, false));
-      } else if (a[0] === 'bpdu-protection' && a[1] === 'enable') {
-        this.applyToStpAgent(ag => ag.setPortBpduGuard(port, true));
-      } else if (a[0] === 'bpdu-protection' && a[1] === 'disable') {
-        this.applyToStpAgent(ag => ag.setPortBpduGuard(port, false));
-      } else if (a[0] === 'bpdu-filter' && a[1] === 'enable') {
-        this.applyToStpAgent(ag => ag.setPortBpduFilter(port, true));
-      } else if (a[0] === 'bpdu-filter' && a[1] === 'disable') {
-        this.applyToStpAgent(ag => ag.setPortBpduFilter(port, false));
-      } else if (a[0] === 'root-protection') {
-        this.applyToStpAgent(ag => ag.setPortRootGuard(port, true));
-      } else if (a[0] === 'loop-protection') {
-        this.applyToStpAgent(ag => ag.setPortLoopGuard(port, true));
-      } else if (a[0] === 'cost') {
-        // `stp [instance <n>] cost <m>` — VRP's spelling of the same knob
-        // Cisco writes `spanning-tree [vlan <v>] cost <m>`.
-        const cost = parseInt(a[1], 10);
-        if (!Number.isNaN(cost)) this.applyToStpAgent(ag => ag.setPortCost(port, cost));
-      } else if (a[0] === 'instance' && a[2] === 'cost') {
-        const inst = parseInt(a[1], 10);
-        const cost = parseInt(a[3], 10);
-        if (!Number.isNaN(inst) && !Number.isNaN(cost)) {
-          this.applyToStpAgent(ag => ag.setPortCost(port, cost, inst));
+
+      // La ligne n'est conservee pour `display this` qu'une fois la
+      // grammaire admise : elle est REJOUEE a l'import, donc y ranger
+      // une forme refusee la ferait tomber au rechargement.
+      const list = this.ifStp.get(port) ?? [];
+      list.push(`stp ${args.join(' ')}`);
+      this.ifStp.set(port, list);
+
+      const actif = a[0] === 'enable' || a[a.length - 1] === 'enable';
+      switch (g.mot) {
+        case 'edged-port':
+          this.applyToStpAgent(ag => ag.setPortFast(port, actif));
+          return '';
+        case 'bpdu-protection':
+          this.applyToStpAgent(ag => ag.setPortBpduGuard(port, actif));
+          return '';
+        case 'bpdu-filter':
+          this.applyToStpAgent(ag => ag.setPortBpduFilter(port, actif));
+          return '';
+        case 'root-protection':
+          this.applyToStpAgent(ag => ag.setPortRootGuard(port, true));
+          return '';
+        case 'loop-protection':
+          this.applyToStpAgent(ag => ag.setPortLoopGuard(port, true));
+          return '';
+        case 'cost': {
+          // `stp [instance <n>] cost <m>` — VRP's spelling of the same knob
+          // Cisco writes `spanning-tree [vlan <v>] cost <m>`.
+          const cost = parseInt(a[0], 10);
+          this.applyToStpAgent(ag => ag.setPortCost(port, cost));
+          return '';
         }
-      } else if (a[0] === 'port' && a[1] === 'priority') {
-        const priority = parseInt(a[2], 10);
-        if (!Number.isNaN(priority)) this.applyToStpAgent(ag => ag.setPortPriority(port, priority));
+        case 'instance': {
+          const inst = parseInt(a[0], 10);
+          const cost = parseInt(a[2], 10);
+          this.applyToStpAgent(ag => ag.setPortCost(port, cost, inst));
+          return '';
+        }
+        case 'port': {
+          const priority = parseInt(a[1], 10);
+          this.applyToStpAgent(ag => ag.setPortPriority(port, priority));
+          return '';
+        }
+        default:
+          return '';
       }
-      return '';
     });
   }
 
