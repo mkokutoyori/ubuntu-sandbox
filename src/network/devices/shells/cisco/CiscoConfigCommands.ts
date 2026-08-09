@@ -747,6 +747,11 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
   trie.requireArgs('ipv6 nd ra lifetime', 1);
+  // Un noeud cree en chemin n'a pas de libelle a lui : `ipv6 nd ?`
+  // listerait `ra` tout nu, qui dit qu'il existe sans dire ce qu'il
+  // fait. La garde de l'autre agent (« chaque mot-cle propose porte une
+  // description ») l'a attrape, a juste titre.
+  trie.describeNode('ipv6 nd ra', 'Router advertisement parameters');
   trie.registerGreedy('ip rip authentication', 'Configure RIP authentication', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName) as any;
