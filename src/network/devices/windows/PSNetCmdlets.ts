@@ -4,6 +4,7 @@ import { IPAddress, SubnetMask } from '../../core/types';
 import { toDisplayName, toPortName, formatLinkSpeedMbps } from './WindowsInterfaceNaming';
 import { parsePSArgs } from './psArgs';
 import type { PSDeviceContext } from './PowerShellExecutor';
+import { WINDOWS_LOOPBACK_ROUTES, LOOPBACK_IFALIAS } from './WindowsLoopbackRoutes';
 
 /** Dotted-quad mask for an IPv4 prefix length (24 → 255.255.255.0). */
 function prefixToMaskString(prefixLength: number): string {
@@ -320,7 +321,15 @@ export function buildDefaultRoutes(ctx: PSNetContext): Array<{ dest: string; ifA
     // (This function's name is kept for its many call sites; it no longer
     // synthesizes anything.)
     const routes: Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> = [];
-    routes.push({ dest: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', metric: 306 });
+    // Une seule declaration pour les deux vues : `Get-NetRoute` en
+    // annoncait UNE, ecrite en dur ici, la ou `route print` n'en
+    // montrait aucune.
+    for (const lo of WINDOWS_LOOPBACK_ROUTES) {
+      routes.push({
+        dest: `${lo.network}/${lo.prefixLength}`,
+        ifAlias: LOOPBACK_IFALIAS, nextHop: '0.0.0.0', metric: lo.metric,
+      });
+    }
     for (const r of ctx.device.getRoutingTable()) {
       const prefix = maskToPrefixLength(r.mask.toString());
       routes.push({

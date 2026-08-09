@@ -123,15 +123,11 @@ export function buildIpCtx(
       return net.getIfIndex(name);
     },
     getInterfaceInfo(name: string): IpInterfaceInfo | null {
-      if (name === 'lo') {
-        return {
-          name: 'lo', mac: '00:00:00:00:00:00',
-          ip: '127.0.0.1', mask: '255.0.0.0', cidr: 8,
-          mtu: 65536, isUp: true, isConnected: true, isDHCP: false,
-          counters: { framesIn: 0, framesOut: 0, bytesIn: 0, bytesOut: 0 },
-          ipv6: [{ address: '::1', prefixLength: 128, scope: 'host' as const }],
-        };
-      }
+      // `lo` était FABRIQUÉ ici, sans port derrière : la boucle se
+      // décrivait mais n'existait pas, si bien qu'ajouter une adresse
+      // dessus répondait `Cannot find device "lo"` sur la machine même
+      // qui venait de l'afficher. C'est un port comme un autre
+      // désormais, créé au démarrage par `createLoopbackPort()`.
       const port = net.getPorts().get(name);
       if (!port) return null;
       const ip = port.getIPAddress();
@@ -147,6 +143,7 @@ export function buildIpCtx(
         isUp: port.getIsUp(),
         isConnected: port.hasCarrier(),
         isDHCP: net.isDHCPConfigured(name),
+        carrierless: port.isCarrierless(),
         counters: {
           framesIn: counters.framesIn,
           framesOut: counters.framesOut,
@@ -158,7 +155,11 @@ export function buildIpCtx(
         ipv6: port.getIPv6Addresses().map(entry => ({
           address: entry.address.toString().split('%')[0],
           prefixLength: entry.prefixLength,
-          scope: entry.origin === 'link-local' ? 'link' as const : 'global' as const,
+          // `::1` est de portée HOST : elle ne quitte pas la machine,
+          // exactement comme 127.0.0.1. Elle était annoncée `global`,
+          // donc décrite comme routable.
+          scope: entry.address.toString() === '::1' ? 'host' as const
+            : entry.origin === 'link-local' ? 'link' as const : 'global' as const,
         })),
         secondaryIPs: port.getSecondaryIPs().map(e => ({ ip: e.ip.toString(), cidr: e.mask.toCIDR() })),
       };

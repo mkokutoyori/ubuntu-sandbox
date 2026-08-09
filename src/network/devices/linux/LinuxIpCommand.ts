@@ -44,6 +44,13 @@ export interface IpInterfaceInfo {
   };
   ipv6?: IpInterfaceV6Address[];
   secondaryIPs?: Array<{ ip: string; cidr: number }>;
+  /**
+   * Interface sans notion de porteuse (`lo`, `dummy`). Linux la
+   * distingue partout : son état opérationnel est `UNKNOWN` — ni `UP`
+   * ni `DOWN`, parce que la question ne se pose pas — et ses fanions
+   * portent `NOARP` au lieu de `MULTICAST`.
+   */
+  carrierless?: boolean;
 }
 
 export interface IpInterfaceV6Address {
@@ -599,6 +606,37 @@ function collapseOneline(block: string): string {
   return block.split('\n').map(l => l.trim()).join(' ');
 }
 
+/**
+ * Le `scope` d'une adresse IPv4, tel que le noyau le choisit : `host`
+ * pour 127.0.0.0/8, qui ne quitte jamais la machine, `global` sinon.
+ * C'est une propriété de l'adresse et non de l'interface qui la porte.
+ */
+function scopeIpv4(ip: string | null): string {
+  return ip !== null && ip.startsWith('127.') ? 'host' : 'global';
+}
+
+/**
+ * La forme d'un lien : son état opérationnel, sa file d'attente et sa
+ * longueur de file.
+ *
+ * `ip addr` et `ip link` décrivent la MÊME interface et calculaient ces
+ * trois faits chacun de leur côté, si bien qu'une machine annonçait
+ * `state UNKNOWN` à l'une et `state UP` à l'autre pour `lo`, au même
+ * instant. Une seule règle, deux vues.
+ */
+function formeLien(info: IpInterfaceInfo): { state: string; qdisc: string; qlen: string } {
+  return {
+    // `UNKNOWN` est l'état d'une interface dont la porteuse n'est pas
+    // une question : c'est ce que `lo` et une `dummy` affichent sur une
+    // vraie machine.
+    state: info.carrierless ? 'UNKNOWN'
+      : info.isUp && info.isConnected ? 'UP' : 'DOWN',
+    // Pas de file sur une interface qui n'attend rien.
+    qdisc: info.carrierless ? 'noqueue' : 'fq_codel',
+    qlen: ' qlen 1000',
+  };
+}
+
 export function computeIfaceFlags(info: IpInterfaceInfo): string[] {
   const isLoopback = info.name === 'lo';
   const flags: string[] = [];
@@ -606,13 +644,18 @@ export function computeIfaceFlags(info: IpInterfaceInfo): string[] {
   if (isLoopback) {
     flags.push('LOOPBACK');
   } else {
-    if (info.isUp && !info.isConnected) flags.push('NO-CARRIER');
+    // `NO-CARRIER` n'a de sens que là où une porteuse peut manquer : une
+    // interface `dummy` l'affichait, ce qu'aucun Linux n'écrit.
+    if (info.isUp && !info.isConnected && !info.carrierless) flags.push('NO-CARRIER');
     flags.push('BROADCAST');
+    // Rien à résoudre au bout d'une interface sans porteuse : le vrai
+    // Linux marque `NOARP` là où une carte porte `MULTICAST`.
+    if (info.carrierless) flags.push('NOARP');
   }
   if (info.isUp) flags.push('UP');
   if (isLoopback) {
     flags.push('UP');
-  } else {
+  } else if (!info.carrierless) {
     flags.push('MULTICAST');
   }
   if (info.isUp && info.isConnected) flags.push('LOWER_UP');
@@ -637,10 +680,8 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputO
   const uniqueFlags = computeIfaceFlags(info);
   const family = opts.family;
 
-  const state = info.isUp && info.isConnected ? 'UP' : 'DOWN';
-  const qdisc = isLoopback ? 'noqueue' : 'fq_codel';
+  const { state, qdisc, qlen } = formeLien(info);
   const group = 'default';
-  const qlen = isLoopback ? '' : ' qlen 1000';
 
   const c = opts.color;
   const lines: string[] = [];
@@ -650,15 +691,32 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputO
 
   if (family !== 'inet6' && info.ip && info.cidr !== null) {
     const dynFlag = info.isDHCP ? 'dynamic ' : '';
-    const scope = isLoopback ? 'host' : 'global';
-    const brd = broadcastAddress(info.ip, info.cidr);
+    // Le `scope` est une propriété de l'ADRESSE, pas de l'interface :
+    // 127.0.0.0/8 ne sort jamais de la machine, une 10.0.0.1 posée sur
+    // `lo` si (c'est tout l'intérêt de l'y poser). En le déduisant de
+    // l'interface, une adresse ajoutée sur la boucle était annoncée
+    // `scope host` — donc décrite comme injoignable alors qu'elle est
+    // précisément là pour être annoncée par un démon de routage.
+    const scope = scopeIpv4(info.ip);
+    // Une adresse de bouclage n'a pas de broadcast : `ip` n'en imprime
+    // aucun pour `127.0.0.1/8`, et nous en calculions un.
+    const brd = isLoopback ? null : broadcastAddress(info.ip, info.cidr);
     // L'espace qui précède `scope` appartient à ce qui le précède : au
     // fragment colorié quand il y a un `brd`, à la chaîne nue sinon.
     const brdStr = brd ? ` brd ${c.inet(`${brd} `)}` : ' ';
     lines.push(`    inet ${c.inet(String(info.ip))}/${info.cidr}${brdStr}${dynFlag}scope ${scope} ${info.name}`);
+    // La durée de vie manquait sur TOUTES les adresses IPv4 — mesuré sur
+    // une vraie machine, où `eth0` la porte comme `lo`. Elle n'est
+    // rendue que pour IPv6 auparavant, si bien que les deux familles
+    // n'étaient pas décrites de la même façon sur la même interface.
+    // `forever` est ce que ce simulateur modélise : la durée restante
+    // d'un bail DHCP existe dans le moteur mais n'est pas acheminée
+    // jusqu'à cette vue, et le fanion `dynamic` dit déjà l'origine.
+    lines.push('       valid_lft forever preferred_lft forever');
     for (const sec of info.secondaryIPs ?? []) {
-      const secBrd = broadcastAddress(sec.ip, sec.cidr);
-      lines.push(`    inet ${c.inet(String(sec.ip))}/${sec.cidr}${secBrd ? ` brd ${c.inet(`${secBrd} `)}` : ' '}scope ${scope} secondary ${info.name}`);
+      const secBrd = isLoopback ? null : broadcastAddress(sec.ip, sec.cidr);
+      lines.push(`    inet ${c.inet(String(sec.ip))}/${sec.cidr}${secBrd ? ` brd ${c.inet(`${secBrd} `)}` : ' '}scope ${scopeIpv4(sec.ip)} secondary ${info.name}`);
+      lines.push('       valid_lft forever preferred_lft forever');
     }
   }
 
@@ -679,7 +737,7 @@ function ipAddrBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): str
   for (const name of names) {
     const info = ctx.getInterfaceInfo(name);
     if (!info) continue;
-    const state = info.isUp && info.isConnected ? 'UP' : 'DOWN';
+    const { state } = formeLien(info);
     // En mode bref, la couleur enveloppe la COLONNE complétée et non le
     // mot : le vrai `ip -br` colorie `eth0            ` d'un bloc, ce qui
     // se voit quand on aligne deux lignes l'une sous l'autre.
@@ -929,11 +987,9 @@ function formatLinkInterface(
   const isLoopback = info.name === 'lo';
   const uniqueFlags = computeIfaceFlags(info);
 
-  const state = info.isUp && info.isConnected ? 'UP' : 'DOWN';
+  const { state, qdisc, qlen } = formeLien(info);
   const mode = 'DEFAULT';
-  const qdisc = isLoopback ? 'noqueue' : 'fq_codel';
   const group = 'default';
-  const qlen = isLoopback ? '' : ' qlen 1000';
 
   const lines: string[] = [];
   lines.push(`${idx}: ${c.ifname(`${info.name}: `)}<${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${c.operstate(state, `${state} `)}mode ${mode} group ${group}${qlen}`);

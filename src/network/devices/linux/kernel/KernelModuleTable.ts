@@ -127,6 +127,26 @@ const BASE_MODULES: readonly ModuleSeed[] = [
  * `NetworkAdapter`, comme `lspci -k` le rapporte déjà — les deux vues
  * doivent nommer le même pilote.
  */
+/**
+ * Les modules que cette image peut REELLEMENT charger.
+ *
+ * La table decrit ce que la machine sait faire, pas un catalogue de
+ * noms : `dummy` y figure parce que `ip link add … type dummy` cree une
+ * vraie interface derriere, et il y figure seul pour cette raison. Un
+ * `modprobe` d'autre chose echoue comme sur une machine dont
+ * `/lib/modules` ne contient pas le fichier — ce qui est litteralement
+ * le cas ici.
+ */
+const CHARGEABLES: readonly ModuleSeed[] = [
+  {
+    name: 'dummy', size: 12288, license: 'GPL',
+    description: 'Dummy network driver',
+    author: 'Nick Holloway <alfie@dcs.warwick.ac.uk>',
+    path: 'kernel/drivers/net/dummy.ko',
+    parms: ['numdummies:Number of dummy pseudo devices (int)'],
+  },
+];
+
 function nicModule(driver: string): ModuleSeed {
   const descriptions: Record<string, string> = {
     e1000: 'Intel(R) PRO/1000 Network Driver',
@@ -201,6 +221,28 @@ export class KernelModuleTable {
   /** `/lib/modules/<release>/<path>` — ce que `modinfo` met en `filename:`. */
   filenameOf(m: KernelModule): string {
     return `/lib/modules/${this.release}/${m.path}`;
+  }
+
+  /**
+   * `modprobe` : charge un module que cette image porte vraiment.
+   *
+   * Charger un module deja charge est un succes silencieux, comme sur
+   * une vraie machine — c'est ce qui rend `modprobe` idempotent et donc
+   * utilisable dans un script de demarrage.
+   */
+  load(name: string): { ok: boolean; error?: string } {
+    const canonique = name.replace(/-/g, '_');
+    if (this.modules.has(canonique)) return { ok: true };
+    const seed = CHARGEABLES.find((m) => m.name === canonique);
+    if (!seed) {
+      return {
+        ok: false,
+        error: `modprobe: FATAL: Module ${name} not found in directory /lib/modules/${this.release}`,
+      };
+    }
+    this.insert(seed);
+    this.recomputeUsedBy();
+    return { ok: true };
   }
 
   /**

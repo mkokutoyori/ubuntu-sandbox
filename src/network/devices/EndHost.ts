@@ -1894,10 +1894,19 @@ export abstract class EndHost extends Equipment {
   // ─── IPv4 Handling (RFC 791) ──────────────────────────────────
 
   /** Return the port that owns the given unicast IPv4 address, if any. */
+  /**
+   * Le port qui porte cette adresse — la primaire OU une secondaire.
+   *
+   * Seule la primaire était consultée, si bien qu'une machine ne se
+   * reconnaissait pas dans ses propres adresses ajoutées par
+   * `ip addr add` : un ping vers l'une d'elles partait résoudre une MAC
+   * sur le lien et échouait, au lieu de boucler dans le noyau. `Port`
+   * portait déjà le prédicat exact (`ownsIPv4`), consulté par le plan de
+   * données ; c'est ici qu'il manquait.
+   */
   protected getPortOwningIP(ip: IPAddress): Port | null {
     for (const [, port] of this.ports) {
-      const portIP = port.getIPAddress();
-      if (portIP && portIP.equals(ip)) return port;
+      if (port.ownsIPv4(ip)) return port;
     }
     return null;
   }
@@ -3190,6 +3199,14 @@ export abstract class EndHost extends Equipment {
       const mask = port.getSubnetMask();
       if (!ip || !mask) continue;
       if (!port.getIsUp() || port.isAdminDown()) continue;
+      // Une interface de bouclage ne produit AUCUNE route dans la table
+      // principale : sur un vrai Linux, `ip route` ne montre pas
+      // 127.0.0.0/8 — cette route vit dans la table `local`, que
+      // `ip route show table local` affiche seule. La joignabilité des
+      // adresses portées par la boucle ne passe pas par une route mais
+      // par `getPortOwningIP()`, qui court-circuite avant toute
+      // résolution, exactement comme le noyau.
+      if (port.isLoopback()) continue;
 
       const portName = port.getName();
       const alreadyExists = table.some(
@@ -3200,6 +3217,31 @@ export abstract class EndHost extends Equipment {
         table.push({
           network: new IPAddress(networkOctets),
           mask,
+          nextHop: null,
+          iface: portName,
+          type: 'connected',
+          metric: 0,
+          linkdown: !port.hasCarrier(),
+        });
+      }
+
+      // Seule l'adresse PRIMAIRE d'un port donnait une route, alors que
+      // le noyau en pose une par adresse : `ip addr add 10.0.0.1/32 dev
+      // lo` était accepté, l'adresse s'affichait, et un ping vers elle
+      // répondait « Network is unreachable » — l'adresse existait sans
+      // être joignable. Ce n'est pas propre à la boucle : toute adresse
+      // secondaire, sur n'importe quelle interface, était dans ce cas.
+      for (const sec of port.getSecondaryIPs()) {
+        const secNet = new IPAddress(
+          sec.ip.getOctets().map((o, i) => o & sec.mask.getOctets()[i]));
+        const deja = table.some((r) => r.type === 'connected'
+          && r.iface === portName
+          && r.network.equals(secNet)
+          && r.mask.toCIDR() === sec.mask.toCIDR());
+        if (deja) continue;
+        table.push({
+          network: secNet,
+          mask: sec.mask,
           nextHop: null,
           iface: portName,
           type: 'connected',

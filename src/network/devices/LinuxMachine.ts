@@ -53,9 +53,9 @@ import {
   IPAddress,
   IPv6Address,
   SubnetMask,
+  MACAddress,
   type DeviceType,
   type IPv4Packet,
-  type MACAddress,
   type EthernetFrame,
 } from '../core/types';
 
@@ -2070,6 +2070,32 @@ export abstract class LinuxMachine extends EndHost
 
   // ─── Ports ───────────────────────────────────────────────────────────
 
+  /**
+   * `lo`, l'interface de bouclage — un VRAI port, non plus une fiction.
+   *
+   * Elle était synthétisée dans le rendu (`getInterfaceInfo` fabriquait
+   * un objet quand on lui demandait `lo`) sans qu'aucun port n'existe
+   * derrière, si bien que `ip link show lo` la décrivait pendant que
+   * `ip addr add 10.0.0.1/32 dev lo` — le laboratoire entier de la
+   * partie Linux du sujet — répondait `Cannot find device "lo"` sur la
+   * même machine au même instant. Une adresse ajoutée sur la boucle
+   * n'avait nulle part où être rangée.
+   *
+   * Le noyau la crée au démarrage et elle ne peut pas être supprimée :
+   * elle est donc posée ici, avant les ports physiques, avec les
+   * propriétés que Linux lui donne — MTU 65536 (aucune contrainte
+   * matérielle), MAC nulle, 127.0.0.1/8 et ::1/128, toujours UP.
+   */
+  private createLoopbackPort(): void {
+    const lo = new Port('lo', 'ethernet', new MACAddress('00:00:00:00:00:00'),
+      { loopback: true });
+    lo.setMTU(65536);
+    lo.setUp(true);
+    lo.configureIP(new IPAddress('127.0.0.1'), SubnetMask.fromCIDR(8));
+    lo.configureIPv6(new IPv6Address('::1'), 128);
+    this.addPort(lo);
+  }
+
   private createPortsFromProfile(): void {
     const { portCount, portPrefix } = this.profile;
     for (let i = 0; i < portCount; i++) {
@@ -2079,6 +2105,12 @@ export abstract class LinuxMachine extends EndHost
       });
       this.addPort(port);
     }
+    // `lo` est ajoutee APRES les cartes physiques, et c'est deliberé :
+    // beaucoup de code designe « la premiere carte » par le premier port
+    // (cablage, laboratoires), et la boucle n'est la premiere carte de
+    // rien. L'ordre d'AFFICHAGE ne s'en trouve pas change : `ip` la
+    // place en tete explicitement, comme le vrai.
+    this.createLoopbackPort();
   }
 
   // ─── Command registry hooks ──────────────────────────────────────────
@@ -2181,7 +2213,17 @@ export abstract class LinuxMachine extends EndHost
 
   private addDummyInterface(name: string): string {
     if (this.ports.has(name)) return 'RTNETLINK answers: File exists';
-    const port = new Port(name, 'ethernet');
+    // Une interface `dummy` n'a pas de porteuse : rien n'est branché au
+    // bout et rien ne peut l'être. Sans cela, elle sortait
+    // `<NO-CARRIER,BROADCAST,UP,MULTICAST> … state DOWN` alors que le
+    // vrai Linux écrit `<BROADCAST,NOARP,UP,LOWER_UP> … state UNKNOWN`,
+    // et `ip link set … up` ne changeait rien à ce qu'on lisait.
+    // Le noyau charge le module a la demande : `ip link add … type
+    // dummy` fonctionne sans `modprobe dummy` prealable sur une vraie
+    // machine, et `lsmod` montre le module APRES coup. Passer par la
+    // meme table que `modprobe` est ce qui rend les deux vues d'accord.
+    this.executor.kernelModules.load('dummy');
+    const port = new Port(name, 'ethernet', undefined, { carrierless: true });
     port.setUp(true);
     this.addPort(port);
     this.virtualInterfaces.add(name);
@@ -3008,10 +3050,14 @@ export abstract class LinuxMachine extends EndHost
   // ─── LinuxNetKernel façade (closes over EndHost protected members) ──
 
   private getIfIndex(name: string): number {
+    // `lo` porte l'index 1 sur toute machine Linux, et n'occupe donc pas
+    // un rang dans la numerotation des autres : sans l'exclure, `eth0`
+    // aurait recu l'index 3 la ou un vrai systeme lui donne 2.
     if (name === 'lo') return 1;
     if (!this.ifIndexMap) {
       this.ifIndexMap = new Map();
       for (const portName of this.ports.keys()) {
+        if (portName === 'lo') continue;
         this.ifIndexMap.set(portName, this.nextIfIndex++);
       }
     }

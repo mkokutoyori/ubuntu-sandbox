@@ -167,6 +167,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   // doit répondre le même chemin que le `binaryPath` déclaré sur la
   // commande, sinon la machine se contredit sur l'emplacement.
   lsmod: '/usr/sbin/lsmod', modinfo: '/usr/sbin/modinfo',
+  modprobe: '/usr/sbin/modprobe',
   swapon: '/usr/sbin/swapon', swapoff: '/usr/sbin/swapoff',
   lid: '/usr/sbin/lid', conntrack: '/usr/sbin/conntrack',
   // The two HTTP servers and their control tool. They are here for two
