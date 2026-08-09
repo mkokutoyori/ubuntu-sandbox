@@ -373,6 +373,25 @@ export function registerLoggingShowCommands(trie: CommandTrie, ctx: LoggingComma
     const suffix = ctx.showSuffix?.() ?? '';
     return suffix ? `${base}\n\n${suffix}` : base;
   });
+  /**
+   * `show logging last <n>` — les N dernières lignes du tampon.
+   *
+   * La commande n'existait pas (`% Invalid input`), alors que c'est la
+   * première chose qu'on tape sur un routeur dont le tampon fait 64 Ko :
+   * le `show logging` nu recrache tout, et ce qu'on cherche est en bas.
+   * L'en-tête reste affiché — IOS ne le supprime pas — seule la liste
+   * des messages est tronquée par la fin.
+   */
+  trie.registerGreedy('show logging last', 'Show last <n> lines of the logging buffer', (args) => {
+    ctx.beforeApply?.();
+    if (args.length === 0) throw new CliIncomplete();
+    if (!/^\d+$/.test(args[0])) throw new CliInvalidInput({ token: args[0] });
+    const n = parseInt(args[0], 10);
+    if (n < 1) throw new CliInvalidInput({ token: args[0] });
+    const base = ctx.config().render({ last: n });
+    const suffix = ctx.showSuffix?.() ?? '';
+    return suffix ? `${base}\n\n${suffix}` : base;
+  });
   trie.register('show logging count', 'Show occurrence count of each message',
     () => { ctx.beforeApply?.(); return ctx.config().renderCount(); });
   // Une table à PART, celle qu'alimente `logging history` et que le SNMP

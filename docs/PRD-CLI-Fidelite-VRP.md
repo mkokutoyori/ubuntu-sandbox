@@ -300,6 +300,9 @@ sans quoi le prochain ajout d'`undo` reproduira le défaut.
 | **V5** | Chantier D §3 et §5 : bornes, abréviation du nom d'interface (**livré, §13** ; l'aide §1.9 est passée à l'agent « logging ») | V4 |
 | **V6** | `debugging` VRP — audit séparé, sur le modèle de `PRD-Debug-Fidelite-Cisco.md` | **Livré, §14** |
 | **V7** | La queue d'une commande lue jusqu'au bout (reliquat de V4/V5) | **Livré, §16** |
+| **V8** | La grammaire de `acl` et `stp` (reliquat de V7) | **Livré, §17** |
+| **V9** | Le typage du shell (agent « logging ») | **Livré, §18** |
+| **V10** | Le typage de `HuaweiSwitchShell` | **Livré, §19** |
 
 V1 part en premier parce qu'il est petit, isolé, et qu'il rend une
 information que l'opérateur n'a pas aujourd'hui. V2 est le plus lourd et
@@ -1236,7 +1239,149 @@ routage, DHCP et L3. Typecheck : **jeu d'erreurs identique** avant et
 après (168, le baseline courant). Lint sur les cinq fichiers touchés :
 125 problèmes avant, 125 après.
 
-## 17. V8 — Livré : le typage du shell, et ce qu'il cachait
+---
+
+## 17. V8 — Livré : la grammaire de `acl` et `stp`
+
+Les deux perméabilités que V8 ferme sont celles que **V7 avait nommées
+sans les fermer**, et pour une raison qui tient toujours : toutes deux
+portent plusieurs grammaires sous un seul nœud glouton, donc un plafond y
+refuserait des formes légitimes. Il fallait écrire la grammaire.
+
+### 17.1 `acl` : il y en avait DEUX, et elles ne disaient pas la même chose
+
+Le constat le plus lourd du lot, et il ne portait pas sur la queue.
+Mesuré sur un routeur et un switch neufs, même ligne, même vue :
+
+| Ligne | Routeur | Switch |
+|---|---|---|
+| `acl 42` | `Error: ACL number must be 2000-…` | `[SW-acl-basic-42]` |
+| `acl 0` | refusé | `[SW-acl-basic-0]` |
+| `acl abc` | refusé | **`[SW-acl-basic-NaN]`** |
+| `acl number` | refusé | **`[SW-acl-basic-NaN]`** |
+| `acl name TEST advance` | `[R-acl-adv-TEST]` | **`[SW-acl-basic-TEST]`** |
+| `acl ipv6 name V6` | `[R-acl-adv-V6]` | **`[SW-acl-basic-NaN]`** |
+
+Trois faits, pas un : le switch **ne bornait rien**, il lisait le mot de
+type comme un NUMÉRO — d'où l'impossibilité d'y créer une ACL nommée
+avancée — et il ouvrait des vues dont le nom était littéralement `NaN`.
+Sur la même maquette, la même commande donnait deux réponses selon
+l'équipement.
+
+`HuaweiAclGrammar.ts` porte la grammaire **une fois**, pour les deux ;
+chaque plateforme garde SON magasin, qui est légitimement différent (le
+moteur d'ACL du routeur, la table du switch). Ce qui ne doit pas
+différer, c'est ce qui est accepté.
+
+**Une forme a été sauvée plutôt que supprimée**, et c'est un test
+existant qui l'a imposé : `acl name MGMT 2999` lie un nom à un numéro,
+et c'était la seule forme que le switch avait et que le routeur
+refusait. Ma première grammaire l'a fait tomber ; la bonne lecture est
+que la grammaire partagée doit être l'**union des deux vraies
+grammaires**, pas celle du routeur seul. Le numéro y décide du type,
+comme partout ailleurs.
+
+### 17.2 `stp` : le premier mot était validé, et rien au-delà
+
+Sept formes en vue système passaient en avalant leur queue
+(`stp mode rstp extra`, `stp priority 4096 extra`, `stp root primary
+extra`, `stp enable extra`, `stp bpdu-protection extra`,
+`stp edged-port default extra`, `stp instance 1 priority 4096 extra`).
+
+La vue interface était pire : **rien** n'était vérifié au-delà du premier
+mot. `stp cost abc`, `stp edged-port zzz`, `stp port priority abc`
+étaient acceptés sans rien poser — et la ligne était **tout de même
+conservée** pour `display this`, donc écrite dans la configuration et
+**rejouée à l'import**. Elle n'est plus rangée qu'une fois la grammaire
+admise.
+
+`HuaweiStpGrammar.ts` est une **table**, pas une suite de `if` : c'est ce
+qui rend vérifiable qu'aucune forme n'est oubliée, et c'est la forme que
+le catalogue de `debugging` avait déjà prise au lot V6. Un mot-clé
+inconnu et un mot en trop y sont deux fautes distinctes, chacune
+désignant son jeton.
+
+### 17.3 Le curseur désignait le mot juste
+
+Défaut transversal aux deux commandes, et invisible tant qu'on ne lit que
+le message : le curseur se posait **toujours sur le premier argument**,
+c'est-à-dire sur le mot-clé que l'opérateur avait tapé correctement.
+
+```
+avant                       après
+stp mode zzz                stp mode zzz
+    ^                                ^
+acl name TEST zzz           acl name TEST zzz
+    ^                                     ^
+```
+
+C'est ce que `rendreErreurVrp` corrige : l'erreur **porte** son jeton
+fautif au lieu qu'il soit deviné au rendu.
+
+### 17.4 Deux réglages jetés alors que le moteur les portait
+
+Trouvés en écrivant la table, pas cherchés. `stp timer` et
+`stp pathcost-standard` étaient acceptés et **écartés**, alors que
+`StpAgent` expose `setHelloSec`, `setForwardDelaySec`, `setMaxAgeSec` et
+`setPathcostMethod` depuis toujours. Les refuser aurait été faux ; les
+brancher tenait en trois lignes. **VRP compte ces temporisateurs en
+centièmes de seconde** et le moteur en secondes, donc la conversion est
+faite ici, et les bornes de chaque temporisateur sont les siennes
+(`hello` 100-1000, `forward-delay` 400-3000, `max-age` 600-4000).
+
+Mesuré : `stp timer hello 500` fait passer `display stp` de
+`Hello 2s` à `Hello 5s`.
+
+### 17.5 Refusé, et pourquoi
+
+**`tc-protection` et `converge` restent admis et sans effet.** Leur
+grammaire est désormais vérifiée, mais aucun modèle ne les porte — il n'y
+a ni limitation de débit des changements de topologie ni convergence
+rapide dans ce simulateur. Les refuser serait faux (ce sont de vraies
+commandes VRP) et prétendre qu'elles agissent le serait aussi. Un test
+les fixe.
+
+**Les ACL L2 (4000-4999) et utilisateur (5000-5999) restent hors des
+bornes tenues.** Elles existent sur VRP ; rien ici ne sait évaluer une
+règle de ces familles, donc la vue n'est pas ouverte et la borne tenue
+est nommée. C'est la règle du lot V6 pour `debugging isis`.
+
+### 17.6 Tests et mesures
+
+`huawei-grammaire-acl-et-stp.test.ts` (33 cas). La propriété la plus
+forte du fichier n'est pas une liste d'attentes écrites à la main :
+**les deux plateformes sont comparées l'une à l'autre** sur 28 formes
+d'`acl`, sortie ET vue ouverte. Un test écrit à la main aurait pu
+recopier la mauvaise réponse ; celui-ci ne peut pas passer si les deux
+divergent.
+
+Le reste balaie les deux vues de `stp` (21 formes légitimes, 28 fautives
+en vue système ; 12 et 14 en vue interface), vérifie qu'un refus ne
+change pas le mode ni ne laisse sa ligne dans la configuration, et pointe
+le curseur mot à mot sur douze refus.
+
+**Une assertion vide de sens, corrigée** : le premier test de
+`stp timer` cherchait `/Hello.*5/`, qui matche aussi
+`Hello 2s MaxAge 20s FwDly 15s` — le `5` de `15s`. Il passait avec le
+correctif désactivé. Il compare maintenant `Hello 5s` contre un témoin
+mesuré dans le même laboratoire (`Hello 2s`, le défaut), sans quoi un
+laboratoire mal monté et une commande sans effet seraient indiscernables.
+
+Discrimination par `git stash` : **23 des 33 tombent** avant.
+
+**Mesures.** 87 suites connexes vertes (1 254 cas), plus les scénarios
+VRP ACL/STP, VLAN et L3. Typecheck : jeu d'erreurs identique avant/après
+(184). Lint : 4 problèmes avant, 4 après — les deux fichiers de grammaire
+n'en ajoutent aucun.
+
+**Un test existant corrigé, et un seul** :
+`huawei-queue-lue-jusquau-bout.test.ts` épinglait ces deux perméabilités
+comme reliquat de V7 ; le reliquat étant fermé, le cas devient sa garde
+et vérifie maintenant le refus.
+
+---
+
+## 18. V9 — Livré : le typage du shell, et ce qu'il cachait (agent « logging »)
 
 `HuaweiVRPShell.ts` portait **61 `no-explicit-any`**. Un `as any` ne
 coûte pas une ligne de lint : il éteint le compilateur sur tout ce qui
@@ -1315,3 +1460,111 @@ sur l'interface en attente (`tunnelSource`, `greKey`…), plus huit
 VRP d'un port, ce qui est la même question que ci-dessus posée sur un
 autre objet : un lot à part. Seul `setMode('rip' as any)`, rendu inutile
 par l'union réparée, a été retiré au passage.
+
+---
+
+## 19. V10 — Livré : le typage de `HuaweiSwitchShell`, et ce qu'il cachait
+
+Le jumeau du §18 sur l'autre shell, et la mesure donne un profil
+différent : `HuaweiSwitchShell.ts` (3 654 lignes) ne portait **qu'un seul
+`no-explicit-any`** — il était déjà propre de ce côté — mais **37
+`as unknown as`**, qui éteignent le compilateur exactement de la même
+façon **sans coûter une ligne de lint**. C'est le point du lot : le
+linter ne les voyait pas, donc personne ne les avait comptés.
+
+### 19.1 Quatorze fois la même affirmation
+
+Les accesseurs d'agents (STP, LLDP, Dot1x, LACP, IGMP/PIM snooping,
+debug) étaient castés **quatorze fois**, chacun réécrivant son
+`import(...)` en ligne. Le cast était légitime dans son principe —
+`swRef` est un `Switch`, ces agents vivent sur `HuaweiSwitch`, et un
+`GenericSwitch` n'en a aucun, ce que `CLAUDE.md` documente. Ce qui ne
+l'était pas, c'est de l'affirmer quatorze fois : chaque site pouvait
+écrire une signature différente de celle du voisin sans que rien ne le
+signale.
+
+`huawei/huaweiSwitchDevice.ts` déclare **ce que le shell exige de son
+équipement**, une fois. Les membres y sont optionnels parce qu'ils le
+sont réellement — et c'est cette honnêteté qui a rendu le défaut suivant
+visible.
+
+### 19.2 Un membre que le cast affirmait et que personne ne fournit
+
+`_setVtyTransportInput` est appelé par les deux shells Huawei sous un
+commentaire affirmant qu'il « route through the device setter so
+`CrossVendorSshHost.evaluate()` sees the change ». Il vit sur `Router`.
+**Un `Switch` ne l'a pas** — et n'a ni serveur SSH ni politique de vty à
+gouverner. `protocol inbound ssh` sur un switch Huawei est donc inerte,
+et l'était en silence.
+
+Le port le déclare optionnel : la commande reste acceptée, comme sur
+VRP, et son inertie est écrite plutôt que masquée. **Le routeur a le
+même appel** ; là-bas le membre existe, donc il fonctionne — c'est
+seulement le cast qui y est du bruit.
+
+### 19.3 La configuration de vue VLAN se perdait
+
+Le défaut le plus concret, et il n'aurait pas été trouvé sans retirer
+les casts. Six sites écrivaient
+`(v as unknown as { extras }).extras` sur l'entrée VLAN —
+`igmp-snooping`, `undo igmp-snooping`, `mux-vlan`, `vlan-type`,
+`mac-vlan`, `ip`, `arp` — et **rien ne lisait jamais ce magasin**.
+
+Ces lignes étaient donc absentes de `display current-configuration`,
+c'est-à-dire perdues au rechargement d'une topologie. Le magasin est
+déclaré dans le port (une conversion au lieu de six) **et il est rendu**,
+sous son VLAN, ce qui était sa seule raison d'exister.
+
+### 19.4 Un cast qui annulait l'union des vues
+
+L'union `VRPSwitchMode` est complète (treize vues, treize cas dans
+`getActiveTrie()`) — mais deux casts la neutralisaient :
+`setMode: (m) => { this.mode = m as VRPSwitchMode }` pour les aides
+partagées, et `this.mode = s.mode as VRPSwitchMode` à la restauration de
+session. Les aides partagées sont écrites pour le **routeur** et
+connaissent une trentaine de vues que le switch n'a pas ; l'une d'elles
+posée ici tombait sur `default:` et rendait le shell **muet**, sans un
+mot.
+
+Une vue que cette plateforme n'a pas ne change plus la vue courante.
+C'est la même forme que le `| string` du §18, sauf qu'ici l'union était
+juste et que c'est le cast qui la défaisait.
+
+### 19.5 Refusé, et pourquoi
+
+**`description` et `step` de la vue ACL restent morts.** Écrits, lus par
+personne, ici comme ailleurs. Les déclarer sur le type de la table ne les
+rend pas vivants ; cela les rend **greppables**, ce qu'un cast empêche —
+c'est la règle du §18 pour les onze champs BGP/IS-IS, et un test empêche
+qu'un cast les rende invisibles à nouveau.
+
+**Deux constats mesurés en passant, et laissés ouverts** parce qu'ils ne
+relèvent pas du typage : `display interface Vlanif 10` (forme séparée)
+est refusé alors que `interface Vlanif 10` est accepté — deux résolveurs
+de nom pour un seul objet ; et `display interface vlanif10` rend
+`vlanif10` en minuscules au lieu du `Vlanif10` canonique, la règle « un
+port a un seul nom » du lot V3 n'ayant pas atteint cette vue.
+
+### 19.6 Tests et mesures
+
+Le typage lui-même est gardé par le **compilateur**, pas par un test :
+`huawei-switch-typage.test.ts` (12 cas) vérifie les trois conséquences
+réelles — la configuration VLAN qui revient et se range sous son VLAN, la
+vue du routeur qui ne rend plus le shell muet, `protocol inbound` dont
+l'inertie est désormais écrite — plus deux cliquets de source (aucun
+`as unknown as` ni `as any` ne subsiste ; les magasins morts restent
+déclarés).
+
+**Une assertion qui ne discriminait rien, corrigée** : le cas « une vue
+du routeur ne devient pas la vue du switch » s'appuyait d'abord sur
+l'invite et sur le refus d'une commande inconnue — or les deux sont
+IDENTIQUES avant et après, la vue inconnue retombant sur la trie
+utilisateur. Il passait avec le correctif désactivé. Il s'appuie
+maintenant sur le nom de vue retenu, qui est ce qui diffère réellement.
+
+Discrimination par `git stash` : **6 des 12 tombent** avant.
+
+**Mesures.** 88 suites connexes vertes (1 266 cas). `as unknown as` :
+**37 → 0** ; `as any` : 1 → 0. Typecheck : jeu d'erreurs identique
+avant/après (185). Lint sur les deux fichiers : **0 erreur, 0
+avertissement**. Aucun test existant modifié.
