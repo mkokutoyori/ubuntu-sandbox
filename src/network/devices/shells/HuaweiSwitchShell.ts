@@ -56,7 +56,10 @@ import {
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { parseHuaweiPortSpec } from './huawei/HuaweiAclCommands';
 import { formatHuaweiAclEntry } from '../router/ACLEngine';
-import { vrrpVirtualMac, effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
+import {
+  AUCUN_GROUPE, analyserVrrp, appliquerVrrp, groupesDeLInterface, lignesConfigVrrp,
+  rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
+} from './huawei/huaweiVrrpViews';
 import {
   describeHuaweiInterfaceArg, wordArg,
   STP_SYSTEM_KEYWORDS, STP_INTERFACE_KEYWORDS,
@@ -305,53 +308,32 @@ export class HuaweiSwitchShell implements ISwitchShell {
     //   vrrp vrid <n> preempt-mode timer delay <sec>   (recorded)
     // A group without a virtual-ip is registered but stays silent —
     // matching real VRP that reports it as "invalid" in `display vrrp`.
-    this.interfaceTrie.registerGreedy('vrrp vrid', 'VRRP group config', (args) => {
+    // Lot V15 : la grammaire est celle du routeur, et reciproquement —
+    // c'est le meme analyseur. Ce qui restait ici de particulier etait
+    // le silence sur `description`, `authentication-mode` et le delai de
+    // `preempt-mode`, acceptes et perdus.
+    this.interfaceTrie.registerGreedy('vrrp vrid', 'VRRP group config', (args, raw) => {
       const m = (this.selectedInterface ?? '').match(/^Vlanif(\d+)$/);
       if (!m || !this.swRef) return "Error: VRRP is valid on Vlanif interfaces only.";
-      if (args.length < 2) return 'Error: Incomplete command.';
-      const vrid = parseInt(args[0], 10);
-      if (!Number.isFinite(vrid) || vrid < 1 || vrid > 255) return 'Error: Wrong parameter found.';
-      const iface = this.selectedInterface!;
-      const agent = this.swRef.getVrrpAgent();
-      agent.ensureGroup(iface, vrid);
-      switch (args[1]) {
-        case 'virtual-ip':
-          if (!args[2] || !IPAddress.isValid(args[2])) return `Error: Invalid IP ${args[2] ?? ''}.`;
-          agent.setVip(iface, vrid, args[2]);
-          return '';
-        case 'priority': {
-          const p = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(p) || p < 1 || p > 254) return 'Error: Wrong parameter found.';
-          agent.setPriority(iface, vrid, p);
-          return '';
-        }
-        case 'preempt-mode':
-          agent.setPreempt(iface, vrid, true);
-          return '';
-        case 'track': {
-          if (args[2] !== 'interface' || !args[3]) return 'Error: Incomplete command.';
-          const target = this.resolveInterfaceName(args[3]) ?? args[3];
-          const redIdx = args.indexOf('reduced');
-          const red = redIdx >= 0 ? (parseInt(args[redIdx + 1] ?? '10', 10) || 10) : 10;
-          agent.addTrack(iface, vrid, target, red);
-          return '';
-        }
-        case 'timer': {
-          if (args[2] !== 'advertise') return 'Error: Incomplete command.';
-          const sec = parseInt(args[3] ?? '', 10);
-          if (!Number.isFinite(sec) || sec < 1) return 'Error: Wrong parameter found.';
-          agent.setAdvertiseSec(iface, vrid, sec);
-          return '';
-        }
-        default: return '';
-      }
+      const ligne = raw ?? `vrrp vrid ${args.join(' ')}`;
+      const a = analyserVrrp(['vrid', ...args]);
+      if (a.statut === 'refus') return rendreErreurVrp(a.err, ligne);
+      appliquerVrrp(this.swRef.getVrrpAgent(), this.selectedInterface!, a.vrid, a.action,
+        (nom) => this.resolveInterfaceName(nom) ?? nom);
+      return '';
     });
     this.interfaceTrie.registerGreedy('undo vrrp vrid', 'Remove a VRRP group', (args) => {
       const m = (this.selectedInterface ?? '').match(/^Vlanif(\d+)$/);
-      if (!m || !this.swRef || !args[0]) return '';
-      const vrid = parseInt(args[0], 10);
-      if (!Number.isFinite(vrid)) return '';
-      this.swRef.getVrrpAgent().removeGroup(this.selectedInterface!, vrid);
+      if (!m || !this.swRef) return '';
+      const a = analyserVrrp(['vrid', ...args]);
+      if (a.statut === 'refus') return '';
+      const agent = this.swRef.getVrrpAgent();
+      if (a.action.quoi === 'groupe') agent.removeGroup(this.selectedInterface!, a.vrid);
+      else if (a.action.quoi === 'preempt-mode') agent.setPreempt(this.selectedInterface!, a.vrid, false);
+      else if (a.action.quoi === 'track') {
+        agent.removeTrack(this.selectedInterface!, a.vrid,
+          this.resolveInterfaceName(a.action.cible) ?? a.action.cible);
+      }
       return '';
     });
 
@@ -2199,45 +2181,25 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
 
-    // display vrrp [brief] — one block per VRRP group configured on
-    // an SVI (Vlanif). Matches the VRP `display vrrp` shape a learner
-    // can compare against real hardware.
+    // Lot V15 : un seul rendu pour les deux plateformes. Ce greedy
+    // AVALAIT ses propres sous-commandes — `display vrrp statistics` et
+    // `display vrrp verbose` rendaient le bloc de `display vrrp` — et
+    // ecrivait la MAC virtuelle au format IEEE (regle du lot V14).
     trie.registerGreedy('display vrrp', 'Display VRRP groups on SVIs', (args) => {
       if (!this.swRef) return '';
       const groups = this.swRef.getVrrpAgent().listGroups();
-      if (groups.length === 0) return 'Info: No VRRP configuration.';
-      if (args[0] === 'brief') {
-        const header = 'VRID  State       Interface       Type     Virtual IP';
-        const rows = groups.map((g) => {
-          const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Initialize';
-          return `${String(g.vrid).padEnd(6)}${state.padEnd(12)}${g.iface.padEnd(16)}${'Normal'.padEnd(9)}${g.vip ?? 'unassigned'}`;
-        });
-        return [header, ...rows].join('\n');
+      const mot = (args[0] ?? '').toLowerCase();
+      if (mot === 'brief') return rendreDisplayVrrpBrief(groups);
+      if (mot === 'statistics') return rendreDisplayVrrpStatistics(groups);
+      if (mot === 'interface') {
+        const demande = args.slice(1).join(' ');
+        const nom = this.resolveInterfaceName(demande);
+        if (!nom) return HUAWEI_ERRORS.WRONG(`display vrrp interface ${demande}`, 'display vrrp interface '.length);
+        const portes = groupesDeLInterface(this.swRef.getVrrpAgent(), nom);
+        return portes.length === 0 ? AUCUN_GROUPE : rendreDisplayVrrp(portes);
       }
-      const out: string[] = [];
-      for (const g of groups) {
-        const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Initialize';
-        const effPrio = vrrpEffectivePriority(g);
-        out.push(`${g.iface} | Virtual Router ${g.vrid}`);
-        out.push(`  State : ${state}`);
-        out.push(`  Virtual IP : ${g.vip ?? 'unassigned'}`);
-        out.push(`  Virtual MAC : ${vrrpVirtualMac(g.vrid)}`);
-        if (effPrio === g.priority) {
-          out.push(`  Priority : ${g.priority}`);
-        } else {
-          out.push(`  PriorityRun : ${effPrio}`);
-          out.push(`  PriorityConfig : ${g.priority}`);
-        }
-        out.push(`  Preempt : ${g.preempt ? 'YES' : 'NO'}`);
-        if (g.tracks.length > 0) {
-          out.push(`  Track IF : ${g.tracks.length}`);
-          for (const t of g.tracks) {
-            out.push(`    ${t.target} Priority reduced : ${t.decrement} State : ${t.down ? 'Down' : 'Up'}`);
-          }
-        }
-        out.push('');
-      }
-      return out.join('\n').replace(/\n$/, '');
+      if (mot) return refuseMotInattenduVrp(`display vrrp ${args.join(' ')}`, args[0]);
+      return rendreDisplayVrrp(groups);
     });
 
     // display arp [all] — render the switch's shared mgmt ARP cache,
@@ -3469,18 +3431,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   private renderVlanifVrrpLines(sw: Switch, iface: string): string[] {
-    const out: string[] = [];
-    const groups = sw.getVrrpAgent().listGroups().filter((g) => g.iface === iface);
-    for (const g of groups) {
-      if (g.vip) out.push(` vrrp vrid ${g.vrid} virtual-ip ${g.vip}`);
-      if (g.priority !== 100) out.push(` vrrp vrid ${g.vrid} priority ${g.priority}`);
-      if (g.preempt) out.push(` vrrp vrid ${g.vrid} preempt-mode`);
-      if (g.advertiseSec !== 1) out.push(` vrrp vrid ${g.vrid} timer advertise ${g.advertiseSec}`);
-      for (const t of g.tracks) {
-        out.push(` vrrp vrid ${g.vrid} track interface ${t.target}${t.decrement !== 10 ? ` reduced ${t.decrement}` : ''}`);
-      }
-    }
-    return out;
+    return lignesConfigVrrp(sw.getVrrpAgent().listGroups(), iface);
   }
 
   private displayCurrentConfigInterface(sw: Switch, ifName: string): string {
@@ -3493,6 +3444,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
         out.push(` ip address ${svi.ip} ${svi.mask}`);
       }
       if (svi && !svi.adminUp) out.push(` shutdown`);
+      // Lot V15 : cette vue-ci ne rendait aucune ligne `vrrp` alors que
+      // la configuration complete les rendait toutes — l'exact miroir du
+      // desaccord mesure cote routeur.
+      out.push(...this.renderVlanifVrrpLines(sw, portName));
       out.push('#');
       return out.join('\n');
     }

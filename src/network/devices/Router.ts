@@ -132,7 +132,6 @@ import { NetflowService } from './router/netflow/NetflowService';
 import { ArchiveService } from './router/archive/ArchiveService';
 import { KeypairService } from './router/security/KeypairService';
 import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
-import { HuaweiVrrpService } from './router/redundancy/HuaweiVrrpService';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
@@ -3630,12 +3629,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getHuaweiRoutingExtras(): HuaweiRoutingExtras {
     if (!this._huaweiRoutingExtras) this._huaweiRoutingExtras = new HuaweiRoutingExtras();
     return this._huaweiRoutingExtras;
-  }
-
-  private _huaweiVrrpService: HuaweiVrrpService | null = null;
-  getHuaweiVrrpService(): HuaweiVrrpService {
-    if (!this._huaweiVrrpService) this._huaweiVrrpService = new HuaweiVrrpService();
-    return this._huaweiVrrpService;
   }
 
   private _huaweiBfdService: HuaweiBfdService | null = null;

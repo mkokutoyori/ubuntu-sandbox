@@ -1903,3 +1903,168 @@ Discrimination par `git stash` : **8 des 10 tombent** avant.
 **Mesures.** 91 suites connexes vertes (1 299 cas), dont les suites ARP
 et table MAC. Typecheck : jeu d'erreurs identique avant/après (192).
 Lint : 37 problèmes avant, **36 après**. Aucun test existant modifié.
+
+---
+
+## 24. V15 — Livré : VRRP, un magasin, une grammaire, une vue
+
+### 24.1 Le constat, mesuré
+
+La même configuration VRRP, tapée mot pour mot sur les deux plateformes,
+donnait deux réponses qui n'avaient **rien en commun** :
+
+```
+routeur                             commutateur
+GE0/0/0 | Virtual Router 1          Vlanif10 | Virtual Router 1
+    State : Initialize                State : Initialize
+    Virtual IP : 10.0.12.254          Virtual IP : 10.0.10.254
+    Priority : 120                    Virtual MAC : 00:00:5e:00:01:01
+    Advertisement timer : 1 seconds   PriorityRun : 90
+    Preempt mode : Yes (delay 5s)     PriorityConfig : 120
+    Authentication : none             Preempt : YES
+```
+
+Ni les champs, ni l'indentation, ni le nom de l'interface, ni l'écriture
+de la MAC. Mais **le désaccord n'était pas d'affichage** : regarder les
+deux priorités suffit à le voir. Pour la même commande
+`vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30`, le
+commutateur descend à 90 et le routeur reste à 120.
+
+**Cause : deux magasins pour un fait.** Le commutateur écrit dans
+l'agent VRRP réel (`VrrpAgent`, qui porte l'état, l'élection et les
+pistes) ; le routeur écrivait dans une **façade** séparée
+(`HuaweiVrrpService`) que ses vues relisaient, et n'informait l'agent que
+pour quatre champs sur huit — le `track` n'en faisait pas partie. Sur un
+routeur, l'interface suivie pouvait donc tomber sans que rien ne bouge :
+c'est exactement ce que la commande existe pour faire.
+
+Dix autres constats, tous mesurés sur machine neuve :
+
+1. **Le routeur ne validait rien.** `vrrp vrid 999`, `vrrp vrid 0`,
+   `priority 300`, `priority 0`, `virtual-ip pas-une-ip`,
+   `timer advertise 0` : tous acceptés en silence, puis rendus dans les
+   vues et dans la configuration. Le commutateur refusait les six.
+2. **Une faute de frappe devenait une ligne de configuration.**
+   `vrrp vrid 1 zzz` tombait dans un tampon `rawLines` et ressortait
+   telle quelle de `display current-configuration interface …` — donc
+   **rejouée à l'import d'une topologie** (règle 3 du §0).
+3. **La configuration se perdait, chacun dans un sens.** Le
+   `display current-configuration` COMPLET du routeur ne rendait **aucune**
+   ligne `vrrp`, alors que sa vue par interface les rendait toutes ; le
+   commutateur faisait exactement l'inverse. Deux constructeurs de lignes
+   par plateforme, quatre en tout, se contredisant deux à deux.
+4. **`display vrrp interface GigabitEthernet0/0/0`** du routeur répondait
+   `Info: No VRRP group on …` pour l'interface qui porte le groupe : le
+   filtre comparait au nom court interne sans le résoudre.
+5. Le routeur écrivait `GE0/0/0` dans `display vrrp`, `display vrrp
+   brief`, `display vrrp statistics` **et dans son
+   `display current-configuration interface …`** — la règle « un port a
+   un seul nom » des lots V3 et V11 n'avait atteint aucune des quatre.
+6. **Le `display vrrp` du commutateur avalait ses propres
+   sous-commandes** : `display vrrp statistics` et `display vrrp verbose`
+   y rendaient le bloc de `display vrrp`. Enregistré en greedy, il
+   consommait tout ce qui suivait.
+7. Le commutateur imprimait la MAC virtuelle au format IEEE
+   (`00:00:5e:00:01:01`) — la règle du lot V14 — et le routeur n'en
+   imprimait **aucune**.
+8. Le commutateur acceptait `description`, `authentication-mode` et le
+   délai de `preempt-mode timer delay` et **les perdait** : son `switch`
+   n'avait pas de branche pour eux, et l'agent pas de champ.
+9. Le couple `PriorityRun`/`PriorityConfig` n'était rendu par le
+   commutateur que lorsque les deux valeurs DIFFÉRAIENT : sans piste on
+   ne voyait qu'une ligne `Priority`, donc rien ne distinguait « pas de
+   piste » de « piste qui n'a pas joué ».
+10. **`admin-vrrp vrid <n>`** rangeait un numéro dans la façade et
+    **personne ne le relisait** : ni vue, ni configuration, ni moteur.
+
+### 24.2 Ce qui est fait
+
+**Un magasin.** L'agent (`VrrpAgent`) devient le seul. `VrrpGroupRuntime`
+reçoit les trois champs de configuration qui lui manquaient
+(`preemptDelaySec`, `description`, `authMode`/`authKey`), et
+`HuaweiVrrpService` est **supprimé** — après le retrait de ses lectures,
+il ne lui restait qu'un écrivain et zéro lecteur, ce qui est le défaut
+que ce lot ferme.
+
+**Une grammaire.** `analyserVrrp` (`huawei/huaweiVrrpViews.ts`) analyse
+les mots qui suivent `vrrp` et **valide** : `vrid` 1-255, `priority`
+1-254 (255 est réservé au propriétaire de l'adresse et 0 à la
+renonciation, RFC 3768 §6.1), adresse virtuelle réellement valide,
+`timer advertise` 1-255, mot inconnu refusé. Les deux plateformes
+n'enregistrent pas la commande au même endroit de l'arbre — `vrrp` côté
+routeur, `vrrp vrid` côté commutateur — et c'est l'appelant qui
+recompose, pour que la grammaire n'ait qu'une forme. Les refus passent
+par `ErreurGrammaireVrp`/`rendreErreurVrp` (lot V7), donc le curseur
+désigne le mot fautif et non le premier venu.
+
+**Une vue.** `rendreDisplayVrrp`, `rendreDisplayVrrpBrief`,
+`rendreDisplayVrrpStatistics` et `lignesConfigVrrp` sont appelées par les
+deux plateformes. `display vrrp brief` passe par le `TextTable` de
+l'autre agent et porte son bloc de comptage des deux côtés — le même
+défaut que le lot V12 avait fermé sur `display ip interface brief`.
+`lignesConfigVrrp` est branché dans `renderHuaweiInterfaceExtras`, que
+les **deux** rendus de configuration du routeur traversent déjà : le
+désaccord devient impossible plutôt que rattrapé.
+
+### 24.3 Mesure et connaissance du constructeur, tenues séparées
+
+Tout le §24.1 est **mesuré**. Que le bloc de VRP porte `PriorityRun` et
+`PriorityConfig` côte à côte, `TimerRun`/`TimerConfig`, `Auth type`,
+`Check TTL`, `Config type`, une piste nommée (`Track IF :
+GigabitEthernet0/0/3   Priority reduced : 80`) suivie de son état sur la
+ligne d'après, et une MAC en `0000-5e00-0101`, relève de la
+**connaissance du constructeur** et non d'une capture. La suite ne
+vérifie donc jamais ce bloc contre une maquette : elle vérifie que les
+deux plateformes rendent **le même**, ce qui se contrôle sans connaître
+VRP.
+
+### 24.4 Ce qui est porté sans être agi, et pourquoi c'est écrit
+
+`preempt-mode timer delay` et `authentication-mode` sont rangés, rendus
+et rejoués, mais **le moteur ne diffère aucune prise de rôle et
+n'authentifie rien**. C'était déjà le cas côté routeur ; ce lot leur
+donne un seul magasin au lieu de les **perdre** côté commutateur, ce qui
+est un progrès et non une décoration. Les faire agir est un travail de
+protocole, pas de CLI, et reste ouvert.
+
+Les compteurs de `display vrrp statistics` sont à zéro, et c'est un
+**fait** plutôt qu'un manque : rien dans cet agent ne compte les annonces
+émises ou reçues. Ce qui est réellement compté — le nombre de pistes —
+l'est depuis l'agent.
+
+`admin-vrrp vrid` est désormais **refusé en nommant la brique absente**
+(`mVRRP is not implemented in this simulator`) : ce simulateur n'a pas de
+VRRP administratif, aucun groupe membre ne peut s'y lier, et une
+acceptation sans effet vaut moins qu'un refus qui dit pourquoi — même
+arbitrage que `test-type` sur NQA.
+
+### 24.5 Tests et mesures
+
+`huawei-vrrp-un-magasin.test.ts` (20 cas). Comme les lots V11 à V14, il
+compare les deux plateformes **entre elles** pour le même objet ; son cas
+le plus fort n'est pas d'affichage mais fonctionnel — *une piste tombée
+baisse la priorité du routeur aussi*. Il vérifie aussi que la
+configuration rendue **se relit** : rejouée sur une machine qui porte
+déjà la même configuration, chaque ligne est acceptée et le
+`display vrrp` final est identique au caractère près.
+
+Discrimination par `git stash` : **17 des 20 tombent** avant. Les 3 qui
+passent des deux côtés portent sur le module de grammaire lui-même,
+lequel n'existait pas — ils ne peuvent donc rien discriminer et sont là
+comme garde-fou.
+
+**Trois tests existants portaient une hypothèse fausse** et sont
+corrigés, jamais le code :
+
+| Fichier | Ce qu'il fixait | Pourquoi c'était faux |
+|---|---|---|
+| `switch-vrrp.test.ts` | `Virtual MAC : 00:00:5e:00:01:01` sur une machine **VRP** | VRP écrit en trois groupes de quatre (lot V14) ; le cas Cisco du même fichier garde sa forme IEEE, qui est celle d'IOS, et le cache ARP du PC aussi |
+| `switch-fhrp-track.test.ts` | `Track IF : 1` puis une ligne à la mise en page propre à ce simulateur | VRP nomme l'interface suivie au lieu d'en donner le **compte** |
+| `huawei-parity.test.ts` (2 cas) | `interface GE0/0/0` dans un bloc de **configuration** | Le nom court interne (lots V3/V11) ; la configuration complète de la même machine rendait déjà le nom canonique. L'abréviation reste acceptée en **entrée**, ce que ces cas vérifient toujours |
+
+**Mesures.** 131 suites connexes vertes (2 224 cas) — famille FHRP
+complète (14 suites, 133 cas), toutes les suites `huawei-*`, les sondes
+et les exigences. Un échec, `probe-debug-02-collecte.test.ts` (SPAN),
+**préexistant et sans rapport** : vérifié identique sur `HEAD` par
+`git stash`. Typecheck : jeu d'erreurs identique avant/après (212).
+Lint : **172 problèmes avant, 172 après**.
