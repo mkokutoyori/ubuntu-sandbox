@@ -21,8 +21,10 @@ import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName } from '../cli-utils';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import {
-  type LigneIpBrief, type LigneInterface, protocoleVrp, rendreIpInterfaceBrief,
+  type LigneIpBrief, type LigneInterface, type LigneArp,
+  protocoleVrp, rendreIpInterfaceBrief,
   rendreInterfaceBrief, rendreInterfaceDescription,
+  huaweiMacAddress, rendreArp,
 } from './huaweiTableLayouts';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
@@ -434,49 +436,43 @@ export function displayInterfaceDescription(router: Router, filtre?: string): st
 
 export function displayArp(router: Router): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  if (arpTable.size === 0) {
-    lines.push('No ARP entries found.');
-  }
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
-    const type = (entry as any).type === 'static' ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    const type = (entry as { type?: string }).type === 'static' ? 'static' : 'D';
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  return lines.join('\n');
+  return rendreArp(lignes, 'No ARP entries found.');
 }
 
 export function displayArpFiltered(router: Router, filterType: 'static' | 'dynamic'): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  let found = false;
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const isStatic = (entry as any).type === 'static';
     if (filterType === 'static' && !isStatic) continue;
     if (filterType === 'dynamic' && isStatic) continue;
-    found = true;
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
     const type = isStatic ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  if (!found) lines.push(`No ${filterType} ARP entries found.`);
-  return lines.join('\n');
+  return rendreArp(lignes, `No ${filterType} ARP entries found.`);
 }
 
 export function displayArpInterface(router: Router, ifName: string): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  let found = false;
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const et = (entry as { type?: string }).type;
     if (entry.iface !== ifName && !entry.iface.endsWith(ifName)) continue;
-    found = true;
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
     const type = et === 'static' ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  if (!found) lines.push('No ARP entries found.');
-  return lines.join('\n');
+  return rendreArp(lignes, 'No ARP entries found.');
 }
 
 export function displayArpStatistics(router: Router): string {
@@ -569,7 +565,7 @@ export function displayCurrentConfig(
   const arpTable = router._getArpTableInternal();
   for (const [ip, entry] of arpTable) {
     if ((entry as any).type === 'static') {
-      lines.push(`arp static ${ip} ${entry.mac.toString()}`);
+      lines.push(`arp static ${ip} ${huaweiMacAddress(entry.mac)}`);
     }
   }
 

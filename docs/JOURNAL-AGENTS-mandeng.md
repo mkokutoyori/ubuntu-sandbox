@@ -25,50 +25,6 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### CLI Huawei VRP — V14 : une adresse MAC s'ecrit comme VRP l'ecrit
-
-**Agent** : session « routage/CLI ».
-**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §23 (a ecrire).
-
-Trouve en poursuivant la famille des tableaux. Le defaut est visible a
-l'oeil nu et sa cause est unique.
-
-```
-[switch] display arp
-IP ADDRESS      MAC ADDRESS    EXPIRE(M) TYPE   INTERFACE
-10.0.10.2       02:00:00:00:00:1120        dynamicGigabitEthernet0/0/1
-
-[switch] display mac-address
-MAC Address    VLAN/VSI   Learned-From   Type
-02:00:00:00:00:1110         GigabitEthernet0/0/1dynamic
-```
-
-**Trois champs se collent** et la ligne est illisible : on ne peut plus
-distinguer la MAC de son delai d'expiration, ni le port du type.
-
-La cause n'est pas la largeur : les colonnes sont taillees pour une MAC
-de **14** caracteres — comme le reste de ces tableaux, qui reproduit VRP
-(`EXPIRE(M)`, `VPN-INSTANCE`, le pied `Total: 1  Dynamic: 1  Static: 0`)
-— et le rendu en produit **17**, parce qu'il ecrit la MAC au format IEEE
-`xx:xx:xx:xx:xx:xx` la ou VRP ecrit `xxxx-xxxx-xxxx`. Le debordement
-avale la colonne suivante.
-
-Ce qui est **prouve ici** : les champs se collent, donc la table est
-cassee telle qu'elle est. Ce qui releve de ma **connaissance de VRP** :
-que la bonne ecriture soit `0200-0000-0005`. Les deux menent au meme
-correctif, et je le dis dans le PRD plutot que de confondre les deux.
-
-**Trouve avec** : `display arp` du routeur rend `GE0/0/0`, le nom court
-interne — la regle « un port a un seul nom » des lots V3 et V11 n'a pas
-atteint cette vue non plus.
-
-**Fichiers que je vais toucher** : `shells/huawei/huaweiTableLayouts.ts`,
-`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`.
-Si l'ecriture de la MAC doit devenir commune a d'autres vues, je le
-signalerai ici avant de sortir de ces trois fichiers.
-
----
-
 ### IPv6 multicast + paquets OSPFv3 — LIVRÉ
 
 **Agent** : session « logging » (auteure de `PRD-Logging-Cisco.md`,
@@ -1938,6 +1894,60 @@ deux imports morts, retires. Aucun test existant modifie.
 
 ---
 
+## Livré
+
+### CLI Huawei VRP — **V14** : une adresse MAC s'ecrit comme VRP l'ecrit
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §23.
+
+Trouve en poursuivant la famille des tableaux, avec de VRAIES entrees —
+c'est ce qui l'a rendu visible, un tableau vide ne debordant jamais.
+
+```
+[switch] display arp
+10.0.10.2       02:00:00:00:00:1120        dynamicGigabitEthernet0/0/1
+[switch] display mac-address
+02:00:00:00:00:1110         GigabitEthernet0/0/1dynamic
+```
+
+**Trois champs colles**, la ligne illisible — et c'est la ligne que tout
+exercice d'ARP fait afficher.
+
+Les colonnes sont taillees pour une MAC de QUATORZE caracteres, comme le
+reste de ces tableaux qui reproduit VRP ; le rendu en produisait
+DIX-SEPT, au format IEEE.
+
+**Ce qui rend le diagnostic certain sans reference exterieure** : la
+machine ACCEPTAIT deja l'ecriture a tirets. `arp static 192.168.1.50
+aaaa-bbbb-cccc` passe depuis toujours et la configuration rendue la
+reecrit a l'identique — mais la vue affichait `aa:aa:bb:bb:cc:cc`. Elle
+lisait une ecriture qu'elle n'imprimait jamais. C'est cette
+contradiction que la suite verifie, plutot que le format lui-meme.
+
+**Deux colonnes trop etroites, trouvees avec** : `TYPE` faisait sept
+caracteres sur le commutateur, soit exactement la longueur de `dynamic` ;
+`Learned-From` en faisait quinze pour un nom de vingt. Les deux tables
+rejoignent `huaweiTableLayouts.ts` — donc toujours VOTRE `TextTable`.
+
+**Trouve avec** : `display arp` du routeur rendait `GE0/0/0`, le nom
+court interne. La regle des lots V3 et V11 n'avait pas atteint cette vue.
+
+**Fichiers touches** : `shells/huawei/huaweiTableLayouts.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`, `shells/HuaweiSwitchShell.ts`.
+
+**Si vous imprimez une MAC quelque part cote VRP**, `huaweiMacAddress()`
+est exporte du module de mises en page. Je n'ai converti que les vues
+ARP et la table MAC : les autres sites, s'il y en a, sont a vous ou a un
+lot suivant.
+
+**Mesures.** 91 suites connexes vertes (1 299 cas), suites ARP et table
+MAC comprises. `huawei-adresse-mac.test.ts` (10 cas) discrimine par
+`git stash` : **8 tombent** avant. Typecheck : jeu d'erreurs identique
+(192). Lint : 37 avant, **36 apres**. Aucun test existant modifie.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -1954,7 +1964,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V13 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V14 livrés** ; lot terminé |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
