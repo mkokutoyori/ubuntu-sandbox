@@ -42,6 +42,21 @@ export function defaultInterfaceDelayUs(speedMbps: number): number {
   return 20_000;                        // serial-grade links
 }
 
+/**
+ * Les valeurs qu'IOS donne à une interface Loopback.
+ *
+ * Elles ne se déduisent d'aucun lien — une loopback n'en a pas — et ne
+ * sont donc pas des constantes d'affichage mais l'état initial du port :
+ * `bandwidth`, `delay` et `mtu` les surchargent par la voie normale, et
+ * EIGRP lit la même bande passante que `show interfaces` affiche.
+ * Relevées sur une sortie réelle (`MTU 1514 bytes, BW 8000000 Kbit/sec,
+ * DLY 5000 usec`) : le MTU vaut 1514 et non 1500, parce qu'IOS compte
+ * ici l'en-tête de trame, ce qu'une loopback n'a pas à retrancher.
+ */
+export const LOOPBACK_MTU = 1514;
+export const LOOPBACK_BW_KBPS = 8_000_000;
+export const LOOPBACK_DELAY_US = 5000;
+
 /** IPv6 address entry with prefix length */
 export interface IPv6AddressEntry {
   address: IPv6Address;

@@ -729,7 +729,12 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
         if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
         if (updates.authType !== undefined) iface.authType = updates.authType;
         if (updates.authKey !== undefined) iface.authKey = updates.authKey;
-        if (updates.networkType !== undefined) iface.networkType = updates.networkType;
+        // Le type de réseau passe par le moteur, qui relance la machine
+        // à états : l'écrire ici laissait l'interface dans l'état
+        // d'avant, minuteurs compris.
+        if (updates.networkType !== undefined) {
+          ospf.setInterfaceNetworkType(ifName, updates.networkType);
+        }
         if (updates.retransmitInterval !== undefined) iface.retransmitInterval = updates.retransmitInterval;
         if (updates.transmitDelay !== undefined) iface.transmitDelay = updates.transmitDelay;
       }
@@ -1722,6 +1727,15 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
     lines.push(ospfIfaceStatusLine(router, name));
     lines.push(`  Internet address is ${iface.ipAddress}/${maskToCIDR(iface.mask)}, Area ${iface.areaId}`);
     lines.push(`  Process ID ${ospf.getProcessId()}, Router ID ${ospf.getRouterId()}, Network Type ${iface.networkType.toUpperCase()}, Cost: ${iface.cost}`);
+    // Une interface de bouclage s'arrête là : elle n'a ni délai de
+    // transmission, ni DR, ni minuteurs, ni voisins, et IOS n'en écrit
+    // aucun. Les afficher revenait à décrire une élection qui n'a pas
+    // lieu — la vue annonçait `State DR` pour une interface seule.
+    if (iface.networkType === 'loopback') {
+      lines.push(`  Loopback interface is treated as a stub Host`);
+      lines.push('');
+      continue;
+    }
     // A dead link elects nobody: IOS reports State DOWN there, never DR.
     lines.push(`  Transmit Delay is ${iface.transmitDelay} sec, State ${operUp ? iface.state : 'DOWN'}, Priority ${iface.priority}`);
     lines.push(`  DR: ${operUp ? iface.dr : '0.0.0.0'}`);

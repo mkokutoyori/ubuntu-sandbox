@@ -99,6 +99,15 @@ export interface OspfConfigView {
   processId: number;
   routerId?: string;
   networks: ReadonlyArray<{ network: string; wildcard: string; areaId: string }>;
+  /**
+   * Les interfaces passives, que le processus OSPF connaissait et que la
+   * configuration ne rendait pas — EIGRP et RIP les rendent tous deux
+   * juste au-dessus. Ce n'est pas un manque d'affichage : la
+   * configuration relue est ce qui REFAIT le processus à l'import d'une
+   * topologie, donc une interface passive s'y perdait silencieusement et
+   * se remettait à émettre des Hellos.
+   */
+  passiveInterfaces?: ReadonlyArray<string>;
 }
 
 export function policyConfigLines(policy: PolicyRepository): string[] {
@@ -198,6 +207,9 @@ export function routingProcessConfigLines(
     lines.push(`router ospf ${ospf.processId}`);
     if (ospf.routerId && ospf.routerId !== '0.0.0.0') lines.push(` router-id ${ospf.routerId}`);
     for (const n of ospf.networks) lines.push(` network ${n.network} ${n.wildcard} area ${n.areaId}`);
+    for (const iface of [...(ospf.passiveInterfaces ?? [])].sort()) {
+      lines.push(` passive-interface ${iface}`);
+    }
     lines.push('!');
   }
 

@@ -72,7 +72,12 @@ export function displayInterface(router: Router, ifName: string): string {
   const lines = [
     `${huaweiDisplayInterfaceName(portName)} current state : `
       + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
-    `Line protocol current state : ${st.protocol.toUpperCase()}`,
+    // `UP (spoofing)` : VRP dit ainsi que l'etat du protocole de
+    // liaison est decrete et non observe. C'est ce qui garantit qu'une
+    // loopback ne tombe jamais, donc la raison meme de s'en servir
+    // comme Router ID.
+    `Line protocol current state : ${st.protocol.toUpperCase()}`
+      + `${vrpProtocoleSimule(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
   ];
 
   const desc = router.getInterfaceDescription(portName);
@@ -292,11 +297,12 @@ export function displayIpIntBrief(router: Router): string {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
-    const { phys, proto } = vrpEtatPort(port, name, router._getPortsInternal());
+    const { phys, proto, spoofing } = vrpEtatPort(port, name, router._getPortsInternal());
     if (phys === 'up') upPhys++; else downPhys++;
     if (proto === 'up') upProto++; else downProto++;
     const renderedName = huaweiDisplayInterfaceName(name);
-    rows.push(`${renderedName.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+    const protoAffiche = spoofing && proto === 'up' ? 'up(s)' : proto;
+    rows.push(`${renderedName.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${protoAffiche}`);
   }
   const lines = [
     '*down: administratively down',
@@ -327,7 +333,8 @@ export function displayIpInterface(router: Router, ifName: string): string {
   const lines = [
     `${huaweiDisplayInterfaceName(portName)} current state : `
       + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
-    `Line protocol current state : ${st.protocol.toUpperCase()}`,
+    `Line protocol current state : ${st.protocol.toUpperCase()}`
+      + `${vrpProtocoleSimule(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
     `Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned'}`,
     `Broadcast address : ${ip && mask ? ip.toString() : '0.0.0.0'}`,
     `The Maximum Transmit Unit : 1500 bytes`,
@@ -361,12 +368,36 @@ export function displayInterfaceAll(router: Router): string {
  * mots.
  */
 function vrpEtatPort(port: import('../../../hardware/Port').Port, nom: string,
-  ports?: ReadonlyMap<string, import('../../../hardware/Port').Port>): { phys: string; proto: string } {
+  ports?: ReadonlyMap<string, import('../../../hardware/Port').Port>): { phys: string; proto: string; spoofing: boolean } {
   const st = iosInterfaceStatus(port, nom, ports);
   return {
     phys: st.status === 'administratively down' ? '*down' : st.status,
     proto: st.protocol,
+    spoofing: vrpProtocoleSimule(nom),
   };
+}
+
+/**
+ * Les interfaces dont VRP SIMULE l'état du protocole de liaison.
+ *
+ * VRP appelle cela « spoofing » et l'écrit : `up(s)` dans
+ * `display ip interface brief`, `UP (spoofing)` dans
+ * `display interface`. Ce n'est pas une décoration — c'est la façon
+ * dont la plateforme dit qu'aucun protocole ne tourne réellement sur
+ * cette interface et que son état UP est décrété, ce qui est
+ * exactement la propriété qui rend une loopback utilisable comme
+ * Router ID. La légende `(s): spoofing` était imprimée par
+ * `display ip interface brief` sans qu'aucune ligne ne porte jamais la
+ * marque qu'elle explique.
+ *
+ * Portée assumée : LoopBack et NULL, les deux pour lesquelles la
+ * documentation de VRP montre la marque. Tunnel n'y est PAS, faute de
+ * référence — les sorties de Huawei pour `display interface Tunnel`
+ * montrent un `UP` sec — et l'ajouter au jugé remplacerait une
+ * information absente par une information fausse.
+ */
+function vrpProtocoleSimule(nom: string): boolean {
+  return /^(LoopBack|NULL)/i.test(nom);
 }
 
 /**

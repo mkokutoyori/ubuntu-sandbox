@@ -104,9 +104,46 @@ function matchesKeyword(token: string, keyword: string): boolean {
   return t.length >= 2 && keyword.startsWith(t);
 }
 
+/**
+ * `undo interface <nom>` prévient avant de supprimer.
+ *
+ * VRP nomme l'interface dans son avertissement — c'est le point : sur
+ * une console où l'on vient d'en désigner plusieurs, la question « celle
+ * que je crois ? » se pose vraiment, et un `[Y/N]:` anonyme n'y répond
+ * pas. La réponse par défaut est NON : une suppression qu'on obtient en
+ * tapant Entrée n'est pas une confirmation.
+ */
+function undoInterfacePlan(ifName: string): CommandInteractionPlan {
+  return {
+    steps: [
+      {
+        kind: 'output',
+        lines: [
+          `Warning: The undo interface ${ifName} command will delete the interface.`,
+          'Continue? [Y/N]:',
+        ],
+      },
+      {
+        kind: 'confirmation',
+        prompt: '',
+        defaultAnswer: 'no',
+        storeAs: 'undo_interface_confirmed',
+        validate: cancelOnNo('Info: The operation is canceled.'),
+      },
+      { kind: 'run', run: async (rt) => { await rt.exec(`undo interface ${ifName}`); } },
+    ],
+  };
+}
+
 export function huaweiInteractionPlanFor(commandLine: string): CommandInteractionPlan | null {
   const toks = commandLine.trim().split(/\s+/).filter(Boolean);
   if (toks.length === 0) return null;
+
+  // VRP admet que le numéro soit séparé du type (`LoopBack 0`), donc
+  // l'interface peut occuper un ou deux jetons.
+  if (toks.length >= 3 && matchesKeyword(toks[0], 'undo') && matchesKeyword(toks[1], 'interface')) {
+    return undoInterfacePlan(toks.slice(2).join(''));
+  }
 
   if (toks.length === 1 && toks[0].toLowerCase() === 'save') return savePlan();
   if (toks.length === 1 && toks[0].toLowerCase() === 'reboot') return rebootPlan();

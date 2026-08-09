@@ -36,6 +36,11 @@ async function configure(r: CiscoRouter, cmds: string[]) {
  * each advertising an identically-numbered stub Loopback (mirroring the
  * raw-engine ECMP fixture in ospf-ecmp-ext-interarea.test.ts, at the
  * device/CLI level instead of directly against OSPFEngine).
+ *
+ * Les deux loopbacks portent `ip ospf network point-to-point` : depuis
+ * que le type de réseau LOOPBACK existe pour de bon, une loopback est
+ * annoncée en /32 et non avec son masque, si bien que le préfixe que ce
+ * laboratoire répartit n'existerait plus sans cette commande.
  */
 async function buildEcmpTopology() {
   const r1 = new CiscoRouter('R1');
@@ -51,7 +56,12 @@ async function buildEcmpTopology() {
   ]);
   await configure(r2, [
     'interface GigabitEthernet0/0', 'ip address 10.0.12.2 255.255.255.252', 'no shutdown', 'exit',
-    'interface Loopback1', 'ip address 192.168.20.1 255.255.255.0', 'exit',
+    'interface Loopback1', 'ip address 192.168.20.1 255.255.255.0',
+    // Sans cela, OSPF annonce une loopback en HÔTE ISOLÉ /32 quel que
+    // soit son masque (RFC 2328 §12.4.1.1) et ce laboratoire n'aurait
+    // pas de /24 à répartir. `ip ospf network point-to-point` est le
+    // remède réel, pas un contournement de test.
+    'ip ospf network point-to-point', 'exit',
     'router ospf 1',
     'router-id 2.2.2.2',
     'network 10.0.12.0 0.0.0.3 area 0',
@@ -59,7 +69,8 @@ async function buildEcmpTopology() {
   ]);
   await configure(r3, [
     'interface GigabitEthernet0/0', 'ip address 10.0.13.2 255.255.255.252', 'no shutdown', 'exit',
-    'interface Loopback1', 'ip address 192.168.20.1 255.255.255.0', 'exit',
+    'interface Loopback1', 'ip address 192.168.20.1 255.255.255.0',
+    'ip ospf network point-to-point', 'exit',
     'router ospf 1',
     'router-id 3.3.3.3',
     'network 10.0.13.0 0.0.0.3 area 0',

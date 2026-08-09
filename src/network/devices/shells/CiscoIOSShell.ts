@@ -1058,7 +1058,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (sub === 'brief') return Show.showIpIntBrief(getRouter());
       const ifName = resolveInterfaceName(getRouter(), args.join(' '));
       if (!ifName) return `% Invalid input detected at '^' marker.`;
-      return Show.showInterface(getRouter(), ifName);
+      // `show ip interface <nom>` rendait le bloc de `show interfaces`,
+      // c'est-à-dire l'AUTRE commande : le traitement IP de l'interface
+      // n'était affichable que pour toutes les interfaces à la fois.
+      return Show.showIpInterfaceOne(getRouter(), ifName);
     };
     trie.registerGreedy('show ip interface', 'Display IP interface status', showIpInterfaceCmd);
   }
