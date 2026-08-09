@@ -12,6 +12,7 @@ import { encodeBasicCredentials } from '../auth/BasicAuth';
 import type { CookieJar } from '../cookies/CookieJar';
 import { serializeCookieHeader } from '../cookies/SetCookie';
 import { jarFromArgument, serializeNetscapeCookies } from './CurlCookies';
+import { buildMultipart } from './CurlForm';
 import { isKnownMethod } from '../semantics/methods';
 import type { CurlOptions } from './CurlArgs';
 import type { CurlHost } from './CurlHost';
@@ -126,6 +127,7 @@ function bodyFor(opts: CurlOptions, host: CurlHost): string | null {
 function methodFor(opts: CurlOptions): string {
   if (opts.method) return opts.method;
   if (opts.head) return 'HEAD';
+  if (opts.form.length > 0) return 'POST';
   // `-T` fait un PUT, pas un POST : c'est un TÉLÉVERSEMENT, et le
   // confondre changerait la sémantique côté serveur.
   if (opts.uploadFile !== null) return 'PUT';
@@ -135,7 +137,7 @@ function methodFor(opts: CurlOptions): string {
 
 function buildRequest(
   url: CurlUrl, method: string, opts: CurlOptions, body: string | null,
-  jar?: CookieJar,
+  jar?: CookieJar, formContentType?: string,
 ): HttpMessage {
   const verb: HttpMethod = isKnownMethod(method) ? method : 'GET';
   const request = createRequest(verb, url.path);
@@ -154,8 +156,11 @@ function buildRequest(
   }
   if (body !== null) {
     // Un téléversement n'est pas un formulaire : curl n'impose alors
-    // aucun type et laisse le serveur décider.
-    if (opts.uploadFile === null) {
+    // aucun type et laisse le serveur décider. Un `-F`, lui, porte sa
+    // frontière dans le type, sans quoi le serveur ne saurait pas où
+    // coupent les parties.
+    if (formContentType) request.headers.set('Content-Type', formContentType);
+    else if (opts.uploadFile === null) {
       request.headers.set('Content-Type', 'application/x-www-form-urlencoded');
     }
     request.body = binaryStringToBytes(body);
@@ -227,9 +232,25 @@ export async function performCurlRequest(
       url: first, remoteIp: '', method: 'PUT', numRedirects: 0, trace: [],
     };
   }
+  // Le corps multipart est construit AVANT toute connexion : un
+  // fichier de partie absent doit échouer comme `-T`, sans ouvrir de
+  // socket pour rien.
+  let formContentType: string | undefined;
+  let corpsForm: string | null = null;
+  if (opts.form.length > 0) {
+    const forme = buildMultipart(opts.form, (p) => host.readFile(p));
+    if (forme.ok === false) {
+      return {
+        ok: false, code: forme.code, message: forme.message,
+        url: first, remoteIp: '', method: 'POST', numRedirects: 0, trace: [],
+      };
+    }
+    formContentType = forme.contentType;
+    corpsForm = forme.body;
+  }
   let url = first;
   let method = methodFor(opts);
-  let sendBody = body !== null;
+  let sendBody = body !== null || opts.form.length > 0;
   let redirects = 0;
   let remoteIp = '';
   // Le bocal vit pour tout le transfert, redirections comprises — et
@@ -273,7 +294,8 @@ export async function performCurlRequest(
     remoteIp = address;
     trace.push(`*   Trying ${address}:${url.port}...`);
 
-    const request = buildRequest(url, method, opts, sendBody ? body : null, jar);
+    const request = buildRequest(
+      url, method, opts, sendBody ? (corpsForm ?? body) : null, jar, formContentType);
 
     let response: HttpMessage | null = null;
     let failure: CurlFailure | null = null;

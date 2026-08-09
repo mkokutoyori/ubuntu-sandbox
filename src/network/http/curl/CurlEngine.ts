@@ -20,6 +20,36 @@ export const CURL_FLAGS: readonly string[] = [
 export const CURL_USAGE =
   'curl [-fiIkLOsSv] [-o file] [-w format] [-X method] [-d data] [-H header] [-u user:password] [--resolve host:port:addr] URL...';
 
+/**
+ * Ce que curl juge TRANSITOIRE, c'est-à-dire ce qui vaut la peine
+ * d'être retenté.
+ *
+ * La liste est la sienne, et elle est courte à dessein : un `404` ou un
+ * certificat invalide ne s'améliorent pas en insistant. `--retry-all-errors`
+ * existe précisément pour passer outre, et n'a de sens que parce que le
+ * défaut est restrictif.
+ */
+const STATUTS_TRANSITOIRES = new Set([408, 429, 500, 502, 503, 504]);
+
+/** Connexion refusée, coupée, ou pas de réponse du tout. */
+const CODES_TRANSITOIRES = new Set([7, 28, 52, 56]);
+
+function retryWorthy(outcome: CurlOutcome, opts: CurlOptions): boolean {
+  if (outcome.ok === false) {
+    return opts.retryAllErrors || CODES_TRANSITOIRES.has(outcome.code);
+  }
+  if (STATUTS_TRANSITOIRES.has(outcome.statusCode)) return true;
+  // Un statut ordinaire n'est un échec que si `-f` le déclare tel ;
+  // sans `-f`, un `404` est une réponse et non une panne.
+  return opts.retryAllErrors && opts.fail && outcome.statusCode >= 400;
+}
+
+function transientLabel(outcome: CurlOutcome): string {
+  return outcome.ok === false
+    ? 'Connection refused'
+    : `HTTP error ${outcome.statusCode}`;
+}
+
 function headerBlock(outcome: CurlSuccess): string {
   const status = `HTTP/${outcome.httpVersion} ${outcome.statusCode} ${outcome.reasonPhrase}`.trimEnd();
   return [status, ...outcome.headers.map((h) => `${h.name}: ${h.value}`), ''].join('\n');
@@ -106,7 +136,15 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promis
   }
 
   const started = Date.now();
-  const outcome = await performCurlRequest(host, parsed.url, opts);
+  let outcome = await performCurlRequest(host, parsed.url, opts);
+  // `--retry N` : N NOUVELLES tentatives après la première, et non N au
+  // total — c'est le compte de curl, et se tromper d'un ferait échouer
+  // un `--retry 1` que le vrai réussit.
+  for (let essai = 0; essai < opts.retry && retryWorthy(outcome, opts); essai++) {
+    stderrLines.push(`Warning: Transient problem: ${transientLabel(outcome)} `
+      + `Will retry in 0 seconds. ${opts.retry - essai} retries left.`);
+    outcome = await performCurlRequest(host, parsed.url, opts);
+  }
   const elapsed = (Date.now() - started) / 1000;
 
   if (opts.verbose) stderrLines.push(...outcome.trace);

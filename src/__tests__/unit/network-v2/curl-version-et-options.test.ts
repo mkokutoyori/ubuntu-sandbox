@@ -157,10 +157,11 @@ describe('`-D` — écrire les en-têtes reçus', () => {
 });
 
 describe('les options encore absentes le disent toujours', () => {
-  it('`-x`, `--retry` et `-F` restent refusées', async () => {
+  it('`-x` reste refusée', async () => {
     // Le garde-fou : ouvrir cinq portes ne doit pas faire croire que
-    // les autres le sont.
-    for (const option of ['-x', '--retry', '-F']) {
+    // les autres le sont. `--retry` et `-F` sont sorties de cette liste
+    // en étant implémentées, et ce cas est tombé alors — son rôle.
+    for (const option of ['-x']) {
       expect(await cli.executeCommand(`curl -s ${option} zorglub http://10.0.0.2:8080/`), option)
         .toContain(`curl: option ${option}: is not implemented in this simulator`);
     }
