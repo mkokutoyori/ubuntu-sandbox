@@ -9,7 +9,8 @@ import type { McastDnsBinding } from '@/network/dns/transport/MulticastDnsTransp
 
 export const MDNS_PORT = 5353;
 export const MDNS_IPV4_GROUP = '224.0.0.251';
-/** Le groupe IPv6, pour mémoire — non émis ici, comme pour LLMNR. */
+/** Le groupe IPv6 (RFC 6762 §3). Emis pour de bon depuis que la pile
+ *  v6 porte l'emission vers un groupe quelconque. */
 export const MDNS_IPV6_GROUP = 'ff02::fb';
 
 /** Le seul domaine que mDNS sert (RFC 6762 §3). */
@@ -18,6 +19,7 @@ export const MDNS_DOMAIN = 'local';
 export const MDNS_BINDING: McastDnsBinding = {
   port: MDNS_PORT,
   group: MDNS_IPV4_GROUP,
+  group6: MDNS_IPV6_GROUP,
   processName: 'systemd-resolved',
 };
 

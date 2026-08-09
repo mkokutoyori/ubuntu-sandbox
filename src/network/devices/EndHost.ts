@@ -609,7 +609,13 @@ export abstract class EndHost extends Equipment {
   ): boolean {
     if (!group.isMulticast()) return false;
     const dstMAC = group.toMulticastMAC();
-    const hopLimit = group.isLinkLocal() ? 1 : this.defaultHopLimit;
+    // La portée d'un GROUPE se lit dans son second quartet (RFC 4291
+    // §2.7) et non dans le préfixe `fe80::/10` : `isLinkLocal()` vaut
+    // faux pour `ff02::5`, donc s'en servir ici donnait la limite de
+    // sauts et la source d'un envoi de portée globale à un paquet qui
+    // ne doit pas quitter le lien.
+    const surLeLien = group.isLinkLocalScopeMulticast();
+    const hopLimit = surLeLien ? 1 : this.defaultHopLimit;
     let sent = false;
     for (const [name, port] of this.ports) {
       if (name === 'lo') continue;
@@ -618,7 +624,7 @@ export abstract class EndHost extends Equipment {
       // La source d'un paquet vers un groupe local au lien est
       // l'adresse de lien-local de l'interface : c'est elle que le
       // voisin doit voir pour répondre.
-      const srcIP = group.isLinkLocal()
+      const srcIP = surLeLien
         ? (port.getLinkLocalIPv6() ?? port.getGlobalIPv6())
         : (port.getGlobalIPv6() ?? port.getLinkLocalIPv6());
       if (!srcIP) continue;
@@ -3792,21 +3798,36 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(ifName);
     if (!port) return false;
     port.enableIPv6();
-
-    // Add connected route for link-local
-    const linkLocal = port.getLinkLocalIPv6();
-    if (linkLocal) {
-      this.ipv6RoutingTable.push({
-        prefix: new IPv6Address('fe80::'),
-        prefixLength: 10,
-        nextHop: null,
-        iface: ifName,
-        type: 'connected',
-        metric: 0,
-      });
-    }
-
+    this.ensureLinkLocalRoute(ifName);
     return true;
+  }
+
+  /**
+   * La route connectée `fe80::/10` de l'interface.
+   *
+   * Deux défauts tenaient ici. Elle n'était posée que par
+   * `enableIPv6()`, jamais par `configureIPv6Interface()` — le chemin
+   * que prend `ip -6 addr add` —, si bien qu'un hôte configuré
+   * normalement ne pouvait joindre AUCUNE adresse de lien-local :
+   * `resolveIPv6Route` ne trouvait rien et l'envoi échouait en silence.
+   * C'est ce qui empêchait une réponse LLMNR/mDNS de revenir sur le
+   * groupe v6, dont la source est justement de lien-local. Et elle
+   * était empilée sans vérification, donc `enableIPv6()` appelé deux
+   * fois laissait deux routes identiques.
+   */
+  private ensureLinkLocalRoute(ifName: string): void {
+    const port = this.ports.get(ifName);
+    if (!port?.getLinkLocalIPv6()) return;
+    const prefix = new IPv6Address('fe80::');
+    const deja = this.ipv6RoutingTable.some(
+      (r) => r.type === 'connected' && r.iface === ifName
+        && r.prefixLength === 10 && r.prefix.equals(prefix),
+    );
+    if (deja) return;
+    this.ipv6RoutingTable.push({
+      prefix, prefixLength: 10, nextHop: null,
+      iface: ifName, type: 'connected', metric: 0,
+    });
   }
 
   /**
@@ -3817,6 +3838,7 @@ export abstract class EndHost extends Equipment {
     if (!port) return false;
 
     port.configureIPv6(address, prefixLength);
+    this.ensureLinkLocalRoute(ifName);
 
     // Add connected route for this prefix
     const networkPrefix = address.getNetworkPrefix(prefixLength);
