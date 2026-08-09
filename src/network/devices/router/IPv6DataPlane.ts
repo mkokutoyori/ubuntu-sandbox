@@ -48,7 +48,14 @@ interface QueuedIPv6Packet {
 }
 
 export interface RAConfig {
+  /**
+   * `ipv6 nd ra suppress` : les annonces NON sollicitées se taisent.
+   * Le routeur répond toujours à une sollicitation — c'est ce que fait
+   * IOS, et c'est `suppress all` qui coupe aussi les réponses.
+   */
   enabled: boolean;
+  /** `ipv6 nd ra suppress all` : plus rien, réponses comprises. */
+  suppressAll?: boolean;
   interval: number;
   curHopLimit: number;
   managedFlag: boolean;
@@ -182,6 +189,8 @@ export class IPv6DataPlane {
    */
   annoncerSurInterface(portName: string): void {
     if (!this.enabled) return;
+    const ra = this.raConfig.get(portName);
+    if (ra && (ra.enabled === false || ra.suppressAll)) return;
     const port = this.ctx.getPorts().get(portName);
     if (!port || !port.isIPv6Enabled() || !port.getIsUp()) return;
     const aUnPrefixe = port.getIPv6Addresses()
@@ -633,6 +642,11 @@ export class IPv6DataPlane {
         ipv6.sourceIP.toString(), srcLLOpt.address, inPort, false);
     }
 
+    // `ipv6 nd ra suppress all` : le routeur ne répond même plus.
+    // `suppress` seul laisse la réponse, seule l'annonce spontanée
+    // se tait — c'est la distinction qu'IOS fait entre les deux.
+    if (this.raConfig.get(inPort)?.suppressAll) return;
+
     this.sendRouterAdvertisement(inPort, ipv6.sourceIP.isUnspecified() ? null : ipv6.sourceIP);
   }
 
@@ -665,6 +679,39 @@ export class IPv6DataPlane {
       this.raTimers.set(ifName, token);
     }
   }
+
+  /** La configuration d'annonce d'une interface, créée au besoin. */
+  private raConfigFor(ifName: string): RAConfig {
+    const existing = this.raConfig.get(ifName);
+    if (existing) return existing;
+    const frais: RAConfig = {
+      enabled: true, interval: 200000, curHopLimit: 64,
+      managedFlag: false, otherConfigFlag: false,
+      routerLifetime: 1800, prefixes: [],
+    };
+    this.raConfig.set(ifName, frais);
+    return frais;
+  }
+
+  /**
+   * Régler un paramètre d'annonce SANS armer le minuteur périodique.
+   *
+   * `configureRA` arme un `setInterval` : s'en servir pour poser le
+   * drapeau M ferait démarrer une annonce périodique sur la seule
+   * interface où l'opérateur a touché un drapeau, et pas sur les
+   * autres — une différence de comportement qu'aucune commande n'aurait
+   * demandée. Les drapeaux et le minuteur sont deux sujets.
+   */
+  setRaParams(ifName: string, params: Partial<RAConfig>): void {
+    const config = this.raConfigFor(ifName);
+    Object.assign(config, params);
+    if (config.enabled === false) {
+      const t = this.raTimers.get(ifName);
+      if (t) { this.timers.clear(t); this.raTimers.delete(ifName); }
+    }
+  }
+
+  getRaParams(ifName: string): RAConfig | undefined { return this.raConfig.get(ifName); }
 
   addRAPrefix(ifName: string, prefix: IPv6Address, prefixLength: number, options?: {
     onLink?: boolean;

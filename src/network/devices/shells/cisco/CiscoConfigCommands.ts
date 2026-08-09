@@ -679,20 +679,74 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     ctx.r().addDhcpv6RelayDestination(ifName, args[0]);
     return '';
   });
+  // Ces deux drapeaux etaient ranges sur une propriete ad hoc du port
+  // (`ipv6NdManagedFlag`) que PERSONNE ne lisait : l'annonce se
+  // construit depuis `raConfig`, un autre magasin. Ils partaient donc
+  // toujours a zero sur le fil, quelle que soit la configuration. Ils
+  // vont desormais dans le magasin que lit `sendRouterAdvertisement`.
+  //
+  // Ce que le drapeau M dit — « demande ton adresse en DHCPv6 » — est
+  // porte fidelement sur le fil et n'est SUIVI par aucun hote : ce
+  // simulateur a un serveur DHCPv6 et pas de client. C'est ecrit ici
+  // plutot que tu, et le jour ou le client existera, rien ne changera
+  // de ce cote.
   trie.register('ipv6 nd managed-config-flag', 'Set IPv6 ND M flag', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    if (port) (port as any).ipv6NdManagedFlag = true;
+    ctx.r().setRaParams(ifName, { managedFlag: true });
+    return '';
+  });
+  trie.register('no ipv6 nd managed-config-flag', 'Clear IPv6 ND M flag', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    ctx.r().setRaParams(ifName, { managedFlag: false });
     return '';
   });
   trie.register('ipv6 nd other-config-flag', 'Set IPv6 ND O flag', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    if (port) (port as any).ipv6NdOtherFlag = true;
+    ctx.r().setRaParams(ifName, { otherConfigFlag: true });
     return '';
   });
+  trie.register('no ipv6 nd other-config-flag', 'Clear IPv6 ND O flag', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    ctx.r().setRaParams(ifName, { otherConfigFlag: false });
+    return '';
+  });
+
+  // `suppress` tait l'annonce spontanee ; `suppress all` tait aussi la
+  // reponse a une sollicitation. La distinction est celle d'IOS et elle
+  // est observable : sous `suppress`, un hote qui arrive s'autoconfigure
+  // toujours puisqu'il sollicite ; sous `suppress all`, non.
+  trie.registerGreedy('ipv6 nd ra suppress', 'Suppress router advertisements', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const tout = (args[0] ?? '').toLowerCase() === 'all';
+    if (args.length > 0 && !tout) return '% Invalid input detected at \'^\' marker.';
+    ctx.r().setRaParams(ifName, { enabled: false, suppressAll: tout });
+    return '';
+  });
+  trie.registerGreedy('no ipv6 nd ra suppress', 'Resume router advertisements', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    ctx.r().setRaParams(ifName, { enabled: true, suppressAll: false });
+    return '';
+  });
+
+  // Une duree de vie nulle veut dire « je ne suis pas un routeur par
+  // defaut » (RFC 4861 §4.2) : l'hote continue de s'autoconfigurer par
+  // le prefixe et ne pose PAS de route par defaut. C'est deja ce que
+  // fait la reception, la valeur n'etait simplement pas reglable.
+  trie.registerGreedy('ipv6 nd ra lifetime', 'Set router lifetime in RAs', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const v = parseInt(args[0], 10);
+    if (isNaN(v) || v < 0 || v > 9000) return '% Invalid input detected at \'^\' marker.';
+    ctx.r().setRaParams(ifName, { routerLifetime: v });
+    return '';
+  });
+  trie.requireArgs('ipv6 nd ra lifetime', 1);
   trie.registerGreedy('ip rip authentication', 'Configure RIP authentication', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName) as any;

@@ -2765,6 +2765,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ═══════════════════════════════════════════════════════════════════
 
   configureRA(ifName: string, config: Partial<import('./router/IPv6DataPlane').RAConfig>) { this.ipv6Engine.configureRA(ifName, config); }
+  /** Régler les paramètres d'annonce ND d'une interface (`ipv6 nd …`). */
+  setRaParams(ifName: string, params: Partial<import('./router/IPv6DataPlane').RAConfig>): void {
+    this.ipv6Engine.setRaParams(ifName, params);
+  }
+
+  getRaParams(ifName: string) { return this.ipv6Engine.getRaParams(ifName); }
+
   addRAPrefix(ifName: string, prefix: IPv6Address, prefixLength: number, options?: {
     onLink?: boolean; autonomous?: boolean; validLifetime?: number; preferredLifetime?: number;
   }) { this.ipv6Engine.addRAPrefix(ifName, prefix, prefixLength, options); }
