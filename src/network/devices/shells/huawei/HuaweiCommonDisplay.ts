@@ -17,16 +17,40 @@ const WEEKDAYS = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
 ];
 
-/** `display clock` — date, weekday, timezone (VRP layout). */
-export function displayClock(now: Date = new Date()): string {
-  const date =
-    `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-  const time =
-    `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+/**
+ * `display clock` — date, jour, fuseau.
+ *
+ * Le fuseau etait ecrit EN DUR (`Time Zone(UTC) : UTC`), si bien qu'un
+ * `clock timezone WAT add 01:00:00` accepte par la machine n'apparaissait
+ * nulle part et que l'heure restait UTC — alors que la meme commande, du
+ * cote Cisco, decalait bien l'affichage (lot N2). Le decalage vient
+ * desormais de la configuration d'horloge, comme chez Cisco.
+ */
+export function displayClock(
+  now: Date = new Date(),
+  fuseau?: { timezone: string; offsetMin: number },
+): string {
+  const decale = fuseau && fuseau.offsetMin
+    ? new Date(now.getTime() + fuseau.offsetMin * 60_000)
+    : now;
+  const d = fuseau ? {
+    an: decale.getUTCFullYear(), mo: decale.getUTCMonth() + 1, j: decale.getUTCDate(),
+    h: decale.getUTCHours(), mi: decale.getUTCMinutes(), s: decale.getUTCSeconds(),
+    jour: decale.getUTCDay(),
+  } : {
+    an: now.getFullYear(), mo: now.getMonth() + 1, j: now.getDate(),
+    h: now.getHours(), mi: now.getMinutes(), s: now.getSeconds(), jour: now.getDay(),
+  };
+  const nom = fuseau?.timezone || 'UTC';
+  const signe = (fuseau?.offsetMin ?? 0) < 0 ? 'minus' : 'add';
+  const abs = Math.abs(fuseau?.offsetMin ?? 0);
+  const decalage = `${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}:00`;
   return [
-    `${date} ${time}`,
-    WEEKDAYS[now.getDay()],
-    'Time Zone(UTC) : UTC',
+    `${d.an}-${pad2(d.mo)}-${pad2(d.j)} ${pad2(d.h)}:${pad2(d.mi)}:${pad2(d.s)}`,
+    WEEKDAYS[d.jour],
+    fuseau && fuseau.offsetMin
+      ? `Time Zone(${nom}) : UTC ${signe} ${decalage}`
+      : `Time Zone(${nom}) : UTC`,
   ].join('\n');
 }
 

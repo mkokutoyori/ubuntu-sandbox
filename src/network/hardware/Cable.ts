@@ -230,6 +230,15 @@ export class Cable {
    * Perform auto-negotiation between both ports.
    * Each port negotiates speed/duplex based on peer capabilities and cable max speed.
    */
+  /**
+   * Re-run negotiation because one end's speed, duplex or negotiation
+   * mode changed. On real hardware that bounces the link; here it is
+   * what makes a forced `speed`/`duplex` reach the negotiated values
+   * the views read — without it they kept reporting what the link had
+   * agreed on before the operator forced anything.
+   */
+  renegotiate(): void { this.negotiateLink(); }
+
   private negotiateLink(): void {
     if (!this.portA || !this.portB) return;
 

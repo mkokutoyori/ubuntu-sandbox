@@ -545,7 +545,15 @@ function validateUnitProperty(key: string, val: string): string | null {
  * Debian/Ubuntu: `apt install bind9` ships `named.service`, and
  * `bind9.service` is a compatibility alias for it).
  */
-const UNIT_ALIASES: Record<string, string> = { bind9: 'named' };
+const UNIT_ALIASES: Record<string, string> = {
+  bind9: 'named',
+  // Debian nomme l'unite de chrony `chrony.service`, RHEL la nomme
+  // `chronyd.service`, et le tutoriel NTP montre les DEUX (`systemctl
+  // enable --now chronyd`). Un lecteur qui suit la colonne RHEL doit
+  // trouver son service, pas un `Unit could not be found` qui ne lui
+  // apprendrait rien sur NTP.
+  chronyd: 'chrony',
+};
 
 function resolveUnitAlias(name: string): string {
   return UNIT_ALIASES[name] ?? name;

@@ -1389,7 +1389,22 @@ export interface IEventLogProvider {
  *
  *   if (!ctx.providers.filesystem) throw new PSRuntimeError('No filesystem available');
  */
+/**
+ * Le fuseau horaire de la machine (`docs/PRD-NTP-Tutoriel.md` §5).
+ *
+ * C'est un PORT etroit, et non un acces a l'identite systeme entiere :
+ * `Get-TimeZone`/`Set-TimeZone` n'ont besoin que de lire et d'ecrire ce
+ * champ, et le partager avec `timedatectl` est ce qui empeche une
+ * machine Windows et une machine Linux de donner deux fuseaux
+ * differents pour la meme configuration.
+ */
+export interface ITimezoneProvider {
+  readonly timezone: string;
+  setTimezone(nom: string): void;
+}
+
 export interface PSProviders {
+  readonly identity:       ITimezoneProvider       | null;
   readonly filesystem:     IFileSystemProvider     | null;
   readonly registry:       IRegistryProvider       | null;
   readonly services:       IServiceProvider        | null;

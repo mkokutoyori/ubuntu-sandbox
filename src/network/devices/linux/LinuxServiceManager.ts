@@ -247,6 +247,21 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    // chrony (`docs/PRD-NTP-Tutoriel.md` §4). L'unite s'appelle `chrony`
+    // sur Debian et `chronyd` sur RHEL ; le tutoriel montre les deux, et
+    // un lecteur qui suit la colonne RHEL ne doit pas tomber sur un
+    // `Unit could not be found` qui ne lui apprendrait rien — l'alias
+    // est resolu par le gestionnaire.
+    name: 'chrony',
+    description: 'chrony, an NTP client/server',
+    type: 'forking',
+    execStart: '/usr/sbin/chronyd -F 1',
+    execReload: '/bin/kill -HUP $MAINPID',
+    after: ['network.target'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
     name: 'cron',
     description: 'Regular background program processing daemon',
     type: 'forking',

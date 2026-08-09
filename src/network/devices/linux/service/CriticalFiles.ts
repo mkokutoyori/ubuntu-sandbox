@@ -153,6 +153,11 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   ps: '/bin/ps', kill: '/bin/kill', tee: '/usr/bin/tee', find: '/usr/bin/find',
   xargs: '/usr/bin/xargs', tar: '/bin/tar', gzip: '/bin/gzip', curl: '/usr/bin/curl',
   openssl: '/usr/bin/openssl',
+  // Le temps (`docs/PRD-NTP-Tutoriel.md` §4). `chronyd` est un binaire a
+  // part entiere plutot qu'un alias : c'est lui que l'unite lance, donc
+  // c'est sa disparition qui empeche le service de demarrer.
+  chronyc: '/usr/bin/chronyc', chronyd: '/usr/sbin/chronyd',
+  timedatectl: '/usr/bin/timedatectl',
   wget: '/usr/bin/wget', ping: '/bin/ping', ssh: '/usr/bin/ssh', scp: '/usr/bin/scp',
   sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
   netstat: '/bin/netstat', ss: '/usr/sbin/ss', iptables: '/usr/sbin/iptables',

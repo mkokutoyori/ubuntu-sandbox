@@ -113,6 +113,16 @@ export class Port {
   private autoNegotiation: boolean = true;
   private negotiatedSpeed: PortSpeed | null = null;
   private negotiatedDuplex: PortDuplex | null = null;
+  /**
+   * What the port advertised before an operator forced it.
+   *
+   * `speed auto` means "advertise everything I support", not "keep the
+   * value I was forced to": without this, returning to auto left the
+   * forced 10 Mbit/s as the capability and the link renegotiated right
+   * back down to it.
+   */
+  private capabilitySpeed: PortSpeed | null = null;
+  private capabilityDuplex: PortDuplex | null = null;
 
   // ─── MTU ───────────────────────────────────────────────────────────
   private mtu: number = 1500;
@@ -123,7 +133,7 @@ export class Port {
   private keepaliveSec: number = 10;
   private keepaliveEnabled: boolean = true;
   private directedBroadcast: boolean = false;
-  private negotiationAuto: boolean = true;
+
   private inputServicePolicy: string | null = null;
   private outputServicePolicy: string | null = null;
   private description: string = '';
@@ -160,8 +170,19 @@ export class Port {
   isKeepaliveEnabled(): boolean { return this.keepaliveEnabled; }
   isDirectedBroadcastEnabled(): boolean { return this.directedBroadcast; }
   setDirectedBroadcast(on: boolean): void { this.directedBroadcast = on; }
-  isNegotiationAuto(): boolean { return this.negotiationAuto; }
-  setNegotiationAuto(on: boolean): void { this.negotiationAuto = on; }
+  /**
+   * Auto-negotiation, asked the way the CLI asks it.
+   *
+   * There used to be TWO flags for this one fact: `negotiationAuto`,
+   * written by `speed`/`duplex`/`negotiation` and read only by the
+   * running-config renderer, and `autoNegotiation`, which is what
+   * `getNegotiatedSpeed()`/`getNegotiatedDuplex()` actually consult. So
+   * `speed 10` stored 10, left the real flag on, and every view kept
+   * reporting the negotiated 1000 — the machine denied its own
+   * configuration. One flag now, and it is the one the model uses.
+   */
+  isNegotiationAuto(): boolean { return this.autoNegotiation; }
+  setNegotiationAuto(on: boolean): void { this.setAutoNegotiation(on); }
   getInputServicePolicy(): string | null { return this.inputServicePolicy; }
   setInputServicePolicy(name: string | null): void { this.inputServicePolicy = name; }
   getOutputServicePolicy(): string | null { return this.outputServicePolicy; }
@@ -526,6 +547,7 @@ export class Port {
       );
     }
     const previous = this.speed;
+    if (this.capabilitySpeed === null) this.capabilitySpeed = this.speed;
     this.speed = speed as PortSpeed;
     Logger.info(this.equipmentId, 'port:speed', `${this.name}: speed set to ${speed} Mbps`);
     if (previous !== this.speed) {
@@ -534,12 +556,14 @@ export class Port {
         payload: { ...this.portRef(), speed: this.speed },
       });
     }
+    this.cable?.renegotiate();
   }
 
   getDuplex(): PortDuplex { return this.duplex; }
 
   setDuplex(duplex: PortDuplex): void {
     const previous = this.duplex;
+    if (this.capabilityDuplex === null) this.capabilityDuplex = this.duplex;
     this.duplex = duplex;
     Logger.info(this.equipmentId, 'port:duplex', `${this.name}: duplex set to ${duplex}`);
     if (previous !== duplex) {
@@ -548,6 +572,7 @@ export class Port {
         payload: { ...this.portRef(), duplex },
       });
     }
+    this.cable?.renegotiate();
   }
 
   // ─── Auto-negotiation (IEEE 802.3u) ──────────────────────────────
@@ -555,9 +580,14 @@ export class Port {
   isAutoNegotiation(): boolean { return this.autoNegotiation; }
 
   setAutoNegotiation(enabled: boolean): void {
+    if (enabled) {
+      if (this.capabilitySpeed !== null) { this.speed = this.capabilitySpeed; this.capabilitySpeed = null; }
+      if (this.capabilityDuplex !== null) { this.duplex = this.capabilityDuplex; this.capabilityDuplex = null; }
+    }
     this.autoNegotiation = enabled;
     Logger.info(this.equipmentId, 'port:autoneg',
       `${this.name}: auto-negotiation ${enabled ? 'enabled' : 'disabled'}`);
+    this.cable?.renegotiate();
   }
 
   getNegotiatedSpeed(): PortSpeed {

@@ -114,3 +114,305 @@ parce que le greedy avalait tout.
 et sans rapport (`probe-cli-arguments-types.test.ts`, `login-timeout` en
 mode `line`), vérifié identique sur `HEAD`. Typecheck : jeu d'erreurs
 identique (241).
+
+---
+
+## 3. N2 — Livré : Huawei
+
+### 3.1 Le défaut central : deux magasins
+
+Il n'était pas d'affichage. Sur une machine où l'on venait de taper
+quatre serveurs :
+
+```
+[R1]display ntp-service sessions
+No NTP associations
+[R1]display current-configuration | include ntp
+ntp-service unicast-server 192.168.100.5 preference
+ntp-service unicast-server 192.168.100.6
+ntp-service unicast-peer 10.0.12.2
+```
+
+Le CLI écrivait dans `RouterManagementService` — pour `unicast-server`,
+dans un simple **sac de chaînes brutes** (`recordRaw`) — tandis que les
+vues lisaient le `NtpAgent`, celui qui porte le protocole. **Aucune
+commande NTP tapée sur un Huawei n'atteignait le moteur** : ni
+association, ni synchronisation, ni authentification, alors que le même
+moteur synchronise un Cisco depuis toujours.
+
+Quatre conséquences que ce sac explique à lui seul :
+
+1. `ntp-service refclock-master 7` rangeait la chaîne `7` et laissait la
+   machine `unsynchronized`, stratum 16 ;
+2. `ntp-service authentication-keyid 1 authentication-mode md5 CLE` était
+   lu **en positions fixes**, si bien que l'algorithme retenu était le
+   mot `authentication-mode` et que **la clé était perdue** ; la
+   configuration rendue écrivait le mot deux fois de suite ;
+3. un second `unicast-server` sur la même adresse **ajoutait une ligne**
+   au lieu de mettre à jour — un sac de chaînes ne connaît pas les
+   adresses qu'il contient ;
+4. tout ce que le sac ne reconnaissait pas y entrait quand même, donc
+   une **faute de frappe ressortait dans la configuration** et était
+   rejouée à l'import.
+
+### 3.2 Le fuseau horaire, indépendamment
+
+`clock timezone WAT add 01:00:00` était accepté et **sans effet** :
+l'analyseur attendait `+01:00`, une forme que VRP n'émet jamais — le
+signe y est le mot `add`/`minus` et le décalage porte des **secondes**.
+Aucun fuseau configuré sur un Huawei n'était donc appliqué, et
+`display clock` écrivait `Time Zone(UTC) : UTC` **en dur**, sans jamais
+lire la configuration d'horloge. La même commande, côté Cisco, décalait
+bien l'affichage : deux plateformes, deux réponses, pour la même
+intention.
+
+### 3.3 Ce qui est fait
+
+`huawei/huaweiNtpCommands.ts` porte **une grammaire qui valide** (au
+lieu de lire des positions), **l'écriture dans l'agent** — le seul
+magasin, celui de Cisco — **un rendu de configuration qui décrit l'état**
+(donc qui se relit), et **les deux vues**. `display ntp-service sessions
+verbose` existe. `display clock` lit le fuseau.
+
+Deux points de fidélité VRP, tenus séparés de la mesure : VRP annonce
+`Nominal frequency: 100.0000 Hz` et `Clock precision: 2^17` là où IOS
+annonce 250 Hz et `2**18` ; et il écrit `LOCAL(0)` là où IOS écrit
+`LOCL`. L'agent étant partagé, la traduction vit dans la vue.
+
+Le `reach` était écrit **`377` en dur** pour toute association : la vue
+affirmait huit réponses sur huit d'un serveur muet. Il est lu.
+
+### 3.4 Tests
+
+`tuto-ntp-huawei.test.ts` (23 cas) suit le §4 du tutoriel. Son premier
+bloc vérifie que la machine **se synchronise**, pas qu'elle affiche
+quelque chose ; son dernier compare les **deux plateformes entre elles** —
+quelle que soit la bonne réponse, un Cisco et un Huawei branchés au même
+serveur ne peuvent pas être l'un synchronisé et l'autre non. C'est la
+propriété qui se vérifie sans connaître VRP.
+
+Discrimination par `git stash` : **19 des 23 tombent** avant.
+
+**Mesures.** 150 suites connexes vertes (2 569 cas). Le même échec
+préexistant et sans rapport (`probe-cli-arguments-types.test.ts`,
+`login-timeout` en mode `line`), vérifié identique sur `HEAD`.
+Typecheck : jeu d'erreurs identique (241). Lint : 343 avant, 343 après.
+Aucun test existant modifié.
+
+---
+
+## 4. N3 — Livré : Linux (chrony)
+
+### 4.1 Le point de départ, le plus grave des quatre
+
+Le paquet `chrony` était déclaré installé par `apt-get` et `dpkg`, et
+**rien n'existait** : ni `chronyc`, ni `chronyd`, ni son unité, ni
+`/etc/chrony/chrony.conf`. Une machine annonçait un logiciel qu'elle
+n'avait pas — la forme de défaut que ce dépôt a déjà fermée pour
+`openssl`.
+
+Pire, sur cette même machine sans **aucun** démon de temps :
+
+```
+$ timedatectl
+System clock synchronized: yes
+              NTP service: active
+```
+
+Deux affirmations que rien ne soutenait. La vue écrivait aussi le
+décalage `(UTC, +0000)` **en dur** quel que soit le fuseau, et
+`timedatectl set-timezone Africa/Douala` était accepté sans rien changer
+— `list-timezones` ne rendait rien et `/etc/localtime` n'existait pas.
+
+### 4.2 Ce qui est fait
+
+**Pas de second moteur NTP.** chronyd pilote le `NtpAgent`, le même que
+Cisco et Huawei : un simulateur avec deux moteurs finirait par donner
+deux réponses à la même question — facture que ce dépôt a déjà payée
+ailleurs (deux registres Windows, deux piles SSH). Ce que le démon
+apporte est ce que chronyd apporte vraiment : la **lecture** de son
+fichier de configuration.
+
+Quatre modules : `time/TimezoneDatabase.ts` (une cinquantaine de zones
+avec décalage et abréviation), `time/ChronyConfig.ts` (l'analyseur),
+`time/LinuxChronyService.ts` (le démon), `time/ChronycViews.ts` (les
+vues du §5.3). Plus `chronyc` et un `timedatectl` réécrit.
+
+**Un chaînon manquait ailleurs, et c'est lui qui bloquait tout** :
+`EndHost.deliverUDP` ne remettait pas l'UDP/123 à un agent NTP. L'hôte
+émettait ses requêtes et **aucune réponse ne revenait jamais** — mesuré,
+pas supposé : les sources restaient `offline` alors que le fichier était
+correctement lu et les paquets correctement émis. Aucune machine Linux
+ne pouvait donc se synchroniser, quel que soit le reste.
+
+**L'unité répond à ses deux noms.** Debian la nomme `chrony`, RHEL
+`chronyd`, et le tutoriel montre les deux (`systemctl enable --now
+chronyd`) : un lecteur qui suit la colonne RHEL ne doit pas tomber sur
+un `Unit could not be found` qui ne lui apprendrait rien sur NTP.
+L'alias passe par `UNIT_ALIASES`, là où `bind9` → `named` vit déjà.
+
+### 4.3 Trois décisions, et leur raison
+
+**Un fichier de configuration MANQUANT empêche le démarrage** (`Cannot
+open configuration file`), un fichier **VIDE** ne l'empêche pas : c'est
+la distinction que `CriticalFiles.ts` tient déjà pour sshd, et elle est
+vraie de chronyd aussi.
+
+**Le quota de `makestep <seuil> <limite>` est réel** : après
+`makestep 1.0 3`, un quatrieme `chronyc makestep` est refusé — sinon la
+directive ne voudrait rien dire.
+
+**`iburst` est la seule directive dont l'effet est observable ici** :
+elle demande une rafale au démarrage, donc une convergence immédiate.
+C'est exactement ce que le tutoriel annonce, et c'est mesurable.
+
+### 4.4 Ce qui est porté sans agir, et pourquoi c'est écrit
+
+`ChronyConfig` distingue **trois** familles, jamais deux : les
+directives **lues et agissantes**, celles que chronyd connaît et que ce
+simulateur **n'applique pas** (`refclock` — aucun matériel derrière —,
+`hwtimestamp`, `leapsectz`…), et celles qu'**aucun** chronyd ne connaît,
+qui sont **signalées** avec leur numéro de ligne. Confondre les deux
+dernières ferait passer une faute de frappe pour une limitation.
+
+`TimezoneDatabase` porte un décalage **fixe** par zone : la vraie tzdata
+décrit les règles d'heure d'été sur plus d'un siècle, et inventer une
+date de bascule serait pire que de ne pas en avoir — personne ne
+pourrait la vérifier. Conséquence assumée et écrite dans le fichier :
+`Europe/Paris` vaut ici UTC+1 toute l'année.
+
+`chronyc sourcestats` rend `NP`/`NR` à 1 : ce moteur garde **une**
+mesure par source. Inventer vingt-et-un échantillons ferait croire à un
+historique qui n'existe pas.
+
+### 4.5 Tests
+
+`tuto-ntp-linux.test.ts` (27 cas) suit le §5 du tutoriel. Le premier
+bloc vérifie que la machine **se synchronise** avec un vrai serveur au
+bout d'un vrai câble ; le reste ne serait que du texte. Un cas vérifie
+que `/etc/chrony/chrony.conf` **appartient à root**, donc que le
+tutoriel a raison d'écrire `sudo`. Deux cas séparent ce que
+`timedatectl` sait de deux choses différentes : le **service** peut être
+actif et l'**horloge** non synchronisée — c'est précisément le cas qu'un
+dépannage cherche.
+
+Discrimination par `git stash` : **23 des 27 tombent** avant.
+
+**Mesures.** 131 suites connexes vertes (2 874 cas). Typecheck : jeu
+d'erreurs identique (213). Aucun test existant modifié.
+
+---
+
+## 5. N4 — Livré : Windows (W32Time)
+
+### 5.1 Le point de départ
+
+`w32tm` était un talon **d'une seule branche** : toute sous-commande
+autre que `/query /status` renvoyait la **chaîne littérale**
+`w32tm /query /status`.
+
+```
+C:\> w32tm /query /peers
+w32tm /query /status
+C:\> w32tm /resync /force
+w32tm /query /status
+```
+
+Et `/query /status` lui-même était un bloc fixe de quatre lignes :
+`Stratum: 3` **écrit en dur** sur une machine qui n'interrogeait
+personne, et `Source` valant le PDC du domaine quoi qu'ait configuré
+l'opérateur — donc `w32tm /config /manualpeerlist` n'avait **aucun**
+effet observable. `Get-TimeZone`/`Set-TimeZone` n'existaient ni en cmd
+ni en PowerShell : le §6.3 du tutoriel ne pouvait pas se suivre.
+
+### 5.2 Ce qui est fait
+
+**Pas de troisième moteur.** W32Time pilote le `NtpAgent`, comme
+chronyd. Ce qu'il apporte est ce que W32Time apporte vraiment : la liste
+de pairs, les drapeaux de synchronisation, et la notion de « source
+fiable » qui structure toute la hiérarchie AD du §6.1.
+
+Les huit sous-commandes du tutoriel sont réelles : `/query
+{status|peers|configuration|source}`, `/config`, `/resync`,
+`/stripchart`, `/monitor`.
+
+### 5.3 Quatre décisions, et leur raison
+
+**Les drapeaux choisissent vraiment le mode.** `0x8` crée un client,
+`0x1` un pair symétrique — les bits se cumulent (`0x9` =
+SpecialInterval|Client), donc c'est le **bit de mode** qui décide, pas
+la valeur entière. `0x2` (broadcast) est **refusé** plutôt que rangé
+sans effet : ce simulateur n'a pas de mode broadcast NTP, et l'accepter
+ferait croire à une écoute qui n'existe pas.
+
+**`/syncfromflags:domhier` ignore la liste manuelle.** C'est la règle
+que le §6.1 énonce — seul le PDC Emulator pointe vers l'extérieur — et
+la faire agir est ce qui rend le lab **vérifiable** au lieu d'être une
+phrase.
+
+**`/config` sans `/update` enregistre sans appliquer.** C'est la raison
+d'être du drapeau ; l'ignorer ferait croire qu'un `w32tm /config` a pris
+effet.
+
+**`/stripchart` mesure vraiment** : chaque échantillon est une
+interrogation, l'écart imprimé est celui que l'agent vient de calculer,
+et une cible muette rend l'erreur `0x800705B4` du vrai outil — le seul
+résultat utile d'un test de connectivité. Il ne laisse **pas** de pair
+derrière lui : il mesure, il ne configure pas.
+
+### 5.4 Le fuseau, partagé avec Linux
+
+`Get-TimeZone`/`Set-TimeZone` lisent et écrivent la `SystemIdentity` que
+`EndHost` portait **déjà** — pas un second magasin — et le décalage se
+résout par la **même** table que `timedatectl` (`TimezoneDatabase`).
+Sans cela, une machine Windows et une machine Linux du même laboratoire
+donneraient deux décalages différents pour `WAT`. Windows nommant ses
+fuseaux autrement que tzdata (`W. Central Africa Standard Time` contre
+`Africa/Douala`), la correspondance est **explicite** plutôt que devinée,
+et un identifiant inconnu est refusé comme le vrai applet le refuse.
+
+### 5.5 Tests
+
+`tuto-ntp-windows.test.ts` (23 cas) suit le §6 du tutoriel. Un cas
+vérifie que les quatre `/query` **ne se répètent pas** — c'est
+exactement ce que le talon faisait. Le dernier branche un Windows et un
+Cisco sur le même maître et vérifie qu'ils atteignent la **même
+strate** : la propriété se contrôle sans connaître W32Time.
+
+Discrimination par `git stash` : **22 des 23 tombent** avant.
+
+**Mesures.** 124 suites connexes vertes (1 807 cas) plus les 61 suites
+PowerShell (1 912 cas). Typecheck : jeu d'erreurs identique (213).
+Aucun test existant modifié.
+
+---
+
+## 6. État du chantier
+
+| Lot | Plateforme | État |
+|---|---|---|
+| N1 | Cisco IOS | **Livré** |
+| N2 | Huawei VRP | **Livré** |
+| N3 | Linux (chrony) | **Livré** |
+| N4 | Windows (W32Time) | **Livré** |
+
+Le tutoriel se suit de bout en bout : **97 cas** répartis en quatre
+suites reproduisent ses labs, et **78** d'entre eux tombent sans les
+correctifs.
+
+### Ce qui reste ouvert, nommé plutôt que tu
+
+- **Les compteurs de paquets** (`show ntp packets`, les statistiques
+  d'émission/réception) : rien ne les compte dans le moteur. Zéro serait
+  une mesure fausse, la commande est donc refusée.
+- **L'authentification NTP ne signe pas** : la clé est portée, comparée
+  et rendue, mais aucun condensé MD5 ne circule sur le paquet — le
+  moteur compare des identifiants de clé. Un lab « les clés diffèrent,
+  la synchronisation échoue » n'est donc pas reproductible aujourd'hui.
+- **`ntp access-group` est stocké et rendu, et ne filtre rien** : aucune
+  ACL n'est consultée à la réception d'un paquet NTP.
+- **Le `slewing` et le `stepping` du §2 ne sont pas modélisés** :
+  l'offset est appliqué d'un coup. La distinction — et le `panic mode` —
+  demanderait une horloge disciplinée que ce simulateur n'a pas.
+- **`ntp broadcast`/`multicast`, PTP, et les horloges matérielles**
+  (`refclock`) : hors périmètre, faute de brique.

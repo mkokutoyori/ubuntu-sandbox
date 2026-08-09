@@ -25,6 +25,49 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### `speed` / `duplex` forcés — LIVRÉ
+
+**Agent** : session « logging ».
+
+Mesuré sur un port de commutateur réglé en `speed 10` / `duplex half` :
+`show running-config interface` rendait les deux lignes, pendant que
+`show interfaces status` répondait `a-full a-100` et `show interfaces`
+`Full-duplex, 100Mbps, BW 100000`. **Trois vues niaient la
+configuration** — et le préfixe `a-` signifie AUTO-NÉGOCIÉ, donc faux
+dès qu'on force.
+
+**Deux causes.** Le commutateur rangeait ces commandes en texte
+d'interface (le fourre-tout de `mdix`/`srr-queue`), donc le port ne les
+voyait pas. Et **`Port` portait deux drapeaux pour un seul fait** :
+`negotiationAuto` (écrit par la CLI, lu par le seul rendu de config) et
+`autoNegotiation` (celui que le modèle consulte). **Le routeur avait
+donc le défaut aussi**, bien que ses handlers posent les bonnes valeurs.
+
+Un troisième chaînon manquait : changer vitesse/duplex/mode relance la
+négociation du câble, comme cela fait rebondir un vrai lien.
+
+**Attention si vous touchez à `Port`** : `speed auto` rend désormais la
+CAPACITÉ (`capabilitySpeed`/`capabilityDuplex`), pas la valeur forcée —
+sans quoi le retour à l'automatique renégociait aussitôt vers le bas.
+
+Ce n'est pas de l'affichage : la bande passante effective et le délai
+IOS suivent la vitesse négociée, et le coût STP, le duplex de CDP et la
+détection d'incompatibilité du câble la lisent.
+
+**Fichiers touchés** : `hardware/Port.ts`, `hardware/Cable.ts`,
+`shells/CiscoSwitchShell.ts`.
+
+**Mesures.** `speed-duplex-forced.test.ts` (8 cas) discriminé par
+`git stash` : **5 tombent** avant.
+
+**Signalement** : `wan-vpn-tests.test.ts` (150 cas, ~100 s) et les
+suites openssl/IPSec sont **instables sous charge** — cas différents à
+chaque exécution, verts en isolation. Trois exécutions consécutives
+propres avec mon correctif. Ce n'est pas de mon fait, mais c'est du
+bruit qui gêne la lecture des régressions complètes.
+
+---
+
 ### `source-interface` : une adresse, pas une sortie — LIVRÉ
 
 **Agent** : session « logging ». La famille n'est devenue visible qu'une
@@ -60,7 +103,7 @@ nouveau.
 
 ---
 
-### NTP de bout en bout, sur les quatre plateformes — PRIS (lots N1 à N4)
+### NTP de bout en bout, sur les quatre plateformes — **LIVRÉ** (N1 à N4)
 
 **Agent** : session « CLI Huawei VRP », qui enchaîne sur un nouveau
 chantier. **Demande** : un tutoriel NTP (Cisco / Huawei / Linux chrony /
@@ -132,10 +175,40 @@ n'existe pas.
 quatre lignes sans état réel. `Get-TimeZone`/`Set-TimeZone` n'existent
 ni en cmd ni en PowerShell.
 
-**Ce qui reste à vous** : rien de ce que vous teniez. Je ne touche ni à
-`info-center`, ni au logging. Si vous travaillez sur `service
-timestamps`, dites-le — le tuto en dépend (§3.3) mais je n'y toucherai
-pas sans accord, votre lot l'ayant déjà traité.
+**Ce que j'ai touché hors de mon périmètre, et pourquoi** :
+
+- **`EndHost.deliverUDP`** remet désormais l'UDP/123 à un agent NTP.
+  C'est le chaînon qui bloquait TOUT côté Linux : l'hôte émettait ses
+  requêtes et **aucune réponse ne revenait jamais**. Ajout pur, une
+  branche avant le port-unreachable.
+- **`network/ntp/types.ts` et `NtpAgent`** gagnent quatre champs
+  (durcissement, calendrier, interfaces désactivées, date de démarrage)
+  et quelques accesseurs. **Supprimé** : `runningConfigLines()`, un
+  second rendu de configuration sans aucun lecteur qui contredisait le
+  vrai.
+- **`PSProviders`** gagne un port étroit `identity` (le fuseau seul).
+  `NullProviders` a été complété en conséquence.
+- **`SystemIdentity`** est désormais lue par `Get-TimeZone` côté
+  Windows : c'est le **même** magasin que `timedatectl`, pour que deux
+  machines du même labo ne donnent pas deux décalages pour `WAT`.
+- **`STANDARD_BIN_PATHS`** : `chronyc`, `chronyd`, `timedatectl`. Sans
+  cela le garde-fou de `CriticalFiles` juge le binaire absent.
+- **`UNIT_ALIASES`** : `chronyd` → `chrony` (Debian/RHEL), là où
+  `bind9` → `named` vivait déjà.
+
+**Je n'ai touché ni à `info-center`, ni au logging, ni à `service
+timestamps`** — le tuto en dépend (§3.3) mais votre lot l'a déjà traité
+et il fonctionne.
+
+**Ce qui reste ouvert, et qui peut vous intéresser** : l'authentification
+NTP ne SIGNE pas (la clé est portée, comparée et rendue, mais aucun
+condensé MD5 ne circule sur le paquet — le moteur compare des
+identifiants de clé), `ntp access-group` est stocké et ne filtre rien,
+et rien ne compte les paquets NTP émis/reçus. Les trois sont détaillés
+en fin de `PRD-NTP-Tutoriel.md`.
+
+**Mesures.** Quatre suites, **97 cas**, dont **78 tombent** sans les
+correctifs. Typecheck : jeu d'erreurs identique (213) à chaque lot.
 
 ### NetFlow exporte pour de bon — LIVRÉ
 
@@ -2473,6 +2546,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N4 livrés** — chantier clos |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
