@@ -68,35 +68,58 @@ mon correctif : encore de l'instabilité sous charge.
 **Constat, bissecté** — pas une supposition, chaque commit a été exécuté
 dans un `git worktree` séparé :
 
-| Commit | `probe-cli-arguments-types.test.ts` |
+| Commit | Suites d'aide CLI |
 |---|---|
-| `82892573` (parent) | 1 échec (`config-line`, préexistant) |
-| `b6ab0c8b` **CLI Views** | **3 échecs** |
-| tout ce qui suit, jusqu'à HEAD | 3 échecs |
+| `82892573` (parent) | **0 échec** (hors `config-line`, préexistant) |
+| `b6ab0c8b` **CLI Views** | **6 échecs** |
+| tout ce qui suit, jusqu'à HEAD | 6 échecs |
 
-Les deux nouveaux :
+Une passe complète de `network-v2` (20 224 cas, 20 167 verts) donne
+**7 échecs, dont 6 sont ceux-ci** et le 7ᵉ est le `config-line`
+préexistant. Les six, dans trois fichiers :
 
 ```
-privileged EXEC: enable view ? -> WORD porte la description du parent
-                 ("Enter a CLI view") au lieu de la sienne
-global config:   (même famille)
+cisco-help-every-keyword-described.test.ts
+  privileged EXEC     → ['show parser'] devrait être vide
+  global config       → ['no parser', 'parser']
+  (switch) global config → ['no parser', 'parser']
+probe-cli-switch-argument-help.test.ts
+  no offered keyword lacks a description, on either platform
+probe-cli-arguments-types.test.ts
+  privileged EXEC     → enable view ? : `WORD` porte la description du
+                        parent ("Enter a CLI view") au lieu de la sienne
+  global config       → même famille
 ```
 
-C'est exactement l'invariant du lot V-« `?` ne recopie jamais la
-description de son parent » : `enable view ?` doit décrire son
-ARGUMENT (`WORD` = le nom de la vue), pas répéter l'intitulé de
-`enable view`. Le correctif est probablement un `describeArgs('enable
-view', [...])` dans `ciscoArgumentHelp.ts`, comme pour les autres
-commandes à argument libre.
+**Deux défauts distincts**, pas un seul :
+
+1. **`parser`, `no parser` et `show parser` sont offerts par `?` sans
+   description** — c'est l'invariant « la machine n'offre jamais un mot
+   qu'elle ne sait pas décrire ». Il manque leurs entrées dans
+   `CliKeywordDescriptions.ts`.
+2. **`enable view ?` décrit son PARENT au lieu de son argument** : il
+   doit dire ce qu'est le `WORD` attendu (le nom de la vue), pas
+   répéter l'intitulé de `enable view`. Un `describeArgs('enable view',
+   [...])` dans `ciscoArgumentHelp.ts`, comme les autres commandes à
+   argument libre.
 
 **Je n'y touche pas** : c'est votre fichier et votre lot, livré après le
-mien. Je le signale parce que je l'ai croisé en passant une suite
-complète (20 193 cas) et que la sonde est à vous.
+mien. Je le signale parce que je l'ai croisé en passant la suite
+complète, et parce que ces sondes sont précisément celles que vos lots
+et les miens ont posées pour tenir cet invariant.
+
+**Mes quatre lots NTP sont transparents pour ces sondes**, vérifié : N1
+seul donne le même résultat que le parent. Mon premier test avait
+pourtant désigné mon propre N2 — parce que c'était le commit suivant
+que j'avais exécuté, et non parce que je l'avais bissecté. Tester « le
+commit d'après » n'est pas bissecter ; c'est en listant ce que la
+rebase avait ramené entre N1 et N2 que `b6ab0c8b` est apparu.
 
 **Au passage, et sans rapport** : `probe-debug-02-collecte.test.ts`
-(« sans session SPAN, l'analyseur ne voit pas le trafic des autres »)
-échoue depuis plus longtemps que nos deux chantiers — vérifié identique
-sur `HEAD` et bien avant. Personne ne l'a pris.
+(« sans session SPAN, l'analyseur ne voit pas le trafic des autres ») est
+**instable** — il échoue seul et passe dans la suite complète, sur le
+même code. Préexistant à nos deux chantiers, vérifié identique sur
+`HEAD` et bien avant. Personne ne l'a pris.
 
 ---
 
