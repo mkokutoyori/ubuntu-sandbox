@@ -135,6 +135,11 @@ diagnostic que les TP réseau cherchent à faire acquérir.
 Proxy, cookies, `--retry`, formulaires. À traiter seulement si un TP les
 demande.
 
+> **Les témoins sont livrés — voir §9.** Le calcul a changé à la mesure :
+> ce n'était pas une fonctionnalité à écrire mais une PORTE à ouvrir sur
+> un moteur qui existait déjà et que rien n'avait jamais appelé. Le
+> proxy, `--retry` et les formulaires restent hors périmètre.
+
 ## 5. Hors périmètre, et dit d'emblée
 
 - **FTP, SFTP, SMTP et les autres protocoles de curl.** `curl` en gère une
@@ -266,7 +271,8 @@ eux, sont discriminés par neutralisation (3 cas sur 9 tombent).
 
 ### 7.5 Limites assumées
 
-- **P4 (proxy, cookies, `--retry`, formulaires) n'est pas fait**, comme le
+- **P4 (proxy, `--retry`, formulaires) n'est pas fait** — les témoins,
+  eux, le sont depuis §9 — comme le
   §4 l'annonçait : « à traiter seulement si un TP les demande ». Ces
   options sont refusées par le cas 2 du §7.3, pas ignorées.
 - **`%{time_total}` est mesuré pour de vrai** et vaut donc à peu près zéro,
@@ -287,3 +293,73 @@ eux, sont discriminés par neutralisation (3 cas sur 9 tombent).
   correct — mais c'est la raison pour laquelle les TP HTTP côté Linux
   doivent aujourd'hui monter leur serveur autrement. À traiter dans un
   chantier « serveur HTTP Linux », sur le modèle de `WindowsIisRole`.
+
+
+---
+
+## 9. Les témoins — livré
+
+### 9.1 Ce n'était pas une fonctionnalité à écrire
+
+§P4 rangeait les témoins avec le proxy et les formulaires. La mesure a
+renversé le calcul : `src/network/http/cookies/` contient un moteur
+**RFC 6265 complet** — `domainMatch`, `pathMatch`, `Secure`,
+`HttpOnly`, `SameSite`, `Max-Age` avec précédence sur `Expires`,
+suppression d'un témoin dont l'échéance est passée — et **aucun
+appelant hors de son propre répertoire**.
+
+C'est le motif que ce dépôt corrige sans arrêt : un moteur sans porte.
+Avec sa conséquence habituelle — un code que rien n'appelle est un code
+que rien n'a jamais vérifié. La première chose faite ici a donc été de
+l'exercer à la main : il s'est révélé juste sur les huit points
+essayés, ce qui rend la porte d'autant plus rentable.
+
+### 9.2 Ce qui est livré
+
+`-b`/`--cookie` et `-c`/`--cookie-jar`, au **format Netscape** — celui
+que `curl -c` écrit et que `curl -b` relit. Écrire un format à soi
+aurait produit un fichier que rien ne consomme, et la séquence
+`-b jar -c jar` que tout script emploie n'aurait pas bouclé.
+
+`-b` distingue ses deux formes comme curl : un argument contenant `=`
+est une chaîne de témoins, tout le reste est un nom de fichier. Un
+fichier absent n'est pas une erreur — c'est le cas normal du PREMIER
+appel de cette séquence.
+
+**Le bocal vit pendant tout le transfert, redirections comprises**, et
+c'est là qu'il sert vraiment : une session s'ouvre par un `302` qui
+pose le témoin, et la page suivante doit le porter. Récolter les
+`Set-Cookie` seulement sur la réponse finale aurait perdu exactement le
+cas d'usage de l'option.
+
+**Le bocal FILTRE, il ne récite pas.** Un témoin d'un autre chemin ne
+part pas ; un témoin `Secure` ne part pas en clair ; un témoin expiré
+n'est ni gardé ni renvoyé. C'est ce filtrage qui distingue `-b` d'un
+simple `-H "Cookie: …"`, lequel serait envoyé à tout le monde.
+
+### 9.3 Deux ajouts au moteur, et pourquoi ils étaient nécessaires
+
+* **`CookieJar.add()`** — `setFromHeader` refuse un `Domain` qui ne
+  correspond pas à l'hôte qui pose le témoin (RFC 6265 §5.3 étape 6),
+  ce qui est juste quand un serveur parle et faux quand on RELIT un
+  bocal : il n'y a alors aucun hôte qui pose quoi que ce soit, et le
+  contrôle a déjà eu lieu à l'écriture.
+* **`CookieJar.entries()`** — `all()` ne suffit pas pour écrire un
+  bocal. Un témoin posé par `Max-Age` porte son échéance dans
+  `expiryMs`, pas dans `Cookie.expires` ; le sérialiser depuis là en
+  aurait fait un témoin de **session**, qui disparaît à la relecture.
+  Un cas le mesure en comparant l'échéance écrite à l'horloge.
+
+### 9.4 Limites assumées
+
+* **`SameSite` est stocké et ne filtre rien ici** : `cookiesFor` sait
+  s'en servir, mais curl n'a pas de « site courant » à lui passer — il
+  n'y a pas de page qui en appelle une autre.
+* **Le format Netscape ne porte pas `SameSite`** — le vrai fichier de
+  curl non plus. Un témoin relu repart donc en `Lax`, la valeur par
+  défaut.
+* **Le reste de §P4 reste refusé et le dit** (`-x`, `--retry`, `-F`) —
+  un cas le vérifie, pour qu'ouvrir cette porte-ci ne laisse pas croire
+  que les autres le sont.
+
+`curl-cookies.test.ts` (15 cas), **12 tombent par `git stash`**.

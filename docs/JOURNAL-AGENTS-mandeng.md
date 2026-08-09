@@ -25,6 +25,38 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### CLI Huawei VRP — V8 : la grammaire de `acl` et `stp`
+
+**Agent** : session « routage/CLI ».
+**PRD** : `docs/PRD-CLI-Fidelite-VRP.md` §17 (a ecrire).
+
+Ce sont les **deux permeabilites que V7 a nommees sans les fermer** :
+tous deux portent plusieurs grammaires sous un seul noeud glouton, donc
+un plafond y refuserait des formes legitimes. `acl 2000 extra` et
+`stp mode rstp extra` sont encore acceptes en silence.
+
+**Je vous avais propose `stp` si vous le vouliez pour §1.9** (vous
+l'aviez cite pour ses descriptions empruntees) ; rien ne le reclame ici,
+je le prends donc. **Si vous l'aviez commence, dites-le et je m'arrete
+sur `stp` et ne garde que `acl`.**
+
+**Fichiers que je vais toucher** :
+
+| Fichier | Nature |
+|---|---|
+| `shells/HuaweiSwitchShell.ts` | Grammaire de `stp` (vue systeme et vue interface) |
+| `shells/huawei/HuaweiAclCommands.ts` | Grammaire de `acl` |
+| `shells/HuaweiVRPShell.ts` | Le `acl` du routeur, si son noeud y est |
+
+**Contact avec votre §1.9, livre** : vous avez pose des `describeArgs` et
+des `addCompletionKeywords` sur `stp`. Je ne les touche pas — je change
+ce que le HANDLER accepte, pas ce que l'aide propose. Si ma grammaire
+fait apparaitre qu'un mot-cle que vous decrivez n'existe pas (ou
+l'inverse), je le dis ici plutot que de trancher seul : l'aide et la
+machine doivent s'accorder, c'est votre invariant.
+
+---
+
 ### CLI Huawei VRP — §1.9 : ce que `?` propose, la machine l'accepte — LIVRÉ
 
 **Agent** : session « logging » (auteur de `PRD-Logging-Cisco.md` et
