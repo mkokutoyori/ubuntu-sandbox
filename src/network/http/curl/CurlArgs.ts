@@ -24,6 +24,10 @@ export interface CurlOptions {
   maxRedirs: number;
   resolve: CurlResolveEntry[];
   caCert: string | null;
+  /** `-b` : un fichier de témoins à lire, ou une chaîne `nom=valeur`. */
+  cookie: string | null;
+  /** `-c` : où écrire le bocal en sortie. */
+  cookieJar: string | null;
   urls: string[];
 }
 
@@ -37,7 +41,7 @@ const TRY_HELP = "curl: try 'curl --help' for more information";
 
 const SHORT_NO_ARG = 'IksSvfLOi';
 
-const SHORT_WITH_ARG = 'owXdHuA';
+const SHORT_WITH_ARG = 'owXdHuAbc';
 
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
@@ -65,16 +69,21 @@ const LONG_WITH_ARG: Record<string, string> = {
   resolve: 'resolve',
   'max-redirs': 'max-redirs',
   cacert: 'cacert',
+  cookie: 'b',
+  'cookie-jar': 'c',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
-  x: true, b: true, c: true, F: true, T: true, C: true, m: true, '#': true,
+  // `b` et `c` ont quitté cette liste : ils ouvrent la porte du bocal
+  // à témoins (`http/cookies/`), un moteur RFC 6265 complet qui
+  // n'avait aucun appelant.
+  x: true, F: true, T: true, C: true, m: true, '#': true,
   E: true, y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
   K: true, r: true, P: true, Q: true, p: true, U: true, D: true, e: true,
 };
 
 const UNSUPPORTED_LONG: Record<string, true> = {
-  proxy: true, cookie: true, 'cookie-jar': true, retry: true, 'retry-delay': true,
+  proxy: true, retry: true, 'retry-delay': true,
   'retry-max-time': true, form: true, 'form-string': true, 'upload-file': true,
   http2: true, 'http2-prior-knowledge': true, http3: true, 'http0.9': true,
   'limit-rate': true, 'continue-at': true, 'progress-bar': true, cert: true,
@@ -109,6 +118,8 @@ function defaults(): CurlOptions {
     maxRedirs: 50,
     resolve: [],
     caCert: null,
+    cookie: null,
+    cookieJar: null,
     urls: [],
   };
 }
@@ -157,6 +168,8 @@ function applyValued(
     case 'd': opts.data.push(value); break;
     case 'H': opts.headers.push(value); break;
     case 'u': opts.user = value; break;
+    case 'b': opts.cookie = value; break;
+    case 'c': opts.cookieJar = value; break;
     case 'A': opts.userAgent = value; break;
     case 'resolve': {
       const entry = parseResolveEntry(value);

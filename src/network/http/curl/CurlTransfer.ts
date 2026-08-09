@@ -9,6 +9,9 @@ import { pemToCertChain } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { createRequest, type HttpMessage, type HttpMethod } from '../semantics/types';
 import { encodeBasicCredentials } from '../auth/BasicAuth';
+import type { CookieJar } from '../cookies/CookieJar';
+import { serializeCookieHeader } from '../cookies/SetCookie';
+import { jarFromArgument, serializeNetscapeCookies } from './CurlCookies';
 import { isKnownMethod } from '../semantics/methods';
 import type { CurlOptions } from './CurlArgs';
 import type { CurlHost } from './CurlHost';
@@ -126,7 +129,10 @@ function methodFor(opts: CurlOptions): string {
   return 'GET';
 }
 
-function buildRequest(url: CurlUrl, method: string, opts: CurlOptions, body: string | null): HttpMessage {
+function buildRequest(
+  url: CurlUrl, method: string, opts: CurlOptions, body: string | null,
+  jar?: CookieJar,
+): HttpMessage {
   const verb: HttpMethod = isKnownMethod(method) ? method : 'GET';
   const request = createRequest(verb, url.path);
   const authority = (url.scheme === 'https' && url.port === 443) || (url.scheme === 'http' && url.port === 80)
@@ -144,6 +150,15 @@ function buildRequest(url: CurlUrl, method: string, opts: CurlOptions, body: str
   if (body !== null) {
     request.headers.set('Content-Type', 'application/x-www-form-urlencoded');
     request.body = binaryStringToBytes(body);
+  }
+  if (jar) {
+    // Le bocal décide seul de ce qui part : domaine, chemin, `Secure`.
+    // C'est ce filtrage qui rend l'option utile — envoyer tout le bocal
+    // à tout le monde serait une chaîne d'en-tête, pas un témoin.
+    const envoyes = jar.cookiesFor(url.host, url.path.split('?')[0], {
+      secure: url.scheme === 'https',
+    });
+    if (envoyes.length > 0) request.headers.set('Cookie', serializeCookieHeader(envoyes));
   }
   applyCustomHeaders(request, opts.headers);
   return request;
@@ -198,6 +213,10 @@ export async function performCurlRequest(
   let sendBody = body !== null;
   let redirects = 0;
   let remoteIp = '';
+  // Le bocal vit pour tout le transfert, redirections comprises — et
+  // c'est là qu'il sert vraiment : une session s'ouvre par un `302` qui
+  // pose le témoin, et la requête suivante doit le porter.
+  const jar = jarFromArgument(opts.cookie, first.host, (p) => host.readFile(p));
 
   // `--cacert` REPLACES the machine's trust store, it does not add to it.
   // That is the whole reason a lab uses it: the operator's own root has to
@@ -235,7 +254,7 @@ export async function performCurlRequest(
     remoteIp = address;
     trace.push(`*   Trying ${address}:${url.port}...`);
 
-    const request = buildRequest(url, method, opts, sendBody ? body : null);
+    const request = buildRequest(url, method, opts, sendBody ? body : null, jar);
 
     let response: HttpMessage | null = null;
     let failure: CurlFailure | null = null;
@@ -321,6 +340,15 @@ export async function performCurlRequest(
     traceRequest(trace, request, url);
     traceResponse(trace, response);
 
+    // Récolté AVANT de décider d'une redirection : un `302` qui pose un
+    // témoin de session est le cas d'usage même de cette option, et
+    // attendre la réponse finale le perdrait.
+    for (const [nom, valeur] of response.headers.entries()) {
+      if (nom.toLowerCase() === 'set-cookie') {
+        jar.setFromHeader(valeur, url.host, url.path.split('?')[0]);
+      }
+    }
+
     const status = response.statusCode ?? 0;
     const location = response.headers.get('Location');
     if (opts.location && isRedirect(status) && location) {
@@ -348,6 +376,12 @@ export async function performCurlRequest(
     }
 
     trace.push(`* Connection #0 to host ${url.host} left intact`);
+    // `-c` écrit le bocal à la FIN du transfert, comme curl : ce qu'il
+    // garde est l'état après la dernière réponse, redirections
+    // comprises.
+    if (opts.cookieJar !== null) {
+      host.writeFile(opts.cookieJar, serializeNetscapeCookies(jar.entries()));
+    }
     return {
       ok: true,
       url,
