@@ -992,6 +992,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.syncRouteDebug();
         if (state === 'up') {
           this._ospfAutoConverge();
+          // Le câble arrive souvent APRÈS la configuration d'adresse :
+          // sans cette annonce, l'hôte du lien ne verrait jamais le
+          // préfixe, celle de `configureInterface` ayant été émise dans
+          // le vide.
+          this.ipv6Engine.annoncerSurInterface(name);
         } else {
           this.ipsecEngine?.onPortDown(name);
           this.ospfIntegration.onPortDown(name);

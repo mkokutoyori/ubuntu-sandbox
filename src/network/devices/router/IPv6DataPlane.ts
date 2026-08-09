@@ -161,7 +161,33 @@ export class IPv6DataPlane {
 
     Logger.info(this.ctx.id, 'router:ipv6-interface-config',
       `${this.ctx.name}: ${portName} configured ${address}/${prefixLength}`);
+    this.annoncerSurInterface(portName);
     return true;
+  }
+
+  /**
+   * L'annonce non sollicitée qu'un routeur émet quand une interface se
+   * met à porter un préfixe (RFC 4861 §6.2.4).
+   *
+   * Elle sert l'hôte qui était déjà là quand le routeur a été
+   * configuré : celui qui arrive ensuite sollicite lui-même, et
+   * `handleRouterSolicitation` lui répond. Sans l'une ni l'autre —
+   * c'était l'état mesuré — l'autoconfiguration n'avait jamais lieu,
+   * bien que tout le reste de la chaîne fût écrit.
+   *
+   * Le minuteur périodique, lui, reste armé par `configureRA` seul :
+   * l'annoncer toutes les 200 s n'apporterait rien de plus à un
+   * laboratoire et ferait tourner un minuteur sur chaque interface de
+   * chaque routeur.
+   */
+  annoncerSurInterface(portName: string): void {
+    if (!this.enabled) return;
+    const port = this.ctx.getPorts().get(portName);
+    if (!port || !port.isIPv6Enabled() || !port.getIsUp()) return;
+    const aUnPrefixe = port.getIPv6Addresses()
+      .some((e) => e.origin !== 'link-local' && e.address.isGlobalUnicast());
+    if (!aUnPrefixe) return;
+    this.sendRouterAdvertisement(portName, null);
   }
 
   addStaticRoute(prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, iface: string, metric: number = 0): void {

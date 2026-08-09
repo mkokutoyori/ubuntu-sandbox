@@ -2466,8 +2466,26 @@ export abstract class EndHost extends Equipment {
   protected addPort(port: Port): void {
     super.addPort(port);
     port.onLinkChange((state) => {
-      if (state === 'down') this.abortSessionsBrokenByLinkLoss();
+      if (state === 'down') { this.abortSessionsBrokenByLinkLoss(); return; }
+      this.soliciterRouteurs(port);
     });
+  }
+
+  /**
+   * RFC 4861 §6.3.7 : une interface qui s'active sollicite les routeurs
+   * du lien au lieu d'attendre la prochaine annonce non sollicitée, qui
+   * peut être à plusieurs centaines de secondes.
+   *
+   * `sendRouterSolicitation` existait, complet et correct, et n'avait
+   * qu'un seul appelant dans tout le dépôt : `ipconfig /renew6` sous
+   * Windows. Aucun hôte ne sollicitait donc jamais de lui-même, et comme
+   * le routeur n'annonçait pas non plus, l'autoconfiguration ne pouvait
+   * pas avoir lieu : la réception SLAAC était écrite et n'était jamais
+   * atteinte.
+   */
+  private soliciterRouteurs(port: Port): void {
+    if (!port.isIPv6Enabled() || !port.getLinkLocalIPv6()) return;
+    this.sendRouterSolicitation(port.getName());
   }
 
   /** True when a peer address still has a usable egress interface. */
@@ -4195,7 +4213,13 @@ export abstract class EndHost extends Equipment {
 
     // If router lifetime > 0, consider as default router
     if (ra.routerLifetime > 0 && !this.defaultGateway6) {
-      this.setDefaultGateway6(ipv6.sourceIP);
+      // L'indice de zone n'est PAS sur le fil : il ne fait pas partie
+      // des 128 bits, et il ne veut rien dire chez le voisin. Adopter
+      // tel quel le `%GigabitEthernet0/0` du routeur donnait à l'hôte
+      // une route par défaut désignant une interface qu'il n'a pas.
+      // Un vrai récepteur note l'interface par laquelle il a entendu.
+      this.setDefaultGateway6(
+        new IPv6Address(ipv6.sourceIP.getHextets(), portName));
     }
 
     // Process prefix information for SLAAC
