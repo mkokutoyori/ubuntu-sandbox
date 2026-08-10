@@ -22,10 +22,9 @@
  * Deux choses, trouvees en ecrivant cette sonde et nommees plutot que
  * laissees a decouvrir :
  *
- * - **Un commutateur n'a AUCUN agent NTP** (`Switch` n'instancie pas de
- *   `NtpAgent`), donc tout le chantier NTP — mode 6 compris — ne
- *   concerne que les routeurs et les machines. Ce n'est pas un oubli du
- *   lot N11 : la brique entiere manque.
+ * - **Un commutateur n'avait AUCUN agent NTP** — lacune constatee ici et
+ *   COMBLEE par le lot V21 ; le cas qui la fixait a ete retourne plutot
+ *   que supprime, pour garder la trace de ce qui manquait.
  * - **Le plan de routage d'un commutateur n'a pas d'ECMP** :
  *   `SwitchSvi.lookupRoute` prend le plus long prefixe et s'arrete au
  *   premier (`prefix > best.prefix`), sans jamais collecter d'ex aequo.
@@ -224,12 +223,13 @@ describe('V18/V19 : le delai partage vaut pour les trois familles du commutateur
   });
 });
 
-describe('ce qui n\'est PAS couvert cote commutateur, et qui est dit', () => {
-  it('un commutateur n\'a AUCUN agent NTP — la brique entiere manque', () => {
-    // Donc tout le chantier NTP, mode 6 compris, ne concerne que les
-    // routeurs et les machines. Le dire vaut mieux que de laisser
-    // croire que N11 couvre les commutateurs.
+describe('ce qui n\'etait PAS couvert cote commutateur', () => {
+  it('un commutateur a MAINTENANT un agent NTP', () => {
+    // Ce cas affirmait l'inverse — `getNtpAgent` etait `undefined` — et
+    // c'etait un CONSTAT, pas un contrat : il existait pour que la
+    // lacune se voie. Elle est comblee (lot V21), donc il est retourne
+    // plutot que supprime, ce qui garde la trace de ce qui manquait.
     const s = new HuaweiSwitch('switch-huawei', `N${++serie}`, 8, 0, 0);
-    expect((s as unknown as { getNtpAgent?: unknown }).getNtpAgent).toBeUndefined();
+    expect(s.getNtpAgent().constructor.name).toBe('NtpAgent');
   });
 });

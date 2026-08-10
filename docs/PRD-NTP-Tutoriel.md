@@ -1182,3 +1182,90 @@ charger, ce qui ne mesurerait rien.
   datagramme, donc l'émettre serait une fiction.
 - `ntpq` n'a pas de **mode interactif**, comme `chronyc` ici pour la même
   raison — ce terminal ne saurait pas en sortir.
+
+---
+
+## 14. V21 — Livré : un commutateur de niveau 3 se synchronise
+
+Le lot V20 avait constaté, en vérifiant la couverture commutateur des
+lots FHRP, que **`Switch` n'instanciait aucun `NtpAgent`** : les onze
+lots NTP ne concernaient donc que les routeurs et les machines, alors
+qu'un Catalyst ou un S5700 se synchronisent parfaitement.
+
+### 14.1 Le défaut n'était pas une commande absente
+
+La CLI existait **des deux côtés** : `ntp server` est accepté sur le
+Catalyst (il vient de `CiscoShellBase`, que son shell étend) et
+`ntp-service unicast-server` sur le Huawei. Le défaut est donc **une
+commande acceptée dont rien ne témoignait** :
+
+- `show ntp status` répondait `Clock is unsynchronized, stratum 16, no
+  reference clock` — une **constante**, puisque le rendu cherche
+  `dev.getNtpAgent?.()` et n'en trouvait aucun ;
+- `display ntp-service` rendait `displayNtpStatus()`, une constante elle
+  aussi, y compris après une synchronisation réussie.
+
+Un affichage qui atteste un état que rien ne mesure : exactement ce que
+ce dépôt referme partout.
+
+### 14.2 Ce qu'il fallait vraiment ajouter : l'HÔTE
+
+C'est le **même moteur** que le routeur, pas un second — un simulateur
+avec deux moteurs NTP finirait par donner deux réponses à la même
+question.
+
+Le travail réel est ailleurs : **`NtpAgent` ne cherche pas ses ports par
+nom**, il PARCOURT `getPorts()` à la recherche d'une interface qui porte
+une adresse, pour décider par où sortir. Or les ports physiques d'un
+commutateur n'en portent aucune — c'est le Vlanif qui la porte. Un hôte
+FHRP tel quel aurait donné un agent qui ne trouve jamais de sortie.
+
+`makeSwitchNtpHost` expose donc les SVI comme des ports, et il est
+**distinct** de l'hôte FHRP plutôt que substitué : celui-là a besoin que
+`getPorts()` rende les ports **physiques** (il y suit les liens), NTP a
+besoin des **SVI**. Les fondre casserait l'un des deux.
+
+Le port 123 est aiguillé dans `deliverLocalUdp` — le siège que
+`SwitchSvi` offrait déjà — vers l'agent, sinon un commutateur client
+émettrait ses requêtes et n'entendrait jamais la réponse.
+
+### 14.3 Le chemin Huawei passait par `getRouter`, absent sur un commutateur
+
+`registerHuaweiCommonSecurity` n'atteignait le moteur que par
+`getRouter()` : sur un commutateur, les commandes `ntp-service`
+retombaient sur le `dispatch` mort du service de gestion. Le lot N2 avait
+fermé ce défaut pour le routeur et **l'avait laissé ouvert ici**. Un
+accesseur direct optionnel le referme, et les vues du commutateur lisent
+désormais **les mêmes rendus** que le routeur — un seul texte pour un
+seul fait.
+
+### 14.4 Une erreur à moi, corrigée
+
+Mes premières assertions Huawei attendaient `clock status:` en
+minuscules : elles **recopiaient la constante d'avant**. Le vrai rendu de
+VRP, celui du lot N2, écrit `Clock status:`. C'est le format inventé qui
+déteignait sur le test.
+
+Et le cas du lot V20 qui **fixait la lacune** (« un commutateur n'a aucun
+agent NTP ») est **retourné** plutôt que supprimé : il gardait trace de
+ce qui manquait, il atteste maintenant que c'est comblé.
+
+### 14.5 Mesures
+
+`probe-ntp-commutateurs.test.ts` (12 cas) discriminé par `git stash` sur
+les quatre fichiers touchés : **11 tombent**. Le seul qui passe des deux
+côtés est le témoin « sans serveur, non synchronisé » — dont c'est
+précisément l'objet.
+
+139 suites connexes vertes (1 985 cas). Typecheck : `HuaweiSwitchShell.ts`
+compte 22 erreurs **avant comme après**. Lint : 2 problèmes sur
+`Switch.ts` avant comme après.
+
+### 14.6 Ce qui reste
+
+Le **mode 6** (lot N11) reste refusé sur un commutateur :
+`modeControlResponder` est posé par `CiscoRouter` et `HuaweiRouter`
+seulement. C'est délibéré et vérifiable — un commutateur répond bien à
+`ntpq` sur le matériel réel, mais l'ouvrir demande de décider quelle
+adresse il présente et par quelle SVI, ce qui est le sujet du lot suivant
+plutôt qu'un branchement.

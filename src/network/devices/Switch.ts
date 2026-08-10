@@ -46,7 +46,9 @@ import { GlbpAgent } from '../glbp/GlbpAgent';
 import { UDP_PORT_GLBP } from '../glbp/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { UDPPacket } from '../core/types';
-import { makeSwitchVrrpHost } from './switch/SwitchVrrpAdapter';
+import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
+import { NtpAgent } from '../ntp/NtpAgent';
+import { UDP_PORT_NTP } from '../ntp/types';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { Logger } from '../core/Logger';
 import {
@@ -390,8 +392,22 @@ export abstract class Switch extends Equipment {
     natTranslateOutbound: (pkt, outIface, inIface, opts) =>
       this.getNATEngine()?.translateOutbound(pkt, outIface, inIface, opts) ?? null,
     natIsOutsideInterface: (iface) => this.getNATEngine()?.isOutsideInterface(iface) ?? false,
-    deliverLocalUdp: (sourceIP, destinationPort, sourcePort, payload) =>
-      this.udpEndpoint?.deliver(sourceIP, destinationPort, sourcePort, payload) ?? false,
+    deliverLocalUdp: (sourceIP, destinationPort, sourcePort, payload) => {
+      // Le port 123 va au moteur NTP, exactement comme sur un routeur.
+      // Sans cet aiguillage, un commutateur configure en client NTP
+      // emettrait ses requetes et n'entendrait jamais la reponse.
+      if (destinationPort === UDP_PORT_NTP || sourcePort === UDP_PORT_NTP) {
+        const svi = this.getSvis().find((s) => s.ip);
+        if (svi && this._ntpAgent) {
+          this._ntpAgent.handleUdp(`Vlanif${svi.vlan}`, sourceIP, {
+            type: 'udp', sourcePort, destinationPort,
+            length: 8 + 48, checksum: 0, payload,
+          } as UDPPacket);
+          return true;
+        }
+      }
+      return this.udpEndpoint?.deliver(sourceIP, destinationPort, sourcePort, payload) ?? false;
+    },
   });
 
   private udpEndpoint: RouterUdpEndpoint | null = null;
@@ -2853,6 +2869,31 @@ export abstract class Switch extends Equipment {
     this._glbpAgent.start();
     return this._glbpAgent;
   }
+  /**
+   * L'agent NTP du commutateur.
+   *
+   * Il n'existait pas : `Switch` n'instanciait aucun `NtpAgent`, donc
+   * tout le chantier NTP ne concernait que les routeurs et les machines,
+   * alors qu'un commutateur de niveau 3 sait parfaitement se
+   * synchroniser et servir l'heure. C'est le MEME moteur que partout
+   * ailleurs — un second moteur finirait par donner deux reponses a la
+   * meme question — avec un hote qui expose les SVI comme des ports,
+   * puisque c'est le Vlanif qui porte l'adresse.
+   */
+  private _ntpAgent: NtpAgent | null = null;
+  getNtpAgent(): NtpAgent {
+    if (this._ntpAgent) return this._ntpAgent;
+    this._ntpAgent = new NtpAgent(
+      makeSwitchNtpHost(this, {
+        egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
+        vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
+        getBridgeMac: () => this.getBridgeMac(),
+      }) as unknown as ConstructorParameters<typeof NtpAgent>[0],
+      () => this.getBus());
+    this._ntpAgent.start();
+    return this._ntpAgent;
+  }
+
   getVrrpAgent(): VrrpAgent { return this.ensureVrrpAgent(); }
   getHsrpAgent(): HsrpAgent { return this.ensureHsrpAgent(); }
   getGlbpAgent(): GlbpAgent { return this.ensureGlbpAgent(); }

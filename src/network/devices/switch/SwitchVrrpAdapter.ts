@@ -58,6 +58,30 @@ export function makeSwitchVrrpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHo
 }
 
 /**
+ * L'hote NTP d'un commutateur — la meme adaptation, une exigence de plus.
+ *
+ * `NtpAgent` ne cherche pas ses ports par nom : il PARCOURT `getPorts()`
+ * a la recherche d'une interface qui porte une adresse, pour decider par
+ * ou sortir. Or les ports physiques d'un commutateur n'en portent aucune
+ * — c'est le Vlanif qui la porte. Un hote FHRP tel quel donnerait donc un
+ * agent qui ne trouve jamais de sortie, et le NTP d'un commutateur ne
+ * serait qu'une CLI.
+ *
+ * Cet hote-ci expose les SVI comme des ports. Il est distinct plutot que
+ * substitue a l'autre : FHRP a besoin que `getPorts()` rende les ports
+ * PHYSIQUES (il y suit les liens), NTP a besoin des SVI. Les fondre
+ * casserait l'un des deux.
+ */
+export function makeSwitchNtpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHost {
+  const base = makeSwitchVrrpHost(sw, bridge);
+  return {
+    ...base,
+    getPorts: () => sw.getSvis()
+      .map((svi) => makeVlanifSyntheticPort(sw, bridge, svi.vlan, `Vlanif${svi.vlan}`)),
+  };
+}
+
+/**
  * Build a Port-shaped object describing a Vlanif for the FhrpAgent to
  * read. Only the three methods the base class reads (getIPAddress,
  * getIsUp, isConnected) carry semantics; the rest are safe defaults

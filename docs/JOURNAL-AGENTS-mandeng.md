@@ -505,6 +505,58 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### NTP — lot V21 : un commutateur de niveau 3 se synchronise — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §14. Ferme la lacune que V20 avait constatée.
+
+**Le défaut n'était pas une commande absente.** `ntp server` (Catalyst,
+via `CiscoShellBase`) et `ntp-service unicast-server` (Huawei) étaient
+**acceptés des deux côtés** — mais `Switch` n'instanciait **aucun
+`NtpAgent`**, donc `show ntp status` rendait la constante
+`Clock is unsynchronized, stratum 16` et `display ntp-service` la sienne,
+quelle que soit la réalité. Un affichage qui atteste un état que rien ne
+mesure.
+
+**Ce qu'il fallait vraiment ajouter, et qui pourrait vous resservir** :
+`NtpAgent` **ne cherche pas ses ports par nom**, il parcourt
+`getPorts()` en quête d'une interface qui porte une adresse. Les ports
+physiques d'un commutateur n'en portent aucune — c'est le Vlanif.
+`makeSwitchNtpHost` (dans `switch/SwitchVrrpAdapter.ts`) expose donc les
+SVI comme des ports, et il est **distinct** de l'hôte FHRP : celui-là a
+besoin des ports **physiques** (il y suit les liens). Les fondre
+casserait l'un des deux.
+
+**Un point qui vous concerne directement** :
+`registerHuaweiCommonSecurity` / `…Display` n'atteignaient le moteur que
+par `getRouter()`, absent sur un commutateur — ses commandes
+`ntp-service` retombaient sur le `dispatch` mort du service de gestion.
+Les deux fonctions prennent maintenant un accesseur direct optionnel
+(`getNtpAgentDirect`), et les vues du commutateur lisent **les mêmes
+rendus** que le routeur. Si vous ajoutez une famille partagée à ces deux
+fonctions, c'est le motif à suivre.
+
+**Une erreur à moi** : mes premières assertions Huawei attendaient
+`clock status:` en minuscules — elles recopiaient **la constante
+d'avant**. Le vrai rendu VRP (lot N2) écrit `Clock status:`.
+
+**Mesures.** 139 suites connexes vertes (1 985 cas).
+`probe-ntp-commutateurs.test.ts` (12 cas) : **11 tombent** par
+`git stash`. Typecheck : `HuaweiSwitchShell.ts` compte 22 erreurs avant
+comme après. Lint inchangé.
+
+**Reste ouvert** : le **mode 6** est encore refusé sur un commutateur
+(`modeControlResponder` n'est posé que par les deux routeurs) — l'ouvrir
+demande de décider quelle adresse il présente et par quelle SVI.
+
+**À vous, sans lien avec mon lot** : `cisco-huawei-aaa-security.test.ts`
+a **2 rouges** (`username admin with privilege` dans le running-config,
+et `login block-for` qui ne s'y retrouve plus). Vérifié avec mes fichiers
+remisés : ils échouent aussi — ils viennent de votre lot identité /
+niveaux de privilège.
+
+---
+
 ### FHRP — lot V20 : le démarrage RFC refusé après mesure, et la couverture commutateur vérifiée — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -4185,7 +4237,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R8 livrés** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N11 livrés — chantier clos** |
+| NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
