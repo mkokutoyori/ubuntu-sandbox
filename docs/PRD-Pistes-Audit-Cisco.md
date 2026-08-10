@@ -124,15 +124,7 @@ view », qui décrit la commande et non ce qu'il faut taper ensuite.
 - **L'accounting AAA (§3) émet désormais**, et le serveur déclaré à
   l'ancienne authentifie — voir §8 ci-dessous.
 - **`show tacacs` voit désormais les deux formes** — voir §8.
-- **`verify /md5 flash:<fichier>` répond `% Incomplete command`** —
-  contrôle A22. Le système de fichiers sait désormais relire un
-  fichier, donc le calcul est possible ; mais une image IOS n'a pas de
-  contenu ici, et une somme MD5 sur un fichier vide serait une fausseté
-  vérifiable — c'est déjà la réserve que `CiscoFileSystem` écrit dans
-  son propre en-tête.
-- **`show snmp user` affiche `AES` là où le tutoriel configure
-  `aes 256`** : la longueur de clé est acceptée et perdue à
-  l'affichage.
+- **`verify /md5` et `show snmp user` sont réparés** — voir §9.
 - **Les variables EEM `$_cli_username` et `$_remote_inet_address` ne
   sont pas substituées** derrière un `event syslog`, et le code le
   documente comme un choix. Sur ce point le vrai EEM lui donne raison :
@@ -216,3 +208,44 @@ chantier jumeau, pas une extension de celui-ci.
 
 `aaa-accounting-et-serveur-herite.test.ts` (13 cas) discriminé : **10
 tombent** avant correctif. Non-régression : 245 fichiers, 3832 cas.
+
+
+## 9. RADIUS hérité, AES 256, `verify /md5` (derniers chantiers)
+
+**RADIUS était le jumeau exact du défaut TACACS+** : `radius-server host
+<ip> key <clé>` était rangé dans `legacyHosts`, un tableau que seul le
+rendu de la configuration lisait, donc `show radius statistics`
+répondait « No RADIUS servers configured » pendant que la configuration
+décrivait le serveur. Même correctif, à une différence près qui compte :
+**RADIUS a deux ports là où TACACS+ n'en a qu'un**, et les confondre
+enverrait les traces de comptabilité sur le port des demandes.
+
+`legacyHosts` n'a désormais plus aucun écrivain. Le champ subsiste pour
+qu'une topologie enregistrée avant ce correctif reste relisible.
+
+**Le défaut SNMP était pire que l'affichage annoncé.** L'analyseur lisait
+le mot suivant `aes` comme l'algorithme et le SUIVANT comme le mot de
+passe : dans `priv aes 256 MonSecret`, c'est donc **`256` qui devenait le
+mot de passe**, et `MonSecret` était jeté. La machine chiffrait avec une
+clé que personne n'avait saisie, et la configuration relue la
+reproduisait. `privKeyBits` existe désormais ; `show snmp user` affiche
+`AES256`, ce que cherche le contrôle A20.
+
+**`verify /md5 <fichier>` n'était pas « non implémentée » : elle était
+inatteignable.** L'option était retirée du PREMIER argument par une
+expression régulière, comme si elle était collée au nom de fichier, alors
+que la CLI la découpe en un jeton à part — le nom restait donc dans
+`args[1]`, jamais lu. Seule la forme sans option fonctionnait,
+c'est-à-dire pas celle qu'on tape.
+
+Le condensé est désormais **la vraie somme MD5 du contenu** quand le
+fichier en a un — ce qui rend la vérification d'une archive de
+configuration réelle plutôt que décorative, et c'est ce que le test
+éprouve : deux archives différentes donnent deux sommes différentes. Un
+fichier sans contenu (l'image livrée avec le châssis n'a que son nom et
+sa taille) garde une valeur dérivée, et la ligne `CCO Hash` est alors
+**omise** : annoncer une somme de référence publiée par Cisco pour une
+image qui n'existe pas ferait croire à une comparaison qui n'a pas lieu.
+
+`radius-herite-snmp-aes-verify.test.ts` (13 cas) discriminé : **8
+tombent** avant correctif. Non-régression : 248 fichiers, 3868 cas.

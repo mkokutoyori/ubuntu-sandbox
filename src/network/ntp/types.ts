@@ -20,6 +20,15 @@ export interface NtpPacket extends NetworkPdu {
   rxTimestampMs: number;
   txTimestampMs: number;
   keyId?: number;
+  /**
+   * Le condensé d'authentification (lot N5), `MD5(cle ‖ en-tete)`.
+   *
+   * Il est distinct de `keyId` parce que les deux repondent a des
+   * questions differentes : le numero dit AVEC QUELLE cle signer, le
+   * condensé prouve qu'on la CONNAIT. Le moteur ne lisait que le
+   * premier, si bien que nommer une cle suffisait a etre accepte.
+   */
+  mac?: string;
 }
 
 export interface NtpAssociation {
@@ -37,6 +46,21 @@ export interface NtpAssociation {
   lastReplyMs: number;
   synced: boolean;
   keyId?: number;
+  /**
+   * La derniere reponse de ce serveur portait-elle un condensé valide ?
+   *
+   * C'est ce que `show ntp associations detail` rend par le mot
+   * `authenticated`, et c'est la SEULE vue qui le montre — la
+   * documentation Cisco et les transcriptions de terrain concordent :
+   * « basic `show ntp associations` won't reveal authentication status,
+   * you must use the `detail` keyword ». Sans ce champ, un operateur
+   * n'avait aucun moyen de distinguer « la cle est bonne » de « la cle
+   * n'est pas verifiee ».
+   *
+   * `undefined` signifie « aucune reponse recue », qui n'est ni
+   * authentifie ni non authentifie.
+   */
+  authenticated?: boolean;
 }
 
 export interface NtpAuthKey {

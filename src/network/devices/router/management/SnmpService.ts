@@ -39,6 +39,16 @@ export interface SnmpUser {
   authAlgo?: 'md5' | 'sha';
   authPassword?: string;
   privAlgo?: 'des' | '3des' | 'aes';
+  /**
+   * La longueur de clé d'AES (`priv aes 256 <mot de passe>`).
+   *
+   * Elle n'existait pas, et son absence ne coûtait pas qu'un affichage :
+   * l'analyseur lisait le mot suivant `aes` comme l'algorithme et le
+   * SUIVANT comme le mot de passe, donc `256` DEVENAIT le mot de passe
+   * et le vrai secret était jeté. La machine chiffrait avec une clé que
+   * personne n'avait saisie, et la configuration relue la reproduisait.
+   */
+  privKeyBits?: 128 | 192 | 256;
   privPassword?: string;
   acl?: string;
 }
@@ -217,9 +227,16 @@ export class SnmpService {
         i += 3;
         if (args[i]?.toLowerCase() === 'priv' && args[i + 1] && args[i + 2]) {
           user.privAlgo = args[i + 1].toLowerCase() as 'des' | '3des' | 'aes';
-          user.privPassword = args[i + 2];
+          i += 2;
+          // `aes` prend une longueur de clé AVANT le mot de passe. Sans
+          // ce pas, `256` était lu comme le secret.
+          if (user.privAlgo === 'aes' && /^(128|192|256)$/.test(args[i] ?? '')) {
+            user.privKeyBits = Number(args[i]) as 128 | 192 | 256;
+            i++;
+          }
+          user.privPassword = args[i];
           user.v3Level = 'priv';
-          i += 3;
+          i++;
         } else {
           user.v3Level = 'auth';
         }
@@ -334,7 +351,11 @@ export class SnmpService {
       let line = `snmp-server user ${u.name} ${u.group} v${u.version}`;
       if (u.authAlgo && u.authPassword) {
         line += ` auth ${u.authAlgo} ${u.authPassword}`;
-        if (u.privAlgo && u.privPassword) line += ` priv ${u.privAlgo} ${u.privPassword}`;
+        if (u.privAlgo && u.privPassword) {
+          line += ` priv ${u.privAlgo}`
+            + (u.privKeyBits ? ` ${u.privKeyBits}` : '')
+            + ` ${u.privPassword}`;
+        }
       }
       if (u.acl) line += ` access ${u.acl}`;
       lines.push(line);

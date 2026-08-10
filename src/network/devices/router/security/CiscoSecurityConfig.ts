@@ -46,7 +46,7 @@ export interface RadiusServer {
   key?: string;
   retransmit: number;
   timeoutSec: number;
-  /** Voir `TacacsServer.legacySpelling` — RADIUS garde encore sa forme héritée dans `legacyHosts`. */
+  /** Voir `TacacsServer.legacySpelling` : `radius-server host <ip>` alimente ce magasin-ci. */
   legacySpelling?: boolean;
   stats: RadiusServerStats;
 }
@@ -515,6 +515,16 @@ export class CiscoSecurityConfig {
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);
     }
     for (const r of this.radiusServers.values()) {
+      // Même règle que pour TACACS+ : la forme héritée se rend telle
+      // qu'elle a été tapée, sans quoi la configuration déclarerait un
+      // nom de serveur que l'opérateur n'a jamais donné.
+      if (r.legacySpelling) {
+        lines.push(`radius-server host ${r.address ?? r.name}`
+          + (r.authPort !== 1645 ? ` auth-port ${r.authPort}` : '')
+          + (r.acctPort !== 1646 ? ` acct-port ${r.acctPort}` : '')
+          + (r.key ? ` key ${r.key}` : ''));
+        continue;
+      }
       lines.push(`radius server ${r.name}`);
       if (r.address) lines.push(` address ipv4 ${r.address} auth-port ${r.authPort} acct-port ${r.acctPort}`);
       if (r.key) lines.push(` key ${r.key}`);
@@ -548,12 +558,13 @@ export class CiscoSecurityConfig {
         lines.push(parAdresse ? ` server ${m}` : ` server name ${m}`);
       }
     }
-    // Seul RADIUS passe encore par `legacyHosts` : la forme héritée de
-    // TACACS+ alimente désormais le magasin unique et se rend plus haut.
+    // `legacyHosts` n'a plus aucun écrivain : les deux formes héritées
+    // alimentent désormais le magasin unique de leur protocole et se
+    // rendent plus haut. Le champ subsiste le temps qu'une topologie
+    // enregistrée avant ce correctif puisse encore être relue.
     for (const lh of this.legacyHosts) {
-      if (lh.kind === 'radius') {
-        lines.push(`radius-server host ${lh.host}${lh.key ? ' key ' + lh.key : ''}`);
-      }
+      lines.push(`${lh.kind === 'radius' ? 'radius' : 'tacacs'}-server host ${lh.host}`
+        + (lh.key ? ` key ${lh.key}` : ''));
     }
     for (const tr of this.timeRanges.values()) {
       lines.push(`time-range ${tr.name}`);

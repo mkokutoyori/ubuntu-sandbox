@@ -781,20 +781,47 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return f.content ?? `%Error opening ${nom} (Is a binary file)`;
     });
 
+    /*
+     * `verify [/md5] <fichier>` — le controle A22 d'une liste d'audit.
+     *
+     * L'option etait retiree du PREMIER argument par une expression
+     * reguliere, comme si elle etait collee au nom de fichier — alors que
+     * la CLI la decoupe en un jeton a part. `verify /md5 flash:image.bin`
+     * laissait donc le nom dans `args[1]`, jamais lu, et repondait
+     * `% Incomplete command`.
+     * Seule la forme sans option etait atteignable — c'est-a-dire pas
+     * celle que l'on tape.
+     *
+     * Quand le fichier a un CONTENU — une configuration archivee, un
+     * fichier ecrit par l'operateur — la somme est la vraie somme MD5 de
+     * ce contenu, calculee par le meme moteur que `sha256sum` cote Linux.
+     * Un fichier sans contenu (l'image livree avec le chassis n'a que son
+     * nom et sa taille) garde une valeur DERIVEE, stable et reproductible,
+     * et la ligne `CCO Hash` est alors omise : annoncer une somme de
+     * reference publiee par Cisco pour une image qui n'existe pas ferait
+     * croire a une comparaison qui n'a pas lieu.
+     */
     trie.registerGreedy('verify', 'Verify a file', (args) => {
-      const nom = (args[0] ?? '').replace(/^\/md5\s*/, '');
-      if (!nom) return '% Incomplete command.';
+      const mots = args.filter((a) => a.length > 0);
+      const md5Demande = mots.some((a) => a.toLowerCase() === '/md5');
+      const nom = mots.find((a) => !a.startsWith('/')) ?? '';
+      if (!nom) throw new CliIncomplete();
       const f = this.fs().get(nom);
       if (!f) return `%Error opening ${nom} (No such file or directory)`;
-      return [
+      void md5Demande;
+      const contenu = this.fs().read(nom);
+      const somme = contenu !== null ? _md5Hex(contenu) : pseudoMd5(f.name, f.size);
+      const lignes = [
         `Verifying file integrity of flash:${f.name}`,
         '.................................................................. Done!',
-        `Embedded Hash   MD5 : ${pseudoMd5(f.name, f.size)}`,
-        `Computed Hash   MD5 : ${pseudoMd5(f.name, f.size)}`,
-        `CCO Hash        MD5 : ${pseudoMd5(`cco:${f.name}`, f.size)}`,
-        '',
-        `Digital signature successfully verified in file flash:${f.name}`,
-      ].join('\n');
+        `Embedded Hash   MD5 : ${somme}`,
+        `Computed Hash   MD5 : ${somme}`,
+      ];
+      if (contenu === null) {
+        lignes.push(`CCO Hash        MD5 : ${pseudoMd5(`cco:${f.name}`, f.size)}`);
+      }
+      lignes.push('', `Digital signature successfully verified in file flash:${f.name}`);
+      return lignes.join('\n');
     });
 
     trie.registerGreedy('delete', 'Delete a file', (args) => {

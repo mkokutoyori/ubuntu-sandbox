@@ -137,15 +137,51 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
+  /*
+   * `radius-server host <ip> [auth-port P] [acct-port P] [key K]` — le
+   * JUMEAU exact du defaut de `tacacs-server host` : range dans
+   * `legacyHosts`, un tableau que seul le rendu de la configuration
+   * lisait, donc `show radius statistics` repondait « No RADIUS servers
+   * configured » pendant que la configuration decrivait le serveur.
+   *
+   * RADIUS a DEUX ports la ou TACACS+ n'en a qu'un, et c'est la seule
+   * difference qui compte ici : l'authentification et la comptabilite ne
+   * vont pas au meme endroit, donc les confondre enverrait les traces sur
+   * le port des demandes.
+   */
   trie.registerGreedy('radius-server', 'Legacy radius host', (args) => {
-    if (args[0] === 'host' && args[1]) {
-      const host = args[1];
-      let key: string | undefined;
-      for (let i = 2; i < args.length; i++) {
-        if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; break; }
-      }
-      sec().legacyHosts.push({ kind: 'radius', host, key });
+    if (args[0] !== 'host' || !args[1]) return '';
+    const host = args[1];
+    let key: string | undefined;
+    let authPort = 1645;
+    let acctPort = 1646;
+    let timeoutSec = 5;
+    let retransmit = 3;
+    for (let i = 2; i < args.length; i++) {
+      if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; i++; }
+      else if (args[i] === 'auth-port' && args[i + 1]) { authPort = Number(args[i + 1]) || authPort; i++; }
+      else if (args[i] === 'acct-port' && args[i + 1]) { acctPort = Number(args[i + 1]) || acctPort; i++; }
+      else if (args[i] === 'timeout' && args[i + 1]) { timeoutSec = Number(args[i + 1]) || timeoutSec; i++; }
+      else if (args[i] === 'retransmit' && args[i + 1]) { retransmit = Number(args[i + 1]) || retransmit; i++; }
     }
+    const existant = sec().radiusServers.get(host);
+    if (existant) {
+      existant.key = key ?? existant.key;
+      existant.authPort = authPort;
+      existant.acctPort = acctPort;
+      existant.timeoutSec = timeoutSec;
+      existant.retransmit = retransmit;
+      return '';
+    }
+    sec().radiusServers.set(host, {
+      name: host, address: host, key, authPort, acctPort,
+      timeoutSec, retransmit, legacySpelling: true,
+      stats: newRadiusServerStats(),
+    });
+    return '';
+  });
+  trie.registerGreedy('no radius-server', 'Remove legacy radius host', (args) => {
+    if (args[0] === 'host' && args[1]) sec().radiusServers.delete(args[1]);
     return '';
   });
 

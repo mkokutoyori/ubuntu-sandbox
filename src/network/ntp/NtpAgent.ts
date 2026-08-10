@@ -11,6 +11,7 @@ import {
   IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { calculerMacNtp, verifierMacNtp } from './auth';
 
 export interface NtpHost {
   readonly id: string;
@@ -197,6 +198,27 @@ export class NtpAgent {
     if (this.config.authenticate) {
       const auth = this.checkAuthentication(payload);
       if (!auth.ok) {
+        // Le verdict concerne une ASSOCIATION quand il vient d'un
+        // serveur qu'on interroge : sans cette trace, `show ntp
+        // associations detail` ne pourrait pas dire `unauthenticated`,
+        // et l'operateur n'aurait aucun moyen de distinguer « cle
+        // refusee » de « serveur muet ».
+        if (payload.mode === 'server') {
+          const assoc = this.config.associations.get(srcIp.toString());
+          if (assoc && assoc.keyId !== undefined) assoc.authenticated = false;
+        }
+        // Un serveur ne se TAIT pas devant une requete mal
+        // authentifiee : il repond par un crypto-NAK. La documentation
+        // de reference le dit mot pour mot — « If the client sends
+        // authenticated packets, the server responds with authenticated
+        // packets if correct, or a crypto-NAK packet if not ». C'est
+        // aussi le comportement le plus instructif : le client apprend
+        // que son authentification a echoue, au lieu d'un silence
+        // indiscernable d'un serveur en panne.
+        if (payload.mode === 'client' && this.config.serverMode
+            && auth.reason !== 'no-key') {
+          this.envoyerCryptoNak(inPort, srcIp, payload);
+        }
         this.getBus().publish({
           topic: 'ntp.auth.rejected',
           payload: {
@@ -290,16 +312,157 @@ export class NtpAgent {
     });
   }
 
-  private checkAuthentication(payload: NtpPacket): { ok: boolean; reason: 'no-key' | 'untrusted-key' | 'unconfigured' } {
+  /**
+   * Authentifier un paquet recu (lot N5).
+   *
+   * Elle ne regardait que le NUMERO de clé : nommer `key 1` suffisait a
+   * etre accepte, sans jamais connaitre le secret. Elle verifie
+   * desormais le condensé, qui est la seule chose qu'un usurpateur ne
+   * peut pas fabriquer.
+   *
+   * Les quatre refus sont DISTINCTS parce qu'ils envoient l'operateur a
+   * quatre endroits differents : pas de clé du tout (le pair n'est pas
+   * configure), une clé inconnue (le numero ne correspond a rien ici),
+   * une clé connue mais non declaree fiable (`trusted-key` manque), et
+   * un condensé faux (les secrets different) — le seul qui denonce une
+   * usurpation plutot qu'une faute de configuration.
+   */
+  /**
+   * Le crypto-NAK : une reponse dont l'identifiant de cle vaut ZERO et
+   * qui ne porte aucun condensé.
+   *
+   * Zero est reserve a cet usage — RFC 5905 autorise 65 535 cles « a
+   * l'exclusion de zero » — ce qui rend le message reconnaissable sans
+   * ambiguite : aucune cle legitime ne peut porter ce numero.
+   */
+  private envoyerCryptoNak(inPort: string, clientIp: IPAddress, request: NtpPacket): void {
+    const srcIp = this.host.getPort(inPort)?.getIPAddress();
+    if (!srcIp) return;
+    const now = this.now();
+    const nak: NtpPacket = {
+      type: 'ntp', leapIndicator: 0, version: 4, mode: 'server',
+      stratum: this.config.localStratum, poll: 6, precision: -20,
+      rootDelay: 0, rootDispersion: 0,
+      refIdentifier: this.config.refIdentifier,
+      refTimestampMs: this.config.lastSyncMs || now,
+      origTimestampMs: request.txTimestampMs,
+      rxTimestampMs: now, txTimestampMs: now,
+      keyId: 0,
+    };
+    // Il part SANS passer par la signature : `signer` ne trouverait
+    // aucune cle numero zero, mais l'ecrire ici rend l'intention
+    // explicite — un crypto-NAK non signe est ce qui le definit.
+    this.sendNtp(inPort, srcIp, clientIp, nak);
+  }
+
+  /** Un paquet est-il un crypto-NAK ? */
+  private estCryptoNak(pkt: NtpPacket): boolean {
+    return pkt.keyId === 0 && !pkt.mac;
+  }
+
+  private checkAuthentication(
+    payload: NtpPacket,
+  ): { ok: boolean; reason: 'no-key' | 'untrusted-key' | 'unconfigured' | 'bad-mac' } {
     if (payload.keyId === undefined) return { ok: false, reason: 'no-key' };
-    if (!this.config.authKeys.has(payload.keyId)) return { ok: false, reason: 'unconfigured' };
+    const cle = this.config.authKeys.get(payload.keyId);
+    if (!cle) return { ok: false, reason: 'unconfigured' };
     if (!this.config.trustedKeys.has(payload.keyId)) return { ok: false, reason: 'untrusted-key' };
+    if (!verifierMacNtp(cle.key, payload, payload.mac)) return { ok: false, reason: 'bad-mac' };
     return { ok: true, reason: 'no-key' };
+  }
+
+  /**
+   * Signer un paquet sortant, quand l'association nomme une clé que
+   * cette machine connait.
+   *
+   * Le condensé est pose EN DERNIER, une fois tous les champs remplis :
+   * il couvre l'en-tete, donc tout champ ecrit apres lui l'invaliderait.
+   */
+  private signer(pkt: NtpPacket): NtpPacket {
+    if (pkt.keyId === undefined) return pkt;
+    const cle = this.config.authKeys.get(pkt.keyId);
+    if (!cle) return pkt;
+    return { ...pkt, mac: calculerMacNtp(cle.key, pkt) };
+  }
+
+  /**
+   * Le verdict d'authentification sur une REPONSE de serveur.
+   *
+   * Il est separe du precedent parce que la question n'est pas la meme :
+   * un serveur decide s'il ACCEPTE une requete, un client decide s'il
+   * CROIT une reponse. Le client ne verifiait rien du tout — donc une
+   * machine configuree pour n'accepter que des serveurs authentifies
+   * acceptait n'importe quelle reponse, ce que la commande existe
+   * precisement pour empecher.
+   */
+  private replyIsAuthentic(a: NtpAssociation, reply: NtpPacket): boolean {
+    const cle = a.keyId !== undefined ? this.config.authKeys.get(a.keyId) : undefined;
+    if (!cle) return false;
+    if (!this.config.trustedKeys.has(a.keyId!)) return false;
+    return verifierMacNtp(cle.key, reply, reply.mac);
+  }
+
+  /**
+   * Cette association exige-t-elle une authentification ?
+   *
+   * Elle l'exige quand `ntp authenticate` arme le mecanisme ET que
+   * `ntp server X key N` le rattache a ce serveur : les deux commandes
+   * sont necessaires, ce que toutes les sources consultees soulignent
+   * comme la premiere cause de « je croyais authentifier » — des cles
+   * declarees mais aucun `ntp authenticate`.
+   */
+  private authRequise(a: NtpAssociation): boolean {
+    return this.config.authenticate && a.keyId !== undefined;
   }
 
   private acceptServerReply(serverIp: string, reply: NtpPacket): void {
     const a = this.config.associations.get(serverIp);
     if (!a) return;
+    // Le verdict est ENREGISTRE meme quand il est negatif : c'est lui que
+    // `show ntp associations detail` rend par `authenticated`, et sans
+    // trace un operateur n'aurait aucun moyen de distinguer « cle
+    // refusee » de « serveur muet ».
+    // Un crypto-NAK n'est PAS une mesure : c'est un refus. Le prendre
+    // pour une source ferait regler l'horloge sur le paquet qui dit
+    // « je te refuse » — defaut introduit puis attrape par le cas
+    // « client sans aucune cle », qui se synchronisait sur le NAK.
+    if (this.estCryptoNak(reply)) {
+      if (a.keyId !== undefined) a.authenticated = false;
+      this.getBus().publish({
+        topic: 'ntp.auth.rejected',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          fromIp: serverIp, reason: 'bad-mac',
+        },
+      });
+      return;
+    }
+    // `authenticated` ne se pose que si une authentification a ete
+    // TENTEE : une association sans clé n'est ni authentifiee ni non
+    // authentifiee, et l'annoncer dans un sens ou dans l'autre serait
+    // affirmer une verification qui n'a pas eu lieu.
+    if (!this.authRequise(a)) {
+      a.authenticated = undefined;
+    } else {
+      const authentique = this.replyIsAuthentic(a, reply);
+      a.authenticated = authentique;
+      if (!authentique) {
+      // Aucun message n'est journalise ici, et c'est DELIBERE : aucune
+      // source consultee ne confirme qu'IOS emette un syslog sur echec
+      // d'authentification NTP — le comportement rapporte est un rejet
+      // SILENCIEUX, diagnostique par `show ntp associations detail` et
+      // par `debug ntp validity`. Inventer un `%NTP-4-...` apprendrait a
+      // chercher une ligne qu'un vrai routeur n'ecrit pas.
+        this.getBus().publish({
+          topic: 'ntp.auth.rejected',
+          payload: {
+            deviceId: this.host.id, hostname: this.host.getHostname(),
+            fromIp: serverIp, reason: 'bad-mac',
+          },
+        });
+        return;
+      }
+    }
     const t1 = reply.origTimestampMs;
     const t2 = reply.rxTimestampMs;
     const t3 = reply.txTimestampMs;
@@ -428,9 +591,13 @@ export class NtpAgent {
     return null;
   }
 
-  private sendNtp(portName: string, srcIp: IPAddress, dstIp: IPAddress, payload: NtpPacket): void {
+  private sendNtp(portName: string, srcIp: IPAddress, dstIp: IPAddress, brut: NtpPacket): void {
     const port = this.host.getPort(portName);
     if (!port) return;
+    // La signature vit ICI plutot qu'a chacun des trois appelants :
+    // requete, reponse de serveur et reponse symetrique doivent porter
+    // le meme condensé, et trois endroits finiraient par diverger.
+    const payload = this.signer(brut);
     const udp: UDPPacket = {
       type: 'udp', sourcePort: UDP_PORT_NTP, destinationPort: UDP_PORT_NTP,
       length: 8 + 48, checksum: 0, payload,

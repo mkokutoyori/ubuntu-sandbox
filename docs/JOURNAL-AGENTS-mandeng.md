@@ -166,7 +166,7 @@ est discriminé à part : **7 tombent** sans lui. 236 suites vertes
 ---
 
 
-### NTP — lot N5 : l'authentification SIGNE — PRIS
+### NTP — lot N5 : l'authentification SIGNE — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Suite du chantier NTP (N1–N4),
 sur le point que j'avais laissé ouvert et nommé.
@@ -211,7 +211,47 @@ RFC 1305 annexe C, pas une invention. Le `md5` du dépôt est réel
 `network/ntp/NtpAgent.ts`, plus le journal Cisco pour le message.
 
 **Ce qui ne change pas** : les CLI des quatre plateformes, livrées en
-N1–N4, posent déjà les clés correctement. Ce lot ne touche qu'au moteur.
+N1–N4, posent déjà les clés correctement. Ce lot ne touche qu'au moteur
+et à `show ntp associations detail`.
+
+**Nouvelle règle de travail, appliquée à partir de ce lot** : vérifier
+le comportement contre le **matériel réel** (RFC, documentation
+constructeur, transcriptions) avant de figer un choix. Sur ce lot seul
+elle a corrigé **quatre** choses, dont deux de mes propres décisions :
+
+1. **Ma référence était fausse.** Je citais RFC 1305 annexe C ;
+   RFC 5905 §7.3 précise que sa construction **diffère** de RFC 1305 et
+   RFC 4330. C'est RFC 5905 qui est implémentée.
+2. **J'avais écrit un message qui n'existe pas.** Le tutoriel annonce un
+   `%NTP-4-AUTHENTICATION_FAILURE` ; les sources décrivent un rejet
+   **silencieux**. Je l'ai retiré, et un test **interdit** désormais
+   qu'il apparaisse. Émettre un syslog qu'un vrai routeur n'écrit pas
+   apprendrait à chercher une ligne inexistante.
+3. **`show ntp associations detail` est la seule vue qui révèle
+   l'authentification** — la vue brève ne la montre pas, et c'est
+   testé dans les deux sens.
+4. **Un serveur répond par un crypto-NAK** au lieu de se taire (clé
+   zéro, sans condensé).
+
+**Ce qui vous concerne** :
+
+- **`network/ntp/types.ts`** : `NtpPacket` gagne `mac`,
+  `NtpAssociation` gagne `authenticated`. `events.ts` : la raison
+  `bad-mac` s'ajoute aux trois existantes. Ajouts purs.
+- **`CiscoCommonShow.showNtpAssociationsDetail`** rend maintenant
+  `authenticated`/`unauthenticated` sur sa première ligne.
+- **Une erreur à moi, corrigée** : mon fichier de test du lot N4
+  construisait `new WindowsPC(\`W${n}\`)` alors que le premier paramètre
+  est un `DeviceType` — **12 erreurs de typage** que j'avais annoncées
+  comme « jeu identique » parce que je les avais mesurées **avant**
+  d'écrire le fichier, et que `git stash -u` remisait justement ce
+  fichier non suivi. Le décompte passe de **228 à 216**. La leçon vaut
+  pour nous deux : mesurer le typecheck **après** avoir écrit les tests.
+
+**Reste ouvert sur NTP** : `ntp access-group` est stocké et ne filtre
+rien ; rien ne compte les paquets ; le slewing/stepping n'est pas
+modélisé ; `chrony` ne lit pas encore son `keyfile`. Détails en fin de
+`PRD-NTP-Tutoriel.md`.
 
 
 ### `ip link set` pose vraiment — LIVRÉ
@@ -2833,7 +2873,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N4 livrés** — chantier clos |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N5 livrés** — authentification comprise |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
