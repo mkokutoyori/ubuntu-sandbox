@@ -160,6 +160,63 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### Routage — lot R8 : `maximum-paths` borne vraiment la répartition — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-Routage-Fidelite.md` §15. Ce lot **rouvre** un PRD que j'avais
+déclaré clos en R7, parce que `PRD-CLI-Fidelite-VRP.md` §18 avait nommé
+sans le traiter un défaut qui n'était pas de typage mais de fonction —
+et la mesure l'a trouvé bien plus large que sa moitié Huawei.
+
+**Le défaut.** L'ECMP de ce dépôt est RÉEL (`Router.lookupRoute` collecte
+toutes les routes à égalité parfaite et les emploie à tour de rôle). **Le
+plafond ne l'était pas** : la valeur était rangée dans **sept magasins**
+— un par protocole et par constructeur — et lue par personne. Donc
+**`maximum-paths 1` n'avait aucun effet**, alors que c'est la façon
+normale de COUPER la répartition et le premier geste de tout diagnostic
+de trafic asymétrique. Côté VRP, `maximum load-balancing` n'était **rendu
+nulle part** non plus, sur aucun des quatre protocoles, donc perdu au
+rechargement d'une topologie.
+
+**Ce qui vous concerne le plus** : `Router.maximumPathsFor(proto)` /
+`setMaximumPaths(proto, n)` est l'autorité unique que le plan de données
+consulte. Si vous ajoutez une commande qui touche l'ECMP d'un protocole,
+c'est là qu'elle écrit — les champs par protocole restent pour le rendu,
+un site d'écriture par commande.
+
+**Les défauts sont ceux du matériel, et leur différence est le sujet** :
+**BGP vaut 1** (« by default, BGP installs only the best path », et
+Huawei l'écrit aussi), **les IGP valent 4**. Les aligner tous sur 4
+apprendrait qu'un iBGP répartit tout seul, ce qui est faux et coûteux.
+Conséquence agréable : côté BGP la commande **ouvre** au lieu de
+restreindre, sens inverse de son emploi sous un IGP.
+
+**`connected` et `static` n'ont PAS de plafond, et c'est voulu** —
+`maximum-paths` vit sous un processus de routage, aucune commande ne
+borne les statiques. `maximumPathsFor` rend `Infinity` pour elles plutôt
+qu'une valeur inventée.
+
+**Une décision qui pourrait vous surprendre** : le plafond s'applique
+aussi à l'**installation** (`RouterOSPFIntegration.installRoutes`), pas
+seulement au choix du plan de données. Sans cela `show ip route`
+listerait quatre chemins sur une machine qui n'en emprunte qu'un, et les
+deux vues de la même machine se contrediraient. Il ne pouvait pas vivre
+dans `isRouteUsable` : il porte sur un GROUPE de chemins vers une
+destination, pas sur la validité d'une route.
+
+**Fichiers touchés** : `Router.ts`, `router/RouterOSPFIntegration.ts`,
+`router/routing/HuaweiRoutingExtras.ts`, `HuaweiVRPShell.ts`,
+`cisco/CiscoOspfCommands.ts`, `cisco/CiscoRoutingProtoCommands.ts`,
+`huawei/HuaweiDisplayCommands.ts`, `huawei/HuaweiOspfCommands.ts`.
+**Aucun contact avec le trie, l'aide `?` ni le logging.**
+
+**Mesures.** 264 suites connexes vertes (3 665 cas).
+`probe-maximum-paths-borne-ecmp.test.ts` (15 cas) discriminé par
+`git stash` sur les huit fichiers : **12 tombent**. Typecheck : jeu
+d'erreurs **identique** (217). Lint : 177 problèmes avant, 177 après.
+
+---
+
 ### NTP — lot N11 : les requêtes de contrôle (mode 6) — **LIVRÉ, chantier NTP clos**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -3474,7 +3531,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Fidélité CLI IOS (itération 3) | `PRD-CLI-Fidelite-IOS-Iteration3.md` | Livré |
 | Logging Cisco (arbre, refus, vues, commandes absentes) | `PRD-Logging-Cisco.md` | Livré |
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
-| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
+| Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R8 livrés** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
 | NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N11 livrés — chantier clos** |
