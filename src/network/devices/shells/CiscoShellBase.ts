@@ -1450,9 +1450,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // caret. C'est le texte d'IOS, mot pour mot.
     if (lower === 'help') return HELP_SYSTEM_TEXT;
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
-    if (lower === 'disable' && this.mode === 'privileged') {
-      this.mode = 'user';
-      this.currentPrivilegeLevel = 1;
+    // `disable [niveau]` — IOS accepte un niveau de destination, et
+    // c'est la moitie de la manoeuvre d'escalade temporaire : on monte a
+    // 15 pour l'intervention, on REDESCEND ensuite. Seul `disable` nu
+    // etait reconnu, donc `disable 10` repondait au caret et laissait
+    // l'operateur a 15 en croyant en etre redescendu.
+    if ((lower === 'disable' || lower.startsWith('disable '))
+      && (this.mode === 'user' || this.mode === 'privileged')) {
+      const arg = cmdPart.trim().split(/\s+/)[1];
+      const cible = arg === undefined ? 1 : Number.parseInt(arg, 10);
+      if (!Number.isFinite(cible) || cible < 0 || cible > 15) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
+      // Descendre seulement : `disable` ne fait jamais monter, sinon ce
+      // serait un `enable` sans mot de passe.
+      if (cible > this.currentPrivilegeLevel) return CISCO_ERRORS.INVALID_INPUT;
+      this.currentPrivilegeLevel = cible;
+      this.mode = cible >= 15 ? 'privileged' : 'user';
       return '';
     }
 
@@ -1653,6 +1667,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       || c.startsWith(ligne + ' '));
   }
 
+  /**
+   * La commande demandee exige-t-elle un niveau SUPERIEUR a celui de la
+   * session ?
+   *
+   * La regle la plus longue gagne, comme dans l'arbre d'IOS :
+   * `privilege exec level 7 show` et `privilege exec level 10 show
+   * running-config` coexistent, et c'est la seconde qui decide pour
+   * `show running-config`. Sans ce choix, l'ordre d'insertion dans la
+   * table trancherait — donc le comportement dependrait de l'ordre de
+   * frappe de l'operateur.
+   */
+  protected commandeHisseeAuDessusDuNiveau(cmdPart: string): boolean {
+    if (this.currentPrivilegeLevel >= 15) return false;
+    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
+    if (!rules || rules.size === 0) return false;
+    const lower = cmdPart.trim().toLowerCase();
+    let meilleur: { longueur: number; niveau: number } | null = null;
+    for (const [key, level] of rules) {
+      if (!key.startsWith('exec ')) continue;
+      const cible = key.slice(5);
+      if (lower !== cible && !lower.startsWith(cible + ' ')) continue;
+      if (!meilleur || cible.length > meilleur.longueur) {
+        meilleur = { longueur: cible.length, niveau: level };
+      }
+    }
+    return meilleur !== null && meilleur.niveau > this.currentPrivilegeLevel;
+  }
+
   private tryGrantedPrivilegeCommand(cmdPart: string): string | null {
     if (this.mode !== 'user' || this.currentPrivilegeLevel <= 1 || this.currentPrivilegeLevel >= 15) return null;
     const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
@@ -1756,6 +1798,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected executeOnTrie(cmdPart: string): string {
     const asNoDebug = CiscoShellBase.undebugAsNoDebug(cmdPart);
     if (asNoDebug !== null) cmdPart = asNoDebug;
+    // Une commande HISSEE au-dessus du niveau de la session n'existe
+    // plus pour elle. Le mecanisme n'agissait que dans un sens : il
+    // AJOUTAIT au socle du niveau 1 les commandes privilegiees
+    // accordees, et ne retirait jamais celles qu'on avait montees.
+    // `privilege exec level 7 ping` etait donc accepte, rendu dans la
+    // configuration, et `ping` restait disponible au niveau 1 — la
+    // moitie du chapitre « qui a le droit de faire quoi » ne faisait
+    // rien. La verification vient AVANT l'octroi, sinon une commande a
+    // la fois hissee et accordee dependrait de l'ordre de la table.
+    if ((this.mode === 'user' || this.mode === 'privileged')
+      && this.commandeHisseeAuDessusDuNiveau(cmdPart)) {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
     if (this.mode === 'user' && this.currentPrivilegeLevel > 1 && this.currentPrivilegeLevel < 15) {
       const granted = this.tryGrantedPrivilegeCommand(cmdPart);
       if (granted !== null) return granted;
@@ -1932,7 +1987,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const wasConfig = this.isConfigMode();
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
-    this.mode = newMode;
+    this.mode = this.modeDeRetour(newMode);
     this.clearFields(fieldsToCllear);
     this.announceConfigExit(wasConfig);
     return '';
@@ -1942,10 +1997,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const wasConfig = this.isConfigMode();
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.end();
-    this.mode = newMode;
+    this.mode = this.modeDeRetour(newMode);
     this.clearFields(fieldsToCllear);
     this.announceConfigExit(wasConfig);
     return '';
+  }
+
+  /**
+   * Le mode ou l'on RETOMBE en quittant la configuration.
+   *
+   * La machine a etats remonte toujours vers `privileged`, parce qu'elle
+   * ne connait que la hierarchie des modes et pas le niveau de la
+   * session. C'etait une ESCALADE DE PRIVILEGE : une session montee a
+   * `enable 10` a le droit d'entrer en configuration (si l'operateur le
+   * lui a donne), et son `end` la deposait en mode privilegie complet —
+   * `reload` et `write memory`, reserves au niveau 15, passaient alors,
+   * pendant que `show privilege` continuait d'annoncer 10. Le mode et le
+   * niveau se contredisaient sur la meme session au meme instant, et
+   * c'est le mode qui decidait.
+   *
+   * Un niveau intermediaire reste en mode `user` — c'est deja la regle
+   * qu'`enable N` applique, IOS n'affichant jamais `#` sous 15.
+   */
+  protected modeDeRetour(modeCalcule: CLIMode): CLIMode {
+    if (modeCalcule !== 'privileged') return modeCalcule;
+    return this.currentPrivilegeLevel >= 15 ? 'privileged' : 'user';
   }
 
   protected isConfigMode(): boolean {
