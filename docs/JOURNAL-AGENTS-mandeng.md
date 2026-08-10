@@ -160,6 +160,60 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### NTP — lot N9 : l'horloge se discipline — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §11.
+
+**Le défaut** : `selectAndSync` posait `config.offsetMs = best.offsetMs`.
+**Tout écart était appliqué d'un coup, quelle qu'en soit la taille** —
+donc le §2 du tutoriel (glissement, saut, mode panique) n'avait aucune
+contrepartie observable, et `chronyc makestep` corrigeait un écart déjà
+corrigé.
+
+**La vérification a contredit le tutoriel, et c'est le cœur du lot.** Le
+tutoriel écrit « si l'offset est grand (> 128 ms), NTP peut corriger d'un
+coup ». Un vrai ntpd fait l'inverse : au-delà du seuil, la mesure est
+**d'abord écartée** comme aberrante — une pointe de congestion réseau —
+et ce n'est que si l'écart **persiste** au-delà du seuil de sortie
+(300 s) que l'horloge saute. C'est exactement ce qui empêche une mesure
+isolée de dérégler une machine ; un simulateur qui sauterait tout de
+suite enseignerait le contraire de ce que fait le matériel. Seuils
+retenus : saut 128 ms, sortie 300 s, panique 1000 s, glissement 500 ppm
+(« approximately 33 minutes per second of correction » — c'est ce coût
+qui rend le saut nécessaire).
+
+**Quatre états et non cinq, et le dire vaut mieux que l'inventer** :
+NSET, SPIK, SYNC, PANIC. **FREQ n'est pas modélisé** parce qu'il sert à
+l'entraînement de FRÉQUENCE et que ce simulateur n'a pas d'horloge
+matérielle qui dérive — la dérive y est une mesure, pas une propriété du
+quartz.
+
+**Ce qui vous concerne** : `network/ntp/discipline.ts` est un module
+neuf et autonome (aucune dépendance sur un équipement), branché en un
+seul point — `NtpAgent.selectAndSync`. Une aberration ou une panique ne
+synchronisent plus, donc le stratum ne descend pas et l'horloge garde son
+écart précédent. `show ntp status` lit désormais
+`nomLoopfilterIos(agent.getEtatHorloge().etat)` au lieu de
+`synced ? 'CTRL' : 'FSET'` — c'est ce qui lui permet enfin d'afficher
+`SPIK` et `PANIC`.
+
+**Une erreur de test à moi, corrigée** : j'avais affirmé que `chronyc
+makestep` laisse `derniereDecision === 'step'`. Faux — la commande
+re-sonde ensuite. L'assertion testait l'ordre des appels au lieu de
+l'effet ; réécrite pour vérifier que l'écart est rattrapé.
+
+**Mesures.** 249 suites connexes vertes (4 636 cas).
+`tuto-ntp-discipline.test.ts` (22 cas) discriminé par `git stash` :
+**5 tombent** — exactement ceux qui passent par une vraie machine ; les
+17 autres exercent le module neuf et sont nommés comme garde-fous dans
+l'en-tête du fichier. Typecheck stable (216).
+
+**Reste ouvert sur NTP** : `chrony` ne lit pas son `keyfile` ; les
+requêtes de contrôle (mode 6) n'existent pas.
+
+---
+
 ### NTP — lot N8 : les compteurs de paquets — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -3272,7 +3326,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N8 livrés** |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N9 livrés** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
