@@ -59,10 +59,10 @@ export class VtyLineConfigStore {
   }
 
   /** Used by show-config renderers: returns the lines for every block in order. */
-  renderAllCisco(): string[] {
+  renderAllCisco(serviceEncryption = false): string[] {
     const out: string[] = [];
     for (const block of this.all()) {
-      out.push(...block.renderCisco());
+      out.push(...block.renderCisco(serviceEncryption));
       out.push('!');
     }
     return out;

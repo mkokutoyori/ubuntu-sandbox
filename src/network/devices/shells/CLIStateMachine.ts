@@ -192,6 +192,14 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-access-map': { parent: 'config', clearOnExit: ['selectedAccessMap'] },
   'config-archive':     { parent: 'config' },
   'config-archive-log': { parent: 'config-archive' },
+  // Les trois sous-modes de la famille identite. Sans eux, un `exit`
+  // depuis `config-tacacs-server` ne remontait nulle part : le shell y
+  // restait, et TOUT ce qui suivait etait juge dans un mode ou seules
+  // `address`/`key`/`timeout` existent — donc refuse, y compris
+  // `aaa new-model`.
+  'config-radius-server': { parent: 'config', clearOnExit: ['selectedRadiusServer'] },
+  'config-tacacs-server': { parent: 'config', clearOnExit: ['selectedTacacsServer'] },
+  'config-aaa-group':     { parent: 'config', clearOnExit: ['selectedAaaGroup'] },
 };
 
 // ─── Huawei VRP Mode Hierarchy ────────────────────────────────────

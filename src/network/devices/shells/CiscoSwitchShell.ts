@@ -25,8 +25,14 @@ import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
-import { showInterface } from './cisco/CiscoShowCommands';
+import {
+  showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
+} from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
+import {
+  buildIdentityConfigCommands, buildIdentitySubmodeCommands,
+  buildIdentityShowCommands, type CiscoSecurityShellContext,
+} from './cisco/CiscoSecurityCommands';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
@@ -298,6 +304,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return out === '[OK]' ? 'Building configuration...\n[OK]' : out;
   }
 
+  private readonly configRadiusServerTrie = new CommandTrie();
+  private readonly configTacacsServerTrie = new CommandTrie();
+  private readonly configAaaGroupTrie = new CommandTrie();
+  private selectedRadiusServer: string | null = null;
+  private selectedTacacsServer: string | null = null;
+  private selectedAaaGroup: string | null = null;
+
   protected getActiveTrie(): CommandTrie {
     switch (this.mode) {
       case 'user':        return this.userTrie;
@@ -312,6 +325,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       case 'config-acl':  return this.configAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-access-map': return this.configAccessMapTrie;
+      case 'config-radius-server': return this.configRadiusServerTrie;
+      case 'config-tacacs-server': return this.configTacacsServerTrie;
+      case 'config-aaa-group':     return this.configAaaGroupTrie;
       default:            return this.userTrie;
     }
   }
@@ -324,6 +340,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (f === 'selectedAcl') { this.selectedAcl = null; this.selectedArpAcl = null; }
       if (f === 'selectedDhcpPool') this.selectedDhcpPool = null;
       if (f === 'selectedAccessMap') this.selectedAccessMap = null;
+      if (f === 'selectedRadiusServer') this.selectedRadiusServer = null;
+      if (f === 'selectedTacacsServer') this.selectedTacacsServer = null;
+      if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
     }
   }
 
@@ -2544,30 +2563,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configTrie.register('no shutdown', 'Enable interface', () => '');
 
     // ── Management plane: SSH host keys, domain, default-gateway ──
-    this.configTrie.registerGreedy('crypto key generate rsa', 'Generate RSA host keys', () => {
-      if (!this.d().getDomainName()) {
-        return '% Please define a domain-name first.';
-      }
-      this.d()._generateRsaKeys();
-      const fqdn = `${this.d().getHostname()}.${this.d().getDomainName()}`;
-      return [
-        `The name for the keys will be: ${fqdn}`,
-        '% The key modulus size is 512 bits',
-        '% Generating 512 bit RSA keys, keys will be non-exportable...[OK]',
-        'RSA key pair generated',
-      ].join('\n');
-    });
-    this.configTrie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
-      return '% Keys to be removed are named ' + `${this.d().getHostname()}.${this.d().getDomainName()}` + '.';
-    });
-    this.configTrie.registerGreedy('ip ssh version', 'Set the SSH version', () => {
-      // SSH requires RSA host keys (`crypto key generate rsa`) first — IOS
-      // refuses to bring SSH up without them.
-      if (!this.d().hasRsaKeys()) {
-        return 'Please create RSA keys to enable SSH (and of at least 768 bits for SSH v2).';
-      }
-      return '';
-    });
+    // `crypto key generate rsa`, `crypto key zeroize rsa` et
+    // `ip ssh version` vivaient ICI, en dur : la premiere ignorait
+    // `modulus`/`label`/`usage-keys` et annoncait 512 bits quoi qu'on
+    // demande, la deuxieme rendait une phrase sans rien supprimer, et la
+    // troisieme ne rangeait rien — `show ip ssh` annoncait donc 1.99
+    // apres un `ip ssh version 2` accepte sur la meme machine. Les vraies
+    // sont enregistrees avec la famille identite, sur le meme magasin que
+    // le routeur.
     this.configTrie.registerGreedy('ip default-gateway', 'Set the management default gateway', (args) => {
       if (!args[0] || !IPAddress.isValid(args[0])) return "% Invalid input detected at '^' marker.";
       this.d()._setDefaultGateway(args[0]);
@@ -3182,6 +3185,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── Running Config Builder ───────────────────────────────────────
 
   buildRunningConfig(sw: CiscoSwitch): string {
+    const chiffre = sw.getServiceFlags?.().get('password-encryption') === true;
     const lines = [
       'Building configuration...',
       '',
@@ -3203,7 +3207,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (enableSecret) lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo, 'enable')}`);
     const enablePassword = sw.getEnablePassword();
     if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false, false, 'enable')}`);
-    if (enableSecret || enablePassword) lines.push('!');
+    // AAA / TACACS+ / RADIUS / `login block-for` / vues d'analyseur.
+    // Le magasin est attache a l'appareil par un symbole, donc le
+    // Catalyst le portait deja des qu'il a su ces commandes — seul le
+    // rendu du routeur le lisait, si bien qu'une configuration TACACS+
+    // posee sur un commutateur etait acceptee, honoree par les vues, et
+    // perdue au rechargement de la topologie.
+    const secLines = (sw as unknown as {
+      [s: symbol]: { asRunningConfigLines?: () => string[] } | undefined;
+    })[Symbol.for('CiscoSecurityConfig')]?.asRunningConfigLines?.() ?? [];
+    if (secLines.length > 0) { lines.push(...secLines); lines.push('!'); }
+
+    // `enable secret level N` — le MEME rendu que le routeur. Le magasin
+    // vit sur `Equipment`, donc le Catalyst le portait deja ; seul le
+    // rendu du routeur le lisait, si bien qu'un niveau intermediaire
+    // configure ici disparaissait au rechargement de la topologie.
+    const niveaux = enableLevelSecretConfigLines(sw, chiffre);
+    if (niveaux.length > 0) lines.push(...niveaux);
+    if (enableSecret || enablePassword || niveaux.length > 0) lines.push('!');
 
     if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
@@ -3220,8 +3241,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push('!');
     }
 
+    // `line console 0` et `line aux 0` — le MEME rendu que le routeur.
+    // Ils n'etaient ecrits que la, donc un Catalyst acceptait
+    // `password`/`login` sur sa console et ne les rendait nulle part.
+    lines.push(...consoleAndAuxLineConfigLines(sw, chiffre));
+
     // VTY line configuration (transport input, login, password, …).
-    const vtyLines = sw._getVtyLineConfig().renderAllCisco();
+    const vtyLines = sw._getVtyLineConfig().renderAllCisco(chiffre);
     if (vtyLines.length > 0) { lines.push(...vtyLines); lines.push('!'); }
 
     if (sw.isIpRoutingEnabled()) { lines.push('ip routing'); lines.push('!'); }
@@ -4303,6 +4329,30 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       setSelectedDHCPPool: (p: string | null) => { this.selectedDhcpPool = p; },
     } as unknown as CiscoShellContext;
     buildConfigDhcpCommands(this.configDhcpTrie, dhcpCtx);
+
+    // ── AAA / TACACS+ / RADIUS / protection force brute ──
+    // Un Catalyst 2960 connait toute cette famille ; elle vivait dans le
+    // module de securite du ROUTEUR, qui enregistre aussi des commandes
+    // qu'un commutateur n'a pas (`zone security`, `class-map type
+    // inspect`). Extraite, elle sert les deux sans leur donner le reste.
+    const identityCtx = {
+      r: () => this.d() as unknown as Router,
+      setMode: (m: string) => { this.mode = m as CLIMode; },
+      setRadiusServer: (n: string | null) => { this.selectedRadiusServer = n; },
+      getRadiusServer: () => this.selectedRadiusServer,
+      setTacacsServer: (n: string | null) => { this.selectedTacacsServer = n; },
+      getTacacsServer: () => this.selectedTacacsServer,
+      setAaaGroup: (n: string | null) => { this.selectedAaaGroup = n; },
+      getAaaGroup: () => this.selectedAaaGroup,
+    } as unknown as CiscoSecurityShellContext;
+    buildIdentityConfigCommands(this.configTrie, identityCtx);
+    buildIdentitySubmodeCommands(
+      this.configRadiusServerTrie, this.configTacacsServerTrie,
+      this.configAaaGroupTrie, identityCtx,
+    );
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      buildIdentityShowCommands(t, () => this.d());
+    }
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {

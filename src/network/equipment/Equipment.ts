@@ -78,6 +78,23 @@ export abstract class Equipment {
       .map(([level, v]) => ({ level, ...v }));
   }
   /** All configured per-level (non-15) enable secret entries — used by `show running-config`. */
+  /**
+   * Les drapeaux `service X` de la machine (`password-encryption`,
+   * `timestamps`, …).
+   *
+   * Ils vivaient sur `Router` seul, si bien que
+   * `service password-encryption` sur un Catalyst etait acceptee, sans
+   * magasin et sans effet : le mot de passe de ligne restait en clair
+   * dans la configuration, c'est-a-dire que la commande ne faisait rien
+   * de ce qu'elle promet sur la seule chose qu'elle existe pour couvrir.
+   * Le secret `enable`, lui, vit deja ici — les deux appartiennent au
+   * meme fait.
+   */
+  private readonly _serviceFlags: Map<string, boolean> = new Map();
+
+  getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
+  _setServiceFlag(name: string, on: boolean): void { this._serviceFlags.set(name, on); }
+
   listEnableSecretLevels(): ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }> {
     return [...this._enableSecretLevels.entries()]
       .sort(([a], [b]) => a - b)

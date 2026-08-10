@@ -439,6 +439,8 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  const serviceEncryption = router.getServiceFlags().get('password-encryption') === true;
+
   const shell = (router as unknown as {
     shell?: {
       _getConsoleLineConfig?: () => unknown;
@@ -453,43 +455,7 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
-  const consoleCfg = shell?._getConsoleLineConfig?.() as null | {
-    line: number;
-    password: string | null;
-    passwordEncrypted: boolean;
-    login: 'password' | 'local' | 'none' | null;
-    privilegeLevel: number | null;
-    execTimeoutMin: number | null;
-    execTimeoutSec: number;
-    loggingSynchronous: boolean;
-  };
-  if (consoleCfg) {
-    lines.push(`line console ${consoleCfg.line}`);
-    if (consoleCfg.password != null) {
-      lines.push(` password ${consoleCfg.passwordEncrypted ? '7 ' : ''}${consoleCfg.password}`);
-    }
-    if (consoleCfg.login === 'local') lines.push(' login local');
-    else if (consoleCfg.login === 'password') lines.push(' login');
-    else if (consoleCfg.login === 'none') lines.push(' no login');
-    if (consoleCfg.privilegeLevel != null) lines.push(` privilege level ${consoleCfg.privilegeLevel}`);
-    if (consoleCfg.execTimeoutMin != null) {
-      lines.push(` exec-timeout ${consoleCfg.execTimeoutMin} ${consoleCfg.execTimeoutSec}`);
-    }
-    if (consoleCfg.loggingSynchronous) lines.push(' logging synchronous');
-    lines.push('!');
-  }
-
-  const auxCfg = shell?._getAuxLineConfig?.() as null | {
-    line: number;
-    noExec: boolean;
-    transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null;
-  };
-  if (auxCfg) {
-    lines.push(`line aux ${auxCfg.line}`);
-    if (auxCfg.noExec) lines.push(' no exec');
-    if (auxCfg.transportInput != null) lines.push(` transport input ${auxCfg.transportInput}`);
-    lines.push('!');
-  }
+  lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
 
   if (dhcp.isEnabled()) {
     lines.push('service dhcp');
@@ -561,7 +527,6 @@ export function showRunningConfig(router: Router): string {
   }
 
   // Local AAA users (`username NAME privilege N secret …`).
-  const serviceEncryption = router.getServiceFlags().get('password-encryption') === true;
   const listUsers = (router as unknown as {
     _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: SecretAlgo; factoryDefault?: boolean }>;
   })._listLocalUsers;
@@ -587,9 +552,9 @@ export function showRunningConfig(router: Router): string {
   }
 
   // VTY line configuration (exec-timeout, access-class, transport input, …)
-  const vtyStore = (router as unknown as { _getVtyLineConfig?: () => { renderAllCisco: () => string[] } })._getVtyLineConfig?.();
+  const vtyStore = (router as unknown as { _getVtyLineConfig?: () => { renderAllCisco: (e?: boolean) => string[] } })._getVtyLineConfig?.();
   if (vtyStore) {
-    const vtyLines = vtyStore.renderAllCisco();
+    const vtyLines = vtyStore.renderAllCisco(serviceEncryption);
     if (vtyLines.length > 0) {
       lines.push(...vtyLines);
     }
@@ -610,16 +575,7 @@ export function showRunningConfig(router: Router): string {
     // password` is never shown with an explicit `0` type digit.
     lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, serviceEncryption, false, 'enable')}`);
   }
-  const levelStore = router as unknown as {
-    listEnableSecretLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }>;
-    listEnablePasswordLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'type-7' }>;
-  };
-  for (const e of levelStore.listEnableSecretLevels?.() ?? []) {
-    lines.push(`enable secret level ${e.level} ${renderSecretField(e.value, e.algo, `enable:${e.level}`)}`);
-  }
-  for (const e of levelStore.listEnablePasswordLevels?.() ?? []) {
-    lines.push(`enable password level ${e.level} ${renderPasswordField(e.value, e.algo, serviceEncryption, false, `enable:${e.level}`)}`);
-  }
+  lines.push(...enableLevelSecretConfigLines(router, serviceEncryption));
   for (const [name, on] of router.getServiceFlags()) {
     lines.push(`${on ? '' : 'no '}service ${name}`);
   }
@@ -1443,4 +1399,100 @@ export function showBgpNotActive(): string {
 /** `show ip eigrp …` — honest state: no EIGRP process configured. */
 export function showEigrpNotRunning(): string {
   return '% EIGRP not running (no autonomous-system configured)';
+}
+
+/**
+ * Les blocs `line console 0` et `line aux 0`, rendus a partir du shell
+ * qui les porte.
+ *
+ * Ils etaient ecrits DANS le rendu du routeur, donc le commutateur n'en
+ * avait aucun : `line console 0` / `password` / `login` etaient acceptes
+ * sur un Catalyst et ne paraissaient nulle part. Ce n'est pas qu'un
+ * defaut d'affichage — la premiere securite qu'un cours fait poser
+ * disparaissait, et la configuration rendue est ce qui REFAIT la
+ * machine a l'import d'une topologie.
+ */
+export function consoleAndAuxLineConfigLines(
+  device: unknown, serviceEncryption = false,
+): string[] {
+  const shell = (device as {
+    shell?: {
+      _getConsoleLineConfig?: () => unknown;
+      _getAuxLineConfig?: () => unknown;
+    };
+  }).shell;
+  const lines: string[] = [];
+
+  const consoleCfg = shell?._getConsoleLineConfig?.() as null | {
+    line: number;
+    password: string | null;
+    passwordEncrypted: boolean;
+    login: 'password' | 'local' | 'none' | null;
+    privilegeLevel: number | null;
+    execTimeoutMin: number | null;
+    execTimeoutSec: number;
+    loggingSynchronous: boolean;
+  };
+  if (consoleCfg) {
+    lines.push(`line console ${consoleCfg.line}`);
+    if (consoleCfg.password != null) {
+      lines.push(` password ${renderPasswordField(
+        consoleCfg.password, consoleCfg.passwordEncrypted ? 'type-7' : 'plain-password',
+        serviceEncryption, false, 'line-console')}`);
+    }
+    if (consoleCfg.login === 'local') lines.push(' login local');
+    else if (consoleCfg.login === 'password') lines.push(' login');
+    else if (consoleCfg.login === 'none') lines.push(' no login');
+    if (consoleCfg.privilegeLevel != null) lines.push(` privilege level ${consoleCfg.privilegeLevel}`);
+    if (consoleCfg.execTimeoutMin != null) {
+      lines.push(` exec-timeout ${consoleCfg.execTimeoutMin} ${consoleCfg.execTimeoutSec}`);
+    }
+    if (consoleCfg.loggingSynchronous) lines.push(' logging synchronous');
+    lines.push('!');
+  }
+
+  const auxCfg = shell?._getAuxLineConfig?.() as null | {
+    line: number;
+    noExec: boolean;
+    transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null;
+  };
+  if (auxCfg) {
+    lines.push(`line aux ${auxCfg.line}`);
+    if (auxCfg.noExec) lines.push(' no exec');
+    if (auxCfg.transportInput != null) lines.push(` transport input ${auxCfg.transportInput}`);
+    lines.push('!');
+  }
+  return lines;
+}
+
+/**
+ * `enable secret level N` / `enable password level N`.
+ *
+ * Le magasin vit sur `Equipment`, donc le commutateur le porte depuis
+ * toujours — mais seul le rendu du ROUTEUR le lisait. Un
+ * `enable secret level 7` pose sur un Catalyst fonctionnait, ouvrait
+ * bien le niveau 7, et disparaissait de la configuration : perdu au
+ * rechargement d'une topologie, donc le niveau intermediaire n'etait
+ * plus accessible a personne apres un aller-retour.
+ */
+export function enableLevelSecretConfigLines(
+  device: unknown, serviceEncryption: boolean,
+): string[] {
+  const store = device as {
+    listEnableSecretLevels?: () => ReadonlyArray<{
+      level: number; value: string;
+      algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+    }>;
+    listEnablePasswordLevels?: () => ReadonlyArray<{
+      level: number; value: string; algo: 'plain' | 'type-7';
+    }>;
+  };
+  const out: string[] = [];
+  for (const e of store.listEnableSecretLevels?.() ?? []) {
+    out.push(`enable secret level ${e.level} ${renderSecretField(e.value, e.algo, `enable:${e.level}`)}`);
+  }
+  for (const e of store.listEnablePasswordLevels?.() ?? []) {
+    out.push(`enable password level ${e.level} ${renderPasswordField(e.value, e.algo, serviceEncryption, false, `enable:${e.level}`)}`);
+  }
+  return out;
 }

@@ -22,6 +22,8 @@ export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
  * arithmetic (membership, overlap, size) that shells and the store would
  * otherwise reimplement ad hoc.
  */
+import { renderPasswordField } from '../../shells/cisco/ciscoPasswordRender';
+
 export class VtyLineRange {
   constructor(public readonly first: number, public readonly last: number) {
     if (last < first) throw new Error(`Invalid vty range: ${first} ${last}`);
@@ -138,8 +140,17 @@ export class VtyLineConfig {
     });
   }
 
-  /** Cisco IOS `show running-config` block for `line vty <first> <last>`. */
-  renderCisco(): string[] {
+  /**
+   * Cisco IOS `show running-config` block for `line vty <first> <last>`.
+   *
+   * `serviceEncryption` est le drapeau `service password-encryption` de
+   * la machine. Il n'etait consulte NULLE PART pour un mot de passe de
+   * ligne : la commande etait acceptee, annoncee, et le mot de passe
+   * restait en clair dans la configuration — c'est-a-dire que la
+   * commande ne faisait rien de ce qu'elle promet, sur la seule chose
+   * qu'elle existe pour couvrir.
+   */
+  renderCisco(serviceEncryption = false): string[] {
     const lines: string[] = [`line vty ${this.first}${this.first === this.last ? '' : ' ' + this.last}`];
     if (this.execTimeoutMinutes !== null || this.execTimeoutSeconds !== null) {
       lines.push(` exec-timeout ${this.execTimeoutMinutes ?? 0} ${this.execTimeoutSeconds ?? 0}`);
@@ -147,7 +158,9 @@ export class VtyLineConfig {
     if (this.loginTimeoutSeconds !== null) lines.push(` login-timeout ${this.loginTimeoutSeconds}`);
     if (this.accessClassIn  !== null) lines.push(` access-class ${this.accessClassIn} in`);
     if (this.accessClassOut !== null) lines.push(` access-class ${this.accessClassOut} out`);
-    if (this.linePassword) lines.push(` password ${this.linePassword}`);
+    if (this.linePassword) {
+      lines.push(` password ${renderPasswordField(this.linePassword, 'plain-password', serviceEncryption, false, `line-vty:${this.first}`)}`);
+    }
     if (this.login !== null) {
       if (this.login === 'local') lines.push(' login local');
       else if (this.login === 'aaa') lines.push(' login authentication default');

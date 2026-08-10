@@ -35,6 +35,8 @@ import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddr
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
+import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
+import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP } from '../vrrp/types';
@@ -2635,20 +2637,63 @@ export abstract class Switch extends Equipment {
 
   // ─── Management plane: domain / SSH host keys / default-gateway ────
   private _domainName = '';
-  private _hasRsaKeys = false;
+
   private _ipDefaultGateway = '';
   /** @internal `ip domain-name` (device fallback for the shared handler). */
   _setDomainName(name: string): void { this._domainName = name; }
   getDomainName(): string { return this._domainName; }
   /** @internal `crypto key generate rsa`. */
-  _generateRsaKeys(): void { this._hasRsaKeys = true; }
-  hasRsaKeys(): boolean { return this._hasRsaKeys; }
+  /**
+   * Les cles RSA vivent dans `CiscoSecurityConfig`, attache a la machine
+   * par un symbole — le MEME magasin que le routeur. Un booleen a part
+   * donnait deux reponses a « cette machine a-t-elle une paire ? », et
+   * c'est ce qui laissait `crypto key zeroize rsa` du commutateur
+   * annoncer une suppression qui n'ecrivait dans aucun des deux.
+   */
+  _generateRsaKeys(): void {
+    const sec = getSecurityConfig(this);
+    if (sec.cryptoKeys.length === 0) {
+      sec.cryptoKeys.push({
+        label: `${this.getHostname()}.${this.getDomainName() ?? ''}`,
+        modulus: 512, general: true, generatedAtMs: Date.now(),
+      });
+    }
+  }
+  hasRsaKeys(): boolean { return getSecurityConfig(this).cryptoKeys.length > 0; }
   /** @internal `ip default-gateway` (L2 switch management route). */
   _setDefaultGateway(ip: string): void { this._ipDefaultGateway = ip; }
   getDefaultGateway(): string { return this._ipDefaultGateway; }
 
   // ─── Local user database (`username …`) ───────────────────────────
   private _credentialStore: NetworkOsCredentialStore | null = null;
+  /**
+   * `transport input` sur les vty. Le magasin manquait au commutateur,
+   * donc `transport input ssh` etait accepte et rendu nulle part —
+   * perdu au rechargement d'une topologie. Il n'ouvre aucune ecoute
+   * ici, ce commutateur n'ayant pas de pile TCP ; c'est la
+   * configuration qui est conservee, pas un serveur qui demarre.
+   */
+  private vtyTransportInput: 'ssh' | 'telnet' | 'all' | 'none' = 'all';
+  _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
+    this.vtyTransportInput = t;
+  }
+  _getVtyTransportInput(): 'ssh' | 'telnet' | 'all' | 'none' {
+    return this.vtyTransportInput;
+  }
+
+  private _aaaAuthenticator: AaaAuthenticator | null = null;
+
+  /**
+   * Un Catalyst authentifie par AAA comme un routeur : meme magasin
+   * (attache par symbole), meme moteur. Il etait type contre `Router`,
+   * donc `test aaa group` et toute la chaine AAA restaient hors de
+   * portee du commutateur.
+   */
+  getAaaAuthenticator(): AaaAuthenticator {
+    if (!this._aaaAuthenticator) this._aaaAuthenticator = new AaaAuthenticator(this as never);
+    return this._aaaAuthenticator;
+  }
+
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
