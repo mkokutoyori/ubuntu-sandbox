@@ -554,6 +554,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected onSave(): string {
     this.d().writeMemory();
+    (this.d() as unknown as { _noteNvramWrite?: (u: string) => void })
+      ._noteNvramWrite?.(this.configSessionLabel);
     this.startupAliases = this.aliases.snapshot();
     this.archiveAfterSave();
     return 'Building configuration...\n[OK]';
@@ -564,8 +566,19 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.startupAliases = null;
   }
 
+  /**
+   * Le démarrage relit `nvram:` — sauf quand le registre le lui interdit.
+   * `ignoreStartupConfig()` était écrite, documentée, et appelée par
+   * personne : `config-register 0x2142` puis `reload` rechargeait la
+   * configuration sauvegardée comme si le bit n'existait pas, donc la
+   * moitié du chapitre « mot de passe oublié » ne pouvait pas se faire.
+   * La sauvegarde est INTACTE dans `nvram:` — c'est le point de la
+   * manœuvre : elle est là, elle n'est simplement pas chargée, et c'est
+   * pourquoi on la relit ensuite par `copy startup-config running-config`.
+   */
   private reloadFromNvram(device: Router): void {
     device._resetConfigurableStateForReload();
+    if (this.bootIgnoresStartupConfig(device)) return;
     device._restoreStartupConfig();
   }
 
@@ -945,7 +958,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const section = (title: string, body: string) =>
         `------------------ ${title} ------------------\n${body}`;
       return [
-        section('show version', Show.showVersion(r, this.getChassisProfile())),
+        section('show version', Show.showVersion(r, this.getChassisProfile(),
+          this.fs().renderConfigRegisterLine())),
         section('show running-config', Show.showRunningConfig(r)),
         section('show ip interface brief', Show.showIpIntBrief(r)),
         section('show ip route', Show.showIpRoute(r)),
@@ -1037,7 +1051,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return Show.showRunningConfigInterface(getRouter(), ifName);
     });
 
-    trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter(), this.getChassisProfile()));
+    trie.register('show version', 'Display system hardware and software status',
+      () => Show.showVersion(getRouter(), this.getChassisProfile(),
+        this.fs().renderConfigRegisterLine()));
 
     // `show interface[s] [<name>|description|status|summary]`.
     // Registered under both the singular and plural IOS spellings;

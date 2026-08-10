@@ -21,7 +21,10 @@
 import type { CommandTrie } from '../CommandTrie';
 import type { ArchiveService, ConfigLogRecord } from '../../router/archive/ArchiveService';
 import { renderTable, type TableColumn, FIXED_TABLE } from '../cli/TextTable';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
+import {
+  parseConfigReplaceArgs, replacePlan, CONFIG_REPLACE_BANNER,
+} from '../../router/archive/ConfigReplace';
 
 export type ArchiveAccessor = () => ArchiveService | undefined;
 
@@ -55,6 +58,9 @@ const SANS_CHEMIN = '% Archive path not configured';
 /** `archive config` (EXEC privilégié) — archive la configuration courante. */
 export function registerArchiveExecCommands(
   trie: CommandTrie, ar: ArchiveAccessor, runningConfig: () => string,
+  lireFichier: (url: string) => string | null = () => null,
+  lireStartup: () => string | null = () => null,
+  appliquer: (texte: string) => void = () => {},
 ): void {
   trie.register('show archive', 'Display archive status', () => {
     const s = ar();
@@ -76,7 +82,13 @@ export function registerArchiveExecCommands(
     const courant = runningConfig();
     const lire = (ref: string): string | null => {
       if (/^system:running-config$/i.test(ref)) return courant;
-      return s.readArchivedConfig(ref);
+      // `nvram:startup-config` est la moitié gauche de la comparaison
+      // que le chapitre présente comme LE contrôle d'audit : « la
+      // configuration courante est-elle sauvegardée ? ». La commande ne
+      // savait lire que des archives, donc cette forme-là — la seule
+      // vraiment utile — répondait `%Error opening`.
+      if (/^(nvram:startup-config|nvram:|startup-config)$/i.test(ref)) return lireStartup();
+      return s.readArchivedConfig(ref) ?? lireFichier(ref);
     };
     if (args.length === 0) {
       const derniere = s.latestArchivedConfig();
@@ -115,6 +127,61 @@ export function registerArchiveExecCommands(
     const choisis = mot === 'all' ? tous : tous.filter((r) => r.index >= Number(mot));
     return renderConfigLog(choisis);
   });
+  /**
+   * `configure replace <url> [force|list|time <n>]` — la VRAIE
+   * restauration, celle que le chapitre oppose à `copy`.
+   *
+   * `copy <source> running-config` fusionne : ce que la courante porte
+   * en trop y reste. `configure replace` calcule la différence puis
+   * applique les ajouts ET les suppressions, si bien que la courante
+   * finit exactement égale au fichier. La commande n'existait pas du
+   * tout : la moitié restauration du tutoriel était injouable.
+   *
+   * Deux limites écrites plutôt que tues. (1) L'application passe par
+   * la remise à zéro de l'état rejouable puis le rejeu du fichier, là
+   * où IOS n'applique que le delta ; l'état FINAL est le même — c'est ce
+   * que la commande promet — mais un vrai IOS perturbe moins ce qui n'a
+   * pas changé. (2) `time <n>` arme sur IOS un retour arrière si la
+   * session meurt avant confirmation ; ici la commande s'exécute
+   * entièrement dans l'appel, donc rien ne peut mourir entre les deux :
+   * le mot-clé est accepté et son effet annoncé, pas simulé.
+   */
+  trie.registerGreedy('configure replace', 'Replace the running configuration', (args) => {
+    if (args.length === 0) throw new CliIncomplete();
+    const { url, options, erreur } = parseConfigReplaceArgs(args);
+    if (erreur) return erreur;
+
+    const s = ar();
+    const courant = runningConfig();
+    let cible: string | null = null;
+    if (/^(nvram:startup-config|nvram:|startup-config)$/i.test(url)) {
+      cible = lireStartup();
+      if (cible === null) return '%% Non-volatile configuration memory is not present';
+    } else if (/^archive:/i.test(url)) {
+      cible = s?.readArchivedConfig(url.replace(/^archive:/i, '')) ?? null;
+    } else {
+      cible = lireFichier(url);
+    }
+    if (cible === null) return `%Error opening ${url} (No such file or directory)`;
+
+    const plan = replacePlan(courant, cible);
+    if (options.list) {
+      const lignes = ['!List of Commands:'];
+      for (const l of plan.suppressions) lignes.push(`no ${l.trim()}`);
+      for (const l of plan.ajouts) lignes.push(l);
+      lignes.push('end');
+      return lignes.join('\n');
+    }
+
+    const tete = options.force ? [] : [CONFIG_REPLACE_BANNER, ''];
+    if (options.timeMinutes !== null) {
+      tete.push(`A rollback will automatically be triggered in ${options.timeMinutes} `
+        + `minute${options.timeMinutes === 1 ? '' : 's'} if the operation fails.`, '');
+    }
+    appliquer(cible);
+    return [...tete, 'Total number of passes: 1', 'Rollback Done'].join('\n');
+  });
+
   trie.register('archive config', 'Archive the running configuration', () => {
     const s = ar();
     if (!s) return SANS_CHEMIN;

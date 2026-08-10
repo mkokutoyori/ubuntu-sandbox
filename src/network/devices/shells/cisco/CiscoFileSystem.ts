@@ -69,7 +69,10 @@ export class CiscoFileSystem {
   /** `boot system flash:<image>`, dans l'ordre de déclaration. */
   private readonly bootSystem: string[] = [];
 
-  constructor(profile: CiscoChassisProfile, private readonly now: () => Date = () => new Date()) {
+  constructor(
+    private readonly profile: CiscoChassisProfile,
+    private readonly now: () => Date = () => new Date(),
+  ) {
     const hw = CISCO_HARDWARE_PROFILES[profile];
     const naissance = new Date(2024, 2, 1);
     this.totalBytes = hw.flashTotalBytes;
@@ -110,6 +113,28 @@ export class CiscoFileSystem {
   }
 
   /** Rend vrai si le fichier existait. */
+  /**
+   * `mkdir` — un répertoire est une entrée de taille nulle marquée
+   * `drwx`, comme `dir` la rend déjà pour `archive/`.
+   */
+  makeDirectory(name: string): void {
+    const clef = stripFs(name).replace(/\/+$/, '');
+    if (clef === '' || this.flash.has(clef)) return;
+    this.flash.set(clef, { name: clef, size: 0, directory: true, modified: this.now() });
+  }
+
+  /** `rmdir` — refuse un répertoire non vide, comme IOS. */
+  removeDirectory(name: string): 'ok' | 'absent' | 'non-vide' {
+    const clef = stripFs(name).replace(/\/+$/, '');
+    const entree = this.flash.get(clef);
+    if (!entree || !entree.directory) return 'absent';
+    for (const autre of this.flash.keys()) {
+      if (autre !== clef && autre.startsWith(`${clef}/`)) return 'non-vide';
+    }
+    this.flash.delete(clef);
+    return 'ok';
+  }
+
   remove(name: string): boolean {
     return this.flash.delete(stripFs(name));
   }
@@ -131,12 +156,44 @@ export class CiscoFileSystem {
 
   getConfigRegister(): number { return this.configRegister; }
 
+  /**
+   * La valeur qui prendra effet au PROCHAIN démarrage.
+   *
+   * IOS distingue les deux, et la distinction est le cœur de la
+   * récupération de mot de passe : `config-register 0x2142` ne change
+   * rien à la machine qui tourne, il prépare le prochain démarrage —
+   * d'où `Configuration register is 0x2102 (will be 0x2142 at next
+   * reload)`. Les confondre ferait ignorer `nvram:` immédiatement, ce
+   * qu'aucun IOS ne fait, et rendrait l'exercice incompréhensible.
+   */
+  private configRegisterPending: number | null = null;
+
+  getPendingConfigRegister(): number | null { return this.configRegisterPending; }
+
   /** `0x2102`, `0x2142`, … Rend faux si la valeur n'est pas lisible. */
   setConfigRegister(text: string): boolean {
     const m = /^0x([0-9a-f]{1,4})$/i.exec(text.trim());
     if (!m) return false;
-    this.configRegister = parseInt(m[1], 16);
+    const valeur = parseInt(m[1], 16);
+    this.configRegisterPending = valeur === this.configRegister ? null : valeur;
     return true;
+  }
+
+  /** Le démarrage adopte la valeur préparée. */
+  applyPendingConfigRegister(): void {
+    if (this.configRegisterPending !== null) {
+      this.configRegister = this.configRegisterPending;
+      this.configRegisterPending = null;
+    }
+  }
+
+  /** La ligne qu'`show version` et `show bootvar` écrivent toutes deux. */
+  renderConfigRegisterLine(): string {
+    const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
+    const base = `Configuration register is ${hex(this.configRegister)}`;
+    return this.configRegisterPending === null
+      ? base
+      : `${base} (will be ${hex(this.configRegisterPending)} at next reload)`;
   }
 
   /**
@@ -202,19 +259,58 @@ export class CiscoFileSystem {
     return lignes.join('\n');
   }
 
-  /** `show bootvar` / `show boot`. */
+  /**
+   * `show bootvar` / `show boot`.
+   *
+   * Les deux plateformes ont deux vues DIFFERENTES, et rendre celle du
+   * routeur sur un Catalyst annoncait un registre de configuration que
+   * `show version` de la meme machine dementait (`0xF`) et qu'aucune
+   * commande ne pouvait regler. Un Catalyst de configuration fixe decrit
+   * son amorcage par des chemins de fichiers — c'est `flash:config.text`
+   * que la manoeuvre de recuperation renomme, la ou un routeur pose
+   * 0x2142.
+   */
   renderBootvar(): string {
     const chaine = this.bootSystem.length > 0
       ? this.bootSystem.map((i) => `flash:${i}`).join(';')
       : '';
-    const reg = `0x${this.configRegister.toString(16).toUpperCase()}`;
+    if (this.profile === 'router-isr2911') {
+      return [
+        `BOOT variable = ${chaine}`,
+        'CONFIG_FILE variable does not exist',
+        'BOOTLDR variable does not exist',
+        this.renderConfigRegisterLine(),
+      ].join('\n');
+    }
+    const largeur = 20;
+    const champ = (nom: string, valeur: string) => `${nom.padEnd(largeur)}: ${valeur}`;
     return [
-      `BOOT variable = ${chaine}`,
-      'CONFIG_FILE variable does not exist',
-      'BOOTLDR variable does not exist',
-      `Configuration register is ${reg}`,
+      champ('BOOT path-list', chaine),
+      champ('Config file', 'flash:/config.text'),
+      champ('Private Config file', 'flash:/private-config.text'),
+      champ('Enable Break', this.enableBreak ? 'yes' : 'no'),
+      champ('Manual Boot', this.manualBoot ? 'yes' : 'no'),
+      champ('HELPER path-list', ''),
+      champ('Auto upgrade', 'yes'),
+      champ('Auto upgrade path', ''),
+      'NVRAM/Config file',
+      `      buffer size:   ${this.nvramBytes + NVRAM_RESERVE_BYTES}`,
+      'Timeout for Config',
+      '          Download:    0 seconds',
+      'Config Download',
+      '       via DHCP:       disabled (next boot: disabled)',
     ].join('\n');
   }
+
+  /**
+   * `boot enable-break` / `boot manual` — les deux seuls reglages
+   * d'amorcage qu'un Catalyst expose vraiment, et que `show boot` lit.
+   */
+  setEnableBreak(on: boolean): void { this.enableBreak = on; }
+  setManualBoot(on: boolean): void { this.manualBoot = on; }
+  getManualBoot(): boolean { return this.manualBoot; }
+  private enableBreak = false;
+  private manualBoot = false;
 }
 
 /** `flash:c2960.bin` → `c2960.bin` ; `flash:/x` → `x`. */

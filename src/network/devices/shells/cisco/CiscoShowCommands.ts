@@ -22,7 +22,10 @@ import { renderCounterTable, renderTable, type TableColumn } from '../cli/TextTa
 import { getHttpService } from '@/network/equipment/RouterServiceCapabilities';
 import { IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE, type Ipv6NeighborRow } from './ciscoTableLayouts';
 
-export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
+export function showVersion(
+  router: Router, profile: CiscoChassisProfile = 'router-isr2911',
+  registerLine?: string,
+): string {
   const ports = router._getPortsInternal();
   const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig') && !n.includes('.'));
   const hw = CISCO_HARDWARE_PROFILES[profile];
@@ -44,7 +47,9 @@ export function showVersion(router: Router, profile: CiscoChassisProfile = 'rout
     `DRAM configuration is 64 bits wide with parity enabled.`,
     `${hw.nvramDisplayKB}K bytes of non-volatile configuration memory.`,
     '',
-    `Configuration register is 0x2102`,
+    // Le registre était écrit EN DUR ici, pendant que `show bootvar` sur
+    // la même machine rendait la vraie valeur : deux vues, deux réponses.
+    registerLine ?? `Configuration register is 0x2102`,
   ].join('\n');
 }
 
@@ -420,6 +425,8 @@ export function showRunningConfig(router: Router): string {
     '',
     'Current configuration:',
     '!',
+    ...configProvenanceLines(router),
+    ...(configProvenanceLines(router).length > 0 ? ['!'] : []),
     `hostname ${router._getHostnameInternal()}`,
     '!',
   ];
@@ -773,6 +780,56 @@ export function showRunningConfig(router: Router): string {
   const body = assembled.slice(4).join('\n');
   assembled[2] = `Current configuration : ${new TextEncoder().encode(body).length + 1} bytes`;
   return assembled.join('\n');
+}
+
+/**
+ * Les deux lignes d'en-tête d'IOS : quand la configuration a changé, et
+ * quand la NVRAM a été écrite.
+ *
+ *     ! Last configuration change at 14:32:15 UTC Tue Aug 9 2026 by admin
+ *     ! NVRAM config last updated at 09:15:00 UTC Mon Aug 8 2026 by admin
+ *
+ * Ce ne sont pas des ornements : l'ÉCART entre elles est le signal
+ * d'audit du chapitre — deux dates différentes veulent dire qu'on a
+ * modifié sans sauvegarder. Elles n'existaient pas, donc la question ne
+ * pouvait pas être posée à la machine.
+ *
+ * Une ligne absente est absente : IOS n'écrit la seconde que si la
+ * NVRAM a été écrite au moins une fois, et rendre une date inventée
+ * pour une sauvegarde qui n'a jamais eu lieu serait exactement le
+ * contraire de ce que l'auditeur cherche.
+ */
+export function configProvenanceLines(router: Router): string[] {
+  const dev = router as unknown as {
+    _getConfigProvenance?: () => {
+      changedAtMs: number | null; changedBy: string | null;
+      nvramAtMs: number | null; nvramBy: string | null;
+    };
+  };
+  const p = dev._getConfigProvenance?.();
+  if (!p) return [];
+  const lignes: string[] = [];
+  if (p.changedAtMs !== null) {
+    lignes.push(`! Last configuration change at ${horodatageIos(p.changedAtMs)}`
+      + `${p.changedBy ? ` by ${p.changedBy}` : ''}`);
+  }
+  if (p.nvramAtMs !== null) {
+    lignes.push(`! NVRAM config last updated at ${horodatageIos(p.nvramAtMs)}`
+      + `${p.nvramBy ? ` by ${p.nvramBy}` : ''}`);
+  }
+  return lignes;
+}
+
+const JOURS_IOS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const MOIS_IOS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/** `14:32:15 UTC Tue Aug 9 2026` — la date telle qu'IOS l'écrit ici. */
+function horodatageIos(ms: number): string {
+  const d = new Date(ms);
+  const deux = (n: number) => String(n).padStart(2, '0');
+  return `${deux(d.getHours())}:${deux(d.getMinutes())}:${deux(d.getSeconds())} UTC `
+    + `${JOURS_IOS[d.getDay()]} ${MOIS_IOS[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
 }
 
 /**

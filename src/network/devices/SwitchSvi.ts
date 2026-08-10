@@ -51,6 +51,8 @@ export interface SviHost {
   fhrpVipArpOwner?(vlanIf: string, targetIp: string, requesterIp: string): string | null;
   /** RFC 3046 Option 82 insertion on relay, shared with the box's DHCP server config. */
   isDhcpRelayInfoEnabled?(): boolean;
+  /** Un datagramme UDP adresse a CETTE machine, remis au port ouvert par son plan de controle. */
+  deliverLocalUdp?(sourceIP: IPAddress, destinationPort: number, sourcePort: number, payload: unknown): boolean;
   /**
    * The box's own DHCP server, when it is serving its VLANs rather than
    * relaying them. Absent on a pure L2 switch.
@@ -322,6 +324,13 @@ export class SwitchSvi {
           const dhcp = udp?.type === 'udp' ? udp.payload : undefined;
           if (dhcp instanceof DHCPPacket && dhcp.op === 2) {
             this.relayDhcpReplyToClientVlan(dhcp);
+          } else if (udp?.type === 'udp') {
+            // Tout ce qui n'est pas DHCP tombait ici en silence, donc un
+            // Catalyst ne pouvait etre le client d'aucun protocole UDP :
+            // il emettait la question et n'entendait jamais la reponse.
+            this.host.deliverLocalUdp?.(
+              workingIp.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
+            );
           }
         }
         return true;
@@ -386,6 +395,34 @@ export class SwitchSvi {
       srcMAC: this.host.getBridgeMac(), dstMAC: MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4, payload: out,
     });
+  }
+
+  /**
+   * Un datagramme UDP emis PAR le switch, route comme n'importe quel
+   * paquet que la SVI origine — c'est le meme chemin que le relais DHCP
+   * emprunte deja, extrait pour que le plan de controle puisse s'en
+   * servir sans redecouvrir la route et l'ARP.
+   */
+  sendUdpBytes(
+    destination: IPAddress, destinationPort: number,
+    sourcePort: number, payload: Uint8Array,
+  ): boolean {
+    const route = this.lookupRoute(destination);
+    if (!route || !route.egress.ip) return false;
+    const nextHopMac = this.resolveArp(route.egress.vlan, route.egress.ip, route.nextHop);
+    if (!nextHopMac) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort,
+      length: 8 + payload.length, checksum: 0, payload,
+    };
+    const out = createIPv4Packet(
+      route.egress.ip, destination, IP_PROTO_UDP, 64, udp, 8 + payload.length,
+    );
+    this.host.egressOnVlan(route.egress.vlan, {
+      srcMAC: this.host.getBridgeMac(), dstMAC: nextHopMac,
+      etherType: ETHERTYPE_IPV4, payload: out,
+    });
+    return true;
   }
 
   /** A relayed OFFER/ACK/NAK addressed back to one of our SVIs (giaddr): strip Option 82 and broadcast it onto the client's own VLAN. */

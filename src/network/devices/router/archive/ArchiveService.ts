@@ -75,9 +75,43 @@ export class ArchiveService {
   private readonly revisions: ArchivedRevision[] = [];
   private revisionCounter = 0;
   private storage: ArchiveStorage | null = null;
+  private hostnameSource: (() => string) | null = null;
 
   /** Branche le `flash:` de l'équipement ; sans lui, rien n'est écrit. */
   attachStorage(s: ArchiveStorage): void { this.storage = s; }
+
+  /**
+   * Le nom de la machine, pour `$h`. Sans lui le chemin garderait la
+   * variable telle quelle — c'est ce qui se passait : `path
+   * flash:archive/$h-config` écrivait un fichier littéralement nommé
+   * `$h-config-1`, sur toutes les machines, donc deux équipements
+   * archivant vers le même serveur se seraient écrasés.
+   */
+  attachHostname(f: () => string): void { this.hostnameSource = f; }
+
+  /**
+   * `$h` → nom de la machine, `$t` → horodatage. Ce sont les deux
+   * variables qu'IOS reconnaît dans `archive path`, et elles existent
+   * précisément pour qu'un chemin serve plusieurs équipements et
+   * plusieurs instants.
+   *
+   * Le format de `$t` est celui d'IOS : `Mon-D-YYYY-HH-MM-SS` — les
+   * deux-points d'une heure ne peuvent pas figurer dans un nom de
+   * fichier IOS, `:` séparant le système de fichiers du chemin.
+   */
+  private developper(chemin: string, quand: Date): string {
+    return chemin
+      .replace(/\$h/g, this.hostnameSource?.() ?? 'Router')
+      .replace(/\$t/g, ArchiveService.horodatage(quand));
+  }
+
+  private static horodatage(d: Date): string {
+    const MOIS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const deux = (n: number) => String(n).padStart(2, '0');
+    return `${MOIS[d.getMonth()]}-${d.getDate()}-${d.getFullYear()}`
+      + `-${deux(d.getHours())}-${deux(d.getMinutes())}-${deux(d.getSeconds())}`;
+  }
   hasStorage(): boolean { return this.storage !== null; }
 
   setPath(path: string): void { this.archivePath.path = path; }
@@ -174,7 +208,8 @@ export class ArchiveService {
   capture(
     source: ArchivedRevision['source'], contenu: string,
   ): ArchivedRevision | { erreur: string } {
-    const chemin = this.nextRevisionPath();
+    const quand = new Date();
+    const chemin = this.developper(this.nextRevisionPath(), quand);
     const octets = contenu.length;
     if (this.storage && this.storage.freeBytes() < octets) {
       return { erreur: `%Error opening ${chemin} (No space left on device)` };
@@ -182,7 +217,7 @@ export class ArchiveService {
     this.storage?.write(chemin, contenu);
     const rev: ArchivedRevision = {
       index: ++this.revisionCounter,
-      capturedAtMs: Date.now(),
+      capturedAtMs: quand.getTime(),
       source, bytes: octets, path: chemin,
     };
     this.revisions.push(rev);
@@ -243,13 +278,19 @@ export class ArchiveService {
       return 'No archives configured / no revisions captured.';
     }
     const lines = [`The maximum archive configurations allowed is ${this.archivePath.maximumVersions ?? 14}.`];
+    lines.push(`There are currently ${this.revisions.length} archive `
+      + `configuration${this.revisions.length === 1 ? '' : 's'} saved.`);
     if (this.revisions.length === 0) {
       lines.push('No backups exist on archive path');
     }
-    if (this.archivePath.path) lines.push(`Archive path: ${this.archivePath.path}`);
-    for (const r of this.revisions) {
-      lines.push(`  ${r.index}: ${r.path} (${new Date(r.capturedAtMs).toISOString()}, ${r.bytes}B, src=${r.source})`);
-    }
+    lines.push(` The next archive file will be named `
+      + `${this.developper(this.nextRevisionPath(), new Date())}`);
+    lines.push(' Archive #  Name');
+    const dernier = this.revisions.length;
+    this.revisions.forEach((r, i) => {
+      const marque = i === dernier - 1 ? ' <- Most Recent' : '';
+      lines.push(`   ${String(r.index).padEnd(9)}${r.path}${marque}`);
+    });
     return lines.join('\n');
   }
 

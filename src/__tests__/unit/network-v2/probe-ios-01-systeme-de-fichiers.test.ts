@@ -44,11 +44,26 @@ describe('Scénario 1 — `show boot` suit le registre, il ne le récite pas', (
     expect(boot).toContain('Configuration register is 0x2102');
   });
 
+  /**
+   * Ce cas attendait le nouveau registre TOUT DE SUITE. Un vrai IOS ne
+   * le change qu'au redémarrage suivant et le dit — c'est la raison
+   * d'être de la manœuvre de récupération de mot de passe : on pose
+   * 0x2142 puis on recharge, et poser la valeur ne saute rien par soi.
+   * Ce que la sonde garde, c'est que les deux orthographes disent la
+   * même chose ; ce qu'elle ajoute, c'est qu'après le rechargement la
+   * valeur en attente est devenue la valeur courante.
+   */
   it('`config-register 0x2142` change ce que LES DEUX annoncent', async () => {
     const r = await routeurPrivilegie();
     await r.executeCommand('configure terminal');
     await r.executeCommand('config-register 0x2142');
     await r.executeCommand('exit');
+    const attendu = 'Configuration register is 0x2102 (will be 0x2142 at next reload)';
+    expect(await r.executeCommand('show boot')).toContain(attendu);
+    expect(await r.executeCommand('show bootvar')).toContain(attendu);
+
+    await r.executeCommand('reload');
+    await r.executeCommand('enable');
     expect(await r.executeCommand('show boot')).toContain('Configuration register is 0x2142');
     expect(await r.executeCommand('show bootvar')).toContain('Configuration register is 0x2142');
   });

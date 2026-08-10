@@ -34,6 +34,9 @@ const BLOCK_ORDER: ReadonlyArray<{ rank: number; test: RegExp }> = [
 
 const UNRANKED = 19.5;
 
+/** Les commandes qui font entrer dans un sous-mode de configuration. */
+const MODE_BLOCK = /^(interface|router|line|vlan|archive|event manager applet|route-map|class-map|policy-map|ip sla \d)\b/;
+
 const NEVER_SERIALIZED: ReadonlyArray<RegExp> = [
   /^crypto key (generate|zeroize)\b/,
   /^service dhcp$/,
@@ -87,9 +90,14 @@ export function orderCiscoConfigBlocks(body: readonly string[]): string[] {
     // Un bloc à plusieurs lignes (un `interface`, un `router`) garde le
     // sien, puisque c'est lui qui ferme le bloc.
     const next = ranked[i + 1];
-    const singleLine = entry.block.lines.length === 1;
+    // Un bloc qui OUVRE un mode garde toujours son séparateur, même
+    // vide : IOS écrit `!` entre deux `interface` consécutives, et un
+    // Catalyst dont les interfaces ne portent rien n'en avait aucun —
+    // la règle « suite de commandes globales » les avait collées.
+    const singleLine = entry.block.lines.length === 1 && !MODE_BLOCK.test(entry.block.head);
     const runContinues = singleLine && next
-      && next.rank === entry.rank && next.block.lines.length === 1;
+      && next.rank === entry.rank && next.block.lines.length === 1
+      && !MODE_BLOCK.test(next.block.head);
     if (!runContinues) out.push('!');
   }
   return out;

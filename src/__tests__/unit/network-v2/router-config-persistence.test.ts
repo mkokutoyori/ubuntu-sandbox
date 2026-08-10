@@ -92,8 +92,12 @@ describe('Router config persistence — Cisco IOS', () => {
     await r.executeCommand('ip address 10.0.0.99 255.255.255.0');
     await r.executeCommand('end');
 
+    // `[OK]` belongs to `copy running-config startup-config`, where IOS
+    // builds the configuration first. A copy INTO running-config reads a
+    // file and reports its size instead — this case used to assert the
+    // former for the latter.
     const copyOut = await r.executeCommand('copy startup-config running-config');
-    expect(copyOut.toLowerCase()).toContain('[ok]');
+    expect(copyOut).toMatch(/\d+ bytes copied/);
 
     const running = await r.executeCommand('show running-config');
     expect(running).toContain('ip address 10.0.0.1 255.255.255.0');

@@ -45,6 +45,30 @@ export interface TftpOackPacket {
 
 export type TftpPacket = TftpRequestPacket | TftpDataPacket | TftpAckPacket | TftpErrorPacket | TftpOackPacket;
 
+/**
+ * What a TFTP endpoint needs from the machine underneath it, and nothing
+ * more. `TftpClientSession` used to be typed against `EndHost`, which is
+ * why a router could not run one: a `Router` is not an `EndHost` and
+ * never will be, yet `copy running-config tftp:` is a router command
+ * before it is a host one. These four members are the whole surface both
+ * sessions ever touched.
+ */
+export interface TftpEndpoint {
+  allocateEphemeralPort(): number;
+  udpBind(port: number, handler: (delivery: TftpUdpDelivery) => void, owner?: string): boolean;
+  udpClose(port: number): void;
+  sendUdpDatagramTo(
+    destIP: unknown, destPort: number, sourcePort: number,
+    payload: Uint8Array, length: number,
+  ): boolean;
+}
+
+/** The one shape of a delivered datagram a TFTP session reads. */
+export interface TftpUdpDelivery {
+  readonly udp: { readonly sourcePort: number; readonly payload: unknown };
+  readonly sourceIP: { toString(): string };
+}
+
 export const TFTP_PORT = 69;
 export const TFTP_DEFAULT_BLKSIZE = 512;
 export const TFTP_DEFAULT_TIMEOUT_SEC = 5;
