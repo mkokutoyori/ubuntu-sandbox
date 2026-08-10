@@ -96,9 +96,28 @@ export interface CommandNode {
    * toutes les commandes existantes est inchange.
    */
   maxArgs?: number;
-  hintSuggestions?: Array<{ keyword: string; description: string }>;
+  /**
+   * `leadingOnly` : un mot-clé qui ne peut venir qu'AVANT l'argument.
+   * `ping ip|ipv6` choisit le protocole, donc il précède la cible ;
+   * `ping X ip` n'existe pas, et le proposer après une cible déjà tapée
+   * décrivait une commande qui n'existe pas. `repeat`, `size`… sont
+   * l'inverse : ce sont des options de queue.
+   */
+  hintSuggestions?: Array<{ keyword: string; description: string; leadingOnly?: boolean }>;
   _hintOnly?: boolean;
   _passthrough?: boolean;
+  /**
+   * Un nœud PUREMENT INDICATIF créé par `describeArgs` sous une commande
+   * greedy décrit un mot-clé que le handler du parent absorbe. Il n'a
+   * donc ni action ni greedy à lui — et l'aide en tirait deux conclusions
+   * fausses : la commande n'était pas exécutable ici (`<cr>` absent alors
+   * qu'IOS le montre) et rien ne pouvait suivre le mot-clé
+   * (`tacacs-server host 1.1.1.1 key ?` répondait `% Invalid input` pour
+   * une commande qui s'exécute très bien). Ces deux drapeaux disent ce
+   * que le VRAI handler, lui, peut faire.
+   */
+  _porteAction?: boolean;
+  _porteGreedy?: boolean;
   /**
    * Le nœud est enregistré greedy pour des raisons d'analyse, mais la
    * commande ne prend AUCUN argument : `cdp run ?` n'offre que `<cr>`
@@ -385,7 +404,7 @@ export class CommandTrie {
    */
   addCompletionKeywords(
     path: string,
-    continuations: ReadonlyArray<string | { keyword: string; description: string }>,
+    continuations: ReadonlyArray<string | { keyword: string; description: string; leadingOnly?: boolean }>,
   ): void {
     const keywords = path.split(/\s+/).map(k => k.toLowerCase());
     let node: CommandNode = this.root;
@@ -400,7 +419,7 @@ export class CommandTrie {
 
   private addContinuations(
     node: CommandNode,
-    continuations: ReadonlyArray<string | { keyword: string; description: string }>,
+    continuations: ReadonlyArray<string | { keyword: string; description: string; leadingOnly?: boolean }>,
   ): void {
     const existing = node.hintSuggestions ? [...node.hintSuggestions] : [];
     const seen = new Set(existing.map(h => h.keyword.toLowerCase()));
@@ -573,7 +592,8 @@ export class CommandTrie {
   private isExecutableAt(
     node: CommandNode, suppliedArgs: number, args?: readonly string[],
   ): boolean {
-    if (!node.action || suppliedArgs < this.requiredArity(node)) return false;
+    if ((!node.action && !node._porteAction)
+      || suppliedArgs < this.requiredArity(node)) return false;
     return node.executableWhen ? node.executableWhen(args ?? []) : true;
   }
 
@@ -745,7 +765,7 @@ export class CommandTrie {
       // sans réponse pour une commande qui s'exécute très bien.
       // Consommer l'argument et poursuivre supprime la classe entière,
       // y compris pour les commandes que personne n'a testées.
-      if (node.params.length > consumedArgs || node.greedy) {
+      if (node.params.length > consumedArgs || node.greedy || node._porteGreedy) {
         if (consumedArgs === 0) firstArg = tokens[i];
         argsSoFar.push(tokens[i]);
         consumedArgs++;
@@ -918,9 +938,26 @@ export class CommandTrie {
       return node._autoKeywords;
     }
     const curated = new Set((node.hintSuggestions ?? []).map(h => h.keyword.toLowerCase()));
+    // Une liste CURATÉE dit que l'auteur connaît les suites de ce nœud.
+    // Y ajouter les mots grappillés dans le corps du handler annule ce
+    // qu'elle affirme : vingt mots-clés de `line` partagent un seul
+    // aiguillage, donc chacun se voyait proposer l'union des mots des
+    // dix-neuf autres — `login ?` offrait `password`, `size`,
+    // `synchronous`. L'extraction ne comble que les nœuds dont personne
+    // n'a déclaré les suites.
+    if (curated.size > 0) {
+      node._autoKeywords = [];
+      return node._autoKeywords;
+    }
     const children = new Set(node.children.keys());
+    // Un nœud ne se propose JAMAIS lui-même comme sa propre suite.
+    // L'extraction lit le corps d'un handler qui, lorsqu'il sert
+    // plusieurs mots-clés, cite forcément le sien : `exec ?` répondait
+    // `exec`, `login ?` répondait `login`, dans tous les modes servis
+    // par un aiguillage commun.
+    const soiMeme = node.keyword.toLowerCase();
     const extracted = extractHandlerKeywords(node.action.toString())
-      .filter(kw => !curated.has(kw) && !children.has(kw));
+      .filter(kw => !curated.has(kw) && !children.has(kw) && kw !== soiMeme);
     // A greedy handler often also accepts abbreviations (`con` for
     // `console`, `sum` for `summary`). An extracted keyword that is a
     // proper prefix of a real keyword — a child, a curated hint, or
@@ -957,6 +994,8 @@ export class CommandTrie {
         child = this.createNode(key, '');
         child._hintOnly = true;
         child._passthrough = true;
+        child._porteAction = !!node.action || !!node._porteAction;
+        child._porteGreedy = !!node.greedy || !!node._porteGreedy;
         node.children.set(key, child);
       }
       node = child;
@@ -1105,6 +1144,29 @@ export class CommandTrie {
   ): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
+    /**
+     * Un mot-clé DÉJÀ SUR LA LIGNE ne se propose plus.
+     *
+     * C'est la règle qui manquait, et son absence ne se voyait que sur
+     * un nœud glouton SANS `params` déclarés : la garde ci-dessous
+     * (`node.params.length > consumedArgs`) y est fausse quel que soit
+     * le nombre d'arguments consommés, donc le nœud reservait sa liste
+     * entière à chaque profondeur. `tacacs server server ?` proposait
+     * `server`, `tacacs-server host key ?` reproposait `host` et `key`,
+     * indéfiniment — sur les deux constructeurs et dans presque tous
+     * les modes.
+     *
+     * La règle vaut aussi pour une liste d'options qui, elle, se
+     * poursuit légitimement : `ping 1.1.1.1 repeat 5 ?` doit encore
+     * offrir `timeout` et `size`, et ne plus offrir `repeat`. C'est
+     * exactement ce que fait une vraie machine.
+     */
+    const dejaTape = new Set(argsSoFar.map((a) => a.toLowerCase()));
+    const jamaisDeuxFois = (
+      liste: ReadonlyArray<{ keyword: string; description: string }>,
+    ): Array<{ keyword: string; description: string }> =>
+      liste.filter((e) => !dejaTape.has(e.keyword.toLowerCase()));
+
     // Tant que la commande ATTEND ENCORE un argument, les mots-clés
     // enfants ne sont pas des candidats : après `ip address
     // 192.168.10.1`, IOS attend le masque, pas `dhcp`. Une fois les
@@ -1112,14 +1174,16 @@ export class CommandTrie {
     // proposables — `access-list 10 ?` rend bien `deny`/`permit`.
     const argumentsConsumed = consumedArgs > 0 && node.params.length > consumedArgs;
     if (!argumentsConsumed) {
+      const enfants: Array<{ keyword: string; description: string }> = [];
       for (const [, child] of node.children) {
         if (child._hintOnly && !child._passthrough) continue;
         const described = this.resolveDescription(child);
-        results.push({
+        enfants.push({
           keyword: child.keyword,
           description: described || this.hintDescription(node, child.keyword),
         });
       }
+      results.push(...jamaisDeuxFois(enfants));
     }
 
     // Un paramètre déjà fourni n'est plus proposé : après
@@ -1143,7 +1207,9 @@ export class CommandTrie {
     if (!argumentsConsumed && !awaitsMandatory
         && node.hintSuggestions && node.hintSuggestions.length > 0) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
-      for (const hint of node.hintSuggestions) {
+      const utilisables = node.hintSuggestions
+        .filter((h) => !(h.leadingOnly && consumedArgs > 0));
+      for (const hint of jamaisDeuxFois(utilisables)) {
         if (!seen.has(hint.keyword.toLowerCase())) {
           // Un hint déclaré sous sa forme courte (`['count']`) naît sans
           // description ; la table canonique en a une.
@@ -1160,7 +1226,7 @@ export class CommandTrie {
     let autoIndescriptibles = false;
     if (!argumentsConsumed && !awaitsDeclaredArgument) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
-      for (const auto of this.autoContinuations(node)) {
+      for (const auto of jamaisDeuxFois(this.autoContinuations(node))) {
         // Un mot EXTRAIT du corps d'un handler et qu'on ne sait pas
         // décrire n'est probablement pas un mot-clé : c'est un nom de
         // variable que l'extracteur a ramassé au passage. `acl ?` sur
@@ -1195,7 +1261,7 @@ export class CommandTrie {
     // <cr> — shown when the current command is already executable
     // (real Cisco always shows <cr> when you can press Enter)
     const keywordForm = firstArg !== null && this.isContinuationKeyword(node, firstArg);
-    if (!!node.action
+    if ((!!node.action || !!node._porteAction)
       && (keywordForm || this.isExecutableAt(node, consumedArgs, argsSoFar))) {
       results.push({ keyword: '<cr>', description: '' });
     }

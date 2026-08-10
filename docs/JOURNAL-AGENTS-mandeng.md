@@ -25,6 +25,90 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### `?` ne repropose plus ce qui est déjà tapé — LIVRÉ (audit complet)
+
+**Agent** : session « logging ». Signalé par l'utilisateur sur `tacacs`,
+audité et corrigé sur TOUTES les plateformes et TOUS les modes.
+
+**Le symptôme rapporté** :
+
+```
+Router(config)#tacacs server ?
+  server  Server
+Router(config)#tacacs server server ?
+  server  Server
+Router(config)#tacacs-server host key ?
+  host     A single host address
+  key      Key management
+  ...
+```
+
+— la même liste, indéfiniment, quoi qu'on ait tapé.
+
+**Ce n'était pas propre à `tacacs`. Mesuré avant de toucher à quoi que
+ce soit : 669 fautes sur 20 des 22 modes** de Cisco routeur, Catalyst,
+VRP routeur et VRP commutateur. Une sonde-cliquet
+(`probe-cli-suggestions-never-repeat.test.ts`) parcourt chaque mode,
+tape ce que `?` propose, et redemande : un mot-clé qui revient alors
+qu'il est déjà sur la ligne est une faute, où qu'elle soit.
+
+**Trois causes, toutes dans `CommandTrie`, toutes générales :**
+
+1. **La garde était fausse pour un nœud glouton SANS `params`.**
+   `nodeCompletionsUnsorted` protégeait ses suggestions par
+   `consumedArgs > 0 && node.params.length > consumedArgs` — faux quel
+   que soit le nombre d'arguments consommés dès que le nœud ne déclare
+   aucun paramètre, c'est-à-dire la quasi-totalité des commandes de ce
+   dépôt (`registerGreedy`). Règle posée : **un mot-clé déjà sur la
+   ligne ne se propose plus.** Elle sert aussi une liste d'options qui
+   se poursuit légitimement — `ping 1.1.1.1 repeat 5 ?` offre encore
+   `size` et `timeout`, et ne propose plus `repeat`, comme une vraie
+   machine.
+2. **Un nœud se proposait LUI-MÊME.** `autoContinuations` lit le corps
+   du handler pour deviner les suites ; un handler qui sert plusieurs
+   mots-clés cite forcément le sien, donc `exec ?` répondait `exec`.
+3. **Une liste curatée ne l'emportait pas sur l'extraction.** Les vingt
+   mots-clés de `line` partagent UN aiguillage : chacun se voyait
+   proposer l'union des mots des dix-neuf autres. `login ?` offrait
+   `password`, `size`, `synchronous`. Désormais, déclarer les suites
+   d'un nœud coupe l'extraction pour ce nœud.
+
+**Deux conséquences corrigées avec** : un nœud purement indicatif créé
+par `describeArgs` sous une commande gloutonne n'avait ni action ni
+greedy à lui, donc l'aide concluait que la commande n'était pas
+exécutable là (`<cr>` absent alors qu'IOS le montre) et que rien ne
+pouvait suivre le mot-clé (`tacacs-server host 1.1.1.1 key ?` répondait
+`% Invalid input` pour une commande qui s'exécute très bien).
+
+**`leadingOnly`** est ajouté à `addCompletionKeywords` : `ping ip` et
+`ping ipv6` choisissent le protocole AVANT la cible ; les proposer après
+décrivait une commande qui n'existe pas. Les options de queue
+(`repeat`, `size`, `source`, `timeout`) sont désormais annoncées — et
+seulement celles que `parsePingArgs` accepte vraiment.
+
+**Suites déclarées d'après le HANDLER et non d'après la documentation**,
+pour `line` et `tacacs` : annoncer une forme que la machine refuse
+ensuite serait le défaut inverse, et un cas le vérifie en exécutant ce
+que l'aide vient de promettre.
+
+**Fichiers touchés** : `shells/CommandTrie.ts`,
+`shells/CiscoShellBase.ts`, `shells/CiscoIOSShell.ts`,
+`shells/cisco/ciscoArgumentHelp.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`.
+
+**Mesures.** 669 fautes → **0**. `probe-cli-suggestions-never-repeat`
+(25 cas) verte ; **toute la suite `network-v2` verte : 1 377 fichiers,
+20 380 cas**.
+
+**Reste ouvert, mesuré et non pris** : un mot-clé consommé compte encore
+comme un ARGUMENT dans le décompte des `params`, donc `ping ip ?`
+n'offre plus `A.B.C.D` alors que la cible reste attendue. La correction
+touche la comptabilité des paramètres, dont dépendent plusieurs
+cliquets — c'est un lot à part, pas un ajout à celui-ci.
+
+---
+
+
 ### NTP — lot N7 : `ntp ?` décrit ce que `ntp` a — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans

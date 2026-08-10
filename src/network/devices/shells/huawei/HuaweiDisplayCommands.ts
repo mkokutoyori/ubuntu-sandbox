@@ -1814,6 +1814,10 @@ export function registerDisplayCommands(
     displayIpv6Statistics(getRouter()));
   trie.register('display icmpv6 statistics', 'Display ICMPv6 statistics', () =>
     displayIcmpv6Statistics(getRouter()));
+  // Le nœud intermédiaire naît sans description : `display ?` proposait
+  // `icmpv6` sans rien en dire. La description doit être posée APRÈS
+  // l'enregistrement qui crée le nœud, sinon l'appel ne trouve rien.
+  trie.describeNode('display icmpv6', 'ICMPv6 information');
   trie.register('reset ipv6 statistics', 'Clear IPv6 statistics', () => {
     getRouter()._clearIpv6Counters();
     return '';

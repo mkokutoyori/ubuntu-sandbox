@@ -731,16 +731,27 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => {
       return this._handlePing(args);
     });
+    // Le protocole se choisit AVANT la cible, les options viennent
+    // APRÈS : `ping ip 1.1.1.1` et `ping 1.1.1.1 repeat 5` existent,
+    // `ping 1.1.1.1 ip` non. Et seules les options que `parsePingArgs`
+    // accepte vraiment sont annoncées.
     this.userTrie.addCompletionKeywords('ping', [
-      { keyword: 'ip', description: 'IP echo' },
-      { keyword: 'ipv6', description: 'IPv6 echo' },
+      { keyword: 'ip', description: 'IP echo', leadingOnly: true },
+      { keyword: 'ipv6', description: 'IPv6 echo', leadingOnly: true },
+      { keyword: 'repeat', description: 'Repeat count' },
+      { keyword: 'size', description: 'Datagram size' },
+      { keyword: 'source', description: 'Source address or interface' },
+      { keyword: 'timeout', description: 'Timeout in seconds' },
     ]);
     this.userTrie.registerGreedy('traceroute', 'Trace route to destination', (args) => {
       return this._handleTraceroute(args);
     });
     this.userTrie.addCompletionKeywords('traceroute', [
-      { keyword: 'ip', description: 'IP Trace' },
-      { keyword: 'ipv6', description: 'IPv6 Trace' },
+      { keyword: 'ip', description: 'IP Trace', leadingOnly: true },
+      { keyword: 'ipv6', description: 'IPv6 Trace', leadingOnly: true },
+      { keyword: 'probe', description: 'Probe count' },
+      { keyword: 'timeout', description: 'Timeout in seconds' },
+      { keyword: 'ttl', description: 'Minimum and maximum time to live' },
     ]);
 
     // ── Privileged mode ──

@@ -4155,6 +4155,53 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return '';
       });
     }
+    // Les vingt mots-clés ci-dessus partagent UN handler, et
+    // `autoContinuations` lit le corps d'un handler pour deviner ses
+    // suites : chacun des vingt se voyait donc proposer l'union des
+    // mots de tous les autres — `login ?` offrait `password`, `size`,
+    // `synchronous`… La déclaration explicite prime sur l'extraction,
+    // et chaque suite ci-dessous est celle que ce handler DISPATCHE
+    // vraiment, pas celle qu'IOS documente : annoncer une forme que la
+    // machine refuse ensuite serait le défaut inverse.
+    const suitesDeLigne: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
+      ['login', [['authentication', 'Use an AAA method list'], ['local', 'Use the local user database']]],
+      ['logging', [['synchronous', 'Synchronize logging output with EXEC output']]],
+      ['privilege', [['level', 'Set the privilege level of the line']]],
+      ['exec', [['banner', 'Enable the display of the EXEC banner']]],
+      ['history', [['size', 'Set the size of the history buffer']]],
+      ['no', [
+        ['exec', 'Disable the EXEC process'],
+        ['login', 'Disable authentication on the line'],
+        ['logging', 'Disable synchronous logging'],
+        ['password', 'Clear the line password'],
+        ['privilege', 'Clear the privilege level'],
+      ]],
+      ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
+      ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
+    ];
+    for (const [kw, suites] of suitesDeLigne) {
+      this.configLineTrie.addCompletionKeywords(kw,
+        suites.map(([keyword, description]) => ({ keyword, description })));
+    }
+    this.configLineTrie.describeArgs('privilege level', [
+      { name: 'level', type: 'INT', description: 'Privilege level', range: [0, 15] },
+    ]);
+    this.configLineTrie.describeArgs('history size', [
+      { name: 'size', type: 'INT', description: 'Size of history buffer', range: [0, 256] },
+    ]);
+    for (const [kw, name, description, range] of [
+      ['length', 'lines', 'Number of lines on a screen', [0, 512]],
+      ['width', 'characters', 'Width of the display terminal', [0, 512]],
+      ['session-timeout', 'minutes', 'Timeout in minutes', [0, 35791]],
+      ['rotary', 'group', 'Rotary group number', [1, 100]],
+    ] as ReadonlyArray<readonly [string, string, string, readonly [number, number]]>) {
+      this.configLineTrie.describeArgs(kw, [{ name, type: 'INT', description, range }]);
+    }
+    this.configLineTrie.describeArgs('autocommand', [
+      { name: 'command', type: 'STRING', description: 'Command to execute on connection' },
+    ]);
+    this.configLineTrie.takesNoArgument('motd-banner');
+
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
     // ─── Sous-mode `config-view` ────────────────────────────────────

@@ -732,6 +732,24 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
       range: [0, 2147483] },
   ]);
+  // `tacacs server <nom>` et `tacacs-server host <adresse>` : les deux
+  // mots-clés absorbent leur argument, et faute de le décrire l'aide
+  // reproposait la liste d'options à sa place.
+  tries.config.describeArgs('tacacs server', [
+    WORD('name', 'Name for the TACACS+ server configuration'),
+  ]);
+  tries.config.describeArgs('tacacs-server host', [
+    { ...IP('address', 'IP address of the TACACS+ server'), literal: 'Hostname or A.B.C.D' },
+  ]);
+  tries.config.addCompletionKeywords('tacacs-server host', [
+    { keyword: 'key', description: 'per-server encryption key' },
+    { keyword: 'port', description: 'TCP port number' },
+    { keyword: 'timeout', description: 'Time to wait for this TACACS server to reply' },
+  ]);
+  tries.config.describeArgs('no tacacs-server host', [
+    { ...IP('address', 'IP address of the TACACS+ server'), literal: 'Hostname or A.B.C.D' },
+  ]);
+
   tries.configLine.describeArgs('login-timeout', [
     INT('seconds', [1, 300], 'Timeout in seconds'),
   ]);
