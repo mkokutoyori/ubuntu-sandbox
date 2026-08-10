@@ -51,6 +51,6 @@ describe('the count of hand-written error literals only goes down', () => {
   });
 
   it('% Incomplete command. is written in at most the sites left to migrate', () => {
-    expect(countIn('% Incomplete command.')).toBeLessThanOrEqual(319);
+    expect(countIn('% Incomplete command.')).toBeLessThanOrEqual(257);
   });
 });

@@ -225,6 +225,7 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
       ] },
   ]);
   // Les NOMS restent des `WORD`, mais avec leur propre description.
+  tries.config.describeArgs('username', [WORD('name', 'Name of the local user')]);
   for (const [path, description] of [
     ['flow exporter', 'Name of the Flexible NetFlow exporter'],
     ['flow monitor', 'Name of the Flexible NetFlow monitor'],

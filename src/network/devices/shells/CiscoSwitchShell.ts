@@ -31,6 +31,8 @@ import {
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
+import { CISCO_ERRORS } from './cli-utils';
+import { ntpConfigLines } from './cisco/ciscoNtpConfig';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands,
   buildIdentityShowCommands, type CiscoSecurityShellContext,
@@ -365,27 +367,27 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Config-vlan mode ──
     this.configVlanTrie.registerGreedy('name', 'Set VLAN name', (args) => {
-      if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
+      if (!this.selectedVlan || args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const ok = this.d().renameVLAN(this.selectedVlan, args[0]);
       if (ok) this.optionalVtp()?.onLocalVlanChange();
       return ok ? '' : '% VLAN not found';
     });
 
     this.configVlanTrie.registerGreedy('private-vlan', 'Configure private VLAN role/association', (args) => {
-      if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
+      if (!this.selectedVlan || args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const sub = args[0].toLowerCase();
       if (sub === 'primary' || sub === 'isolated' || sub === 'community') {
         const res = this.d().setPrivateVlanRole(this.selectedVlan, sub);
         return res.ok ? '' : `% ${res.error}`;
       }
       if (sub === 'association') {
-        if (!args[1]) return '% Incomplete command.';
+        if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
         const idSet = this.parseVlanList(args[1]);
         if (!idSet) return '% Invalid VLAN list';
         const res = this.d().associatePrivateVlan(this.selectedVlan, [...idSet]);
         return res.ok ? '' : `% ${res.error}`;
       }
-      return '% Incomplete command.';
+      return CISCO_ERRORS.INCOMPLETE;
     });
 
     // ── Spanning Tree (L2, switch-only) ──
@@ -408,7 +410,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configTrie.registerGreedy('vlan access-map', 'Configure a VLAN access map', (args) => {
-      if (!args[0]) return '% Incomplete command.';
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       const seq = args[1] !== undefined ? parseInt(args[1], 10) : 10;
       if (isNaN(seq)) return '% Invalid sequence number';
       this.selectedAccessMap = { name: args[0], seq };
@@ -417,20 +419,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     this.configTrie.registerGreedy('no vlan access-map', 'Remove a VLAN access map', (args) => {
-      if (!args[0]) return '% Incomplete command.';
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       this.d().removeVlanAccessMap(args[0]);
       return '';
     });
     this.configTrie.registerGreedy('vlan filter', 'Apply a VLAN access map to VLANs', (args) => {
       const li = args.findIndex(a => a.toLowerCase() === 'vlan-list');
-      if (li < 0 || !args[0] || !args[li + 1]) return '% Incomplete command.';
+      if (li < 0 || !args[0] || !args[li + 1]) return CISCO_ERRORS.INCOMPLETE;
       const vlans = this.parseVlanList(args.slice(li + 1).join(','));
       if (!vlans) return '% Invalid VLAN list';
       const res = this.d().applyVlanFilter(args[0], [...vlans]);
       return res.ok ? '' : `% ${res.error}`;
     });
     this.configTrie.registerGreedy('no vlan filter', 'Remove a VLAN access map binding', (args) => {
-      if (!args[0]) return '% Incomplete command.';
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       const li = args.findIndex(a => a.toLowerCase() === 'vlan-list');
       const vlans = li >= 0 && args[li + 1] ? this.parseVlanList(args.slice(li + 1).join(',')) : null;
       this.d().removeVlanFilter(args[0], vlans ? [...vlans] : undefined);
@@ -438,13 +440,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configAccessMapTrie.registerGreedy('match ip address', 'Match an IP ACL', (args) => {
-      if (!this.selectedAccessMap || !args[0]) return '% Incomplete command.';
+      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
       const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
       rule.matchIpAcl = args[0];
       return '';
     });
     this.configAccessMapTrie.registerGreedy('action', 'Set the access-map action', (args) => {
-      if (!this.selectedAccessMap) return '% Incomplete command.';
+      if (!this.selectedAccessMap) return CISCO_ERRORS.INCOMPLETE;
       const a = args[0]?.toLowerCase();
       if (a !== 'forward' && a !== 'drop') return '% Invalid action';
       const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
@@ -460,7 +462,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.trackObjects.set(id, iface, kind);
         return '';
       }
-      return '% Incomplete command.';
+      return CISCO_ERRORS.INCOMPLETE;
     });
     this.configTrie.registerGreedy('no track', 'Remove a tracked object', (args) => {
       const id = parseInt(args[0] ?? '', 10);
@@ -549,7 +551,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Global ── ip arp inspection vlan <list>
     this.configTrie.registerGreedy('ip arp inspection vlan', 'Enable DAI on VLAN(s)', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const cfg = this.d()._getArpInspectionConfig();
       for (const v of parseList(args.join(','))) cfg.vlans.add(v);
       return '';
@@ -584,9 +586,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configTrie.registerGreedy('ip arp inspection filter', 'Apply ARP ACL to VLAN(s)', (args) => {
       // ip arp inspection filter <acl> vlan <list> [static]
       const aclName = args[0]; const vlanIdx = args.indexOf('vlan');
-      if (!aclName || vlanIdx < 1) return '% Incomplete command.';
+      if (!aclName || vlanIdx < 1) return CISCO_ERRORS.INCOMPLETE;
       const list = args[vlanIdx + 1];
-      if (!list) return '% Incomplete command.';
+      if (!list) return CISCO_ERRORS.INCOMPLETE;
       const isStatic = args[vlanIdx + 2]?.toLowerCase() === 'static';
       const cfg = this.d()._getArpInspectionConfig();
       for (const v of parseList(list)) cfg.vlanAclFilters.set(v, { aclName, staticMode: isStatic });
@@ -617,7 +619,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── arp access-list ──
     this.configTrie.registerGreedy('arp access-list', 'Define an ARP ACL', (args) => {
-      const name = args[0]; if (!name) return '% Incomplete command.';
+      const name = args[0]; if (!name) return CISCO_ERRORS.INCOMPLETE;
       const map = this.d()._getArpAccessLists();
       if (!map.has(name)) map.set(name, { name, entries: [] });
       this.selectedArpAcl = name;
@@ -790,7 +792,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── mac-address (static + sticky toggle + sticky <mac>) ──
     this.configIfTrie.registerGreedy('switchport port-security mac-address',
       'Configure secure MAC', (args) => {
-        if (args.length === 0) return '% Incomplete command.';
+        if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
         if (args[0].toLowerCase() === 'sticky') {
           if (args.length === 1) {
             return this.applyToSelectedInterfaces(p => {
@@ -812,7 +814,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     this.configIfTrie.registerGreedy('no switchport port-security mac-address',
       'Remove secure MAC', (args) => {
-        if (args.length === 0) return '% Incomplete command.';
+        if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
         if (args[0].toLowerCase() === 'sticky' && args.length === 1) {
           return this.applyToSelectedInterfaces(p => {
             const port = this.d().getPort(p); if (port) port.getPortSecurity().disableSticky();
@@ -908,7 +910,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configIfTrie.registerGreedy('vrrp', 'VRRP group config', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% VRRP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return '% Incomplete command.';
+      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
       const group = parseInt(args[0], 10);
       if (Number.isNaN(group) || group < 1 || group > 255) return '% Invalid VRRP group.';
       const iface = `Vlanif${vlan}`;
@@ -949,7 +951,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           return '';
         }
         case 'timers': {
-          if (args[2] !== 'advertise') return '% Incomplete command.';
+          if (args[2] !== 'advertise') return CISCO_ERRORS.INCOMPLETE;
           const sec = parseInt(args[3] ?? '', 10);
           if (!Number.isFinite(sec) || sec < 1) return '% Invalid advertise interval.';
           agent.setAdvertiseSec(iface, group, sec);
@@ -973,7 +975,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configIfTrie.registerGreedy('standby', 'HSRP group config', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% HSRP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return '% Incomplete command.';
+      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
       const iface = `Vlanif${vlan}`;
       const agent = this.d().getHsrpAgent();
       if (args[0] === 'version') {
@@ -1050,7 +1052,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configIfTrie.registerGreedy('glbp', 'GLBP group config', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% GLBP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return '% Incomplete command.';
+      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
       const group = parseInt(args[0], 10);
       if (Number.isNaN(group) || group < 0 || group > 1023) return '% Invalid GLBP group.';
       const iface = `Vlanif${vlan}`;
@@ -1283,7 +1285,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private registerVtpCommands(): void {
     this.configTrie.registerGreedy('vtp domain', 'Set VTP domain', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       this.requireVtp().setDomain(args[0]);
       return '';
     });
@@ -1296,7 +1298,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     this.configTrie.registerGreedy('vtp password', 'Set VTP password', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       this.requireVtp().setPassword(args[0]);
       return '';
     });
@@ -1446,7 +1448,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private applyStaticMrouter(vlan: number, rest: string[], on: boolean): string {
     const idx = rest.findIndex(s => s.toLowerCase() === 'interface');
     const spec = idx >= 0 ? rest.slice(idx + 1).join(' ') : rest.join(' ');
-    if (!spec) return '% Incomplete command.';
+    if (!spec) return CISCO_ERRORS.INCOMPLETE;
     const port = this.resolvePortName(spec);
     if (!port) return `% Invalid interface ${spec}`;
     this.requireIgmpSnooping().setStaticRouterPort(vlan, port, on);
@@ -1463,7 +1465,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const agent = this.requireIgmpSnooping();
     const kw = rest[0];
     if (kw === 'address') {
-      if (on && !rest[1]) return '% Incomplete command.';
+      if (on && !rest[1]) return CISCO_ERRORS.INCOMPLETE;
       if (on && !/^\d{1,3}(\.\d{1,3}){3}$/.test(rest[1])) {
         return `% Invalid input detected at '^' marker.`;
       }
@@ -2076,11 +2078,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
     const iVlan = args.indexOf('vlan');
     const iIf = args.findIndex((a) => a === 'interface');
-    if (iVlan < 0 || !args[iVlan + 1]) return '% Incomplete command.';
+    if (iVlan < 0 || !args[iVlan + 1]) return CISCO_ERRORS.INCOMPLETE;
     const vlan = parseInt(args[iVlan + 1], 10);
     if (Number.isNaN(vlan) || vlan < 1 || vlan > 4094) return '% Invalid VLAN id';
     if (!this.d().getVLANs().has(vlan)) return `% VLAN ${vlan} does not exist`;
-    if (iIf < 0 || !args[iIf + 1]) return '% Incomplete command.';
+    if (iIf < 0 || !args[iIf + 1]) return CISCO_ERRORS.INCOMPLETE;
     const port = this.resolvePortName(args.slice(iIf + 1).join(' '));
     if (!port) return `% Invalid interface ${args.slice(iIf + 1).join(' ')}`;
     return { mac: mac.toLowerCase(), vlan, port };
@@ -2371,7 +2373,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.privilegedTrie.registerGreedy('show vlan name', 'Display a VLAN by name', (args) => {
-      if (!args[0]) return '% Incomplete command.';
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       return this.showVlanBrief(this.d(), { name: args[0] });
     });
 
@@ -2483,7 +2485,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // hostname is handled by base class (registerCommonConfigCommands)
 
     this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       // Accept a single id, a comma list (100,200,300) and ranges
       // (30-35) — IOS creates them all; only a single id enters
       // config-vlan.
@@ -2518,7 +2520,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configTrie.registerGreedy('no vlan', 'Delete a VLAN', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const id = parseInt(args[0], 10);
       if (isNaN(id)) return '% Invalid VLAN ID';
       if (id === 1) return '% Default VLAN 1 may not be deleted.';
@@ -2528,7 +2530,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
 
       if (args[0].toLowerCase() === 'range') {
         return this.handleInterfaceRange(args.slice(1));
@@ -2568,7 +2570,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ]);
 
     this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const seconds = parseInt(args[0], 10);
       if (isNaN(seconds) || seconds < 0) return '% Invalid aging time';
       this.d().setMACAgingTime(seconds);
@@ -2625,7 +2627,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configTrie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping on VLANs', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const cfg = this.d()._getDHCPSnoopingConfig();
       const parts = args[0].split(',');
       for (const part of parts) {
@@ -2667,7 +2669,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private handleMonitorSession(args: string[], negate: boolean): string {
-    if (args.length < 1) return '% Incomplete command.';
+    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const id = parseInt(args[0], 10);
     if (Number.isNaN(id) || id < 1 || id > 66) return '% Invalid session id.';
     const dev = this.d();
@@ -2679,7 +2681,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const verb = (args[1] ?? '').toLowerCase();
     if (verb === 'source') {
       const ifaceArg = args[2] === 'interface' ? args[3] : null;
-      if (!ifaceArg) return '% Incomplete command.';
+      if (!ifaceArg) return CISCO_ERRORS.INCOMPLETE;
       const portName = this.resolveInterfaceName(ifaceArg);
       if (!portName || !dev.getPort(portName)) return `% Invalid interface name "${ifaceArg}"`;
       if (dev.getPortMirror().isDestination(portName)) {
@@ -2696,7 +2698,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     if (verb === 'destination') {
       const ifaceArg = args[2] === 'interface' ? args[3] : null;
-      if (!ifaceArg) return '% Incomplete command.';
+      if (!ifaceArg) return CISCO_ERRORS.INCOMPLETE;
       const portName = this.resolveInterfaceName(ifaceArg);
       if (!portName || !dev.getPort(portName)) return `% Invalid interface name "${ifaceArg}"`;
       const session = dev.getMirrorSession(id);
@@ -2726,7 +2728,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private registerConfigIfCommands(): void {
     // Cisco IOS: `interface X` from config-if switches to the new interface
     this.configIfTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       if (args[0].toLowerCase() === 'range') {
         return this.handleInterfaceRange(args.slice(1));
       }
@@ -2787,7 +2789,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     this.configIfTrie.registerGreedy('switchport private-vlan mapping trunk',
       'Map a promiscuous trunk to primary/secondary private VLANs', (args) => {
-        if (args.length < 2) return '% Incomplete command.';
+        if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const primary = parseInt(args[0], 10);
         if (isNaN(primary)) return '% Invalid VLAN ID';
         const secondarySet = this.parseVlanList(args[1]);
@@ -2801,7 +2803,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     this.configIfTrie.registerGreedy('switchport private-vlan association trunk',
       'Associate an isolated trunk with its primary/secondary private VLAN', (args) => {
-        if (args.length < 2) return '% Incomplete command.';
+        if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const primary = parseInt(args[0], 10);
         const secondary = parseInt(args[1], 10);
         if (isNaN(primary) || isNaN(secondary)) return '% Invalid VLAN ID';
@@ -2813,7 +2815,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     this.configIfTrie.registerGreedy('switchport private-vlan host-association',
       'Associate a host port with its primary/secondary private VLAN', (args) => {
-        if (args.length < 2) return '% Incomplete command.';
+        if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const primary = parseInt(args[0], 10);
         const secondary = parseInt(args[1], 10);
         if (isNaN(primary) || isNaN(secondary)) return '% Invalid VLAN ID';
@@ -2825,7 +2827,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     this.configIfTrie.registerGreedy('switchport private-vlan mapping',
       'Map a promiscuous port to primary/secondary private VLANs', (args) => {
-        if (args.length < 2) return '% Incomplete command.';
+        if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const primary = parseInt(args[0], 10);
         if (isNaN(primary)) return '% Invalid VLAN ID';
         const secondarySet = this.parseVlanList(args[1]);
@@ -2841,7 +2843,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       'Map secondary VLANs to this primary VLAN SVI', (args) => {
         const vlan = this.sviVlanId(this.selectedInterface ?? '');
         if (vlan === null) return '% Command rejected: not applicable on this interface.';
-        if (args.length < 1) return '% Incomplete command.';
+        if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
         const secondarySet = this.parseVlanList(args[0]);
         if (!secondarySet) return '% Invalid VLAN list';
         this.d().setPrivateVlanSviMapping(vlan, [...secondarySet]);
@@ -2877,7 +2879,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configIfTrie.registerGreedy('switchport access vlan', 'Assign interface to access VLAN', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const vlanId = parseInt(args[0], 10);
       if (isNaN(vlanId) || vlanId < 1 || vlanId > 4094) return '% Invalid VLAN ID';
       return this.applyToSelectedInterfaces(portName =>
@@ -2898,7 +2900,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configIfTrie.registerGreedy('switchport vlan mapping', 'Selective QinQ: map a client VLAN to a service (S-VLAN)', (args) => {
-      if (args.length < 2) return '% Incomplete command.';
+      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
       const cvlan = parseInt(args[0], 10);
       const svlan = parseInt(args[1], 10);
       if (isNaN(cvlan) || isNaN(svlan)) return '% Invalid VLAN ID';
@@ -2912,7 +2914,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configIfTrie.registerGreedy('switchport trunk native vlan', 'Set trunk native VLAN', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const vlanId = parseInt(args[0], 10);
       if (isNaN(vlanId)) return '% Invalid VLAN ID';
       return this.applyToSelectedInterfaces(portName =>
@@ -2921,7 +2923,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configIfTrie.registerGreedy('switchport trunk allowed vlan', 'Set trunk allowed VLANs', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const sub = args[0].toLowerCase();
 
       if (sub === 'all') {
@@ -2935,7 +2937,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         );
       }
       if (sub === 'add') {
-        if (args.length < 2) return '% Incomplete command.';
+        if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const vlans = this.parseVlanList(args[1]);
         if (!vlans) return '% Invalid VLAN list';
         return this.applyToSelectedInterfaces(portName =>
@@ -2943,7 +2945,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         );
       }
       if (sub === 'remove') {
-        if (args.length < 2) return '% Incomplete command.';
+        if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const vlans = this.parseVlanList(args[1]);
         if (!vlans) return '% Invalid VLAN list';
         return this.applyToSelectedInterfaces(portName =>
@@ -2951,7 +2953,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         );
       }
       if (sub === 'except') {
-        if (args.length < 2) return '% Incomplete command.';
+        if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const vlans = this.parseVlanList(args[1]);
         if (!vlans) return '% Invalid VLAN list';
         return this.applyToSelectedInterfaces(portName =>
@@ -3063,7 +3065,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     };
     this.configIfTrie.registerGreedy('switchport voice vlan', 'Set the voice VLAN', (args) => {
-      if (!args[0]) return '% Incomplete command.';
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       const kw = args[0].toLowerCase();
       const v = parseInt(args[0], 10);
       if (kw !== 'dot1p' && kw !== 'none' && kw !== 'untagged' && (isNaN(v) || v < 1 || v > 4094)) {
@@ -3130,11 +3132,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }));
 
     this.configIfTrie.registerGreedy('switchport trunk pruning vlan', 'Set pruning-eligible VLANs', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const sub = args[0].toLowerCase();
       if (sub === 'none') return recordIf('switchport trunk pruning vlan none');
       if (sub === 'add' || sub === 'remove' || sub === 'except') {
-        if (args.length < 2) return '% Incomplete command.';
+        if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         if (!this.parseVlanList(args[1])) return '% Invalid VLAN list';
         return recordIf(`switchport trunk pruning vlan ${sub} ${args[1]}`);
       }
@@ -3145,10 +3147,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       removeIf('switchport trunk pruning'));
 
     this.configIfTrie.registerGreedy('channel-group', 'EtherChannel membership', (args) => {
-      if (args.length < 3) return '% Incomplete command.';
+      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const id = parseInt(args[0], 10);
       if (isNaN(id) || id < 1 || id > 64) return '% Invalid channel-group id';
-      if (args[1].toLowerCase() !== 'mode') return '% Incomplete command.';
+      if (args[1].toLowerCase() !== 'mode') return CISCO_ERRORS.INCOMPLETE;
       const m = args[2].toLowerCase();
       let mode: 'active' | 'passive' | 'on';
       // `desirable` and `auto` are PAgP modes. They used to be folded
@@ -3185,7 +3187,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configIfTrie.registerGreedy('description', 'Interface description', (args) => {
-      if (!this.selectedInterface || args.length < 1) return '% Incomplete command.';
+      if (!this.selectedInterface || args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       return this.applyToSelectedInterfaces(portName => {
         this.d().setInterfaceDescription(portName, args.join(' '));
         return '';
@@ -3209,7 +3211,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     this.configIfTrie.registerGreedy('ip dhcp snooping limit rate', 'Set DHCP snooping rate limit', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const rate = parseInt(args[0], 10);
       if (isNaN(rate) || rate < 1) return '% Invalid rate value';
       const cfg = this.d()._getDHCPSnoopingConfig();
@@ -3284,7 +3286,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // `password`/`login` sur sa console et ne les rendait nulle part.
     lines.push(...consoleAndAuxLineConfigLines(sw, chiffre));
 
-    const lignesNtp = this.ntpConfigLines();
+    const lignesNtp = ntpConfigLines(sw);
     if (lignesNtp.length > 0) { lines.push(...lignesNtp); lines.push('!'); }
 
     // VTY line configuration (transport input, login, password, …).
@@ -4309,7 +4311,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ip route <net> <mask> <next-hop>
     cfg.registerGreedy('ip route', 'Add a static route', (args) => {
-      if (args.length < 3) return '% Incomplete command.';
+      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       let net: IPAddress, mask: SubnetMask, gw: IPAddress;
       try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
       try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
@@ -4318,7 +4320,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
-      if (args.length < 2) return '% Incomplete command.';
+      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
       let net: IPAddress, mask: SubnetMask;
       try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
       try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
@@ -4328,7 +4330,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ip dhcp pool <name> → enter dhcp-config view, reuse shared builder
     cfg.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const dhcp = this.d()._getDHCPServerInternal();
       if (!dhcp.getPool(args[0])) dhcp.createPool(args[0]);
       dhcp.enable(); // IOS auto-enables the DHCP service when a pool is created
@@ -4337,19 +4339,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     cfg.registerGreedy('no ip dhcp pool', 'Remove a DHCP pool', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       this.d()._getDHCPServerInternal().deletePool(args[0]);
       return '';
     });
     cfg.registerGreedy('ip dhcp excluded-address',
       'Exclude IP range from DHCP allocation', (args) => {
-        if (args.length < 1) return '% Incomplete command.';
+        if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
         this.d()._getDHCPServerInternal().addExcludedRange(args[0], args[1] || args[0]);
         return '';
       });
     cfg.registerGreedy('ip dhcp database', 'Configure a DHCP database agent URL', (args, raw) => {
       const url = raw ? raw.replace(/^ip dhcp database\s+/i, '') : args.join(' ');
-      if (!url) return '% Incomplete command.';
+      if (!url) return CISCO_ERRORS.INCOMPLETE;
       this.d()._getDHCPServerInternal().addDatabaseAgent(url);
       return '';
     });
@@ -5256,7 +5258,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private handleInterfaceRange(args: string[]): string {
-    if (args.length < 1) return '% Incomplete command.';
+    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
 
     const rangeStr = args.join(' ').replace(/\s*-\s*/g, '-');
     const rangeMatch = rangeStr.match(/^([a-zA-Z]+)\s*([\d/]+)-([\d/]+)$/);

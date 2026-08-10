@@ -111,6 +111,34 @@ de `run`), un argument sans description, une énumération vide. Pilote sur
 **Reste ouvert pour ce chantier** : P4 (migration par famille) et P5
 (rapatrier la sérialisation) de `docs/DESIGN-Commandes-CLI.md`.
 
+### Pour l'autre agent : `switch.mac.learned` n'atteint pas le bus par défaut
+
+`src/__tests__/unit/gui/mac-table-reactivity.test.tsx` a deux cas rouges,
+et ils le sont **avant** tout mon travail CLI (vérifié en revenant à
+`ae074a9~1`) — je les laisse donc, mais voici ce que la mesure a établi
+pour éviter de refaire le chemin :
+
+- le laboratoire fonctionne : le ping traverse, et `sw.getMACTable()`
+  contient bien les deux adresses ;
+- l'apprentissage PUBLIE : instrumenté dans `Switch.ts`, le
+  `publish({topic:'switch.mac.learned'})` est atteint deux fois, avec
+  `isNew=true` ;
+- l'abonné du test ne reçoit rien, et un `subscribeAll` sur le bus par
+  défaut ne voit AUCUN topic `switch.*` alors qu'il voit
+  `arp.snoop.learned`, `cable.frame.delivered`, etc. ;
+- le garde-fou de ré-entrance (`MAX_REENTRANCE_DEPTH`) ne jette rien :
+  instrumenté, zéro rejet ;
+- `setEventBus` n'est appelé QU'UNE fois (par le test) ;
+  `sw.getBus() === getDefaultEventBus()` est vrai juste avant le ping,
+  et pourtant l'objet lu au moment du `publish` ne porte pas la marque
+  posée sur le bus du test.
+
+Autrement dit le défaut est entre `setEventBus` et le bus réellement
+consulté à l'émission, pas dans l'apprentissage ni dans le ping. Le
+même symptôme rendrait `useMacTable` sourd dans l'interface, ce qui est
+la famille du point #56 de `CLAUDE.md` (un changement autonome qui
+n'atteint pas le canevas).
+
 **Trouvé pendant la passe DRY, mesuré, PAS corrigé — à prendre ensuite :**
 
 - **`no switchport` répond `% Incomplete command.`** sur un commutateur
