@@ -25,6 +25,61 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Niveaux de privilège : une ESCALADE fermée — LIVRÉ
+
+**Agent** : session « logging ». L'utilisateur a demandé de m'assurer que
+les privilèges fonctionnent *vraiment*. Mon premier relevé, superficiel,
+donnait le mécanisme pour bon — `configure terminal` était bien refusé au
+niveau 7. Trois défauts sérieux se cachaient derrière, sur les deux
+plateformes.
+
+1. **Escalade de privilège par `end`.** Une session montée à `enable 10`
+   a le droit d'entrer en configuration si l'opérateur le lui a donné ;
+   son `end` la déposait en mode privilégié COMPLET. `reload` et
+   `write memory` — réservés au niveau 15 — passaient alors, **pendant
+   que `show privilege` continuait d'annoncer 10**. Le mode et le niveau
+   se contredisaient sur la même session au même instant, et c'est le
+   mode qui décidait ; rien ne le signalait. La machine à états ne
+   remonte que la hiérarchie des MODES, elle ignore le niveau.
+   `modeDeRetour()` est la règle qui manquait.
+2. **`privilege exec level N` n'agissait que dans un sens.** Il AJOUTAIT
+   au socle du niveau 1 les commandes privilégiées accordées, et ne
+   retirait jamais celles qu'on avait HISSÉES :
+   `privilege exec level 7 ping` était accepté, rendu, et `ping` restait
+   disponible au niveau 1. La règle la plus LONGUE décide, comme dans
+   l'arbre d'IOS — sinon l'ordre d'insertion trancherait, donc le
+   comportement dépendrait de l'ordre de frappe de l'opérateur.
+3. **`disable <niveau>` n'existait pas** : la seconde moitié de
+   l'escalade temporaire (monter à 15, puis REDESCENDRE) répondait au
+   caret et laissait l'opérateur à 15 en croyant en être redescendu. Il
+   ne fait jamais MONTER — ce serait un `enable` sans mot de passe.
+
+**Mesuré et trouvé JUSTE, donc laissé tel quel** : la porte `enable`
+demande et vérifie réellement le mot de passe sur le chemin du terminal,
+et par niveau. Le chemin scripté `executeCommand` ne demande rien, ce qui
+est assumé et documenté dans le code — rien ne pourrait répondre à une
+invite là où personne ne tape.
+
+**Deux compléments du même lot** : les **jetons de bannière**
+(`$(hostname)`, `$(domain)`, `$(line)`, `$(line-desc)`, substitués par
+IOS depuis la 12.0(3)T, vérifié contre la documentation de Cisco)
+sortaient littéralement — la substitution a lieu à l'AFFICHAGE, pas au
+rangement, le nom de la machine pouvant changer après ; les
+`$USERNAME`/`$TIME` du tutoriel ne sont PAS des jetons IOS et restent
+littéraux, comme sur une vraie machine. Et **`login authentication
+<liste>` sur `line console 0`** — la ligne de secours de toute activation
+d'AAA, celle qui garde la console sur la base locale pour qu'un TACACS+
+en panne ne ferme pas la porte — était comprise comme un `login` nu et
+rendue nulle part, donc perdue au rechargement : le cas dangereux.
+
+**Mesures.** `cisco-privilege-levels-really-gate.test.ts` (24 cas, les
+deux plateformes) : **12 tombent** contre le shell restauré. Deux de ses
+cas de terminal demandaient d'abord le niveau à l'APPAREIL, ce qui lit
+une autre session et répond toujours 1 — ils interrogent maintenant la
+session qui a tapé le mot de passe.
+
+---
+
 ### Tutoriel « Cycle de vie d'une identité » + contournement Ctrl+C — LIVRÉ
 
 **Agent** : session « logging ». Deux demandes : rendre le tutoriel
