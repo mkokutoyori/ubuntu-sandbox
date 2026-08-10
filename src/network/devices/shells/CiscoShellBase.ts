@@ -1269,6 +1269,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const modeAvant = this.mode;
     const output = this.executeOnTrie(cmdPart);
     this.journaliserCommandeDeConfig(modeAvant, cmdPart, output);
+    this.comptabiliserCommande(cmdPart, output);
 
     // Async escape hatch (e.g. ping on routers sets this)
     if (this._pendingAsync) {
@@ -1664,6 +1665,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const cible = device?._loggingConfig ?? device?.getLoggingConfig?.() ?? this.logging;
     cible.append('notifications', 'parser',
       `User:${record.user} logged command:${record.command}`, true, 'CFGLOG_LOGGEDCMD');
+  }
+
+  /**
+   * `aaa accounting commands <niveau>` — envoie la commande au collecteur
+   * (`docs/PRD-Pistes-Audit-Cisco.md` §5).
+   *
+   * L'émission est délibérément « au fil de l'eau » et non attendue : un
+   * opérateur ne doit pas voir sa CLI se figer parce qu'un serveur
+   * TACACS+ est lent, et c'est ce que fait `start-stop` sur une vraie
+   * machine — `wait-start`, qui bloque, n'est pas modélisé ici.
+   *
+   * Une commande refusée n'est pas comptabilisée, pour la même raison
+   * qu'elle n'entre pas au journal : elle n'a rien changé.
+   */
+  private comptabiliserCommande(commande: string, sortie: string): void {
+    if (/^%|Invalid input|Incomplete command/m.test(sortie)) return;
+    const texte = commande.trim();
+    if (texte.length === 0) return;
+    const dev = this.d() as unknown as { getAaaAuthenticator?: () => AaaAuthenticator };
+    const authenticator = dev.getAaaAuthenticator?.();
+    if (!authenticator) return;
+    const niveau = this.mode === 'user' ? 1 : 15;
+    void authenticator.accountCommand(this.configSessionLabel, texte, niveau)
+      .catch(() => undefined);
   }
 
   protected cmdExit(): string {

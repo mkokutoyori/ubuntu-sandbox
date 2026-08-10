@@ -149,15 +149,49 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
+  /*
+   * `tacacs-server host <ip> [port P] [timeout T] [key K]` — la forme
+   * HERITEE, et de loin la plus tapee dans les cours et les guides.
+   *
+   * Elle etait rangee dans `legacyHosts`, un tableau que SEUL le rendu de
+   * la configuration lisait : la machine decrivait donc un serveur
+   * qu'elle n'avait pas. `show tacacs` repondait « No TACACS+ servers
+   * configured » sur la meme machine au meme instant, et surtout
+   * l'authentification ne trouvait rien — un laboratoire monte
+   * entierement a l'ancienne echouait en silence.
+   *
+   * Elle alimente desormais le MEME magasin que `tacacs server <nom>`.
+   * Le serveur n'a pas de nom dans cette forme : IOS le designe par son
+   * adresse, et c'est donc l'adresse qui sert de cle — ce qui rend aussi
+   * `server <ip>` utilisable comme membre de groupe.
+   */
   trie.registerGreedy('tacacs-server', 'Legacy tacacs host', (args) => {
-    if (args[0] === 'host' && args[1]) {
-      const host = args[1];
-      let key: string | undefined;
-      for (let i = 2; i < args.length; i++) {
-        if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; break; }
-      }
-      sec().legacyHosts.push({ kind: 'tacacs', host, key });
+    if (args[0] !== 'host' || !args[1]) return '';
+    const host = args[1];
+    let key: string | undefined;
+    let port = 49;
+    let timeoutSec = 5;
+    for (let i = 2; i < args.length; i++) {
+      if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; i++; }
+      else if (args[i] === 'port' && args[i + 1]) { port = Number(args[i + 1]) || 49; i++; }
+      else if (args[i] === 'timeout' && args[i + 1]) { timeoutSec = Number(args[i + 1]) || 5; i++; }
     }
+    const existant = sec().tacacsServers.get(host);
+    if (existant) {
+      existant.key = key ?? existant.key;
+      existant.port = port;
+      existant.timeoutSec = timeoutSec;
+      return '';
+    }
+    sec().tacacsServers.set(host, {
+      name: host, address: host, key, port, timeoutSec,
+      singleConnection: false, legacySpelling: true,
+      stats: newTacacsServerStats(),
+    });
+    return '';
+  });
+  trie.registerGreedy('no tacacs-server', 'Remove legacy tacacs host', (args) => {
+    if (args[0] === 'host' && args[1]) sec().tacacsServers.delete(args[1]);
     return '';
   });
 
@@ -754,12 +788,32 @@ export function buildSecuritySubmodeCommands(
     return '';
   });
 
+  /*
+   * Un groupe accepte DEUX formes de membre, et seule la moderne etait
+   * lue : `server name <nom>` designe un serveur declare par
+   * `tacacs server <nom>`, tandis que `server <ip>` — la forme heritee,
+   * celle qui accompagne `tacacs-server host` et que tous les cours
+   * emploient — etait acceptee et JETEE en silence. Un groupe monte a
+   * l'ancienne etait donc vide, et l'authentification ne trouvait aucun
+   * serveur sans que rien ne le dise.
+   */
   aaaGroupTrie.registerGreedy('server', 'Add server', (args) => {
     const name = ctx.getAaaGroup?.();
     if (!name) return '';
     const g = sec().aaaGroups.get(name);
     if (!g) return '';
-    if (args[0] === 'name' && args[1]) g.members.push(args[1]);
+    const membre = args[0] === 'name' ? args[1] : args[0];
+    if (!membre) return CISCO_ERRORS.INCOMPLETE;
+    if (!g.members.includes(membre)) g.members.push(membre);
+    return '';
+  });
+  aaaGroupTrie.registerGreedy('no server', 'Remove server', (args) => {
+    const name = ctx.getAaaGroup?.();
+    const g = name ? sec().aaaGroups.get(name) : undefined;
+    if (!g) return '';
+    const membre = args[0] === 'name' ? args[1] : args[0];
+    const i = membre ? g.members.indexOf(membre) : -1;
+    if (i >= 0) g.members.splice(i, 1);
     return '';
   });
 
@@ -958,6 +1012,35 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     return '';
   });
 
+  /*
+   * `show accounting` — la vue qui dit combien d'enregistrements sont
+   * REELLEMENT partis vers le collecteur. Elle repondait
+   * `% Invalid input detected`, si bien que le controle A10 d'une liste
+   * d'audit (« echecs = 0 ») ne portait sur rien.
+   *
+   * Le tutoriel ecrit `show aaa accounting` ; cette commande n'existe pas
+   * sur un vrai IOS, et l'inventer pour coller au tutoriel apprendrait
+   * une commande que la machine reelle refuse. C'est `show accounting`
+   * qui est rendue, avec le tableau « Overall Accounting Traffic » du
+   * vrai IOS.
+   */
+  trie.register('show accounting', 'Display accounting records', () => {
+    const auth = (getRouter() as unknown as {
+      getAaaAuthenticator?: () => { accountingTraffic: () => ReadonlyMap<string, { starts: number; stops: number; failed: number }> };
+    }).getAaaAuthenticator?.();
+    const trafic = auth?.accountingTraffic();
+    const lines = ['Overall Accounting Traffic:', '                       Starts   Stops    Failed'];
+    if (!trafic || trafic.size === 0) {
+      lines.push('     (no accounting records)');
+      return lines.join('\n');
+    }
+    for (const [service, c] of trafic) {
+      lines.push(`     ${service.padEnd(18)}${String(c.starts).padStart(6)}`
+        + `${String(c.stops).padStart(9)}${String(c.failed).padStart(10)}`);
+    }
+    return lines.join('\n');
+  });
+
   trie.register('show aaa sessions', 'Display AAA sessions', () => {
     const reg = (getRouter() as unknown as { getSshSessionRegistry?: () =>{ list: () => readonly { id: string; user: string; fromIp: string; line: string; loginAt: number }[]; history: () => readonly { id: string }[] } }).getSshSessionRegistry?.();
     if (!reg) return 'Total sessions since last reload: 0';
@@ -986,12 +1069,19 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
 
   trie.register('show tacacs', 'Display TACACS', () => {
     const s = sec();
+    const auth = (getRouter() as unknown as {
+      getAaaAuthenticator?: () => { failedAccounting: () => number };
+    }).getAaaAuthenticator?.();
     const lines: string[] = [];
     for (const t of s.tacacsServers.values()) {
       const st = t.stats;
       lines.push(`Tacacs+ Server : ${t.address ?? t.name}/${t.port}`);
       lines.push(`Socket opens: ${st.socketOpens}, closes: ${st.socketCloses}`);
       lines.push(`Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
+      // `Failed accounting` est le controle A10 d'une liste d'audit : un
+      // compteur qui monte veut dire que des traces sont PERDUES. Il
+      // n'existait pas, donc le controle ne portait sur rien.
+      lines.push(`Failed accounting: ${auth?.failedAccounting() ?? 0}`);
     }
     return lines.length ? lines.join('\n') : 'No TACACS+ servers configured';
   });

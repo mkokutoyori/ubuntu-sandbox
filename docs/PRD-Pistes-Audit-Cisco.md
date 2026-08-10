@@ -121,24 +121,9 @@ view », qui décrit la commande et non ce qu'il faut taper ensuite.
   défaut : `show ntp status` et `show ntp associations` rendent de
   vraies valeurs, l'absence de synchronisation immédiate venant de la
   scrutation à 64 s.
-- **L'accounting AAA (§3) n'émet rien.** C'est le plus gros reste, et
-  c'est la même forme que `test aaa group` : `TacacsClientAgent
-  .accountCommand()` est écrit, correct, et **n'a aucun appelant de
-  production** — seul un test l'appelle. `aaa accounting commands 15
-  default start-stop group X` est donc accepté, rendu dans la
-  configuration, et aucun paquet ne part. `show aaa accounting` répond
-  « Total sessions since last reload: 0 » quoi qu'on tape. Le brancher
-  demande de décider où s'accroche le `start`/`stop` d'une commande et
-  d'une session exec, ce qui touche le chemin de dispatch de toutes les
-  commandes — un chantier à part entière, pas une extension de
-  celui-ci.
-- **`show tacacs` ne voit qu'un des deux magasins.** La forme héritée
-  `tacacs-server host <ip> key <clé>` est rangée et rendue dans la
-  configuration, mais cette vue ne lit que la forme moderne
-  `tacacs server <nom>`. Le contrôle A10 de la liste du tutoriel
-  (« TACACS+ joignable, échecs = 0 ») porte donc sur le mauvais serveur,
-  ou sur aucun. C'est le défaut des deux magasins que ce dépôt referme
-  ailleurs ; il appartient au même chantier que l'accounting.
+- **L'accounting AAA (§3) émet désormais**, et le serveur déclaré à
+  l'ancienne authentifie — voir §8 ci-dessous.
+- **`show tacacs` voit désormais les deux formes** — voir §8.
 - **`verify /md5 flash:<fichier>` répond `% Incomplete command`** —
   contrôle A22. Le système de fichiers sait désormais relire un
   fichier, donc le calcul est possible ; mais une image IOS n'a pas de
@@ -164,3 +149,70 @@ les cas de non-régression, les deux autres passaient pour une raison qui
 ne prouve rien du mécanisme.
 
 Non-régression : 224 fichiers, 3680 cas.
+
+
+## 8. L'accounting et le serveur hérité (chantiers refermés)
+
+Les deux points que §6 laissait ouverts sont traités ensemble : ils sont
+le même sujet.
+
+**La mesure a été faite contre un TÉMOIN monté dans le même
+laboratoire, et c'était nécessaire** : au premier essai les deux formes
+échouaient, ce qui aurait fait conclure à un défaut alors que c'était le
+laboratoire qui était mal bâti. Avec le témoin, la mesure devient
+lisible.
+
+| | authentification | `show tacacs` |
+|---|---|---|
+| forme moderne (témoin) | réussit | voit le serveur |
+| forme héritée | **échoue** | « No TACACS+ servers configured » |
+
+**`tacacs-server host <ip> key <clé>` — la forme la plus tapée de tous
+les cours — était rangée dans `legacyHosts`, un tableau que SEUL le
+rendu de la configuration lisait.** La machine décrivait donc dans sa
+configuration un serveur qu'elle n'avait pas, et un laboratoire monté
+entièrement à l'ancienne échouait en silence. Elle alimente désormais le
+même magasin que `tacacs server <nom>` ; le serveur n'ayant pas de nom
+dans cette forme, c'est son adresse qui sert de clé, comme sur IOS.
+
+**`server <ip>` comme membre de groupe était acceptée et JETÉE** : seul
+`server name <nom>` était lu. C'était la cause restante — même une fois
+le magasin unifié, le groupe demeurait vide.
+
+**La configuration garde l'orthographe de chaque forme.** `legacySpelling`
+est un drapeau de RENDU et non un second magasin : réécrire la forme
+héritée en `tacacs server <nom>` déclarerait un nom que l'opérateur n'a
+jamais donné, et la configuration est rejouée à l'import d'une topologie.
+
+**Les compteurs de `show tacacs` étaient uniquement lus, jamais
+incrémentés** : ils affichaient zéro après une authentification réussie,
+donc le contrôle A10 (« échecs = 0 ») ne pouvait rien distinguer. Ils
+sont mesurés au point où l'échange a lieu.
+
+**`TacacsClientAgent.accountCommand()` était écrit, correct, et n'avait
+aucun appelant de production.** Il est branché sur le point où toute
+commande passe déjà. Deux décisions :
+
+- **L'émission n'est pas attendue.** Un opérateur ne doit pas voir sa
+  CLI se figer parce qu'un serveur TACACS+ est lent — c'est ce que fait
+  `start-stop` sur une vraie machine. `wait-start`, qui bloque, n'est
+  pas modélisé.
+- **`start-stop` émet deux enregistrements, `stop-only` un seul.** Les
+  rendre identiques ferait mentir la configuration sur ce que le
+  collecteur reçoit.
+
+**`show accounting` compte ce qui est réellement parti.** Le tutoriel
+écrit `show aaa accounting` ; cette commande n'existe pas sur un vrai
+IOS, et l'inventer pour coller au tutoriel apprendrait une commande que
+la machine réelle refuse. C'est `show accounting` qui est rendue, avec le
+tableau « Overall Accounting Traffic ». `Failed accounting` figure dans
+`show tacacs` — c'est le contrôle A10.
+
+Reste ouvert et non traité : la forme héritée de RADIUS
+(`radius-server host`) est encore dans `legacyHosts`, donc inerte de la
+même façon. Le correctif est le même, mais RADIUS a son propre magasin et
+ses propres ports d'authentification et de comptabilité — c'est un
+chantier jumeau, pas une extension de celui-ci.
+
+`aaa-accounting-et-serveur-herite.test.ts` (13 cas) discriminé : **10
+tombent** avant correctif. Non-régression : 245 fichiers, 3832 cas.
