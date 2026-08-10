@@ -15,6 +15,7 @@ import {
   getHuaweiRoutingExtras, getSwitchSecurityService,
 } from '../../../equipment/RouterServiceCapabilities';
 import { IPAddress, IPv6Address } from '../../../core/types';
+import { renderTable, VRP_TABLE, type TableColumn } from '../cli/TextTable';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
@@ -923,17 +924,43 @@ export function displayIpv6Interface(router: Router, ifName: string): string {
   return lines.join('\n');
 }
 
+/**
+ * Three defects here, all made visible the day `ipv6 enable` started
+ * creating a real link-local address (RFC 4862 §5.3) instead of setting
+ * a flag: the ZONE INDEX was concatenated with the prefix length
+ * (`fe80::1%GE0/0/0/64` — an address that does not exist), several
+ * addresses were joined on ONE line so the column overflowed and glued
+ * the state onto the address, and a link-local was given a `/64` VRP
+ * does not print. One row per address, the zone dropped — the Interface
+ * column already names it.
+ */
 export function displayIpv6InterfaceBrief(router: Router): string {
-  const ports = router._getPortsInternal();
-  const lines = ['Interface                         IPv6 Address                    State'];
-  for (const [name, port] of ports) {
-    const addrs = port.getIPv6Addresses?.() || [];
-    const addrStr = addrs.length > 0 ? addrs.map((a: any) => `${a.address}/${a.prefixLength}`).join(', ') : 'unassigned';
+  const lignes: LigneIpv6Brief[] = [];
+  for (const [name, port] of router._getPortsInternal()) {
+    const addrs = (port.getIPv6Addresses?.() ?? []) as IPv6AddressEntry[];
     const state = port.isConnected() ? 'up' : 'down';
-    lines.push(`${name.padEnd(34)}${addrStr.padEnd(32)}${state}`);
+    if (addrs.length === 0) {
+      lignes.push({ iface: name, address: 'unassigned', state });
+      continue;
+    }
+    addrs.forEach((a, i) => lignes.push({
+      iface: i === 0 ? name : '',
+      address: a.origin === 'link-local'
+        ? `${a.address.withScopeId(null)}`
+        : `${a.address.withScopeId(null)}/${a.prefixLength}`,
+      state: i === 0 ? state : '',
+    }));
   }
-  return lines.join('\n');
+  return renderTable(lignes, IPV6_BRIEF_COLUMNS, VRP_TABLE).join('\n');
 }
+
+interface LigneIpv6Brief { iface: string; address: string; state: string }
+
+const IPV6_BRIEF_COLUMNS: ReadonlyArray<TableColumn<LigneIpv6Brief>> = [
+  { header: 'Interface', width: 32, value: (r) => r.iface },
+  { header: 'IPv6 Address', width: 30, value: (r) => r.address },
+  { header: 'State', value: (r) => r.state },
+];
 
 /**
  * `display ipv6 neighbors`. VRP renders one RECORD per neighbour rather
@@ -956,7 +983,7 @@ export function displayIpv6Neighbors(router: Router, ifFilter?: string): string 
     if (ifFilter && entry.iface !== ifFilter) continue;
     total++;
     const age = Math.floor(Math.max(0, nowMs - entry.timestamp) / 1000);
-    lines.push(`IPv6 Address : ${new IPv6Address(ip).toString().toUpperCase()}`);
+    lines.push(`IPv6 Address : ${ip.split('%')[0].toUpperCase()}`);
     lines.push(`Link-layer   : ${huaweiMacAddress(entry.mac).padEnd(22)}State : ${VRP_NEIGHBOR_STATE[entry.state]}`);
     lines.push(`Interface    : ${entry.iface.padEnd(22)}Age   : ${age}`);
     lines.push(`VLAN         : -                     CEVLAN: -`);
@@ -1735,6 +1762,11 @@ export function registerDisplayCommands(
 
   trie.register('display ipv6 routing-table', 'Display IPv6 routing table', () =>
     displayIpv6RoutingTable(getRouter()));
+
+  trie.register('reset ipv6 neighbors', 'Clear IPv6 neighbour cache', () => {
+    getRouter()._clearNeighborCache();
+    return '';
+  });
 
   trie.registerGreedy('display ipv6 neighbors', 'Display IPv6 neighbour cache', (args) => {
     if (args.length === 0) return displayIpv6Neighbors(getRouter());

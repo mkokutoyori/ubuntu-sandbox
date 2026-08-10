@@ -1138,7 +1138,7 @@ export function showIpv6Neighbors(router: Router, ifFilter?: string): string {
   for (const [ip, entry] of router.getNeighborCache()) {
     if (ifFilter && entry.iface !== ifFilter) continue;
     rows.push({
-      address: new IPv6Address(ip).toString().toUpperCase(),
+      address: displayIpv6Address(ip),
       age: entry.state === 'incomplete' ? '-' : String(Math.floor(Math.max(0, nowMs - entry.timestamp) / 60000)),
       mac: entry.mac.toCiscoString(),
       state: IPV6_NEIGHBOR_STATE_IOS[entry.state],
@@ -1147,6 +1147,16 @@ export function showIpv6Neighbors(router: Router, ifFilter?: string): string {
   }
   rows.sort((a, b) => a.address.localeCompare(b.address));
   return renderTable(rows, IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE).join('\n');
+}
+
+/**
+ * IOS prints an address in upper case and WITHOUT its zone index here:
+ * the zone is an interface name, not part of the 128 bits, and the
+ * Interface column already names it. Upper-casing the whole string
+ * turned `%GigabitEthernet0/0` into `%GIGABITETHERNET0/0`.
+ */
+function displayIpv6Address(ip: string): string {
+  return ip.split('%')[0].toUpperCase();
 }
 
 /** IOS abbreviates every NDP state to five characters. */

@@ -84,6 +84,50 @@ vertes (766 cas).
 
 ---
 
+### `traceroute ipv6`, et deux vues qui ne rendaient pas une adresse — LIVRÉ
+
+**Agent** : session « logging ». Suite directe du lot précédent : une
+fois l'émetteur ICMPv6 posé, `traceroute ipv6` / `tracert ipv6` étaient
+la commande suivante, et elles étaient refusées des deux côtés.
+
+**Trois autres manques mesurés en même temps**, tous du genre « le
+moteur existe, la porte non » :
+
+- `clear ipv6 neighbors` (IOS) et `reset ipv6 neighbors` (VRP)
+  n'existaient pas — `NeighborCache.clear()` était là, sans appelant.
+- **Un indice de zone rendu comme une adresse.** La vue que je venais
+  d'écrire sortait `FE80::FF:FE00:5%GIGABITETHERNET0/0` : la zone est un
+  NOM D'INTERFACE, pas une partie des 128 bits, et la mettre en
+  majuscules avec le reste la rendait fausse. IOS ne l'imprime pas du
+  tout ici, la colonne Interface la nommant déjà. Corrigé sur les deux
+  plateformes.
+- **`display ipv6 interface brief` était cassée**, et c'est mon
+  correctif d'`ipv6 enable` qui l'a révélé : dès qu'une adresse de
+  lien-local existe, la vue sortait
+  `fe80::ff:fe00:1%GE0/0/0/64, 2001:db8::1/64up` — l'indice de zone
+  collé à la longueur de préfixe (une adresse qui n'existe pas),
+  plusieurs adresses jointes sur UNE ligne, la colonne débordée et
+  l'état recollé derrière. Réécrite avec `TextTable`, une adresse par
+  ligne.
+
+**Fichiers touchés** : `devices/Router.ts`, `router/IPv6DataPlane.ts`,
+`shells/CiscoIOSShell.ts`, `shells/HuaweiVRPShell.ts`,
+`shells/cisco/CiscoShowCommands.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`.
+
+**Encore ouvert, mesuré et non pris** (je le signale, personne ne l'a) :
+`show ipv6 traffic`, `show ipv6 static`, `display ipv6 statistics`,
+`display icmpv6 statistics` n'existent pas ; `show ipv6 route summary`
+répond `% Route to summary` (il prend « summary » pour une
+destination) ; `debug ipv6 nd` répond `debugging is on for access list
+nd` (il prend « nd » pour une ACL).
+
+**Mesures.** `router-ipv6-ping.test.ts` passe à 20 cas ; le second lot
+est discriminé à part : **7 tombent** sans lui. 236 suites vertes
+(3 443 cas).
+
+---
+
 
 ### NTP — lot N5 : l'authentification SIGNE — PRIS
 

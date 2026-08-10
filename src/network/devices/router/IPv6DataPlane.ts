@@ -161,6 +161,9 @@ export class IPv6DataPlane {
   /** The clock the neighbour cache stamps its entries with. */
   neighborCacheNow(): number { return this.neighborCache.nowMs(); }
 
+  /** Drop every learned neighbour, timers included. */
+  clearNeighborCache(): void { this.neighborCache.clear(); }
+
   configureInterface(portName: string, address: IPv6Address, prefixLength: number): boolean {
     const port = this.ctx.getPorts().get(portName);
     if (!port) return false;

@@ -22,7 +22,7 @@ import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
 import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
-import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
+import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
 import type { PromptMap } from './PromptBuilder';
@@ -738,10 +738,18 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.userTrie.registerGreedy('traceroute', 'Trace route to destination', (args) => {
       return this._handleTraceroute(args);
     });
+    this.userTrie.addCompletionKeywords('traceroute', [
+      { keyword: 'ip', description: 'IP Trace' },
+      { keyword: 'ipv6', description: 'IPv6 Trace' },
+    ]);
 
     // ── Privileged mode ──
     this.registerShowCommands(this.privilegedTrie);
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
+    this.privilegedTrie.register('clear ipv6 neighbors', 'Clear IPv6 neighbour cache', () => {
+      this.d()._clearNeighborCache();
+      return '';
+    });
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
 
@@ -1123,6 +1131,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     let probesPerHop = 3;
 
     let i = 0;
+    let ipv6 = false;
+    const first = args[0]?.trim().toLowerCase();
+    if (first === 'ipv6' || first === 'ip') {
+      ipv6 = first === 'ipv6';
+      i++;
+    }
     target = args[i++]?.trim() || '';
 
     while (i < args.length) {
@@ -1145,6 +1159,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
 
     if (!target) return '% Traceroute requires a target IP address.';
+
+    if (ipv6 || looksLikeIPv6(target)) {
+      if (!looksLikeIPv6(target)) {
+        return `% Unrecognized host or address, or protocol not running.`;
+      }
+      this._pendingAsync = this.d()
+        .executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
+        .then(hops => this._formatCiscoTraceroute(target, maxHops, hops));
+      return '';
+    }
 
     const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
     if (!ipMatch) return `% Unrecognized host or address, or protocol not running.`;

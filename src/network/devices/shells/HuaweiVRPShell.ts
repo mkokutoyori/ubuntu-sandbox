@@ -2957,6 +2957,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     let timeoutMs = 2000;
     let probesPerHop = 3;
 
+    let ipv6 = false;
+    if (args[0]?.toLowerCase() === 'ipv6') {
+      ipv6 = true;
+      args = args.slice(1);
+    }
+
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if (a === '-h' && args[i + 1]) { maxHops = parseInt(args[i + 1], 10) || 30; i++; }
@@ -2966,6 +2972,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
 
     if (!target) return 'Error: Please specify a destination IP address.';
+
+    if (ipv6 || looksLikeIPv6(target)) {
+      if (!looksLikeIPv6(target)) return `Error: Unknown host ${target}.`;
+      this._pendingAsync = this.r()
+        .executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
+        .then(hops => this._formatHuaweiTracert(target, maxHops, hops));
+      return '';
+    }
 
     const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
     if (!ipMatch) return `Error: Unknown host ${target}.`;
