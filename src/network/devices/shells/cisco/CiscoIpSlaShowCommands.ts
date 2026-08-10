@@ -79,7 +79,10 @@ function renderConfiguration(runtime: SlaOperationRuntime): string[] {
     lines.push(`Target Address: ${config.dns.name ?? ''}`);
     lines.push(`Name Server: ${config.dns.nameServer ?? ''}`);
   } else {
-    lines.push(`Target address/Source address: ${config.target ?? '0.0.0.0'}/${config.sourceIp ?? '0.0.0.0'}`);
+    // `2001:db8::2/0.0.0.0` paired an IPv6 target with the IPv4 "unset"
+    // literal — the unset source of an IPv6 operation is `::`.
+    const unset = config.target && config.target.includes(':') ? '::' : '0.0.0.0';
+    lines.push(`Target address/Source address: ${config.target ?? unset}/${config.sourceIp ?? unset}`);
   }
   if (config.targetPort !== null) {
     lines.push(`Target port/Source port: ${config.targetPort}/${config.sourcePort ?? 0}`);

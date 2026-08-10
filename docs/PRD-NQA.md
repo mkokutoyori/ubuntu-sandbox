@@ -254,7 +254,7 @@ exprime par `controlEnabled = false`.
 | `test-type ftp`/`snmp`/`dhcp` | Aucun client correspondant côté routeur (cf. `PRD-IP-SLA.md` §6) |
 | `lspping`/`lsptrace` | Aucun plan MPLS |
 | `pathmtu`, `pathjitter`, `macping` | Idem IP SLA : la brique manque, pas la volonté |
-| NQA sur IPv6 (`destination-address ipv6`) | Aucun émetteur ICMPv6 côté routeur — même exclusion que côté IOS, et le jour où elle tombera elle tombera pour les deux |
+| ~~NQA sur IPv6~~ **LEVÉE** | Elle est tombée pour les deux, comme annoncé : l'émetteur ICMPv6 existe, donc `destination-address ipv6` est accepté et `test-type icmp` mesure vraiment. Un autre type refuse une destination IPv6 en nommant la brique absente plutôt qu'en acceptant une adresse qu'il ne peut pas atteindre |
 | `vpn-instance` | Aucun plan de routage par VRF ; refusé plutôt qu'accepté sans effet |
 | Réactions/traps NQA (`nqa-jitter`/trap SNMP VRP) | La MIB Huawei NQA est distincte de CISCO-RTTMON ; elle mérite son propre lot, et rien ne la consomme aujourd'hui |
 | Commutateurs Huawei | NQA vit sur `Router` ; `HuaweiSwitch` n'a pas de plan L3 propre au sens où ce moteur l'exige |

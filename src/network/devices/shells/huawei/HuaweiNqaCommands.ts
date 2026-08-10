@@ -3,6 +3,7 @@ import type { Router } from '../../Router';
 import type { NqaService, NqaTestInstance, NqaTestType } from '../../../nqa/NqaService';
 import { NQA_TEST_TYPES, NQA_UNSUPPORTED_TYPES } from '../../../nqa/NqaService';
 import { applyTypeDefaults } from '../../../ipsla/types';
+import { looksLikeIPv6 } from '../cisco/ciscoPing';
 
 export interface HuaweiNqaShellCtx {
   r(): Router;
@@ -12,6 +13,7 @@ export interface HuaweiNqaShellCtx {
 }
 
 const INCOMPLETE = 'Error: Incomplete command.';
+
 const WRONG_PARAM = 'Error: Wrong parameter found at \'^\' position.';
 
 function service(ctx: HuaweiNqaShellCtx): NqaService {
@@ -116,12 +118,22 @@ export function buildHuaweiNqaTestView(trie: CommandTrie, ctx: HuaweiNqaShellCtx
   trie.registerGreedy('destination-address', 'Set the destination address', (args) => {
     const config = runtime()?.config;
     if (!config) return '';
-    if (args[0] === 'ipv6') {
-      return 'Error: IPv6 NQA is not supported in this simulator '
-        + '(no ICMPv6 sender on a router).';
-    }
-    const address = args[0] === 'ipv4' ? args[1] : args[0];
+    // `destination-address ipv6 <addr>` was refused because a router
+    // had no ICMPv6 sender. It has one now, so the refusal was the only
+    // thing left standing. Only an `icmp` test can measure over IPv6
+    // today, and the others say which brick is missing rather than
+    // accepting an address they cannot reach.
+    const famille = args[0] === 'ipv6' || args[0] === 'ipv4' ? args[0] : null;
+    const address = famille ? args[1] : args[0];
     if (!address) return INCOMPLETE;
+    if (famille === 'ipv6' || looksLikeIPv6(address)) {
+      if (!looksLikeIPv6(address)) return WRONG_PARAM;
+      const type = current(ctx)?.testType;
+      if (type !== undefined && type !== 'icmp') {
+        return `Error: an IPv6 destination is only measurable by a test-type icmp `
+          + `(no IPv6 transport for ${type} in this simulator).`;
+      }
+    }
     config.target = address;
     config.dns.nameServer = address;
     return '';

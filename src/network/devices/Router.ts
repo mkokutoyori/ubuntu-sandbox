@@ -515,6 +515,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPort: (name) => this.ports.get(name),
       resolveEgress: (destination, sourceInterface, sourceIp) =>
         this.resolveIpSlaEgress(destination, sourceInterface, sourceIp),
+      sendIcmpv6Echo: (r) => this.sendIpSlaIcmpv6Echo(r),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       sendUdp: (destination, sourcePort, destinationPort, payload) =>
         this.sendIpSlaUdp(destination, sourcePort, destinationPort, payload),
@@ -1676,6 +1677,30 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** What the IPv6 data plane has actually counted. */
   getIpv6Counters() { return this.ipv6Engine.getIpv6Counters(); }
   _clearIpv6Counters(): void { this.ipv6Engine.clearIpv6Counters(); }
+
+  /**
+   * One ICMPv6 Echo Request for IP SLA / NQA. It goes through the very
+   * `resolveEgress`/`sendEchoRequest` pair `ping ipv6` uses, so a probe
+   * and a ping cannot disagree about whether a target is reachable.
+   */
+  private sendIpSlaIcmpv6Echo(r: {
+    destination: string; identifier: number; sequence: number;
+    dataSize: number; sourceInterface: string | null; sourceIp: string | null;
+  }): { sourceIp: string } | null {
+    let source = r.sourceIp ?? undefined;
+    if (!source && r.sourceInterface) {
+      const port = this.ports.get(r.sourceInterface);
+      const addr = port?.getGlobalIPv6() ?? port?.getLinkLocalIPv6();
+      if (!addr) return null;
+      source = addr.toString();
+    }
+    const target = new IPv6Address(r.destination);
+    const egress = this.ipv6Engine.resolveEgress(target, source);
+    if (!egress) return null;
+    this.ipv6Engine.sendEchoRequest(
+      egress, target, r.identifier, r.sequence, Math.max(0, r.dataSize));
+    return { sourceIp: egress.sourceIP.toString() };
+  }
 
   /** The clock an entry's `timestamp` is expressed in. */
   getNeighborCacheNow(): number { return this.ipv6Engine.neighborCacheNow(); }

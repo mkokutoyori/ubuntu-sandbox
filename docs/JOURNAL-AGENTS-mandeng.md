@@ -84,6 +84,45 @@ vertes (766 cas).
 
 ---
 
+### IP SLA et NQA mesurent une cible IPv6 — LIVRÉ
+
+**Agent** : session « logging ». Les deux sous-systèmes refusaient une
+cible IPv6, et les deux nommaient la MÊME raison — pas d'émetteur ICMPv6
+sur un routeur. La brique est posée depuis, donc le refus était la seule
+chose qui restait debout.
+
+**Côté Cisco ce n'était même pas un refus** : `icmp-echo 2001:db8::2`
+était accepté, rendu par `show ip sla configuration` — et
+`show ip sla statistics` répondait `Latest RTT: NoConnection` avec un
+échec, indéfiniment. Accepté, affiché, lu par rien qui puisse
+l'atteindre ; et la source rendue `0.0.0.0` à côté d'une cible IPv6,
+c'est-à-dire le littéral « non défini » de l'AUTRE famille.
+
+La sonde passe par `IPv6DataPlane.resolveEgress`/`sendEchoRequest` —
+**le même chemin que `ping ipv6`** — donc une sonde et un ping ne peuvent
+pas se contredire sur la joignabilité d'une cible. `track` suit, ce pour
+quoi la commande existe.
+
+**Ce qui reste refusé, en nommant sa brique** : tout type autre
+qu'`icmp-echo` / `test-type icmp`, faute de transport IPv6 pour l'écho
+UDP, la connexion TCP, HTTP ou DNS. Refuser en le disant vaut mieux
+qu'accepter une adresse qu'on ne peut pas atteindre.
+
+`docs/PRD-IP-SLA.md` et `docs/PRD-NQA.md` portaient l'exclusion dans
+leur tableau de limites : elle y est marquée LEVÉE plutôt que supprimée.
+
+**Fichiers touchés** : `ipsla/types.ts`, `ipsla/IpSlaEngine.ts`,
+`ipsla/probes/IcmpEchoProbe.ts`, `devices/Router.ts`,
+`shells/cisco/CiscoIpSlaShowCommands.ts`,
+`shells/huawei/HuaweiNqaCommands.ts`.
+
+**Mesures.** `ipsla-nqa-ipv6-target.test.ts` (11 cas) : **6 tombent**
+avant ; les 5 autres sont nommés dans l'en-tête plutôt que comptés comme
+couverture (deux TÉMOINS IPv4, et trois cas négatifs qui passaient avant
+pour la mauvaise raison). 173 suites vertes (2 413 cas).
+
+---
+
 ### Le plan de données IPv6 COMPTE, et quatre vues le lisent — LIVRÉ
 
 **Agent** : session « logging ». Dernier des manques mesurés sur la

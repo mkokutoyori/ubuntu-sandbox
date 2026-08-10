@@ -30,7 +30,8 @@ import {
   type RttAggregate,
 } from './statistics';
 import { evaluateEModel, type EModelResult } from './emodel';
-import { sendIcmpEcho } from './probes/IcmpEchoProbe';
+import { sendIcmpEcho, sendIcmpv6Echo } from './probes/IcmpEchoProbe';
+import { looksLikeIPv6 as looksLikeIpv6Target } from '../devices/shells/cisco/ciscoPing';
 import { runUdpProbe, type UdpTransport } from './probes/UdpProbe';
 import {
   runDnsProbe, runHttpProbe, runIcmpJitterProbe, runPathEchoProbe, runTcpConnectProbe,
@@ -579,6 +580,31 @@ export class IpSlaEngine {
         respondingAddress: null,
       };
     }
+    // An IPv6 target is a different data plane, not a different
+    // spelling of an IPv4 one: only `icmp-echo` has a v6 path today, and
+    // the other types say which brick is missing rather than answering
+    // `Cannot resolve` for an address that is perfectly well formed.
+    if (looksLikeIpv6Target(config.target)) {
+      if (config.type !== 'icmp-echo') {
+        return {
+          returnCode: 'notConnected', rttMs: null,
+          diagText: `IPv6 target not supported for ${config.type} (no IPv6 transport for this operation)`,
+          respondingAddress: null,
+        };
+      }
+      runtime.sequence = (runtime.sequence + 1) & 0xffff;
+      return sendIcmpv6Echo({
+        host: this.host,
+        bus: this.getBus(),
+        scheduler,
+        config,
+        identifier: runtime.identifier,
+        sequence: runtime.sequence,
+        destination: config.target,
+        timeoutMs: config.timeoutMs,
+      });
+    }
+
     const destination = this.resolveTarget(config.target);
     if (!destination) {
       return {

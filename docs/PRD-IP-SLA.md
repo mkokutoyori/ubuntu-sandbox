@@ -620,7 +620,7 @@ sous-jacente, pas par la difficulté :
 | `mpls lsp ping/trace`, `auto ip sla mpls-lsp-monitor` | Aucun plan MPLS (ni LDP, ni labels, ni LSP) |
 | `ethernet echo`/`jitter` (Y.1731) | Aucun OAM 802.1ag/Y.1731 |
 | `path-jitter` | Exigerait de maintenir des statistiques de gigue par saut découvert, sur une topologie qui peut changer entre deux cycles. `path-echo` couvre le besoin pédagogique (« quel saut est lent ») sans cette complexité |
-| Cibles **IPv6** | `IPv6DataPlane` répond aux echo-requests mais aucun émetteur ICMPv6 n'existe côté routeur. Ajouter IP SLA v6 exigerait d'abord cet émetteur — travail distinct, réutilisable ailleurs (`ping ipv6` en bénéficierait) |
+| ~~Cibles **IPv6**~~ **LEVÉE** | La brique manquante — un émetteur ICMPv6 côté routeur — a été posée depuis (`IPv6DataPlane.resolveEgress`/`sendEchoRequest`, ce que `ping ipv6` utilise). `icmp-echo` mesure donc une cible IPv6 pour de bon, par le MÊME chemin que le ping, si bien qu'une sonde et un ping ne peuvent pas se contredire sur la joignabilité d'une cible. Les AUTRES types restent refusés en nommant leur brique : il n'existe pas de transport IPv6 pour l'écho UDP, la connexion TCP, HTTP ni DNS ici |
 | **VRF** (`vrf <nom>` sur une opération) | Le simulateur n'a pas de plan de routage par VRF ; la commande serait acceptée et sans effet. Elle est **refusée** plutôt que stockée |
 | `ip sla responder twamp`, `ip sla server twamp` | RFC 5357 est un protocole complet (contrôle TCP/862 + test UDP), pas une option du responder Cisco. Le faire à moitié le rendrait faux ; il mérite son propre PRD |
 | Horodatage matériel (`Supported Hardware Timestamp Modes`) | Sans objet dans un simulateur ; la ligne est rendue à `None`, comme sur un ISR |
@@ -749,7 +749,8 @@ Livré et discriminé par `git stash` :
   deux clés différentes pour ces deux rôles.
 
 Restent non faits, tels que §6 les décrit : `path-jitter`, `ftp`,
-`dhcp`, `voip`, MPLS, Y.1731, cibles IPv6, VRF, TWAMP, et Huawei NQA.
+`dhcp`, `voip`, MPLS, Y.1731, VRF, TWAMP, et Huawei NQA. (Les cibles
+IPv6 figuraient dans cette liste ; `icmp-echo` les mesure désormais.)
 
 ---
 

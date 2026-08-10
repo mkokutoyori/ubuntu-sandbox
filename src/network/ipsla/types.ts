@@ -269,6 +269,17 @@ export interface IpSlaHost {
   getHostname(): string;
   getPort(name: string): Port | undefined;
   resolveEgress(destination: IPAddress, sourceInterface: string | null, sourceIp: string | null): IpSlaEgress | null;
+  /**
+   * Put one ICMPv6 Echo Request on the wire and say which address it
+   * left with. Separate from `resolveEgress`/`sendFrame` because the
+   * IPv6 data plane owns its own neighbour resolution — routing an IPv6
+   * probe through the IPv4 pair would mean a second, divergent copy of
+   * that resolution. `null` means the probe never reached the wire.
+   */
+  sendIcmpv6Echo(request: {
+    destination: string; identifier: number; sequence: number;
+    dataSize: number; sourceInterface: string | null; sourceIp: string | null;
+  }): { sourceIp: string } | null;
   sendFrame(iface: string, frame: EthernetFrame): void;
   sendUdp(destination: IPAddress, sourcePort: number, destinationPort: number, payload: unknown): boolean;
   connectTcp(ip: string, port: number, timeoutMs: number): Promise<IpSlaTcpProbeResult>;
