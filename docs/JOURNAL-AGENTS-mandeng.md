@@ -160,6 +160,82 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### NTP — lot N10 : chrony lit ses clés, et `ntp authenticate` gouverne le bon sens — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §12.
+
+**Le défaut annoncé** : `keyfile` était analysé, rangé dans
+`ChronyConf.keyfile`, et **lu par personne** — l'en-tête de
+`ChronyConfig.ts` le classait pourtant parmi les directives « LUES et
+agissantes », ce qui était faux. Conséquence : `server X key 1`
+transmettait le NUMÉRO de clé à l'agent mais aucun secret n'existait
+derrière, donc le paquet partait avec un identifiant de clé et **sans
+condensé** — la forme exacte qu'un serveur rejette. Une machine Linux ne
+pouvait pas authentifier NTP, alors que Cisco et Huawei le font depuis
+N5.
+
+**Le défaut trouvé en vérifiant, et c'est le plus important pour vous** :
+la porte d'authentification de `NtpAgent.handleUdp` lisait
+`config.authenticate` et s'appliquait à **TOUS** les paquets reçus, donc
+un routeur armé refusait de servir un client ordinaire. La documentation
+Cisco dit l'inverse en toutes lettres : la commande fait que « the system
+will not synchronize to a device unless the device carries one of the
+specified authentication keys » — elle gouverne ce que la machine
+**CROIT**, pas ce qu'elle **SERT** — et elle « does not ensure
+authentication of peer associations ». Un routeur authentifiant continue
+donc de donner l'heure à qui la demande ; c'est `ntp access-group` qui
+restreint la clientèle. **Seul ce qui PRÉSENTE une clé est désormais
+vérifié** (et un mauvais condensé reçoit toujours son crypto-NAK). Si
+vous montez un lab où un serveur `ntp authenticate` doit refuser des
+clients, il faut maintenant l'access-group — c'est le vrai matériel qui
+l'impose, pas moi.
+
+**Ce qui vous concerne aussi** : `NtpCounters` gagne `authOk`, **mesuré**
+aux deux points où un condensé est reconnu bon. `chronyc serverstats`
+l'affichait comme `reçus - échecs`, donc comptait comme authentifié tout
+paquet nu.
+
+**Vos tableaux** : `chronyc authdata` (neuf), `sources` et `sourcestats`
+passent par **`TextTable`** — votre module du lot V12. Largeurs mesurées
+au caractère près sur la sortie réelle de la documentation de chrony ;
+ses trois lignes de données d'exemple sont reproduites exactement.
+
+**Une mesure qui pourrait vous servir ailleurs** : l'en-tête de chrony
+**ne s'aligne pas sur ses propres données**. Sur son exemple, la valeur
+de `Poll` finit colonne 37 quand l'intitulé finit à la 38, `LastRx` à la
+49 contre 51. Même chose sur `ntpq -p`, où `reach` est décalé d'un cran.
+L'en-tête est une chaîne fixe du code, les données un `printf` qui ne s'y
+aligne pas. Les colonnes portent donc les données et l'en-tête reste la
+constante mesurée : la dériver donnerait un tableau **plus propre que la
+vraie machine**, donc faux. `authdata`, dont l'en-tête s'aligne, est
+entièrement déclaré. Si vous croisez le même cas côté IOS/VRP, c'est un
+motif et non une exception.
+
+**Une erreur à moi, corrigée** : mon test du lot N8 (« une
+authentification qui échoue compte un rejet ») montait un client **sans
+aucune clé** et attendait un rejet — il encodait le défaut ci-dessus
+comme contrat. Réécrit, plus un cas jumeau qui vérifie qu'un client nu
+est bien **servi**.
+
+**Fichiers touchés** : `ntp/auth.ts`, `ntp/NtpAgent.ts`, `ntp/types.ts`,
+`devices/linux/time/*` (dont `ChronyKeys.ts`, neuf),
+`devices/linux/commands/system/Chronyc.ts`, `devices/LinuxMachine.ts`.
+**Aucun contact avec le trie ni avec l'aide `?`.**
+
+**Mesures.** 95 suites du domaine temps/CLI vertes (1 804 cas), puis 343
+suites Linux/Windows/shell vertes (5 903 cas).
+`tuto-ntp-chrony-cles.test.ts` (26 cas) discriminé par `git stash` :
+**19 tombent** avant correctif ; les 7 restants portent sur les modules
+neufs seuls et sont nommés comme tels dans l'en-tête du fichier.
+Typecheck : jeu d'erreurs **identique** (217 — c'est la fusion qui l'a
+fait passer de 216 à 217, pas ce lot). Lint propre.
+
+**Reste ouvert sur NTP** : les requêtes de contrôle (mode 6), donc
+`query-only` de `ntp access-group` reste structurellement inerte.
+
+---
+
 ### NTP — lot N9 : l'horloge se discipline — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -3326,7 +3402,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N9 livrés** |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N10 livrés** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
