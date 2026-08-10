@@ -350,6 +350,27 @@ export abstract class TerminalSession {
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
   }
 
+  /**
+   * Le minuteur ABSOLU, distinct du precedent — et la distinction est
+   * tout le sujet : celui-ci n'est JAMAIS reamorce par l'activite. C'est
+   * ce qui separe `absolute-timeout` d'`exec-timeout`, et sans un second
+   * minuteur il n'y a pas moyen de l'exprimer : reutiliser celui de
+   * l'inactivite ferait repousser la limite absolue a chaque frappe,
+   * c'est-a-dire ne la ferait jamais expirer pour un operateur actif —
+   * exactement le cas que la commande existe pour borner.
+   */
+  private absoluteTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected armAbsoluteTimer(ms: number, onTimeout: () => void): void {
+    this.clearAbsoluteTimer();
+    if (!Number.isFinite(ms) || ms <= 0) return;
+    this.absoluteTimer = setTimeout(() => { this.absoluteTimer = null; onTimeout(); }, ms);
+  }
+
+  protected clearAbsoluteTimer(): void {
+    if (this.absoluteTimer) { clearTimeout(this.absoluteTimer); this.absoluteTimer = null; }
+  }
+
   /** Vendor hook: called after every submitted command (activity). */
   protected onCommandActivity(): void { /* no-op by default */ }
 
@@ -987,6 +1008,7 @@ export abstract class TerminalSession {
   dispose(): void {
     if (this.disposed) return;
     this.clearIdleTimer();
+    this.clearAbsoluteTimer();
     this.asyncRuntime.cancelAll();
     // Subclasses may register a teardown to release SSH sessions, sub-shells,
     // remote-forwarders, etc. Run them BEFORE flagging disposed so handlers

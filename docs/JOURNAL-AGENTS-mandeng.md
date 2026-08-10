@@ -4453,6 +4453,58 @@ de passe VIDE au lieu de poser une question.
 
 ---
 
+## Lot S1 — les sessions Cisco, tutoriel rejoue laboratoire par laboratoire
+
+**PRD** : `PRD-Sessions-Cisco.md`. Mesure de depart inhabituelle et dite
+telle quelle : **l'essentiel du tutoriel fonctionnait deja** — `show
+users`, `show who`, `show ssh`, `show tcp brief`, `show sessions`,
+`resume`, `disconnect`, `clear line`, `terminal length/width/history`,
+`exec-timeout`, `access-class`, `transport input`, `line vty 5 15`. Cinq
+points ne fonctionnaient pas.
+
+**`show line <n>` ignorait son argument** (listait tout), et **le bloc de
+detail n'existait pas** : la commande rendait un tableau
+`Tty Line Speed Timeout` qui n'existe dans AUCUNE version d'IOS. Le vrai
+bloc — delais, limite de session, temps depuis activation, historique,
+transports — est ce qui dit a un operateur pourquoi sa session va tomber,
+et c'est tout le sujet des §3.4 et §7.3.
+
+**`absolute-timeout` etait refusee**, et elle AGIT : `armAbsoluteTimer`
+est deliberement distinct du minuteur d'inactivite, sans quoi la limite
+serait repoussee a chaque frappe — la negation exacte du mecanisme.
+**`escape-character` etait refusee.** **`send` partait en RESOLUTION
+DNS** : la machine cherchait un hote nomme `send`. **`session-timeout` et
+`history size`** etaient acceptees et rangees sous des noms qu'aucun
+champ ne portait, donc perdues sans un mot — y compris a l'import d'une
+topologie, ce qui faisait revenir la panne du scenario 1 a chaque
+reouverture.
+
+**Deux ecarts du tutoriel avec une vraie machine sont PINCES plutot que
+reproduits**, meme decision que pour `show aaa accounting` : il n'existe
+pas de mot-cle `detail` (`show line vty 0` suffit, `summary` est le seul
+suffixe), et les formes reelles sont `send *` / `send vty 0`, pas
+`send all` / `send line vty 0`.
+
+Trouve en chemin : le jeton `$(line)` d'une banniere annoncait `0` sur
+toutes les lignes, deux endroits lisant `this.vty?.lineIndex`, une
+propriete qui n'existe sur aucun objet.
+
+**Fichiers touches** : `shells/cisco/CiscoLineViews.ts` (nouveau),
+`shells/cisco/CiscoCommonShow.ts`, `shells/CiscoShellBase.ts`,
+`router/vty/VtyLineConfig.ts`, `router/aaa/SshSessionRegistry.ts`,
+`terminal/sessions/TerminalSession.ts`,
+`terminal/sessions/CiscoTerminalSession.ts`.
+
+**Mesures.** `tuto-sessions-cisco.test.ts` (67 cas, les deux
+plateformes) discrimine par `git stash` : **39 tombent** avant. 12 suites
+connexes vertes (474 cas). Typecheck : 119, un de MOINS que la reference
+de 120. Lint identique. **Restent ouverts et ecrits dans le PRD** : les
+messages `%SYS-6-LOGOUT` / `%SEC_LOGIN-*` (toute la partie 9 en depend et
+ils n'existent nulle part), l'epuisement des VTY, et la divergence de
+`show ssh` entre routeur et commutateur.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -4471,7 +4523,8 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
-| Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** — audit en cours |
+| Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
+| Sessions Cisco (lignes, délais, `send`, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 livré** — 3 points ouverts |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

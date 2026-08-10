@@ -12,6 +12,10 @@ import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateV
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
 import { CISCO_ERRORS } from '../cli-utils';
+import {
+  tableauLignes, blocDetailLigne, REGLAGES_PAR_DEFAUT,
+  type LigneTty, type ReglagesLigne, type SessionSurLigne,
+} from './CiscoLineViews';
 import { nomLoopfilterIos } from '@/network/ntp/discipline';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
@@ -840,49 +844,125 @@ export function showNtpAssociations(dev?: ShowStateDevice): string {
   return [header, ...rows, legende].join('\n');
 }
 
-function formatLineTimeout(minutes: number | null, seconds: number | null): string {
-  const totalSeconds = (minutes ?? 10) * 60 + (seconds ?? 0);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+/**
+ * `show line [n [m]] | [{aux|console|tty|vty} n [m]] [summary]`.
+ *
+ * Trois defauts mesures avant reecriture, decrits en tete de
+ * `CiscoLineViews.ts` : l'argument etait IGNORE (`show line 2` listait
+ * tout), le bloc de detail n'existait pas, et la forme rendue pour
+ * `show line vty 0 4` — un tableau `Tty Line Speed Timeout` — n'existe
+ * dans aucune version d'IOS.
+ */
+export function showLine(dev: ShowStateDevice, args: string[] = []): string {
+  const mots = args.map((a) => a.toLowerCase()).filter((a) => a.length > 0);
+  const resumeSeul = mots[mots.length - 1] === 'summary';
+  const reste = resumeSeul ? mots.slice(0, -1) : mots;
+
+  const inventaire = inventaireLignes(dev);
+  // Pas d'argument : le tableau de toutes les lignes, sans detail.
+  if (reste.length === 0) return tableauLignes(inventaire);
+
+  const TYPES: Record<string, LigneTty['type']> = {
+    con: 'CTY', console: 'CTY', aux: 'AUX', tty: 'VTY', vty: 'VTY',
+  };
+  let choisies: LigneTty[];
+  const type = TYPES[reste[0]];
+  if (type !== undefined) {
+    const premier = Number.parseInt(reste[1] ?? '', 10);
+    if (!Number.isFinite(premier)) return CISCO_INVALID_INPUT;
+    const dernier = reste[2] !== undefined ? Number.parseInt(reste[2], 10) : premier;
+    if (!Number.isFinite(dernier)) return CISCO_INVALID_INPUT;
+    // `vty 0` designe le RANG dans le type, pas le numero absolu de tty
+    // — sur un routeur la vty 0 est la ligne 2, et confondre les deux
+    // ferait decrire la console quand on demande la premiere vty.
+    choisies = inventaire.filter((l) => l.type === type && l.rang >= premier && l.rang <= dernier);
+  } else {
+    const premier = Number.parseInt(reste[0], 10);
+    if (!Number.isFinite(premier)) return CISCO_INVALID_INPUT;
+    const dernier = reste[1] !== undefined ? Number.parseInt(reste[1], 10) : premier;
+    if (!Number.isFinite(dernier)) return CISCO_INVALID_INPUT;
+    if (reste.length > 2) return CISCO_INVALID_INPUT;
+    choisies = inventaire.filter((l) => l.tty >= premier && l.tty <= dernier);
+  }
+  if (choisies.length === 0) return CISCO_INVALID_INPUT;
+
+  const sortie = [tableauLignes(choisies)];
+  // `summary` est le SEUL suffixe qu'IOS accepte ici. Nommer une ligne
+  // demande deja le detail — il n'existe pas de mot-cle `detail`, et
+  // l'ajouter apprendrait une commande que le materiel refuse.
+  if (!resumeSeul) {
+    const maintenant = Date.now();
+    for (const l of choisies) {
+      sortie.push(...blocDetailLigne(l, reglagesDeLigne(dev, l), sessionSurLigne(dev, l), maintenant));
+    }
+  }
+  return sortie.join('\n');
+}
+
+const CISCO_INVALID_INPUT = "% Invalid input detected at '^' marker.";
+
+/**
+ * L'inventaire reel : un routeur numerote CTY 0, AUX 1, puis les VTY a
+ * partir de 2. Le nombre de VTY vient de la configuration — `line vty
+ * 5 15` en cree vraiment onze de plus, et les afficher toujours au
+ * nombre de cinq nierait la commande qu'on vient de taper.
+ */
+function inventaireLignes(dev: ShowStateDevice): LigneTty[] {
+  const store = (dev as unknown as {
+    _getVtyLineConfig?: () => { all: () => Array<{ first: number; last: number }> };
+  })._getVtyLineConfig?.();
+  let maxVty = 4;
+  for (const bloc of store?.all() ?? []) maxVty = Math.max(maxVty, bloc.last);
+  const lignes: LigneTty[] = [
+    { tty: 0, type: 'CTY', rang: 0, courante: true, uses: 0 },
+    { tty: 1, type: 'AUX', rang: 0, courante: false, uses: 0 },
+  ];
+  for (let i = 0; i <= maxVty; i++) {
+    lignes.push({ tty: 2 + i, type: 'VTY', rang: i, courante: false, uses: 0 });
+  }
+  return lignes;
+}
+
+/** Les reglages configures pour la ligne, lus dans le magasin que la CLI ecrit. */
+function reglagesDeLigne(dev: ShowStateDevice, l: LigneTty): ReglagesLigne {
+  if (l.type !== 'VTY') return REGLAGES_PAR_DEFAUT;
+  const store = (dev as unknown as {
+    _getVtyLineConfig?: () => { all: () => Array<Record<string, unknown>> };
+  })._getVtyLineConfig?.();
+  const bloc = (store?.all() ?? []).find(
+    (b) => l.rang >= (b.first as number) && l.rang <= (b.last as number),
+  );
+  if (!bloc) return REGLAGES_PAR_DEFAUT;
+  const n = (k: string): number | null => (typeof bloc[k] === 'number' ? bloc[k] as number : null);
+  const t = (k: string): string | null => (typeof bloc[k] === 'string' ? bloc[k] as string : null);
+  return {
+    execTimeoutMinutes: n('execTimeoutMinutes'),
+    execTimeoutSeconds: n('execTimeoutSeconds'),
+    sessionTimeoutMinutes: n('sessionTimeoutMinutes'),
+    absoluteTimeoutMinutes: n('absoluteTimeoutMinutes'),
+    escapeCharacter: t('escapeCharacter'),
+    historyEnabled: bloc.historyEnabled !== false,
+    historySize: n('historySize'),
+    transportInput: t('transportInput'),
+    accessClassIn: t('accessClassIn'),
+    screenLengthLines: n('screenLengthLines'),
+  };
 }
 
 /**
- * `show line` — the device's real default line inventory, or (when a
- * specific `vty <first> <last>` / `console <n>` is named) the real
- * configured exec-timeout for that line, not a value disconnected from
- * the running configuration.
+ * La session posee sur cette ligne, s'il y en a une. Sans elle,
+ * `Time since activation` annoncerait `never` sur une ligne occupee —
+ * c'est-a-dire exactement le champ qu'on consulte pour reperer une
+ * session abandonnee.
  */
-export function showLine(dev: ShowStateDevice, args: string[] = []): string {
-  const kind = args[0]?.toLowerCase();
-  if (kind === 'vty' && args[1] !== undefined) {
-    const first = Number.parseInt(args[1], 10);
-    const last = Number.parseInt(args[2] ?? args[1], 10);
-    const store = (dev as unknown as {
-      _getVtyLineConfig?: () => { get: (f: number, l: number) => { execTimeoutMinutes: number | null; execTimeoutSeconds: number | null } | undefined };
-    })._getVtyLineConfig?.();
-    const block = store?.get(first, last);
-    const rows = ['   Tty Line  Speed   Timeout'];
-    for (let i = first; i <= last; i++) {
-      rows.push(`     ${i}  VTY ${i}  -       ${formatLineTimeout(block?.execTimeoutMinutes ?? null, block?.execTimeoutSeconds ?? null)}`);
-    }
-    return rows.join('\n');
-  }
-  // `AccO` est un O, pas un zéro : la colonne nomme la classe d'accès
-  // SORTANTE (Out), face à `AccI` pour l'entrante. Et un routeur numérote
-  // CTY 0, AUX 1, puis les VTY à partir de 2 — l'AUX manquait, donc les
-  // VTY commençaient une ligne trop tôt.
-  const ligne = (tty: number, line: number, type: string, actuelle: boolean): string =>
-    `${actuelle ? '*' : ' '} ${String(tty).padStart(4)}${String(line).padStart(5)} ${type.padEnd(7)}`
-    + '           -    -    -    -      0     0   0/0       -';
-  const rows = [
-    '   Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int',
-    ligne(0, 0, 'CTY', true),
-    ligne(1, 1, 'AUX', false),
-  ];
-  for (let i = 0; i < 5; i++) rows.push(ligne(2 + i, 2 + i, 'VTY', false));
-  return rows.join('\n');
+function sessionSurLigne(dev: ShowStateDevice, l: LigneTty): SessionSurLigne | null {
+  if (l.type !== 'VTY') return null;
+  const reg = (dev as unknown as {
+    getSshSessionRegistry?: () => { listSessions?: () => Array<{ line?: number; user?: string; startedAt?: number }> };
+  }).getSshSessionRegistry?.();
+  const s = (reg?.listSessions?.() ?? []).find((x) => x.line === l.rang);
+  if (!s) return null;
+  return { user: s.user ?? null, depuisMs: s.startedAt ?? Date.now() };
 }
 
 /**

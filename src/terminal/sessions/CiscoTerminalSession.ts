@@ -84,6 +84,8 @@ export class CiscoTerminalSession extends CLITerminalSession {
     await super.init();
     this.startConsoleLogging();
     this.maybeStartConsoleLogin();
+    this.armerLimiteAbsolue();
+    this.abonnerAuxMessages();
   }
 
   /**
@@ -110,6 +112,42 @@ export class CiscoTerminalSession extends CLITerminalSession {
       this.offConsoleLogging?.();
       this.offConsoleLogging = null;
     });
+  }
+
+  /**
+   * S'inscrire pour recevoir les messages de `send`.
+   *
+   * La ligne est celle de la session : la console est 0, une vty prend
+   * son rang. Sans cette inscription, `send` serait une commande qui
+   * annonce avoir livre un message que personne ne voit — le defaut que
+   * ce depot referme partout ailleurs.
+   */
+  private abonnerAuxMessages(): void {
+    const reg = (this.device as unknown as {
+      getSshSessionRegistry?: () => { subscribeMessages?: (l: number, cb: (t: string) => void) => () => void };
+    }).getSshSessionRegistry?.();
+    if (!reg?.subscribeMessages) return;
+    const ligne = this.numeroDeLigne();
+    const off = reg.subscribeMessages(ligne, (texte) => {
+      for (const l of texte.split('\n')) this.addLine(l);
+      this.notify();
+    });
+    this.registerTearDown(off);
+  }
+
+  /**
+   * Le numero de ligne de CETTE session : 0 pour la console, son rang
+   * pour une vty.
+   *
+   * `CliShellSession` ne porte que `lineId` (« vty 3 ») ; deux endroits
+   * lisaient `this.vty?.lineIndex`, une propriete qui n'existe sur
+   * aucun objet — donc le jeton `$(line)` d'une banniere annoncait `0`
+   * sur toutes les lignes, y compris une vty.
+   */
+  private numeroDeLigne(): number {
+    if (!this.isVtyRemoteSession) return 0;
+    const m = /(\d+)/.exec(this.vty?.lineId ?? '');
+    return m ? Number.parseInt(m[1], 10) : 0;
   }
 
   private maybeStartConsoleLogin(): void {
@@ -237,7 +275,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
     return expandBannerTokens(brut, {
       hostname: () => dev.getHostname?.() ?? '',
       domain: () => dev.getManagementService?.().domainName ?? dev.getDomainName?.() ?? '',
-      line: () => (this.isVtyRemoteSession ? String(this.vty?.lineIndex ?? 0) : '0'),
+      line: () => String(this.numeroDeLigne()),
       lineDescription: () => '',
     });
   }
@@ -492,6 +530,54 @@ export class CiscoTerminalSession extends CLITerminalSession {
     const ms = this.resolveExecTimeoutMs();
     if (ms == null) { this.clearIdleTimer(); return; }
     this.armIdleTimer(ms, () => this.onExecTimeout());
+  }
+
+  /**
+   * `absolute-timeout <minutes>` : la duree MAXIMALE d'une session,
+   * activite comprise.
+   *
+   * Il ne passe deliberement PAS par `rearmExecTimeout` : ce minuteur-la
+   * est reamorce a chaque commande, donc un operateur qui tape sans
+   * arret ne le declenche jamais — ce qui est juste pour l'inactivite et
+   * serait la negation exacte d'une limite absolue. Il est arme UNE
+   * fois, a l'ouverture, et n'est jamais repousse.
+   *
+   * IOS previent 20 secondes avant de couper. On garde l'avertissement
+   * plutot que la surprise : c'est l'unique chose qui laisse a
+   * l'operateur le temps d'enregistrer son travail, donc la partie utile
+   * du mecanisme.
+   */
+  private armerLimiteAbsolue(): void {
+    const minutes = this.resolveAbsoluteTimeoutMinutes();
+    if (minutes == null || minutes <= 0) { this.clearAbsoluteTimer(); return; }
+    const totalMs = minutes * 60_000;
+    const preavisMs = Math.max(0, totalMs - 20_000);
+    this.armAbsoluteTimer(preavisMs, () => {
+      if (this.disposed) return;
+      this.addLine('');
+      this.addLine('Line timeout expired');
+      this.notify();
+      this.armAbsoluteTimer(totalMs - preavisMs, () => this.onAbsoluteTimeout());
+    });
+  }
+
+  private resolveAbsoluteTimeoutMinutes(): number | null {
+    if (!this.isVtyRemoteSession) return null;
+    const dev = this.device as unknown as {
+      _getVtyLineConfig?: () => { all: () => ReadonlyArray<{ absoluteTimeoutMinutes?: number | null }> };
+    };
+    return dev._getVtyLineConfig?.().all()[0]?.absoluteTimeoutMinutes ?? null;
+  }
+
+  private onAbsoluteTimeout(): void {
+    if (this.disposed) return;
+    if (this.isRemoteChild) { this.endRemoteSession(); return; }
+    if (this.vty) {
+      this.vty.state.mode = 'user';
+      this.vty.state.privilegeLevel = 1;
+    }
+    this.updatePrompt();
+    this.maybeStartConsoleLogin();
   }
 
   private onExecTimeout(): void {

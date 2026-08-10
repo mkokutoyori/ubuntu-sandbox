@@ -71,6 +71,35 @@ export interface VtyLineConfigInit {
    * l'inactivite APRES la connexion. La commande etait refusee.
    */
   readonly loginTimeoutSeconds?: number;
+  /**
+   * `session-timeout <minutes>` et `history size <n>`, cote Cisco.
+   *
+   * Les deux etaient ACCEPTEES par la CLI, qui posait
+   * `update.sessionTimeoutMinutes` et `update.historySize` — deux noms
+   * qui n'existaient dans AUCUN champ de cette classe, donc `withFields`
+   * les laissait tomber sans un mot. Rien ne les rangeait, rien ne les
+   * rendait, rien ne les lisait : la commande repondait `` et ne faisait
+   * rien du tout. (`historyCommandSize`, lui, existe mais se rend
+   * ` history-command max-size N`, qui est l'orthographe VRP.)
+   */
+  readonly sessionTimeoutMinutes?: number;
+  readonly historySize?: number;
+  /** `no history` — distinct de `history size 0`, qui est une taille nulle. */
+  readonly historyEnabled?: boolean;
+  /**
+   * `absolute-timeout <minutes>` : la duree MAXIMALE d'une session, quelle
+   * que soit l'activite. `exec-timeout` ne compte que l'inactivite, donc
+   * un operateur qui tape sans arret reste connecte indefiniment — c'est
+   * exactement ce que cette commande existe pour borner. Elle etait
+   * refusee.
+   */
+  readonly absoluteTimeoutMinutes?: number;
+  /**
+   * `escape-character {break | <ascii> | default | none | soft}`.
+   * Stockee telle qu'ecrite : `none` supprime la suspension de session,
+   * un nombre designe un code ASCII.
+   */
+  readonly escapeCharacter?: string;
 }
 
 export class VtyLineConfig {
@@ -94,6 +123,11 @@ export class VtyLineConfig {
   readonly historyCommandSize: number | null;
   readonly loggingSynchronous: boolean;
   readonly loginTimeoutSeconds: number | null;
+  readonly sessionTimeoutMinutes: number | null;
+  readonly historySize: number | null;
+  readonly historyEnabled: boolean;
+  readonly absoluteTimeoutMinutes: number | null;
+  readonly escapeCharacter: string | null;
 
   constructor(init: VtyLineConfigInit) {
     this.first              = init.first;
@@ -116,6 +150,11 @@ export class VtyLineConfig {
     this.historyCommandSize = init.historyCommandSize ?? null;
     this.loggingSynchronous = init.loggingSynchronous ?? false;
     this.loginTimeoutSeconds = init.loginTimeoutSeconds ?? null;
+    this.sessionTimeoutMinutes = init.sessionTimeoutMinutes ?? null;
+    this.historySize = init.historySize ?? null;
+    this.historyEnabled = init.historyEnabled ?? true;
+    this.absoluteTimeoutMinutes = init.absoluteTimeoutMinutes ?? null;
+    this.escapeCharacter = init.escapeCharacter ?? null;
     Object.freeze(this);
   }
 
@@ -150,6 +189,14 @@ export class VtyLineConfig {
       historyCommandSize: patch.historyCommandSize ?? this.historyCommandSize ?? undefined,
       loggingSynchronous: patch.loggingSynchronous ?? this.loggingSynchronous ?? undefined,
       loginTimeoutSeconds: patch.loginTimeoutSeconds ?? this.loginTimeoutSeconds ?? undefined,
+      sessionTimeoutMinutes: patch.sessionTimeoutMinutes ?? this.sessionTimeoutMinutes ?? undefined,
+      historySize:        patch.historySize        ?? this.historySize        ?? undefined,
+      // Un booleen ne peut pas passer par `??` : `false` est une valeur,
+      // pas une absence, et `no history` serait perdu a chaque retouche
+      // ulterieure de la ligne.
+      historyEnabled:     patch.historyEnabled     ?? this.historyEnabled,
+      absoluteTimeoutMinutes: patch.absoluteTimeoutMinutes ?? this.absoluteTimeoutMinutes ?? undefined,
+      escapeCharacter:    patch.escapeCharacter    ?? this.escapeCharacter    ?? undefined,
     });
   }
 
@@ -168,7 +215,12 @@ export class VtyLineConfig {
     if (this.execTimeoutMinutes !== null || this.execTimeoutSeconds !== null) {
       lines.push(` exec-timeout ${this.execTimeoutMinutes ?? 0} ${this.execTimeoutSeconds ?? 0}`);
     }
+    if (this.absoluteTimeoutMinutes !== null) lines.push(` absolute-timeout ${this.absoluteTimeoutMinutes}`);
     if (this.loginTimeoutSeconds !== null) lines.push(` login-timeout ${this.loginTimeoutSeconds}`);
+    if (this.sessionTimeoutMinutes !== null) lines.push(` session-timeout ${this.sessionTimeoutMinutes}`);
+    if (this.escapeCharacter !== null) lines.push(` escape-character ${this.escapeCharacter}`);
+    if (!this.historyEnabled) lines.push(' no history');
+    else if (this.historySize !== null) lines.push(` history size ${this.historySize}`);
     if (this.accessClassIn  !== null) lines.push(` access-class ${this.accessClassIn} in`);
     if (this.accessClassOut !== null) lines.push(` access-class ${this.accessClassOut} out`);
     if (this.linePassword) {

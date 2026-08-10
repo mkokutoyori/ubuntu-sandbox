@@ -645,6 +645,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ],
       };
     }
+    if (path === 'send') {
+      const cible = this.cibleDeSend(m.args);
+      if (cible === null) return { steps: [{ kind: 'output', lines: [CISCO_ERRORS.INVALID_INPUT] }] };
+      return this.sendInteractionPlan(cible, ctx?.device);
+    }
     if (path === 'copy' && m.args.length === 2) {
       const norm = (a: string): string => {
         const t = a.toLowerCase();
@@ -657,6 +662,76 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
     }
     return null;
+  }
+
+  /**
+   * `send {line-number | * | aux n | console n | tty n | vty n}` — porter
+   * un message a une session vivante.
+   *
+   * La commande n'existait pas du tout : `send` tombait dans le
+   * rattrapage « mot inconnu » et partait en RESOLUTION DNS
+   * (`Translating "send"...domain server`), c'est-a-dire que la machine
+   * prenait le nom d'une de ses propres commandes pour un nom d'hote.
+   *
+   * Note de syntaxe, verifiee sur la reference Cisco : la forme est
+   * `send *` pour toutes les lignes et `send vty 0` pour une ligne — les
+   * orthographes `send all` et `send line vty 0` qu'on lit dans les
+   * supports de cours n'existent sur aucune machine, et les accepter
+   * apprendrait une commande que le materiel refuse.
+   */
+  private cibleDeSend(args: string[]): 'all' | number | null {
+    const a = args.map((x) => x.toLowerCase()).filter((x) => x.length > 0);
+    if (a.length === 0) return null;
+    if (a[0] === '*') return a.length === 1 ? 'all' : null;
+    if (a[0] === 'vty' || a[0] === 'tty' || a[0] === 'aux' || a[0] === 'console' || a[0] === 'con') {
+      const n = Number.parseInt(a[1] ?? '', 10);
+      if (!Number.isInteger(n) || n < 0 || a.length > 2) return null;
+      // La console et l'AUX sont les lignes 0 et 1 ; une vty prend son rang.
+      return a[0] === 'console' || a[0] === 'con' ? 0 : n;
+    }
+    const n = Number.parseInt(a[0], 10);
+    if (!Number.isInteger(n) || n < 0 || a.length > 1) return null;
+    return n;
+  }
+
+  private sendInteractionPlan(cible: 'all' | number, deviceCtx?: unknown): CommandInteractionPlan {
+    return {
+      steps: [
+        { kind: 'output', lines: ['Enter message, end with CTRL/Z; abort with CTRL/C:'] },
+        {
+          kind: 'collect',
+          prompt: '',
+          storeAs: 'send_message',
+          // IOS termine la saisie sur Ctrl-Z. Le terminal rend cette
+          // frappe par `^Z` sur la ligne, donc c'est ce mot qui clot —
+          // et la ligne qui le porte n'entre pas dans le message.
+          accept: (ligne, accumulees) => {
+            const fin = /\^Z\s*$/i.test(ligne) || ligne.trim() === '\u001a';
+            if (!fin) return { done: false };
+            const reste = ligne.replace(/\^Z\s*$/i, '');
+            const corps = [...accumulees, ...(reste.trim() ? [reste] : [])];
+            return { done: true, body: corps.join('\n') };
+          },
+        },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            const corps = rt.values.get('send_message') ?? '';
+            // L'appareil est capture a la CONSTRUCTION du plan : `this.d()`
+            // n'est valide que pendant `execute`, et un plan interactif
+            // s'execute par definition entre deux commandes.
+            const reg = (deviceCtx as {
+              getSshSessionRegistry?: () => { deliverMessage?: (c: 'all' | number, t: string) => number };
+            } | undefined)?.getSshSessionRegistry?.();
+            const entete = cible === 'all'
+              ? `*** Message from tty0 to all terminals: ***`
+              : `*** Message from tty0 to tty${cible}: ***`;
+            const texte = ['', '***', entete, '', corps, '***', ''].join('\n');
+            reg?.deliverMessage?.(cible, texte);
+          },
+        },
+      ],
+    };
   }
 
   /**
@@ -3521,6 +3596,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._clearDynamicRoutes?.();
       return '';
     });
+    // `send` doit EXISTER dans le trie meme si tout son interet est dans
+    // le plan interactif : sans noeud, le mot part en resolution DNS et
+    // la machine cherche un hote nomme « send ».
+    this.privilegedTrie.registerGreedy('send', 'Send a message to other tty lines', (args) => {
+      const cible = this.cibleDeSend(args);
+      if (cible === null) return CISCO_ERRORS.INVALID_INPUT;
+      // Appel non interactif (script, pipe) : aucun corps a saisir, donc
+      // rien a livrer. On ne feint pas un envoi.
+      return '';
+    });
+    this.privilegedTrie.addCompletionKeywords('send', [
+      { keyword: '*', description: 'All tty lines' },
+      { keyword: 'aux', description: 'Auxiliary line' },
+      { keyword: 'console', description: 'Primary terminal line' },
+      { keyword: 'tty', description: 'Terminal controller' },
+      { keyword: 'vty', description: 'Virtual terminal' },
+    ]);
     this.privilegedTrie.registerGreedy('clear line', 'Terminate a vty session', (args) => {
       const dev = this.d() as unknown as {
         getSshSessionRegistry?: () => {
@@ -4536,7 +4628,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const kw of ['login', 'password',
       'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
       'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',
-      'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
+      'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec',
+      'absolute-timeout', 'escape-character']) {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         this.requireLineKind(kw);
         const range = this.selectedVtyRange;
@@ -4633,6 +4726,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           update.sessionTimeoutMinutes = parseInt(args[0], 10);
         } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
           update.historySize = parseInt(args[1], 10);
+          update.historyEnabled = true;
+        } else if (kw === 'absolute-timeout' && args[0]) {
+          // `absolute-timeout <minutes>` : la duree MAXIMALE d'une
+          // session, activite comprise. `exec-timeout` ne borne que
+          // l'inactivite, donc un operateur qui tape sans arret n'etait
+          // jamais deconnecte — ce que cette commande existe pour
+          // empecher. Elle etait refusee.
+          const min = parseInt(args[0], 10);
+          if (!Number.isFinite(min) || min < 0) return CISCO_ERRORS.INVALID_INPUT;
+          update.absoluteTimeoutMinutes = min;
+        } else if (kw === 'escape-character' && args[0]) {
+          // `escape-character {break | <ascii> | default | none | soft}`.
+          const v = args[0].toLowerCase();
+          if (v === 'break' || v === 'default' || v === 'none' || v === 'soft') {
+            update.escapeCharacter = v;
+          } else {
+            const code = parseInt(args[0], 10);
+            if (!Number.isFinite(code) || code < 0 || code > 255) return CISCO_ERRORS.INVALID_INPUT;
+            update.escapeCharacter = String(code);
+          }
         } else if (kw === 'length' && args[0]) {
           update.terminalLength = parseInt(args[0], 10);
         } else if (kw === 'width' && args[0]) {
@@ -4659,6 +4772,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           // unset, distinct from "never configured"); `no login` disables auth.
           if (sub === 'password') update.linePassword = '';
           else if (sub === 'login') update.login = 'none';
+          // `no history` COUPE l'historique ; ce n'est pas
+          // `history size 0`, qui en demande un de taille nulle.
+          else if (sub === 'history' && args.length === 1) update.historyEnabled = false;
+          else if (sub === 'absolute-timeout') update.absoluteTimeoutMinutes = 0;
+          else if (sub === 'escape-character') update.escapeCharacter = 'default';
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
         const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
@@ -4685,8 +4803,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ['privilege', [['level', 'Set the privilege level of the line']]],
       ['exec', [['banner', 'Enable the display of the EXEC banner']]],
       ['history', [['size', 'Set the size of the history buffer']]],
+      ['escape-character', [
+        ['break', 'Use the BREAK signal as the escape character'],
+        ['default', 'Restore the default escape character'],
+        ['none', 'Disable the escape character'],
+        ['soft', 'Use a soft escape character'],
+      ]],
       ['no', [
+        ['absolute-timeout', 'Clear the absolute session limit'],
+        ['escape-character', 'Restore the default escape character'],
         ['exec', 'Disable the EXEC process'],
+        ['history', 'Disable the command history'],
         ['login', 'Disable authentication on the line'],
         ['logging', 'Disable synchronous logging'],
         ['password', 'Clear the line password'],
@@ -4709,6 +4836,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ['length', 'lines', 'Number of lines on a screen', [0, 512]],
       ['width', 'characters', 'Width of the display terminal', [0, 512]],
       ['session-timeout', 'minutes', 'Timeout in minutes', [0, 35791]],
+      ['absolute-timeout', 'minutes', 'Absolute session lifetime in minutes', [0, 35791]],
       ['rotary', 'group', 'Rotary group number', [1, 100]],
     ] as ReadonlyArray<readonly [string, string, string, readonly [number, number]]>) {
       this.configLineTrie.describeArgs(kw, [{ name, type: 'INT', description, range }]);

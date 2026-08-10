@@ -223,6 +223,42 @@ export class SshSessionRegistry {
 
   private onSessionClosed = () => { /* placeholder for external close hook */ };
 
+  // ── `send` : porter un message a une session vivante ───────────────
+  //
+  // Un terminal s'inscrit pour SA ligne ; `send` pousse le texte a qui
+  // s'est inscrit. Le canal est keye par le NUMERO DE LIGNE et non par
+  // l'enregistrement de session, pour une raison mesuree : la console
+  // n'a pas d'enregistrement ici (`show users` la synthetise quand la
+  // table est vide), et un `send *` qui sauterait la console laisserait
+  // hors du message la seule ligne dont on est sur qu'elle est occupee.
+  private readonly canaux: Map<number, Set<(texte: string) => void>> = new Map();
+
+  subscribeMessages(lineIndex: number, cb: (texte: string) => void): () => void {
+    let set = this.canaux.get(lineIndex);
+    if (!set) { set = new Set(); this.canaux.set(lineIndex, set); }
+    set.add(cb);
+    return () => {
+      const s = this.canaux.get(lineIndex);
+      if (!s) return;
+      s.delete(cb);
+      if (s.size === 0) this.canaux.delete(lineIndex);
+    };
+  }
+
+  /**
+   * Rend le nombre de lignes REELLEMENT touchees. Ce compte est ce qui
+   * distingue un message livre d'un message tombe dans le vide, donc la
+   * commande peut dire la verite au lieu d'annoncer un succes constant.
+   */
+  deliverMessage(cible: 'all' | number, texte: string): number {
+    let n = 0;
+    for (const [ligne, abonnes] of this.canaux) {
+      if (cible !== 'all' && cible !== ligne) continue;
+      for (const cb of abonnes) { cb(texte); n += 1; }
+    }
+    return n;
+  }
+
   formatShowUsers(now: number = this.now()): string {
     const header = '    Line       User       Host(s)              Idle       Location';
     if (this.active.size === 0) return `${header}\n*  0 con 0                idle                 00:00:00`;
