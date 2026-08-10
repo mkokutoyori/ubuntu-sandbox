@@ -11,6 +11,8 @@ import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
+import { CISCO_ERRORS } from '../cli-utils';
+import { nomLoopfilterIos } from '@/network/ntp/discipline';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 
@@ -645,6 +647,7 @@ export function showNtpStatus(dev?: ShowStateDevice): string {
   const synced = ntp.isSynced();
   const best = [...cfg.associations.values()].find((a) => a.preferred);
   const driftPpm = ntp.getDriftPpm();
+  const boucle = nomLoopfilterIos(ntp.getEtatHorloge().etat);
   const nominalHz = 250;
   const actualHz = nominalHz * (1 + driftPpm / 1e6);
   // Une reference LOCALE (`ntp master`) n'a ni delai ni dispersion vers
@@ -669,7 +672,11 @@ export function showNtpStatus(dev?: ShowStateDevice): string {
     `reference time is ${formatNtpReferenceTime(cfg.lastSyncMs || Date.now())}`,
     `clock offset is ${cfg.offsetMs.toFixed(4)} msec, root delay is ${rootDelay.toFixed(2)} msec`,
     `root dispersion is ${rootDisp.toFixed(2)} msec, peer dispersion is ${peerDisp.toFixed(2)} msec`,
-    `loopfilter state is '${synced ? 'CTRL' : 'FSET'}' (${synced ? 'Normal Controlled Loop' : 'Drift set from file'}), drift is ${(driftPpm / 1e6).toFixed(9)} s/s`,
+    // L'etat de la boucle est LU sur la discipline (lot N9) : il valait
+    // `CTRL` des que la machine etait synchronisee, donc il ne pouvait
+    // jamais annoncer une aberration ni une panique — les deux etats que
+    // cette ligne existe pour montrer.
+    `loopfilter state is '${boucle.code}' (${boucle.libelle}), drift is ${(driftPpm / 1e6).toFixed(9)} s/s`,
     `system poll interval is ${pollSec}, ${lastUpdateSec === null ? 'never updated' : `last update was ${lastUpdateSec} sec ago`}.`,
   ].join('\n');
 }
@@ -729,6 +736,48 @@ export function showNtpAssociationsDetail(dev?: ShowStateDevice): string {
  * est imprimee parce qu'IOS l'imprime ici -- c'est precisement pourquoi
  * la vue est reservee a l'EXEC privilegie.
  */
+/**
+ * `show ntp packets [mode {active|client|passive|server}]`.
+ *
+ * Elle etait REFUSEE au lot N1, au motif que rien ne comptait — c'etait
+ * vrai du moteur, mais la commande EXISTE sur IOS et son format est
+ * documente. Refuser une vraie commande parce que sa matiere manque
+ * revient a cacher le manque plutot qu'a le combler ; les compteurs
+ * existent maintenant, et elle repond.
+ *
+ * Les quatre lignes sont celles de la reference : « Ntp In packets »,
+ * « Ntp Out packets », « Ntp bad version packets »,
+ * « Ntp protocol error packets ».
+ */
+export function showNtpPackets(dev?: ShowStateDevice, mode?: string): string {
+  const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
+  if (!ntp) return 'Ntp In packets: 0\nNtp Out packets: 0\nNtp bad version packets: 0\nNtp protocol error packets: 0';
+  const c = ntp.getCounters();
+  if (mode) {
+    // IOS nomme le mode symetrique passif `passive` et l'actif
+    // `active` ; le moteur les nomme en toutes lettres.
+    const cle = ({ active: 'symmetric-active', passive: 'symmetric-passive',
+      client: 'client', server: 'server' } as Record<string, string>)[mode.toLowerCase()];
+    if (!cle) return CISCO_ERRORS.INVALID_INPUT;
+    const k = cle as keyof typeof c.receivedByMode;
+    return [
+      `Ntp In packets: ${c.receivedByMode[k]}`,
+      `Ntp Out packets: ${c.sentByMode[k]}`,
+      // Une version invalide et une erreur de protocole se constatent
+      // AVANT de connaitre le mode : elles ne se ventilent pas, et
+      // les repeter par mode ferait compter le meme paquet quatre fois.
+      `Ntp bad version packets: 0`,
+      `Ntp protocol error packets: 0`,
+    ].join('\n');
+  }
+  return [
+    `Ntp In packets: ${c.received}`,
+    `Ntp Out packets: ${c.sent}`,
+    `Ntp bad version packets: ${c.badVersion}`,
+    `Ntp protocol error packets: ${c.protocolError}`,
+  ].join('\n');
+}
+
 export function showNtpAuthenticationKeys(dev?: ShowStateDevice): string {
   const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
   const entete = 'Key  Algorithm  Md5 Key';

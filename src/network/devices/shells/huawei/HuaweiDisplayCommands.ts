@@ -20,7 +20,7 @@ import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName, HUAWEI_ERRORS } from '../cli-utils';
-import { displayNtpServiceStatus, displayNtpServiceSessions, lignesConfigNtpVrp } from './huaweiNtpCommands';
+import { displayNtpServiceStatus, displayNtpServiceSessions, lignesConfigNtpVrp, displayNtpStatisticsPacket } from './huaweiNtpCommands';
 import {
   AUCUN_GROUPE, groupesDeLInterface, lignesConfigVrrp,
   rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
@@ -1584,6 +1584,10 @@ export function registerDisplayCommands(
   // quatre serveurs. Le rendu est partage et le magasin unique.
   trie.register('display ntp-service status', 'Display NTP service status',
     () => displayNtpServiceStatus(huaweiNtpAgent(getRouter())));
+  trie.register('reset ntp-service statistics packet', 'Clear NTP packet statistics',
+    () => { huaweiNtpAgent(getRouter())?.clearCounters(); return ''; });
+  trie.register('display ntp-service statistics packet', 'NTP packet statistics',
+    () => displayNtpStatisticsPacket(huaweiNtpAgent(getRouter())));
   trie.register('display ntp-service sessions verbose', 'Detailed NTP sessions',
     () => displayNtpServiceSessions(huaweiNtpAgent(getRouter()), true));
   trie.register('display ntp-service sessions', 'Display NTP sessions',

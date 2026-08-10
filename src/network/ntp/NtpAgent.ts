@@ -2,6 +2,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type NtpAssociation, type NtpConfig, type NtpPacket, type NtpMode,
+  type NtpCounters, createNtpCounters,
   createDefaultNtpConfig, defaultAssociation, computeOffsetMs,
   UDP_PORT_NTP,
 } from './types';
@@ -13,6 +14,10 @@ import {
 import { Logger } from '../core/Logger';
 import { calculerMacNtp, verifierMacNtp } from './auth';
 import { verdictAccesNtp, type ActionNtp } from './accessGroups';
+import {
+  disciplinerHorloge, appliquerDecision, creerEtatHorloge,
+  type EtatHorloge, type DecisionDiscipline, type ReglagesDiscipline,
+} from './discipline';
 
 export interface NtpHost {
   readonly id: string;
@@ -147,6 +152,51 @@ export class NtpAgent {
   isInterfaceDisabled(iface: string): boolean {
     return this.config.disabledInterfaces.has(iface);
   }
+  /**
+   * L'etat de la discipline d'horloge (lot N9).
+   *
+   * Il vit a cote de la configuration plutot que dedans : c'est un etat
+   * de FONCTIONNEMENT, pas un reglage, et `show running-config` n'a
+   * aucune raison de le rendre.
+   */
+  private horloge: {
+    etat: EtatHorloge;
+    dernierReglageMs: number;
+    derniereDecision: DecisionDiscipline['quoi'] | null;
+  } = { etat: creerEtatHorloge(), dernierReglageMs: 0, derniereDecision: null };
+
+  private reglagesDiscipline: ReglagesDiscipline = {};
+
+  /** `makestep <seuil> <limite>` de chrony, et l'equivalent d'un `-g`. */
+  setReglagesDiscipline(r: ReglagesDiscipline): void { this.reglagesDiscipline = r; }
+  getEtatHorloge(): Readonly<EtatHorloge> { return this.horloge.etat; }
+  getDerniereDecision(): DecisionDiscipline['quoi'] | null {
+    return this.horloge.derniereDecision;
+  }
+
+  /**
+   * Forcer un saut : `chronyc makestep`, `w32tm /resync /force`.
+   *
+   * Elle existe parce qu'un operateur doit pouvoir passer outre la
+   * discipline — c'est tout l'objet de la commande — et elle n'a d'effet
+   * que s'il y a un ecart a rattraper.
+   */
+  forcerSaut(): boolean {
+    const best = [...this.config.associations.values()].find((a) => a.preferred);
+    if (!best) return false;
+    this.horloge.etat = appliquerDecision(
+      this.horloge.etat, { quoi: 'step', nouvelOffset: best.offsetMs }, 0);
+    this.horloge.derniereDecision = 'step';
+    this.config.offsetMs = this.horloge.etat.offsetApplique;
+    return true;
+  }
+
+  /** Les compteurs, en lecture — ce que les trois vues lisent. */
+  getCounters(): Readonly<NtpCounters> { return this.config.counters; }
+
+  /** `clear ntp statistics` / `reset ntp-service statistics packet`. */
+  clearCounters(): void { this.config.counters = createNtpCounters(); }
+
   getUptimeSec(): number {
     return Math.max(0, Math.floor((Date.now() - this.config.startedAtMs) / 1000));
   }
@@ -213,7 +263,23 @@ export class NtpAgent {
     if (!this.config.enabled) return;
     if (udp.destinationPort !== UDP_PORT_NTP && udp.sourcePort !== UDP_PORT_NTP) return;
     const payload = udp.payload as NtpPacket | undefined;
-    if (!payload || payload.type !== 'ntp') return;
+    // Un datagramme sur le port 123 dont la charge utile n'est pas un
+    // paquet NTP est une erreur de protocole, et c'est bien ce que le
+    // compteur d'IOS nomme.
+    if (!payload || payload.type !== 'ntp') {
+      this.config.counters.protocolError++;
+      return;
+    }
+    const c = this.config.counters;
+    c.received++;
+    if (payload.mode in c.receivedByMode) c.receivedByMode[payload.mode]++;
+    // NTPv4 lit les versions 1 a 4 ; au-dela, le paquet est compte et
+    // ecarte plutot que devine.
+    if (payload.version < 1 || payload.version > 4) {
+      c.badVersion++;
+      c.dropped++;
+      return;
+    }
 
     this.getBus().publish({
       topic: 'ntp.packet.received',
@@ -247,6 +313,8 @@ export class NtpAgent {
             && auth.reason !== 'no-key') {
           this.envoyerCryptoNak(inPort, srcIp, payload);
         }
+        c.authFailures++;
+        c.dropped++;
         this.getBus().publish({
           topic: 'ntp.auth.rejected',
           payload: {
@@ -257,6 +325,15 @@ export class NtpAgent {
         return;
       }
     }
+
+    // `processed` compte les paquets qui atteignent leur traitement. Il
+    // est pose ICI, apres les portes de version et d'authentification,
+    // et REPRIS par les deux motifs de rejet qui ne peuvent se decider
+    // qu'apres l'aiguillage — un refus d'acces et un crypto-NAK. Le
+    // comptage vit donc a un endroit par motif plutot qu'a trois points
+    // de reussite, et `recus = traites + ecartes` reste une identite
+    // verifiable plutot qu'une coincidence.
+    c.processed++;
 
     if (payload.mode === 'client') {
       // `serve`, `serve-only` et `peer` autorisent une requete de temps ;
@@ -406,6 +483,14 @@ export class NtpAgent {
    * capture, sans rien emettre vers l'exterieur.
    */
   private refuserAcces(srcIp: IPAddress, action: ActionNtp): void {
+    // Le paquet avait ete compte TRAITE — les portes d'acces sont
+    // franchies apres l'aiguillage, une fois le mode connu — donc le
+    // comptage est repris ici pour que l'identite
+    // `recus = traites + ecartes` reste vraie. C'est le meme geste que
+    // pour le crypto-NAK, et il vit a un seul endroit par motif.
+    this.config.counters.processed--;
+    this.config.counters.accessDenied++;
+    this.config.counters.dropped++;
     this.getBus().publish({
       topic: 'ntp.access.denied',
       payload: {
@@ -494,6 +579,12 @@ export class NtpAgent {
     // « je te refuse » — defaut introduit puis attrape par le cas
     // « client sans aucune cle », qui se synchronisait sur le NAK.
     if (this.estCryptoNak(reply)) {
+      // Un NAK a bien ete TRAITE — c'est ainsi qu'on sait que c'en est
+      // un — mais il n'est pas une mesure : il compte comme ecarte, et
+      // le traitement est repris pour que l'identite tienne.
+      this.config.counters.processed--;
+      this.config.counters.dropped++;
+      this.config.counters.authFailures++;
       if (a.keyId !== undefined) a.authenticated = false;
       this.getBus().publish({
         topic: 'ntp.auth.rejected',
@@ -587,7 +678,22 @@ export class NtpAgent {
     }
     if (!best) return;
     for (const a of this.config.associations.values()) a.preferred = a === best;
-    this.config.offsetMs = best.offsetMs;
+    // L'ecart n'est plus applique d'un coup : il traverse la discipline,
+    // qui decide de glisser, de sauter, d'ecarter une aberration ou de
+    // paniquer (lot N9). C'est le §2 du tutoriel, rendu observable.
+    const maintenant = Date.now();
+    const ecoule = this.horloge.dernierReglageMs
+      ? maintenant - this.horloge.dernierReglageMs
+      : (best.pollSec || 64) * 1000;
+    const decision = disciplinerHorloge(
+      this.horloge.etat, best.offsetMs, ecoule, this.reglagesDiscipline);
+    this.horloge.etat = appliquerDecision(this.horloge.etat, decision, ecoule);
+    this.horloge.dernierReglageMs = maintenant;
+    this.horloge.derniereDecision = decision.quoi;
+    // Une aberration ou une panique ne synchronise PAS : l'horloge garde
+    // ce qu'elle avait, et la strate ne descend pas.
+    if (decision.quoi === 'spike' || decision.quoi === 'panic') return;
+    this.config.offsetMs = this.horloge.etat.offsetApplique;
     this.config.localStratum = best.stratum + 1;
     this.config.refIdentifier = best.serverIp;
     this.config.lastSyncMs = Date.now();
@@ -661,6 +767,10 @@ export class NtpAgent {
   private sendNtp(portName: string, srcIp: IPAddress, dstIp: IPAddress, brut: NtpPacket): void {
     const port = this.host.getPort(portName);
     if (!port) return;
+    this.config.counters.sent++;
+    if (brut.mode in this.config.counters.sentByMode) {
+      this.config.counters.sentByMode[brut.mode]++;
+    }
     // La signature vit ICI plutot qu'a chacun des trois appelants :
     // requete, reponse de serveur et reponse symetrique doivent porter
     // le meme condensé, et trois endroits finiraient par diverger.

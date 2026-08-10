@@ -414,16 +414,10 @@ correctifs.
 
 ### Ce qui reste ouvert, nommé plutôt que tu
 
-- **Les compteurs de paquets** (`show ntp packets`, les statistiques
-  d'émission/réception) : rien ne les compte dans le moteur. Zéro serait
-  une mesure fausse, la commande est donc refusée.
 - **L'authentification NTP ne signe pas** : la clé est portée, comparée
   et rendue, mais aucun condensé MD5 ne circule sur le paquet — le
   moteur compare des identifiants de clé. Un lab « les clés diffèrent,
   la synchronisation échoue » n'est donc pas reproductible aujourd'hui.
-- **Le `slewing` et le `stepping` du §2 ne sont pas modélisés** :
-  l'offset est appliqué d'un coup. La distinction — et le `panic mode` —
-  demanderait une horloge disciplinée que ce simulateur n'a pas.
 - **`ntp broadcast`/`multicast`, PTP, et les horloges matérielles**
   (`refclock`) : hors périmètre, faute de brique.
 
@@ -712,3 +706,172 @@ l'exécution ne disent donc pas tout à fait la même chose après un
 argument invalide. C'est un comportement du marcheur d'arguments
 partagé, pas de `ntp` : signalé à l'agent qui tient ces sondes plutôt
 que corrigé ici.
+
+
+---
+
+## 10. N8 — Livré : les compteurs de paquets
+
+### 10.1 Un refus à corriger, et c'est le mien
+
+Au lot N1, `show ntp packets` a été **refusée** au motif que « rien ne
+les compte ». Le motif était vrai du moteur ; la conclusion était
+fausse. **La commande existe sur IOS**, son format est documenté, et
+elle accepte un filtre `mode {active|client|passive|server}`.
+
+Refuser une vraie commande parce que sa matière manque revient à
+**cacher** le manque plutôt qu'à le combler. Un apprenant qui tape
+`show ntp packets` sur une vraie machine obtient une réponse ; sur le
+simulateur il obtenait `% Invalid input detected`, ce qui lui apprenait
+que la commande n'existe pas.
+
+### 10.2 Les trois formats, vérifiés avant d'écrire
+
+| Plateforme | Commande | Source |
+|---|---|---|
+| Cisco | `show ntp packets [mode …]` | Référence de commandes IOS — quatre lignes : `Ntp In packets`, `Ntp Out packets`, `Ntp bad version packets`, `Ntp protocol error packets` |
+| Huawei | `display ntp-service statistics packet` | Documentation Huawei — quinze compteurs sous `NTP IPv4 Packet Statistical Information` |
+| chrony | `chronyc serverstats` | Documentation chrony — distingue les paquets **NTP** des paquets de **commande** |
+
+### 10.3 Un seul comptage, trois lectures
+
+`NtpCounters` porte des noms **neutres** : Cisco dit « Ntp In packets »,
+Huawei « Received », chrony « NTP packets received ». Trois vues sur un
+seul comptage — un compteur par plateforme finirait par donner trois
+nombres pour un seul fait.
+
+Six compteurs sont observés **au point où l'événement a lieu** :
+`received`/`sent` (avec leur ventilation par mode), `processed`,
+`dropped`, `authFailures`, `accessDenied`, plus `badVersion` et
+`protocolError`.
+
+### 10.4 L'identité qui fait la différence
+
+`reçus = traités + écartés`. Elle se vérifie **sans connaître aucune
+plateforme**, et c'est elle qui distingue un comptage d'un affichage.
+Un cas la contrôle sur quatre configurations : sans rien, avec
+authentification, avec un `access-group` qui refuse, avec un qui permet.
+
+Elle a d'ailleurs **attrapé un défaut pendant l'écriture** : les portes
+d'accès se franchissent après l'aiguillage — une fois le mode connu —
+donc un paquet était compté « traité » puis écarté, et l'identité
+tombait à `2 = 1`. Le comptage est repris au point du rejet, comme il
+l'était déjà pour le crypto-NAK.
+
+Deux autres propriétés vérifiées plutôt que supposées : **la somme des
+modes redonne le total** (ce qui distingue une ventilation d'une
+invention), et **les compteurs du client et du serveur se répondent** —
+ce que l'un a émis, l'autre l'a reçu.
+
+### 10.5 Ce qui vaut zéro, et pourquoi c'est vrai
+
+Neuf des quinze compteurs Huawei valent zéro **parce que le mécanisme
+n'existe pas** : pas de limiteur de débit, pas de file de traitement,
+pas de plafond d'associations dynamiques. Aucun paquet n'a jamais **pu**
+être limité, retardé ou refusé pour ces motifs — zéro est la vraie
+valeur. Les omettre donnerait un format qui n'est pas celui de la
+machine ; inventer un nombre serait pire. Même raisonnement pour les
+deux compteurs de **commande** de chrony : ce simulateur n'a pas de
+socket de contrôle, `chronyc` parlant au démon dans le même processus.
+
+`clear ntp statistics` et `reset ntp-service statistics packet`
+remettent à zéro : un compteur qu'on ne peut pas effacer ne sert qu'à
+moitié, un diagnostic commençant par effacer, provoquer, relire.
+
+### 10.6 Tests
+
+`tuto-ntp-compteurs.test.ts` (18 cas). `git stash` : **17 tombent**
+avant. **Un test existant corrigé** — le mien, au lot N1, qui prenait
+`show ntp packets` pour exemple d'une commande inexistante.
+
+**Mesures.** 260 suites connexes vertes (4 770 cas). Typecheck : 216,
+inchangé.
+
+
+---
+
+## 11. N9 — Livré : la discipline de l'horloge
+
+### 11.1 Le défaut
+
+`selectAndSync` posait `config.offsetMs = best.offsetMs` : **tout écart
+était appliqué d'un coup**, quelle qu'en soit la taille. Le §2 du
+tutoriel — glissement, saut, mode panique — n'avait aucune contrepartie
+observable, et `chronyc makestep` corrigeait un écart déjà corrigé.
+
+### 11.2 Où le tutoriel simplifie, et pourquoi ça compte
+
+Le tutoriel écrit : « **Stepping (saut)** : si l'offset est grand
+(> 128ms), NTP peut corriger d'un coup. »
+
+La documentation de référence dit autre chose :
+
+> « When an offset exceeds the 128 ms step threshold, it is **initially
+> discarded** rather than applied immediately. However, if such large
+> offsets persist beyond the stepout threshold, the system then performs
+> a clock step. »
+
+Un écart au-delà du seuil est donc d'abord tenu pour une **aberration**
+— une pointe de congestion réseau — et **ignoré**. Seule sa
+**persistance** au-delà du seuil de sortie le rend crédible.
+
+**C'est exactement ce qui empêche une mesure isolée de dérégler une
+machine.** Un simulateur qui sauterait tout de suite enseignerait le
+contraire d'une protection — et c'est le genre d'erreur qu'un apprenant
+emporterait en production.
+
+Les valeurs, vérifiées :
+
+| Seuil | Valeur |
+|---|---|
+| Saut (`STEPT`) | 128 ms |
+| Sortie d'aberration | 300 s |
+| Panique (`PANICT`) | 1000 s |
+| Vitesse de glissement max | 500 ppm |
+
+500 ppm est la limite du noyau Unix, « requiring approximately 33
+minutes per second of correction » : corriger une seconde par
+glissement demande une demi-heure. C'est **pourquoi** le saut existe, et
+pourquoi une machine qui démarre à la mauvaise heure a le droit d'en
+faire un.
+
+### 11.3 Ce qui est fait
+
+`ntp/discipline.ts` porte la machine à états et les quatre décisions —
+`slew`, `step`, `spike`, `panic`. `selectAndSync` la traverse ; une
+aberration ou une panique **ne synchronise pas**, donc la strate ne
+descend pas et l'horloge garde ce qu'elle avait.
+
+`show ntp status` lit l'état réel : `loopfilter state` valait `CTRL` dès
+que la machine était synchronisée, donc il ne pouvait **jamais**
+annoncer une aberration ni une panique — les deux états que cette ligne
+existe pour montrer.
+
+`makestep <seuil> <limite>` de chrony était analysé, stocké, rendu — et
+n'atteignait jamais la discipline. C'est désormais un **réglage** : il
+remplace les 128 ms et borne le nombre de sauts. Et `chronyc makestep`
+**force** le saut au lieu de seulement compter.
+
+### 11.4 Ce qui n'est pas modélisé, et pourquoi
+
+La machine réelle a cinq états ; il y en a quatre ici. **`FREQ` est
+absent** parce qu'il sert à l'entraînement de **fréquence**, et que ce
+simulateur n'a pas d'horloge matérielle qui dérive — la dérive y est une
+mesure, pas une propriété du quartz. Ajouter un état qu'aucune
+transition ne pourrait quitter pour la bonne raison vaudrait moins que
+de le dire.
+
+### 11.5 Tests
+
+`tuto-ntp-discipline.test.ts` (22 cas). `git stash` : **5 tombent**
+avant — les cinq qui passent par une vraie machine. Les dix-sept autres
+exercent le module neuf et sont nommés comme garde-fous dans l'en-tête.
+
+**Une assertion à moi corrigée pendant l'écriture** : j'avais vérifié
+que `chronyc makestep` laisse `derniereDecision === 'step'`. Faux — la
+commande réinterroge après avoir sauté, et cette mesure-là ne trouve
+plus rien à corriger. L'assertion testait l'ordre des appels plutôt que
+l'effet ; elle porte maintenant sur l'écart rattrapé.
+
+**Mesures.** 249 suites connexes vertes (4 636 cas). Typecheck : 216,
+inchangé.

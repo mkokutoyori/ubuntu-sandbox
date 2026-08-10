@@ -305,6 +305,44 @@ function refVrp(ref: string): string {
   return ref === 'LOCL' ? 'LOCAL(0)' : ref;
 }
 
+/**
+ * `display ntp-service statistics packet`.
+ *
+ * Le format vient de la documentation Huawei. Quinze compteurs y
+ * figurent ; ce moteur en observe SIX pour de bon — `Sent`, `Received`,
+ * `Processed`, `Dropped`, `Authentication failures`, `Access denied`.
+ *
+ * **Les neuf autres sont a zero, et c'est un FAIT plutot qu'un
+ * remplissage** : ce simulateur n'a ni limiteur de debit, ni file de
+ * traitement, ni plafond d'associations dynamiques, donc aucun paquet
+ * n'a jamais pu etre limite, retarde ou refuse pour ces motifs. Zero est
+ * la vraie valeur. Les omettre donnerait un format qui n'est pas celui
+ * de la machine ; inventer un nombre serait pire.
+ */
+export function displayNtpStatisticsPacket(agent: NtpAgent | undefined): string {
+  const c = agent?.getCounters();
+  const n = (v: number | undefined) => String(v ?? 0);
+  return [
+    'NTP IPv4 Packet Statistical Information',
+    '---------------------------------------',
+    `Sent                            : ${n(c?.sent)}`,
+    `Send failures                   : 0`,
+    `Received                        : ${n(c?.received)}`,
+    `Processed                       : ${n(c?.processed)}`,
+    `Dropped                         : ${n(c?.dropped)}`,
+    `Validity test failures          : ${n(c?.badVersion)}`,
+    `Authentication failures         : ${n(c?.authFailures)}`,
+    `Invalid packets                 : ${n(c?.protocolError)}`,
+    `Access denied                   : ${n(c?.accessDenied)}`,
+    `Rate-limited                    : 0`,
+    `Processing delay                : 0`,
+    `Interface disabled              : 0`,
+    `Max dynamic association reached : 0`,
+    `Server disabled                 : 0`,
+    `Others                          : 0`,
+  ].join('\n');
+}
+
 const FILET_SESSIONS = '*'.repeat(78);
 
 /**

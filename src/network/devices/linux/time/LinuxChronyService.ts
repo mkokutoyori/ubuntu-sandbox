@@ -155,6 +155,9 @@ export class LinuxChronyService {
       return { ok: false, erreur: '505 No such source' };
     }
     this.sautsFaits++;
+    // La commande FORCE le saut : sans cela elle ne faisait que compter,
+    // et l'ecart restait celui d'avant.
+    this.host.ntp().forcerSaut();
     return { ok: true };
   }
 
@@ -183,6 +186,13 @@ export class LinuxChronyService {
     for (const ip of [...agent.getConfig().associations.keys()]) {
       if (!voulues.has(ip)) agent.removeServer(ip);
     }
+    // `makestep <seuil> <limite>` est un reglage de la DISCIPLINE, pas
+    // une commande : il decide a quel ecart chronyd saute au lieu de
+    // glisser, et combien de fois. Il etait lu et range sans jamais
+    // atteindre le moteur (lot N9).
+    agent.setReglagesDiscipline(this.conf.makestep
+      ? { seuilSautMs: this.conf.makestep.seuilSec * 1000, limiteSauts: this.conf.makestep.limite }
+      : {});
     if (this.conf.localStratum !== null) {
       agent.setServerMode(true);
       agent.setLocalStratum(this.conf.localStratum);
