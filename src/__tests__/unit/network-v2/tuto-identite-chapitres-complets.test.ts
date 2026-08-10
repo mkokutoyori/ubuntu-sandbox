@@ -47,9 +47,11 @@
  *  - `show privilege` passé par le pont SSH non interactif répond
  *    encore 15. Le verrou qui compte — `show running-config` refusé à
  *    un compte de niveau 7 — tient, et il est vérifié ici.
- *  - **Le mot de passe SSH n'est pas vérifié vers une cible Cisco.** Le
- *    compte doit exister, mais n'importe quel secret passe. Mesuré,
- *    localisé, figé par un cas de ce fichier — c'est le lot suivant.
+ *  - Un appelant qui ne pilote PAS `sshpass` n'offre aucun mot de passe,
+ *    et la session est alors accordée sur la seule existence du compte.
+ *    C'est le défaut de confiance historique du simulateur, dont dépend
+ *    une grande partie de la suite ; ce qui a été refermé est le cas où
+ *    un secret EST offert et se trouve faux.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -599,33 +601,30 @@ describe('Ch.7.5 — SSH entrant, et le niveau du compte y tient', () => {
   }, 30_000);
 
   /**
-   * MESURE, pas conformité — et écrite ici plutôt que passée sous
-   * silence. Le serveur vérifie que le COMPTE existe (un nom inconnu
-   * reçoit `Permission denied`) mais ne vérifie PAS le mot de passe
-   * vers une cible Cisco : `sshpass -p FAUX`, et même aucun mot de
-   * passe du tout, exécutent la commande.
+   * Ce cas figeait un CONTOURNEMENT : le serveur vérifiait que le compte
+   * existe et acceptait n'importe quel secret — ou aucun. Le mécanisme
+   * de vérification était pourtant écrit et correct côté serveur
+   * (`CrossVendorSshHost` compare `credentials.password` contre
+   * l'autorité) ; c'est le CLIENT qui n'offrait rien, donc l'autorité,
+   * n'ayant rien à vérifier, se contentait de constater l'existence du
+   * compte. Le mot de passe de `sshpass -p` est maintenant transmis.
    *
-   * La cause est localisée : `verifyOfferedPassword` valide bien contre
-   * `userMgr.checkPassword`, qu'un routeur n'a pas — il porte
-   * `checkPassword` sur lui-même, et le repli vers cette méthode a été
-   * ajouté. Il ne suffit pas : la négociation ne retient pas la méthode
-   * `password` pour cette cible, donc la vérification n'est pas
-   * atteinte. C'est le lot suivant, et c'est un contournement
-   * d'authentification tant qu'il n'est pas fait.
-   *
-   * Ce cas fige les DEUX moitiés : ce qui marche (le compte inconnu est
-   * refusé) et ce qui ne marche pas encore. Le jour où la négociation
-   * est corrigée, la seconde assertion tombe et signale qu'il faut la
-   * resserrer — un test qui n'affirmerait rien ici laisserait le trou
-   * invisible.
+   * Ne RIEN offrir garde le comportement de confiance existant, dont
+   * dépend tout appelant qui ne pilote pas `sshpass` — c'est pourquoi
+   * le dernier cas passe encore, et il est écrit ici plutôt que tu.
    */
-  it('le compte inconnu est refusé — le mot de passe, lui, n\'est pas encore vérifié', async () => {
+  it('un mot de passe faux est refusé, un compte inconnu aussi', async () => {
     const { pc } = await labo();
-    const inconnu = await parSsh(pc, 'personne', 'x', 'show version');
-    expect(inconnu).toContain('Permission denied');
-
+    expect(await parSsh(pc, 'personne', 'x', 'show version')).toContain('Permission denied');
     const mauvais = await parSsh(pc, 'jean-baptiste', 'pas-le-bon', 'show version');
-    expect(mauvais, 'contournement connu, cf. le commentaire').toContain('Cisco IOS Software');
+    expect(mauvais).toContain('Permission denied');
+    expect(mauvais).not.toContain('Cisco IOS Software');
+  }, 30_000);
+
+  it('le bon mot de passe passe — la porte n\'est pas une souricière', async () => {
+    const { pc } = await labo();
+    expect(await parSsh(pc, 'jean-baptiste', 'MotDePasseJB2024!', 'show version'))
+      .toContain('Cisco IOS Software');
   }, 30_000);
 
   /**

@@ -1450,6 +1450,14 @@ function runCrossPlatformExec(
     if (admission && !admission.accept) {
       return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
     }
+    // Le mot de passe OFFERT par le client (`sshpass -p <pw>`). Il
+    // n'etait pas transmis : la demande partait sans identifiant, et
+    // l'autorite, ne voyant rien a verifier, se contentait de constater
+    // que le COMPTE existe. Un secret faux — ou aucun — ouvrait donc la
+    // session vers un equipement Cisco, alors que le mecanisme de
+    // verification etait ecrit et correct de l'autre cote. Ne rien
+    // offrir garde le comportement de confiance existant, dont depend
+    // tout appelant qui ne pilote pas `sshpass`.
     const request = SshConnectionRequest.create({
       requestedUser: remoteUser,
       requestedHost: host,
@@ -1458,6 +1466,9 @@ function runCrossPlatformExec(
       sourceHostname: opts.sourceHostname,
       command: remoteCmd || null,
       offeredAuthMethods: ['publickey', 'password'],
+      credentials: opts.offeredPassword !== undefined
+        ? { password: opts.offeredPassword }
+        : undefined,
     });
     const decision = sshHost.evaluate(request);
     if (decision.outcome === 'dropped') {
