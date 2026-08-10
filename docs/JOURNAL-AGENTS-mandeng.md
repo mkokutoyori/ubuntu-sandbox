@@ -25,6 +25,61 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Tutoriel identité : relecture COMPLÈTE + deux contournements SSH — LIVRÉ
+
+**Agent** : session « logging ». Demande : « est-ce que toutes les
+sections du tuto sont gérées ? », un fichier de tests complet, et
+s'assurer qu'on peut le suivre.
+
+**`tuto-identite-chapitres-complets.test.ts` (77 cas, les deux
+plateformes)** rejoue les douze chapitres dans l'ordre, organisé par
+SECTION du cours et non par défaut trouvé — pour qu'on puisse répondre
+« ce chapitre est-il jouable ? » sans lire le code.
+
+**Quatre choses que le tutoriel demande sont refusées à dessein**,
+chacune vérifiée contre la documentation de Cisco : la forme à mots-clés
+de `test aaa group` ; **`aaa accounting … local`** (la liste de méthodes
+d'accounting prend `group`, `none`, `broadcast` — il n'existe pas de
+méthode `local`, un enregistrement partant vers un collecteur ; c'était
+accepté, rangé, rendu, et n'émettait RIEN, donc la commande promettait
+une trace qui ne venait jamais) ; `config-register` sur un Catalyst ; et
+les variables `$USERNAME`/`$TIME` de bannière.
+
+**Deux contournements trouvés en écrivant ce fichier, et fermés :**
+
+1. **Le niveau du compte ne tenait pas sur SSH.**
+   `ssh technicien@routeur "show running-config"` rendait la
+   configuration ENTIÈRE à un compte `privilege 7` : `runShowCommandSync`
+   forçait 15, et le raccourci `show running-config` du pont répondait
+   avant tout contrôle. Le niveau est désormais un paramètre dont 15
+   n'est que le défaut, et une commande SSH tourne dans SA propre session
+   vty au lieu d'hériter du shell de la console — deux connexions se
+   marchaient dessus.
+2. **Le mot de passe SSH n'était pas vérifié vers une cible Cisco.** Le
+   compte devait exister, et n'importe quel secret passait. Le mécanisme
+   était pourtant écrit et correct côté serveur
+   (`CrossVendorSshHost` compare `credentials.password` à l'autorité) :
+   c'est le CLIENT qui n'offrait rien, donc l'autorité, n'ayant rien à
+   vérifier, se contentait de constater l'existence du compte. Le mot de
+   passe de `sshpass -p` est transmis. **Ne rien offrir garde le
+   comportement de confiance historique**, dont dépend une grande partie
+   de la suite — ce qui est refermé est le cas où un secret EST offert et
+   se trouve faux.
+
+**Méthode, notée parce qu'elle a servi** : j'avais d'abord figé le
+contournement (2) par un cas affirmant les DEUX moitiés — ce qui marche
+et ce qui ne marche pas — plutôt que de le taire ou d'écrire un cas
+vide. Le correctif trouvé ensuite a fait tomber l'assertion, ce qui est
+exactement ce qu'on attend d'elle ; elle a été resserrée.
+
+**Reste hors de portée, mesuré** : SSH ENTRANT sur un Catalyst — `Switch`
+n'a aucune pile TCP, donc sa configuration SSH est stockée et rendue
+sans que rien n'écoute. Limite d'architecture, lot à part entière. Et
+`show privilege` par le pont SSH non interactif répond encore 15, alors
+que le verrou qui compte tient.
+
+---
+
 ### Niveaux de privilège : une ESCALADE fermée — LIVRÉ
 
 **Agent** : session « logging ». L'utilisateur a demandé de m'assurer que
