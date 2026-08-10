@@ -67,6 +67,7 @@ import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
+import { evaluateIpv6Acl } from './router/Ipv6AclEngine';
 
 /** One probe of one hop, as both traceroute implementations report it. */
 export interface TracerouteProbe {
@@ -419,6 +420,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getDhcpv6RelayDestinations: (iface) => this.dhcpv6RelayDestinations.get(iface) ?? [],
       deliverOspfv3: (inPort, srcIP, packet, ipsecProtected) =>
         this.ospfIntegration?.receivePacketV3(inPort, srcIP, packet, ipsecProtected),
+      ipv6FilterPermits: (iface, direction, pkt) => this.ipv6FilterPermits(iface, direction, pkt),
       onIcmpv6EchoReply: (p) => this.emitIcmpEchoReply({ ...p, ttl: p.hopLimit, rttMs: 0 }),
       onIcmpv6EchoFailed: (p) => this.emitIcmpEchoFailed({
         fromIp: p.fromIp, toIp: '', id: -1, seq: -1, reason: p.reason,
@@ -1673,6 +1675,23 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   getNeighborCache() { return this.ipv6Engine.getNeighborCache(); }
+
+  /**
+   * `ipv6 traffic-filter` on an interface. The base router has no IPv6
+   * access lists at all, so it filters nothing; a platform that has them
+   * says where the binding lives by overriding `getIpv6TrafficFilter`,
+   * which keeps ONE store — the one the running-config renders.
+   */
+  protected getIpv6TrafficFilter(_iface: string): { name: string; direction: 'in' | 'out' } | null {
+    return null;
+  }
+
+  private ipv6FilterPermits(iface: string, direction: 'in' | 'out', pkt: IPv6Packet): boolean {
+    const binding = this.getIpv6TrafficFilter(iface);
+    if (!binding || binding.direction !== direction) return true;
+    const acl = this.ipv6AccessLists.find((a) => a.name === binding.name);
+    return evaluateIpv6Acl(acl, pkt) === 'permit';
+  }
 
   /** What the IPv6 data plane has actually counted. */
   getIpv6Counters() { return this.ipv6Engine.getIpv6Counters(); }

@@ -89,6 +89,15 @@ export class CiscoRouter extends Router {
     return getSecurityConfig(this).cryptoKeys.length > 0;
   }
 
+  /**
+   * The binding `ipv6 traffic-filter` wrote. It is read from the very
+   * store the running-config renders, so a filter that shows in the
+   * configuration is the filter the data plane applies.
+   */
+  protected override getIpv6TrafficFilter(iface: string): { name: string; direction: 'in' | 'out' } | null {
+    return getSecurityConfig(this).ifaceFlags(iface).ipv6TrafficFilter ?? null;
+  }
+
   installIkeCertAuth(config: {
     localCert: import('../pki/X509Certificate').X509Certificate;
     localKey: import('../pki/PkiKeyPair').PkiPrivateKey;

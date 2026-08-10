@@ -84,6 +84,66 @@ vertes (766 cas).
 
 ---
 
+### Une ACL IPv6 FILTRE, et une réponse ICMPv6 est ROUTÉE — LIVRÉ
+
+**Agent** : session « logging ».
+
+**Mesuré d'abord** : une liste dont la première ligne est
+`deny icmp any any`, appliquée par `ipv6 traffic-filter BLOCK in`,
+laissait passer un ping à **100 %**. `ipv6 access-list` produisait de
+vraies entrées structurées, `show ipv6 access-list` les rendait, et
+**personne ne les lisait**. Une fonction de sécurité acceptée, affichée,
+et qui ne filtre rien est pire qu'absente : elle se lit comme une
+protection.
+
+**La règle facile à manquer et portante** : IOS permet implicitement la
+découverte de voisins à la FIN de chaque ACL IPv6, avant le refus
+implicite. Sans elle, poser n'importe quelle ACL IPv6 tue NDP et emporte
+le lien. **APPENDU** est le mot : une entrée écrite par l'opérateur
+correspond d'abord, donc un `deny ipv6 any any` explicite fait vraiment
+tomber le lien — c'est pourquoi IOS met en garde contre. Les deux
+moitiés sont épinglées, parce que faire que l'avertissement ne se
+réalise pas enseignerait le contraire du vrai.
+
+**Un défaut sans rapport avec les ACL, trouvé parce que le TÉMOIN IPv4
+du laboratoire à trois routeurs passait pendant que son jumeau IPv6
+perdait tout** : une réponse d'écho ICMPv6 — et une ERREUR ICMPv6 avec
+elle — était remise au voisin dont l'demandeur portait l'adresse, au
+lieu d'être ROUTÉE. Cela marche exactement tant que le demandeur est sur
+le même lien ; un routeur à deux sauts ne recevait aucune réponse, la
+sollicitation de voisin partant sur un segment qui ne porte pas cette
+adresse. Conséquence : **`traceroute ipv6` au-delà du premier saut ne
+pouvait pas fonctionner**, « Hop Limit Exceeded » étant par définition
+une réponse à quelqu'un de lointain. Corrigé par `resolveEgress`, et
+avec : la source d'une erreur est l'adresse GLOBALE de l'interface
+d'arrivée (RFC 4443 §2.2) plutôt que sa lien-local, et **l'indice de
+zone ne part plus sur le fil** — c'est une métadonnée locale, le
+récepteur pose la sienne.
+
+**Et une deuxième réponse à une même question, supprimée** :
+`show running-config interface <nom>` était un SECOND rendu du bloc
+d'interface, écrit à la main, qui connaissait un sous-ensemble des
+lignes du premier. Sur une machine, au même instant, la configuration
+complète portait `ipv6 address` et `ipv6 traffic-filter` là où la vue
+par interface n'avait ni l'un ni l'autre. Un seul constructeur
+(`interfaceConfigLines`) désormais.
+
+**Fichiers touchés** : `router/Ipv6AclEngine.ts` (nouveau),
+`router/IPv6DataPlane.ts`, `devices/Router.ts`, `devices/CiscoRouter.ts`,
+`shells/cisco/CiscoShowCommands.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`.
+
+**Signalement, pas ma prise** : `ripng` / `ipv6 router rip` n'existent
+sur AUCUNE des deux plateformes (protocole entier, hors d'un lot) ; et
+`ipv6 route-static` de VRP fonctionne mais **n'apparaît pas dans
+`display current-configuration`**, donc il est perdu au rechargement
+d'une topologie.
+
+**Mesures.** `ipv6-traffic-filter-really-filters.test.ts` (13 cas) :
+**8 tombent** avant. 273 suites vertes (3 904 cas).
+
+---
+
 ### IP SLA et NQA mesurent une cible IPv6 — LIVRÉ
 
 **Agent** : session « logging ». Les deux sous-systèmes refusaient une

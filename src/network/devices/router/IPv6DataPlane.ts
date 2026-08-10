@@ -101,6 +101,11 @@ export interface IPv6RouterContext {
     fromIp: string; toIp: string; id: number; seq: number; hopLimit: number;
   }): void;
   onIcmpv6EchoFailed?(payload: { fromIp: string; reason: string }): void;
+  /**
+   * `ipv6 traffic-filter <name> in|out` on this interface. Absent on a
+   * platform with no IPv6 access lists; `true` means the packet passes.
+   */
+  ipv6FilterPermits?(iface: string, direction: 'in' | 'out', pkt: IPv6Packet): boolean;
 }
 
 /**
@@ -119,6 +124,8 @@ export interface Ipv6Counters {
   inDelivers: number;
   inNoRoutes: number;
   inHopLimitExceeded: number;
+  inFiltered: number;
+  outFiltered: number;
   outForwarded: number;
   outRequests: number;
   icmpInEchoRequests: number;
@@ -136,6 +143,7 @@ export interface Ipv6Counters {
 export function emptyIpv6Counters(): Ipv6Counters {
   return {
     inReceives: 0, inDelivers: 0, inNoRoutes: 0, inHopLimitExceeded: 0,
+    inFiltered: 0, outFiltered: 0,
     outForwarded: 0, outRequests: 0,
     icmpInEchoRequests: 0, icmpInEchoReplies: 0, icmpOutEchoReplies: 0,
     icmpOutErrors: 0,
@@ -318,6 +326,17 @@ export class IPv6DataPlane {
     const port = this.ctx.getPorts().get(inPort);
     if (!port) return;
     this.v6Counters.inReceives++;
+
+    // An inbound filter is applied to EVERYTHING arriving on the
+    // interface, transit and self-destined alike — that is what makes it
+    // a way to protect the router itself.
+    if (this.ctx.ipv6FilterPermits?.(inPort, 'in', ipv6) === false) {
+      this.v6Counters.inFiltered++;
+      Logger.info(this.ctx.id, 'router:ipv6-acl-deny-in',
+        `${this.ctx.name}: IPv6 ACL denied inbound on ${inPort}: `
+        + `${ipv6.sourceIP} -> ${ipv6.destinationIP}`);
+      return;
+    }
 
     const destIP = ipv6.destinationIP;
     let isForUs = false;
@@ -615,6 +634,10 @@ export class IPv6DataPlane {
         : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
     }
     if (!sourceIP) return null;
+    // A zone index is LOCAL metadata — it is not part of the 128 bits and
+    // never goes on the wire. A receiver notes the interface it heard the
+    // packet on and stamps its OWN zone.
+    sourceIP = sourceIP.withScopeId(null);
 
     const nextHopMAC = this.resolveNeighborSync(iface, nextHopIP);
     if (!nextHopMAC) return null;
@@ -695,12 +718,13 @@ export class IPv6DataPlane {
     const port = this.ctx.getPorts().get(inPort);
     if (!port) return;
 
-    let srcIP: IPv6Address | null = null;
-    if (ipv6.destinationIP.isLinkLocal()) {
-      srcIP = port.getLinkLocalIPv6();
-    } else {
-      srcIP = port.getGlobalIPv6() || port.getLinkLocalIPv6();
-    }
+    // RFC 4443 §4.2: the reply's source is the address the request was
+    // addressed to, when that was a unicast address of ours.
+    const srcIP = ipv6.destinationIP.isMulticast()
+      ? (ipv6.sourceIP.isLinkLocal()
+        ? port.getLinkLocalIPv6()
+        : (port.getGlobalIPv6() || port.getLinkLocalIPv6()))
+      : ipv6.destinationIP;
     if (!srcIP) return;
 
     const reply = createICMPv6EchoReply(icmpv6.id || 0, icmpv6.sequence || 0, icmpv6.dataSize || 56);
@@ -713,16 +737,19 @@ export class IPv6DataPlane {
       8 + (icmpv6.dataSize || 56),
     );
 
-    // A sender this router has never resolved is solicited now rather
-    // than dropped: a reply nobody sends is indistinguishable from an
-    // unreachable host, and the asker did nothing wrong.
-    const dstMAC = this.resolveNeighborSync(inPort, ipv6.sourceIP);
-    if (!dstMAC) return;
+    // The reply is ROUTED, not handed to the neighbour whose address the
+    // asker happens to carry. Soliciting the source address as if it
+    // were on this link works only while the asker IS on this link:
+    // measured, a router two hops away got no reply at all, because the
+    // Neighbor Solicitation for its address went out on a segment that
+    // does not hold it and nobody answered.
+    const egress = this.resolveEgress(ipv6.sourceIP, srcIP.toString());
+    if (!egress) return;
     this.v6Counters.icmpOutEchoReplies++;
     this.v6Counters.outRequests++;
-    this.ctx.sendFrame(inPort, {
-      srcMAC: port.getMAC(),
-      dstMAC,
+    this.ctx.sendFrame(egress.iface, {
+      srcMAC: egress.port.getMAC(),
+      dstMAC: egress.nextHopMAC,
       etherType: ETHERTYPE_IPV6,
       payload: replyPkt,
     });
@@ -986,6 +1013,17 @@ export class IPv6DataPlane {
       hopLimit: newHopLimit,
     };
 
+    // An outbound filter applies to TRANSIT traffic only: a packet this
+    // router originates itself is not filtered on the way out, which is
+    // why the check lives here and not in `sendEchoRequest`.
+    if (this.ctx.ipv6FilterPermits?.(route.iface, 'out', fwdPkt) === false) {
+      this.v6Counters.outFiltered++;
+      Logger.info(this.ctx.id, 'router:ipv6-acl-deny-out',
+        `${this.ctx.name}: IPv6 ACL denied outbound on ${route.iface}: `
+        + `${ipv6.sourceIP} -> ${ipv6.destinationIP}`);
+      return;
+    }
+
     const nextHopIP = route.nextHop || ipv6.destinationIP;
     const outPort = this.ctx.getPorts().get(route.iface);
     if (!outPort) return;
@@ -1035,7 +1073,11 @@ export class IPv6DataPlane {
   ): void {
     const port = this.ctx.getPorts().get(inPort);
     if (!port) return;
-    const srcIP = port.getLinkLocalIPv6() || port.getGlobalIPv6();
+    // RFC 4443 §2.2: a unicast address of the interface the packet came
+    // in on. The global one when there is one — it is what a traceroute
+    // prints, and a link-local hop teaches the operator nothing about
+    // which network the router sits on.
+    const srcIP = port.getGlobalIPv6() || port.getLinkLocalIPv6();
     if (!srcIP) return;
 
     const icmpError: ICMPv6Packet = {
@@ -1054,13 +1096,16 @@ export class IPv6DataPlane {
       48,
     );
 
-    const dstMAC = this.resolveNeighborSync(inPort, offendingPkt.sourceIP);
-    if (!dstMAC) return;
+    // Routed for the same reason the echo reply is: a Hop Limit Exceeded
+    // answers a source that is by definition several hops away — that is
+    // what makes a traceroute work at all.
+    const egress = this.resolveEgress(offendingPkt.sourceIP, srcIP.toString());
+    if (!egress) return;
     this.v6Counters.icmpOutErrors++;
     this.v6Counters.outRequests++;
-    this.ctx.sendFrame(inPort, {
-      srcMAC: port.getMAC(),
-      dstMAC,
+    this.ctx.sendFrame(egress.iface, {
+      srcMAC: egress.port.getMAC(),
+      dstMAC: egress.nextHopMAC,
       etherType: ETHERTYPE_IPV6,
       payload: errorPkt,
     });

@@ -988,9 +988,11 @@ export function displayIpv6Statistics(router: Router): string {
     `    Local host: ${c.inDelivers}`,
     `    Hoplimit exceeded: ${c.inHopLimitExceeded}`,
     `    No route: ${c.inNoRoutes}`,
+    `    Filtered: ${c.inFiltered}`,
     `  Sent packets:`,
     `    Total: ${c.outRequests}`,
     `    Forwarded: ${c.outForwarded}`,
+    `    Filtered: ${c.outFiltered}`,
   ].join('\n');
 }
 

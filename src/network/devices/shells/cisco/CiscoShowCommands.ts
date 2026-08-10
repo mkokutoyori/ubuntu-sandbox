@@ -512,91 +512,7 @@ export function showRunningConfig(router: Router): string {
   lines.push('!');
   const descs = router._getInterfaceDescriptions();
   for (const [name, port] of ports) {
-    lines.push(`interface ${name}`);
-    const desc = descs.get(name);
-    if (desc) lines.push(` description ${desc}`);
-    const ip = port.getIPAddress();
-    const mask = port.getSubnetMask();
-    const enc = (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation;
-    if (enc && enc.type) {
-      lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
-    }
-    // `no ip address` est RENDU : sans lui, la configuration ne permet
-    // pas de distinguer une interface sans adresse d'une interface dont
-    // l'adresse aurait été omise — et c'est ce texte que l'import de
-    // topologie rejoue.
-    if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
-    else if (!/^(Tunnel|Loopback|Vlan|BVI|Port-channel|Null)/i.test(name)) {
-      lines.push(' no ip address');
-    }
-    for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
-    lines.push(...runningConfigInterfaceIPv6(port));
-    // IOS ne rend que l'ecart au defaut du processus : `no ip
-    // split-horizon` se voit, l'etat par defaut non.
-    if (router.isRIPEnabled() && !router.ripSplitHorizonOn(name)) {
-      lines.push(' no ip split-horizon');
-    }
-    if (!port.getIsUp()) lines.push(` shutdown`);
-    // Le durcissement d'une interface se REJOUE : sans cette ligne, un
-    // `ntp disable` posé sur un lien exterieur disparaissait a l'import
-    // de la topologie et l'interface revenait servante.
-    if (ntpAgentOf(router)?.isInterfaceDisabled(name)) lines.push(` ntp disable`);
-    if (!port.isNegotiationAuto?.()) {
-      const sp = port.getSpeed?.();
-      if (sp) lines.push(` speed ${sp}`);
-      const dx = port.getDuplex?.();
-      if (dx) lines.push(` duplex ${dx}`);
-    }
-    const helpers = dhcp.getHelperAddresses(name);
-    for (const h of helpers) {
-      lines.push(` ip helper-address ${h}`);
-    }
-    lines.push(...runningConfigInterfaceACL(router, name));
-    lines.push(...runningConfigInterfaceNAT(router, name));
-    const sec = (router as unknown as {
-      [s: symbol]: { asInterfaceRunningConfigLines?: (iface: string) => string[] } | undefined;
-    })[Symbol.for('CiscoSecurityConfig')];
-    if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
-    const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
-    if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
-    const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
-    if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
-    lines.push(...igmpInterfaceRunningConfigLines(router, name));
-    // `rate-limit` (CAR historique) était STOCKÉ sur le port et rendu
-    // nulle part : la commande était acceptée, absente de la
-    // running-config, et sans vue pour la contredire. Le stockage
-    // existait, il lui manquait ses deux portes.
-    for (const r of (router.getCarPolicer(name)?.list() ?? [])) lines.push(` ${r.raw}`);
-    const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
-    const pending = ospfExtra?.pendingIfConfig.get(name);
-    if (pending) {
-      if (pending.tunnelMode) lines.push(` tunnel mode ${pending.tunnelMode}`);
-      if (pending.tunnelSource) lines.push(` tunnel source ${pending.tunnelSource}`);
-      if (pending.tunnelDest) lines.push(` tunnel destination ${pending.tunnelDest}`);
-      if (pending.tunnelKey) lines.push(` tunnel key ${pending.tunnelKey}`);
-      if (pending.tunnelVrf) lines.push(` tunnel vrf ${pending.tunnelVrf}`);
-      const pmtud = pending.tunnelPathMtuDiscovery as { enabled: boolean; ageTimer?: number; minMtu?: number } | undefined;
-      if (pmtud?.enabled) {
-        let s = ' tunnel path-mtu-discovery';
-        if (pmtud.ageTimer !== undefined) s += ` age-timer ${pmtud.ageTimer}`;
-        if (pmtud.minMtu !== undefined) s += ` min-mtu ${pmtud.minMtu}`;
-        lines.push(s);
-      }
-      if (pending.bfdInterval !== undefined) {
-        lines.push(` bfd interval ${pending.bfdInterval}${pending.bfdMinRx !== undefined ? ' min_rx ' + pending.bfdMinRx : ''}${pending.bfdMultiplier !== undefined ? ' multiplier ' + pending.bfdMultiplier : ''}`);
-      }
-      if (pending.bfdTemplate) lines.push(` bfd template ${pending.bfdTemplate}`);
-      if (pending.bfdEcho) lines.push(' bfd echo');
-      const fr = pending.frameRelay as Record<string, unknown> | undefined;
-      if (fr) {
-        if (fr.dlci !== undefined) lines.push(` frame-relay interface-dlci ${fr.dlci}`);
-        if (fr.lmiType) lines.push(` frame-relay lmi-type ${fr.lmiType}`);
-        if (fr.inverseArp) lines.push(' frame-relay inverse-arp');
-        for (const m of (fr.maps as Array<{ ip: string; dlci: number }>) ?? []) {
-          lines.push(` frame-relay map ip ${m.ip} ${m.dlci}`);
-        }
-      }
-    }
+    lines.push(...interfaceConfigLines(router, name, port, descs, dhcp));
     lines.push('!');
   }
 
@@ -859,13 +775,114 @@ export function showRunningConfig(router: Router): string {
   return assembled.join('\n');
 }
 
+/**
+ * The lines of ONE interface block, in IOS's own order.
+ *
+ * There used to be two hand-written renderers of this block —
+ * `show running-config` and `show running-config interface <name>` —
+ * and the second knew about a subset of the first. Measured on one
+ * machine at one instant: the full configuration listed
+ * `ipv6 address 2001:db8::1/64` and `ipv6 traffic-filter BLOCK in`
+ * where the per-interface view showed neither. Two possible answers
+ * to one question is the defect; there is one builder now.
+ */
+function interfaceConfigLines(
+  router: Router, name: string, port: Port,
+  descs: Map<string, string>, dhcp: ReturnType<Router['_getDHCPServerInternal']>,
+): string[] {
+  const lines: string[] = [];
+  lines.push(`interface ${name}`);
+  const desc = descs.get(name);
+  if (desc) lines.push(` description ${desc}`);
+  const ip = port.getIPAddress();
+  const mask = port.getSubnetMask();
+  const enc = (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation;
+  if (enc && enc.type) {
+    lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
+  }
+  // `no ip address` est RENDU : sans lui, la configuration ne permet
+  // pas de distinguer une interface sans adresse d'une interface dont
+  // l'adresse aurait été omise — et c'est ce texte que l'import de
+  // topologie rejoue.
+  if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
+  else if (!/^(Tunnel|Loopback|Vlan|BVI|Port-channel|Null)/i.test(name)) {
+    lines.push(' no ip address');
+  }
+  for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
+  lines.push(...runningConfigInterfaceIPv6(port));
+  // IOS ne rend que l'ecart au defaut du processus : `no ip
+  // split-horizon` se voit, l'etat par defaut non.
+  if (router.isRIPEnabled() && !router.ripSplitHorizonOn(name)) {
+    lines.push(' no ip split-horizon');
+  }
+  if (!port.getIsUp()) lines.push(` shutdown`);
+  // Le durcissement d'une interface se REJOUE : sans cette ligne, un
+  // `ntp disable` posé sur un lien exterieur disparaissait a l'import
+  // de la topologie et l'interface revenait servante.
+  if (ntpAgentOf(router)?.isInterfaceDisabled(name)) lines.push(` ntp disable`);
+  if (!port.isNegotiationAuto?.()) {
+    const sp = port.getSpeed?.();
+    if (sp) lines.push(` speed ${sp}`);
+    const dx = port.getDuplex?.();
+    if (dx) lines.push(` duplex ${dx}`);
+  }
+  const helpers = dhcp.getHelperAddresses(name);
+  for (const h of helpers) {
+    lines.push(` ip helper-address ${h}`);
+  }
+  lines.push(...runningConfigInterfaceACL(router, name));
+  lines.push(...runningConfigInterfaceNAT(router, name));
+  const sec = (router as unknown as {
+    [s: symbol]: { asInterfaceRunningConfigLines?: (iface: string) => string[] } | undefined;
+  })[Symbol.for('CiscoSecurityConfig')];
+  if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
+  const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
+  if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
+  const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
+  if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
+  lines.push(...igmpInterfaceRunningConfigLines(router, name));
+  // `rate-limit` (CAR historique) était STOCKÉ sur le port et rendu
+  // nulle part : la commande était acceptée, absente de la
+  // running-config, et sans vue pour la contredire. Le stockage
+  // existait, il lui manquait ses deux portes.
+  for (const r of (router.getCarPolicer(name)?.list() ?? [])) lines.push(` ${r.raw}`);
+  const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
+  const pending = ospfExtra?.pendingIfConfig.get(name);
+  if (pending) {
+    if (pending.tunnelMode) lines.push(` tunnel mode ${pending.tunnelMode}`);
+    if (pending.tunnelSource) lines.push(` tunnel source ${pending.tunnelSource}`);
+    if (pending.tunnelDest) lines.push(` tunnel destination ${pending.tunnelDest}`);
+    if (pending.tunnelKey) lines.push(` tunnel key ${pending.tunnelKey}`);
+    if (pending.tunnelVrf) lines.push(` tunnel vrf ${pending.tunnelVrf}`);
+    const pmtud = pending.tunnelPathMtuDiscovery as { enabled: boolean; ageTimer?: number; minMtu?: number } | undefined;
+    if (pmtud?.enabled) {
+      let s = ' tunnel path-mtu-discovery';
+      if (pmtud.ageTimer !== undefined) s += ` age-timer ${pmtud.ageTimer}`;
+      if (pmtud.minMtu !== undefined) s += ` min-mtu ${pmtud.minMtu}`;
+      lines.push(s);
+    }
+    if (pending.bfdInterval !== undefined) {
+      lines.push(` bfd interval ${pending.bfdInterval}${pending.bfdMinRx !== undefined ? ' min_rx ' + pending.bfdMinRx : ''}${pending.bfdMultiplier !== undefined ? ' multiplier ' + pending.bfdMultiplier : ''}`);
+    }
+    if (pending.bfdTemplate) lines.push(` bfd template ${pending.bfdTemplate}`);
+    if (pending.bfdEcho) lines.push(' bfd echo');
+    const fr = pending.frameRelay as Record<string, unknown> | undefined;
+    if (fr) {
+      if (fr.dlci !== undefined) lines.push(` frame-relay interface-dlci ${fr.dlci}`);
+      if (fr.lmiType) lines.push(` frame-relay lmi-type ${fr.lmiType}`);
+      if (fr.inverseArp) lines.push(' frame-relay inverse-arp');
+      for (const m of (fr.maps as Array<{ ip: string; dlci: number }>) ?? []) {
+        lines.push(` frame-relay map ip ${m.ip} ${m.dlci}`);
+      }
+    }
+  }
+  return lines;
+}
+
 export function showRunningConfigInterface(router: Router, ifName: string): string {
   const port = router.getPort(ifName);
   if (!port) return `% Invalid interface "${ifName}"`;
 
-  const ip = port.getIPAddress();
-  const mask = port.getSubnetMask();
-  const dhcp = router._getDHCPServerInternal();
   const lines = [
     'Building configuration...',
     '',
@@ -873,24 +890,10 @@ export function showRunningConfigInterface(router: Router, ifName: string): stri
     // pas le nom de ce qu'on affiche.
     '',
     '!',
-    `interface ${ifName}`,
+    ...interfaceConfigLines(
+      router, ifName, port,
+      router._getInterfaceDescriptions(), router._getDHCPServerInternal()),
   ];
-  const desc = router.getInterfaceDescription(ifName);
-  if (desc) lines.push(` description ${desc}`);
-  const enc = (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation;
-  if (enc && enc.type) {
-    lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
-  }
-  if (ip && mask) {
-    lines.push(` ip address ${ip} ${mask}`);
-    for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
-  }
-  if (!port.getIsUp()) lines.push(` shutdown`);
-  for (const natLine of runningConfigInterfaceNAT(router, ifName)) lines.push(natLine);
-  const helpers = dhcp.getHelperAddresses(ifName);
-  for (const h of helpers) {
-    lines.push(` ip helper-address ${h}`);
-  }
   lines.push('end');
   const corps = lines.slice(3).join('\n') + '\n';
   lines[2] = `Current configuration : ${new TextEncoder().encode(corps).length} bytes`;
@@ -1168,8 +1171,9 @@ export function showIpv6Traffic(router: Router): string {
     'IPv6 statistics:',
     `  Rcvd:  ${c.inReceives} total, ${c.inDelivers} local destination`,
     `         ${c.inHopLimitExceeded} hop count exceeded`,
-    `         ${c.inNoRoutes} no route`,
+    `         ${c.inNoRoutes} no route, ${c.inFiltered} access denied`,
     `  Sent:  ${c.outRequests} generated, ${c.outForwarded} forwarded`,
+    `         ${c.outFiltered} access denied`,
     '',
     'ICMP statistics:',
     `  Rcvd: ${icmpIn} input`,
