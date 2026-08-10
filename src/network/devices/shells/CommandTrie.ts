@@ -19,6 +19,9 @@
 import { extractHandlerKeywords } from './HandlerKeywordExtractor';
 import { descriptionForKeyword } from './CliKeywordDescriptions';
 import {
+  type CommandSpec, validateCommandSpec, specIsGreedy, specAppliesTo,
+} from './cli/CommandSpec';
+import {
   SUGGESTION_SOURCES, DERIVED_ORIGINS,
   type SuggestionCandidate, type SuggestionOrigin, type SuggestionRequest,
   type SuggestionTrieAccess,
@@ -149,6 +152,7 @@ export interface CommandNode {
    * computed once). Undefined = not yet computed.
    */
   _autoKeywords?: ReadonlyArray<{ keyword: string; description: string }>;
+  _spec?: CommandSpec;
 }
 
 export type CommandAction = (args: string[], rawLine: string) => string;
@@ -319,6 +323,48 @@ export class CommandTrie {
    *   trie.register('show mac address-table', 'Display MAC table', handler);
    *   trie.register('vlan', 'Create VLAN', handler, [{ name: 'id', type: 'INT', description: 'VLAN ID' }]);
    */
+  private platform: string | null = null;
+
+  setPlatform(platform: string | null): void {
+    this.platform = platform;
+  }
+
+  getPlatform(): string | null {
+    return this.platform;
+  }
+
+  declare(spec: CommandSpec): void {
+    validateCommandSpec(spec);
+    if (!specAppliesTo(spec, this.platform)) return;
+    if (specIsGreedy(spec)) {
+      this.registerGreedy(spec.path, spec.description, spec.run, spec.continuations);
+      if (spec.args && spec.args.length > 0) this.describeArgs(spec.path, spec.args);
+    } else {
+      this.register(spec.path, spec.description, spec.run,
+        spec.args ? [...spec.args] : undefined);
+    }
+    const node = this.nodeAt(spec.path);
+    if (node) node._spec = spec;
+  }
+
+  declaredSpecs(): CommandSpec[] {
+    const out: CommandSpec[] = [];
+    const walk = (node: CommandNode): void => {
+      if (node._spec) out.push(node._spec);
+      for (const child of node.children.values()) walk(child);
+    };
+    walk(this.root);
+    return out;
+  }
+
+  declaredConfigLines(device: unknown): string[] {
+    const lines: string[] = [];
+    for (const spec of this.declaredSpecs()) {
+      if (spec.serialize) lines.push(...spec.serialize(device));
+    }
+    return lines;
+  }
+
   register(path: string, description: string, action: CommandAction, params?: ParamSpec[]): void {
     const keywords = path.split(/\s+/);
     let node = this.root;

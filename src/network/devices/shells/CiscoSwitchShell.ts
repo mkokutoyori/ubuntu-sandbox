@@ -2406,10 +2406,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.buildRunningConfig(this.d());
     });
 
-    this.privilegedTrie.register('show startup-config', 'Display startup configuration',
-      () => this.showStartupConfig());
-    this.privilegedTrie.register('show configuration', 'Display saved configuration',
-      () => this.showStartupConfig());
+    for (const chemin of ['show startup-config', 'show configuration']) {
+      this.privilegedTrie.declare({
+        path: chemin,
+        description: 'Display saved configuration',
+        run: () => this.showStartupConfig(),
+      });
+    }
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
       return this.d().writeMemory();
