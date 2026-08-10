@@ -1,3 +1,4 @@
+import type { FhrpGroupBase } from '../fhrp/types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 import { createDefaultFhrpConfig, trackedPriority, type FhrpTrackEntry } from '../fhrp/types';
 export const IP_PROTO_VRRP = 112;
@@ -104,7 +105,7 @@ export function createVrrpGlobalStats(): VrrpGlobalStats {
   return { checksumErrors: 0, versionErrors: 0, vridErrors: 0, otherErrors: 0 };
 }
 
-export interface VrrpGroupRuntime {
+export interface VrrpGroupRuntime extends FhrpGroupBase {
   iface: string;
   vrid: number;
   state: VrrpState;

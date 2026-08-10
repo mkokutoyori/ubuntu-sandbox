@@ -28,6 +28,8 @@ export type GlbpHost = FhrpHost;
 export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
   getConfig(): Readonly<GlbpConfig> { return this.config; }
 
+  protected groupIdOf(g: { group: number }): number { return g.group; }
+
   // ── FhrpAgentBase hooks ───────────────────────────────────────────
   protected groupId(g: GlbpGroupRuntime): number { return g.group; }
 
@@ -416,7 +418,11 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
     } else {
       const me = { priority: g.priority, ip: myIp };
       const avg = { priority: g.avgPriority, ip: g.avgIp };
-      if (compareCandidate(me, avg) < 0 && (g.preempt || g.priority > g.avgPriority)) {
+      // Le delai ne s'applique qu'a la PREEMPTION d'un AVG vivant :
+      // quand notre priorite est simplement superieure a l'AVG connu
+      // sans qu'aucun ne parle, il n'y a rien a retarder.
+      if (compareCandidate(me, avg) < 0 && (g.preempt || g.priority > g.avgPriority)
+        && this.preemptDelayElapsed(g)) {
         newState = 'active';
       } else {
         newState = 'standby';

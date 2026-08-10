@@ -160,6 +160,58 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### FHRP — lot V18 : le délai de préemption vaut pour les trois familles — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-CLI-Fidelite-VRP.md` §27.
+
+**Ce lot corrige d'abord une insuffisance du précédent.** V16 avait rendu
+le délai de préemption réel **côté Huawei seulement**, et rien ne le
+disait. La mesure faite ensuite le trouve inerte partout ailleurs :
+`vrrp <n> preempt delay minimum`, `standby <n> preempt delay minimum`,
+`glbp <n> preempt delay minimum` et `vrrp <n> authentication md5
+key-string` rangeaient tous leur valeur sur une **façade**
+(`FhrpRepository`) que **seuls les affichages lisent**.
+
+**Le point qui vaut d'être retenu** : un laboratoire monté sur la colonne
+Cisco voyait la commande acceptée, **confirmée par `show standby`**, et
+sans le moindre effet. Un affichage qui atteste un réglage inerte est
+pire qu'une commande absente. Et rendre une chose réelle sur une
+plateforme sans vérifier la sœur crée une divergence *invisible*.
+
+**Ce qui vous concerne** : le délai vit maintenant sur **`FhrpAgentBase`**
+(`preemptDelayElapsed`, `clearPreemptDelay`, un réveil sur le
+`Scheduler`) et `FhrpGroupBase` porte `preemptDelaySec` /
+`preemptEligibleSinceMs`. `setPreempt` prend un 4ᵉ paramètre optionnel —
+le délai voyage **avec** le drapeau, la commande n'en faisant qu'une.
+Nouvelle méthode abstraite `groupIdOf(g)` sur la base (les trois familles
+nomment leur identifiant différemment).
+
+**Deux défauts de typage trouvés en chemin, et ils étaient porteurs** :
+`HsrpAgent.setPreempt` **avalait** le délai (surcharge restée à trois
+paramètres — accepté au site d'appel, perdu dans le corps) ; et les trois
+`*GroupRuntime` **redéclaraient** les champs de la base au lieu de
+l'étendre, si bien que le champ neuf restait invisible du typage concret.
+Les trois `extends FhrpGroupBase` désormais.
+
+**Reste ouvert, et dit plutôt que tu** : **VRRP ne passe pas par l'état
+Backup au démarrage** — `recompute` rend `master` dès que `masterIp` est
+nul, là où RFC 5798 §6.4.1 fait démarrer en Backup et attendre
+l'intervalle de maître absent. Trouvé en écrivant la sonde, délibérément
+non traité : la changer touche le démarrage de **tout** groupe VRRP du
+dépôt. Et **GLBP n'a aucune authentification** (ni champ ni contrôle
+dans l'agent) — c'est le jumeau du lot V16 côté GLBP, pas un branchement.
+
+**Fichiers touchés** : `fhrp/{types,FhrpAgentBase}.ts`,
+`vrrp/{types,VrrpAgent}.ts`, `hsrp/{types,HsrpAgent}.ts`,
+`glbp/{types,GlbpAgent}.ts`, `shells/cisco/{CiscoHsrpCommands,CiscoVrrpGlbpCommands}.ts`.
+
+**Mesures.** 102 suites connexes vertes (1 514 cas).
+`probe-fhrp-preempt-delay-famille.test.ts` (13 cas) : **9 tombent** par
+`git stash`. Typecheck : jeu d'erreurs **identique** (217). Lint propre.
+
+---
+
 ### VRRP — lot V17 : `display vrrp statistics` compte, sous les vrais intitulés — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -3653,7 +3705,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R8 livrés** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V17 livrés** |
+| CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V18 livrés** |
 | NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N11 livrés — chantier clos** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :

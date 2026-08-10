@@ -24,6 +24,8 @@ export type HsrpHost = FhrpHost;
 export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
   getConfig(): Readonly<HsrpConfig> { return this.config; }
 
+  protected groupIdOf(g: { group: number }): number { return g.group; }
+
   // ── FhrpAgentBase hooks ───────────────────────────────────────────
   protected groupId(g: HsrpGroupRuntime): number { return g.group; }
 
@@ -102,8 +104,13 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
 
   // HSRP (unlike VRRP/GLBP) also advertises right after a preempt
   // change so the coup is observable immediately.
-  override setPreempt(iface: string, group: number, on: boolean): void {
-    super.setPreempt(iface, group, on);
+  override setPreempt(iface: string, group: number, on: boolean, delaySec?: number): void {
+    // La surcharge AVALAIT le delai : sa signature s'etait arretee a
+    // trois parametres, donc le quatrieme etait accepte par le typage du
+    // site d'appel et perdu ici. C'est la forme la plus discrete de la
+    // meme faute que ce lot corrige — une valeur transmise et lue par
+    // personne.
+    super.setPreempt(iface, group, on, delaySec);
     const g = this.ensureGroup(iface, group);
     this.advertiseIfDue(g);
   }
@@ -293,7 +300,8 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
         }
       } else if (active.ip === myIp) {
         g.state = 'active';
-      } else if (compareSpeaker(me, active) < 0 && g.preempt) {
+      } else if (compareSpeaker(me, active) < 0 && g.preempt
+        && this.preemptDelayElapsed(g)) {
         // RFC 2281 §5.3 / IOS default: preemption is DISABLED. Without
         // `standby <grp> preempt`, a higher-priority router never
         // displaces a live active router — it waits for it to die.

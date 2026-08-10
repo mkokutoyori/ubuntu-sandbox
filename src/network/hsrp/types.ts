@@ -1,3 +1,4 @@
+import type { FhrpGroupBase } from '../fhrp/types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 import { createDefaultFhrpConfig, trackedPriority, type FhrpTrackEntry } from '../fhrp/types';
 export const UDP_PORT_HSRP = 1985;
@@ -24,7 +25,7 @@ export interface HsrpPacket extends NetworkPdu {
 
 export type HsrpTrackEntry = FhrpTrackEntry;
 
-export interface HsrpGroupRuntime {
+export interface HsrpGroupRuntime extends FhrpGroupBase {
   iface: string;
   group: number;
   state: HsrpState;

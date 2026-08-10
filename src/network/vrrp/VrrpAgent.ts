@@ -8,7 +8,8 @@ import {
   type VrrpConfig, type VrrpGroupRuntime, type VrrpPacket, type VrrpState,
   defaultGroupRuntime, makeKey, vrrpVirtualMac,
   compareCandidate, masterDownIntervalMs, effectivePriority,
-  type VrrpStats, type VrrpGlobalStats, createVrrpStats, createVrrpGlobalStats,
+  type VrrpStats, type VrrpGlobalStats, type VrrpAuthMode,
+  createVrrpStats, createVrrpGlobalStats,
   IP_PROTO_VRRP, VRRP_MULTICAST_IP, VRRP_MULTICAST_MAC,
 } from './types';
 import {
@@ -19,7 +20,6 @@ import {
 import { Logger } from '../core/Logger';
 import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
 import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';
-import type { TimerHandle } from '@/events/Scheduler';
 
 export type VrrpHost = FhrpHost;
 
@@ -266,6 +266,25 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     return !!g.vip && this.linkContext(g).myIp === g.vip;
   }
 
+  protected groupIdOf(g: VrrpGroupRuntime): number { return g.vrid; }
+
+  /**
+   * `authentication-mode` (VRP) / `vrrp <n> authentication md5
+   * key-string` (IOS) : un seul point d'entree pour les deux CLI.
+   *
+   * Cote Huawei la vue ecrivait directement sur le groupe ; cote Cisco
+   * la commande ecrivait sur une facade que l'agent ne lit pas, donc
+   * l'authentification VRRP etait inerte sur IOS alors qu'elle
+   * fonctionnait sur VRP — deux magasins pour un fait, et un seul
+   * constructeur servi.
+   */
+  setAuth(iface: string, vrid: number, mode: VrrpAuthMode, key?: string): void {
+    const g = this.ensureGroup(iface, vrid);
+    g.authMode = mode;
+    g.authKey = key;
+    this.recompute(g, 'config');
+  }
+
   /**
    * La DEMISSION d'un maitre : une annonce de priorite zero.
    *
@@ -323,55 +342,6 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     return (pkt.authData ?? '') === (g.authKey ?? '');
   }
 
-  // ── Delai de preemption (extension de constructeur) ──────────────
-
-  /**
-   * Le delai de `preempt-mode timer delay` est-il ecoule ?
-   *
-   * Il ne retarde PAS le basculement : quand il n'y a plus de maitre du
-   * tout, la reprise est immediate — c'est le chemin de la panne, et le
-   * retarder ferait perdre du trafic pour rien. Ce qu'il retarde est la
-   * PREEMPTION d'un maitre vivant qui annonce encore, ce que la
-   * documentation Huawei donne comme sa raison d'etre : « to prevent
-   * frequent switching of the VRRP group status ».
-   *
-   * L'horloge part au moment ou ce routeur devient eligible et est
-   * REMISE A ZERO des qu'il cesse de l'etre, sans quoi une eligibilite
-   * intermittente finirait par accumuler assez de temps pour preempter
-   * sans avoir jamais ete stable une seule seconde.
-   */
-  private delaiPreemptionEcoule(g: VrrpGroupRuntime): boolean {
-    // Le proprietaire n'attend jamais : la regle est enoncee une seule
-    // fois, ici et dans la machine a etats, pour qu'elles ne puissent
-    // pas diverger.
-    if (this.estProprietaire(g)) { g.preemptEligibleSinceMs = null; return true; }
-    const delai = g.preemptDelaySec ?? 0;
-    if (delai <= 0) { g.preemptEligibleSinceMs = null; return true; }
-    const now = Date.now();
-    if (g.preemptEligibleSinceMs == null) {
-      g.preemptEligibleSinceMs = now;
-      // Le minuteur est arme ici, et il faut que quelque chose le
-      // reveille : sans ce rendez-vous, la preemption n'aurait lieu qu'a
-      // la prochaine annonce recue, donc jamais si le maitre se tait.
-      this.armerReveilPreemption(g, delai * 1000);
-      return false;
-    }
-    return now - g.preemptEligibleSinceMs >= delai * 1000;
-  }
-
-  private reveilsPreemption = new Map<string, TimerHandle>();
-
-  private armerReveilPreemption(g: VrrpGroupRuntime, dansMs: number): void {
-    const cle = makeKey(g.iface, g.vrid);
-    if (this.reveilsPreemption.has(cle)) return;
-    const s = this.getScheduler();
-    this.reveilsPreemption.set(cle, s.setTimeout(() => {
-      this.reveilsPreemption.delete(cle);
-      this.recompute(g, 'preempt');
-      this.advertiseIfDue(g);
-    }, dansMs));
-  }
-
   // ── State machine (RFC 3768 §6) ──────────────────────────────────
   protected recompute(g: VrrpGroupRuntime, reason: FhrpRecomputeReason): void {
     const oldState = g.state;
@@ -388,7 +358,10 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
         // — donc ni le drapeau ni le delai ne s'appliquent a lui.
         if (myPri === 255) return 'master';
         if (!g.preempt) return 'backup';
-        return this.delaiPreemptionEcoule(g) ? 'master' : 'backup';
+        // Le proprietaire n'attend jamais (traite plus haut) ; pour
+        // les autres, la regle est celle de la base, commune aux trois
+        // familles.
+        return this.preemptDelayElapsed(g) ? 'master' : 'backup';
       }
       return 'backup';
     })();

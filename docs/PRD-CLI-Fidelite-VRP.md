@@ -2290,3 +2290,94 @@ attendus et aucun compteur n'existait.
 
 115 suites connexes vertes (1 661 cas). Typecheck : jeu d'erreurs
 **identique** (217). Lint propre.
+
+---
+
+## 27. V18 — Livré : le délai de préemption vaut pour les TROIS familles et les DEUX constructeurs
+
+Ce lot est né d'une vérification du précédent : V16 avait rendu le délai
+de préemption réel **côté Huawei seulement**, et rien ne le disait. La
+mesure faite ensuite a trouvé le même réglage inerte partout ailleurs.
+
+### 27.1 Ce que la mesure a trouvé
+
+| Commande | Atteignait l'agent ? |
+|---|---|
+| `vrrp <n> preempt delay minimum <s>` (IOS) | **non** |
+| `standby <n> preempt delay minimum <s>` (IOS) | **non** |
+| `glbp <n> preempt delay minimum <s>` (IOS) | **non** |
+| `vrrp <n> authentication md5 key-string <clé>` (IOS) | **non** |
+| `vrrp vrid <n> preempt-mode timer delay <s>` (VRP) | oui (V16) |
+
+La cause est la même à chaque fois : la CLI d'IOS range la valeur sur une
+**façade** (`FhrpRepository`) que **seuls les affichages lisent**, jamais
+l'agent qui décide. Un laboratoire monté sur la colonne Cisco d'un cours
+voyait donc la commande acceptée, **confirmée par `show standby`**, et
+sans le moindre effet — le pire des trois états possibles, puisque
+l'affichage atteste le réglage.
+
+C'est aussi une leçon sur V16 : rendre une chose réelle sur une
+plateforme sans vérifier la sœur crée une divergence pire que l'absence,
+parce qu'elle est invisible.
+
+### 27.2 Une règle, pas trois
+
+Le délai vit désormais sur `FhrpAgentBase`, que les trois agents
+partagent déjà, et `FhrpGroupBase` porte `preemptDelaySec` /
+`preemptEligibleSinceMs`. Les trois familles ont la même commande sous
+trois orthographes et prennent la même décision ; en écrire trois copies,
+c'était garantir qu'elles finiraient par différer — ce qui venait
+précisément d'arriver entre les deux constructeurs.
+
+`setPreempt(iface, id, on, delaySec?)` transporte le délai **avec** le
+drapeau, parce que la commande n'en fait qu'une : les séparer ferait
+exister un instant où la préemption est armée sans son délai, donc une
+prise de rôle que l'opérateur n'a pas demandée. Et `no preempt` remet
+l'horloge à zéro.
+
+### 27.3 Deux défauts de typage trouvés en chemin, et ils étaient porteurs
+
+- **`HsrpAgent.setPreempt` avalait le délai** : sa surcharge s'était
+  arrêtée à trois paramètres, donc le quatrième était accepté par le
+  typage du site d'appel et perdu dans le corps. C'est la forme la plus
+  discrète de la faute que ce lot corrige — une valeur transmise et lue
+  par personne.
+- **Les trois `*GroupRuntime` redéclaraient les champs de la base au lieu
+  de l'étendre.** Le code compilait (la contrainte générique est
+  satisfaite structurellement) mais le champ neuf restait invisible du
+  typage concret. Les trois `extends FhrpGroupBase` désormais, ce qui est
+  ce que la hiérarchie disait déjà.
+
+### 27.4 Une propriété du protocole, écrite dans la sonde
+
+L'**ordre** des lignes est porteur, et c'est du protocole et non une
+commodité : un routeur qui n'a **jamais entendu de pair** prend le rôle
+tout de suite, ce qui est juste — il n'y a rien à préempter. Le délai ne
+se mesure donc qu'en montant le groupe d'abord (il devient secours en
+entendant le pair), puis en élevant la priorité : c'est à cet instant
+qu'il devient éligible, et c'est cela que le délai retarde.
+
+### 27.5 Ce qui reste, et pourquoi
+
+**VRRP ne passe pas par l'état Backup au démarrage** : `recompute` rend
+`master` dès que `masterIp` est nul, là où RFC 5798 §6.4.1 fait démarrer
+en Backup et attendre l'intervalle de maître absent (sauf pour le
+propriétaire). C'est une simplification réelle, trouvée en écrivant cette
+sonde et **délibérément non traitée ici** : la changer touche le
+démarrage de tout groupe VRRP du dépôt, ce qui est un lot à part et une
+décision à mesurer, pas un ajout à celui-ci.
+
+**GLBP n'a pas d'authentification** : `glbp <n> authentication md5
+key-string` range la clé sur la façade et `GlbpAgent` n'a aucune notion
+d'authentification — ni champ, ni contrôle. La lui donner est le jumeau
+du lot V16 côté GLBP, et non un branchement.
+
+### 27.6 Mesures
+
+`probe-fhrp-preempt-delay-famille.test.ts` (13 cas) discriminé par
+`git stash` sur les six fichiers touchés : **9 tombent**. Les 4 qui
+passent des deux côtés sont les témoins sans délai — dont c'est l'objet
+de passer — et le cas de remise à zéro.
+
+102 suites connexes vertes (1 514 cas). Typecheck : jeu d'erreurs
+**identique** (217). Lint propre.

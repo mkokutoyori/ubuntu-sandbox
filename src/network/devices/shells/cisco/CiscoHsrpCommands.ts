@@ -129,13 +129,21 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
       g.priority = parseInt(rest[0], 10) || g.priority;
       agent?.setPriority(iface, group, g.priority);
       return '';
-    case 'preempt':
+    case 'preempt': {
       g.preempt = true;
+      // Le delai etait range sur cette facade et lu par le SEUL
+      // affichage : `preempt delay minimum` etait accepte, rendu, et
+      // n'a jamais retarde une prise de role. Il atteint desormais
+      // l'agent, qui est la seule chose qui decide.
+      let delai: number | undefined;
       if (rest[0] === 'delay' && rest[1] === 'minimum') {
-        g.preemptDelay = parseInt(rest[2], 10) || undefined;
+        const n = parseInt(rest[2], 10);
+        delai = Number.isFinite(n) && n > 0 ? n : undefined;
+        g.preemptDelay = delai;
       }
-      agent?.setPreempt(iface, group, true);
+      agent?.setPreempt(iface, group, true, delai);
       return '';
+    }
     case 'timers': {
       const nums = rest.filter((t) => /^\d+$/.test(t)).map(Number);
       if (nums.length >= 2) {

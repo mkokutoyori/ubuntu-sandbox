@@ -25,6 +25,22 @@ export interface FhrpGroupBase {
   vip: string | null;
   priority: number;
   preempt: boolean;
+  /**
+   * `preempt delay minimum <s>` (IOS) / `preempt-mode timer delay <s>`
+   * (VRP) : combien de temps ce routeur doit rester ELIGIBLE avant de
+   * prendre le role a un pair vivant de priorite moindre.
+   *
+   * Le reglage vit sur la BASE et non sur chaque protocole parce que les
+   * trois familles l'ont, sous trois orthographes, et que c'est la meme
+   * decision. Il etait range par les trois CLI dans trois facades que
+   * seuls les affichages lisaient — donc inerte partout.
+   */
+  preemptDelaySec?: number;
+  /**
+   * Depuis quand ce routeur est eligible ; `null` quand il ne l'est pas.
+   * C'est ce qui rend le delai reel plutot que decoratif.
+   */
+  preemptEligibleSinceMs?: number | null;
 }
 
 export interface FhrpConfigBase<G extends FhrpGroupBase> {

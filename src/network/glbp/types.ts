@@ -1,3 +1,4 @@
+import type { FhrpGroupBase } from '../fhrp/types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 import { createDefaultFhrpConfig, type FhrpTrackEntry } from '../fhrp/types';
 export const UDP_PORT_GLBP = 3222;
@@ -52,7 +53,7 @@ export interface GlbpPacket extends NetworkPdu {
   tlvs: GlbpTlv[];
 }
 
-export interface GlbpGroupRuntime {
+export interface GlbpGroupRuntime extends FhrpGroupBase {
   iface: string;
   group: number;
   avgState: GlbpAvgState;
