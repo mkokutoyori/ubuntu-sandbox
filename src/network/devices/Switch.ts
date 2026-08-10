@@ -35,6 +35,7 @@ import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddr
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
+import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP } from '../vrrp/types';
@@ -2649,6 +2650,34 @@ export abstract class Switch extends Equipment {
 
   // ─── Local user database (`username …`) ───────────────────────────
   private _credentialStore: NetworkOsCredentialStore | null = null;
+  /**
+   * `transport input` sur les vty. Le magasin manquait au commutateur,
+   * donc `transport input ssh` etait accepte et rendu nulle part —
+   * perdu au rechargement d'une topologie. Il n'ouvre aucune ecoute
+   * ici, ce commutateur n'ayant pas de pile TCP ; c'est la
+   * configuration qui est conservee, pas un serveur qui demarre.
+   */
+  private vtyTransportInput: 'ssh' | 'telnet' | 'all' | 'none' = 'all';
+  _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
+    this.vtyTransportInput = t;
+  }
+  _getVtyTransportInput(): 'ssh' | 'telnet' | 'all' | 'none' {
+    return this.vtyTransportInput;
+  }
+
+  private _aaaAuthenticator: AaaAuthenticator | null = null;
+
+  /**
+   * Un Catalyst authentifie par AAA comme un routeur : meme magasin
+   * (attache par symbole), meme moteur. Il etait type contre `Router`,
+   * donc `test aaa group` et toute la chaine AAA restaient hors de
+   * portee du commutateur.
+   */
+  getAaaAuthenticator(): AaaAuthenticator {
+    if (!this._aaaAuthenticator) this._aaaAuthenticator = new AaaAuthenticator(this as never);
+    return this._aaaAuthenticator;
+  }
+
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });

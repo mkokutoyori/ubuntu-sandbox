@@ -3495,15 +3495,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getRipVersion(): 1 | 2 { return this._ripVersion; }
   _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
 
-  private readonly _serviceFlags: Map<string, boolean> = new Map();
   private readonly _unhandledConfigLines: string[] = [];
   private _systemClockOverrideMs: number | null = null;
   private _systemClockSetAtMs: number = 0;
-
-  getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
-  _setServiceFlag(name: string, on: boolean): void {
-    this._serviceFlags.set(name, on);
-  }
 
   getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }
   _recordUnhandledConfigLine(line: string): void {

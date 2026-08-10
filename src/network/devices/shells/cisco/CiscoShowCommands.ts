@@ -439,6 +439,8 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  const serviceEncryption = router.getServiceFlags().get('password-encryption') === true;
+
   const shell = (router as unknown as {
     shell?: {
       _getConsoleLineConfig?: () => unknown;
@@ -453,7 +455,7 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
-  lines.push(...consoleAndAuxLineConfigLines(router));
+  lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
 
   if (dhcp.isEnabled()) {
     lines.push('service dhcp');
@@ -525,7 +527,6 @@ export function showRunningConfig(router: Router): string {
   }
 
   // Local AAA users (`username NAME privilege N secret …`).
-  const serviceEncryption = router.getServiceFlags().get('password-encryption') === true;
   const listUsers = (router as unknown as {
     _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: SecretAlgo; factoryDefault?: boolean }>;
   })._listLocalUsers;
@@ -551,9 +552,9 @@ export function showRunningConfig(router: Router): string {
   }
 
   // VTY line configuration (exec-timeout, access-class, transport input, …)
-  const vtyStore = (router as unknown as { _getVtyLineConfig?: () => { renderAllCisco: () => string[] } })._getVtyLineConfig?.();
+  const vtyStore = (router as unknown as { _getVtyLineConfig?: () => { renderAllCisco: (e?: boolean) => string[] } })._getVtyLineConfig?.();
   if (vtyStore) {
-    const vtyLines = vtyStore.renderAllCisco();
+    const vtyLines = vtyStore.renderAllCisco(serviceEncryption);
     if (vtyLines.length > 0) {
       lines.push(...vtyLines);
     }
@@ -1411,7 +1412,9 @@ export function showEigrpNotRunning(): string {
  * disparaissait, et la configuration rendue est ce qui REFAIT la
  * machine a l'import d'une topologie.
  */
-export function consoleAndAuxLineConfigLines(device: unknown): string[] {
+export function consoleAndAuxLineConfigLines(
+  device: unknown, serviceEncryption = false,
+): string[] {
   const shell = (device as {
     shell?: {
       _getConsoleLineConfig?: () => unknown;
@@ -1433,7 +1436,9 @@ export function consoleAndAuxLineConfigLines(device: unknown): string[] {
   if (consoleCfg) {
     lines.push(`line console ${consoleCfg.line}`);
     if (consoleCfg.password != null) {
-      lines.push(` password ${consoleCfg.passwordEncrypted ? '7 ' : ''}${consoleCfg.password}`);
+      lines.push(` password ${renderPasswordField(
+        consoleCfg.password, consoleCfg.passwordEncrypted ? 'type-7' : 'plain-password',
+        serviceEncryption, false, 'line-console')}`);
     }
     if (consoleCfg.login === 'local') lines.push(' login local');
     else if (consoleCfg.login === 'password') lines.push(' login');

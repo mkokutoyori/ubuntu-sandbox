@@ -3324,13 +3324,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         };
       };
       const registry = dev.getSshSessionRegistry?.();
-      if (!registry) return '% Invalid input detected';
-      const index = args[0]?.toLowerCase() === 'vty'
+      const genre = args[0]?.toLowerCase();
+      const index = (genre === 'vty' || genre === 'console' || genre === 'con' || genre === 'aux')
         ? Number.parseInt(args[1] ?? '', 10)
         : Number.parseInt(args[0] ?? '', 10);
       if (!Number.isInteger(index) || index < 0) return '% Incomplete command.';
-      const closed = registry.closeWhere(s => s.lineIndex === index, 'admin');
-      return closed > 0 ? '[confirm]\n [OK]' : '% Not allowed to clear that line';
+      // `% Not allowed to clear that line` est ce qu'IOS repond quand on
+      // demande a couper SA PROPRE ligne — pas quand la ligne est
+      // inoccupee. Les deux etaient confondus : une ligne vty libre
+      // recevait un refus, ce qui fait chercher un droit manquant la ou
+      // il n'y a simplement personne. Un `clear line` d'une ligne libre
+      // demande confirmation et ne coupe rien, comme sur une vraie
+      // machine.
+      if (genre === 'console' || genre === 'con' || (genre !== 'vty' && genre !== 'aux' && index === 0)) {
+        return '% Not allowed to clear that line';
+      }
+      const closed = registry?.closeWhere(s => s.lineIndex === index, 'admin') ?? 0;
+      return closed > 0 ? '[confirm]\n [OK]' : '[confirm]';
     });
     this.privilegedTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
       if (!args[0]) return '% Incomplete command.';

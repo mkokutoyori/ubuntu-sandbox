@@ -25,6 +25,82 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Tutoriel « Cycle de vie d'une identité » + contournement Ctrl+C — LIVRÉ
+
+**Agent** : session « logging ». Deux demandes : rendre le tutoriel
+identité jouable **sur les deux plateformes**, et corriger un
+contournement d'authentification signalé depuis l'interface.
+
+**1. Ctrl+C ouvrait la porte.** La cause n'était pas dans le flux de
+connexion mais dans le traitement GÉNÉRAL de la touche : `Ctrl+C`
+pendant un flux l'annule et rend la main au prompt normal. Pour un flux
+ordinaire — un `ssh` qui demande un mot de passe, une confirmation —
+c'est juste. Pour le flux de connexion, **« le prompt normal » EST le
+shell authentifié**. Un flux peut désormais se déclarer *porte
+d'authentification* : l'interrompre la RELANCE. Les deux chemins sont
+câblés — le moteur de flux synchrone et le **courtier d'entrée**, qui
+est celui que l'interface emprunte réellement et où vivait le
+contournement ; ma première correction ne touchait que le premier et le
+test le montrait toujours ouvert. **`login` seul** (mot de passe de
+ligne, sans nom) était déclaré hors périmètre : le tout premier verrou
+du cours était configuré, rendu, et n'invitait à rien. Il existe.
+
+**2. Le Catalyst n'avait presque rien de ce tutoriel.** Mesuré en
+rejouant les douze chapitres sur les deux plateformes : le routeur
+savait déjà presque tout. Cinq défauts, tous de la même famille — un
+mécanisme écrit UNE fois, dans le module du routeur.
+
+- **Toute la famille identité manquait au switch** : `aaa new-model`,
+  `tacacs server`, `aaa group server tacacs+`, `login block-for`,
+  `show tacacs`, `show login` tombaient dans la résolution de nom d'hôte
+  (`Translating "aaa"...`), alors qu'un vrai 2960 les connaît toutes.
+  Elles vivaient dans `buildSecurityConfigCommands`, que seul le shell
+  du routeur appelle et qui enregistre aussi ce qu'un commutateur n'a
+  pas (`zone security`, `class-map type inspect`). Extraites en
+  `buildIdentity{Config,Submode,Show}Commands`, appelées par les deux.
+- **Les trois sous-modes manquaient à la hiérarchie du switch**, donc
+  `exit` depuis `config-tacacs-server` ne remontait nulle part : tout ce
+  qui suivait était jugé dans un mode où seules `address`/`key`/`timeout`
+  existent. C'est ce qui m'a d'abord fait croire que `aaa` était refusée.
+- **`line console 0` n'était rendue nulle part** sur un Catalyst, et
+  **`enable secret level N`** non plus — le magasin vit pourtant sur
+  `Equipment`, donc le switch le portait et ouvrait bien le niveau.
+- **`service password-encryption` ne chiffrait AUCUN mot de passe de
+  ligne**, sur les deux plateformes : c'est le chapitre 4 entier, et la
+  seule chose que cette commande existe pour couvrir. `renderPasswordField`
+  savait le faire depuis toujours ; les rendus de ligne ne l'appelaient
+  pas. Trouvé en même temps : le switch n'avait **aucun magasin de
+  `service`** — la commande y était acceptée et sans effet. Remonté sur
+  `Equipment`, où le secret `enable` vit déjà.
+- **`clear line` confondait deux situations** :
+  `% Not allowed to clear that line` est ce qu'IOS répond pour SA PROPRE
+  ligne, pas pour une ligne libre. Une vty inoccupée recevait un refus,
+  ce qui fait chercher un droit manquant là où il n'y a personne.
+
+**Deux formes du tutoriel sont REFUSÉES, et c'est la fidélité** :
+`test aaa group GRP username X password Y new-code` — la vraie syntaxe
+est positionnelle, vérifiée contre le command reference d'IOS et non de
+mémoire — et `config-register` sur un Catalyst.
+
+**Deux TDZ introduites par moi et corrigées** : `serviceEncryption` et
+`chiffre` étaient lus au-dessus de leur déclaration, ce que `tsc` n'a
+pas attrapé et que le test a fait tomber immédiatement.
+
+**Mesures.** `tuto-cycle-identite-cisco.test.ts` (37 cas, les deux
+plateformes) discriminé par restauration des onze fichiers : **11
+tombent**. `console-login-ctrlc-no-bypass.test.ts` (14 cas) : **6
+tombent** ; son témoin (aucun `login` configuré) est là parce que « on
+n'est pas revenu au prompt » est trivialement vrai quand il n'y a jamais
+eu d'invite.
+
+**Reste ouvert, mesuré** : `crypto key generate rsa modulus 2048` ignore
+le modulus et génère 512 (le PRD crypto explique pourquoi la taille par
+défaut est petite, mais la taille DEMANDÉE devrait être honorée ici comme
+elle l'est pour `openssl genrsa`) ; `show ip ssh` ne rend pas la taille
+de clé hôte ; `banner exec` ne substitue pas `$USERNAME`/`$TIME`.
+
+---
+
 ### Tutoriel « Persistance des données Cisco » — LIVRÉ (lot 1)
 
 **Agent** : session « logging ». Demandé par l'utilisateur : que le

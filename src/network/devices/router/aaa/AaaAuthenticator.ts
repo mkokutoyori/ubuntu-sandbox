@@ -46,6 +46,19 @@ function vtyStoreOf(router: Router): VtyLineConfigStore | undefined {
   return (router as unknown as { _getVtyLineConfig?: () => VtyLineConfigStore })._getVtyLineConfig?.();
 }
 
+/**
+ * Ce dont l'authentificateur a VRAIMENT besoin de la machine : deux
+ * accesseurs, tous deux portes par `Equipment`. Il etait type contre
+ * `Router`, ce qu'un commutateur n'est pas — d'ou l'absence de
+ * `test aaa group` et de toute authentification AAA sur un Catalyst,
+ * alors que le magasin de securite, lui, est attache par un symbole et
+ * marchait deja sur les deux.
+ */
+export interface AaaAuthenticatorHost {
+  getCredentialStore(): unknown;
+  getEnableSecret(): { value: string; algo: string } | null;
+}
+
 export class AaaAuthenticator {
   constructor(private readonly router: Router) {}
 

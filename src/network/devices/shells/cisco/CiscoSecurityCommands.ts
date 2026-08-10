@@ -74,7 +74,23 @@ export interface CiscoSecurityShellContext extends CiscoShellContext {
   getAaaGroup?(): string | null;
 }
 
-export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurityShellContext): void {
+/**
+ * La famille IDENTITE : AAA, RADIUS, TACACS+ et la protection contre la
+ * force brute.
+ *
+ * Elle etait ecrite DANS `buildSecurityConfigCommands`, que seul le
+ * shell du routeur appelle — et cette fonction enregistre aussi des
+ * choses qu'un Catalyst n'a pas (`zone security`, `class-map type
+ * inspect`, `control-plane`). Un commutateur n'avait donc AUCUNE de ces
+ * commandes : `aaa new-model`, `tacacs server`, `login block-for`,
+ * `show tacacs`, `show login` tombaient toutes dans la resolution de nom
+ * d'hote (`Translating "aaa"...`), alors qu'un vrai 2960 les connait
+ * toutes. Extraite ici, elle est appelee par les deux shells sans leur
+ * donner le reste.
+ */
+export function buildIdentityConfigCommands(
+  trie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
   const sec = () => getSecurityConfig(ctx.r());
 
   trie.registerGreedy('aaa', 'AAA configuration', (args) => {
@@ -231,6 +247,40 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
+  trie.registerGreedy('login block-for', 'Login block', (args) => {
+    const seconds = parseInt(args[0], 10);
+    let attempts = 0, withinSeconds = 0;
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === 'attempts' && args[i + 1]) attempts = parseInt(args[i + 1], 10);
+      if (args[i] === 'within' && args[i + 1]) withinSeconds = parseInt(args[i + 1], 10);
+    }
+    if (!isNaN(seconds)) sec().login.blockFor = { seconds, attempts, withinSeconds };
+    const r = ctx.r() as unknown as { _configureLoginBlock?: (s: number, a: number, w: number) => void };
+    if (r._configureLoginBlock && !isNaN(seconds)) r._configureLoginBlock(seconds, attempts, withinSeconds);
+    return '';
+  });
+
+  trie.registerGreedy('login quiet-mode access-class', 'Quiet mode ACL', (args) => {
+    if (args[0]) sec().login.quietModeAcl = args[0];
+    return '';
+  });
+
+  trie.registerGreedy('login delay', 'Login delay', (args) => {
+    const d = parseInt(args[0], 10);
+    if (!isNaN(d)) sec().login.delay = d;
+    return '';
+  });
+
+  trie.register('login on-failure log', 'Log failures', () => { sec().login.onFailureLog = true; return ''; });
+  trie.register('login on-success log', 'Log successes', () => { sec().login.onSuccessLog = true; return ''; });
+
+}
+
+export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurityShellContext): void {
+  const sec = () => getSecurityConfig(ctx.r());
+
+  buildIdentityConfigCommands(trie, ctx);
+
   trie.registerGreedy('username', 'Local user', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const name = args[0];
@@ -366,33 +416,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     if (!isNaN(n)) sec().passwords.minLength = n;
     return '';
   });
-
-  trie.registerGreedy('login block-for', 'Login block', (args) => {
-    const seconds = parseInt(args[0], 10);
-    let attempts = 0, withinSeconds = 0;
-    for (let i = 1; i < args.length; i++) {
-      if (args[i] === 'attempts' && args[i + 1]) attempts = parseInt(args[i + 1], 10);
-      if (args[i] === 'within' && args[i + 1]) withinSeconds = parseInt(args[i + 1], 10);
-    }
-    if (!isNaN(seconds)) sec().login.blockFor = { seconds, attempts, withinSeconds };
-    const r = ctx.r() as unknown as { _configureLoginBlock?: (s: number, a: number, w: number) => void };
-    if (r._configureLoginBlock && !isNaN(seconds)) r._configureLoginBlock(seconds, attempts, withinSeconds);
-    return '';
-  });
-
-  trie.registerGreedy('login quiet-mode access-class', 'Quiet mode ACL', (args) => {
-    if (args[0]) sec().login.quietModeAcl = args[0];
-    return '';
-  });
-
-  trie.registerGreedy('login delay', 'Login delay', (args) => {
-    const d = parseInt(args[0], 10);
-    if (!isNaN(d)) sec().login.delay = d;
-    return '';
-  });
-
-  trie.register('login on-failure log', 'Log failures', () => { sec().login.onFailureLog = true; return ''; });
-  trie.register('login on-success log', 'Log successes', () => { sec().login.onSuccessLog = true; return ''; });
 
   trie.registerGreedy('crypto key generate rsa', 'Generate RSA key', (args) => {
     const dev = ctx.r() as unknown as { getManagementService?: () => { domainName?: string } };
@@ -652,6 +675,102 @@ function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[
   return '';
 }
 
+/**
+ * Les trois sous-modes de la famille identite : `config-radius-server`,
+ * `config-tacacs-server` et `config-aaa-group`. Extraits pour la meme
+ * raison que les deux fonctions ci-dessus — sans eux, `tacacs server X`
+ * ouvrirait un mode ou aucune commande n'existe.
+ */
+export function buildIdentitySubmodeCommands(
+  radiusTrie: CommandTrie,
+  tacacsTrie: CommandTrie,
+  aaaGroupTrie: CommandTrie,
+  ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
+
+  radiusTrie.registerGreedy('address', 'Radius address', (args) => {
+    const name = ctx.getRadiusServer?.();
+    if (!name) return '';
+    const s = sec().radiusServers.get(name);
+    if (!s) return '';
+    if (args[0] === 'ipv4' && args[1]) s.address = args[1];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === 'auth-port' && args[i + 1]) s.authPort = parseInt(args[i + 1], 10);
+      if (args[i] === 'acct-port' && args[i + 1]) s.acctPort = parseInt(args[i + 1], 10);
+    }
+    return '';
+  });
+  radiusTrie.registerGreedy('key', 'Radius key', (args) => {
+    const name = ctx.getRadiusServer?.();
+    if (!name) return '';
+    const s = sec().radiusServers.get(name);
+    if (s) s.key = args.join(' ');
+    return '';
+  });
+
+  tacacsTrie.registerGreedy('address', 'Tacacs address', (args) => {
+    const name = ctx.getTacacsServer?.();
+    if (!name) return '';
+    const s = sec().tacacsServers.get(name);
+    if (!s) return '';
+    if (args[0] === 'ipv4' && args[1]) s.address = args[1];
+    return '';
+  });
+  tacacsTrie.registerGreedy('key', 'Tacacs key', (args) => {
+    const name = ctx.getTacacsServer?.();
+    if (!name) return '';
+    const s = sec().tacacsServers.get(name);
+    if (s) s.key = args.join(' ');
+    return '';
+  });
+  tacacsTrie.registerGreedy('port', 'Tacacs port', (args) => {
+    const name = ctx.getTacacsServer?.();
+    if (!name) return '';
+    const s = sec().tacacsServers.get(name);
+    const n = parseInt(args[0], 10);
+    if (s && !isNaN(n)) s.port = n;
+    return '';
+  });
+  tacacsTrie.registerGreedy('timeout', 'Tacacs timeout', (args) => {
+    const name = ctx.getTacacsServer?.();
+    if (!name) return '';
+    const s = sec().tacacsServers.get(name);
+    const n = parseInt(args[0], 10);
+    if (s && !isNaN(n)) s.timeoutSec = n;
+    return '';
+  });
+
+  /*
+   * Un groupe accepte DEUX formes de membre, et seule la moderne etait
+   * lue : `server name <nom>` designe un serveur declare par
+   * `tacacs server <nom>`, tandis que `server <ip>` — la forme heritee,
+   * celle qui accompagne `tacacs-server host` et que tous les cours
+   * emploient — etait acceptee et JETEE en silence. Un groupe monte a
+   * l'ancienne etait donc vide, et l'authentification ne trouvait aucun
+   * serveur sans que rien ne le dise.
+   */
+  aaaGroupTrie.registerGreedy('server', 'Add server', (args) => {
+    const name = ctx.getAaaGroup?.();
+    if (!name) return '';
+    const g = sec().aaaGroups.get(name);
+    if (!g) return '';
+    const membre = args[0] === 'name' ? args[1] : args[0];
+    if (!membre) return CISCO_ERRORS.INCOMPLETE;
+    if (!g.members.includes(membre)) g.members.push(membre);
+    return '';
+  });
+  aaaGroupTrie.registerGreedy('no server', 'Remove server', (args) => {
+    const name = ctx.getAaaGroup?.();
+    const g = name ? sec().aaaGroups.get(name) : undefined;
+    if (!g) return '';
+    const membre = args[0] === 'name' ? args[1] : args[0];
+    const i = membre ? g.members.indexOf(membre) : -1;
+    if (i >= 0) g.members.splice(i, 1);
+    return '';
+  });
+}
+
 export function buildSecuritySubmodeCommands(
   cmapTrie: CommandTrie,
   pmapTrie: CommandTrie,
@@ -772,86 +891,8 @@ export function buildSecuritySubmodeCommands(
     return '';
   });
 
-  radiusTrie.registerGreedy('address', 'Radius address', (args) => {
-    const name = ctx.getRadiusServer?.();
-    if (!name) return '';
-    const s = sec().radiusServers.get(name);
-    if (!s) return '';
-    if (args[0] === 'ipv4' && args[1]) s.address = args[1];
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === 'auth-port' && args[i + 1]) s.authPort = parseInt(args[i + 1], 10);
-      if (args[i] === 'acct-port' && args[i + 1]) s.acctPort = parseInt(args[i + 1], 10);
-    }
-    return '';
-  });
-  radiusTrie.registerGreedy('key', 'Radius key', (args) => {
-    const name = ctx.getRadiusServer?.();
-    if (!name) return '';
-    const s = sec().radiusServers.get(name);
-    if (s) s.key = args.join(' ');
-    return '';
-  });
+  buildIdentitySubmodeCommands(radiusTrie, tacacsTrie, aaaGroupTrie, ctx);
 
-  tacacsTrie.registerGreedy('address', 'Tacacs address', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    if (!s) return '';
-    if (args[0] === 'ipv4' && args[1]) s.address = args[1];
-    return '';
-  });
-  tacacsTrie.registerGreedy('key', 'Tacacs key', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    if (s) s.key = args.join(' ');
-    return '';
-  });
-  tacacsTrie.registerGreedy('port', 'Tacacs port', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    const n = parseInt(args[0], 10);
-    if (s && !isNaN(n)) s.port = n;
-    return '';
-  });
-  tacacsTrie.registerGreedy('timeout', 'Tacacs timeout', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    const n = parseInt(args[0], 10);
-    if (s && !isNaN(n)) s.timeoutSec = n;
-    return '';
-  });
-
-  /*
-   * Un groupe accepte DEUX formes de membre, et seule la moderne etait
-   * lue : `server name <nom>` designe un serveur declare par
-   * `tacacs server <nom>`, tandis que `server <ip>` — la forme heritee,
-   * celle qui accompagne `tacacs-server host` et que tous les cours
-   * emploient — etait acceptee et JETEE en silence. Un groupe monte a
-   * l'ancienne etait donc vide, et l'authentification ne trouvait aucun
-   * serveur sans que rien ne le dise.
-   */
-  aaaGroupTrie.registerGreedy('server', 'Add server', (args) => {
-    const name = ctx.getAaaGroup?.();
-    if (!name) return '';
-    const g = sec().aaaGroups.get(name);
-    if (!g) return '';
-    const membre = args[0] === 'name' ? args[1] : args[0];
-    if (!membre) return CISCO_ERRORS.INCOMPLETE;
-    if (!g.members.includes(membre)) g.members.push(membre);
-    return '';
-  });
-  aaaGroupTrie.registerGreedy('no server', 'Remove server', (args) => {
-    const name = ctx.getAaaGroup?.();
-    const g = name ? sec().aaaGroups.get(name) : undefined;
-    if (!g) return '';
-    const membre = args[0] === 'name' ? args[1] : args[0];
-    const i = membre ? g.members.indexOf(membre) : -1;
-    if (i >= 0) g.members.splice(i, 1);
-    return '';
-  });
 
   const tp = () => {
     const name = ctx.getPkiTrustpoint?.();
@@ -1009,8 +1050,17 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
   });
 }
 
-export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Router): void {
-  const sec = () => getSecurityConfig(getRouter());
+/**
+ * Les vues de la famille identite. Meme raison que
+ * `buildIdentityConfigCommands` : elles vivaient dans le module de
+ * securite du routeur, si bien qu'un Catalyst configure en TACACS+
+ * n'avait ni `show tacacs` ni `show login` pour verifier ce qu'il
+ * venait de poser.
+ */
+export function buildIdentityShowCommands(
+  trie: CommandTrie, getDevice: () => object,
+): void {
+  const sec = () => getSecurityConfig(getDevice());
 
   trie.register('show aaa servers', 'Display AAA servers', () => {
     const s = sec();
@@ -1035,7 +1085,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   });
 
   trie.register('show aaa local user lockout', 'Local users currently locked out', () => {
-    const locked = getRouter().getCredentialStore().list().filter(a => a.locked);
+    const locked = getDevice().getCredentialStore().list().filter(a => a.locked);
     if (locked.length === 0) return 'No users are presently locked out';
     const lines = ['User                             Lock time'];
     for (const a of locked) lines.push(`${a.name.padEnd(33)}${a.lockReason ?? 'locked'}`);
@@ -1044,7 +1094,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
 
   trie.registerGreedy('clear aaa local user lockout', 'Unlock a locally-locked-out user', (args) => {
     if (args[0] !== 'username' || !args[1]) return '% Incomplete command.';
-    getRouter().getCredentialStore().unlock(args[1]);
+    getDevice().getCredentialStore().unlock(args[1]);
     return '';
   });
 
@@ -1061,7 +1111,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
    * vrai IOS.
    */
   trie.register('show accounting', 'Display accounting records', () => {
-    const auth = (getRouter() as unknown as {
+    const auth = (getDevice() as unknown as {
       getAaaAuthenticator?: () => { accountingTraffic: () => ReadonlyMap<string, { starts: number; stops: number; failed: number }> };
     }).getAaaAuthenticator?.();
     const trafic = auth?.accountingTraffic();
@@ -1078,7 +1128,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   });
 
   trie.register('show aaa sessions', 'Display AAA sessions', () => {
-    const reg = (getRouter() as unknown as { getSshSessionRegistry?: () =>{ list: () => readonly { id: string; user: string; fromIp: string; line: string; loginAt: number }[]; history: () => readonly { id: string }[] } }).getSshSessionRegistry?.();
+    const reg = (getDevice() as unknown as { getSshSessionRegistry?: () =>{ list: () => readonly { id: string; user: string; fromIp: string; line: string; loginAt: number }[]; history: () => readonly { id: string }[] } }).getSshSessionRegistry?.();
     if (!reg) return 'Total sessions since last reload: 0';
     const active = reg.list();
     const past = reg.history();
@@ -1105,7 +1155,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
 
   trie.register('show tacacs', 'Display TACACS', () => {
     const s = sec();
-    const auth = (getRouter() as unknown as {
+    const auth = (getDevice() as unknown as {
       getAaaAuthenticator?: () => { failedAccounting: () => number };
     }).getAaaAuthenticator?.();
     const lines: string[] = [];
@@ -1122,47 +1172,9 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     return lines.length ? lines.join('\n') : 'No TACACS+ servers configured';
   });
 
-  trie.register('show crypto pki trustpoints', 'PKI trustpoints', () => {
-    const tps = [...sec().pkiTrustpoints.values()];
-    if (tps.length === 0) return 'No trustpoints configured';
-    return tps.map(tp => [
-      `Trustpoint ${tp.name}:`,
-      `    Subject Name: ${tp.subjectName ?? '<not configured>'}`,
-      `    Enrollment URL: ${tp.enrollmentUrl ?? 'terminal'}`,
-      `    Revocation Check: ${tp.revocationCheck ?? 'crl'}`,
-      `    RSA Keypair: ${tp.rsaKeypair ?? '<auto>'}`,
-      tp.fqdn ? `    FQDN: ${tp.fqdn}` : '',
-      tp.serialNumber ? `    Serial Number: ${tp.serialNumber}` : '',
-    ].filter(Boolean).join('\n')).join('\n');
-  });
-  trie.register('show crypto pki certificates', 'PKI certificates', () => {
-    const tps = [...sec().pkiTrustpoints.values()];
-    if (tps.length === 0) return 'No PKI certificates installed';
-    return tps.map(tp => {
-      if (!tp.localCert) return `Certificate (Trustpoint ${tp.name}):\n  Status: Pending enrollment`;
-      const lines = [
-        `Certificate (Trustpoint ${tp.name}):`,
-        '  Status: Available',
-        `  Certificate Serial Number: ${tp.localCert.serialNumber}`,
-        `  Subject: ${tp.localCert.subject}`,
-        `  Issuer: ${tp.localCert.issuer}`,
-        `  Validity: ${new Date(tp.localCert.notBefore).toISOString()} to ${new Date(tp.localCert.notAfter).toISOString()}`,
-      ];
-      if (tp.caCert) {
-        lines.push(
-          `CA Certificate (Trustpoint ${tp.name}):`,
-          '  Status: Available',
-          `  Certificate Serial Number: ${tp.caCert.serialNumber}`,
-          `  Subject: ${tp.caCert.subject}`,
-        );
-      }
-      return lines.join('\n');
-    }).join('\n\n');
-  });
-
   trie.register('show login', 'Display login config', () => {
     const s = sec();
-    const r = getRouter() as unknown as {
+    const r = getDevice() as unknown as {
       getLoginBlocker?: () => {
         isBlocked: () => boolean;
         remainingBlockSeconds: () => number;
@@ -1205,7 +1217,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   });
 
   trie.register('show login failures', 'Display login failures', () => {
-    const r = getRouter() as unknown as { getSecurityAuditLog?: () => { entries: () => readonly { mnemonic: string; message: string; at: number }[] } | null };
+    const r = getDevice() as unknown as { getSecurityAuditLog?: () => { entries: () => readonly { mnemonic: string; message: string; at: number }[] } | null };
     const audit = r.getSecurityAuditLog?.();
     if (!audit) return "Information about login failure's with the device\n\n*** No failures recorded ***";
     const failures = audit.entries().filter(e => e.mnemonic === 'LOGIN_FAILED');
@@ -1227,6 +1239,51 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     }
     return lines.join('\n');
   });
+}
+
+export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Router): void {
+  const sec = () => getSecurityConfig(getRouter());
+
+  buildIdentityShowCommands(trie, getRouter);
+
+  trie.register('show crypto pki trustpoints', 'PKI trustpoints', () => {
+    const tps = [...sec().pkiTrustpoints.values()];
+    if (tps.length === 0) return 'No trustpoints configured';
+    return tps.map(tp => [
+      `Trustpoint ${tp.name}:`,
+      `    Subject Name: ${tp.subjectName ?? '<not configured>'}`,
+      `    Enrollment URL: ${tp.enrollmentUrl ?? 'terminal'}`,
+      `    Revocation Check: ${tp.revocationCheck ?? 'crl'}`,
+      `    RSA Keypair: ${tp.rsaKeypair ?? '<auto>'}`,
+      tp.fqdn ? `    FQDN: ${tp.fqdn}` : '',
+      tp.serialNumber ? `    Serial Number: ${tp.serialNumber}` : '',
+    ].filter(Boolean).join('\n')).join('\n');
+  });
+  trie.register('show crypto pki certificates', 'PKI certificates', () => {
+    const tps = [...sec().pkiTrustpoints.values()];
+    if (tps.length === 0) return 'No PKI certificates installed';
+    return tps.map(tp => {
+      if (!tp.localCert) return `Certificate (Trustpoint ${tp.name}):\n  Status: Pending enrollment`;
+      const lines = [
+        `Certificate (Trustpoint ${tp.name}):`,
+        '  Status: Available',
+        `  Certificate Serial Number: ${tp.localCert.serialNumber}`,
+        `  Subject: ${tp.localCert.subject}`,
+        `  Issuer: ${tp.localCert.issuer}`,
+        `  Validity: ${new Date(tp.localCert.notBefore).toISOString()} to ${new Date(tp.localCert.notAfter).toISOString()}`,
+      ];
+      if (tp.caCert) {
+        lines.push(
+          `CA Certificate (Trustpoint ${tp.name}):`,
+          '  Status: Available',
+          `  Certificate Serial Number: ${tp.caCert.serialNumber}`,
+          `  Subject: ${tp.caCert.subject}`,
+        );
+      }
+      return lines.join('\n');
+    }).join('\n\n');
+  });
+
 
   trie.register('show crypto key mypubkey rsa', 'Show RSA keys', () => {
     const s = sec();
