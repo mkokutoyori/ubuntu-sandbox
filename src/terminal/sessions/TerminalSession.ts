@@ -1499,11 +1499,55 @@ export abstract class TerminalSession {
    * Create a FlowContext, instantiate the engine, and advance.
    * Centralises the duplicated createAndAdvanceFlow / startFlow logic.
    */
+  /**
+   * Le flux en cours est-il une PORTE d'authentification ?
+   *
+   * Ctrl+C sur un pas de flux fait `flowEngine = null` et rend la main
+   * au prompt normal. Pour un flux ordinaire — un `ssh` qui demande un
+   * mot de passe, une confirmation — c'est juste : on renonce et on
+   * revient a son shell. Pour le flux de CONNEXION, « revenir au prompt
+   * normal » EST le shell authentifie : Ctrl+C au `Username:` donnait
+   * donc l'acces sans mot de passe. Un vrai IOS ne laisse pas sortir de
+   * cette invite ; elle recommence.
+   */
+  private flowIsAuthGate = false;
+
+  /**
+   * Relance la porte d'authentification qu'on vient d'interrompre.
+   * Redefinie par la session qui SAIT construire ses pas ; par defaut
+   * il n'y a pas de porte, donc rien a relancer.
+   */
+  protected restartAuthGate(): void { /* pas de porte par defaut */ }
+
+  /** Vrai quand la session est derriere une porte d'authentification. */
+  protected isAuthGateActive(): boolean {
+    return this.flowIsAuthGate && this.flowEngine !== null;
+  }
+
+  /**
+   * Ctrl+C pendant un flux. Rend `true` quand la touche a ete traitee.
+   * Une porte d'authentification est REDEMARREE plutot qu'abandonnee.
+   */
+  protected cancelFlowOnCtrlC(): boolean {
+    const porte = this.flowIsAuthGate;
+    this.flowEngine = null;
+    this.flowIsAuthGate = false;
+    this._passwordBuf = '';
+    this._inputBuf = '';
+    this.inputMode = { type: 'normal' };
+    this.addLine('^C');
+    if (porte) { this.restartAuthGate(); return true; }
+    this.notify();
+    return true;
+  }
+
   protected startFlowFromSteps(
     steps: InteractiveStep[],
     command: string,
     extraMetadata?: Map<string, unknown>,
+    options?: { authGate?: boolean },
   ): void {
+    this.flowIsAuthGate = options?.authGate === true;
     const ctx: FlowContext = {
       values: new Map(),
       device: this.device,
@@ -1538,6 +1582,7 @@ export abstract class TerminalSession {
   }
 
   protected async runFlowViaBroker(steps: InteractiveStep[], ctx: FlowContext): Promise<void> {
+    const porte = this.flowIsAuthGate;
     const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
     const result = await runFlowOnBrokerFn(steps, broker, ctx, {
       emit: (text, lineType) => this.addLine(text, lineType ?? 'normal'),
@@ -1546,9 +1591,17 @@ export abstract class TerminalSession {
     this._passwordBuf = '';
     this._inputBuf = '';
     this.inputMode = { type: 'normal' };
+    this.flowIsAuthGate = false;
     if (result.status === 'ok') {
       this.onFlowComplete(result.ctx);
+      this.notify();
+      return;
     }
+    // Le flux a ete ANNULE (Ctrl+C, Ctrl+D). Pour un flux ordinaire on
+    // revient au prompt, ce qui est juste. Pour une porte
+    // d'authentification, ce prompt EST le shell authentifie : on la
+    // rouvre au lieu de la laisser tomber.
+    if (porte) { this.restartAuthGate(); return; }
     this.notify();
   }
 
@@ -1625,14 +1678,7 @@ export abstract class TerminalSession {
       this.advanceFlow(pw);
       return true;
     }
-    if (e.key === 'c' && e.ctrlKey) {
-      this.flowEngine = null;
-      this._passwordBuf = '';
-      this.inputMode = { type: 'normal' };
-      this.addLine('^C');
-      this.notify();
-      return true;
-    }
+    if (e.key === 'c' && e.ctrlKey) return this.cancelFlowOnCtrlC();
     // Let the view's hidden password <input> handle the keystroke
     return false;
   }
@@ -1654,14 +1700,7 @@ export abstract class TerminalSession {
       this.advanceFlow(val);
       return true;
     }
-    if (e.key === 'c' && e.ctrlKey) {
-      this.flowEngine = null;
-      this._inputBuf = '';
-      this.inputMode = { type: 'normal' };
-      this.addLine('^C');
-      this.notify();
-      return true;
-    }
+    if (e.key === 'c' && e.ctrlKey) return this.cancelFlowOnCtrlC();
     // Let the view's interactive text <input> handle the keystroke
     return false;
   }

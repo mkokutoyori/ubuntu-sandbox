@@ -113,14 +113,98 @@ export class CiscoTerminalSession extends CLITerminalSession {
   private maybeStartConsoleLogin(): void {
     const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
     const cfg = (shell as {
-      _getConsoleLineConfig?: () => { login: 'password' | 'local' | 'none' | null } | null;
+      _getConsoleLineConfig?: () => {
+        login: 'password' | 'local' | 'none' | null; password: string | null;
+      } | null;
     } | undefined)?._getConsoleLineConfig?.();
-    // Scope: `login local` (multi-account Username:/Password:) only — a
-    // bare `login` (single shared line password, no username prompt) is a
-    // real, distinct IOS mode not exercised by this scenario; left as a
-    // disclosed gap rather than faked.
-    if (!cfg || cfg.login !== 'local') return;
-    this.startFlowFromSteps(this.buildConsoleLoginSteps(), '');
+    if (!cfg) return;
+    // `login local` demande un nom PUIS un mot de passe ; `login` seul
+    // demande le mot de passe DE LA LIGNE et rien d'autre. Le second
+    // etait declare hors perimetre, or c'est la toute premiere securite
+    // qu'un cours fait poser : la ligne etait configuree, la
+    // configuration la rendait, et la console n'invitait a rien.
+    if (cfg.login === 'local') {
+      this.startFlowFromSteps(this.buildConsoleLoginSteps(), '', undefined, { authGate: true });
+      return;
+    }
+    if (cfg.login === 'password' && cfg.password != null) {
+      this.startFlowFromSteps(this.buildLinePasswordLoginSteps(cfg.password), '', undefined, { authGate: true });
+    }
+  }
+
+  /**
+   * Ctrl+C n'ouvre pas la porte : elle recommence.
+   *
+   * Interrompre un flux ordinaire rend la main au prompt — c'est juste.
+   * Mais pour le flux de connexion, ce prompt EST le shell authentifie,
+   * donc Ctrl+C au `Username:` donnait l'acces sans mot de passe. Un
+   * vrai IOS reaffiche l'invite ; on ne sort pas d'une invite de
+   * connexion par une touche.
+   */
+  protected override restartAuthGate(): void {
+    this.maybeStartConsoleLogin();
+  }
+
+  /**
+   * `login` seul : le mot de passe de la LIGNE, sans nom d'utilisateur.
+   * IOS ne dit pas lequel des deux est faux (il n'y a qu'un secret ici)
+   * et laisse trois essais avant de fermer la ligne, comme la variante
+   * nominative.
+   */
+  private buildLinePasswordLoginSteps(attendu: string): InteractiveStep[] {
+    const loginBanner = this.deviceBanner('login');
+    const preLines = loginBanner.length > 0 ? [...loginBanner.split('\n'), ''] : [];
+    return [
+      /* 0 */ { type: 'output', outputLines: [...preLines, 'User Access Verification', ''] },
+      /* 1 */ { type: 'password', prompt: 'Password: ', mask: 'hidden', storeAs: 'line_login_password' },
+      /* 2 */ {
+        type: 'execute',
+        action: async (ctx) => {
+          const saisi = ctx.values.get('line_login_password') ?? '';
+          const ok = saisi === attendu;
+          const essais = parseInt(ctx.values.get('line_login_attempts') ?? '0', 10) + (ok ? 0 : 1);
+          ctx.values.set('line_login_attempts', String(essais));
+          ctx.values.set('line_login_ok', ok ? '1' : '0');
+          const store = (this.device as unknown as {
+            getCredentialStore?: () => {
+              recordLoginSuccess: (n: string, f: string, m: 'password') => void;
+              recordLoginFailure: (n: string, f: string, r: string) => void;
+            };
+          }).getCredentialStore?.();
+          if (ok) store?.recordLoginSuccess('', 'console', 'password');
+          else store?.recordLoginFailure('', 'console', 'bad password');
+        },
+      },
+      /* 3 */ {
+        type: 'branch',
+        predicate: (ctx) => (ctx.values.get('line_login_ok') === '1' ? 4 : 6),
+      },
+      /* 4 */ {
+        type: 'execute',
+        action: async () => {
+          // Un mot de passe de ligne n'identifie personne : la session
+          // n'a pas de nom d'utilisateur, et `show users` doit le dire
+          // plutot qu'inventer un compte.
+          this.authenticatedUsername = null;
+          const niveau = this.consoleLinePrivilegeOverride() ?? 1;
+          if (this.vty) {
+            this.vty.state.mode = niveau === 15 ? 'privileged' : 'user';
+            this.vty.state.privilegeLevel = niveau;
+          }
+          this.rearmExecTimeout();
+          const execBanner = this.deviceBanner('exec');
+          if (execBanner) for (const ln of execBanner.split('\n')) this.addLine(ln);
+        },
+      },
+      /* 5 */ { type: 'branch', predicate: () => 10 },
+      /* 6 */ { type: 'output', outputLines: ['% Login invalid'] },
+      /* 7 */ {
+        type: 'branch',
+        predicate: (ctx) => (parseInt(ctx.values.get('line_login_attempts') ?? '0', 10) >= 3 ? 8 : 1),
+      },
+      /* 8 */ { type: 'output', outputLines: ['% Bad passwords'] },
+      /* 9 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
+    ];
   }
 
   private deviceBanner(kind: 'motd' | 'login' | 'exec' | 'incoming'): string {

@@ -25,7 +25,9 @@ import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
-import { showInterface } from './cisco/CiscoShowCommands';
+import {
+  showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
+} from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
@@ -3203,7 +3205,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (enableSecret) lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo, 'enable')}`);
     const enablePassword = sw.getEnablePassword();
     if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false, false, 'enable')}`);
-    if (enableSecret || enablePassword) lines.push('!');
+    // `enable secret level N` — le MEME rendu que le routeur. Le magasin
+    // vit sur `Equipment`, donc le Catalyst le portait deja ; seul le
+    // rendu du routeur le lisait, si bien qu'un niveau intermediaire
+    // configure ici disparaissait au rechargement de la topologie.
+    const niveaux = enableLevelSecretConfigLines(sw, sw.getServiceFlags?.().get('password-encryption') === true);
+    if (niveaux.length > 0) lines.push(...niveaux);
+    if (enableSecret || enablePassword || niveaux.length > 0) lines.push('!');
 
     if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
@@ -3219,6 +3227,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       lines.push('!');
     }
+
+    // `line console 0` et `line aux 0` — le MEME rendu que le routeur.
+    // Ils n'etaient ecrits que la, donc un Catalyst acceptait
+    // `password`/`login` sur sa console et ne les rendait nulle part.
+    lines.push(...consoleAndAuxLineConfigLines(sw));
 
     // VTY line configuration (transport input, login, password, …).
     const vtyLines = sw._getVtyLineConfig().renderAllCisco();
