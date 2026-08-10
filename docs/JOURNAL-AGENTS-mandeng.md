@@ -160,6 +160,64 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### VRRP — lot V17 : `display vrrp statistics` compte, sous les vrais intitulés — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-CLI-Fidelite-VRP.md` §26.
+
+**Ce que le cadrage précédent masquait.** §24.4 et §25.8 qualifiaient les
+zéros de **fait** plutôt que de manque — rien ne comptait les annonces —
+et c'était vrai. Mais la mesure a trouvé un second défaut, plus grave :
+**les intitulés étaient inventés**. La vue annonçait `Advertisement
+sent`, `Advertisement received`, `Priority zero packets sent`, `Become
+master`, `Track interfaces` — **aucun** ne figure dans la sortie d'une
+vraie machine. Un apprenant qui compare sa capture à la nôtre ne
+retrouvait pas une seule ligne, ce qui est pire qu'un zéro : un zéro se
+comprend, un champ inexistant ne se cherche pas.
+
+**La leçon, si elle vous sert ailleurs** : qualifier un zéro de « fait »
+n'excuse pas de vérifier le FORMAT autour. J'avais accepté ce cadrage
+deux lots de suite.
+
+**Deux règles de protocole trouvées PAR leurs compteurs** — un compteur
+qui ne peut structurellement rien compter signale une règle absente :
+
+- **`Received ip ttl errors`** : RFC 5798 §5.1.1.3 exige un TTL de 255 et
+  fait **écarter** l'annonce sinon (c'est ce qui garantit qu'elle vient
+  du lien local). Le contrôle n'existait pas.
+- **`Sent packets with priority zero`** : RFC 5798 §6.4.3 fait démissionner
+  un maître qui s'arrête par une annonce de priorité 0 — ce qui fait
+  basculer le secours **tout de suite** au lieu d'attendre l'intervalle
+  de maître absent. Sans elle, un labo où l'on coupe proprement le maître
+  enseignerait que VRRP est lent alors qu'il ne l'est que sur une panne.
+
+**Les zéros qui restent sont des faits, et chacun est nommé** dans
+`VrrpAgent` : pas de sérialisation des paquets VRRP ici, donc ni somme de
+contrôle à fausser, ni longueur à tronquer, ni version à corrompre, ni
+type invalide.
+
+**Ce qui vous concerne** : `VrrpStats` (19 champs) et `VrrpGlobalStats`
+(4) dans `vrrp/types.ts`, `VrrpAgent.stats(g)` / `getGlobalStats()` /
+`resetStats()`. `reset vrrp statistics` existe enfin — une commande qui
+promet de remettre à zéro doit le faire.
+
+**Un test à moi, corrigé** : `huawei-vrrp-un-magasin.test.ts` (lot V15)
+exigeait `Advertisement sent : 0` et `Track interfaces : 1` — il encodait
+le format inventé comme contrat. Son intention est intacte, il vérifie
+les vrais champs.
+
+**Fichiers touchés** : `network/vrrp/{types,VrrpAgent}.ts`,
+`shells/huawei/huaweiVrrpViews.ts`, `shells/huawei/HuaweiDisplayCommands.ts`,
+`shells/HuaweiSwitchShell.ts`.
+
+**Mesures.** 115 suites connexes vertes (1 661 cas).
+`probe-vrrp-statistics-mesurent.test.ts` (15 cas) : **les 15 tombent**
+par `git stash` — la vue ne portait aucun des intitulés attendus et aucun
+compteur n'existait. Typecheck : jeu d'erreurs **identique** (217). Lint
+propre.
+
+---
+
 ### VRRP — lot V16 : le délai de préemption retarde, l'authentification authentifie — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -3595,7 +3653,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R8 livrés** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V16 livrés** |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V17 livrés** |
 | NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N11 livrés — chantier clos** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
