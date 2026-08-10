@@ -97,6 +97,8 @@ import {
 } from '../router/management/CiscoHttpService';
 import { runTestAaaGroup } from '../router/aaa/TestAaaGroup';
 import type { AaaAuthenticator } from '../router/aaa/AaaAuthenticator';
+import type { TftpEndpoint } from '@/network/tftp/types';
+import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
 import type {
   CommandInteractionPlan,
   InteractionPlanContext,
@@ -185,11 +187,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.scheduledReloadAtMs;
   }
 
+  /**
+   * La ROM lit le registre de configuration AU DÉMARRAGE — c'est tout le
+   * sens de `(will be 0x2142 at next reload)`. La valeur préparée devient
+   * donc la valeur courante ici, et nulle part ailleurs : l'appliquer à la
+   * frappe ferait ignorer `nvram:` tout de suite, ce qu'aucun IOS ne fait,
+   * et la manœuvre de récupération de mot de passe n'aurait plus de sens.
+   */
+  protected adoptPendingConfigRegister(device: TDevice): void {
+    const avant = this.deviceRef;
+    this.deviceRef = device;
+    this.fs().applyPendingConfigRegister();
+    this.deviceRef = avant;
+  }
+
+  /** Vrai quand le registre demande d'ignorer `nvram:` au démarrage (bit 0x40). */
+  protected bootIgnoresStartupConfig(device: TDevice): boolean {
+    const avant = this.deviceRef;
+    this.deviceRef = device;
+    const ignore = this.fs().ignoreStartupConfig();
+    this.deviceRef = avant;
+    return ignore;
+  }
+
   protected performImmediateReload(): string {
     // Le tampon est en mémoire vive : il part avec le redémarrage, et
     // `logging reload` décide de ce qui est journalisé pendant celui-ci.
     this.attachLoggingToDevice(this.d());
     this.logging.startReload();
+    this.adoptPendingConfigRegister(this.d());
     this.d().powerOff();
     this.d().powerOn();
     this.logging.noteRestart();
@@ -205,6 +231,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected performScheduledReload(device: TDevice): void {
     this.attachLoggingToDevice(device);
     this.logging.startReload();
+    this.adoptPendingConfigRegister(device);
     device.powerOff();
     device.powerOn();
     this.logging.noteRestart();
@@ -472,8 +499,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Le service d'archivage de l'équipement, avec SON `flash:` branché.
    *
    * Le branchement se fait ici et pas dans le constructeur de
-   * l'appareil, parce que le système de fichiers appartient au shell
-   * (`this.fs()`, semé au premier accès) : c'est le même objet que
+   * l'appareil, parce que le profil châssis n'est connu que du shell ;
+   * `this.fs()` rend désormais le système de fichiers de la MACHINE,
+   * partagé par toutes ses sessions : c'est le même objet que
    * `dir flash:` et `more flash:` lisent, donc une archive écrite est
    * une archive que ces commandes voient. Deux systèmes de fichiers
    * distincts feraient de `show archive` un catalogue de fichiers
@@ -483,7 +511,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const s = (this.d() as unknown as {
       getArchiveService?: () => import('../router/archive/ArchiveService').ArchiveService;
     }).getArchiveService?.();
-    if (s && !s.hasStorage()) s.attachStorage(this.fs());
+    if (s && !s.hasStorage()) {
+      s.attachStorage(this.fs());
+      // `$h` dans `archive path` est le nom de la MACHINE : sans cette
+      // source, le chemin gardait la variable telle quelle et le fichier
+      // s'appelait littéralement `$h-config-1`.
+      s.attachHostname(() => this.d().getHostname());
+    }
     return s;
   }
 
@@ -747,6 +781,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /**
+   * Le registre de configuration est une notion de ROUTEUR. Un Catalyst
+   * de configuration fixe affiche bien `Configuration register is 0xF`
+   * dans `show version`, mais la valeur est décorative : la commande
+   * `config-register` n'existe pas en configuration globale et sa
+   * manœuvre de récupération passe par le bouton MODE et le chargeur
+   * d'amorçage (`flash_init`, `rename flash:config.text`), pas par
+   * 0x2142. L'accepter ici rangeait une valeur que `show version`
+   * démentait sur la même machine au même instant.
+   */
+  protected hasConfigRegister(): boolean {
+    return this.getChassisProfile() === 'router-isr2911';
+  }
+
+  /**
    * Le shell pose-t-il sa PROPRE vue de la table d'adresses MAC ?
    *
    * La question est tranchée ici et non en lisant l'appareil, pour deux
@@ -772,13 +820,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /**
-   * Le système de fichiers de l'équipement, semé au premier accès depuis
-   * le profil châssis. Un seul par shell : `dir`, `delete` et
-   * `show flash:` doivent voir le même `flash:`, sinon supprimer un
-   * fichier ne se verrait nulle part.
+   * Le système de fichiers de l'équipement — UN par MACHINE.
+   *
+   * Il vivait sur le shell, et `createVtyShell()` en fabrique un neuf par
+   * session : un fichier écrit depuis la console était donc invisible
+   * depuis SSH, et une archive écrite depuis SSH invisible depuis la
+   * console. Mesuré : `dir flash:` niait un fichier que `show archive`
+   * listait, sur la même machine au même instant. C'est le même défaut
+   * que celui déjà refermé pour IP SLA et `track` — un état de MACHINE
+   * rangé sur un objet de SESSION.
+   *
+   * Le repli sur un système local n'est pas mort : un shell peut être
+   * construit sans appareil lié (les tries s'enregistrent avant), et il
+   * lui faut alors un `flash:` à décrire.
    */
   private _fs: CiscoFileSystem | null = null;
   protected fs(): CiscoFileSystem {
+    const dev = this.deviceRef as unknown as {
+      _getCiscoFileSystem?: (
+        profile: import('./cisco/CiscoCommonShow').CiscoChassisProfile,
+      ) => CiscoFileSystem;
+    } | null;
+    const partage = dev?._getCiscoFileSystem?.(this.getChassisProfile());
+    if (partage) return partage;
     if (!this._fs) this._fs = new CiscoFileSystem(this.getChassisProfile());
     return this._fs;
   }
@@ -792,7 +856,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   private registerFileSystemCommands(trie: CommandTrie): void {
     trie.registerGreedy('dir', 'List files on a filesystem', (args) => {
-      const cible = args[0] ?? 'flash:';
+      // `/all` liste aussi les fichiers marqués supprimés ; ce système de
+      // fichiers en libère l'espace tout de suite (comme un IOS moderne),
+      // donc il n'y a jamais rien de plus à montrer — l'option est
+      // acceptée et ne ment pas.
+      const cible = args.filter((a) => !a.startsWith('/'))[0] ?? 'flash:';
       if (/^nvram:/i.test(cible)) return this.renderNvramDir();
       if (!/^(flash|bootflash|disk0)(:|$)/i.test(cible) && cible !== '') {
         return `%Error opening ${cible} (No such file or directory)`;
@@ -867,6 +935,50 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
+    /**
+     * `mkdir` / `rmdir` — un `flash:` a des répertoires, et le tutoriel
+     * en crée un pour ranger ses sauvegardes. Ils n'existaient pas :
+     * `mkdir flash:backups` tombait dans la résolution de nom d'hôte et
+     * répondait `Translating "mkdir"...`.
+     */
+    trie.registerGreedy('mkdir', 'Create a directory', (args) => {
+      const nom = args[0];
+      if (!nom) throw new CliIncomplete();
+      const propre = nom.replace(/\/+$/, '');
+      if (this.fs().exists(propre)) return `%Error Creating dir ${propre} (File exists)`;
+      this.fs().makeDirectory(propre);
+      return `Create directory filename [${propre.replace(/^[a-z]+:\/?/i, '')}]? [confirm]\n`
+        + `Created dir ${propre}`;
+    });
+    trie.registerGreedy('rmdir', 'Remove a directory', (args) => {
+      const nom = args[0];
+      if (!nom) throw new CliIncomplete();
+      const propre = nom.replace(/\/+$/, '');
+      const verdict = this.fs().removeDirectory(propre);
+      if (verdict === 'absent') return `%Error Removing dir ${propre} (No such file or directory)`;
+      if (verdict === 'non-vide') return `%Error Removing dir ${propre} (Directory not empty)`;
+      return `Remove directory filename [${propre.replace(/^[a-z]+:\/?/i, '')}]? [confirm]\n`
+        + `Removed dir ${propre}`;
+    });
+
+    /**
+     * `squeeze` — sur un IOS ancien, `delete` marquait le fichier et
+     * `squeeze` récupérait l'espace. Ce système de fichiers le récupère
+     * tout de suite, comme un IOS moderne : la commande existe, elle
+     * DIT qu'il n'y avait rien à récupérer plutôt que de prétendre
+     * l'avoir fait.
+     */
+    trie.registerGreedy('squeeze', 'Squeeze a filesystem', (args) => {
+      const cible = args[0] ?? 'flash:';
+      if (!/^(flash|bootflash|disk0):?$/i.test(cible.replace(/\/$/, ''))) {
+        return `%Error squeezing ${cible} (No such device)`;
+      }
+      return 'All deleted files will be removed. Continue? [confirm]\n'
+        + 'Squeeze operation may take a while. Continue? [confirm]\n'
+        + 'Squeeze of flash complete\n'
+        + '%No files were deleted: this filesystem reclaims space on delete.';
+    });
+
     trie.register('pwd', 'Display current working directory', () => 'flash:');
 
     trie.register('show bootvar', 'Display boot variables', () => this.fs().renderBootvar());
@@ -896,6 +1008,60 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * `getStartupConfigSnapshot`. Une seule lecture pour `more`, `dir` et
    * la séquence de démarrage.
    */
+/**
+   * Une copie vers ou depuis le réseau (`tftp:`, `ftp:`, `scp:`…).
+   *
+   * Elle répondait `[OK]` sans qu'un octet quitte la machine : une
+   * sauvegarde annoncée réussie et inexistante. Tant que le transfert
+   * n'est pas réel, la commande DIT ce qui manque plutôt que de
+   * prétendre — c'est la règle de ce dépôt pour tout ce qu'il ne sait
+   * pas encore faire, et c'est la seule réponse qui n'égare pas
+   * l'opérateur au moment où il croit avoir une sauvegarde.
+   */
+  /**
+   * L'écriture d'un contenu à sa DESTINATION, quel que soit d'où il
+   * vient. Elle était écrite dans le corps de `copy` et donc inatteignable
+   * depuis le chemin réseau, qui aurait dû la recopier — deux façons de
+   * déposer le même fichier finissent toujours par diverger.
+   */
+  protected deposerCopie(
+    appareil: TDevice, dstBrut: string, dst: string, texte: string, srcBrut = dstBrut,
+  ): string {
+    const avant = this.deviceRef;
+    this.deviceRef = appareil;
+    try {
+      const dev = appareil as unknown as {
+        _applyConfigText?: (text: string) => void;
+        _captureStartupConfig?: (t: string) => void;
+        setStartupConfigText?: (t: string) => void;
+      };
+      if (dst === 'running-config' || dst === 'system:running-config') {
+        dev._applyConfigText?.(texte);
+        return `Destination filename [running-config]?\n${texte.length} bytes copied`;
+      }
+      if (dst === 'startup-config' || dst === 'nvram:startup-config' || dst === 'nvram:') {
+        if (dev._captureStartupConfig) dev._captureStartupConfig(texte);
+        else if (dev.setStartupConfigText) dev.setStartupConfigText(texte);
+        else return '%% Non-volatile configuration memory is not present';
+        return `Destination filename [startup-config]?\n${texte.length} bytes copied`;
+      }
+      if (this.fs().freeBytes() < texte.length) {
+        return `%Error copying ${srcBrut} (No space left on device)`;
+      }
+      this.fs().write(dstBrut, texte);
+      return `Destination filename [${dstBrut.replace(/^[a-z]+:\/?/i, '')}]?\n`
+        + `${texte.length} bytes copied`;
+    } finally {
+      this.deviceRef = avant;
+    }
+  }
+
+  protected copieReseauIndisponible(cible: string): string {
+    const schema = /^([a-z]+):/i.exec(cible)?.[1]?.toLowerCase() ?? cible;
+    return `%Error: copy ${schema}: is not implemented in this simulator `
+      + `(no ${schema.toUpperCase()} client on this device yet).`;
+  }
+
   protected readStartupConfig(): string | null {
     const dev = this.d() as unknown as {
       getStartupConfig?: () => string | null;
@@ -1686,6 +1852,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const target = device?._loggingConfig ?? device?.getLoggingConfig?.() ?? this.logging;
     target.append('notifications', 'sys',
       `Configured from console by ${this.configSessionLabel}`, true, 'CONFIG_I');
+    (this.configExitLogTarget as { _noteConfigChange?: (u: string) => void } | null)
+      ?._noteConfigChange?.(this.configSessionLabel);
   }
 
   protected configExitLogTarget: unknown = null;
@@ -1977,11 +2145,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private runPipeWriter(cmdPart: string, filter: PipeFilter, device: TDevice): string {
     const cible = filter.pattern.trim();
     if (!cible) return CISCO_ERRORS.INCOMPLETE;
-    const fs = this.fs();
     const nom = cible.replace(/^[a-z]+:\/?/i, '');
     if (!nom) return `%Error opening ${cible} (No such file or directory)`;
 
     this.deviceRef = device;
+    const fs = this.fs();
     const sortie = this.executeOnTrie(cmdPart);
     this.deviceRef = null;
 
@@ -2649,6 +2817,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     const saveRunningToStartup = () =>
       `Destination filename [startup-config]?\n${this.onSave()}`;
+    // Sauvegarder DATE la NVRAM : c'est la seconde des deux lignes d'en-tête.
+    this.privilegedTrie.describeNode('copy', 'Copy a file');
 
     this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
 
@@ -2661,6 +2831,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.privilegedTrie,
       () => this.archiveService(),
       () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+      (url) => this.fs().read(url),
+      () => this.readStartupConfig(),
+      (texte) => {
+        // Un REMPLACEMENT, pas une fusion : l'état rejouable est remis à
+        // zéro avant que le fichier ne soit appliqué, sinon ce que la
+        // configuration courante porte en trop y resterait — ce qui est
+        // précisément la différence avec `copy`.
+        const dev = this.d() as unknown as {
+          _resetConfigurableStateForReload?: () => void;
+          _applyConfigText?: (t: string) => void;
+        };
+        dev._resetConfigurableStateForReload?.();
+        dev._applyConfigText?.(texte);
+        (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
+          ._noteConfigChange?.(this.configSessionLabel);
+      },
     );
 
     const eraseNvram = () => {
@@ -2731,47 +2917,111 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
     this.privilegedTrie.registerSuggestions('show ip route', showIpRouteHints);
     this.userTrie.registerSuggestions('show ip route', showIpRouteHints);
+    /**
+     * `copy SOURCE DESTINATION`.
+     *
+     * Ce qu'elle faisait avant : `copy running-config flash:X` répondait
+     * `Writing flash:X ... [OK]` en écrivant dans une Map À PART de
+     * l'appareil, si bien que `dir flash:` de la même machine, au même
+     * instant, ne montrait rien. Une sauvegarde qui annonce avoir
+     * réussi et n'a rien écrit est le pire des défauts de ce chapitre :
+     * on ne le découvre qu'au moment de restaurer. Tout passe désormais
+     * par le VRAI `flash:` — celui que `dir`, `more`, `delete` et
+     * `verify` lisent.
+     *
+     * IOS compte les octets et le temps ; le temps est nul ici (la copie
+     * est locale et synchrone), donc seule la taille est rapportée — un
+     * débit inventé serait une mesure fausse.
+     */
     this.privilegedTrie.registerGreedy('copy', 'Copy a file', (args) => {
-      if (!args[0] || !args[1]) return '% Incomplete command.';
-      const src = norm(args[0]);
-      const dst = norm(args[1]);
+      if (!args[0]) return '% Incomplete command.';
+      if (!args[1]) return '% Incomplete command.';
+      const srcBrut = args[0];
+      const dstBrut = args[1];
+      const src = norm(srcBrut);
+      const dst = norm(dstBrut);
       const dev = this.d() as unknown as {
         _restoreStartupConfig?: () => boolean;
-        _readFlashFile?: (name: string) => string | null;
-        _writeFlashFile?: (name: string, content: string) => void;
         _applyConfigText?: (text: string) => void;
         getRunningConfig?: () => string;
       };
 
-      if (src === 'running-config' && dst === 'startup-config') return saveRunningToStartup();
+      const estConfigCourante = (x: string) =>
+        x === 'running-config' || x === 'system:running-config';
+      const estConfigDemarrage = (x: string) =>
+        x === 'startup-config' || x === 'nvram:startup-config' || x === 'nvram:';
+      const estReseau = (x: string) =>
+        /^(tftp|ftp|scp|sftp|http|https|rcp):/.test(x);
+      const estTftp = (x: string) => /^tftp:/.test(x);
 
-      if (dst === 'running-config' && (src === 'startup-config' || src === 'nvram:')) {
-        // Devices that model NVRAM (the switch) report an empty NVRAM; the
-        // router keeps its shell-level snapshot, so preserve the OK path.
-        if (typeof dev._restoreStartupConfig === 'function' && !dev._restoreStartupConfig()) {
+      /**
+       * La table des ports UDP de CETTE machine. Le routeur et le
+       * commutateur la portent tous les deux ; une plateforme qui ne
+       * l'a pas n'a pas de client TFTP, et le dit.
+       */
+      const pointUdp = (): TftpEndpoint | null =>
+        (this.d() as unknown as { getUdpEndpoint?: () => TftpEndpoint })
+          .getUdpEndpoint?.() ?? null;
+
+      /** Le contenu de la source, ou un message d'erreur d'IOS. */
+      const lire = (): { texte: string } | { erreur: string } => {
+        if (estConfigCourante(src)) return { texte: dev.getRunningConfig?.() ?? '' };
+        if (estConfigDemarrage(src)) {
+          const t = this.readStartupConfig();
+          return t === null
+            ? { erreur: '%% Non-volatile configuration memory is not present' }
+            : { texte: t };
+        }
+        if (estReseau(src)) {
+          return { erreur: this.copieReseauIndisponible(srcBrut) };
+        }
+        const contenu = this.fs().read(srcBrut);
+        return contenu === null
+          ? { erreur: `%Error opening ${srcBrut} (No such file or directory)` }
+          : { texte: contenu };
+      };
+
+      if (estConfigCourante(src) && estConfigDemarrage(dst)) return saveRunningToStartup();
+
+      // ── Le fil : `copy tftp: <cible>` ──
+      if (estTftp(src)) {
+        const url = parseTftpUrl(srcBrut);
+        const point = pointUdp();
+        if (!url) return TFTP_NO_HOST;
+        if (!point) return this.copieReseauIndisponible(srcBrut);
+        const appareil = this.d();
+        this._pendingAsync = tftpGet(point, url).then((res) =>
+          'erreur' in res ? res.erreur : res.trace + this.deposerCopie(appareil, dstBrut, dst, res.texte));
+        return '';
+      }
+
+      const source = lire();
+      if ('erreur' in source) return source.erreur;
+
+      // ── Le fil : `copy <source> tftp:` ──
+      if (estTftp(dst)) {
+        const url = parseTftpUrl(dstBrut);
+        const point = pointUdp();
+        if (!url) return TFTP_NO_HOST;
+        if (!point) return this.copieReseauIndisponible(dstBrut);
+        this._pendingAsync = tftpPut(point, url, source.texte);
+        return '';
+      }
+
+      if (estConfigCourante(dst) && estConfigDemarrage(src)
+        && typeof dev._restoreStartupConfig === 'function') {
+        // MERGE, et pas remplacement : c'est le point que le tutoriel
+        // insiste à distinguer de `configure replace`.
+        if (!dev._restoreStartupConfig()) {
           return '%% Non-volatile configuration memory is not present';
         }
-        return 'Destination filename [running-config]?\n[OK]';
+        return `Destination filename [running-config]?\n`
+          + `${source.texte.length} bytes copied`;
       }
 
-      const fileSrc = src.startsWith('flash:') || src.startsWith('tftp:') || src.startsWith('ftp:');
-      const fileDst = dst.startsWith('flash:') || dst.startsWith('tftp:') || dst.startsWith('ftp:') || dst.startsWith('nvram:');
+      if (estReseau(dst)) return this.copieReseauIndisponible(dstBrut);
 
-      if (dst === 'running-config' && fileSrc) {
-        if (typeof dev._readFlashFile === 'function') {
-          const content = dev._readFlashFile(args[0]);
-          if (content == null) return `%Error opening ${args[0]} (No such file or directory)`;
-          dev._applyConfigText?.(content);
-        }
-        return 'Destination filename [running-config]?\n[OK]';
-      }
-
-      if (src === 'running-config' && fileDst) {
-        dev._writeFlashFile?.(args[1], dev.getRunningConfig?.() ?? '');
-        return `Destination filename [${args[1]}]?\nWriting ${args[1]} ... [OK]`;
-      }
-
-      return `[OK]`;
+      return this.deposerCopie(this.d(), dstBrut, dst, source.texte, srcBrut);
     });
     this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
       if (args[0]?.toLowerCase() === 'cancel') {
@@ -3298,13 +3548,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.fs().removeBootSystem(image || undefined);
       return '';
     });
-    this.configTrie.registerGreedy('config-register', 'Set configuration register', (args) => {
-      const val = args[0] ?? '';
-      if (!this.fs().setConfigRegister(val)) {
-        return '% Invalid config register value';
-      }
-      return '';
-    });
+    if (!this.hasConfigRegister()) {
+      // Les deux seuls reglages d'amorcage d'un Catalyst, et les deux
+      // seuls champs de son `show boot` qu'un operateur peut changer.
+      this.configTrie.register('boot enable-break', 'Enable the Break key during boot',
+        () => { this.fs().setEnableBreak(true); return ''; });
+      this.configTrie.register('no boot enable-break', 'Disable the Break key during boot',
+        () => { this.fs().setEnableBreak(false); return ''; });
+      this.configTrie.register('boot manual', 'Boot into the boot loader instead of the image',
+        () => { this.fs().setManualBoot(true); return ''; });
+      this.configTrie.register('no boot manual', 'Boot the image automatically',
+        () => { this.fs().setManualBoot(false); return ''; });
+    }
+    if (this.hasConfigRegister()) {
+      this.configTrie.registerGreedy('config-register', 'Set configuration register', (args) => {
+        const val = args[0] ?? '';
+        if (!this.fs().setConfigRegister(val)) {
+          return '% Invalid config register value';
+        }
+        return '';
+      });
+    }
 
     this.configTrie.registerGreedy('hostname', 'Set system hostname', (args) => {
       if (args.length < 1) return '% Incomplete command.';

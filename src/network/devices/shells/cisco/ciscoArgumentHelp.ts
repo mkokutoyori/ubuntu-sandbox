@@ -77,6 +77,12 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ]);
   tries.privileged.describeArgs('more', [WORD('file', 'File to display')]);
   tries.privileged.describeArgs('verify', [WORD('file', 'File to verify')]);
+  tries.privileged.describeArgs('mkdir', [WORD('directory', 'Directory to create')]);
+  tries.privileged.describeArgs('rmdir', [WORD('directory', 'Directory to remove')]);
+  tries.privileged.describeArgs('squeeze', [WORD('filesystem', 'Filesystem to squeeze')]);
+  tries.privileged.describeArgs('configure replace', [
+    WORD('url', 'Configuration file URL'),
+  ]);
   tries.privileged.describeArgs('disconnect', [
     { ...INT('connection', [1, 16], 'Connection number'), optional: true },
   ]);

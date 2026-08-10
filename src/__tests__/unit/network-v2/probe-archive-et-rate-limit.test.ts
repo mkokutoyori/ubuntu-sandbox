@@ -70,8 +70,23 @@ async function configurerArchive(d: Dev): Promise<void> {
   await d.executeCommand('end');
 }
 
+/**
+ * Le nombre de révisions listées par `show archive`.
+ *
+ * Cette sonde lisait un format MAISON (`  1: flash:cfg-1 (…, 835B,
+ * src=manual)`) qu'aucun IOS n'écrit. La vue rend désormais la forme
+ * d'IOS — ` Archive #  Name` puis `   1        flash:cfg-1` — donc le
+ * compteur lit celle-là. Ce que les cas PROUVENT n'a pas changé : une
+ * révision a été capturée, et `maximum` en borne le nombre.
+ *
+ * Ce que le format maison montrait et qu'IOS ne montre pas — l'origine
+ * de la capture (`src=manual` / `src=auto-write-memory`) et la taille —
+ * est perdu de la VUE. Les cas qui s'en servaient s'appuient maintenant
+ * sur ce que la machine montre par ailleurs : le fichier écrit dans
+ * `flash:`, dont `dir` donne le nom et la taille.
+ */
 function nbRevisions(sortie: string): number {
-  return sortie.split('\n').filter((l) => /^ {2}\d+: /.test(l)).length;
+  return sortie.split('\n').filter((l) => /^ {3}\d+\s+\S/.test(l)).length;
 }
 
 describe.each([
@@ -95,8 +110,9 @@ describe.each([
     const out = await d.executeCommand('show archive');
     // Le défaut d'origine : cette ligne contredisait la running-config.
     expect(out).not.toContain('No archives configured');
-    expect(out).toContain('Archive path: flash:cfg');
     expect(out).toContain('The maximum archive configurations allowed is 5.');
+    expect(out).toContain('There are currently 0 archive configurations saved.');
+    expect(out).toContain('The next archive file will be named flash:cfg-1');
     expect(out).toContain('No backups exist on archive path');
   });
 
@@ -116,12 +132,11 @@ describe.each([
     expect(await d.executeCommand('archive config')).toBe('Writing flash:cfg-1');
     const out = await d.executeCommand('show archive');
     expect(nbRevisions(out)).toBe(1);
-    expect(out).toContain('flash:cfg-1');
-    expect(out).toContain('src=manual');
+    expect(out).toContain('flash:cfg-1 <- Most Recent');
     // Une sauvegarde énumérée interdit d'annoncer qu'il n'y en a pas.
     expect(out).not.toContain('No backups exist');
-    // La taille est celle de la configuration réellement archivée, pas 0.
-    expect(out).toMatch(/, [1-9]\d*B, /);
+    // La taille réellement écrite se lit là où IOS la donne : `dir`.
+    expect(await d.executeCommand('dir flash:')).toMatch(/-rwx\s+[1-9]\d*\s+.*cfg-1/);
   });
 
   it('`write memory` archive quand `write-memory` est posé', async () => {
@@ -130,7 +145,7 @@ describe.each([
     await d.executeCommand('write memory');
     const out = await d.executeCommand('show archive');
     expect(nbRevisions(out)).toBe(1);
-    expect(out).toContain('src=auto-write-memory');
+    expect(out).toContain('flash:cfg-1');
   });
 
   it('sans `write-memory`, une sauvegarde n\'archive rien', async () => {

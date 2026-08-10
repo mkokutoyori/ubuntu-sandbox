@@ -28,11 +28,13 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
+import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP } from '../vrrp/types';
@@ -386,7 +388,27 @@ export abstract class Switch extends Equipment {
     natTranslateOutbound: (pkt, outIface, inIface, opts) =>
       this.getNATEngine()?.translateOutbound(pkt, outIface, inIface, opts) ?? null,
     natIsOutsideInterface: (iface) => this.getNATEngine()?.isOutsideInterface(iface) ?? false,
+    deliverLocalUdp: (sourceIP, destinationPort, sourcePort, payload) =>
+      this.udpEndpoint?.deliver(sourceIP, destinationPort, sourcePort, payload) ?? false,
   });
+
+  private udpEndpoint: RouterUdpEndpoint | null = null;
+
+  /**
+   * Les ports UDP que le plan de controle de CE commutateur tient
+   * ouverts — la meme table que le routeur, parce qu'un Catalyst fait
+   * `copy running-config tftp:` exactement comme un ISR et qu'ecrire
+   * deux tables donnerait deux reponses a la meme question.
+   */
+  getUdpEndpoint(): RouterUdpEndpoint {
+    if (!this.udpEndpoint) {
+      this.udpEndpoint = new RouterUdpEndpoint({
+        sendUdpBytes: (dst, dstPort, srcPort, payload) =>
+          this.svi.sendUdpBytes(dst, dstPort, srcPort, payload),
+      });
+    }
+    return this.udpEndpoint;
+  }
 
   private getNATEngine(): import('./router/NATEngine').NATEngine | null {
     return (this as unknown as { _getNATEngine?: () => import('./router/NATEngine').NATEngine })._getNATEngine?.() ?? null;
@@ -2486,12 +2508,28 @@ export abstract class Switch extends Equipment {
    *  running-config`). */
   _applyConfigText(text: string): void { this.applyConfigText(text); }
 
-  // ── Simulated flash file system (config backups) ──────────────────
-  private flashFiles = new Map<string, string>();
-  /** @internal `copy running-config flash:X` — store a named config file. */
-  _writeFlashFile(name: string, content: string): void { this.flashFiles.set(name, content); }
+  // ── `flash:` / `nvram:` — UN par machine, pas un par session ──────
+  private ciscoFs: CiscoFileSystem | null = null;
+
+  /** Le `flash:` de CETTE machine, partagé par toutes ses sessions. */
+  _getCiscoFileSystem(
+    profile: import('./shells/cisco/CiscoCommonShow').CiscoChassisProfile,
+  ): CiscoFileSystem {
+    if (!this.ciscoFs) this.ciscoFs = new CiscoFileSystem(profile);
+    return this.ciscoFs;
+  }
+
+  /** @internal `copy running-config flash:X` — dans le VRAI `flash:`. */
+  _writeFlashFile(name: string, content: string): void {
+    this._getCiscoFileSystem('switch-c2960').write(name, content);
+  }
   /** @internal `copy flash:X running-config` — read it back (null if absent). */
-  _readFlashFile(name: string): string | null { return this.flashFiles.get(name) ?? null; }
+  _readFlashFile(name: string): string | null {
+    return this._getCiscoFileSystem('switch-c2960').read(name);
+  }
+  _listFlashFiles(): readonly string[] {
+    return this._getCiscoFileSystem('switch-c2960').list().map((f) => f.name);
+  }
 
   private restoreFromStartupConfig(): void {
     if (this.startupConfig) this.applyConfigText(this.startupConfig);

@@ -9,11 +9,11 @@
  * else in this PRD otherwise (no control channel, no auth).
  */
 import type { IPAddress, IPv6Address } from '@/network/core/types';
-import type { EndHost, UdpDelivery } from '@/network/devices/EndHost';
 import type { ISftpFileSystem } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
 import type { IEventBus } from '@/events/EventBus';
 import {
   type TftpPacket, type TftpRequestPacket, type TftpOptions, type TftpMode,
+  type TftpEndpoint, type TftpUdpDelivery,
   TFTP_PORT, TFTP_DEFAULT_BLKSIZE, TFTP_DEFAULT_TIMEOUT_SEC, TFTP_MAX_RETRIES, TFTP_ERROR_MESSAGES,
 } from './types';
 import { encodeTftpPacket, decodeTftpPacket, concatBytes } from './codec';
@@ -53,7 +53,7 @@ class TransferIo {
   private peerPort: number;
 
   constructor(
-    private readonly host: EndHost,
+    private readonly host: TftpEndpoint,
     private readonly peerIP: IPAddress | IPv6Address,
     initialPeerPort: number,
     private readonly localPort: number,
@@ -104,7 +104,7 @@ export class TftpServer {
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
 
-  constructor(private readonly host: EndHost, private readonly config: TftpServerConfig) {
+  constructor(private readonly host: TftpEndpoint, private readonly config: TftpServerConfig) {
     this.rootPath = config.rootPath ?? '/';
     this.timeoutMs = config.timeoutMs ?? TFTP_DEFAULT_TIMEOUT_SEC * 1000;
     this.maxRetries = config.maxRetries ?? TFTP_MAX_RETRIES;
@@ -118,7 +118,7 @@ export class TftpServer {
     this.host.udpClose(TFTP_PORT);
   }
 
-  private handleRequest(delivery: UdpDelivery): void {
+  private handleRequest(delivery: TftpUdpDelivery): void {
     if (!(delivery.udp.payload instanceof Uint8Array)) return;
     const pkt = decodeTftpPacket(delivery.udp.payload);
     if (!pkt) return;
@@ -136,7 +136,7 @@ export class TftpServer {
     this.config.eventBus?.publish({ topic: 'tftp.transfer.failed', payload: { transferId, filename, mode, errorCode, reason } });
   }
 
-  private rejectUnknownTid(delivery: UdpDelivery, localPort: number): void {
+  private rejectUnknownTid(delivery: TftpUdpDelivery, localPort: number): void {
     if (!(delivery.udp.payload instanceof Uint8Array)) return;
     const err = encodeTftpPacket({ opcode: 'ERROR', code: 5, message: TFTP_ERROR_MESSAGES[5] });
     this.host.sendUdpDatagramTo(delivery.sourceIP, delivery.udp.sourcePort, localPort, err, err.length);
@@ -146,7 +146,7 @@ export class TftpServer {
     const transferId = randomTftpTransferId();
     const path = joinRoot(this.rootPath, req.filename);
     const file = this.config.fs.readFile(path);
-    const localPort = this.host.getSocketTable().allocateEphemeralPort();
+    const localPort = this.host.allocateEphemeralPort();
 
     if (!file.ok) {
       const err = encodeTftpPacket({ opcode: 'ERROR', code: 1, message: TFTP_ERROR_MESSAGES[1] });
@@ -196,7 +196,7 @@ export class TftpServer {
   private serveWrite(req: TftpRequestPacket, clientIP: IPAddress | IPv6Address, clientPort: number): void {
     const transferId = randomTftpTransferId();
     const path = joinRoot(this.rootPath, req.filename);
-    const localPort = this.host.getSocketTable().allocateEphemeralPort();
+    const localPort = this.host.allocateEphemeralPort();
     this.emitStarted(transferId, req.filename, 'wrq');
 
     const negotiated = negotiateOptions(req.options);
@@ -250,7 +250,7 @@ export interface TftpTransferResult {
 
 export class TftpClientSession {
   constructor(
-    private readonly host: EndHost,
+    private readonly host: TftpEndpoint,
     private readonly serverIp: IPAddress | IPv6Address,
     private readonly port: number = TFTP_PORT,
     private readonly timeoutMs: number = TFTP_DEFAULT_TIMEOUT_SEC * 1000,
@@ -260,7 +260,7 @@ export class TftpClientSession {
   /** `RRQ` — downloads `filename`; mode is always octet (binary-transparent), matching the rest of this project's file-content convention. */
   get(filename: string, options?: TftpOptions): Promise<TftpTransferResult> {
     return new Promise((resolve) => {
-      const localPort = this.host.getSocketTable().allocateEphemeralPort();
+      const localPort = this.host.allocateEphemeralPort();
       let serverPort: number | null = null;
       let expectedBlock = 1;
       const received: Uint8Array[] = [];
@@ -301,7 +301,7 @@ export class TftpClientSession {
   /** `WRQ` — uploads `content` to `filename`. */
   put(filename: string, content: string, options?: TftpOptions): Promise<TftpTransferResult> {
     return new Promise((resolve) => {
-      const localPort = this.host.getSocketTable().allocateEphemeralPort();
+      const localPort = this.host.allocateEphemeralPort();
       let serverPort: number | null = null;
       const dataBytes = stringToBytes(content);
       const blksize = options?.blksize ?? TFTP_DEFAULT_BLKSIZE;

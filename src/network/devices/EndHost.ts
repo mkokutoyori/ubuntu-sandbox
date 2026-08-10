@@ -1338,6 +1338,9 @@ export abstract class EndHost extends Equipment {
   /** Expose the per-device socket table (used by netstat/ss commands). */
   getSocketTable(): SocketTable { return this.socketTable; }
 
+  /** `TftpEndpoint` — the one member the port needs that reaching through `getSocketTable()` would have made a two-step. */
+  allocateEphemeralPort(): number { return this.socketTable.allocateEphemeralPort(); }
+
   /**
    * docs/PRD-Sockets-Une-Seule-Verite.md §P1 — une écoute réelle
    * s'inscrit d'elle-même dans la table que lisent `ss`, `netstat`,

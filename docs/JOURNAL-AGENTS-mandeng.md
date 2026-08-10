@@ -25,6 +25,182 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Tutoriel « Persistance des données Cisco » — LIVRÉ (lot 1)
+
+**Agent** : session « logging ». Demandé par l'utilisateur : que le
+tutoriel soit jouable, avec de vraies implémentations.
+
+**Mesuré d'abord**, en rejouant les dix parties. Cinq défauts, du plus
+grave au plus discret :
+
+1. **`flash:` était PAR SESSION.** Le système de fichiers vivait sur le
+   shell, et `createVtyShell()` en fabrique un neuf par session : un
+   fichier copié depuis la console n'existait pas pour SSH. Pire, dans
+   la même session, `show archive` listait une archive que `dir flash:`
+   niait. C'est le défaut déjà refermé pour IP SLA et `track` — un état
+   de MACHINE rangé sur un objet de SESSION. Le système de fichiers
+   vit désormais sur l'appareil.
+2. **`copy running-config flash:X` mentait** : `Writing … [OK]` en
+   écrivant dans une Map à part de celle que `dir` lit. Une sauvegarde
+   qui s'annonce réussie et n'a rien écrit ne se découvre qu'au moment
+   de restaurer. Tout `copy` passe maintenant par le vrai `flash:`, et
+   une flash pleine refuse au lieu de perdre.
+3. **`configure replace` n'existait pas** — toute la moitié
+   « restauration » était injouable, et rien ne distinguait le MERGE de
+   `copy` du REPLACE. Elle existe avec `force`, `list` et `time`, et
+   accepte `flash:`, `nvram:startup-config` et `archive:N`.
+4. **Les deux lignes d'audit n'existaient pas.**
+   `! Last configuration change` / `! NVRAM config last updated` sont
+   LE signal du chapitre — deux dates différentes veulent dire qu'on a
+   modifié sans sauvegarder. La machine ne pouvait pas répondre à la
+   question. Elles portent l'heure et l'utilisateur, et la seconde
+   n'est écrite que si la NVRAM a vraiment été écrite.
+5. **`$h` n'était pas développé** : le fichier d'archive s'appelait
+   littéralement `$h-config-1`, sur toutes les machines — deux
+   équipements archivant au même endroit se seraient écrasés. `$h` et
+   `$t` le sont.
+
+**Trouvé en chemin** : `show version` écrivait `Configuration register
+is 0x2102` EN DUR pendant que `show bootvar` rendait la vraie valeur.
+Et IOS distingue la valeur COURANTE de celle du prochain démarrage —
+`config-register 0x2142` ne change pas la machine qui tourne, il
+prépare le boot suivant, d'où `(will be 0x2142 at next reload)`. Les
+confondre rendrait la récupération de mot de passe incompréhensible.
+
+**Ajoutés** : `mkdir`, `rmdir` (qui refuse un répertoire non vide),
+`squeeze`, `dir /all`, et `show archive` dans la forme d'IOS
+(`There are currently N…`, `The next archive file will be named…`,
+`<- Most Recent`).
+
+**Deux limites écrites plutôt que tues :**
+
+- **`copy` vers `ftp:`/`scp:` répond ce qui manque** au lieu de `[OK]`
+  (aucun client FTP ni SCP sur ces plateformes). `tftp:` ne fait plus
+  partie de cette liste : voir le lot 2 ci-dessous.
+- **`configure replace` applique par remise à zéro puis rejeu**, là où
+  IOS n'applique que le delta. L'état FINAL est le même — c'est ce que
+  la commande promet — mais un vrai IOS perturbe moins ce qui n'a pas
+  changé. Le PLAN affiché par `list`, lui, est le vrai delta.
+- **`| head`** du tutoriel n'existe sur AUCUN IOS (les filtres sont
+  `begin`, `include`, `exclude`, `section`, `count`, `append`,
+  `redirect`, `tee`). Ne pas l'implémenter est la fidélité, pas un
+  manque.
+
+**Fichiers touchés** : `devices/Router.ts`, `devices/Switch.ts`,
+`shells/CiscoShellBase.ts`, `shells/CiscoIOSShell.ts`,
+`shells/cisco/CiscoFileSystem.ts`, `shells/cisco/CiscoShowCommands.ts`,
+`shells/cisco/CiscoArchiveCommands.ts`,
+`router/archive/ArchiveService.ts`,
+`router/archive/ConfigReplace.ts` (nouveau).
+
+**Mesures.** `tuto-persistance-cisco.test.ts` (25 cas) discriminé par
+`git stash` : **20 tombent** avant.
+
+---
+
+### Tutoriel « Persistance » — lot 2 : le fil, et le Catalyst — LIVRÉ
+
+**Agent** : session « logging ». Deux demandes de l'utilisateur : que
+`copy … tftp:` transporte vraiment, et que **le switch soit pris en
+charge lui aussi**.
+
+**1. `copy … tftp:` est un vrai transfert.** Le lot 1 avait laissé la
+commande sur un refus honnête faute d'un client. La cause n'était pas
+le protocole — `src/network/tftp/` est un client ET un serveur RFC 1350
+complets — mais un TYPE : `TftpClientSession` était écrit contre
+`EndHost`, ce qu'un routeur n'est pas et ne sera jamais, alors que
+`copy running-config tftp:` est une commande de routeur avant d'être une
+commande d'hôte. `TftpEndpoint` (quatre membres : port éphémère,
+`udpBind`, `udpClose`, `sendUdpDatagramTo`) l'en dégage ; `EndHost` le
+satisfait déjà, à un délégué près.
+
+**Ce qui manquait vraiment était côté équipement, et des deux côtés :**
+le répartiteur UDP de `Router.processIPv4` connaît RIP, DHCP, IKE et
+IP SLA — chacun par une comparaison de port écrite dans le corps de la
+méthode — et laissait tomber tout le reste, donc **aucun port ne pouvait
+être ouvert par le plan de contrôle**. C'est exactement ce qu'il faut
+ici : un client TFTP écoute un port éphémère et reçoit la réponse depuis
+le port éphémère du serveur (le « Transfer ID », RFC 1350 §4), que
+personne ne peut connaître à l'avance. `RouterUdpEndpoint` est cette
+table, et **rien de plus** — ce n'est délibérément pas une `SocketTable`,
+dont la moitié sert `netstat`/`ss`, que ces plateformes n'ont pas.
+**Le Catalyst avait le même trou** : `SwitchSvi` livrait localement le
+DHCP et laissait tomber tout autre UDP en silence. Il porte le MÊME
+`RouterUdpEndpoint` — deux tables auraient fini par donner deux réponses
+à la même question.
+
+**2. Le registre de configuration n'est pas une notion de Catalyst.**
+Mesuré et vérifié plutôt que supposé : sur un 2960/3560 de configuration
+fixe, `config-register` n'existe pas en configuration globale et la
+valeur de `show version` (`0xF`) est décorative — la récupération passe
+par le bouton MODE et `rename flash:config.text`. Le simulateur
+l'acceptait quand même, si bien que `show version` annonçait `0xF`
+pendant que `show boot` de la MÊME machine annonçait
+`0x2102 (will be 0x2142 at next reload)` : deux magasins pour un fait,
+dont l'un ne pouvait rien décider. La commande est refusée sur le
+Catalyst, `show boot` y rend la vue du Catalyst (chemins de fichiers,
+`Enable Break`, `Manual Boot`), et `boot enable-break` / `boot manual`
+existent puisque ce sont les deux seuls réglages qu'un opérateur peut
+changer là.
+
+**Trois défauts trouvés en chemin, tous corrigés :**
+
+- **`applyPendingConfigRegister()` et `ignoreStartupConfig()` étaient
+  écrites, documentées, et appelées par PERSONNE** — c'est-à-dire que
+  `config-register 0x2142` puis `reload` rechargeait la configuration
+  sauvegardée comme si le bit 0x40 n'existait pas. La moitié du chapitre
+  « mot de passe oublié » ne pouvait pas se faire. La ROM lit le registre
+  au démarrage et nulle part ailleurs ; la sauvegarde reste INTACTE dans
+  `nvram:`, elle n'est simplement pas chargée, ce qui est tout le point.
+- **Le switch ne rendait pas sa configuration dans l'ordre d'IOS** :
+  `service timestamps` sortait APRÈS les interfaces, et l'en-tête
+  n'annonçait aucune taille. Il lit désormais le MÊME
+  `orderCiscoConfigBlocks` que le routeur. Ce faisant, la règle « une
+  suite de commandes globales partage un `!` » s'est révélée fausse pour
+  un bloc qui OUVRE un mode : les interfaces nues d'un Catalyst se
+  retrouvaient collées sans séparateur, ce qu'IOS n'écrit jamais.
+- **`write memory` rendait deux textes selon la plateforme** (`[OK]` seul
+  sur le switch, `Building configuration...` + `[OK]` sur le routeur)
+  pour une commande qu'IOS n'a qu'en un exemplaire.
+
+**Une limite mesurée et écrite** : le budget de retransmission de ce
+chemin est 2 essais à 1 s, pas les 5 × 5 s de la RFC. `TransferIo` arme
+un `setTimeout` d'horloge RÉELLE et non un minuteur du `Scheduler` ; un
+serveur injoignable figerait le terminal vingt-cinq secondes sans une
+ligne de sortie, ce transcript ne montrant pas les points d'attente au
+fur et à mesure. Le protocole est inchangé.
+
+**Fichiers touchés** : `tftp/types.ts`, `tftp/TftpSession.ts`,
+`devices/EndHost.ts`, `devices/Router.ts`, `devices/Switch.ts`,
+`devices/SwitchSvi.ts`, `router/RouterUdpEndpoint.ts` (nouveau),
+`shells/CiscoShellBase.ts`, `shells/CiscoIOSShell.ts`,
+`shells/CiscoSwitchShell.ts`, `shells/cisco/CiscoTftpCopy.ts` (nouveau),
+`shells/cisco/CiscoFileSystem.ts`, `shells/cisco/ciscoConfigSerializer.ts`,
+`shells/cisco/ciscoArgumentHelp.ts`.
+
+**Mesures.** `cisco-copy-tftp-sur-le-fil.test.ts` (8 cas) discriminé par
+restauration des neuf fichiers : **8 tombent** avant. La sonde relit le
+fichier depuis le système de fichiers DU SERVEUR et compte les trames
+sur le câble — sans ce témoin, une commande qui répond `[OK]` sans rien
+émettre passerait, ce qui est précisément le défaut visé.
+
+**Quatre tests existants corrigés, jamais le code** : ils encodaient
+l'ancien comportement. `probe-archive-et-rate-limit` pinnait le format
+maison de `show archive` ; `probe-ios-01-systeme-de-fichiers` attendait
+le registre appliqué IMMÉDIATEMENT ; `router-config-persistence`
+attendait `[OK]` pour une copie VERS running-config (IOS y compte les
+octets, `[OK]` appartient au sens inverse) ; `probe-cli-commandes-
+universelles` a démasqué un vrai défaut, `| redirect` écrivant dans un
+autre `flash:` que celui que `more` lit, faute d'avoir posé la référence
+d'appareil avant de demander le système de fichiers.
+
+**Reste ouvert, non pris** : `ftp:`/`scp:` (aucun client sur ces
+plateformes), les applets EEM du chapitre 8 (déclenchement non vérifié),
+`show archive log config last N`, et ROMMON.
+
+---
+
+
 ### Tab lit la MÊME règle que `?` — LIVRÉ (suite de l'audit)
 
 **Agent** : session « logging ». L'utilisateur a signalé, à juste titre,

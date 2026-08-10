@@ -50,6 +50,7 @@ import { IpPrefixListStore } from './router/policy/IpPrefixList';
 import { RoutePolicyStore } from './router/policy/RoutePolicy';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
 import { NqaService } from '../nqa/NqaService';
+import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
 import { Port, LOOPBACK_MTU, LOOPBACK_BW_KBPS, LOOPBACK_DELAY_US } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -67,6 +68,7 @@ import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
+import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { evaluateIpv6Acl } from './router/Ipv6AclEngine';
 
 /** One probe of one hop, as both traceroute implementations report it. */
@@ -2374,6 +2376,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp);
       } else if (this.ipSlaEngine.handleUdp(ipPkt.sourceIP, udp)) {
         return;
+      } else if (this.udpEndpoint?.deliver(
+        ipPkt.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
+      )) {
+        return;
       }
       // Other UDP ports silently dropped (no DNS/DHCP/etc. yet)
     }
@@ -3532,6 +3538,46 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this._systemClockOverrideMs + (Date.now() - this._systemClockSetAtMs);
   }
 
+  /**
+   * La PROVENANCE de la configuration : quand la running-config a
+   * changé pour la dernière fois et par qui, et quand la NVRAM a été
+   * écrite pour la dernière fois et par qui.
+   *
+   * IOS écrit ces deux lignes en tête de `show running-config` et de
+   * `show startup-config`, et l'écart entre elles est LE signal d'audit
+   * du chapitre : deux dates différentes veulent dire que quelqu'un a
+   * modifié sans sauvegarder. Elles n'existaient pas ici, donc la
+   * question ne pouvait pas être posée à la machine.
+   */
+  private _configChangedAtMs: number | null = null;
+  private _configChangedBy: string | null = null;
+  private _nvramWrittenAtMs: number | null = null;
+  private _nvramWrittenBy: string | null = null;
+
+  _noteConfigChange(user: string): void {
+    this._configChangedAtMs = this.getSystemClockMs();
+    this._configChangedBy = user;
+  }
+  _noteNvramWrite(user: string): void {
+    this._nvramWrittenAtMs = this.getSystemClockMs();
+    this._nvramWrittenBy = user;
+    // Sauvegarder rend les deux dates égales : c'est exactement ce que
+    // l'auditeur vérifie.
+    if (this._configChangedAtMs === null) {
+      this._configChangedAtMs = this._nvramWrittenAtMs;
+      this._configChangedBy = user;
+    }
+  }
+  _getConfigProvenance(): {
+    changedAtMs: number | null; changedBy: string | null;
+    nvramAtMs: number | null; nvramBy: string | null;
+  } {
+    return {
+      changedAtMs: this._configChangedAtMs, changedBy: this._configChangedBy,
+      nvramAtMs: this._nvramWrittenAtMs, nvramBy: this._nvramWrittenBy,
+    };
+  }
+
   private _startupConfigSnapshot: string | null = null;
   private readonly _hostnameUsine = this.name;
   _captureStartupConfig(snapshot: string): void { this._startupConfigSnapshot = snapshot; }
@@ -4132,11 +4178,88 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected ftpServerEnabled = false;
   private ftpServer: FtpServer | null = null;
-  private flashFiles = new Map<string, string>();
+  private ciscoFs: CiscoFileSystem | null = null;
+  private udpEndpoint: RouterUdpEndpoint | null = null;
 
-  _writeFlashFile(name: string, content: string): void { this.flashFiles.set(name, content); }
-  _readFlashFile(name: string): string | null { return this.flashFiles.get(name) ?? null; }
-  _listFlashFiles(): readonly string[] { return [...this.flashFiles.keys()]; }
+  /**
+   * Les ports UDP que le plan de contrôle de CETTE machine tient
+   * ouverts. Construit à la demande : un routeur qui ne fait aucune
+   * copie réseau n'a aucun port éphémère et ne paie rien.
+   */
+  getUdpEndpoint(): RouterUdpEndpoint {
+    if (!this.udpEndpoint) {
+      this.udpEndpoint = new RouterUdpEndpoint({
+        sendUdpBytes: (dst, dstPort, srcPort, payload) =>
+          this.sendUdpBytesThroughFib(dst, dstPort, srcPort, payload),
+      });
+    }
+    return this.udpEndpoint;
+  }
+
+  /**
+   * Un datagramme d'octets émis à travers la FIB, comme `_sendIkeUdp` le
+   * fait pour IKE. La somme de contrôle est nulle : c'est la clause de
+   * retrait d'IPv4 de la RFC 768, et c'est ce que font déjà tous les
+   * agents internes de ce simulateur.
+   */
+  private sendUdpBytesThroughFib(
+    destination: IPAddress, destinationPort: number,
+    sourcePort: number, payload: Uint8Array,
+  ): boolean {
+    const route = this.lookupRoute(destination);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    const sourceIp = egress?.getIPAddress();
+    if (!egress || !sourceIp || !egress.isOperationallyUp()) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort,
+      length: 8 + payload.length, checksum: 0, payload,
+    };
+    const packet = createIPv4Packet(
+      sourceIp, destination, IP_PROTO_UDP, 64, udp, 8 + payload.length,
+    );
+    const arpHit = this.arpTable.get((route.nextHop ?? destination).toString())
+      ?? this.arpTable.get(destination.toString());
+    this.sendFrame(route.iface, {
+      srcMAC: egress.getMAC(),
+      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: packet,
+    });
+    return true;
+  }
+
+  /**
+   * Le `flash:`/`nvram:` de CETTE machine, partagé par toutes ses
+   * sessions. Il vivait sur le shell, donc `createVtyShell()` en donnait
+   * un neuf à chaque session SSH : un fichier copié depuis la console
+   * n'existait pas pour SSH, et réciproquement.
+   *
+   * Le profil châssis vient du shell, seul à le connaître ; il n'est lu
+   * qu'à la création, la machine ne changeant pas de châssis.
+   */
+  _getCiscoFileSystem(
+    profile: import('./shells/cisco/CiscoCommonShow').CiscoChassisProfile,
+  ): CiscoFileSystem {
+    if (!this.ciscoFs) this.ciscoFs = new CiscoFileSystem(profile);
+    return this.ciscoFs;
+  }
+
+  /**
+   * Les trois accesseurs que le serveur FTP/SFTP et `copy` utilisent.
+   * Ils écrivaient dans une Map À PART, si bien que
+   * `copy running-config flash:X` répondait `[OK]` et que `dir flash:`
+   * ne montrait rien : deux magasins pour un seul `flash:`.
+   */
+  _writeFlashFile(name: string, content: string): void {
+    this._getCiscoFileSystem('router-isr2911').write(name, content);
+  }
+  _readFlashFile(name: string): string | null {
+    return this._getCiscoFileSystem('router-isr2911').read(name);
+  }
+  _listFlashFiles(): readonly string[] {
+    return this._getCiscoFileSystem('router-isr2911').list().map((f) => f.name);
+  }
 
   isFtpServerEnabled(): boolean { return this.ftpServerEnabled; }
 

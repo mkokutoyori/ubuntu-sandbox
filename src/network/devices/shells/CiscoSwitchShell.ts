@@ -26,6 +26,7 @@ import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import { showInterface } from './cisco/CiscoShowCommands';
+import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
@@ -286,10 +287,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   protected getPromptMap(): PromptMap { return CISCO_SWITCH_PROMPTS; }
 
+  /**
+   * `write memory` sur un Catalyst ecrit `Building configuration...`
+   * avant `[OK]`, exactement comme sur un routeur — la meme commande
+   * rendait deux textes selon la plateforme, alors qu'IOS n'en a qu'un.
+   */
   protected onSave(): string {
     const out = this.d().writeMemory();
     this.archiveAfterSave();
-    return out;
+    return out === '[OK]' ? 'Building configuration...\n[OK]' : out;
   }
 
   protected getActiveTrie(): CommandTrie {
@@ -3396,8 +3402,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push(...unhandled);
     }
 
-    lines.push('end');
-    return lines.join('\n');
+    // Le routeur ordonne ses blocs et compte ses octets ; le switch ne
+    // faisait ni l'un ni l'autre, si bien que `service timestamps`
+    // sortait APRES les interfaces — un ordre qu'IOS ne produit sur
+    // aucune plateforme — et que l'en-tete annoncait une configuration
+    // sans taille. C'est la MEME regle qui sert les deux, pas une
+    // seconde : deux ordres possibles pour une meme configuration
+    // seraient exactement le defaut qu'on referme ailleurs.
+    const header = lines.slice(0, 4);
+    const ordered = orderCiscoConfigBlocks(lines.slice(4));
+    const assembled = [...header, ...ordered, 'end'];
+    const body = assembled.slice(4).join('\n');
+    assembled[2] = `Current configuration : ${new TextEncoder().encode(body).length + 1} bytes`;
+    return assembled.join('\n');
   }
 
   private renderSviFhrpLines(sw: CiscoSwitch, vlan: number): string[] {
