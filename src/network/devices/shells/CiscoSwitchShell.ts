@@ -27,6 +27,7 @@ import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRen
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
+  ipIntBriefRowsFromPorts, renderIpIntBrief,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
@@ -4901,27 +4902,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   /** `show ip interface brief` — the switch carries IPs only on SVIs. */
   private showIpInterfaceBrief(): string {
-    const header = 'Interface              IP-Address      OK? Method Status                Protocol';
-    const row = (name: string, ip: string, method: string, status: string, proto: string) =>
-      `${name.padEnd(23)}${ip.padEnd(16)}YES ${method.padEnd(6)} ${status.padEnd(22)}${proto}`;
-    const rows: string[] = [];
-
-    for (const [portName, port] of this.d()._getPortsInternal()) {
-      const status = !port.getIsUp()
-        ? 'administratively down'
-        : (port.isConnected() ? 'up' : 'down');
-      const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
-      rows.push(row(portName, 'unassigned', 'unset', status, proto));
-    }
-
+    const rows = ipIntBriefRowsFromPorts(this.d()._getPortsInternal());
     for (const svi of this.d().getSvis()) {
-      const ip = svi.ip ? svi.ip.toString() : 'unassigned';
-      const method = svi.ip ? 'manual' : 'unset';
-      const status = svi.adminUp ? 'up' : 'administratively down';
-      const proto = svi.adminUp && this.d().isSviLineUp(svi) ? 'up' : 'down';
-      rows.push(row(`Vlan${svi.vlan}`, ip, method, status, proto));
+      rows.push({
+        name: `Vlan${svi.vlan}`,
+        ip: svi.ip ? svi.ip.toString() : 'unassigned',
+        method: svi.ip ? 'manual' : 'unset',
+        status: svi.adminUp ? 'up' : 'administratively down',
+        protocol: svi.adminUp && this.d().isSviLineUp(svi) ? 'up' : 'down',
+      });
     }
-    return [header, ...rows].join('\n');
+    return renderIpIntBrief(rows, 23);
   }
 
   /**

@@ -261,16 +261,39 @@ export function renderIpRouteTable(
   return lines.join('\n');
 }
 
-export function showIpIntBrief(router: Router): string {
-  const ports = router._getPortsInternal();
-  const lines = ['Interface                  IP-Address      OK? Method Status                Protocol'];
+export interface IpIntBriefRow {
+  name: string;
+  ip: string;
+  method: string;
+  status: string;
+  protocol: string;
+}
+
+export function ipIntBriefRowsFromPorts(ports: ReadonlyMap<string, Port>): IpIntBriefRow[] {
+  const rows: IpIntBriefRow[] = [];
   for (const [name, port] of ports) {
-    const ip = port.getIPAddress()?.toString() || 'unassigned';
     const { status, protocol } = iosInterfaceStatus(port, name, ports);
-    const method = iosAddressMethod(port).padEnd(6);
-    lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES ${method} ${status.padEnd(22)}${protocol}`);
+    rows.push({
+      name,
+      ip: port.getIPAddress()?.toString() || 'unassigned',
+      method: iosAddressMethod(port),
+      status,
+      protocol,
+    });
+  }
+  return rows;
+}
+
+export function renderIpIntBrief(rows: readonly IpIntBriefRow[], nameWidth: number): string {
+  const lines = [`${'Interface'.padEnd(nameWidth)}${'IP-Address'.padEnd(16)}OK? Method Status                Protocol`];
+  for (const r of rows) {
+    lines.push(`${r.name.padEnd(nameWidth)}${r.ip.padEnd(16)}YES ${r.method.padEnd(6)} ${r.status.padEnd(22)}${r.protocol}`);
   }
   return lines.join('\n');
+}
+
+export function showIpIntBrief(router: Router): string {
+  return renderIpIntBrief(ipIntBriefRowsFromPorts(router._getPortsInternal()), 27);
 }
 
 /** IOS prints the ARP timeout as hh:mm:ss (default 04:00:00). */
