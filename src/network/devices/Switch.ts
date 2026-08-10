@@ -2744,13 +2744,13 @@ export abstract class Switch extends Equipment {
    */
   private attachLoggingBus(bus: import('@/events/EventBus').IEventBus): void {
     const shell = this.shell as unknown as {
-      attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string) => void;
+      attachLoggingToBus?: (b: import('@/events/EventBus').IEventBus, id: string, d?: unknown) => void;
       getLoggingConfig?: () => {
         setDebugGate: (g: (tag: string) => boolean) => void;
         recordDebugLine: (text: string) => string;
       } | undefined;
     };
-    shell.attachLoggingToBus?.(bus, this.id);
+    shell.attachLoggingToBus?.(bus, this.id, this);
     const dev = this as unknown as {
       getDebugService?: () => {
         isEnabledForSyslogTag: (t: string) => boolean;

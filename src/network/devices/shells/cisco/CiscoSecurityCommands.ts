@@ -1342,18 +1342,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     ].join('\n')).join('\n\n');
   });
 
-  trie.register('show ssh', 'Display SSH connections', () => {
-    const reg = (getRouter() as unknown as { getSshSessionRegistry?: () =>{ list: () => readonly { line: string; lineIndex: number; user: string; fromIp: string; loginAt: number; idleSeconds: number }[] } | null }).getSshSessionRegistry?.();
-    if (!reg) return 'No SSHv2 server connections running.';
-    const active = reg.list();
-    if (active.length === 0) return 'No SSHv2 server connections running.';
-    const header = 'Connection Version Mode Encryption           Hmac      State                 Username';
-    const rows = active.map(s =>
-      `${String(s.lineIndex).padEnd(11)}2.0     IN   aes256-ctr           sha256    Session started       ${s.user}`
-    );
-    return [header, ...rows].join('\n');
-  });
-
   trie.register('show policy-map control-plane', 'Show CoPP policy', () => {
     const s = sec();
     const pm = s.controlPlane.servicePolicyInput;

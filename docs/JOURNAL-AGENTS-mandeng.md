@@ -4505,6 +4505,57 @@ ils n'existent nulle part), l'epuisement des VTY, et la divergence de
 
 ---
 
+## Lot S2 — les trois points que S1 laissait ouverts
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Les trois points ouverts ».
+
+**Une de mes affirmations etait fausse et est corrigee.** J'avais ecrit
+que les messages de session « n'existent nulle part ». Faux pour la
+moitie, et pire pour l'autre : `%SEC_LOGIN-5-LOGIN_SUCCESS` et
+`%SEC_LOGIN-4-LOGIN_FAILED` EXISTAIENT, emis INCONDITIONNELLEMENT —
+alors qu'un vrai IOS ne les produit QUE apres `login on-success log` /
+`login on-failure log`. Les deux drapeaux etaient ranges, rendus dans la
+configuration, et lus par PERSONNE : la machine journalisait ce qu'une
+vraie tait, et la commande qui gouverne la trace ne gouvernait rien.
+Leur formulation etait fausse aussi (`[localport:]` absent, `Login
+Failed` au lieu de `Login failed`, motif entre parentheses au lieu de
+`[Reason: ...]`). **`%SYS-6-LOGOUT` n'existait vraiment nulle part.**
+
+Deux decisions : `%SYS-6-LOGOUT` n'est PAS gouverne par le drapeau
+d'ouverture — ce sont deux mecanismes distincts, et les lier ferait
+disparaitre la moitie de la piste d'audit ; et la politique est LUE a
+chaque message plutot que copiee.
+
+**Trouve en cablant** : `attachLoggingToDevice`, l'endroit evident, n'est
+appele que sur les chemins de REDEMARRAGE — donc presque jamais.
+Attachee la, la porte restait fermee sur une machine qui venait de taper
+la commande. Elle est posee a l'attache au BUS.
+
+**L'epuisement des VTY fonctionnait deja** (capacite lue sur la plage
+`line vty`, `hasFreeLine` gardant l'admission) : les cas le PINCENT, ils
+ne le corrigent pas, et le fichier le dit.
+
+**`show ssh` avait DEUX implementations** : celle du socle rendait un
+en-tete et une phrase CONSTANTS (aucun registre lu, donc aucune session
+annoncable, jamais), celle du routeur lisait le vrai registre mais sans
+le `%`. Il n'en reste qu'une, la ligne SSHv1 est toujours ecrite, et le
+commutateur repond dans les MEMES mots (pince par test).
+
+**Fichiers touches** : `inspection/config/LoggingConfig.ts`,
+`shells/CiscoShellBase.ts`, `shells/IRouterShell.ts`,
+`shells/CiscoSwitchShell.ts`, `shells/cisco/CiscoCommonShow.ts`,
+`shells/cisco/CiscoSecurityCommands.ts`, `devices/Router.ts`,
+`devices/Switch.ts`.
+
+**Mesures.** `tuto-sessions-journal-et-lignes.test.ts` (17 cas)
+discrimine par `git stash` : **10 tombent** avant. 12 suites connexes
+vertes (318 cas), 6 cas Playwright verts. Typecheck 119, lint identique.
+**Reste ouvert** : `Uses` toujours a 0 (rien ne compte les connexions par
+ligne), et `show ssh` decrit un chiffrement (`aes256-ctr`/`sha256`) qui
+n'est pas negocie.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -4524,7 +4575,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 | Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
-| Sessions Cisco (lignes, délais, `send`, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 livré** — 3 points ouverts |
+| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 + S2 livrés** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

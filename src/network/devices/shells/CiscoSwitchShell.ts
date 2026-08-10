@@ -4107,7 +4107,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...base,
       beforeApply: () => {
         base.beforeApply?.();
-        this.attachLoggingToBus(this.d().getBus(), this.d().id);
+        this.attachLoggingToBus(this.d().getBus(), this.d().id, this.d());
       },
       showSuffix: () => this.d()._getSnoopingLog().join('\n'),
     };

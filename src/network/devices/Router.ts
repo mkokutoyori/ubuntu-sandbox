@@ -3700,7 +3700,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * must stop on `undebug all`.
    */
   private attachLoggingBus(bus: import('@/events/EventBus').IEventBus): void {
-    this.shell.attachLoggingToBus?.(bus, this.id);
+    this.shell.attachLoggingToBus?.(bus, this.id, this);
     const journal = this.shell.getLoggingConfig?.();
     if (journal) {
       (this as unknown as { _loggingConfig?: unknown })._loggingConfig = journal;

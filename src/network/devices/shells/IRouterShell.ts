@@ -29,7 +29,14 @@ export interface IRouterShell {
   /** All full-line Tab candidates (static keywords + live device values) */
   tabCandidates(input: string, router: Router): string[];
   /** Attach the shell's logging config to a bus for event-driven syslog buffering. */
-  attachLoggingToBus?(bus: import('@/events/EventBus').IEventBus, deviceId: string): void;
+  /**
+   * `device` est optionnel parce que VRP n'en a pas besoin : cote Cisco
+   * il porte la politique de `login on-*-log`, que seul l'appareil
+   * connait.
+   */
+  attachLoggingToBus?(
+    bus: import('@/events/EventBus').IEventBus, deviceId: string, device?: unknown,
+  ): void;
   /** The shell's logging config — source of the `terminal monitor` syslog stream. */
   getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
   /**

@@ -1009,11 +1009,37 @@ export function showIpSsh(ssh?: {
   return lines.join('\n');
 }
 
-export function showSshSessions(): string {
-  return [
-    'Connection Version Mode Encryption  Hmac  State  Username',
-    '%No SSHv2 server connections running.',
-  ].join('\n');
+/**
+ * `show ssh` — les sessions SSH vivantes.
+ *
+ * Il y en avait DEUX implementations, donc deux reponses a une seule
+ * question. Celle du socle rendait un en-tete et une phrase CONSTANTS :
+ * elle ne lisait aucun registre et ne pouvait donc annoncer aucune
+ * session, jamais. Celle du routeur lisait le vrai registre mais
+ * ecrivait la phrase SANS le `%` — si bien que la meme commande, au meme
+ * instant, se presentait autrement selon la plateforme.
+ *
+ * Ici il n'y en a qu'une. Le `%` est celui d'IOS, et **la ligne SSHv1
+ * est toujours ecrite** : une vraie machine rend les deux sections, et
+ * c'est cette ligne qui dit a un operateur que la version 1 — celle
+ * qu'on veut voir absente — n'est pas en service.
+ *
+ * Un commutateur n'a pas de registre de sessions parce qu'il n'a pas de
+ * pile TCP (limite deja ecrite pour le serveur HTTP) : il repond donc
+ * « aucune connexion », ce qui est la verite et non un repli.
+ */
+export function showSshSessions(registre?: {
+  list: () => readonly { lineIndex: number; user: string }[];
+} | null): string {
+  const actives = registre?.list() ?? [];
+  const finV1 = '%No SSHv1 server connections running.';
+  if (actives.length === 0) {
+    return ['%No SSHv2 server connections running.', finV1].join('\n');
+  }
+  const entete = 'Connection Version Mode Encryption           Hmac      State                 Username';
+  const rangs = actives.map((s) =>
+    `${String(s.lineIndex).padEnd(11)}2.0     IN   aes256-ctr           sha256    Session started       ${s.user}`);
+  return [entete, ...rangs, finV1].join('\n');
 }
 
 export function showHosts(router?: { _getHostsTable?: () => import('../../router/dns/RouterHostsTable').RouterHostsTable; getManagementService?: () => { domainName: string; ipDomainLookupEnabled: boolean; nameServers: string[] } }): string {

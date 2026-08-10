@@ -129,22 +129,77 @@ sur aucun objet — `CliShellSession` ne porte que `lineId` (« vty 3 »).
 Une seule méthode, `numeroDeLigne()`, sert maintenant la bannière et
 l'abonnement aux messages.
 
-## Laissé ouvert, mesuré et écrit plutôt que tu
+## Les trois points ouverts — traités (lot S2)
 
-- **Les messages `%SYS-6-LOGOUT` / `%SEC_LOGIN-5-LOGIN_SUCCESS` /
-  `%SEC_LOGIN-4-LOGIN_FAILED`** (§9.1) n'existent nulle part dans le
-  dépôt. Toute la partie 9 et le diagnostic du scénario 1 reposent
-  dessus. C'est un chantier à part entière — il touche le journal, pas
-  les lignes — et il n'est pas fait ici.
-- **L'épuisement des VTY** (§2.2, scénario 1) : le refus quand toutes les
-  lignes sont prises n'est pas vérifié par ce lot.
-- **`show ssh` diverge entre les deux plateformes** : le routeur répond
-  `No SSHv2 server connections running.` sans en-tête ni `%`, le
-  commutateur rend l'en-tête *et* le message. Deux rendus d'une même
-  commande, donc au moins un des deux est faux.
+### 1. Le journal de session, et une affirmation à corriger
+
+J'avais écrit que les messages « n'existent nulle part ». **C'était faux
+pour la moitié, et pire pour l'autre.**
+
+`%SEC_LOGIN-5-LOGIN_SUCCESS` et `%SEC_LOGIN-4-LOGIN_FAILED` **existaient**
+— mais émis **inconditionnellement**, alors qu'un vrai IOS ne les produit
+QUE si l'opérateur a tapé `login on-success log` / `login on-failure log`
+(introduites en 12.3 pour cela). Les deux drapeaux existaient, étaient
+rendus dans la configuration, et n'étaient **lus par personne** : la
+machine journalisait donc ce qu'une vraie tait, et la commande qui
+gouverne la trace ne gouvernait rien.
+
+Leur formulation était fausse aussi. Relevée sur transcriptions réelles :
+
+```
+%SEC_LOGIN-5-LOGIN_SUCCESS: Login Success [user: X] [Source: Y] [localport: 22]
+%SEC_LOGIN-4-LOGIN_FAILED: Login failed [user: X] [Source: Y] [localport: 22] [Reason: Z]
+%SYS-6-LOGOUT: User X has exited tty session N(Y)
+```
+
+`[localport:]` manquait aux deux, l'échec s'écrivait `Login Failed` au
+lieu de `Login failed`, et son motif était entre parenthèses au lieu de
+`[Reason: …]`. **`%SYS-6-LOGOUT`, lui, n'existait vraiment nulle part** —
+la moitié « fermeture » de « qui s'est connecté, quand, depuis où ». Les
+supports de cours lui ajoutent souvent un motif et une durée (« with
+timeout after 00:15:00 ») qu'aucune vraie machine n'écrit sur cette ligne.
+
+Deux décisions : **`%SYS-6-LOGOUT` n'est PAS gouverné par
+`login on-success log`** (ce sont deux mécanismes distincts sur une vraie
+machine, et lier la fermeture au drapeau d'ouverture ferait disparaître la
+moitié de la piste d'audit) ; et la politique est **lue à chaque message**
+plutôt que copiée, pour qu'une commande tapée après l'attache prenne effet.
+
+**Trouvé en câblant** : `attachLoggingToDevice` — l'endroit évident où
+poser la politique — n'est appelé que sur les chemins de redémarrage,
+donc presque jamais. Attachée là, la porte restait fermée sur une machine
+qui venait pourtant de taper la commande. Elle est posée à l'attache au
+**bus**, que le routeur comme le commutateur appellent à la construction.
+
+### 2. L'épuisement des VTY — il fonctionnait déjà
+
+La capacité vient de la plage `line vty` configurée
+(`VtyLineConfigStore.lineCapacity`) et `hasFreeLine` garde l'admission via
+`VtyIncomingPolicy`. Mesuré : 5 lignes avec `line vty 0 4`, 16 après
+`line vty 5 15`, et `clear line vty 2` en libère une. Les cas du lot S2
+**pincent** ce mécanisme, ils ne le corrigent pas — le dire vaut mieux que
+de les présenter comme une correction.
+
+### 3. `show ssh` avait deux implémentations
+
+Donc deux réponses à une question. Celle du socle rendait un en-tête et
+une phrase **constants** : elle ne lisait aucun registre, donc ne pouvait
+annoncer aucune session, jamais. Celle du routeur lisait le vrai registre
+mais écrivait sa phrase **sans le `%`**. Il n'en reste qu'une, et **la
+ligne SSHv1 est toujours écrite** — une vraie machine rend les deux
+sections, et c'est cette ligne qui dit qu'une version qu'on veut voir
+absente l'est bien. Un commutateur répond « aucune connexion » parce
+qu'il n'a pas de pile TCP : c'est la vérité, pas un repli, et il le dit
+désormais dans les mêmes mots que le routeur (pincé par test).
+
+## Reste ouvert
+
 - **`Uses`** est toujours 0 : rien ne compte les connexions par ligne
   depuis le démarrage. Le champ est rendu parce qu'il fait partie du
   tableau, pas parce qu'il mesure quelque chose.
+- **`show ssh` décrit un chiffrement qui n'est pas négocié** : `aes256-ctr`
+  et `sha256` sont écrits en dur pour toute session. La colonne existe,
+  la négociation qu'elle décrirait n'a pas lieu ici.
 
 ---
 
@@ -158,3 +213,9 @@ Régressions connexes : 12 suites (lignes, bannières, tableaux CLI, accès,
 `show` communes), **474 cas verts**. Typecheck : **119** hors tests, un de
 moins que la référence de 120 — le `lineIndex` corrigé. Lint : identique
 (les 2 erreurs de `TerminalSession.ts` préexistent).
+
+**Lot S2** — `tuto-sessions-journal-et-lignes.test.ts`, **17 cas**,
+discriminé par `git stash` : **10 tombent** avant correctif. Les 7 autres
+sont les cas d'épuisement des VTY (mécanisme préexistant) et les refus.
+12 suites connexes vertes (**318 cas**), 6 cas Playwright verts.
+Typecheck 119, lint identique.

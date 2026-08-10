@@ -311,6 +311,24 @@ export function bareTimestampSpec(): TimestampSpec {
  * the timestamps stay truthful instead of the format silently changing
  * platform.
  */
+/**
+ * Ce que `login on-success log` / `login on-failure log` decident.
+ *
+ * Les deux messages `%SEC_LOGIN-*` etaient emis INCONDITIONNELLEMENT,
+ * alors qu'un vrai IOS ne les produit QUE si l'operateur a demande ces
+ * commandes — introduites en 12.3 precisement pour cela. Les drapeaux
+ * existaient, etaient rendus par la configuration, et n'etaient LUS par
+ * personne : la machine journalisait donc ce qu'une vraie tait, et la
+ * commande qui gouverne la trace ne gouvernait rien.
+ *
+ * Le port est etroit a dessein : ce module ne doit pas connaitre
+ * `CiscoSecurityConfig`, il doit connaitre la reponse a deux questions.
+ */
+export interface LoginLoggingPolicy {
+  logSuccess(): boolean;
+  logFailure(): boolean;
+}
+
 export interface LoggingClockSource {
   /** Milliseconds since this device booted — the `uptime` form. */
   uptimeMs(): number;
@@ -548,6 +566,7 @@ export class LoggingConfig {
     log: defaultTimestampSpec(),
   };
   private clock: LoggingClockSource | null = null;
+  private loginPolicy: LoginLoggingPolicy | null = null;
   readonly hostConfigs: SyslogHostConfig[] = [];
 
   /** Les adresses seules, pour qui n'a que faire du transport. */
@@ -565,6 +584,13 @@ export class LoggingConfig {
   }> = [];
 
   attachClockSource(source: LoggingClockSource): void { this.clock = source; }
+
+  /**
+   * Sans politique attachee, rien n'est journalise — c'est le defaut
+   * d'IOS, ou ces deux commandes sont absentes d'une configuration
+   * neuve. Un commutateur qui n'attache rien se tait donc, comme il doit.
+   */
+  attachLoginLoggingPolicy(p: LoginLoggingPolicy): void { this.loginPolicy = p; }
 
   timestampSpec(channel: TimestampChannel): Readonly<TimestampSpec> {
     return this.horodatage[channel];
@@ -1161,15 +1187,26 @@ export class LoggingConfig {
         this.append('notifications', 'glbp',
           `${p.iface ?? '?'} Grp ${p.group ?? 0} AVG state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`, true, 'STATECHANGE');
       }),
+      // Formulation d'IOS, relevee sur des transcriptions reelles :
+      // `[localport: N]` manquait aux deux, l'echec s'ecrit `Login
+      // failed` en minuscule et porte son motif ENTRE CROCHETS
+      // (`[Reason: ...]`) et non entre parentheses.
       bus.subscribeWhere('router.aaa.account.login.success', isOurs, (e) => {
-        const p = e.payload as unknown as { account?: { name?: string }; from?: string };
+        if (!this.loginPolicy?.logSuccess()) return;
+        const p = e.payload as unknown as { account?: { name?: string }; from?: string; localPort?: number };
         this.append('notifications', 'sec_login',
-          `Login Success [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}]`, true, 'LOGIN_SUCCESS');
+          `Login Success [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}]`
+          + ` [localport: ${p.localPort ?? 22}]`, true, 'LOGIN_SUCCESS');
       }),
       bus.subscribeWhere('router.aaa.account.login.failure', isOurs, (e) => {
-        const p = e.payload as unknown as { account?: { name?: string }; from?: string; reason?: string };
+        if (!this.loginPolicy?.logFailure()) return;
+        const p = e.payload as unknown as {
+          account?: { name?: string }; from?: string; reason?: string; localPort?: number;
+        };
         this.append('warnings', 'sec_login',
-          `Login Failed [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}] (${p.reason ?? 'invalid credentials'})`, true, 'LOGIN_FAILED');
+          `Login failed [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}]`
+          + ` [localport: ${p.localPort ?? 22}]`
+          + ` [Reason: ${p.reason ?? 'Login Authentication Failed'}]`, true, 'LOGIN_FAILED');
       }),
       bus.subscribeWhere('router.aaa.account.locked', isOurs, (e) => {
         const p = e.payload as unknown as { account?: { name?: string; lockReason?: string | null } };
@@ -1182,9 +1219,23 @@ export class LoggingConfig {
           `Session opened for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'} from ${p.session?.fromIp ?? '?'}`, true, 'SSH2_SESSION');
       }),
       bus.subscribeWhere('router.ssh.session.closed', isOurs, (e) => {
-        const p = e.payload as unknown as { session?: { user?: string; line?: string; closeReason?: string | null } };
+        const p = e.payload as unknown as {
+          session?: { user?: string; line?: string; lineIndex?: number; fromIp?: string; closeReason?: string | null };
+        };
         this.append('informational', 'ssh',
           `Session closed for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'}${p.session?.closeReason ? ` (${p.session.closeReason})` : ''}`, true, 'SSH2_CLOSE');
+        // `%SYS-6-LOGOUT` n'existait NULLE PART, alors que c'est la seule
+        // trace disant qui est parti et depuis quelle ligne — la moitie
+        // fermeture de « qui s'est connecte, quand, depuis ou ».
+        //
+        // La formulation est celle d'IOS et non celle des supports de
+        // cours : `User X has exited tty session N(1.2.3.4)`. Les
+        // supports y ajoutent souvent un motif et une duree
+        // (« with timeout after 00:15:00 ») qu'aucune vraie machine
+        // n'ecrit sur cette ligne.
+        this.append('informational', 'sys',
+          `User ${p.session?.user || 'unknown'} has exited tty session`
+          + ` ${p.session?.lineIndex ?? 0}(${p.session?.fromIp ?? '0.0.0.0'})`, true, 'LOGOUT');
       }),
       bus.subscribeWhere('stp.root-guard.changed', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; state?: string };

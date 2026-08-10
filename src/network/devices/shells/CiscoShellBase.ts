@@ -252,10 +252,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // its own NTP state for the `*` marker. A switch carries none of the
     // last three and takes the defaults.
     this.logging.attachClockSource(deviceClockSource(device));
+    this.attacherPolitiqueDeConnexion(device);
   }
 
-  attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
+  /**
+   * `login on-success log` / `login on-failure log` gouvernent pour de
+   * bon : sans elles, une vraie machine ne journalise NI l'une NI
+   * l'autre.
+   *
+   * La politique est LUE a chaque message plutot que copiee, pour qu'une
+   * commande tapee apres l'attache prenne effet sur la connexion
+   * suivante ; et elle est posee des l'attache au BUS plutot que dans
+   * `attachLoggingToDevice`, qui n'est appele que sur les chemins de
+   * redemarrage — donc presque jamais. Attachee la, la porte restait
+   * fermee sur une machine qui venait pourtant de taper la commande.
+   */
+  protected attacherPolitiqueDeConnexion(device: unknown): void {
+    if (!device) return;
+    this.logging.attachLoginLoggingPolicy({
+      logSuccess: () => getSecurityConfig(device as object).login.onSuccessLog === true,
+      logFailure: () => getSecurityConfig(device as object).login.onFailureLog === true,
+    });
+  }
+
+  attachLoggingToBus(
+    bus: import('@/events/EventBus').IEventBus, deviceId: string, device?: unknown,
+  ): void {
     this.logging.attachToBus(bus, deviceId);
+    this.attacherPolitiqueDeConnexion(device);
   }
 
   getLoggingConfig(): LoggingConfig {
@@ -2828,8 +2852,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const dev = this.d() as unknown as { _getSshKnownHosts?: () => { renderCisco: () => string } };
       return dev._getSshKnownHosts?.().renderCisco() ?? '';
     });
-    trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
-      showSshSessions());
+    trie.registerGreedy('show ssh', 'Display SSH sessions', () => {
+      const dev = this.d() as unknown as {
+        getSshSessionRegistry?: () => { list: () => readonly { lineIndex: number; user: string }[] } | null;
+      };
+      return showSshSessions(dev.getSshSessionRegistry?.() ?? null);
+    });
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
     trie.registerGreedy('show ip vrf', 'Display VRFs', (args) => {
       const sub = args[0]?.toLowerCase();
