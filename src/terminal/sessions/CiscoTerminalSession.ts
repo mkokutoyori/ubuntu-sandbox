@@ -642,7 +642,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * mode is supplied here so plans stay privileged-EXEC-only.
    */
   protected override interactionPlanContext() {
-    return { mode: this.vty?.state.mode ?? 'user', device: this.device };
+    return {
+      mode: this.vty?.state.mode ?? 'user',
+      device: this.device,
+      onVtyLine: this.isVtyRemoteSession,
+    };
   }
 
   private debugJob: AsyncJobHandle | null = null;

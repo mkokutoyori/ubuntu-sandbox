@@ -83,6 +83,13 @@ export interface CommandInteractionPlan {
 export interface InteractionPlanContext {
   currentUser?: string;
   currentUid?: number;
+  /**
+   * La session parle-t-elle par une ligne RESEAU (vty) plutot que par la
+   * console ? IOS traite les deux differemment sur un point precis et
+   * ancien : sans mot de passe d'activation configure, la console passe
+   * en mode privilegie et une vty se voit refuser `% No password set`.
+   */
+  onVtyLine?: boolean;
   /** CLI mode for network equipment ('user' | 'privileged' | config modes…). */
   mode?: string;
   /**

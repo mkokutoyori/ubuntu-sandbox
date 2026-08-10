@@ -566,7 +566,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mode === 'user') {
       const um = this.userTrie.match(line);
       if (um.status === 'ok' && um.node?.action && um.matchedKeywords[0]?.toLowerCase() === 'enable') {
-        return this.enableInteractionPlan(um.args, ctx?.device);
+        return this.enableInteractionPlan(um.args, ctx?.device, ctx?.onVtyLine === true);
       }
       return null;
     }
@@ -655,7 +655,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * (the same one non-interactive callers like `device.executeCommand()`
    * hit directly).
    */
-  private enableInteractionPlan(args: string[], deviceCtx: unknown): CommandInteractionPlan | null {
+  private enableInteractionPlan(
+    args: string[], deviceCtx: unknown, surVty = false,
+  ): CommandInteractionPlan | null {
     const lvl = args[0] ? parseInt(args[0], 10) : 15;
     if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) return null;
     const dev = deviceCtx as {
@@ -665,15 +667,42 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const secret = dev?.getEnableSecretForLevel?.(lvl) ?? null;
     const password = secret ? null : (dev?.getEnablePasswordForLevel?.(lvl) ?? null);
     const gate = secret ?? password;
-    if (!gate) return null;
+    // Sans mot de passe d'activation, IOS distingue les deux portes
+    // depuis toujours : la console passe, une ligne RESEAU est refusee.
+    // La raison est de securite et non de commodite — une vty joignable
+    // depuis le reseau ne doit pas offrir le mode privilegie a qui sait
+    // taper `enable`, alors qu'un acces console suppose deja d'etre
+    // devant la machine.
+    if (!gate) {
+      if (!surVty) return null;
+      return { steps: [{ kind: 'output', lines: ['% No password set'] }] };
+    }
+    // Le compteur vit dans CETTE invocation d'`enable` : le plan est
+    // reconstruit a chaque frappe de la commande, donc les trois essais
+    // se comptent par invocation, comme sur une vraie machine.
+    let essais = 0;
     return {
       steps: [
         {
+          // IOS laisse TROIS essais sur une meme invocation d'`enable` :
+          // il redemande `Password:` apres chaque refus, puis abandonne
+          // sur `% Bad secrets` et rend la main au mode UTILISATEUR — il
+          // ne ferme pas la ligne, et le nombre d'essais n'est pas
+          // reglable. Le refus etait ici a un seul coup (`maxRetries: 0`),
+          // donc l'invite ne revenait jamais : il fallait retaper
+          // `enable` a chaque fois, ce qu'aucune machine reelle ne
+          // demande, et `% Bad secrets` n'existait nulle part.
           kind: 'password',
           prompt: 'Password: ',
           validate: (value) => {
             if (value === gate.value) return { valid: true };
-            return { valid: false, errorMessage: '% Access denied', maxRetries: 0 };
+            essais += 1;
+            // Le troisieme refus est celui qui abandonne, et IOS ne dit
+            // pas la meme chose : `% Access denied` tant qu'il redemande,
+            // `% Bad secrets` quand il renonce.
+            return essais >= 3
+              ? { valid: false, errorMessage: '% Bad secrets', maxRetries: 2 }
+              : { valid: false, errorMessage: '% Access denied', maxRetries: 2 };
           },
         },
         { kind: 'run', run: async (rt) => { await rt.exec(`enable ${lvl}`); } },
@@ -2003,9 +2032,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       .catch(() => undefined);
   }
 
+  /**
+   * `exit` — et la confusion la plus repandue de tout IOS.
+   *
+   * Depuis un mode de CONFIGURATION, `exit` remonte d'un cran. Depuis un
+   * mode EXEC — utilisateur comme privilegie — il TERMINE LA SESSION,
+   * exactement comme `logout`. Ce n'est pas `exit` qui fait redescendre
+   * de `#` a `>`, c'est `disable`, et lui seul.
+   *
+   * Le mode utilisateur fermait bien, le mode privilegie ne faisait
+   * RIEN : la commande rendait la main sans un mot et laissait la
+   * session au niveau 15. Un operateur qui tape `exit` en croyant avoir
+   * quitte les droits d'administration les gardait — et le terminal, ne
+   * recevant aucune annonce, gardait l'onglet ouvert.
+   */
   protected cmdExit(): string {
-    if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
-    if (this.mode === 'privileged') this.terminalMonitor = false;
+    if (this.mode === 'user' || this.mode === 'privileged') {
+      this.terminalMonitor = false;
+      return 'Connection closed.';
+    }
     const wasConfig = this.isConfigMode();
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.exit();

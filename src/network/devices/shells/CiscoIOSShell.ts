@@ -595,16 +595,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     if (this.startupAliases) this.aliases.restore(this.startupAliases);
   }
 
-  protected override cmdExit(): string {
-    if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
-    const wasConfig = this.isConfigMode();
-    this.fsm.mode = this.mode as CiscoShellMode;
-    const { newMode, fieldsToCllear } = this.fsm.exit();
-    this.mode = newMode;
-    this.clearFields(fieldsToCllear);
-    this.announceConfigExit(wasConfig);
-    return '';
-  }
+  // `cmdExit` n'est PAS redefinie ici : la copie qui s'y trouvait ne
+  // differait de celle de la base que par une conversion de type, et
+  // c'est elle qui a fait diverger les deux plateformes le jour ou la
+  // base a appris qu'`exit` depuis le mode privilegie ferme la session.
+  // Le switch fermait, le routeur ne faisait rien.
 
   protected getActiveTrie(): CommandTrie {
     switch (this.mode) {
