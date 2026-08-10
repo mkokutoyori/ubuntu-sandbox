@@ -160,6 +160,81 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### NTP — lot N11 : les requêtes de contrôle (mode 6) — **LIVRÉ, chantier NTP clos**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §13.
+
+**Deux commandes de durcissement étaient structurellement inertes.**
+`ntp access-group query-only` : l'action `control-query` existait depuis
+le lot N6 et **rien dans le dépôt n'émettait ni ne recevait de requête de
+contrôle**, donc le mot ne pouvait qu'AUTORISER rien — son seul effet
+observable était de refuser le temps. Et `no ntp allow mode control` — la
+commande qui ferme la porte de `monlist` et de CVE-2013-5211 — était
+rangée et lue par personne : une machine durcie et une machine ouverte se
+comportaient pareil.
+
+**`network/ntp/control.ts`** (neuf) porte l'en-tête de douze octets de
+RFC 9327. Il est écrit pour de vrai — non pour aller sur le fil, ce
+simulateur transportant ses paquets NTP comme objets, mais parce que **R,
+E et M sont des bits qui partagent un octet avec l'opcode** : rien
+n'oblige un code qui les manipule séparément à rester d'accord avec la
+RFC, et un endroit unique où la disposition est vraie peut être vérifié.
+
+**Deux opcodes servis** (read status, read variables), **onze refusés
+avec le bit E et le code de la RFC** plutôt qu'ignorés — dont les opcodes
+d'ÉCRITURE, refusés **par conception** : un simulateur où l'on
+reconfigure un routeur par un datagramme UDP non authentifié enseignerait
+l'inverse de ce qu'il faut. `monlist` n'a jamais été un opcode standard,
+et c'est dit.
+
+**Ce qui vous concerne le plus** : `NtpConfig` gagne
+**`modeControlResponder`**, une propriété de PLATEFORME distincte du
+réglage de l'opérateur. `chronyd` n'implémente pas le mode 6 du tout (il
+cause à `chronyc` sur UDP/323), donc un poste Linux ne répond pas à
+`ntpq` alors qu'IOS et VRP répondent. `CiscoRouter` et `HuaweiRouter` le
+posent à `true` dans leur constructeur. **C'est le seul endroit du lot où
+ma première version était fausse et où c'est un test qui l'a montré** —
+un LinuxPC répondait à `ntpq`.
+
+**Vos tableaux, et un motif qui se confirme** : `ntpq -p` passe par
+**`TextTable`**, largeurs mesurées au caractère près sur une capture
+réelle. Et comme chez chrony (lot N10), **l'en-tête de `ntpq` ne s'aligne
+pas sur ses propres données** — `reach` finit colonne 52 quand sa valeur
+finit à la 51. Deux outils indépendants, même constat : l'en-tête est une
+chaîne fixe du code, les données un `printf` qui ne s'y aligne pas. Si
+vous croisez ce cas côté IOS/VRP, c'est un motif et non une exception —
+dériver l'en-tête donnerait un tableau **plus propre que la vraie
+machine**, donc faux.
+
+**Un défaut trouvé au passage** : `PACKAGE_DB` ne nommait **ni `chrony`
+ni `ntpsec`** alors que cette image exécute `chronyd`, `chronyc` et
+`ntpq`. C'est le défaut exactement inverse de celui qui a ouvert le lot
+N3 (un paquet déclaré installé dont rien n'existait). Les deux lignes
+sont ajoutées.
+
+**Fichiers touchés** : `ntp/control.ts` (neuf), `ntp/NtpAgent.ts`,
+`ntp/types.ts`, `devices/linux/commands/net/Ntpq.ts` (neuf),
+`commands/index.ts`, `service/CriticalFiles.ts`,
+`packages/PackageDatabase.ts`, `CiscoRouter.ts`, `HuaweiRouter.ts`.
+**Aucun contact avec le trie ni avec l'aide `?`.**
+
+**Mesures.** 214 suites connexes vertes (3 215 cas).
+`tuto-ntp-mode-controle.test.ts` (25 cas) : la discrimination est faite en
+restaurant **le câblage seul** et en gardant les modules neufs — **14
+tombent** ; les 11 restants sont les garde-fous de format de
+`control.ts`. Retirer aussi les modules neufs empêcherait la suite de se
+charger, ce qui ne mesurerait rien, et c'est écrit plutôt que déguisé en
+« 25 tombent ». Typecheck : jeu d'erreurs **identique** (217). Lint
+propre.
+
+**Le chantier NTP est clos** : `PRD-NTP-Tutoriel.md` n'a plus de point
+ouvert. Ce qui reste hors périmètre est nommé en §13.9 (mode 6 non
+authentifié, fragmentation non produite, pas de mode interactif) et
+chacun avec sa raison.
+
+---
+
 ### NTP — lot N10 : chrony lit ses clés, et `ntp authenticate` gouverne le bon sens — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -3402,7 +3477,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N10 livrés** |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N11 livrés — chantier clos** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
