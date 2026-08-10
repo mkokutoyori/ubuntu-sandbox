@@ -3,9 +3,16 @@ import { getSecurityConfig } from '../../shells/cisco/CiscoSecurityCommands';
 import type { AaaMethodEntry, AaaServerGroup, CiscoSecurityConfig, RadiusServer, TacacsServer } from '../security/CiscoSecurityConfig';
 import type { RadiusClientAgent } from '../../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../../tacacs/TacacsClientAgent';
+import type { TacacsAcctFlag } from '../../../tacacs/types';
 import type { VtyLineConfig } from '../vty/VtyLineConfig';
 import type { VtyLineConfigStore } from '../vty/VtyLineConfigStore';
 import type { HuaweiAaaService } from './HuaweiAaaService';
+
+export interface AccountingCounters {
+  starts: number;
+  stops: number;
+  failed: number;
+}
 
 export interface AaaAuthenticationOutcome {
   accepted: boolean;
@@ -273,11 +280,125 @@ export class AaaAuthenticator {
       const server = sec.tacacsServers.get(memberName);
       if (!server || !server.address) continue;
       this.syncTacacsServer(client, server);
+      // Les compteurs de `show tacacs` etaient uniquement LUS, jamais
+      // incrementes : ils affichaient donc zero quoi qu'il arrive, et le
+      // controle « echecs = 0 » d'une liste d'audit ne pouvait rien
+      // distinguer. Ils sont mesures ici, au point ou l'echange a lieu.
+      server.stats.socketOpens += 1;
+      server.stats.authRequests += 1;
       const result = await client.authenticate(username, password, server.address);
-      if (result.status === 'pass') return { verdict: 'accept', privLvl: result.privLvl };
-      if (result.status === 'fail') return { verdict: 'reject' };
+      server.stats.socketCloses += 1;
+      if (result.status === 'pass') {
+        server.stats.authAccepts += 1;
+        return { verdict: 'accept', privLvl: result.privLvl };
+      }
+      if (result.status === 'fail') {
+        server.stats.authRejects += 1;
+        return { verdict: 'reject' };
+      }
+      server.stats.socketAborts += 1;
     }
     return { verdict: 'continue' };
+  }
+
+  /**
+   * L'accounting de commandes (`docs/PRD-Pistes-Audit-Cisco.md` §5).
+   *
+   * `TacacsClientAgent.accountCommand()` etait ecrit, correct, et n'avait
+   * AUCUN appelant de production — seul un test l'appelait. `aaa
+   * accounting commands 15 default start-stop group X` etait donc
+   * accepte, rendu dans la configuration, et aucun paquet ne partait : le
+   * mecanisme le plus puissant des pistes d'audit Cisco ne tracait rien.
+   *
+   * Rend le nombre d'enregistrements REELLEMENT emis, ce que
+   * `show aaa accounting` compte ensuite — un compteur qui ne serait pas
+   * celui des paquets partis serait la decoration qu'on vient de retirer
+   * ailleurs.
+   */
+  async accountCommand(
+    username: string, command: string, privilegeLevel: number,
+  ): Promise<number> {
+    return this.emitAccounting('commands', command, username, privilegeLevel);
+  }
+
+  /** L'accounting de session exec (`aaa accounting exec`). */
+  async accountExec(username: string, event: 'start' | 'stop'): Promise<number> {
+    return this.emitAccounting('exec', `exec-${event}`, username, undefined, event);
+  }
+
+  private async emitAccounting(
+    service: string, command: string, username: string,
+    privilegeLevel?: number, phase: 'start' | 'stop' = 'stop',
+  ): Promise<number> {
+    const sec = getSecurityConfig(this.router);
+    if (!sec.aaaNewModel) return 0;
+    const entries = sec.aaaMethods.filter((m) => m.phase === 'accounting'
+      && m.service === service
+      && (privilegeLevel === undefined || (m.privilegeLevel ?? privilegeLevel) === privilegeLevel));
+    if (entries.length === 0) return 0;
+    const client = tacacsClientOf(this.router);
+    if (!client) return 0;
+
+    // `start-stop` emet DEUX enregistrements, `stop-only` un seul : c'est
+    // le mot-cle qui le dit, et le rendre identique ferait mentir la
+    // configuration sur ce que le collecteur recoit.
+    let emis = 0;
+    let echecs = 0;
+    for (const entry of entries) {
+      const drapeaux: TacacsAcctFlag[] = entry.recordType === 'start-stop'
+        ? (['start', 'stop'] as TacacsAcctFlag[])
+        : (['stop'] as TacacsAcctFlag[]);
+      for (let i = 0; i + 1 < entry.methods.length; i++) {
+        if (entry.methods[i] !== 'group') continue;
+        const group = sec.aaaGroups.get(entry.methods[i + 1]);
+        if (!group || group.kind !== 'tacacs+') continue;
+        for (const memberName of group.members) {
+          const server = sec.tacacsServers.get(memberName);
+          if (!server?.address) continue;
+          this.syncTacacsServer(client, server);
+          for (const flag of drapeaux) {
+            if (phase === 'start' && flag === 'stop') continue;
+            const statut = await client.accountCommand(
+              username, command, [flag], server.address);
+            if (statut === 'success') {
+              emis += 1;
+              const c = this.compteurs(service);
+              if (flag === 'start') c.starts += 1; else c.stops += 1;
+            } else {
+              echecs += 1;
+            }
+          }
+        }
+      }
+    }
+    this.compteurs(service).failed += echecs;
+    return emis;
+  }
+
+  /**
+   * Ce que `show accounting` compte : des enregistrements REELLEMENT
+   * partis, par service. Un compteur qui ne serait pas celui des paquets
+   * emis serait la decoration que ce chantier retire ailleurs, et
+   * `Failed accounting` — le controle A10 d'une liste d'audit — ne
+   * pourrait rien distinguer.
+   */
+  private readonly accountingCounters = new Map<string, AccountingCounters>();
+
+  private compteurs(service: string): AccountingCounters {
+    let c = this.accountingCounters.get(service);
+    if (!c) { c = { starts: 0, stops: 0, failed: 0 }; this.accountingCounters.set(service, c); }
+    return c;
+  }
+
+  accountingTraffic(): ReadonlyMap<string, Readonly<AccountingCounters>> {
+    return this.accountingCounters;
+  }
+
+  /** Le total d'echecs, que `show tacacs` rend comme `Failed accounting`. */
+  failedAccounting(): number {
+    let n = 0;
+    for (const c of this.accountingCounters.values()) n += c.failed;
+    return n;
   }
 
   private syncRadiusServer(client: RadiusClientAgent, server: RadiusServer): void {

@@ -46,6 +46,8 @@ export interface RadiusServer {
   key?: string;
   retransmit: number;
   timeoutSec: number;
+  /** Voir `TacacsServer.legacySpelling` — RADIUS garde encore sa forme héritée dans `legacyHosts`. */
+  legacySpelling?: boolean;
   stats: RadiusServerStats;
 }
 
@@ -57,6 +59,21 @@ export interface TacacsServer {
   timeoutSec: number;
   singleConnection: boolean;
   stats: TacacsServerStats;
+  /**
+   * Déclaré par la forme héritée `tacacs-server host <ip> [key K]`.
+   *
+   * C'est un drapeau de RENDU, pas un second magasin : le serveur est le
+   * même objet que celui de `tacacs server <nom>`, donc il authentifie
+   * et `show tacacs` le voit. Seule l'orthographe rendue change, parce
+   * qu'une configuration doit reproduire ce qui a été tapé — elle est
+   * rejouée à l'import d'une topologie.
+   *
+   * Avant, la forme héritée allait dans un tableau `legacyHosts` que
+   * SEUL le rendu de la configuration lisait : la machine décrivait donc
+   * un serveur qu'elle n'avait pas, `show tacacs` répondait « No TACACS+
+   * servers configured » et l'authentification ne trouvait rien.
+   */
+  legacySpelling?: boolean;
 }
 
 export function newRadiusServerStats(): RadiusServerStats {
@@ -503,6 +520,17 @@ export class CiscoSecurityConfig {
       if (r.key) lines.push(` key ${r.key}`);
     }
     for (const t of this.tacacsServers.values()) {
+      // La forme HÉRITÉE se rend telle qu'elle a été tapée : la
+      // réécrire en `tacacs server <nom>` produirait une configuration
+      // que l'opérateur ne reconnaîtrait pas, et qui déclarerait un nom
+      // là où il n'en avait donné aucun.
+      if (t.legacySpelling) {
+        lines.push(`tacacs-server host ${t.address ?? t.name}`
+          + (t.port !== 49 ? ` port ${t.port}` : '')
+          + (t.timeoutSec !== 5 ? ` timeout ${t.timeoutSec}` : '')
+          + (t.key ? ` key ${t.key}` : ''));
+        continue;
+      }
       lines.push(`tacacs server ${t.name}`);
       if (t.address) lines.push(` address ipv4 ${t.address}`);
       if (t.port !== 49) lines.push(` port ${t.port}`);
@@ -511,13 +539,20 @@ export class CiscoSecurityConfig {
     }
     for (const g of this.aaaGroups.values()) {
       lines.push(`aaa group server ${g.kind} ${g.name}`);
-      for (const m of g.members) lines.push(` server name ${m}`);
+      for (const m of g.members) {
+        // Un membre déclaré par son ADRESSE se rend par son adresse :
+        // `server name 10.0.0.2` est une ligne qu'IOS ne produit pas et
+        // qu'un import rejouerait comme un nom de serveur inexistant.
+        const parAdresse = this.tacacsServers.get(m)?.legacySpelling
+          || this.radiusServers.get(m)?.legacySpelling;
+        lines.push(parAdresse ? ` server ${m}` : ` server name ${m}`);
+      }
     }
+    // Seul RADIUS passe encore par `legacyHosts` : la forme héritée de
+    // TACACS+ alimente désormais le magasin unique et se rend plus haut.
     for (const lh of this.legacyHosts) {
       if (lh.kind === 'radius') {
         lines.push(`radius-server host ${lh.host}${lh.key ? ' key ' + lh.key : ''}`);
-      } else {
-        lines.push(`tacacs-server host ${lh.host}${lh.key ? ' key ' + lh.key : ''}`);
       }
     }
     for (const tr of this.timeRanges.values()) {
