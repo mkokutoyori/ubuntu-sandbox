@@ -89,7 +89,17 @@ est une commande d'EXEC utilisateur sur IOS ; `crypto key generate rsa`
 écrit « Generating » et jamais « generate » ; un laboratoire qui pose
 `ip ssh version 2` génère sa clé d'abord.
 
-**Reste ouvert pour ce chantier** : P2 à P5 de
+**P2 livré dans la foulée** : `cli/SuggestionSources.ts` nomme et ordonne
+les cinq sources de suggestion (enfants déclarés, valeurs de paramètre,
+indices curatés, mots grappillés dans le corps du handler, valeurs
+vivantes) ; les deux portes parcourent cette table au lieu de la
+ré-énumérer chacune, ce qui est exactement l'endroit où elles divergeaient.
+Chaque porte garde sa politique, l'extraction est la dernière des sources
+statiques et se coupe. Refactoring : aucune sortie ne change, le cliquet
+reste à zéro, et la sonde qui l'accompagne fixe une capacité, pas un
+défaut réparé.
+
+**Reste ouvert pour ce chantier** : P3 à P5 de
 `docs/DESIGN-Commandes-CLI.md`.
 
 **Trouvé pendant la passe DRY, mesuré, PAS corrigé — à prendre ensuite :**

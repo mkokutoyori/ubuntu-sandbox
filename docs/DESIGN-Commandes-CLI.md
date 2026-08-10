@@ -74,9 +74,17 @@ formes pendant toute la migration.
   INVENTAIT des commandes sur le commutateur — puis les trois causes ont été corrigées,
   si bien que les budgets sont à 0. Ce sont des budgets, pas des constantes : ils
   peuvent remonter, et la neutralisation des correctifs fait tomber 7 des 19 cas.
-- **P2 — unifier les sources.** Extraire les cinq derrière `SuggestionSource` sans
-  rien changer d'autre. L'extraction depuis le texte source devient une source comme
-  les autres, explicitement DERNIÈRE et désactivable. Purement interne.
+- **P2 — unifier les sources. LIVRÉ** (`cli/SuggestionSources.ts`,
+  `probe-cli-suggestion-sources.test.ts`). Les cinq sont nommées et ORDONNÉES en un
+  seul endroit (`child`, `param`, `hint`, `auto`, `dynamic`) ; le trie les implémente
+  en cinq collecteurs et les deux portes parcourent cette table au lieu de la
+  ré-énumérer chacune. Chaque porte garde sa POLITIQUE — l'aide continue de filtrer sur
+  les arguments consommés et d'écarter un mot grappillé qu'elle ne sait pas décrire, Tab
+  continue de ne laisser passer les valeurs vivantes que si aucun mot-clé ne convient —
+  parce que ce sont des différences voulues entre une liste qu'on lit et un mot qu'on
+  complète. L'extraction depuis le texte source est explicitement la dernière des
+  sources statiques et se coupe (`setAutoExtractionEnabled`). Aucune sortie ne change ;
+  le cliquet de P1 reste à zéro.
 - **P3 — introduire `CommandSpec`, sans migrer.** `declare(spec)` à côté de
   `register()`, construisant le même nœud. Toute nouvelle commande passe par là.
 - **P4 — migrer par famille**, en s'arrêtant à chaque fois que le compteur du
