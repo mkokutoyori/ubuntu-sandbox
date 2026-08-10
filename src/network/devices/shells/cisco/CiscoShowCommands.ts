@@ -20,6 +20,7 @@ import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/n
 import { IPv6Address } from '@/network/core/types';
 import { renderCounterTable, renderTable, type TableColumn } from '../cli/TextTable';
 import { getHttpService } from '@/network/equipment/RouterServiceCapabilities';
+import { IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE, type Ipv6NeighborRow } from './ciscoTableLayouts';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
@@ -1122,6 +1123,37 @@ export function showIpv6Interface(router: Router, ifName: string): string {
     `  MTU is ${port.getMTU()} bytes`,
   ].join('\n');
 }
+
+/**
+ * `show ipv6 neighbors`. The neighbour cache was real, complete and
+ * unviewable: nothing anywhere in the repo rendered it, on either
+ * vendor, so an operator had no way to tell an unresolved next hop from
+ * an unreachable one.
+ */
+export function showIpv6Neighbors(router: Router, ifFilter?: string): string {
+  const rows: Ipv6NeighborRow[] = [];
+  // The cache stamps its entries with the SCHEDULER's clock, so an age
+  // computed from the wall clock reports the epoch. One clock, not two.
+  const nowMs = router.getNeighborCacheNow();
+  for (const [ip, entry] of router.getNeighborCache()) {
+    if (ifFilter && entry.iface !== ifFilter) continue;
+    rows.push({
+      address: new IPv6Address(ip).toString().toUpperCase(),
+      age: entry.state === 'incomplete' ? '-' : String(Math.floor(Math.max(0, nowMs - entry.timestamp) / 60000)),
+      mac: entry.mac.toCiscoString(),
+      state: IPV6_NEIGHBOR_STATE_IOS[entry.state],
+      iface: iosShortInterfaceName(entry.iface),
+    });
+  }
+  rows.sort((a, b) => a.address.localeCompare(b.address));
+  return renderTable(rows, IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE).join('\n');
+}
+
+/** IOS abbreviates every NDP state to five characters. */
+const IPV6_NEIGHBOR_STATE_IOS: Record<string, string> = {
+  incomplete: 'INCMP', reachable: 'REACH', stale: 'STALE',
+  delay: 'DELAY', probe: 'PROBE',
+};
 
 export function showInterfacesAll(router: Router): string {
   const names = [...router._getPortsInternal().keys()];

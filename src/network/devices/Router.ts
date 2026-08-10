@@ -66,6 +66,7 @@ import { RouterSftpFileSystem } from '../protocols/ssh/sftp/RouterSftpFileSystem
 import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
+import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import {
   EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
@@ -409,6 +410,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getDhcpv6RelayDestinations: (iface) => this.dhcpv6RelayDestinations.get(iface) ?? [],
       deliverOspfv3: (inPort, srcIP, packet, ipsecProtected) =>
         this.ospfIntegration?.receivePacketV3(inPort, srcIP, packet, ipsecProtected),
+      onIcmpv6EchoReply: (p) => this.emitIcmpEchoReply({ ...p, ttl: p.hopLimit, rttMs: 0 }),
+      onIcmpv6EchoFailed: (p) => this.emitIcmpEchoFailed({
+        fromIp: p.fromIp, toIp: '', id: -1, seq: -1, reason: p.reason,
+      }),
     });
     this.ospfIntegration = new RouterOSPFIntegration({
       id: this.id,
@@ -1658,6 +1663,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   getNeighborCache() { return this.ipv6Engine.getNeighborCache(); }
+
+  /** The clock an entry's `timestamp` is expressed in. */
+  getNeighborCacheNow(): number { return this.ipv6Engine.neighborCacheNow(); }
 
   // ─── Performance Counters ─────────────────────────────────────
 
@@ -4281,6 +4289,89 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       hooks?.onResult?.(row);
     }
     return results;
+  }
+
+  /**
+   * The IPv6 counterpart of {@link executePingSequence}. A router had no
+   * ICMPv6 emitter at all: it ANSWERED an Echo Request and could not send
+   * one, so `ping ipv6` was refused on both vendors and every IPv6 lab on
+   * a router was unverifiable from the router itself.
+   */
+  async executePing6Sequence(
+    targetIP: IPv6Address,
+    count: number = 5,
+    timeoutMs: number = 2000,
+    sourceIPStr?: string,
+    hooks?: { sizeBytes?: number; shouldStop?: () => boolean },
+  ): Promise<CiscoPingRow[]> {
+    const targetStr = targetIP.toString();
+    const rows: CiscoPingRow[] = [];
+    const fill = (row: Omit<CiscoPingRow, 'seq'>): CiscoPingRow[] => {
+      for (let seq = 1; seq <= count; seq++) {
+        if (hooks?.shouldStop?.()) break;
+        rows.push({ ...row, seq });
+      }
+      return rows;
+    };
+
+    let mine = targetIP.isLoopback();
+    for (const [, port] of this.ports) {
+      if (port.getIPv6Addresses().some((e) => e.address.equals(targetIP))) mine = true;
+    }
+    if (mine) {
+      return fill({ success: true, rttMs: 0.01, ttl: 64, fromIP: targetStr });
+    }
+
+    const egress = this.ipv6Engine.resolveEgress(targetIP, sourceIPStr);
+    if (!egress) return fill({ success: false, rttMs: 0, ttl: 0, fromIP: '', error: 'timeout' });
+
+    // IOS counts the whole datagram: 40 bytes of IPv6 header and 8 of
+    // ICMPv6 come off before the payload.
+    const dataSize = Math.max(0, (hooks?.sizeBytes ?? 100) - 48);
+    for (let seq = 1; seq <= count; seq++) {
+      if (hooks?.shouldStop?.()) break;
+      this.pingIdCounter++;
+      const id = this.pingIdCounter;
+      const sentAt = performance.now();
+      const reply = waitForEvent(
+        this.getBus(), 'host.icmp.echo-reply',
+        (p) => p.deviceId === this.id && p.fromIp === targetStr && p.id === id && p.seq === seq,
+        { timeoutMs, scheduler: this.getRouterScheduler() },
+      );
+      const failed = waitForEvent(
+        this.getBus(), 'host.icmp.echo-failed',
+        (p) => p.deviceId === this.id && (p.id === -1 || (p.id === id && p.seq === seq)),
+        { timeoutMs, scheduler: this.getRouterScheduler() },
+      );
+      const replyOutcome = reply.then((r) => ({ kind: 'reply' as const, r }));
+      const failedOutcome = failed.then((r) => ({ kind: 'failed' as const, r }));
+      replyOutcome.catch(() => {});
+      failedOutcome.catch(() => {});
+
+      this.ipv6Engine.sendEchoRequest(egress, targetIP, id, seq, dataSize);
+      this.emitIcmpEchoSent({
+        fromIp: egress.sourceIP.toString(), toIp: targetStr,
+        id, seq, ttl: 64, size: 8 + dataSize,
+      });
+
+      try {
+        const winner = await Promise.race([replyOutcome, failedOutcome]);
+        if (winner.kind === 'failed') {
+          rows.push({
+            success: false, rttMs: 0, ttl: 0, seq, fromIP: winner.r.fromIp,
+            error: winner.r.reason,
+          });
+          continue;
+        }
+        rows.push({
+          success: true, rttMs: performance.now() - sentAt,
+          ttl: winner.r.ttl, seq, fromIP: targetStr,
+        });
+      } catch {
+        rows.push({ success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' });
+      }
+    }
+    return rows;
   }
 
   /**

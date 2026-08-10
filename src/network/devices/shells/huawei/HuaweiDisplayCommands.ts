@@ -14,7 +14,7 @@ import { nqaRunningConfigLines } from './HuaweiNqaCommands';
 import {
   getHuaweiRoutingExtras, getSwitchSecurityService,
 } from '../../../equipment/RouterServiceCapabilities';
-import { IPAddress } from '../../../core/types';
+import { IPAddress, IPv6Address } from '../../../core/types';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
@@ -935,6 +935,44 @@ export function displayIpv6InterfaceBrief(router: Router): string {
   return lines.join('\n');
 }
 
+/**
+ * `display ipv6 neighbors`. VRP renders one RECORD per neighbour rather
+ * than a table, and the fields it shows are not the ones IOS shows: an
+ * age in seconds, the router flag learned from the advertisement, and
+ * the totals split between dynamic and static entries.
+ *
+ * `VLAN`/`CEVLAN` are `-` here because a routed port carries neither;
+ * `VPN name` is empty and `Secure` FALSE for the same reason the rest of
+ * this simulator has no VPN instance or secure-ND model — writing
+ * anything else would describe a mechanism that does not run.
+ */
+export function displayIpv6Neighbors(router: Router, ifFilter?: string): string {
+  const rule = '-'.repeat(79);
+  const lines: string[] = [rule];
+  let total = 0;
+  // Same clock the cache stamped the entry with — the scheduler's.
+  const nowMs = router.getNeighborCacheNow();
+  for (const [ip, entry] of router.getNeighborCache()) {
+    if (ifFilter && entry.iface !== ifFilter) continue;
+    total++;
+    const age = Math.floor(Math.max(0, nowMs - entry.timestamp) / 1000);
+    lines.push(`IPv6 Address : ${new IPv6Address(ip).toString().toUpperCase()}`);
+    lines.push(`Link-layer   : ${huaweiMacAddress(entry.mac).padEnd(22)}State : ${VRP_NEIGHBOR_STATE[entry.state]}`);
+    lines.push(`Interface    : ${entry.iface.padEnd(22)}Age   : ${age}`);
+    lines.push(`VLAN         : -                     CEVLAN: -`);
+    lines.push(`VPN name     :                       Is Router: ${entry.isRouter ? 'TRUE' : 'FALSE'}`);
+    lines.push('Secure       : FALSE');
+    lines.push(rule);
+  }
+  lines.push(`Total: ${total}        Dynamic: ${total}     Static: 0`);
+  return lines.join('\n');
+}
+
+const VRP_NEIGHBOR_STATE: Record<string, string> = {
+  incomplete: 'INCMP', reachable: 'REACH', stale: 'STALE',
+  delay: 'DELAY', probe: 'PROBE',
+};
+
 export function displayDebugging(router: Router): string {
   const debugSvc = (router as unknown as {
     getHuaweiDebugService?: () => HuaweiDebugService;
@@ -1697,6 +1735,11 @@ export function registerDisplayCommands(
 
   trie.register('display ipv6 routing-table', 'Display IPv6 routing table', () =>
     displayIpv6RoutingTable(getRouter()));
+
+  trie.registerGreedy('display ipv6 neighbors', 'Display IPv6 neighbour cache', (args) => {
+    if (args.length === 0) return displayIpv6Neighbors(getRouter());
+    return displayIpv6Neighbors(getRouter(), args.join(' '));
+  });
 
   trie.register('display ipv6 interface brief', 'Display IPv6 interface summary', () =>
     displayIpv6InterfaceBrief(getRouter()));
