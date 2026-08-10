@@ -85,8 +85,18 @@ formes pendant toute la migration.
   complète. L'extraction depuis le texte source est explicitement la dernière des
   sources statiques et se coupe (`setAutoExtractionEnabled`). Aucune sortie ne change ;
   le cliquet de P1 reste à zéro.
-- **P3 — introduire `CommandSpec`, sans migrer.** `declare(spec)` à côté de
-  `register()`, construisant le même nœud. Toute nouvelle commande passe par là.
+- **P3 — introduire `CommandSpec`, sans migrer. LIVRÉ** (`cli/CommandSpec.ts`,
+  `probe-cli-command-spec.test.ts`, 16 cas). `declare(spec)` construit exactement le
+  nœud que `register()` construit, donc les deux formes coexistent pendant toute la
+  migration. Ce que le constructeur REFUSE est le fond du sujet : pas de description ;
+  un gestionnaire qui LIT ses arguments sans en déclarer aucun (contrôle mécanique — la
+  signature de `run` prend des arguments, donc `args`, `continuations` ou
+  `freeform: true` est exigé) ; un argument sans description ; une énumération vide.
+  `platforms` rend la Specification réelle : une commande déclarée pour le routeur n'est
+  pas enregistrée du tout sur l'arbre d'un commutateur. `serialize` existe et
+  `declaredConfigLines` le collecte ; rien d'écrit à la main n'y migre encore, c'est P5.
+  Pilote pour que ce soit un chemin et pas un type sans appelant : `show startup-config`
+  et `show configuration` du commutateur sont déclarés.
 - **P4 — migrer par famille**, en s'arrêtant à chaque fois que le compteur du
   garde-fou descend. L'ordre suit le risque : d'abord ce que les tutoriels traversent.
 - **P5 — rapatrier la sérialisation.** `serialize()` sur la spécification retire les

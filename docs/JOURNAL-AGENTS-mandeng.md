@@ -99,8 +99,17 @@ statiques et se coupe. Refactoring : aucune sortie ne change, le cliquet
 reste à zéro, et la sonde qui l'accompagne fixe une capacité, pas un
 défaut réparé.
 
-**Reste ouvert pour ce chantier** : P3 à P5 de
-`docs/DESIGN-Commandes-CLI.md`.
+**P3 livré** : `cli/CommandSpec.ts` — un seul objet décrit une commande
+(chemin, description, action, arguments, continuations, plateformes,
+sérialisation) et `declare(spec)` construit le même nœud que `register()`,
+donc rien n'a à bouger aujourd'hui. Ce qui compte est ce que le
+constructeur REFUSE : une description manquante, un gestionnaire qui lit
+ses arguments sans en déclarer aucun (contrôle mécanique sur la signature
+de `run`), un argument sans description, une énumération vide. Pilote sur
+`show startup-config` / `show configuration` du commutateur.
+
+**Reste ouvert pour ce chantier** : P4 (migration par famille) et P5
+(rapatrier la sérialisation) de `docs/DESIGN-Commandes-CLI.md`.
 
 **Trouvé pendant la passe DRY, mesuré, PAS corrigé — à prendre ensuite :**
 
