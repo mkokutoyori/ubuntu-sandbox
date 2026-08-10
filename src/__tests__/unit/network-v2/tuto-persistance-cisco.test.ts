@@ -118,13 +118,24 @@ describe('Partie 3 — sauvegarder', () => {
       .toContain('No space left on device');
   }, 30_000);
 
+  /**
+   * `tftp:` a quitté cette liste : le lot 2 lui a donné un vrai
+   * transfert, mesuré par `cisco-copy-tftp-sur-le-fil.test.ts`. Sans ce
+   * client, un routeur n'avait AUCUNE façon d'ouvrir un port UDP. Ce
+   * qu'il reste ici est ce qui manque toujours, et les deux moitiés
+   * comptent : un protocole absent le dit, une URL mal formée nomme la
+   * forme attendue au lieu de répondre `[OK]`.
+   */
   it('une copie réseau DIT ce qui manque au lieu de répondre [OK]', async () => {
     const r = await routeur();
-    for (const cible of ['tftp:', 'ftp:', 'scp:']) {
+    for (const cible of ['ftp:', 'scp:']) {
       const out = await r.executeCommand(`copy running-config ${cible}`);
       expect(out, cible).toContain('not implemented in this simulator');
       expect(out, cible).not.toMatch(/\[OK\]/);
     }
+    const tftp = await r.executeCommand('copy running-config tftp:');
+    expect(tftp).toContain('tftp://<address>/<filename>');
+    expect(tftp).not.toMatch(/\[OK\]/);
   }, 30_000);
 
   it('`write memory` et `copy running-config startup-config` font la même chose', async () => {
@@ -376,5 +387,104 @@ describe('Partie 9 — récupération', () => {
     expect(await r.executeCommand('show running-config')).toContain('hostname R1-PROD');
     await r.executeCommand('copy running-config startup-config');
     expect(await r.executeCommand('show startup-config')).toContain('hostname R1-PROD');
+  }, 30_000);
+});
+
+describe('Partie 5 — le journal des commandes a les formes d\'IOS', () => {
+  async function journalise(): Promise<CiscoRouter> {
+    const r = await routeur();
+    for (const c of [
+      'configure terminal', 'archive', 'log config', 'logging enable',
+      'logging size 500', 'hidekeys', 'exit', 'exit',
+      'ip domain-name lab.local', 'ip name-server 8.8.8.8',
+      'ip route 192.168.9.0 255.255.255.0 10.0.0.2', 'end',
+    ]) await r.executeCommand(c);
+    return r;
+  }
+
+  it('`all` liste tout, un numéro seul démarre à ce numéro', async () => {
+    const r = await journalise();
+    const tout = await r.executeCommand('show archive log config all');
+    expect(tout).toContain('ip domain-name lab.local');
+    expect(tout).toContain('ip name-server 8.8.8.8');
+    const depuis = await r.executeCommand('show archive log config 5');
+    expect(depuis).not.toContain('logging enable');
+  }, 30_000);
+
+  /**
+   * La borne de fin était ignorée : `show archive log config 2 3` rendait
+   * tout à partir de 2, donc une plage n'en était pas une.
+   */
+  it('deux numéros sont une PLAGE, borne de fin comprise', async () => {
+    const r = await journalise();
+    const plage = await r.executeCommand('show archive log config 5 6');
+    const lignes = plage.split('\n').filter((l) => l.includes('|'));
+    expect(lignes.length).toBe(2);
+  }, 30_000);
+
+  /**
+   * `provisioning` rend le journal SOUS LA FORME d'un fichier de
+   * configuration — c'est ce que le mot veut dire, et c'est ce qui le
+   * rend utile : on recolle la sortie dans un terminal. Il était accepté
+   * et jeté, donc la vue était identique à celle sans le mot.
+   */
+  it('`provisioning` rend les commandes seules, sans les colonnes', async () => {
+    const r = await journalise();
+    const brut = await r.executeCommand('show archive log config all provisioning');
+    expect(brut).not.toContain('Logged command');
+    expect(brut).not.toContain('|');
+    expect(brut).toContain('ip domain-name lab.local');
+  }, 30_000);
+
+  it('`statistics` compte, il ne liste pas', async () => {
+    const r = await journalise();
+    const stats = await r.executeCommand('show archive log config statistics');
+    expect(stats).toContain('Number of entries in the log-queue');
+    expect(stats).not.toContain('ip domain-name lab.local');
+  }, 30_000);
+
+  it('`user <nom>` restreint à cet opérateur', async () => {
+    const r = await journalise();
+    expect(await r.executeCommand('show archive log config user console all'))
+      .toContain('ip domain-name lab.local');
+    const autre = await r.executeCommand('show archive log config user personne all');
+    expect(autre).not.toContain('ip domain-name lab.local');
+  }, 30_000);
+
+  /**
+   * `last` n'existe sur AUCUN IOS — la syntaxe est `all`, un numéro, une
+   * plage, ou `user`/`statistics`. Le refuser EST la fidélité, comme
+   * pour `| head` que ce tutoriel emploie aussi.
+   */
+  it('`last N` est refusé, parce qu\'IOS ne le connaît pas', async () => {
+    const r = await journalise();
+    expect(await r.executeCommand('show archive log config last 1'))
+      .toContain('% Invalid input detected');
+  }, 30_000);
+
+  it('`contenttype` est accepté et une valeur inconnue refusée', async () => {
+    const r = await journalise();
+    expect(await r.executeCommand('show archive log config all contenttype plaintext'))
+      .toContain('ip domain-name lab.local');
+    expect(await r.executeCommand('show archive log config all contenttype json'))
+      .toContain('% Invalid input detected');
+  }, 30_000);
+});
+
+describe('Partie 6 — `delete` confirme, comme toute commande destructrice', () => {
+  it('une suppression muette est celle qu\'on croit avoir annulée', async () => {
+    const r = await routeur();
+    await r.executeCommand('copy running-config flash:jetable.cfg');
+    const out = await r.executeCommand('delete flash:jetable.cfg');
+    expect(out).toContain('Delete filename [jetable.cfg]?');
+    expect(out).toContain('Delete flash:/jetable.cfg? [confirm]');
+    expect(await r.executeCommand('dir flash:')).not.toContain('jetable.cfg');
+  }, 30_000);
+
+  it('un fichier absent est rapporté et ne confirme rien', async () => {
+    const r = await routeur();
+    const out = await r.executeCommand('delete flash:jamais.cfg');
+    expect(out).toContain('No such file or directory');
+    expect(out).not.toContain('[confirm]');
   }, 30_000);
 });

@@ -194,9 +194,30 @@ universelles` a démasqué un vrai défaut, `| redirect` écrivant dans un
 autre `flash:` que celui que `more` lit, faute d'avoir posé la référence
 d'appareil avant de demander le système de fichiers.
 
+**Trois compléments du même lot, mesurés après coup :**
+
+- **`delete` supprimait en SILENCE.** `mkdir`, `rmdir` et `squeeze`
+  rendent tous leurs confirmations juste à côté ; la plus destructrice
+  des quatre ne rendait rien du tout, et une suppression muette est
+  celle qu'on croit avoir annulée. Elle rend les deux demandes d'IOS
+  (`Delete filename [x]?` puis `Delete flash:/x? [confirm]`).
+- **`show archive log config` n'avait qu'une forme sur cinq.** La borne
+  de fin était ignorée — `… 2 3` rendait tout à partir de 2, donc une
+  plage n'en était pas une —, `provisioning` était accepté et jeté alors
+  qu'il rend le journal SOUS LA FORME d'un fichier de configuration (ce
+  qui le rend recollable dans un terminal, tout son intérêt), et
+  `statistics`, `user <nom> [session N]` et `contenttype` n'existaient
+  pas. Vérifié contre le command reference d'IOS plutôt que de mémoire.
+  **`last N`, que le tutoriel emploie, n'existe sur AUCUN IOS** : le
+  refuser est la fidélité, comme pour le `| head` du même chapitre.
+- **Les applets EEM du chapitre 8 fonctionnent VRAIMENT** — je les avais
+  notés « non vérifiés », c'était une prudence de trop : mesuré, l'applet
+  se déclenche sur `%SYS-5-CONFIG_I`, exécute son `write memory`, la
+  NVRAM est réellement écrite et `%HA_EM-6-LOG` part.
+
 **Reste ouvert, non pris** : `ftp:`/`scp:` (aucun client sur ces
-plateformes), les applets EEM du chapitre 8 (déclenchement non vérifié),
-`show archive log config last N`, et ROMMON.
+plateformes) et ROMMON (un mode de chargeur d'amorçage entier, sans
+rapport avec ce qui précède).
 
 ---
 

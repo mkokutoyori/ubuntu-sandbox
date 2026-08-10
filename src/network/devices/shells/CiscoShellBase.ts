@@ -932,7 +932,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return `%Error deleting ${nom} (No such file or directory)`;
       }
       this.fs().remove(nom);
-      return '';
+      // IOS demande DEUX fois — le nom, puis la suppression elle-même —
+      // et une suppression muette est celle qu'on croit avoir annulée.
+      // `mkdir`/`rmdir`/`squeeze` juste en dessous rendent déjà leurs
+      // confirmations ; `delete`, la plus destructrice des quatre, ne
+      // rendait rien du tout.
+      const court = nom.replace(/^[a-z]+:\/?/i, '');
+      const chemin = /^[a-z]+:/i.test(nom) ? nom.replace(/^([a-z]+):\/?/i, '$1:/') : `flash:/${court}`;
+      return `Delete filename [${court}]?\nDelete ${chemin}? [confirm]`;
     });
 
     /**

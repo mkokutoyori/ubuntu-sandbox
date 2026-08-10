@@ -121,10 +121,85 @@ export function registerArchiveExecCommands(
   trie.registerGreedy('show archive log config', 'Display configuration log', (args) => {
     const s = ar();
     if (!s) return '';
-    const mot = (args[0] ?? 'all').toLowerCase();
-    if (mot !== 'all' && !/^\d+$/.test(mot)) throw new CliInvalidInput({ token: args[0] });
     const tous = s.listConfigLog();
-    const choisis = mot === 'all' ? tous : tous.filter((r) => r.index >= Number(mot));
+    const mots = args.map((a) => a.toLowerCase());
+
+    // `statistics` compte la memoire du journal — la seule forme de la
+    // commande qui ne liste aucune entree.
+    if (mots[0] === 'statistics') {
+      const octets = tous.reduce((n, r) => n + r.command.length + 40, 0);
+      return 'Config Log Session Info:\n'
+        + `   Number of sessions being tracked: ${new Set(tous.map((r) => r.session)).size}\n`
+        + `   Memory being held: ${octets} bytes\n`
+        + `   Total memory allocated for session tracking: ${octets} bytes\n`
+        + '   Total memory freed from session tracking: 0 bytes\n'
+        + '\nConfig Log log-queue Info:\n'
+        + `   Number of entries in the log-queue: ${tous.length}\n`
+        + `   Memory being held in the log-queue: ${octets} bytes\n`
+        + `   Total memory allocated for log entries: ${octets} bytes\n`
+        + '   Total memory freed from log entries: 0 bytes';
+    }
+
+    // Les suffixes de PRESENTATION, qui ne choisissent pas les entrees.
+    // `provisioning` rend le journal sous la forme d'un fichier de
+    // configuration : les commandes seules, sans les colonnes.
+    let provisioning = false;
+    let reste = [...mots];
+    const bruts = [...args];
+    const retirer = (i: number, n = 1) => { reste.splice(i, n); bruts.splice(i, n); };
+    for (;;) {
+      const i = reste.indexOf('provisioning');
+      if (i < 0) break;
+      provisioning = true; retirer(i);
+    }
+    for (;;) {
+      const i = reste.indexOf('persistent');
+      if (i < 0) break;
+      retirer(i);
+    }
+    const iType = reste.indexOf('contenttype');
+    if (iType >= 0) {
+      const forme = reste[iType + 1];
+      if (forme !== 'plaintext' && forme !== 'xml') {
+        throw new CliInvalidInput({ token: bruts[iType + 1] ?? 'contenttype' });
+      }
+      retirer(iType, 2);
+    }
+
+    // La SELECTION. IOS n'a pas de mot `last` : ou bien `all`, ou bien
+    // un numero d'enregistrement avec une borne de fin facultative, le
+    // tout eventuellement restreint a un utilisateur et a une session.
+    let choisis = tous;
+    let i = 0;
+    if (reste[i] === 'user') {
+      const nom = bruts[i + 1];
+      if (!nom) throw new CliIncomplete();
+      choisis = choisis.filter((r) => r.user === nom);
+      i += 2;
+      if (reste[i] === 'session') {
+        const n = reste[i + 1];
+        if (!n || !/^\d+$/.test(n)) throw new CliInvalidInput({ token: bruts[i + 1] ?? 'session' });
+        choisis = choisis.filter((r) => r.session === Number(n));
+        i += 2;
+      }
+    }
+    const premier = reste[i] ?? 'all';
+    if (premier !== 'all') {
+      if (!/^\d+$/.test(premier)) throw new CliInvalidInput({ token: bruts[i] });
+      const debut = Number(premier);
+      const finBrute = reste[i + 1];
+      if (finBrute !== undefined && !/^\d+$/.test(finBrute)) {
+        throw new CliInvalidInput({ token: bruts[i + 1] });
+      }
+      const fin = finBrute === undefined ? Number.MAX_SAFE_INTEGER : Number(finBrute);
+      choisis = choisis.filter((r) => r.index >= debut && r.index <= fin);
+      i += finBrute === undefined ? 1 : 2;
+    } else {
+      i += 1;
+    }
+    if (i < reste.length) throw new CliInvalidInput({ token: bruts[i] });
+
+    if (provisioning) return choisis.map((r) => r.command).join('\n');
     return renderConfigLog(choisis);
   });
   /**
