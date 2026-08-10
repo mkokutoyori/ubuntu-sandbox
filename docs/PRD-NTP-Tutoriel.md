@@ -414,9 +414,6 @@ correctifs.
 
 ### Ce qui reste ouvert, nommé plutôt que tu
 
-- **Les compteurs de paquets** (`show ntp packets`, les statistiques
-  d'émission/réception) : rien ne les compte dans le moteur. Zéro serait
-  une mesure fausse, la commande est donc refusée.
 - **L'authentification NTP ne signe pas** : la clé est portée, comparée
   et rendue, mais aucun condensé MD5 ne circule sur le paquet — le
   moteur compare des identifiants de clé. Un lab « les clés diffèrent,
@@ -712,3 +709,83 @@ l'exécution ne disent donc pas tout à fait la même chose après un
 argument invalide. C'est un comportement du marcheur d'arguments
 partagé, pas de `ntp` : signalé à l'agent qui tient ces sondes plutôt
 que corrigé ici.
+
+
+---
+
+## 10. N8 — Livré : les compteurs de paquets
+
+### 10.1 Un refus à corriger, et c'est le mien
+
+Au lot N1, `show ntp packets` a été **refusée** au motif que « rien ne
+les compte ». Le motif était vrai du moteur ; la conclusion était
+fausse. **La commande existe sur IOS**, son format est documenté, et
+elle accepte un filtre `mode {active|client|passive|server}`.
+
+Refuser une vraie commande parce que sa matière manque revient à
+**cacher** le manque plutôt qu'à le combler. Un apprenant qui tape
+`show ntp packets` sur une vraie machine obtient une réponse ; sur le
+simulateur il obtenait `% Invalid input detected`, ce qui lui apprenait
+que la commande n'existe pas.
+
+### 10.2 Les trois formats, vérifiés avant d'écrire
+
+| Plateforme | Commande | Source |
+|---|---|---|
+| Cisco | `show ntp packets [mode …]` | Référence de commandes IOS — quatre lignes : `Ntp In packets`, `Ntp Out packets`, `Ntp bad version packets`, `Ntp protocol error packets` |
+| Huawei | `display ntp-service statistics packet` | Documentation Huawei — quinze compteurs sous `NTP IPv4 Packet Statistical Information` |
+| chrony | `chronyc serverstats` | Documentation chrony — distingue les paquets **NTP** des paquets de **commande** |
+
+### 10.3 Un seul comptage, trois lectures
+
+`NtpCounters` porte des noms **neutres** : Cisco dit « Ntp In packets »,
+Huawei « Received », chrony « NTP packets received ». Trois vues sur un
+seul comptage — un compteur par plateforme finirait par donner trois
+nombres pour un seul fait.
+
+Six compteurs sont observés **au point où l'événement a lieu** :
+`received`/`sent` (avec leur ventilation par mode), `processed`,
+`dropped`, `authFailures`, `accessDenied`, plus `badVersion` et
+`protocolError`.
+
+### 10.4 L'identité qui fait la différence
+
+`reçus = traités + écartés`. Elle se vérifie **sans connaître aucune
+plateforme**, et c'est elle qui distingue un comptage d'un affichage.
+Un cas la contrôle sur quatre configurations : sans rien, avec
+authentification, avec un `access-group` qui refuse, avec un qui permet.
+
+Elle a d'ailleurs **attrapé un défaut pendant l'écriture** : les portes
+d'accès se franchissent après l'aiguillage — une fois le mode connu —
+donc un paquet était compté « traité » puis écarté, et l'identité
+tombait à `2 = 1`. Le comptage est repris au point du rejet, comme il
+l'était déjà pour le crypto-NAK.
+
+Deux autres propriétés vérifiées plutôt que supposées : **la somme des
+modes redonne le total** (ce qui distingue une ventilation d'une
+invention), et **les compteurs du client et du serveur se répondent** —
+ce que l'un a émis, l'autre l'a reçu.
+
+### 10.5 Ce qui vaut zéro, et pourquoi c'est vrai
+
+Neuf des quinze compteurs Huawei valent zéro **parce que le mécanisme
+n'existe pas** : pas de limiteur de débit, pas de file de traitement,
+pas de plafond d'associations dynamiques. Aucun paquet n'a jamais **pu**
+être limité, retardé ou refusé pour ces motifs — zéro est la vraie
+valeur. Les omettre donnerait un format qui n'est pas celui de la
+machine ; inventer un nombre serait pire. Même raisonnement pour les
+deux compteurs de **commande** de chrony : ce simulateur n'a pas de
+socket de contrôle, `chronyc` parlant au démon dans le même processus.
+
+`clear ntp statistics` et `reset ntp-service statistics packet`
+remettent à zéro : un compteur qu'on ne peut pas effacer ne sert qu'à
+moitié, un diagnostic commençant par effacer, provoquer, relire.
+
+### 10.6 Tests
+
+`tuto-ntp-compteurs.test.ts` (18 cas). `git stash` : **17 tombent**
+avant. **Un test existant corrigé** — le mien, au lot N1, qui prenait
+`show ntp packets` pour exemple d'une commande inexistante.
+
+**Mesures.** 260 suites connexes vertes (4 770 cas). Typecheck : 216,
+inchangé.

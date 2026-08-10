@@ -96,6 +96,52 @@ export interface NtpConfig {
   disabledInterfaces: Set<string>;
   /** Depuis quand le service tourne : `show ntp status` le rend. */
   startedAtMs: number;
+  /** Les compteurs de paquets (lot N8). */
+  counters: NtpCounters;
+}
+
+/**
+ * Ce qu'un equipement compte sur ses paquets NTP.
+ *
+ * Les noms sont NEUTRES plutot que ceux d'un constructeur : Cisco parle
+ * de « Ntp In packets », Huawei de « Received », chrony de « NTP packets
+ * received ». Trois vues sur un seul comptage — un compteur par
+ * plateforme finirait par donner trois nombres pour un seul fait.
+ *
+ * Ce qui est compte l'est au point ou l'evenement a lieu, jamais deduit.
+ */
+export interface NtpCounters {
+  /** Paquets recus, tous modes confondus. */
+  received: number;
+  /** Paquets emis. */
+  sent: number;
+  /** Recus ET traites jusqu'au bout. */
+  processed: number;
+  /** Recus et ecartes, pour quelque raison que ce soit. */
+  dropped: number;
+  /** Ecartes parce que l'authentification a echoue. */
+  authFailures: number;
+  /** Ecartes par `ntp access-group`. */
+  accessDenied: number;
+  /** Version NTP non prise en charge. */
+  badVersion: number;
+  /** Paquet mal forme : ni un mode connu, ni une charge utile lisible. */
+  protocolError: number;
+  /** Recus par mode, pour le filtre `show ntp packets mode <x>`. */
+  receivedByMode: Record<NtpMode, number>;
+  /** Emis par mode. */
+  sentByMode: Record<NtpMode, number>;
+}
+
+export function createNtpCounters(): NtpCounters {
+  const parMode = (): Record<NtpMode, number> => ({
+    client: 0, server: 0, 'symmetric-active': 0, 'symmetric-passive': 0,
+  });
+  return {
+    received: 0, sent: 0, processed: 0, dropped: 0,
+    authFailures: 0, accessDenied: 0, badVersion: 0, protocolError: 0,
+    receivedByMode: parMode(), sentByMode: parMode(),
+  };
 }
 
 export function createDefaultNtpConfig(): NtpConfig {
@@ -116,6 +162,7 @@ export function createDefaultNtpConfig(): NtpConfig {
     updateCalendar: false,
     disabledInterfaces: new Set(),
     startedAtMs: Date.now(),
+    counters: createNtpCounters(),
   };
 }
 

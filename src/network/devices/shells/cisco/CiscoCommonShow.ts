@@ -11,6 +11,7 @@ import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
+import { CISCO_ERRORS } from '../cli-utils';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 
@@ -729,6 +730,48 @@ export function showNtpAssociationsDetail(dev?: ShowStateDevice): string {
  * est imprimee parce qu'IOS l'imprime ici -- c'est precisement pourquoi
  * la vue est reservee a l'EXEC privilegie.
  */
+/**
+ * `show ntp packets [mode {active|client|passive|server}]`.
+ *
+ * Elle etait REFUSEE au lot N1, au motif que rien ne comptait — c'etait
+ * vrai du moteur, mais la commande EXISTE sur IOS et son format est
+ * documente. Refuser une vraie commande parce que sa matiere manque
+ * revient a cacher le manque plutot qu'a le combler ; les compteurs
+ * existent maintenant, et elle repond.
+ *
+ * Les quatre lignes sont celles de la reference : « Ntp In packets »,
+ * « Ntp Out packets », « Ntp bad version packets »,
+ * « Ntp protocol error packets ».
+ */
+export function showNtpPackets(dev?: ShowStateDevice, mode?: string): string {
+  const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
+  if (!ntp) return 'Ntp In packets: 0\nNtp Out packets: 0\nNtp bad version packets: 0\nNtp protocol error packets: 0';
+  const c = ntp.getCounters();
+  if (mode) {
+    // IOS nomme le mode symetrique passif `passive` et l'actif
+    // `active` ; le moteur les nomme en toutes lettres.
+    const cle = ({ active: 'symmetric-active', passive: 'symmetric-passive',
+      client: 'client', server: 'server' } as Record<string, string>)[mode.toLowerCase()];
+    if (!cle) return CISCO_ERRORS.INVALID_INPUT;
+    const k = cle as keyof typeof c.receivedByMode;
+    return [
+      `Ntp In packets: ${c.receivedByMode[k]}`,
+      `Ntp Out packets: ${c.sentByMode[k]}`,
+      // Une version invalide et une erreur de protocole se constatent
+      // AVANT de connaitre le mode : elles ne se ventilent pas, et
+      // les repeter par mode ferait compter le meme paquet quatre fois.
+      `Ntp bad version packets: 0`,
+      `Ntp protocol error packets: 0`,
+    ].join('\n');
+  }
+  return [
+    `Ntp In packets: ${c.received}`,
+    `Ntp Out packets: ${c.sent}`,
+    `Ntp bad version packets: ${c.badVersion}`,
+    `Ntp protocol error packets: ${c.protocolError}`,
+  ].join('\n');
+}
+
 export function showNtpAuthenticationKeys(dev?: ShowStateDevice): string {
   const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
   const entete = 'Key  Algorithm  Md5 Key';

@@ -67,6 +67,7 @@ import {
   showCdp, showLldp, showSnmp, showSnmpCommunity, showSnmpHost,
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
   showNtpStatus, showNtpAssociations, showNtpAssociationsDetail, showNtpAuthenticationKeys,
+  showNtpPackets,
   showLine, showIpSsh, showSshSessions, showHosts, showVrf,
   showVrfDetail, showVrfInterfaces, showAdjacency,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
@@ -2254,6 +2255,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showPrivilege(this.currentPrivilegeLevel));
     trie.register('show history', 'Display command history', () =>
       this.cmdHistory.slice(-this.terminalHistorySize).join('\n'));
+    // Un compteur qu'on ne peut pas remettre a zero ne sert qu'a moitie :
+    // un diagnostic commence par effacer, provoquer, relire.
+    trie.register('clear ntp statistics', 'Clear NTP packet statistics', () => {
+      getNtpAgent(this.d())?.clearCounters();
+      return '';
+    });
     trie.register('clear history', 'Clear command history buffer', () => {
       this.cmdHistory = [];
       return '';
@@ -2288,6 +2295,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       () => showNtpAssociationsDetail(this.cs()));
     trie.register('show ntp associations', 'NTP associations',
       () => showNtpAssociations(this.cs()));
+    // Refusee au lot N1 faute de compteurs : ils existent (lot N8).
+    trie.registerGreedy('show ntp packets', 'NTP packet statistics', (a) => {
+      if (a.length === 0) return showNtpPackets(this.cs());
+      if (a[0].toLowerCase() !== 'mode') return CISCO_ERRORS.INVALID_INPUT;
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
+      return showNtpPackets(this.cs(), a[1]);
+    }, [{ keyword: 'mode', description: 'Display packets by NTP mode' }]);
     // Pas de greedy de repli : sans lui, l'arbre lui-meme refuse
     // `show ntp packets` avec le curseur d'IOS, ce qu'un repli maison
     // ne saurait pas placer aussi bien.

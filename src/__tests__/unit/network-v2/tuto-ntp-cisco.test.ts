@@ -286,8 +286,14 @@ describe('§3.8 — la vue de statut porte de quoi diagnostiquer', () => {
   });
 
   it('une sous-commande qui n\'existe pas est refusee', async () => {
+    // Lot N8 : ce cas prenait `show ntp packets` pour exemple d'une
+    // commande inexistante. Verification faite contre la reference IOS,
+    // **elle existe** — c'etait mon refus du lot N1 qui avait tort, et
+    // il est corrige. L'exemple porte desormais sur un mot qu'aucune
+    // documentation ne liste.
     const r = new CiscoRouter(`I${++serie}`);
-    expect(await r.executeCommand('show ntp packets')).toMatch(/% Invalid input detected/);
+    expect(await r.executeCommand('show ntp zzz')).toMatch(/% Invalid input detected/);
+    expect(await r.executeCommand('show ntp packets')).not.toMatch(/Invalid input/);
   });
 });
 

@@ -11,12 +11,13 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import {
-  chronycTracking, chronycSources, chronycSourcestats, chronycActivity,
+  chronycTracking, chronycSources, chronycSourcestats, chronycActivity, chronycServerstats,
   CHRONYC_SANS_DEMON,
 } from '../../time/ChronycViews';
 
 /** Les sous-commandes que ce build implemente. */
-const CONNUES = ['tracking', 'sources', 'sourcestats', 'activity', 'makestep', 'reload'];
+const CONNUES = ['tracking', 'sources', 'sourcestats', 'activity', 'makestep', 'reload',
+  'serverstats'];
 
 export const chronycCommand: LinuxCommand = {
   name: 'chronyc',
@@ -45,6 +46,7 @@ export const chronycCommand: LinuxCommand = {
       case 'sources': return chronycSources(agent, verbose);
       case 'sourcestats': return chronycSourcestats(agent);
       case 'activity': return chronycActivity(agent);
+      case 'serverstats': return chronycServerstats(agent);
       case 'reload': {
         const r = service.reload();
         return r.ok === true ? '200 OK' : r.erreur;

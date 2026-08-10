@@ -165,6 +165,29 @@ export function chronycActivity(agent: NtpAgent): string {
   ].join('\n');
 }
 
+/**
+ * `chronyc serverstats` — ce que le demon a vu passer.
+ *
+ * chrony distingue les paquets NTP des paquets de COMMANDE (ceux que
+ * `chronyc` lui-meme envoie sur son socket de controle). Ce simulateur
+ * n'a pas ce socket — `chronyc` parle au demon dans le meme processus —
+ * donc les deux compteurs de commandes sont a zero, ce qui est vrai
+ * plutot qu'approximatif.
+ */
+export function chronycServerstats(agent: NtpAgent): string {
+  const c = agent.getCounters();
+  return [
+    `NTP packets received       : ${c.received}`,
+    `NTP packets dropped        : ${c.dropped}`,
+    `Command packets received   : 0`,
+    `Command packets dropped    : 0`,
+    `Client log records dropped : 0`,
+    `NTS-KE connections accepted: 0`,
+    `NTS-KE connections dropped : 0`,
+    `Authenticated NTP packets  : ${c.received - c.authFailures}`,
+  ].join('\n');
+}
+
 /** `chronyc -n sources` etc. : la sortie depend du service, pas que de l'agent. */
 export function chronycExige(service: LinuxChronyService): string | null {
   return service.isRunning() ? null : CHRONYC_SANS_DEMON;
