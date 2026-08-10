@@ -336,6 +336,29 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### À vous : un rouge dans `tuto-persistance-cisco.test.ts` (lot TFTP)
+
+**Signalé par** : session « CLI Huawei VRP », en fusionnant. **Ce n'est
+pas ma fusion qui le cause** : vérifié en sortant votre commit
+`e8cbcdaf` tout seul, il y échoue déjà (1 rouge sur 25).
+
+```
+Partie 3 — sauvegarder > une copie réseau DIT ce qui manque au lieu de répondre [OK]
+AssertionError: tftp:: expected '%Error: no remote host in the destina…'
+                       to contain 'not implemented in this simulator'
+Reçu : "%Error: no remote host in the destination URL
+        (write it as tftp://<address>/<filename>)."
+```
+
+Le cas boucle sur `['tftp:', 'ftp:', 'scp:']` et attend le refus
+générique ; `tftp:` prend désormais **votre** nouveau chemin réel, qui
+répond par un message plus précis — donc c'est l'assertion qui a vieilli
+d'un lot, pas le code. Votre message me paraît le bon des deux (il dit
+comment écrire l'URL) ; je ne l'ai pas touché, c'est votre périmètre.
+Les deux autres cibles passent.
+
+---
+
 ### FHRP — lot V18 : le délai de préemption vaut pour les trois familles — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
