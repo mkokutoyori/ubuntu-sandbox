@@ -46,7 +46,7 @@ async function serveur() {
 
 /** Un poste Windows cable au serveur. */
 async function poste(srv: CiscoRouter) {
-  const pc = new WindowsPC(`W${++serie}`);
+  const pc = new WindowsPC('windows-pc', `W${++serie}`);
   new Cable(`n${serie}`).connect(srv.getPort('GigabitEthernet0/0')!, pc.getPorts()[0]);
   await pc.executeCommand(
     'netsh interface ip set address "Ethernet0" static 192.168.100.9 255.255.255.0');
@@ -63,7 +63,7 @@ describe('§6.2 — le PDC Emulator se configure, et ca se voit', () => {
   it('avant configuration, la machine ne pretend pas etre synchronisee', async () => {
     // `Stratum: 3` etait ecrit en dur sur une machine qui n'interrogeait
     // personne.
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     const st = await pc.executeCommand('w32tm /query /status');
     expect(ligne(st, 'Stratum')).toBe('Stratum: 0 (unspecified)');
     expect(ligne(st, 'Source')).toBe('Source: Local CMOS Clock');
@@ -130,7 +130,7 @@ describe('§6.3 — chaque `/query` est une vue distincte', () => {
   });
 
   it('sans pair configure, `/peers` le dit', async () => {
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     expect(await pc.executeCommand('w32tm /query /peers')).toBe('#Peers: 0');
   });
 });
@@ -139,7 +139,7 @@ describe('§6.3 — `/resync` et `/stripchart` mesurent', () => {
   it('`/resync` sans aucune source echoue en le disant', async () => {
     // Le vrai message, et il est utile : il dit que la machine n'a
     // aucune source, pas que le reseau a echoue.
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     const r = await pc.executeCommand('w32tm /resync /force');
     expect(r).toContain('no time data was available');
     expect(r).toContain('The command failed to complete successfully');
@@ -201,7 +201,7 @@ describe('§6.2 — les drapeaux choisissent vraiment le mode', () => {
   it('un drapeau que ce simulateur ne sert pas est REFUSE', async () => {
     // `0x2` est le mode broadcast : ce simulateur n'en a pas, et
     // l'accepter ferait croire a une ecoute qui n'existe pas.
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     const out = await pc.executeCommand(
       'w32tm /config /manualpeerlist:"1.2.3.4,0x2" /update');
     expect(out).toContain('The following flag is not supported: 0x2');
@@ -223,13 +223,13 @@ describe('§6.2 — les drapeaux choisissent vraiment le mode', () => {
   });
 
   it('un `syncfromflags` inconnu est refuse', async () => {
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     expect(await pc.executeCommand('w32tm /config /syncfromflags:zzz /update'))
       .toContain('The parameter is incorrect');
   });
 
   it('une sous-commande inconnue rend l\'aide, pas une autre commande', async () => {
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     const out = await pc.executeCommand('w32tm /zzz');
     expect(out).toContain('/stripchart /computer:<target>');
     expect(out).not.toBe('w32tm /query /status');
@@ -239,14 +239,14 @@ describe('§6.2 — les drapeaux choisissent vraiment le mode', () => {
 describe('§6.3 — le fuseau horaire', () => {
   it('`Get-TimeZone` existe et decrit le fuseau courant', async () => {
     // L'applet n'existait ni en cmd ni en PowerShell.
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     const out = await pc.executeCommand('powershell -c "Get-TimeZone"');
     expect(out).not.toContain('not recognized');
     expect(out).toContain('Id                         : UTC');
   });
 
   it('`Set-TimeZone` change vraiment le fuseau', async () => {
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     await pc.executeCommand(
       'powershell -c "Set-TimeZone -Id \'W. Central Africa Standard Time\'"');
     const out = await pc.executeCommand('powershell -c "Get-TimeZone"');
@@ -255,14 +255,14 @@ describe('§6.3 — le fuseau horaire', () => {
   });
 
   it('un identifiant inconnu est refuse', async () => {
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     const out = await pc.executeCommand('powershell -c "Set-TimeZone -Id \'Mars/Olympus\'"');
     expect(out).toContain('Cannot find the time zone');
     expect(await pc.executeCommand('powershell -c "Get-TimeZone"')).toContain(': UTC');
   });
 
   it('`-ListAvailable` rend la liste', async () => {
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     const out = await pc.executeCommand('powershell -c "Get-TimeZone -ListAvailable"');
     expect(out).toContain('W. Central Africa Standard Time');
     expect(out).toContain('Eastern Standard Time');
@@ -271,7 +271,7 @@ describe('§6.3 — le fuseau horaire', () => {
   it('le decalage sort de la MEME table que celle de Linux', async () => {
     // Sans magasin partage, une machine Windows et une machine Linux du
     // meme laboratoire donneraient deux decalages pour `WAT`.
-    const pc = new WindowsPC(`W${++serie}`);
+    const pc = new WindowsPC('windows-pc', `W${++serie}`);
     await pc.executeCommand(
       'powershell -c "Set-TimeZone -Id \'W. Central Africa Standard Time\'"');
     expect(pc.getTimezoneStore().timezone).toBe('Africa/Douala');

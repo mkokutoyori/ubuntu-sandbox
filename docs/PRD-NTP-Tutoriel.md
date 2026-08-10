@@ -382,8 +382,20 @@ strate** : la propriété se contrôle sans connaître W32Time.
 Discrimination par `git stash` : **22 des 23 tombent** avant.
 
 **Mesures.** 124 suites connexes vertes (1 807 cas) plus les 61 suites
-PowerShell (1 912 cas). Typecheck : jeu d'erreurs identique (213).
-Aucun test existant modifié.
+PowerShell (1 912 cas). Aucun test existant modifié.
+
+> **Correction (lot N5).** La phrase « Typecheck : jeu d'erreurs
+> identique (213) » qui figurait ici était **fausse**. Elle avait été
+> mesurée avant l'écriture de `tuto-ntp-windows.test.ts`, et le
+> comparatif `git stash -u` remisait précisément ce fichier non suivi —
+> donc la mesure ne l'a jamais vu. Ce fichier construisait
+> `new WindowsPC(\`W${n}\`)` alors que le premier paramètre est un
+> `DeviceType`, ce qui ajoutait **12 erreurs de typage**. Elles ne
+> changeaient rien à l'exécution (Vitest ne typecheck pas), mais
+> l'affirmation était inexacte. Corrigé au lot N5, qui ramène le
+> décompte **sous** la ligne de base. Leçon retenue et appliquée
+> désormais : mesurer le typecheck **après** avoir écrit les tests, pas
+> avant.
 
 ---
 
@@ -416,3 +428,119 @@ correctifs.
   demanderait une horloge disciplinée que ce simulateur n'a pas.
 - **`ntp broadcast`/`multicast`, PTP, et les horloges matérielles**
   (`refclock`) : hors périmètre, faute de brique.
+
+
+---
+
+## 7. N5 — Livré : l'authentification signe
+
+### 7.1 Le défaut, mesuré
+
+`checkAuthentication` ne regardait que le **numéro** de clé. Trois
+laboratoires, un client et un serveur `ntp master 2` sur un vrai câble :
+
+| Configuration | Attendu (tuto §3.6) | Mesuré |
+|---|---|---|
+| Mêmes clés | synchronisé | synchronisé |
+| **Clés différentes** | **REJET** | **synchronisé** |
+| **Client sans aucune clé** | **REJET** | **synchronisé** |
+
+Le troisième cas dit tout : le client n'a ni `ntp authenticate`, ni
+`authentication-key`, ni `trusted-key`. Il lui suffit d'écrire
+`ntp server 10.0.0.1 key 1` — de **nommer** un numéro — pour être
+accepté. **Nommer une clé suffisait ; connaître son secret n'était pas
+requis.** C'est exactement l'usurpation que le §9 du tutoriel décrit
+comme la raison d'être de l'authentification.
+
+Deux constats de plus : le **client ne vérifiait jamais la réponse**
+(`acceptServerReply` n'appelait pas l'authentification du tout), et
+`show ntp associations detail` ne montrait **rien** de l'état
+d'authentification.
+
+### 7.2 Ce qui est fait
+
+`ntp/auth.ts` sérialise **un vrai en-tête NTP de 48 octets** — ordre
+gros-boutien, virgule fixe 16.16 pour le délai et la dispersion, 32.32
+pour les horodatages depuis 1900, exposant de précision **signé** — et
+le signe `MD5(clé ‖ en-tête)`. Le `md5` du dépôt est réel, donc le
+condensé l'est : il **dépend** de chaque champ signé, ce qu'un cas de
+test vérifie sur les douze.
+
+La signature est posée dans `sendNtp`, **point unique** traversé par les
+trois émetteurs (requête, réponse serveur, réponse symétrique) : trois
+endroits finiraient par diverger.
+
+### 7.3 Ce qui a été vérifié contre le matériel réel, et ce que ça a changé
+
+**C'est ici que la recherche a le plus servi**, et elle a corrigé
+**quatre** choses, dont deux de mes propres décisions :
+
+1. **La référence était fausse.** J'avais cité RFC 1305 annexe C.
+   RFC 5905 §7.3 précise que « the MAC computation used here **differs**
+   from those defined in [RFC1305] and [RFC4330] but is consistent with
+   how existing implementations generate a MAC ». C'est donc RFC 5905
+   qui est implémentée. Le texte exact de la RFC — « 128-bit MD5 hash
+   computed over the key followed by the NTP packet header and extension
+   fields (but not the Key Identifier or Message Digest fields) » —
+   confirme la construction, y compris l'exclusion du numéro de clé et
+   du condensé, qu'un cas vérifie.
+
+2. **Le message que le tutoriel annonce n'a pas pu être confirmé.** Le
+   tutoriel affirme qu'un `%NTP-4-AUTHENTICATION_FAILURE` apparaît. Les
+   sources consultées décrivent au contraire un rejet **silencieux** —
+   « a mismatched secret does not throw a loud error » — diagnostiqué
+   par `show ntp associations detail` et `debug ntp validity`. J'avais
+   écrit ce message ; **je l'ai retiré**. Émettre un syslog qu'un vrai
+   routeur n'écrit pas apprendrait à chercher une ligne qui n'existe
+   pas, ce qui est pire qu'une absence. Un cas de test le **pin** :
+   le journal ne doit rien contenir.
+
+3. **`show ntp associations detail` est la seule vue qui montre l'état
+   d'authentification.** La documentation et les transcriptions
+   concordent : « basic `show ntp associations` won't reveal
+   authentication status — you must use the `detail` keyword ». La vue
+   rend désormais `authenticated` / `unauthenticated`, et un cas vérifie
+   que la vue **brève** ne le montre pas — sans quoi on enseignerait un
+   diagnostic que le matériel ne permet pas.
+
+4. **Un serveur ne se tait pas : il répond par un crypto-NAK.** « The
+   server responds with authenticated packets if correct, or a
+   crypto-NAK packet if not. » C'est un paquet dont l'identifiant de clé
+   vaut **zéro** — réservé, la RFC autorisant 65 535 clés « à
+   l'exclusion de zéro » — et qui ne porte aucun condensé. Il est
+   implémenté, et il est **plus instructif** que le silence : le client
+   apprend que son authentification a échoué au lieu d'un timeout
+   indiscernable d'un serveur en panne.
+
+**Un défaut introduit puis attrapé en chemin**, à signaler parce qu'il
+illustre le risque : en ajoutant le crypto-NAK, le client s'est mis à
+**se synchroniser sur le NAK lui-même** — à régler son horloge sur le
+paquet qui dit « je te refuse ». Le cas « client sans aucune clé » l'a
+attrapé immédiatement. Un crypto-NAK est un refus, jamais une mesure.
+
+### 7.4 Trois refus distincts, et pourquoi
+
+`checkAuthentication` rend quatre raisons plutôt qu'un booléen, parce
+qu'elles envoient l'opérateur à quatre endroits différents : pas de clé
+du tout, clé inconnue, clé connue mais **non déclarée fiable** (le
+`trusted-key` manquant — « définir une clé n'est pas la faire
+confiance »), et **condensé faux**, le seul qui dénonce une usurpation
+plutôt qu'une faute de configuration.
+
+Un cas pin aussi la cause la plus fréquente de « je croyais
+authentifier » : des clés déclarées **sans** `ntp authenticate` ne font
+rien, et le client se synchronise.
+
+### 7.5 Tests
+
+`tuto-ntp-authentification.test.ts` (20 cas). `git stash` : **6
+tombent** avant. Les 14 autres sont nommés dans l'en-tête du fichier
+plutôt que laissés à découvrir — sept portent sur le module `auth.ts`
+(qui n'existait pas, donc ne discriminent rien) et sept sont des
+**témoins** qui doivent passer des deux côtés.
+
+**Mesures.** 168 suites connexes vertes (2 488 cas) — Cisco, Huawei,
+FHRP, tutoriels, famille NTP complète. Typecheck : **228 avant, 216
+après** — douze de moins, parce que ce lot corrige les douze erreurs que
+le lot N4 avait introduites dans son propre fichier de test (voir la
+correction au §5.5). Aucun test existant modifié.

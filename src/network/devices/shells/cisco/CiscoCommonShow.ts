@@ -690,12 +690,21 @@ export function showNtpAssociationsDetail(dev?: ShowStateDevice): string {
   for (const [, a] of ntp.getConfig().associations) {
     const joignable = a.reach !== 0;
     const role = a.preferred && joignable ? 'our_master' : joignable ? 'selected' : 'unsynced';
+    // `authenticated` n'apparait que sur les associations dont le
+    // condensé a ete VERIFIE, et cette vue est la SEULE a le montrer :
+    // la documentation Cisco et les transcriptions concordent — « basic
+    // `show ntp associations` won't reveal authentication status, you
+    // must use the `detail` keyword ». Une association sans clé n'ecrit
+    // rien plutot que `unauthenticated`, parce qu'IOS n'ecrit ce mot que
+    // lorsqu'une authentification a ete tentee et a echoue.
+    const auth = a.authenticated === true ? ', authenticated'
+      : a.authenticated === false ? ', unauthenticated' : '';
     const notreMode = a.mode === 'symmetric-active' ? 'active' : 'client';
     const sonMode = a.mode === 'symmetric-active' ? 'passive' : 'server';
     const syncDist = Math.abs(a.delayMs) / 2 + a.dispersionMs;
     const filt = (v: number) => Array(8).fill(v.toFixed(2)).join('  ');
     blocs.push([
-      `${a.serverIp} configured, ${role}, sane, valid, stratum ${a.stratum}`,
+      `${a.serverIp} configured${auth}, ${role}, sane, valid, stratum ${a.stratum}`,
       `ref ID ${a.stratum < 16 ? a.serverIp : '.INIT.'}, time ${formatNtpReferenceTime(a.lastReplyMs || Date.now())}`,
       `our mode ${notreMode}, peer mode ${sonMode}, our poll intvl ${a.pollSec}, peer poll intvl ${a.pollSec}`,
       `root delay ${Math.abs(a.delayMs).toFixed(2)} msec, root disp ${a.dispersionMs.toFixed(2)}, reach ${a.reach.toString(8).padStart(3, '0')}, sync dist ${syncDist.toFixed(2)}`,
