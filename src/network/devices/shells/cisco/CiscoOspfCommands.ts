@@ -1401,6 +1401,12 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
       // ne désigne pas un préfixe. `show ipv6 route static` répondait
       // `% Route to static`, en cherchant une destination nommée
       // « static ».
+      // `summary` is not a destination either — it counts the table by
+      // source. It answered `% Route to summary`, hunting for a prefix
+      // by that name.
+      if ('summary'.startsWith(args[0].toLowerCase())) {
+        return showIpv6RouteSummary(getRouter());
+      }
       const codes = ROUTE_FILTER_CODES[args[0].toLowerCase()];
       if (codes) return filterRouteTableByCode(showIpv6Route(getRouter()), codes);
       return showIpv6RouteSpecific(getRouter(), args[0]);
@@ -2828,6 +2834,35 @@ function showIpv6Route(router: Router): string {
     const iface = r.iface ? `, ${r.iface}` : '';
     lines.push(`${code}  ${prefix}/${prefLen} [${r.ad || 0}/${r.metric || 0}]${nh}${iface}`);
   }
+  return lines.join('\n');
+}
+
+/**
+ * `show ipv6 route summary` — how many prefixes each source contributes.
+ * Every number is COUNTED on the live table; nothing here is a constant.
+ */
+function showIpv6RouteSummary(router: Router): string {
+  router._ospfAutoConverge();
+  const rt = (router._getIPv6RoutingTableInternal() as Array<{ type?: string }>) || [];
+  const parSource = new Map<string, number>();
+  for (const r of rt) {
+    const source = r.type === 'default' ? 'static' : (r.type ?? 'connected');
+    parSource.set(source, (parSource.get(source) ?? 0) + 1);
+  }
+  const lines = [
+    `IPv6 routing table name is Default-IPv6-Routing-Table(0)`,
+    `IPv6 routing table maximum-paths is 4`,
+    `Route Source    Networks    Overhead    Memory (bytes)`,
+  ];
+  let total = 0;
+  for (const source of ['connected', 'local', 'static', 'ospf', 'rip', 'bgp', 'eigrp']) {
+    const n = parSource.get(source) ?? 0;
+    if (n === 0 && source !== 'connected' && source !== 'local' && source !== 'static') continue;
+    total += n;
+    // IOS bills 88 bytes of overhead and 44 of table per IPv6 route.
+    lines.push(`${source.padEnd(16)}${String(n).padEnd(12)}${String(n * 88).padEnd(12)}${n * 44}`);
+  }
+  lines.push(`Total           ${String(total).padEnd(12)}${String(total * 88).padEnd(12)}${total * 44}`);
   return lines.join('\n');
 }
 

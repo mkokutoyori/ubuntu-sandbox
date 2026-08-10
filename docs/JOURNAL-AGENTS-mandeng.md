@@ -84,6 +84,43 @@ vertes (766 cas).
 
 ---
 
+### `debug ipv6 nd`, `debug ipv6 icmp`, `show ipv6 route summary` — LIVRÉ
+
+**Agent** : session « logging ». Trois commandes qui répondaient à une
+AUTRE question que celle posée, mesurées sur une paire de routeurs :
+
+```
+debug ipv6 nd            -> IPv6 packet debugging is on for access list nd
+debug ipv6 icmp          -> ... for access list icmp
+show ipv6 route summary  -> % Route to summary
+```
+
+Dans les deux premiers cas le sous-mot-clé était pris pour un NOM
+D'ACL — donc un filtre sur une liste que personne n'a déclarée, ce qui
+en pratique éteint la sortie qu'on vient d'allumer. Dans le troisième,
+`summary` était pris pour une destination : c'est exactement le défaut
+que `show ipv6 route static` avait, et qui avait été corrigé pour les
+noms de protocole sans que `summary` en fasse partie.
+
+**Rien de nouveau n'est branché** pour `nd`/`icmp` : les deux lisent la
+trame que `debug ipv6 packet` observe déjà, le TYPE ICMPv6 séparant la
+découverte de voisins du reste — les trois ne peuvent donc pas diverger.
+`show ipv6 route summary` COMPTE la table vivante, aucun nombre n'y est
+constant (le test ajoute une route statique et vérifie que le total
+bouge).
+
+**Trouvé au passage** : le nom d'ACL de `debug ipv6 packet` était mis en
+minuscules, alors qu'un nom d'ACL est sensible à la casse sur IOS —
+`debug ipv6 packet MYLIST` filtrait sur `mylist`.
+
+**Fichiers touchés** : `router/diag/RouterDebugService.ts`,
+`shells/CiscoShellBase.ts`, `shells/cisco/CiscoOspfCommands.ts`.
+
+**Mesures.** `cisco-ipv6-debug-and-summary.test.ts` (8 cas) discriminé
+par `git stash` : **les 8 tombent** avant. 196 suites vertes (2 711 cas).
+
+---
+
 ### `traceroute ipv6`, et deux vues qui ne rendaient pas une adresse — LIVRÉ
 
 **Agent** : session « logging ». Suite directe du lot précédent : une

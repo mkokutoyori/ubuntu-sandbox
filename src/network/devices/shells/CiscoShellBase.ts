@@ -2744,15 +2744,39 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('debug cdp', 'Debug CDP', () => genericDebug()?.enable('cdp.packets') ?? 'CDP packets debugging is on');
     this.privilegedTrie.registerGreedy('no debug lldp', 'Disable LLDP debug', () => genericDebug()?.disable('lldp.packets') ?? '');
     this.privilegedTrie.registerGreedy('no debug cdp', 'Disable CDP debug', () => genericDebug()?.disable('cdp.packets') ?? '');
+    // `nd`, `icmp` and `packet` are three DIFFERENT IOS commands. Taking
+    // the sub-keyword for an access-list name answered `debugging is on
+    // for access list nd` — a filter on a list nobody declared.
+    const ipv6DebugCategory = (mot: string): 'ipv6.packet' | 'ipv6.nd' | 'ipv6.icmp' | null => {
+      if (mot === '' || mot.startsWith('packet')) return 'ipv6.packet';
+      if ('nd'.startsWith(mot) || mot === 'nd') return 'ipv6.nd';
+      if ('icmp'.startsWith(mot)) return 'ipv6.icmp';
+      return null;
+    };
     this.privilegedTrie.registerGreedy('debug ipv6', 'Debug IPv6', (args) => {
       const svc = genericDebug();
+      const mots = args.map((a) => a.toLowerCase());
+      const category = ipv6DebugCategory(mots[0] ?? '');
+      if (!category) throw new CliInvalidInput({ token: args[0] });
       if (!svc) return 'IPv6 packet debugging is on';
-      const sub = args.join(' ').toLowerCase();
-      if (sub === '' || sub.startsWith('packet')) return svc.enable('ipv6.packet');
-      return svc.enable('ipv6.packet', sub);
+      // Only `packet` takes an access list; the other two filter nothing.
+      // The keyword matches case-insensitively, the LIST NAME does not —
+      // an ACL name is case-sensitive on IOS, and lowercasing it made
+      // the filter name a list nobody declared.
+      const acl = category === 'ipv6.packet' ? args.slice(1).join(' ') : '';
+      return acl ? svc.enable(category, acl) : svc.enable(category);
     });
-    this.privilegedTrie.registerGreedy('no debug ipv6', 'Disable IPv6 debug', () =>
-      genericDebug()?.disable('ipv6.packet') ?? '');
+    this.privilegedTrie.addCompletionKeywords('debug ipv6', [
+      { keyword: 'icmp', description: 'ICMPv6 messages' },
+      { keyword: 'nd', description: 'ICMPv6 Neighbor Discovery' },
+      { keyword: 'packet', description: 'IPv6 packets' },
+    ]);
+    this.privilegedTrie.registerGreedy('no debug ipv6', 'Disable IPv6 debug', (args) => {
+      const svc = genericDebug();
+      const category = ipv6DebugCategory((args[0] ?? '').toLowerCase());
+      if (!category) throw new CliInvalidInput({ token: args[0] });
+      return svc?.disable(category) ?? '';
+    });
     this.privilegedTrie.registerGreedy('debug condition', 'Restrict every debug to a condition', (args) => {
       const svc = genericDebug();
       if (!svc) return '';

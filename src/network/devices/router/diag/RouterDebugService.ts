@@ -40,6 +40,8 @@ export type DebugCategory =
   | 'vxlan'
   | 'port-security'
   | 'ipv6.packet'
+  | 'ipv6.nd'
+  | 'ipv6.icmp'
   | 'mac'
   | 'link'
   | 'stp.events'
@@ -108,7 +110,7 @@ const DEBUG_CATEGORIES: ReadonlySet<string> = new Set<string>([
   'aaa.authentication', 'aaa.authorization', 'aaa.accounting',
   'radius', 'tacacs', 'ntp.events', 'ntp.packets',
   'lldp.packets', 'cdp.packets', 'ip.pim', 'vxlan', 'port-security',
-  'ipv6.packet', 'mac', 'link', 'stp.events', 'stp.bpdu',
+  'ipv6.packet', 'ipv6.nd', 'ipv6.icmp', 'mac', 'link', 'stp.events', 'stp.bpdu',
 ]);
 
 const ALIAS: ReadonlyArray<readonly [RegExp, DebugCategory]> = [
@@ -224,11 +226,58 @@ export class RouterDebugService implements TerminalDebugSource {
     return [...this.flags.values()].sort((a, b) => a.category.localeCompare(b.category));
   }
 
+  /**
+   * `debug ipv6 nd` and `debug ipv6 icmp` are separate IOS commands, and
+   * they were neither: the greedy handler took `nd`/`icmp` for an ACCESS
+   * LIST name and answered `debugging is on for access list nd`. Both
+   * read the same frame `debug ipv6 packet` already observes — the
+   * ICMPv6 type is what tells Neighbor Discovery from the rest, so
+   * nothing new is hooked and the three cannot drift.
+   */
+  private tracerIcmpv6(
+    v6: { nextHeader?: number; payload?: unknown; sourceIP?: { toString(): string }; destinationIP?: { toString(): string } },
+    dir: string,
+    iface: string,
+  ): void {
+    if (v6.nextHeader !== 58) return;
+    const icmp = v6.payload as {
+      type?: string; icmpType?: string;
+      ndp?: { targetAddress?: { toString(): string } };
+    } | undefined;
+    if (icmp?.type !== 'icmpv6' || !icmp.icmpType) return;
+
+    const verbe = dir === 'sent' ? 'Sending' : 'Received';
+    const src = v6.sourceIP?.toString?.() ?? '?';
+    const dst = v6.destinationIP?.toString?.() ?? '?';
+    const cible = icmp.ndp?.targetAddress?.toString?.();
+
+    switch (icmp.icmpType) {
+      case 'neighbor-solicitation':
+      case 'neighbor-advertisement': {
+        const sigle = icmp.icmpType === 'neighbor-solicitation' ? 'NS' : 'NA';
+        this.emit('ipv6.nd',
+          `ICMPv6-ND: ${verbe} ${sigle} for ${cible ?? dst} on ${iface}`);
+        return;
+      }
+      case 'router-solicitation':
+      case 'router-advertisement': {
+        const sigle = icmp.icmpType === 'router-solicitation' ? 'RS' : 'RA';
+        this.emit('ipv6.nd', `ICMPv6-ND: ${verbe} ${sigle} on ${iface}`);
+        return;
+      }
+      default:
+        this.emit('ipv6.icmp',
+          `ICMPv6: ${verbe} ${icmp.icmpType} ${dir === 'sent' ? 'to' : 'from'} `
+          + `${dir === 'sent' ? dst : src} on ${iface}`);
+    }
+  }
+
   private static readonly ALL: ReadonlyArray<DebugCategory> = [
     'ip.packet', 'ip.icmp', 'ip.arp', 'ip.routing', 'ip.nat', 'ip.tcp', 'ip.udp',
     'ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
     'ip.ospf.packet', 'ip.ospf.lsa-generation', 'ip.dhcp.server',
     'ip.sla.trace', 'ip.sla.error', 'track', 'interface', 'ipv6.packet',
+    'ipv6.nd', 'ipv6.icmp',
     'cdp.packets', 'lldp.packets', 'ip.pim', 'vxlan',
     'crypto.isakmp', 'crypto.ipsec',
   ];
@@ -586,6 +635,7 @@ export class RouterDebugService implements TerminalDebugSource {
         const v6 = f6.payload;
         this.emit('ipv6.packet',
           `IPV6: s=${v6.sourceIP?.toString?.() ?? '?'} (${iface}), d=${v6.destinationIP?.toString?.() ?? '?'}, len ${v6.payloadLength ?? 0}, ${dir} (nxt ${v6.nextHeader ?? 0})`);
+        this.tracerIcmpv6(v6, dir, iface);
         return;
       }
       const ip = decodeIp(frame);
@@ -944,6 +994,8 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'vxlan': return 'VXLAN';
       case 'port-security': return 'Port security';
       case 'ipv6.packet': return 'IPv6 packet';
+      case 'ipv6.nd': return 'ICMP Neighbor Discovery';
+      case 'ipv6.icmp': return 'ICMPv6';
       case 'mac': return 'MAC address table';
       case 'link': return 'Link state';
       case 'stp.events': return 'Spanning Tree event';
@@ -983,7 +1035,7 @@ export class RouterDebugService implements TerminalDebugSource {
 
   private static readonly RUBRIQUES: ReadonlyArray<readonly [string, ReadonlyArray<DebugCategory>]> = [
     ['Generic IP', ['ip.packet', 'ip.icmp', 'ip.tcp', 'ip.udp', 'ip.arp', 'ip.routing', 'ip.nat']],
-    ['IPv6', ['ipv6.packet']],
+    ['IPv6', ['ipv6.packet', 'ipv6.nd', 'ipv6.icmp']],
     ['OSPF', ['ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
       'ip.ospf.packet', 'ip.ospf.lsa-generation']],
     ['RIP', ['ip.rip']],
