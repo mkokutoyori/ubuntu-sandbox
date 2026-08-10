@@ -243,6 +243,7 @@ interface QueuedPacket {
 
 import type { IRouterShell } from './shells/IRouterShell';
 import { iosInterfaceUsable, interfacesBootShutdown, routerPortCountOverride } from './inspection/InterfaceStatusView';
+import { ciscoPasswordMatches } from './shells/cisco/ciscoPasswordVerify';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -893,7 +894,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const ctx = new RouterTelnetServerContext({
       hostname: () => this.hostname,
       loginMode: () => this.resolveVtyLoginMode(),
-      linePassword: () => this.vtyLineConfig.all()[0]?.linePassword ?? null,
+      linePassword: () => {
+        const l = this.vtyLineConfig.all()[0];
+        return l?.linePassword ? { value: l.linePassword, algo: l.linePasswordAlgo } : null;
+      },
       authHeader: () => this.getVtyAuthHeader(),
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
@@ -3906,7 +3910,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       // `enable` ignore le nom d'utilisateur : le mot de passe EST le
       // secret d'activation, et l'accès obtenu est de niveau 15.
       const secret = this.getEnableSecret();
-      const ok = secret !== null && password.length > 0 && secret.value === password;
+      const ok = secret !== null && password.length > 0
+        && ciscoPasswordMatches(password, secret.value, secret.algo);
       return { ok, privilege: ok ? 15 : 1 };
     }
     if (method === 'local') {

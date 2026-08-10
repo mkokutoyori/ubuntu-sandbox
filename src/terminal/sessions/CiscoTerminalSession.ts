@@ -25,6 +25,7 @@ import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
 import { IOS_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
+import { ciscoPasswordMatches } from '@/network/devices/shells/cisco/ciscoPasswordVerify';
 
 const CISCO_THEME: TerminalTheme = {
   sessionType: 'cisco',
@@ -116,6 +117,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
     const cfg = (shell as {
       _getConsoleLineConfig?: () => {
         login: 'password' | 'local' | 'none' | null; password: string | null;
+        passwordEncrypted?: boolean;
       } | null;
     } | undefined)?._getConsoleLineConfig?.();
     if (!cfg) return;
@@ -129,7 +131,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
       return;
     }
     if (cfg.login === 'password' && cfg.password != null) {
-      this.startFlowFromSteps(this.buildLinePasswordLoginSteps(cfg.password), '', undefined, { authGate: true });
+      this.startFlowFromSteps(
+        this.buildLinePasswordLoginSteps(cfg.password, cfg.passwordEncrypted === true ? 'type-7' : 'plain'),
+        '', undefined, { authGate: true },
+      );
     }
   }
 
@@ -152,7 +157,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * et laisse trois essais avant de fermer la ligne, comme la variante
    * nominative.
    */
-  private buildLinePasswordLoginSteps(attendu: string): InteractiveStep[] {
+  private buildLinePasswordLoginSteps(attendu: string, algo: 'plain' | 'type-7' = 'plain'): InteractiveStep[] {
     const loginBanner = this.deviceBanner('login');
     const preLines = loginBanner.length > 0 ? [...loginBanner.split('\n'), ''] : [];
     return [
@@ -162,7 +167,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
         type: 'execute',
         action: async (ctx) => {
           const saisi = ctx.values.get('line_login_password') ?? '';
-          const ok = saisi === attendu;
+          // Comparer a la forme STOCKEE refusait le bon mot de passe des
+          // que `service password-encryption` etait actif ou que la
+          // configuration avait fait un aller-retour : la porte se
+          // fermait sur l'operateur qui venait de la poser.
+          const ok = ciscoPasswordMatches(saisi, attendu, algo);
           const essais = parseInt(ctx.values.get('line_login_attempts') ?? '0', 10) + (ok ? 0 : 1);
           ctx.values.set('line_login_attempts', String(essais));
           ctx.values.set('line_login_ok', ok ? '1' : '0');
@@ -978,5 +987,29 @@ export class CiscoTerminalSession extends CLITerminalSession {
         });
       }),
     });
+  }
+
+  /**
+   * `<nom> con0 is now available` puis `Press RETURN to get started.` —
+   * la formulation d'IOS, verifiee sur des transcriptions reelles et non
+   * ecrite de memoire : une session qui se termine sur la console LIBERE
+   * la ligne, elle ne debranche pas le cable.
+   */
+  protected override consoleReleasedBanner(): string[] | null {
+    if (this.isRemoteChild) return null;
+    const nom = this.device.getHostname?.() ?? 'Router';
+    return ['', `${nom} con0 is now available`, '', 'Press RETURN to get started.', ''];
+  }
+
+  /**
+   * La frappe rouvre une session EXEC. Elle repasse par la porte de la
+   * ligne console : si un `login` y est configure, on redemande les
+   * identifiants — sinon on aurait invente une session gratuite juste
+   * apres avoir annonce qu'on en fermait une.
+   */
+  protected override reopenConsoleExec(): void {
+    this.maybeStartConsoleLogin();
+    if (!this.isFlowActive) this.updatePrompt();
+    this.notify();
   }
 }

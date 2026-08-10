@@ -50,6 +50,16 @@ export interface VtyLineConfigInit {
   readonly login?: VtyLoginMode;
   /** `password …` configured on the line (line-local auth secret). */
   readonly linePassword?: string;
+  /**
+   * La FORME sous laquelle `linePassword` est range. Elle manquait, et
+   * son absence coutait deux fois : `password 7 <chiffre>` etait range
+   * comme s'il etait en clair, donc rechiffre une seconde fois par le
+   * rendu quand `service password-encryption` est actif, et compare tel
+   * quel au mot de passe tape — donc refuse pour toujours. Comme la
+   * configuration rendue est REJOUEE a l'import d'une topologie, un
+   * simple aller-retour suffisait a produire ce cas.
+   */
+  readonly linePasswordAlgo?: 'plain' | 'type-7';
   readonly privilege?: number;
   readonly authenticationMode?: 'password' | 'aaa' | 'none';
   readonly screenLengthLines?: number;
@@ -77,6 +87,7 @@ export class VtyLineConfig {
   readonly transportInput: VtyTransport | null;
   readonly login: VtyLoginMode | null;
   readonly linePassword: string | null;
+  readonly linePasswordAlgo: 'plain' | 'type-7';
   readonly privilege: number | null;
   readonly authenticationMode: 'password' | 'aaa' | 'none' | null;
   readonly screenLengthLines: number | null;
@@ -98,6 +109,7 @@ export class VtyLineConfig {
     this.transportInput     = init.transportInput ?? null;
     this.login              = init.login ?? null;
     this.linePassword       = init.linePassword ?? null;
+    this.linePasswordAlgo   = init.linePasswordAlgo ?? 'plain';
     this.privilege          = init.privilege ?? null;
     this.authenticationMode = init.authenticationMode ?? null;
     this.screenLengthLines  = init.screenLengthLines ?? null;
@@ -131,6 +143,7 @@ export class VtyLineConfig {
       transportInput:     patch.transportInput     ?? this.transportInput     ?? undefined,
       login:              patch.login              ?? this.login              ?? undefined,
       linePassword:       patch.linePassword       ?? this.linePassword       ?? undefined,
+      linePasswordAlgo:   patch.linePasswordAlgo   ?? this.linePasswordAlgo   ?? undefined,
       privilege:          patch.privilege          ?? this.privilege          ?? undefined,
       authenticationMode: patch.authenticationMode ?? this.authenticationMode ?? undefined,
       screenLengthLines:  patch.screenLengthLines  ?? this.screenLengthLines  ?? undefined,
@@ -159,7 +172,7 @@ export class VtyLineConfig {
     if (this.accessClassIn  !== null) lines.push(` access-class ${this.accessClassIn} in`);
     if (this.accessClassOut !== null) lines.push(` access-class ${this.accessClassOut} out`);
     if (this.linePassword) {
-      lines.push(` password ${renderPasswordField(this.linePassword, 'plain-password', serviceEncryption, false, `line-vty:${this.first}`)}`);
+      lines.push(` password ${renderPasswordField(this.linePassword, this.linePasswordAlgo === 'type-7' ? 'type-7' : 'plain-password', serviceEncryption, false, `line-vty:${this.first}`)}`);
     }
     if (this.login !== null) {
       if (this.login === 'local') lines.push(' login local');

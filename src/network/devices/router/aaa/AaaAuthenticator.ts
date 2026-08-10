@@ -7,6 +7,7 @@ import type { TacacsAcctFlag } from '../../../tacacs/types';
 import type { VtyLineConfig } from '../vty/VtyLineConfig';
 import type { VtyLineConfigStore } from '../vty/VtyLineConfigStore';
 import type { HuaweiAaaService } from './HuaweiAaaService';
+import { ciscoPasswordMatches } from '../../shells/cisco/ciscoPasswordVerify';
 
 export interface AccountingCounters {
   starts: number;
@@ -166,11 +167,11 @@ export class AaaAuthenticator {
     return 'default';
   }
 
-  private activeLinePassword(): string | null {
+  private activeLinePassword(): { value: string; algo: 'plain' | 'type-7' } | null {
     const store = vtyStoreOf(this.router);
     if (!store) return null;
     for (const line of store.all()) {
-      if (line.linePassword !== null) return line.linePassword;
+      if (line.linePassword !== null) return { value: line.linePassword, algo: line.linePasswordAlgo };
     }
     return null;
   }
@@ -250,11 +251,19 @@ export class AaaAuthenticator {
       }
       if (token === 'enable') {
         const secret = this.router.getEnableSecret();
-        return { accepted: secret !== null && password.length > 0 && secret.value === password, method: 'enable' };
+        return {
+          accepted: secret !== null && password.length > 0
+            && ciscoPasswordMatches(password, secret.value, secret.algo),
+          method: 'enable',
+        };
       }
       if (token === 'line') {
         const linePassword = this.activeLinePassword();
-        return { accepted: linePassword !== null && password.length > 0 && linePassword === password, method: 'line' };
+        return {
+          accepted: linePassword !== null && password.length > 0
+            && ciscoPasswordMatches(password, linePassword.value, linePassword.algo),
+          method: 'line',
+        };
       }
       if (token === 'none') {
         return { accepted: true, method: 'none' };

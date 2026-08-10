@@ -203,6 +203,47 @@ export abstract class CLITerminalSession extends TerminalSession {
   protected _onRequestClose?: () => void;
   onRequestClose(cb: () => void): void { this._onRequestClose = cb; }
 
+  /**
+   * Une CONSOLE ne se ferme pas quand la session se termine : elle se
+   * repropose.
+   *
+   * `exit` depuis un mode EXEC termine bien la session — c'est le vrai
+   * comportement d'IOS et il est verifie par test. Mais un onglet de
+   * terminal est la LIGNE console, un cable soude a la machine : la
+   * session finit, la ligne reste. Une vraie machine annonce alors
+   * `<nom> con0 is now available` puis `Press RETURN to get started.` et
+   * attend une frappe. Ici l'onglet DISPARAISSAIT, donc `exit` — le geste
+   * qu'on apprend pour quitter le mode privilegie — coupait l'acces a la
+   * machine entiere, et il fallait rouvrir un terminal pour revenir.
+   *
+   * La fermeture reste juste pour une session ENFANT (un `ssh`/`telnet`
+   * ouvert depuis un autre terminal) : la, la session EST la connexion.
+   */
+  protected endExecSession(): void {
+    const banniere = this.consoleReleasedBanner();
+    if (!banniere) { this._onRequestClose?.(); return; }
+    for (const l of banniere) this.addLine(l);
+    this.consoleAwaitingReturn = true;
+    this.prompt = '';
+    this.notify();
+  }
+
+  /**
+   * Les lignes annoncant que la console se libere, ou null pour fermer
+   * l'onglet comme avant. Null par defaut : n'invente pas la formulation
+   * d'un constructeur dont on n'a pas la transcription.
+   */
+  protected consoleReleasedBanner(): string[] | null { return null; }
+
+  /** La console attend la frappe qui rouvre une session EXEC. */
+  protected consoleAwaitingReturn = false;
+
+  /** Rouvrir une session EXEC apres la frappe. */
+  protected reopenConsoleExec(): void {
+    this.updatePrompt();
+    this.notify();
+  }
+
   // ── Key handling ────────────────────────────────────────────────
 
   /**
@@ -224,6 +265,17 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   protected handleModeKey(e: KeyEvent): boolean {
+    // La console est libre : toute frappe est absorbee, seule RETURN
+    // rouvre une session — comme sur une vraie ligne console.
+    if (this.consoleAwaitingReturn) {
+      if (e.key === 'Enter') {
+        this.consoleAwaitingReturn = false;
+        this.input = '';
+        this.reopenConsoleExec();
+      }
+      return true;
+    }
+
     // Pager mode
     if (this.pagerLines) {
       if (e.key === ' ') { this.pagerNextPage(); return true; }
@@ -344,7 +396,7 @@ export abstract class CLITerminalSession extends TerminalSession {
 
       if (result === CONNECTION_CLOSED || exitBeforeExec) {
         if (this.endRemoteSession()) return;
-        this._onRequestClose?.();
+        this.endExecSession();
         return;
       }
 

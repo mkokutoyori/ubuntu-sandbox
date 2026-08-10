@@ -4359,6 +4359,63 @@ deux imports morts, retires. Aucun test existant modifie.
 
 ---
 
+## Lot A1 — vérifier un mot de passe, et libérer la console
+
+**PRD** : `PRD-Acces-Mot-De-Passe-Cisco.md`. Deux bugs signalés depuis
+l'usage : `enable` refusait le bon mot de passe après
+`service password-encryption`, et `exit` depuis `#` fermait l'onglet.
+
+Le premier est une **famille entière**. Le mot de passe tapé était comparé
+à la FORME STOCKÉE (`value === gate.value`), juste seulement tant que
+cette forme est le clair. Le cas le plus coûteux n'est pas celui qui a été
+signalé : **sauvegarder puis rouvrir une topologie suffit**, parce que
+`show running-config` rend le condensé (c'est son rôle) et que l'import
+rejoue cette configuration — donc un secret posé en clair devient un
+condensé à la première sauvegarde et la machine rouverte refuse pour
+toujours le mot de passe que l'apprenant vient de choisir. Mesuré :
+`enable secret MonSecret1` ressort en
+`enable secret 5 $1$a38effcc$3fSShOKFha.TXFAu34YEB/`.
+
+**Cinq portes** comparaient ainsi (`enable`, connexion console, telnet
+vers une vty, AAA `enable`/`line`, `ip http authentication enable`) ;
+`ciscoPasswordVerify.ts` est le pendant lecture de
+`ciscoPasswordRender.ts`, qui existait seul. La règle n'était écrite
+qu'UNE fois dans tout le dépôt — `NetworkOsAccount.authenticate`, côté
+Huawei, dont le commentaire l'énonce déjà mot pour mot.
+
+Trouvé en chemin : l'analyseur du mot de passe de ligne retirait le
+chiffre de type inconditionnellement, donc `password mon mot` rangeait
+`mot` et `password 7 <chiffre>` était **rechiffré une seconde fois** au
+rendu.
+
+Le second bug n'en était pas tout à fait un : terminer la session EST le
+vrai IOS. Ce qui manquait est ce qu'une vraie machine fait ensuite —
+`<nom> con0 is now available` / `Press RETURN to get started.` —
+formulation vérifiée sur transcription. Le fond que la sonde stricte a
+attrapé : la session rouverte doit repartir au niveau UTILISATEUR, et
+poser `mode` ne suffisait pas puisque `show privilege` lit le NIVEAU ;
+sans les deux, `exit` **rendait les droits d'administration à qui appuie
+sur une touche**. Visible seulement parce que l'assertion a été ancrée —
+`level is 1` est un préfixe de `level is 15`.
+
+**Fichiers touchés** : `shells/cisco/ciscoPasswordVerify.ts` (nouveau),
+`shells/CiscoShellBase.ts`, `router/vty/VtyLineConfig.ts`,
+`router/aaa/AaaAuthenticator.ts`, `devices/Router.ts`,
+`protocols/telnet/RouterTelnetServerContext.ts`,
+`terminal/sessions/CLITerminalSession.ts`,
+`terminal/sessions/CiscoTerminalSession.ts`.
+
+**Mesures.** `probe-acces-mot-de-passe-et-console.test.ts` (24 cas, les
+deux plateformes) discriminé par `git stash` : **12 tombent** avant.
+`e2e/cisco-enable-password-et-console-liberee.spec.ts` (6 cas Playwright).
+15 suites connexes vertes (310 cas). Typecheck et lint : jeux identiques.
+**Trois tests existants corrigés** — ils échouaient AVANT ce lot (vérifié
+par revert complet) et encodaient un contrat périmé : `enable` laisse
+trois essais, donc `show privilege` tapé après un seul refus soumet un mot
+de passe VIDE au lieu de poser une question.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -4377,6 +4434,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
+| Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** — audit en cours |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

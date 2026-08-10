@@ -90,6 +90,7 @@ import {
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
+import { ciscoPasswordMatches } from './cisco/ciscoPasswordVerify';
 import {
   getManagementService, getSnmpService, getSnmpAgent, getNtpAgent, getHttpService,
 } from '../../equipment/RouterServiceCapabilities';
@@ -681,6 +682,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const secret = dev?.getEnableSecretForLevel?.(lvl) ?? null;
     const password = secret ? null : (dev?.getEnablePasswordForLevel?.(lvl) ?? null);
     const gate = secret ?? password;
+    /**
+     * Le mot de passe tape correspond-il a la porte ?
+     *
+     * Il etait compare a la FORME STOCKEE (`value === gate.value`), ce
+     * qui rendait `enable` IMPOSSIBLE des que cette forme n'etait plus le
+     * texte en clair. La regle de verification vit dans
+     * `ciscoPasswordVerify`, avec la liste des trois situations tres
+     * ordinaires qui produisaient ce refus — dont l'aller-retour d'une
+     * topologie, qui reecrit tout secret en condense.
+     */
+    const correspond = (saisi: string): boolean =>
+      !!gate && ciscoPasswordMatches(saisi, gate.value, gate.algo);
     // Sans mot de passe d'activation, IOS distingue les deux portes
     // depuis toujours : la console passe, une ligne RESEAU est refusee.
     // La raison est de securite et non de commodite — une vty joignable
@@ -709,7 +722,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           kind: 'password',
           prompt: 'Password: ',
           validate: (value) => {
-            if (value === gate.value) return { valid: true };
+            if (correspond(value)) return { valid: true };
             essais += 1;
             // Le troisieme refus est celui qui abandonne, et IOS ne dit
             // pas la meme chose : `% Access denied` tant qu'il redemande,
@@ -2077,6 +2090,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * session au niveau 15. Un operateur qui tape `exit` en croyant avoir
    * quitte les droits d'administration les gardait — et le terminal, ne
    * recevant aucune annonce, gardait l'onglet ouvert.
+   */
+  /**
+   * La session est finie : la SUIVANTE recommence au niveau de la ligne,
+   * pas la ou celle-ci s'est arretee.
+   *
+   * Les TROIS champs comptent, et le niveau est le moins evident :
+   * `show privilege` et `modeDeRetour` lisent `currentPrivilegeLevel` et
+   * non `mode`, donc ne poser que le mode laissait la session a 15 et le
+   * mode y revenait tout seul — `exit` rendait alors les droits
+   * d'administration a la premiere frappe suivante. C'est le meme couple
+   * que `disable` remet a zero.
    */
   protected fermerSessionExec(): string {
     this.terminalMonitor = false;
@@ -4585,7 +4609,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           const sub = args[0]?.toLowerCase();
           update.login = sub === 'local' ? 'local' : sub === 'authentication' ? 'aaa' : 'password';
         } else if (kw === 'password') {
-          update.linePassword = args.slice(1).join(' ') || args[0];
+          // `password [0|7] <mot>`. Le chiffre de type n'est un type que
+          // s'il est ecrit ; il etait retire INCONDITIONNELLEMENT
+          // (`args.slice(1)`), donc `password mon mot` rangeait `mot` — le
+          // premier mot du mot de passe disparaissait — et la forme
+          // `password 7 <chiffre>` rangeait le chiffre comme s'il etait le
+          // texte en clair, sans garder l'algorithme.
+          if (args[0] === '0' && args.length > 1) {
+            update.linePassword = args.slice(1).join(' ');
+            update.linePasswordAlgo = 'plain';
+          } else if (args[0] === '7' && args.length > 1) {
+            update.linePassword = args.slice(1).join(' ');
+            update.linePasswordAlgo = 'type-7';
+          } else {
+            update.linePassword = args.join(' ');
+            update.linePasswordAlgo = 'plain';
+          }
         } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
           update.loggingSynchronous = true;
         } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {

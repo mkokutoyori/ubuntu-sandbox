@@ -228,11 +228,30 @@ describe('la porte `enable` demande et vérifie le mot de passe', () => {
    * cassee dans l'autre sens.
    */
   async function niveauVuParLaSession(s: CiscoTerminalSession): Promise<string> {
+    // La question n'a de sens qu'a l'invite ordinaire. IOS laisse TROIS
+    // essais sur une meme invocation d'`enable` : tant qu'ils ne sont pas
+    // epuises, la session est encore en saisie de mot de passe et taper
+    // `show privilege` y soumet un mot de passe VIDE. Ces deux cas
+    // lisaient donc `% Access denied` la ou ils croyaient lire un niveau,
+    // et ne prouvaient plus rien depuis que le refus a cesse d'etre a un
+    // seul coup.
+    if (s.currentInputMode.type !== 'normal') {
+      throw new Error(`la session est en mode ${s.currentInputMode.type} : epuiser les essais d'abord`);
+    }
     const avant = s.lines.length;
     s.setInput('show privilege');
     s.handleKey(key('Enter'));
     for (let i = 0; i < 30; i++) await tick();
     return s.lines.slice(avant).map((l) => l.text).join('\n');
+  }
+
+  /** Epuiser les essais restants pour qu'IOS rende la main au mode utilisateur. */
+  async function abandonneEnable(s: CiscoTerminalSession): Promise<void> {
+    for (let n = 0; n < 3 && s.currentInputMode.type === 'password'; n++) {
+      s.setPasswordBuf('encore-faux');
+      s.handleKey(key('Enter'));
+      for (let i = 0; i < 30; i++) await tick();
+    }
   }
 
   it('`enable` ouvre une invite au lieu d\'accorder tout de suite', async () => {
@@ -248,7 +267,8 @@ describe('la porte `enable` demande et vérifie le mot de passe', () => {
     s.handleKey(key('Enter'));
     for (let i = 0; i < 30; i++) await tick();
     expect(s.lines.map((l) => l.text).join('\n')).toContain('% Access denied');
-    expect(await niveauVuParLaSession(s)).toContain('level is 1');
+    await abandonneEnable(s);
+    expect(await niveauVuParLaSession(s)).toMatch(/level is 1$/m);
   }, 30_000);
 
   it('le bon mot de passe ouvre — la porte n\'est pas une souricière', async () => {
@@ -266,7 +286,8 @@ describe('la porte `enable` demande et vérifie le mot de passe', () => {
     s.setPasswordBuf('TresSecret');
     s.handleKey(key('Enter'));
     for (let i = 0; i < 30; i++) await tick();
-    expect(await niveauVuParLaSession(s)).toContain('level is 1');
+    await abandonneEnable(s);
+    expect(await niveauVuParLaSession(s)).toMatch(/level is 1$/m);
 
     await tape(s, 'enable 7');
     s.setPasswordBuf('Sept');

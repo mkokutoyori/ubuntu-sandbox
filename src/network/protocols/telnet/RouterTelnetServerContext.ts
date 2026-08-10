@@ -14,13 +14,14 @@ import type {
   ITelnetServerContext, TelnetAdmission, TelnetAuthPrompt,
   TelnetSessionHandle, TelnetVtyShell,
 } from './ITelnetServerContext';
+import { ciscoPasswordMatches } from '@/network/devices/shells/cisco/ciscoPasswordVerify';
 
 export interface RouterTelnetServerDeps {
   hostname(): string;
   /** `login` mode of the first configured VTY block, vendor-neutral. */
   loginMode(): 'none' | 'local' | 'aaa' | 'password';
   /** `password …` set on the line, used when the mode is `password`. */
-  linePassword(): string | null;
+  linePassword(): { value: string; algo: 'plain' | 'type-7' } | null;
   authHeader(): string | null;
   loginBanner(): string | null;
   motd(): string | null;
@@ -62,7 +63,7 @@ export class RouterTelnetServerContext implements ITelnetServerContext {
     switch (this.deps.loginMode()) {
       case 'password': {
         const expected = this.deps.linePassword();
-        return expected !== null && password === expected;
+        return expected !== null && ciscoPasswordMatches(password, expected.value, expected.algo);
       }
       case 'local': return this.deps.authenticateLocal(username ?? '', password);
       case 'aaa': return this.deps.authenticateAaa(username ?? '', password);

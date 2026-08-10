@@ -157,6 +157,14 @@ describe('Scénario 1 — enable / enable N : véritable gate par mot de passe',
     await submitPassword(session, 'WrongPassword');
 
     expect(lastLines(session).some((l) => l.includes('% Access denied'))).toBe(true);
+    // IOS laisse TROIS essais sur une meme invocation d'`enable` : tant
+    // qu'ils ne sont pas epuises, la session est encore en saisie et
+    // `show privilege` y soumet un mot de passe VIDE au lieu de poser une
+    // question. Ce cas lisait donc un second refus la ou il croyait lire
+    // un niveau, depuis que le refus a cesse d'etre a un seul coup.
+    await submitPassword(session, 'WrongPassword');
+    await submitPassword(session, 'WrongPassword');
+    expect(session.currentInputMode.type).toBe('normal');
     await type(session, 'show privilege');
     expect(lastLines(session)).toContain('Current privilege level is 1');
   });
