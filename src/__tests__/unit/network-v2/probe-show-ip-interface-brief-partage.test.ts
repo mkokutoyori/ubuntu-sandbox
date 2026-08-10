@@ -83,4 +83,39 @@ describe('`show ip interface brief` : un port débranché n\'est pas éteint', (
     expect(enTeteR.indexOf('IP-Address')).toBe(27);
     expect(enTeteSw.slice(23)).toBe(enTeteR.slice(27));
   }, 30_000);
+
+  it('`show ip interface` sans argument rend le DÉTAIL, pas le tableau bref', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 8, 0, 0);
+    sw.powerOn();
+    const vue = await ios(sw, ['enable', 'show ip interface']);
+    expect(vue).not.toContain('IP-Address      OK? Method');
+    expect(vue).toContain('FastEthernet0/1 is');
+    expect(vue).toContain('Internet protocol processing disabled');
+  }, 30_000);
+
+  it('le détail d\'un port physique existe sur le commutateur aussi', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 8, 0, 0);
+    sw.powerOn();
+    const vue = await ios(sw, ['enable', 'show ip interface FastEthernet0/1']);
+    expect(vue).not.toContain('% Invalid input');
+    expect(vue).toContain('FastEthernet0/1 is');
+  }, 30_000);
+
+  it('le détail d\'une SVI reste celui de la SVI', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 8, 0, 0);
+    sw.powerOn();
+    const vue = await ios(sw, [
+      'enable', 'configure terminal', 'interface Vlan1',
+      'ip address 192.168.1.2 255.255.255.0', 'end', 'show ip interface Vlan1',
+    ]);
+    expect(vue).toContain('Hardware is EtherSVI');
+    expect(vue).toContain('Internet address is 192.168.1.2');
+  }, 30_000);
+
+  it('un nom d\'interface inconnu reste refusé', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 8, 0, 0);
+    sw.powerOn();
+    expect(await ios(sw, ['enable', 'show ip interface FastEthernet9/9']))
+      .toContain('% Invalid input');
+  }, 30_000);
 });

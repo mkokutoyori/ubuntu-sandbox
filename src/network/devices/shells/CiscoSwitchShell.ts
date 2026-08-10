@@ -27,7 +27,7 @@ import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRen
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
-  ipIntBriefRowsFromPorts, renderIpIntBrief,
+  ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
@@ -4447,9 +4447,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       t.register('show ip dhcp snooping statistics', 'Display DHCP snooping statistics', () =>
         this.showIpDhcpSnoopingStatistics());
       t.registerGreedy('show ip interface', 'Display verbose L3 state per interface', (args) => {
-        if (args.length === 0 || args[0]?.toLowerCase() === 'brief') {
-          return this.showIpInterfaceBrief();
-        }
+        if (args[0]?.toLowerCase() === 'brief') return this.showIpInterfaceBrief();
+        if (args.length === 0) return this.showIpInterfaceAll();
         return this.showIpInterfaceVerbose(args.join(' '));
       });
       t.registerGreedy('show track', 'Display tracked objects', (args) => {
@@ -4645,12 +4644,27 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * state, and the configured `ip helper-address` list. Falls back to a
    * "% Invalid interface" for non-SVI names since L2 ports carry no IP.
    */
+  private showIpInterfaceAll(): string {
+    const ports = this.d()._getPortsInternal();
+    const blocs: string[] = [];
+    for (const [nom, port] of ports) blocs.push(ipInterfaceBlockFor(nom, port, ports));
+    for (const svi of this.d().getSvis()) blocs.push(this.sviInterfaceBlock(svi.vlan));
+    return blocs.length ? blocs.join('\n') : 'No interfaces present.';
+  }
+
   private showIpInterfaceVerbose(iface: string): string {
     const vlanIfMatch = iface.match(/^(?:vl|vlan)\s*(\d+)$/i);
     if (!vlanIfMatch) {
-      return `% Invalid input detected at '^' marker.`;
+      const ports = this.d()._getPortsInternal();
+      const nom = this.resolveInterfaceName(iface);
+      const port = nom ? ports.get(nom) : undefined;
+      if (!port || !nom) return `% Invalid input detected at '^' marker.`;
+      return ipInterfaceBlockFor(nom, port, ports);
     }
-    const vlan = parseInt(vlanIfMatch[1], 10);
+    return this.sviInterfaceBlock(parseInt(vlanIfMatch[1], 10));
+  }
+
+  private sviInterfaceBlock(vlan: number): string {
     const svi = this.d().getSvi(vlan);
     if (!svi) return '% Invalid interface';
 

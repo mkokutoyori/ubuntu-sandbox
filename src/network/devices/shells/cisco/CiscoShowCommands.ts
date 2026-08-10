@@ -1348,12 +1348,21 @@ function ntpAgentOf(router: Router): import('@/network/ntp/NtpAgent').NtpAgent |
 }
 
 function ipInterfaceBlock(router: Router, name: string, port: Port): string {
-  const view = iosInterfaceStatus(port, name, router._getPortsInternal());
   const nat = router._getNATEngine();
-  const ip = port.getIPAddress();
-  const mask = port.getSubnetMask();
   const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
     : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
+  return ipInterfaceBlockFor(name, port, router._getPortsInternal(), natTag);
+}
+
+export function ipInterfaceBlockFor(
+  name: string,
+  port: Port,
+  ports: ReadonlyMap<string, Port>,
+  natTag = '',
+): string {
+  const view = iosInterfaceStatus(port, name, ports);
+  const ip = port.getIPAddress();
+  const mask = port.getSubnetMask();
   const lines = [
     `${name} is ${view.status}, line protocol is ${view.protocol}${natTag}`,
     ip
