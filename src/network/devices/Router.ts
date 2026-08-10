@@ -3891,6 +3891,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this._huaweiRoutingExtras;
   }
 
+  /**
+   * Cette liste d'acces accepte-t-elle cette source ?
+   *
+   * Un seul point d'evaluation, partage (lot N6) : NAT, VTY et
+   * `ntp access-group` posent la meme question, et deux evaluateurs
+   * finiraient par repondre differemment pour la meme liste.
+   */
+  evaluateAclPermit(acl: string, srcIp: string): boolean {
+    return this.aclEngine.evaluateACLByName(
+      acl, { type: 'ipv4', sourceIP: new IPAddress(srcIp) } as never) === 'permit';
+  }
+
   private _huaweiBfdService: HuaweiBfdService | null = null;
   getHuaweiBfdService(): HuaweiBfdService {
     if (!this._huaweiBfdService) this._huaweiBfdService = new HuaweiBfdService();

@@ -421,8 +421,6 @@ correctifs.
   et rendue, mais aucun condensé MD5 ne circule sur le paquet — le
   moteur compare des identifiants de clé. Un lab « les clés diffèrent,
   la synchronisation échoue » n'est donc pas reproductible aujourd'hui.
-- **`ntp access-group` est stocké et rendu, et ne filtre rien** : aucune
-  ACL n'est consultée à la réception d'un paquet NTP.
 - **Le `slewing` et le `stepping` du §2 ne sont pas modélisés** :
   l'offset est appliqué d'un coup. La distinction — et le `panic mode` —
   demanderait une horloge disciplinée que ce simulateur n'a pas.
@@ -544,3 +542,173 @@ FHRP, tutoriels, famille NTP complète. Typecheck : **228 avant, 216
 après** — douze de moins, parce que ce lot corrige les douze erreurs que
 le lot N4 avait introduites dans son propre fichier de test (voir la
 correction au §5.5). Aucun test existant modifié.
+
+
+---
+
+## 8. N6 — Livré : `ntp access-group` filtre
+
+### 8.1 Le défaut
+
+Les quatre groupes étaient acceptés, rangés et rendus dans la
+configuration — et **aucune ACL n'était consultée à la réception d'un
+paquet NTP**. Le durcissement des §3.7 et §9 du tutoriel n'avait aucun
+effet observable.
+
+### 8.2 Ce que la vérification contre la documentation a apporté
+
+**Quatre points, dont un qui corrige le tutoriel et un mon propre lot.**
+
+1. **La table des permissions**, telle que la référence de commandes IOS
+   la décrit :
+
+   | Mot-clé | Requêtes de temps | Requêtes de contrôle | Se **synchroniser** dessus |
+   |---|---|---|---|
+   | `peer` | oui | oui | **oui** |
+   | `serve` | oui | oui | non |
+   | `serve-only` | oui | non | non |
+   | `query-only` | non | oui | non |
+
+2. **`nomodify` n'est pas un mot-clé IOS.** Le tutoriel écrit
+   `ntp access-group nomodify 10` ; c'est la syntaxe de `ntpd`/`chrony`.
+   Il est désormais **refusé** — et **mon propre lot N1 l'acceptait**,
+   son test l'ayant recopié du tutoriel. Corrigé dans les deux.
+
+3. **L'ordre va du moins au plus restrictif** — `peer`, `serve`,
+   `serve-only`, `query-only` — et le premier groupe dont l'ACL accepte
+   la source décide ; une source qu'aucun ne reconnaît est écartée.
+
+   *Écart de sources, écrit plutôt que tu* : une page de la référence de
+   commandes Cisco place `query-only` en **deuxième** position. Deux
+   autres sources — dont la description de `ntp access-group match-all`
+   — le placent en quatrième, seul ordre cohérent avec « du moins au
+   plus restrictif », `query-only` interdisant précisément les requêtes
+   de temps que `serve` autorise. C'est ce dernier qui est implémenté.
+
+4. **Aucun groupe = accès complet ; un seul groupe = seulement ce qu'il
+   accorde.** C'est le piège que le §3.7 tend sans le dire, et il est
+   maintenant reproductible : un routeur en `serve-only` **continue de
+   servir l'heure** et **cesse de se synchroniser**, puisque se
+   synchroniser demande `peer`. Deux cas de test le montrent, et un
+   troisième montre la correction — ajouter `peer`.
+
+### 8.3 Ce qui est fait
+
+`ntp/accessGroups.ts` porte la table, l'ordre et le verdict.
+`NtpAgent.setAclMatchFn` est un port étroit — même motif que
+`NATEngine.setACLMatchFn` — et `CiscoRouter` le branche sur
+`Router.evaluateAclPermit`, **un seul point d'évaluation** partagé avec
+NAT et les VTY : deux évaluateurs finiraient par répondre différemment
+pour la même liste.
+
+Le contrôle s'applique aux **trois** chemins : requête de client entrante
+(`serve-time`), pair symétrique (`sync-from`), et réponse de serveur
+que l'on veut utiliser (`sync-from`).
+
+**Le refus est silencieux sur le fil** : un routeur qui répondrait « tu
+n'as pas le droit » confirmerait son existence à qui le sonde, ce qui
+est l'inverse d'un durcissement. L'événement `ntp.access.denied` est
+publié, ce qui rend le refus observable sans rien émettre.
+
+### 8.4 Tests
+
+`tuto-ntp-access-group.test.ts` (18 cas). `git stash` : **5 tombent**
+avant. Les 13 autres se partagent entre la table de permissions —
+module neuf, donc sans pouvoir discriminer — et les témoins (aucun
+groupe, ACL qui permet, `serve`/`peer`) qui doivent passer des deux
+côtés.
+
+**Mesures.** 175 suites connexes vertes (2 540 cas). Typecheck : 216,
+inchangé. **Un test existant corrigé** — le mien, au lot N1, qui avait
+recopié le `nomodify` du tutoriel.
+
+### 8.5 Ce qui reste hors de portée, et pourquoi
+
+`ntp access-group match-all` existe sur IOS et change la règle : au lieu
+de s'arrêter au premier groupe qui reconnaît la source, il les parcourt
+tous. Il n'est **pas** implémenté — la commande est refusée plutôt
+qu'acceptée sans effet — parce que les sources consultées décrivent son
+existence sans en donner la sémantique exacte de combinaison, et
+qu'implémenter une règle devinée serait précisément ce que ce PRD
+interdit.
+
+Les requêtes de **contrôle** (mode 6) n'existent pas dans ce simulateur :
+`query-only` est donc structurellement inerte sur le fil, et sa seule
+conséquence observable est de **refuser** les requêtes de temps — ce que
+le test vérifie. C'est un fait sur ce moteur, pas une approximation.
+
+
+---
+
+## 9. N7 — Livré : `ntp ?` décrit ce que `ntp` a
+
+### 9.1 Le défaut, signalé depuis une vraie session
+
+```
+Router1(config)#ntp ?
+  access-group        Specify access control for packets
+  …
+  md5                 MD5 authentication
+  mode                Set trunking mode of the interface
+  prefer              Preferred server
+```
+
+Trois de ces mots ne sont pas des sous-commandes de `ntp` : `md5` est un
+argument d'`authentication-key`, `prefer` un argument de `server`, et
+**`mode` porte la description de `switchport mode`** — une fuite d'une
+commande vers une autre.
+
+Et la même liste revenait à **toutes les profondeurs** :
+`ntp access-group access-group access-group ?` la reproposait, et la
+commande était **acceptée**.
+
+### 9.2 La cause
+
+`ntp` était un unique nœud **glouton**. Un tel nœud n'a pas de
+sous-arbre — son aide ne peut donc rien descendre — et la liste proposée
+était **extraite du code source du gestionnaire** par
+`autoContinuations`, qui ramasse tout mot comparé dans un `if`. D'où
+`md5` (comparé pour `authentication-key`), `prefer` (comparé pour
+`server`) et `mode` (comparé pour `allow mode control`), ce dernier
+recevant la description que le catalogue partagé associe au mot `mode`.
+
+### 9.3 Ce qui est fait
+
+Chaque sous-commande de `ntp` est un **vrai nœud**, déclaré depuis la
+référence de commandes IOS. Les enfants déclarés sont exclus de
+l'extraction, chacun porte sa propre aide, et ce qui n'est pas dans la
+table est refusé.
+
+Les corps des deux gestionnaires deviennent `appliquerNtp` /
+`retirerNtp`, partagés par toutes les sous-commandes : un analyseur par
+mot-clé finirait par diverger sur ce que `ntp server` et `ntp peer` ont
+en commun.
+
+Les arguments sont **décrits** : `ntp access-group ?` nomme les quatre
+familles, `ntp master ?` donne `<1-15>`, `ntp authentication-key ?`
+donne `<1-4294967295>`, `ntp server ?` attend `A.B.C.D`.
+
+**Une sous-commande sans argument est déclarée non gloutonne**
+(`authenticate`, `update-calendar`) : sinon `ntp authenticate ?`
+proposerait un `WORD` recopiant la description de son parent — le défaut
+exact que ce lot ferme, et que la sonde de l'autre agent a attrapé sur
+mes propres nœuds pendant le développement.
+
+### 9.4 Tests
+
+`tuto-ntp-aide-arborescence.test.ts` (12 cas). Un cas vérifie qu'**aucune
+description ne se répète** dans `ntp ?` — une description recopiée du
+parent apparaîtrait deux fois. Deux cas gardent les formes légitimes et
+les formes `no`, parce que restructurer un arbre ne doit rien casser.
+
+**Mesures.** 141 suites connexes vertes (1 973 cas), dont les trois
+sondes d'aide CLI de l'autre agent. Typecheck : 216, inchangé.
+
+### 9.5 Ce qui reste, et à qui
+
+`ntp access-group access-group access-group ?` propose encore un `WORD`
+générique, alors que la **commande** est correctement refusée. L'aide et
+l'exécution ne disent donc pas tout à fait la même chose après un
+argument invalide. C'est un comportement du marcheur d'arguments
+partagé, pas de `ntp` : signalé à l'agent qui tient ces sondes plutôt
+que corrigé ici.

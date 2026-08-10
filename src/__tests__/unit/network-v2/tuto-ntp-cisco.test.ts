@@ -221,12 +221,17 @@ describe('§3.6 — authentification MD5', () => {
 
 describe('§3.7 — controle d\'acces NTP', () => {
   it('les quatre familles d\'`access-group` se relisent', async () => {
+    // Lot N6 : ce cas suivait le tutoriel, qui ecrit `ntp access-group
+    // nomodify 10`. Verification faite contre la reference de commandes
+    // IOS, `nomodify` n'est PAS un mot-cle Cisco — c'est celui de
+    // `ntpd`/`chrony`. Les quatre familles d'IOS sont `peer`, `serve`,
+    // `serve-only` et `query-only`, et `nomodify` est refuse.
     const r = new CiscoRouter(`AG${++serie}`);
     await conf(r, 'access-list 10 permit 192.168.100.0 0.0.0.255',
       'ntp access-group serve-only 10', 'ntp access-group peer 10',
-      'ntp access-group query-only 10', 'ntp access-group nomodify 10');
+      'ntp access-group query-only 10', 'ntp access-group serve 10');
     const cfg = await r.executeCommand('show running-config');
-    for (const k of ['serve-only', 'peer', 'query-only', 'nomodify']) {
+    for (const k of ['serve-only', 'peer', 'query-only', 'serve']) {
       expect(cfg, k).toContain(`ntp access-group ${k} 10`);
     }
   });

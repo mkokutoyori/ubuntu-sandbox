@@ -195,6 +195,10 @@ export class CiscoRouter extends Router {
     this.hsrpAgent = new HsrpAgent(hostBase, () => this.getBus());
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
+    // `ntp access-group` consulte les MEMES listes d'acces que le reste
+    // du routeur (lot N6) : une seconde evaluation finirait par rendre
+    // un verdict different pour la meme liste, sur la meme machine.
+    this.ntpAgent.setAclMatchFn((acl, srcIp) => this.evaluateAclPermit(acl, srcIp));
     this.glbpAgent = new GlbpAgent(hostBase, () => this.getBus());
     this.bfdAgent = new BfdAgent(hostBase, () => this.getBus());
     this.getBus().subscribe('bfd.session.changed', (e) => {

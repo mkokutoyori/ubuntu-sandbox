@@ -12,6 +12,7 @@ import {
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { calculerMacNtp, verifierMacNtp } from './auth';
+import { verdictAccesNtp, type ActionNtp } from './accessGroups';
 
 export interface NtpHost {
   readonly id: string;
@@ -110,6 +111,33 @@ export class NtpAgent {
   }
 
   setSourceInterface(name: string): void { this.config.sourceInterface = name; }
+
+  /**
+   * Comment cette machine evalue une liste d'acces (lot N6).
+   *
+   * L'agent ne connait pas les ACL — elles vivent sur l'equipement — et
+   * ce port etroit est le meme motif que `NATEngine.setACLMatchFn`.
+   * Sans lui, `ntp access-group` restait une commande rangee que rien
+   * ne consultait.
+   */
+  private aclMatch: ((acl: string, srcIp: string) => boolean) | null = null;
+  setAclMatchFn(fn: (acl: string, srcIp: string) => boolean): void {
+    this.aclMatch = fn;
+  }
+
+  /**
+   * Ce paquet a-t-il le droit de faire ce qu'il demande ?
+   *
+   * Sans evaluateur d'ACL branche, tout passe : une machine sans notion
+   * de liste d'acces ne peut pas filtrer, et refuser par defaut
+   * couperait NTP sur tout equipement qui n'en a pas.
+   */
+  private accesAutorise(action: ActionNtp, srcIp: string): boolean {
+    if (this.config.accessGroups.size === 0) return true;
+    const fn = this.aclMatch;
+    if (!fn) return true;
+    return verdictAccesNtp(this.config.accessGroups, action, (acl) => fn(acl, srcIp));
+  }
   setAllowModeControl(on: boolean): void { this.config.allowModeControl = on; }
   setUpdateCalendar(on: boolean): void { this.config.updateCalendar = on; }
   setInterfaceDisabled(iface: string, off: boolean): void {
@@ -231,10 +259,23 @@ export class NtpAgent {
     }
 
     if (payload.mode === 'client') {
+      // `serve`, `serve-only` et `peer` autorisent une requete de temps ;
+      // `query-only` ne l'autorise pas, et une source qu'aucun groupe ne
+      // reconnait est ecartee.
+      if (!this.accesAutorise('serve-time', srcIp.toString())) {
+        this.refuserAcces(srcIp, 'serve-time');
+        return;
+      }
       if (this.config.serverMode) this.respondAsServer(inPort, srcIp, payload);
       return;
     }
     if (payload.mode === 'symmetric-active') {
+      // Un pair symetrique demande a la fois a servir et a se
+      // synchroniser : seul `peer` le permet.
+      if (!this.accesAutorise('sync-from', srcIp.toString())) {
+        this.refuserAcces(srcIp, 'sync-from');
+        return;
+      }
       this.handleSymmetricActive(inPort, srcIp, payload);
       return;
     }
@@ -355,6 +396,25 @@ export class NtpAgent {
     this.sendNtp(inPort, srcIp, clientIp, nak);
   }
 
+  /**
+   * Un paquet ecarte par une liste d'acces.
+   *
+   * Le refus est SILENCIEUX sur le fil — un routeur qui repondrait
+   * « tu n'as pas le droit » confirmerait son existence a qui le sonde,
+   * ce qui est l'inverse d'un durcissement. L'evenement, lui, est
+   * publie : c'est ce qui rend le refus observable depuis un test ou une
+   * capture, sans rien emettre vers l'exterieur.
+   */
+  private refuserAcces(srcIp: IPAddress, action: ActionNtp): void {
+    this.getBus().publish({
+      topic: 'ntp.access.denied',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        fromIp: srcIp.toString(), action,
+      },
+    });
+  }
+
   /** Un paquet est-il un crypto-NAK ? */
   private estCryptoNak(pkt: NtpPacket): boolean {
     return pkt.keyId === 0 && !pkt.mac;
@@ -418,6 +478,13 @@ export class NtpAgent {
   private acceptServerReply(serverIp: string, reply: NtpPacket): void {
     const a = this.config.associations.get(serverIp);
     if (!a) return;
+    // Se SYNCHRONISER sur une source demande `peer` — c'est le piege du
+    // §3.7 : poser un `serve-only` seul empeche le routeur lui-meme de
+    // se synchroniser, alors qu'il continue de servir l'heure.
+    if (!this.accesAutorise('sync-from', serverIp)) {
+      this.refuserAcces(new IPAddress(serverIp), 'sync-from');
+      return;
+    }
     // Le verdict est ENREGISTRE meme quand il est negatif : c'est lui que
     // `show ntp associations detail` rend par `authenticated`, et sans
     // trace un operateur n'aurait aucun moyen de distinguer « cle

@@ -24,6 +24,38 @@ import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
+import { estGenreAcces } from '../../ntp/accessGroups';
+
+/**
+ * Les sous-commandes de `ntp` en configuration globale, avec la
+ * description qu'IOS en donne.
+ *
+ * Elles sont declarees plutot qu'extraites : la liste que `?` proposait
+ * etait scrapee du code source du gestionnaire, d'ou `md5`, `prefer` et
+ * `mode` — trois arguments ou fuites d'autres commandes, jamais des
+ * sous-commandes de `ntp`. Ce qui n'est pas ici est refuse.
+ */
+const NTP_SOUS_COMMANDES: ReadonlyArray<{
+  mot: string;
+  desc: string;
+  /**
+   * Une sous-commande SANS argument se declare non gloutonne : sinon
+   * `ntp authenticate ?` propose un `WORD` qui recopie la description de
+   * son parent, exactement le defaut que ce lot ferme.
+   */
+  args?: false;
+}> = [
+  { mot: 'access-group', desc: 'Control NTP access' },
+  { mot: 'allow', desc: 'Allow processing of packets' },
+  { mot: 'authenticate', desc: 'Authenticate time sources', args: false },
+  { mot: 'authentication-key', desc: 'Authentication key for trusted time sources' },
+  { mot: 'master', desc: 'Act as NTP master clock' },
+  { mot: 'peer', desc: 'Configure NTP peer' },
+  { mot: 'server', desc: 'Configure NTP server' },
+  { mot: 'source', desc: 'Configure interface for source address' },
+  { mot: 'trusted-key', desc: 'Key numbers for trusted time sources' },
+  { mot: 'update-calendar', desc: 'Periodically update calendar from NTP', args: false },
+];
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter, PIPE_WRITERS, PIPE_MODIFIERS, type PipeFilter } from './cli-utils';
 import { isValidIPv4 } from '../../core/ip';
 import {
@@ -1808,6 +1840,84 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const dev = this.d() as unknown as { _setSystemClock?: (ms: number) => void };
     dev._setSystemClock?.(q);
     return '';
+  }
+
+  /**
+   * Ce que fait une commande `ntp …`, une fois son mot-cle retrouve.
+   *
+   * Le corps est partage par toutes les sous-commandes declarees dans
+   * l'arbre : un analyseur par mot-cle finirait par diverger sur ce que
+   * `ntp server` et `ntp peer` ont en commun.
+   */
+  private appliquerNtp(args: string[]): string {
+      const a = args.map(s => s.toLowerCase());
+      if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+      if ((a[0] === 'server' || a[0] === 'peer') && !a[1]) return CISCO_ERRORS.INCOMPLETE;
+      const agent = getNtpAgent(this.d());
+      if (!agent) return '';
+      if (a[0] === 'server' && a[1]) {
+        const target = a[1];
+        const resolved = this.resolveNtpTarget(target);
+        if (!resolved) {
+          return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+        }
+        agent.addServer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
+      } else if (a[0] === 'peer' && a[1]) {
+        const resolved = this.resolveNtpTarget(a[1]);
+        if (!resolved) {
+          return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+        }
+        agent.addPeer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
+      } else if (a[0] === 'master') {
+        agent.setServerMode(true);
+        if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
+      } else if (a[0] === 'source' && a[1]) {
+        // `args` et non `a` : un nom d'interface et un mot de passe sont
+        // des DONNEES, pas des mots-cles. La ligne du dessus met toute la
+        // commande en minuscules pour comparer, et ce qui en sortait
+        // etait rangé tel quel -- `Loopback0` devenait `loopback0`, et
+        // `ClefNTP2024Secret` devenait `clefntp2024secret`, donc une
+        // AUTRE clé. Une configuration relue ne refaisait pas la machine.
+        agent.setSourceInterface(args[1]);
+      } else if (a[0] === 'authenticate') {
+        agent.setAuthenticate(true);
+      } else if (a[0] === 'authentication-key' && a[1] && a[2] === 'md5' && args[3]) {
+        agent.addAuthKey(parseInt(a[1], 10), 'md5', args[3]);
+      } else if (a[0] === 'trusted-key' && a[1]) {
+        agent.addTrustedKey(parseInt(a[1], 10));
+      } else if (a[0] === 'access-group' && a[1] && a[2]) {
+        // IOS ne connait QUE ces quatre familles. Le tutoriel ecrit
+        // `ntp access-group nomodify 10`, qui est la syntaxe de `ntpd`
+        // et de `chrony` : l'accepter apprendrait une commande que la
+        // vraie machine refuse (lot N6).
+        if (!estGenreAcces(a[1])) return CISCO_ERRORS.INVALID_INPUT;
+        agent.setAccessGroup(a[1], a[2]);
+      } else if (a[0] === 'update-calendar') {
+        agent.setUpdateCalendar(true);
+      } else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
+        agent.setAllowModeControl(true);
+      }
+      return '';
+  }
+
+  /** Ce qu'une forme `no ntp …` retire. */
+  private retirerNtp(args: string[]): string {
+      const a = args.map(s => s.toLowerCase());
+      const agent = getNtpAgent(this.d());
+      if (!agent) return '';
+      if ((a[0] === 'server' || a[0] === 'peer') && a[1]) agent.removeServer(a[1]);
+      else if (a[0] === 'master') { agent.setServerMode(false); agent.setLocalStratum(16); }
+      else if (a[0] === 'authenticate') agent.setAuthenticate(false);
+      else if (a[0] === 'authentication-key' && a[1]) agent.removeAuthKey(parseInt(a[1], 10));
+      else if (a[0] === 'trusted-key' && a[1]) agent.removeTrustedKey(parseInt(a[1], 10));
+      else if (a[0] === 'access-group' && a[1]) agent.removeAccessGroup(a[1]);
+      else if (a[0] === 'source') agent.setSourceInterface('');
+      else if (a[0] === 'update-calendar') agent.setUpdateCalendar(false);
+      // Le durcissement du §9 : fermer le mode 6, celui de `monlist`.
+      else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
+        agent.setAllowModeControl(false);
+      }
+      return '';
   }
 
   protected resolveNtpTarget(target: string): string | null {
@@ -3623,69 +3733,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.applyServiceTimestamps(args, false));
     this.configTrie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>
       this.applyServiceTimestamps(args, true));
-    this.configTrie.registerGreedy('ntp', 'NTP configuration', (args) => {
-      const a = args.map(s => s.toLowerCase());
-      if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
-      if ((a[0] === 'server' || a[0] === 'peer') && !a[1]) return CISCO_ERRORS.INCOMPLETE;
-      const agent = getNtpAgent(this.d());
-      if (!agent) return '';
-      if (a[0] === 'server' && a[1]) {
-        const target = a[1];
-        const resolved = this.resolveNtpTarget(target);
-        if (!resolved) {
-          return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-        }
-        agent.addServer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
-      } else if (a[0] === 'peer' && a[1]) {
-        const resolved = this.resolveNtpTarget(a[1]);
-        if (!resolved) {
-          return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-        }
-        agent.addPeer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
-      } else if (a[0] === 'master') {
-        agent.setServerMode(true);
-        if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
-      } else if (a[0] === 'source' && a[1]) {
-        // `args` et non `a` : un nom d'interface et un mot de passe sont
-        // des DONNEES, pas des mots-cles. La ligne du dessus met toute la
-        // commande en minuscules pour comparer, et ce qui en sortait
-        // etait rangé tel quel -- `Loopback0` devenait `loopback0`, et
-        // `ClefNTP2024Secret` devenait `clefntp2024secret`, donc une
-        // AUTRE clé. Une configuration relue ne refaisait pas la machine.
-        agent.setSourceInterface(args[1]);
-      } else if (a[0] === 'authenticate') {
-        agent.setAuthenticate(true);
-      } else if (a[0] === 'authentication-key' && a[1] && a[2] === 'md5' && args[3]) {
-        agent.addAuthKey(parseInt(a[1], 10), 'md5', args[3]);
-      } else if (a[0] === 'trusted-key' && a[1]) {
-        agent.addTrustedKey(parseInt(a[1], 10));
-      } else if (a[0] === 'access-group' && a[1] && a[2]) {
-        agent.setAccessGroup(a[1], a[2]);
-      } else if (a[0] === 'update-calendar') {
-        agent.setUpdateCalendar(true);
-      } else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
-        agent.setAllowModeControl(true);
+    // Chaque sous-commande de `ntp` est un VRAI noeud de l'arbre.
+    //
+    // Un unique noeud glouton n'a pas de sous-arbre : son aide ne
+    // pouvait donc rien descendre, et `?` reproduisait la meme liste a
+    // toutes les profondeurs — `ntp access-group access-group ?`
+    // proposait encore la liste complete, et la commande etait acceptee.
+    // Pire, la liste elle-meme etait EXTRAITE du code source du
+    // gestionnaire (`autoContinuations`), d'ou trois mots qui ne sont
+    // pas des sous-commandes de `ntp` : `md5` (argument
+    // d'`authentication-key`), `prefer` (argument de `server`) et
+    // `mode` — qui portait « Set trunking mode of the interface », la
+    // description de `switchport mode`, une fuite d'une commande vers
+    // une autre.
+    //
+    // Declarer les vrais enfants les exclut de l'extraction, donne a
+    // chacun sa propre aide, et fait refuser ce qui n'existe pas.
+    for (const { mot, desc, args: prendArgs } of NTP_SOUS_COMMANDES) {
+      if (prendArgs === false) {
+        this.configTrie.register(`ntp ${mot}`, desc, () => this.appliquerNtp([mot]));
+        this.configTrie.register(`no ntp ${mot}`, desc, () => this.retirerNtp([mot]));
+        continue;
       }
-      return '';
-    });
-    this.configTrie.registerGreedy('no ntp', 'Remove NTP config', (args) => {
-      const a = args.map(s => s.toLowerCase());
-      const agent = getNtpAgent(this.d());
-      if (!agent) return '';
-      if ((a[0] === 'server' || a[0] === 'peer') && a[1]) agent.removeServer(a[1]);
-      else if (a[0] === 'master') { agent.setServerMode(false); agent.setLocalStratum(16); }
-      else if (a[0] === 'authenticate') agent.setAuthenticate(false);
-      else if (a[0] === 'authentication-key' && a[1]) agent.removeAuthKey(parseInt(a[1], 10));
-      else if (a[0] === 'trusted-key' && a[1]) agent.removeTrustedKey(parseInt(a[1], 10));
-      else if (a[0] === 'access-group' && a[1]) agent.removeAccessGroup(a[1]);
-      else if (a[0] === 'source') agent.setSourceInterface('');
-      else if (a[0] === 'update-calendar') agent.setUpdateCalendar(false);
-      // Le durcissement du §9 : fermer le mode 6, celui de `monlist`.
-      else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
-        agent.setAllowModeControl(false);
-      }
-      return '';
-    });
+      this.configTrie.registerGreedy(`ntp ${mot}`, desc,
+        (a) => this.appliquerNtp([mot, ...a]));
+      this.configTrie.registerGreedy(`no ntp ${mot}`, desc,
+        (a) => this.retirerNtp([mot, ...a]));
+    }
+    this.configTrie.register('ntp', 'Configure NTP', () => CISCO_ERRORS.INCOMPLETE);
+
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {
       const svc = getSnmpService(this.d());
       if (!svc) return '';

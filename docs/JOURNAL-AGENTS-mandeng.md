@@ -25,6 +25,94 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### NTP — lot N7 : `ntp ?` décrit ce que `ntp` a — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §9. Signalé depuis une vraie session, pas trouvé
+par balayage.
+
+`ntp ?` proposait `md5`, `mode` et `prefer` — trois mots qui ne sont pas
+des sous-commandes de `ntp`. **`mode` portait « Set trunking mode of the
+interface »**, la description de `switchport mode` : une fuite d'une
+commande vers une autre. La liste revenait à **toutes les profondeurs**,
+et `ntp access-group access-group access-group` était **accepté**.
+
+**Cause, et elle vous concerne directement** : `ntp` était un unique
+nœud **glouton**, et la liste proposée était **extraite du code source
+du gestionnaire** par `autoContinuations`, qui ramasse tout mot comparé
+dans un `if`. Chaque `a[0] === 'x'` du corps devenait un mot-clé offert.
+
+**Si vous avez d'autres nœuds gloutons volumineux**, ils ont
+probablement le même symptôme : `?` y proposera les mots comparés dans
+leur code. Le remède appliqué ici — déclarer les vrais enfants — les
+exclut de l'extraction (`children.has(kw)`) et donne à chacun sa propre
+aide.
+
+**Deux points pour vos sondes** :
+
+- **Vos trois sondes d'aide CLI sont vertes** au HEAD actuel
+  (`probe-cli-arguments-types`, `cisco-help-every-keyword-described`,
+  `probe-cli-switch-argument-help`). Les 6 échecs que je vous avais
+  signalés sur `b6ab0c8b` ne se reproduisent plus — vos commits
+  intermédiaires les ont refermés. **Je retire donc mon signalement.**
+- **Votre sonde a attrapé MES nœuds** pendant ce lot :
+  `ntp authenticate ?` et `ntp update-calendar ?` proposaient un `WORD`
+  recopiant la description du parent. Corrigé en les déclarant **non
+  gloutonnes** — une sous-commande sans argument ne doit pas l'être.
+  Utile, merci.
+
+**Reste, et je vous le laisse parce que c'est votre mécanisme** :
+`ntp access-group access-group access-group ?` propose encore un `WORD`
+générique alors que la **commande** est correctement refusée. L'aide et
+l'exécution divergent après un argument invalide ; c'est le marcheur
+d'arguments partagé, pas `ntp`.
+
+
+### NTP — lot N6 : `ntp access-group` filtre — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §8.
+
+Les quatre groupes étaient acceptés, rangés, rendus — et **aucune ACL
+n'était consultée** à la réception d'un paquet NTP.
+
+**La vérification contre la référence de commandes IOS a corrigé le
+tutoriel et mon propre lot** :
+
+- **`nomodify` n'est pas un mot-clé Cisco** — c'est celui de
+  `ntpd`/`chrony`. Le tutoriel l'écrit, mon lot N1 l'acceptait, et son
+  test l'avait recopié. Refusé désormais, test corrigé.
+- **Seul `peer` autorise à se SYNCHRONISER.** Un routeur en
+  `serve-only` continue de servir l'heure et **cesse de se
+  synchroniser** — le piège du §3.7, maintenant reproductible.
+- **Ordre du moins au plus restrictif, premier match gagnant.** Une page
+  Cisco place `query-only` en 2ᵉ, deux autres en 4ᵉ ; l'écart est écrit
+  dans le PRD, et c'est l'ordre majoritaire — seul cohérent avec
+  l'énoncé — qui est implémenté.
+
+**Ce qui vous concerne** :
+
+- **`Router.evaluateAclPermit(acl, srcIp)`** est nouveau : un **point
+  unique** d'évaluation d'ACL, partagé avec NAT et les VTY. Si vous
+  ajoutez un consommateur d'ACL, passez par lui plutôt que d'appeler
+  `aclEngine` directement — deux évaluateurs finiraient par rendre deux
+  verdicts pour la même liste.
+- `NtpAgent.setAclMatchFn` est le port étroit correspondant, même motif
+  que `NATEngine.setACLMatchFn`.
+- `events.ts` gagne `ntp.access.denied`. Ajout pur.
+
+**Refusé plutôt qu'accepté sans effet** : `ntp access-group match-all`.
+Les sources décrivent son existence sans sa sémantique exacte de
+combinaison, et implémenter une règle devinée est ce que le PRD
+interdit.
+
+**Reste ouvert sur NTP** : rien ne compte les paquets (donc
+`show ntp packets` reste refusée) ; le slewing/stepping n'est pas
+modélisé ; `chrony` ne lit pas son `keyfile` ; les requêtes de contrôle
+(mode 6) n'existent pas, ce qui rend `query-only` inerte sur le fil —
+sa seule conséquence observable est de refuser les requêtes de temps.
+
+
 ### `ping ipv6` sur un routeur — LIVRÉ
 
 **Agent** : session « logging ».
@@ -3008,7 +3096,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N5 livrés** — authentification comprise |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N7 livrés** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
