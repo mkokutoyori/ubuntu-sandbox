@@ -15,6 +15,11 @@ import { Logger } from '../core/Logger';
 import { calculerMacNtp, verifierMacNtp } from './auth';
 import { verdictAccesNtp, type ActionNtp } from './accessGroups';
 import {
+  type NtpControlPacket, OPCODES_SERVIS, ERREURS_CONTROLE,
+  motEtatSysteme, motEtatPair, SELECT,
+  formaterVariables, formaterListeAssociations,
+} from './control';
+import {
   disciplinerHorloge, appliquerDecision, creerEtatHorloge,
   type EtatHorloge, type DecisionDiscipline, type ReglagesDiscipline,
 } from './discipline';
@@ -144,6 +149,8 @@ export class NtpAgent {
     return verdictAccesNtp(this.config.accessGroups, action, (acl) => fn(acl, srcIp));
   }
   setAllowModeControl(on: boolean): void { this.config.allowModeControl = on; }
+  /** La plateforme sait-elle repondre au mode 6 ? Voir `NtpConfig`. */
+  setModeControlResponder(on: boolean): void { this.config.modeControlResponder = on; }
   setUpdateCalendar(on: boolean): void { this.config.updateCalendar = on; }
   setInterfaceDisabled(iface: string, off: boolean): void {
     if (off) this.config.disabledInterfaces.add(iface);
@@ -262,6 +269,13 @@ export class NtpAgent {
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.config.enabled) return;
     if (udp.destinationPort !== UDP_PORT_NTP && udp.sourcePort !== UDP_PORT_NTP) return;
+    const brut = udp.payload as { type?: string } | undefined;
+    // Le mode 6 partage le port 123 avec le temps lui-meme (RFC 9327),
+    // donc l'aiguillage se fait sur la charge utile et non sur le port.
+    if (brut && brut.type === 'ntp-control') {
+      this.handleControl(inPort, srcIp, brut as NtpControlPacket);
+      return;
+    }
     const payload = udp.payload as NtpPacket | undefined;
     // Un datagramme sur le port 123 dont la charge utile n'est pas un
     // paquet NTP est une erreur de protocole, et c'est bien ce que le
@@ -823,6 +837,256 @@ export class NtpAgent {
   private stopTimer(): void {
     const s = this.scheduler ?? this.getScheduler();
     if (this.pollTimer !== null) { s.clear(this.pollTimer); this.pollTimer = null; }
+  }
+
+  // ── Mode 6 : les messages de controle (lot N11) ───────────────────
+
+  /**
+   * Un identifiant d'association est un entier de 16 bits que le serveur
+   * attribue, pas une adresse : c'est ce que `ntpq -p` affiche et ce
+   * qu'on repasse a `rv <id>`. Il est stable pour la duree de vie de
+   * l'association, et jamais zero — zero designe la machine elle-meme.
+   */
+  private prochainIdAssoc = 1;
+  private idsAssoc = new Map<string, number>();
+
+  private idAssoc(serverIp: string): number {
+    let id = this.idsAssoc.get(serverIp);
+    if (id === undefined) { id = ++this.prochainIdAssoc; this.idsAssoc.set(serverIp, id); }
+    return id;
+  }
+
+  private assocParId(id: number): NtpAssociation | undefined {
+    for (const [ip, n] of this.idsAssoc) {
+      if (n === id) return this.config.associations.get(ip);
+    }
+    return undefined;
+  }
+
+  /** Le champ `select` d'un pair, d'ou decoule le pointage de `ntpq -p`. */
+  private selectDe(a: NtpAssociation): number {
+    if (a.reach === 0) return SELECT.REJECT;
+    if (a.preferred) return SELECT.SYSPEER;
+    return a.synced ? SELECT.CANDIDATE : SELECT.OUTLIER;
+  }
+
+  /** Les variables systeme, celles que rend `rv 0`. */
+  private variablesSysteme(): Record<string, string> {
+    const cfg = this.config;
+    const best = [...cfg.associations.values()].find((a) => a.preferred);
+    return {
+      version: 'ntpd 4.2.8p15',
+      leap: String(cfg.localStratum < 16 ? 0 : 3),
+      stratum: String(cfg.localStratum),
+      precision: '-20',
+      rootdelay: (best ? Math.abs(best.delayMs) : 0).toFixed(3),
+      rootdisp: (best ? best.dispersionMs : 0).toFixed(3),
+      refid: cfg.refIdentifier,
+      offset: cfg.offsetMs.toFixed(3),
+      frequency: this.getDriftPpm().toFixed(3),
+      sys_jitter: '0.000',
+      clk_jitter: '0.000',
+      clk_wander: '0.000',
+    };
+  }
+
+  /** Les variables d'un pair, celles que rend `rv <id>`. */
+  private variablesPair(a: NtpAssociation): Record<string, string> {
+    return {
+      srcadr: a.serverIp,
+      srcport: String(UDP_PORT_NTP),
+      stratum: String(a.stratum),
+      precision: '-20',
+      reach: a.reach.toString(8).padStart(3, '0'),
+      hpoll: String(Math.max(0, Math.round(Math.log2(a.pollSec)))),
+      ppoll: String(Math.max(0, Math.round(Math.log2(a.pollSec)))),
+      delay: a.delayMs.toFixed(3),
+      offset: a.offsetMs.toFixed(3),
+      jitter: a.dispersionMs.toFixed(3),
+      dispersion: a.dispersionMs.toFixed(3),
+    };
+  }
+
+  /**
+   * Repondre — ou refuser — une requete de controle.
+   *
+   * Trois portes, dans cet ordre, et l'ordre est celui du sens :
+   *
+   * 1. **`no ntp allow mode control`** ferme la fonction entiere. Le
+   *    refus est SILENCIEUX, comme celui d'une liste d'acces : une
+   *    machine qui repondrait « je ne reponds pas aux requetes de
+   *    controle » confirmerait son existence a qui la sonde, l'inverse
+   *    d'un durcissement. C'est le reglage que CVE-2013-5211 a rendu
+   *    obligatoire.
+   * 2. **La liste d'acces**, action `control-query` — donc `peer`,
+   *    `serve` et `query-only` l'autorisent, `serve-only` non. C'est
+   *    exactement ce que `query-only` existe pour dire, et ce qui etait
+   *    jusqu'ici inobservable.
+   * 3. **L'opcode**, refuse par le bit E et le code de la RFC quand il
+   *    n'est pas servi — nommer le refus vaut mieux que se taire, et
+   *    c'est ce qui distingue « cette machine ne sait pas » de « cette
+   *    machine ne repond pas ».
+   */
+  private handleControl(inPort: string, srcIp: IPAddress, req: NtpControlPacket): void {
+    const c = this.config.counters;
+    c.received++;
+    c.receivedControl++;
+    // Une REPONSE qui nous revient est pour le client, pas pour le
+    // serveur : sans ce partage, une machine repondrait a sa propre
+    // reponse, les deux portant le meme opcode.
+    if (req.response) { this.derniereReponseControle = req; c.processed++; return; }
+    // Une plateforme qui n'implemente pas le mode 6 ne le refuse pas :
+    // elle ne le connait pas. Le paquet est compte et abandonne, sans
+    // etre porte au compteur du DURCISSEMENT — confondre « la machine
+    // ne sait pas » et « l'operateur a ferme » enverrait un diagnostic
+    // au mauvais endroit.
+    if (!this.config.modeControlResponder) { c.dropped++; return; }
+    if (!this.config.allowModeControl) { c.dropped++; c.controlDenied++; return; }
+    if (!this.accesAutorise('control-query', srcIp.toString())) {
+      c.dropped++;
+      this.getBus().publish({
+        topic: 'ntp.access.denied',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          fromIp: srcIp.toString(), action: 'control-query',
+        },
+      });
+      c.accessDenied++;
+      return;
+    }
+    c.processed++;
+    if (!OPCODES_SERVIS.includes(req.opcode)) {
+      this.repondreControle(inPort, srcIp, req, '', 0, ERREURS_CONTROLE.INVALID_OPCODE);
+      return;
+    }
+    if (req.opcode === 1) {
+      const entrees = [...this.config.associations.entries()].map(([ip, a]) => ({
+        id: this.idAssoc(ip),
+        status: motEtatPair(true, a.reach !== 0, this.selectDe(a), 0, 0),
+      }));
+      this.repondreControle(
+        inPort, srcIp, req, formaterListeAssociations(entrees), this.motSysteme());
+      return;
+    }
+    // Opcode 2. L'association 0 designe la machine elle-meme.
+    if (req.associationId === 0) {
+      this.repondreControle(
+        inPort, srcIp, req, formaterVariables(this.variablesSysteme()), this.motSysteme());
+      return;
+    }
+    const a = this.assocParId(req.associationId);
+    if (!a) {
+      this.repondreControle(
+        inPort, srcIp, req, '', 0, ERREURS_CONTROLE.INVALID_ASSOCIATION);
+      return;
+    }
+    this.repondreControle(
+      inPort, srcIp, req, formaterVariables(this.variablesPair(a)),
+      motEtatPair(true, a.reach !== 0, this.selectDe(a), 0, 0));
+  }
+
+  private motSysteme(): number {
+    // La source d'horloge : 0 quand rien ne la discipline, 6 quand c'est
+    // NTP — les deux seules valeurs que cette machine puisse atteindre.
+    return motEtatSysteme(
+      this.config.localStratum < 16 ? 0 : 3,
+      this.config.localStratum < 16 ? 6 : 0, 0, 0);
+  }
+
+  private repondreControle(
+    inPort: string, dstIp: IPAddress, req: NtpControlPacket,
+    data: string, status = 0, erreur?: number,
+  ): void {
+    const srcIp = this.host.getPort(inPort)?.getIPAddress();
+    if (!srcIp) return;
+    const reponse: NtpControlPacket = {
+      type: 'ntp-control', leapIndicator: 0, version: req.version,
+      response: true, error: erreur !== undefined, more: false,
+      opcode: req.opcode, sequence: req.sequence,
+      // Le code d'erreur occupe l'octet de POIDS FORT du champ d'etat
+      // (RFC 9327 §3.2) : c'est le meme champ que l'etat normal, ce qui
+      // est precisement pourquoi le bit E doit exister pour les separer.
+      status: erreur !== undefined ? (erreur & 0xff) << 8 : status,
+      associationId: req.associationId, offset: 0,
+      count: data.length, data,
+    };
+    this.envoyerControle(inPort, srcIp, dstIp, reponse);
+  }
+
+  /** La derniere reponse de controle recue — ce que lit `ntpq`. */
+  private derniereReponseControle: NtpControlPacket | null = null;
+
+  /**
+   * Emettre une requete de controle et rendre la reponse.
+   *
+   * La livraison des trames est SYNCHRONE dans ce simulateur, donc la
+   * reponse est deja arrivee quand l'emission rend la main. C'est la
+   * meme hypothese que tout le reste du moteur NTP, et elle est ecrite
+   * ici plutot que supposee.
+   */
+  controlQuery(
+    cibleIp: string, opcode: number, associationId = 0,
+  ): NtpControlPacket | null {
+    const sortie = this.findEgressPort(cibleIp);
+    if (!sortie) return null;
+    const srcIp = sortie.port.getIPAddress();
+    if (!srcIp) return null;
+    this.derniereReponseControle = null;
+    const req: NtpControlPacket = {
+      type: 'ntp-control', leapIndicator: 0, version: 4,
+      response: false, error: false, more: false,
+      opcode, sequence: ++this.sequenceControle, status: 0,
+      associationId, offset: 0, count: 0, data: '',
+    };
+    this.envoyerControle(sortie.name, srcIp, new IPAddress(cibleIp), req);
+    const rep = this.derniereReponseControle;
+    // Une reponse qui ne repond pas a CETTE requete n'en est pas une :
+    // sans ce controle, une reponse en retard serait prise pour celle-ci.
+    if (rep && rep.sequence !== req.sequence) return null;
+    return rep;
+  }
+
+  private sequenceControle = 0;
+
+  private envoyerControle(
+    portName: string, srcIp: IPAddress, dstIp: IPAddress, pkt: NtpControlPacket,
+  ): void {
+    const port = this.host.getPort(portName);
+    if (!port) return;
+    this.config.counters.sent++;
+    this.config.counters.sentControl++;
+    const taille = 12 + pkt.data.length;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: UDP_PORT_NTP, destinationPort: UDP_PORT_NTP,
+      length: 8 + taille, checksum: 0, payload: pkt,
+    };
+    const ipPkt: IPv4Packet = {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 20 + 8 + taille,
+      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
+      sourceIP: srcIp, destinationIP: dstIp, payload: udp,
+    };
+    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const key = `ctl|${portName}|${dstIp.toString()}`;
+    if (this.emitting.has(key)) return;
+    this.emitting.add(key);
+    try {
+      if (this.host.sendIpv4FrameArpAware) {
+        this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
+      } else {
+        this.host.sendFrame(portName, {
+          srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+          etherType: ETHERTYPE_IPV4, payload: ipPkt,
+        });
+      }
+    } finally { this.emitting.delete(key); }
+  }
+
+  /** L'identifiant qu'une vue doit afficher pour une association. */
+  associationId(serverIp: string): number { return this.idAssoc(serverIp); }
+  /** Le mot d'etat d'une association, pour la vue locale. */
+  peerStatus(a: NtpAssociation): number {
+    return motEtatPair(true, a.reach !== 0, this.selectDe(a), 0, 0);
   }
 }
 

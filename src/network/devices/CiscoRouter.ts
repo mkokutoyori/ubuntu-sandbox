@@ -195,6 +195,8 @@ export class CiscoRouter extends Router {
     this.hsrpAgent = new HsrpAgent(hostBase, () => this.getBus());
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
+    // Un routeur repond a `ntpq` ; un poste sous chronyd non.
+    this.ntpAgent.setModeControlResponder(true);
     // `ntp access-group` consulte les MEMES listes d'acces que le reste
     // du routeur (lot N6) : une seconde evaluation finirait par rendre
     // un verdict different pour la meme liste, sur la meme machine.

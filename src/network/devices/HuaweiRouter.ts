@@ -99,6 +99,8 @@ export class HuaweiRouter extends Router {
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
+    // Un routeur repond a `ntpq` ; un poste sous chronyd non.
+    this.ntpAgent.setModeControlResponder(true);
     this.bfdAgent = new BfdAgent(hostBase, () => this.getBus());
     this.getBus().subscribe('bfd.session.changed', (e) => {
       if (e.payload.deviceId !== this.id) return;

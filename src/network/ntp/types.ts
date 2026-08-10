@@ -91,6 +91,17 @@ export interface NtpConfig {
    * ouverte apres un import de topologie.
    */
   allowModeControl: boolean;
+  /**
+   * Cette machine SAIT-elle repondre aux requetes de mode 6 ?
+   *
+   * Distinct de `allowModeControl`, qui est le reglage de l'operateur
+   * (`no ntp allow mode control`). Ici c'est une propriete de la
+   * PLATEFORME : IOS et VRP repondent a `ntpq`, **chronyd non** — il
+   * n'implemente pas le mode 6 du tout et cause a `chronyc` par son
+   * propre protocole sur UDP/323. Les confondre ferait repondre un poste
+   * Linux a une interrogation qu'aucun chronyd reel n'honore.
+   */
+  modeControlResponder: boolean;
   updateCalendar: boolean;
   /** Les interfaces ou `ntp disable` interdit de servir le temps. */
   disabledInterfaces: Set<string>;
@@ -131,6 +142,11 @@ export interface NtpCounters {
   authOk: number;
   /** Ecartes par `ntp access-group`. */
   accessDenied: number;
+  /** Messages de CONTROLE (mode 6) recus et emis — lot N11. */
+  receivedControl: number;
+  sentControl: number;
+  /** Refuses par `no ntp allow mode control`, distinct d'un refus d'ACL. */
+  controlDenied: number;
   /** Version NTP non prise en charge. */
   badVersion: number;
   /** Paquet mal forme : ni un mode connu, ni une charge utile lisible. */
@@ -148,6 +164,7 @@ export function createNtpCounters(): NtpCounters {
   return {
     received: 0, sent: 0, processed: 0, dropped: 0,
     authFailures: 0, authOk: 0, accessDenied: 0, badVersion: 0, protocolError: 0,
+    receivedControl: 0, sentControl: 0, controlDenied: 0,
     receivedByMode: parMode(), sentByMode: parMode(),
   };
 }
@@ -167,6 +184,7 @@ export function createDefaultNtpConfig(): NtpConfig {
     trustedKeys: new Set(),
     accessGroups: new Map(),
     allowModeControl: true,
+    modeControlResponder: false,
     updateCalendar: false,
     disabledInterfaces: new Set(),
     startedAtMs: Date.now(),

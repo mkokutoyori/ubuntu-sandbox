@@ -1044,7 +1044,141 @@ l'en-tête du fichier dit plutôt que de le laisser découvrir.
 
 ### 12.9 Reste ouvert
 
-Les **requêtes de contrôle (mode 6)** n'existent pas, donc `query-only`
-de `ntp access-group` reste structurellement inerte : son seul effet
-observable est de refuser le service du temps. C'est le dernier point du
-chantier NTP.
+Rien — les **requêtes de contrôle (mode 6)** sont livrées par le lot N11,
+en §13, et c'était le dernier point du chantier.
+
+---
+
+## 13. N11 — Livré : les requêtes de contrôle (mode 6)
+
+Le dernier point ouvert du chantier, et il fermait **deux** commandes de
+durcissement, pas une.
+
+### 13.1 Deux commandes structurellement inertes
+
+- **`ntp access-group query-only`** : `verdictAccesNtp` connaît l'action
+  `control-query` depuis N6, et **rien dans le dépôt n'émettait ni ne
+  recevait de requête de contrôle**. Le seul effet observable de
+  `query-only` était donc de REFUSER le temps — jamais d'AUTORISER ce
+  qu'il autorise. Un apprenant en déduisait que le mot ne sert à rien.
+- **`no ntp allow mode control`** — la commande qui ferme la porte de
+  `monlist` et de CVE-2013-5211 — était rangée et lue par personne. Une
+  machine durcie et une machine ouverte se comportaient exactement
+  pareil, ce qui est la pire chose qu'un simulateur puisse enseigner sur
+  une commande de sécurité.
+
+### 13.2 Ce que le mode 6 est, et pourquoi il fallait l'écrire
+
+RFC 9327 (novembre 2022, qui remplace l'annexe B de RFC 1305) : un
+message de contrôle est un paquet NTP de **mode 6** sur le même port
+UDP/123, avec son propre en-tête de douze octets. Les trois bits qui
+suivent le mode ne sont pas décoratifs et sont la raison pour laquelle un
+booléen n'aurait pas suffi :
+
+- **R** distingue une requête d'une réponse — les deux portent le même
+  opcode, donc sans lui une machine répondrait à ses propres réponses ;
+- **E** dit que la réponse est une erreur, ce qui permet de refuser un
+  opcode **en le nommant** plutôt que de se taire ;
+- **M** annonce une suite.
+
+`serialiserEnteteControle` écrit les douze octets pour de vrai — non pour
+les mettre sur le fil (ce simulateur transporte ses paquets NTP comme
+objets, comme `auth.ts` le dit déjà) mais parce que ce sont des **champs
+de bits** : rien n'oblige un code qui les manipule séparément à rester
+d'accord avec la RFC, et un endroit unique où la disposition est vraie
+peut être vérifié par un test.
+
+### 13.3 Deux opcodes servis, onze refusés en les nommant
+
+Servis : **1 (read status)**, qui rend la liste des associations, et
+**2 (read variables)**, qui rend les variables système (association 0) ou
+celles d'un pair. Ce sont ceux que `ntpq` emploie pour tout ce qu'un
+cours de NTP fait faire.
+
+Les onze autres sont refusés avec le bit E et le code de la RFC, et deux
+le sont **par conception** plutôt que par manque de temps :
+
+- **`monlist` n'existe pas** : c'était une extension privée de `ntpd`,
+  jamais un opcode standard, et c'est elle qui a rendu CVE-2013-5211
+  célèbre ;
+- **les opcodes d'ÉCRITURE (3, 5, 8)** — un simulateur où l'on
+  reconfigure un routeur par un datagramme UDP non authentifié
+  enseignerait exactement ce qu'il faut ne pas faire.
+
+### 13.4 Trois portes, dans l'ordre du sens
+
+1. **`no ntp allow mode control`** ferme la fonction entière. Le refus est
+   **silencieux**, comme celui d'une liste d'accès : une machine qui
+   répondrait « je ne réponds pas aux requêtes de contrôle »
+   confirmerait son existence à qui la sonde, l'inverse d'un
+   durcissement.
+2. **La liste d'accès**, action `control-query` — donc `peer`, `serve` et
+   `query-only` l'autorisent, `serve-only` non. La sonde vérifie les
+   **deux** sens : `query-only` autorise le contrôle et refuse le temps,
+   `serve-only` fait l'inverse. Sans la symétrie, `query-only` pourrait
+   « marcher » simplement parce que tout marche.
+3. **L'opcode**, refusé en le nommant.
+
+### 13.5 Une distinction de plateforme, mesurée et non supposée
+
+`chronyd` **n'implémente pas le mode 6 du tout** : il cause à `chronyc`
+par son propre protocole sur UDP/323. Un poste Linux ne doit donc pas
+répondre à `ntpq`, alors que IOS et VRP le font.
+
+`NtpConfig.modeControlResponder` porte cette différence, **distincte de
+`allowModeControl`** qui est le réglage de l'opérateur. Confondre les deux
+ferait répondre un poste Linux à une interrogation qu'aucun chronyd réel
+n'honore ; et les compteurs les séparent aussi — « la machine ne sait
+pas » et « l'opérateur a fermé » envoient à deux endroits différents.
+C'est le seul cas du lot où la première version du code était fausse et
+où c'est un test qui l'a montré.
+
+### 13.6 `ntpq`, et la table des paquets
+
+La commande est un `LinuxCommand` avec son `binaryPath`, donc
+`rm /usr/bin/ntpq` la casse pour de vrai (§F7.7). Les colonnes de
+`ntpq -p` passent par **`TextTable`**, largeurs mesurées au caractère
+près sur une sortie réelle — les deux lignes de données de la capture de
+référence sont reproduites exactement.
+
+**Même constat que pour chrony, et c'est un motif** : l'en-tête de `ntpq`
+**ne s'aligne pas sur ses propres données** (`reach` finit colonne 52
+quand sa valeur finit à la 51). L'en-tête reste donc la constante
+mesurée, les données passent par les colonnes.
+
+Le pointage (`*`, `+`, `x`, …) est **dérivé du champ `select`** du mot
+d'état du pair, jamais recalculé à côté : c'est la même information sur
+le fil et à l'écran.
+
+### 13.7 La table des paquets disait le contraire de la vérité
+
+`PACKAGE_DB` ne nommait **ni `chrony` ni `ntpsec`**, alors que cette image
+exécute `chronyd`, `chronyc` et maintenant `ntpq`. C'est le défaut
+exactement inverse de celui qui a ouvert N3 (un paquet déclaré installé
+dont rien n'existait), et il se corrige de la même façon : la table dit
+ce que la machine porte.
+
+### 13.8 Mesures
+
+`tuto-ntp-mode-controle.test.ts` (25 cas). La discrimination est faite en
+**restaurant le câblage seul** (`NtpAgent`, `types`, les deux routeurs,
+l'enregistrement de la commande) et en gardant les modules neufs : **14
+tombent**. Les 11 qui passent portent sur `control.ts` seul — disposition
+des bits, mots d'état, aller-retour du format — et sont des garde-fous de
+format, ce que l'en-tête du fichier dit plutôt que de le laisser
+découvrir. Retirer aussi les modules neufs empêcherait la suite de se
+charger, ce qui ne mesurerait rien.
+
+214 suites connexes vertes (3 215 cas). Typecheck : jeu d'erreurs
+**identique** (217). Lint propre.
+
+### 13.9 Ce qui reste, et qui n'est pas un manque caché
+
+- Le mode 6 n'est pas **authentifié** : RFC 9327 permet un MAC sur une
+  requête de contrôle, et il n'aurait de sens que pour les opcodes
+  d'écriture, qui sont refusés par conception.
+- La **fragmentation** (bit M, champ `offset`) est écrite dans l'en-tête
+  et jamais produite : aucune réponse de cette machine ne dépasse un
+  datagramme, donc l'émettre serait une fiction.
+- `ntpq` n'a pas de **mode interactif**, comme `chronyc` ici pour la même
+  raison — ce terminal ne saurait pas en sortir.

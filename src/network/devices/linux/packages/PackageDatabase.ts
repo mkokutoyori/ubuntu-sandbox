@@ -33,6 +33,13 @@ export const PACKAGE_DB: readonly PackageEntry[] = [
     summary: 'GNU Bourne Again SHell' },
   { name: 'bind9', version: '9.18.12-0ubuntu0.22.04.1', arch: 'amd64', installed: false,
     summary: 'Internet Domain Name Server' },
+  // `chronyd`/`chronyc` tournent sur cette image depuis le lot N3 et
+  // `ntpq` depuis le lot N11 : sans ces deux lignes, `dpkg -l` niait des
+  // logiciels que la machine exécute — la forme de défaut exactement
+  // inverse de celle que cette table a fermée (des paquets déclarés
+  // installés dont rien n'existait).
+  { name: 'chrony', version: '4.2-2ubuntu2', arch: 'amd64', installed: true,
+    summary: 'Versatile implementation of the Network Time Protocol' },
   { name: 'coreutils', version: '8.32-4.1ubuntu1', arch: 'amd64', installed: true,
     summary: 'GNU core utilities' },
   { name: 'cron', version: '3.0pl1-137ubuntu3', arch: 'amd64', installed: true,
@@ -47,6 +54,12 @@ export const PACKAGE_DB: readonly PackageEntry[] = [
     summary: 'Tools to test the reachability of network hosts' },
   { name: 'mtr-tiny', version: '0.95-1', arch: 'amd64', installed: true,
     summary: 'Full screen ncurses traceroute tool' },
+  // Le paquet qui fournit `/usr/bin/ntpq` sur Jammy. Il est nommé plutôt
+  // que `ntp` parce que c'est celui qu'Ubuntu 22.04 maintient, et
+  // installé sans son démon : `ntpq` est un CLIENT, il n'a besoin
+  // d'aucun `ntpd` local pour interroger un routeur.
+  { name: 'ntpsec', version: '1.2.1+dfsg1-4', arch: 'amd64', installed: true,
+    summary: 'Network Time Protocol daemon and utility programs' },
   { name: 'openssh-client', version: '1:8.9p1-3ubuntu0.1', arch: 'amd64', installed: true,
     summary: 'secure shell (SSH) client, for secure access to remote machines' },
   { name: 'openssh-server', version: '1:8.9p1-3ubuntu0.1', arch: 'amd64', installed: true,
