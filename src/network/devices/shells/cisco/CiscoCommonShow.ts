@@ -593,7 +593,12 @@ export function showSnmpUser(dev?: ShowStateDevice): string {
     `Engine ID: ${svc.getEngineId()}`,
     `storage-type: nonvolatile        active`,
     `Authentication Protocol: ${u.authAlgo ? u.authAlgo.toUpperCase() : 'None'}`,
-    `Privacy Protocol: ${u.privAlgo ? u.privAlgo.toUpperCase() : 'None'}`,
+    // `AES256` et non `AES` : la longueur de cle fait partie du protocole
+    // sur IOS, et c'est elle que le controle A20 d'une liste d'audit
+    // cherche a lire.
+    `Privacy Protocol: ${u.privAlgo
+      ? u.privAlgo.toUpperCase() + (u.privKeyBits ?? '')
+      : 'None'}`,
     `Group-name: ${u.group}`,
   ].join('\n')).join('\n\n');
 }
