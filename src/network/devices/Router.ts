@@ -4406,11 +4406,55 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return null;
   }
 
+  /**
+   * Une commande executee a travers SSH, dans SA propre session vty et
+   * AU NIVEAU DE SON COMPTE.
+   *
+   * Elle retombait sur `executeCommand`, c'est-a-dire sur le shell
+   * partage de la console. Deux consequences, toutes deux mesurees :
+   * un compte declare `privilege 7` repondait `Current privilege level
+   * is 15` — le chapitre « qui a le droit de faire quoi » ne tenait pas
+   * sur la porte par laquelle les administrateurs entrent vraiment — et
+   * la session heritait du mode ou la console avait ete laissee, donc
+   * deux connexions se marchaient dessus.
+   *
+   * Le niveau vient du compte, la ligne vty pouvant l'imposer par
+   * `privilege level N` — c'est la meme regle que la session
+   * interactive applique deja (`prepareAsRemoteUser`), lue ici au meme
+   * endroit pour que les deux portes ne puissent pas diverger.
+   */
   async runSshCommand(user: string, command: string): Promise<{ output: string; exitCode: number }> {
     const sync = this.runSshCommandSync(user, command);
     if (sync) return sync;
-    const output = await this.executeCommand(command);
-    return { output, exitCode: 0 };
+    const session = this.openVtySession();
+    try {
+      const niveau = this.sshSessionPrivilege(user);
+      session.state.privilegeLevel = niveau;
+      session.state.mode = niveau >= 15 ? 'privileged' : 'user';
+      const output = await this.executeCommandInVty(command, session);
+      return { output, exitCode: 0 };
+    } finally {
+      this.closeVtySession(session);
+    }
+  }
+
+  /**
+   * Le niveau qu'une session distante prend : celui que la ligne vty
+   * impose, sinon celui du compte. Une seule regle, lue par le chemin
+   * interactif comme par le chemin non interactif — deux portes qui
+   * calculeraient le niveau chacune de leur cote finiraient par ne pas
+   * donner le meme.
+   */
+  _niveauPourCompte(user: string): number {
+    return this.sshSessionPrivilege(user);
+  }
+
+  /** Le niveau qu'une session SSH prend : celui de la ligne vty s'il est impose, sinon celui du compte. */
+  private sshSessionPrivilege(user: string): number {
+    const ligne = this._getVtyLineConfig().all()[0];
+    const impose = (ligne as unknown as { privilege?: number | null } | undefined)?.privilege;
+    if (typeof impose === 'number') return impose;
+    return this.getCredentialStore().get(user)?.privilege ?? 1;
   }
 
   sshBanner(): string { return this.getSshBanner(); }

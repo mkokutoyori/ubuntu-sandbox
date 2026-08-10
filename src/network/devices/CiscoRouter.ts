@@ -515,6 +515,10 @@ export class CiscoRouter extends Router {
     _user: string,
     command: string,
   ): { output: string; exitCode: number } | null {
+    // Le niveau du COMPTE qui s'est authentifie, ou celui que la ligne
+    // vty impose. Sans lui, toute commande `show` passee par SSH
+    // s'executait au niveau 15 quel que soit le compte.
+    const niveauSsh = this._niveauPourCompte(_user);
     let trimmed = command.trim();
     if (!trimmed) return { output: '', exitCode: 0 };
     if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
@@ -555,7 +559,18 @@ export class CiscoRouter extends Router {
       return { output: `${showIpIntBrief(this)}\n`, exitCode: 0 };
     }
     // `show running-config [ | include … ]` — pipe filter supported.
+    // Ce raccourci contournait la porte des niveaux : il rendait la
+    // configuration entiere quel que soit le compte, alors que
+    // `show running-config` est une commande de niveau 15. La verdict
+    // du niveau est demande AVANT de construire le texte, sinon on
+    // aurait calcule ce qu'on refuse ensuite.
     const runMatch = /^show\s+run(?:ning-config)?(?:\s*\|\s*(include|exclude)\s+(.+))?$/i.exec(cmd);
+    if (runMatch && niveauSsh < 15) {
+      const refus = (this as unknown as {
+        shell?: { runShowCommandSync?: (d: unknown, c: string, n?: number) => string };
+      }).shell?.runShowCommandSync?.(this, 'show running-config', niveauSsh) ?? '';
+      if (refus.includes('Invalid input')) return { output: `${refus}\n`, exitCode: 1 };
+    }
     if (runMatch) {
       const base = showRunningConfig(this);
       const extra: string[] = this._listLocalUsers().map(u =>
@@ -579,7 +594,7 @@ export class CiscoRouter extends Router {
       const shell = (this as unknown as { shell?: { runShowCommandSync?: (d: unknown, c: string) => string } }).shell;
       let out: string | undefined;
       try {
-        out = shell?.runShowCommandSync?.(this, cmd);
+        out = shell?.runShowCommandSync?.(this, cmd, niveauSsh);
       } catch {
         out = undefined;
       }

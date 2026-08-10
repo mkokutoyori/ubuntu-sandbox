@@ -682,6 +682,23 @@ function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[
     i++;
   }
   const methods = args.slice(i);
+  if (methods.length === 0) return CISCO_ERRORS.INCOMPLETE;
+  // Les methodes d'ACCOUNTING ne sont pas celles d'authentification.
+  // IOS n'accepte ici que `group <nom>`, `group radius|tacacs+`, `none`
+  // et `broadcast` : il n'y a PAS de methode `local`, parce qu'un
+  // enregistrement de comptabilite part vers un collecteur — il n'y a
+  // rien de local ou l'ecrire. `aaa accounting exec default start-stop
+  // local` etait accepte, range, rendu dans la configuration, et
+  // n'emettait jamais rien : la commande promettait une trace qui ne
+  // venait pas, ce qui est pire que son refus.
+  if (phase === 'accounting') {
+    const permis = new Set(['group', 'none', 'broadcast', 'radius', 'tacacs+']);
+    for (let k = 0; k < methods.length; k++) {
+      const mot = methods[k].toLowerCase();
+      if (permis.has(mot)) { if (mot === 'group') k++; continue; }
+      throw new CliInvalidInput({ token: methods[k] });
+    }
+  }
   sec.aaaMethods.push({ phase, service, listName, privilegeLevel, recordType, methods });
   return '';
 }

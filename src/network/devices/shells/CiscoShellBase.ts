@@ -1748,12 +1748,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return false;
   }
 
-  runShowCommandSync(device: TDevice, cmdPart: string): string {
+  /**
+   * Une commande `show` executee hors session, pour le compte d'un
+   * appelant qui n'a pas de shell a lui — la porte SSH non interactive.
+   *
+   * Le niveau etait FORCE a 15 : `ssh technicien@routeur "show
+   * running-config"` rendait la configuration entiere a un compte
+   * declare `privilege 7`. Les niveaux tenaient sur la console et
+   * tombaient sur la porte par laquelle les administrateurs entrent
+   * vraiment. Il est desormais un parametre, et 15 n'est que son defaut
+   * — les appelants internes (diagnostic, serialisation) le gardent.
+   */
+  runShowCommandSync(device: TDevice, cmdPart: string, niveau = 15): string {
     const previousMode = this.mode;
     const previousLevel = this.currentPrivilegeLevel;
     const previousDevice = this.deviceRef;
-    this.mode = 'privileged';
-    this.currentPrivilegeLevel = 15;
+    this.mode = niveau >= 15 ? 'privileged' : 'user';
+    this.currentPrivilegeLevel = niveau;
     this.deviceRef = device;
     try {
       return this.executeOnTrie(cmdPart);
