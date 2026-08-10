@@ -2190,7 +2190,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const groups = this.swRef.getVrrpAgent().listGroups();
       const mot = (args[0] ?? '').toLowerCase();
       if (mot === 'brief') return rendreDisplayVrrpBrief(groups);
-      if (mot === 'statistics') return rendreDisplayVrrpStatistics(groups);
+      if (mot === 'statistics') {
+        return rendreDisplayVrrpStatistics(groups, this.swRef.getVrrpAgent().getGlobalStats());
+      }
       if (mot === 'interface') {
         const demande = args.slice(1).join(' ');
         const nom = this.resolveInterfaceName(demande);

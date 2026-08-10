@@ -2035,7 +2035,8 @@ protocole, pas de CLI — **et c'est fait par le lot V16, en §25**.
 Les compteurs de `display vrrp statistics` sont à zéro, et c'est un
 **fait** plutôt qu'un manque : rien dans cet agent ne compte les annonces
 émises ou reçues. Ce qui est réellement compté — le nombre de pistes —
-l'est depuis l'agent.
+l'est depuis l'agent. **Traité par le lot V17, en §26** — et ce cadrage
+masquait un défaut plus grave : les intitulés eux-mêmes étaient inventés.
 
 `admin-vrrp vrid` est désormais **refusé en nommant la brique absente**
 (`mVRRP is not implemented in this simulator`) : ce simulateur n'a pas de
@@ -2182,8 +2183,110 @@ d'asymétrie, dont c'est l'objet de passer.
 
 ### 25.8 Ce qui reste
 
-Les compteurs de `display vrrp statistics` restent à zéro : rien dans cet
-agent ne compte les annonces émises ou reçues. C'est un fait et non un
-manque — les compter est un lot à part, et il serait maintenant utile,
-puisqu'un refus d'authentification est exactement ce qu'un opérateur
-voudrait voir compté.
+Les compteurs de `display vrrp statistics` restaient à zéro. **Livré par
+le lot V17, en §26**, qui a trouvé au passage que leurs intitulés étaient
+inventés — et deux règles de protocole absentes que leurs compteurs
+signalaient.
+
+---
+
+## 26. V17 — Livré : `display vrrp statistics` compte, sous les vrais intitulés
+
+§25.8 laissait ce point ouvert en le qualifiant de *fait* plutôt que de
+manque : rien ne comptait les annonces. C'était vrai — mais la mesure a
+trouvé un **second défaut, plus grave, que ce cadrage masquait**.
+
+### 26.1 Les intitulés étaient inventés
+
+La vue annonçait `Advertisement sent`, `Advertisement received`,
+`Priority zero packets sent`, `Priority zero packets received`,
+`Become master` et `Track interfaces`. **Aucun des six ne figure dans la
+sortie d'une vraie machine.** Un apprenant qui compare sa capture à la
+nôtre ne retrouvait pas une seule ligne — ce qui est pire qu'un compteur
+à zéro, puisqu'un zéro se comprend et un champ inexistant ne se cherche
+pas.
+
+Les dix-neuf champs de VRP et les **quatre compteurs globaux** qui les
+précèdent sont relevés sur sa documentation. Les globaux le sont parce
+qu'ils portent sur des paquets qu'on n'a pas pu rattacher à un groupe :
+une somme de contrôle fausse ou un VRID inconnu ne désignent justement
+aucun groupe.
+
+### 26.2 Un compteur qui ne peut rien compter signale une règle absente
+
+Deux règles de protocole ont été trouvées par leurs compteurs :
+
+- **`Received ip ttl errors`** — RFC 5798 §5.1.1.3 exige un TTL de 255
+  sur une annonce et fait **écarter** le paquet sinon. C'est ce qui
+  garantit qu'elle n'a traversé aucun routeur, donc qu'elle vient du lien
+  local. Le contrôle n'existait pas : une annonce venue d'ailleurs était
+  acceptée comme une voisine.
+- **`Sent packets with priority zero`** — RFC 5798 §6.4.3 fait émettre au
+  maître qui s'arrête une annonce de priorité 0. Ce n'est pas une
+  politesse : c'est ce qui fait basculer le secours **tout de suite** au
+  lieu de lui faire attendre l'intervalle de maître absent. Un
+  laboratoire où l'on coupe proprement un maître et où le basculement
+  prend trois secondes enseignerait que VRRP est lent alors qu'il ne
+  l'est que sur une **panne**.
+
+Sans ces deux ajouts, les deux compteurs auraient été nuls *faute de
+fonction* — et non par fait, ce qui est la distinction que ce lot tient
+partout ailleurs.
+
+`Received selfsend packets` a suivi la même logique : une annonce émise
+par nous-mêmes et qui nous revient (un pont qui boucle) n'est pas la
+preuve qu'un autre maître existe.
+
+### 26.3 Les zéros qui restent sont des faits, et ils sont nommés
+
+Ce simulateur ne sérialise pas ses paquets VRRP — ils voyagent comme
+objets — donc il n'existe **ni somme de contrôle à fausser**
+(`Checksum errors`), **ni longueur à tronquer** (`Packet length
+errors`), **ni octet de version à corrompre** (`Version errors`), **ni
+VRID hors bornes** (`Vrid errors`), **ni type invalide** (`Received
+invalid type packets`) : `handleIp` n'accepte qu'une charge utile déjà
+typée. Ces compteurs valent zéro parce que l'événement **ne peut pas se
+produire**, ce qui n'est pas la même chose que de ne pas savoir le
+compter.
+
+`Discarded packets since track admin-vrrp` l'est pour une autre raison,
+déjà écrite : `admin-vrrp vrid` est refusé en nommant sa brique absente
+(§24.4).
+
+### 26.4 Ce qui est mesuré, et l'identité qui le prouve
+
+Transitions (les trois états, chacune dans son champ), annonces émises et
+reçues, ARP gratuit de prise de rôle, intervalle d'annonce discordant,
+priorité zéro dans les deux sens, liste d'adresses non concordante,
+erreurs de TTL, paquets de soi-même, et **les deux échecs
+d'authentification séparés** — `Failed to authentication check` pour une
+clé, `Mismatched authentication type` pour un mode. Cette séparation
+existe sur la vraie machine pour la même raison qu'elle existe dans
+l'événement du lot V16 : les deux envoient l'opérateur à deux endroits
+différents.
+
+La sonde vérifie une propriété plutôt qu'une valeur : **ce que `a` a
+émis, `b` l'a reçu**.
+
+### 26.5 `reset vrrp statistics`
+
+La commande était absente : un opérateur ne pouvait pas repartir d'un
+comptage propre avant une mesure. Une commande qui promet de remettre à
+zéro doit le faire.
+
+### 26.6 Un test à moi, corrigé
+
+`huawei-vrrp-un-magasin.test.ts` (lot V15) exigeait
+`Advertisement sent : 0` et `Track interfaces : 1` : il **encodait le
+format inventé comme contrat**. Son intention — `statistics` est une vue
+à soi, pas le bloc détaillé — est intacte et il vérifie désormais les
+vrais champs.
+
+### 26.7 Mesures
+
+`probe-vrrp-statistics-mesurent.test.ts` (15 cas) discriminé par
+`git stash` : **les 15 tombent** — la vue ne portait aucun des intitulés
+attendus et aucun compteur n'existait.
+
+115 suites connexes vertes (1 661 cas). Typecheck : jeu d'erreurs
+**identique** (217). Lint propre.

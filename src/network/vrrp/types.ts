@@ -37,6 +37,73 @@ export type VrrpTrackEntry = FhrpTrackEntry;
 
 export type VrrpAuthMode = 'simple' | 'md5' | 'none';
 
+/**
+ * Ce qu'un groupe VRRP compte, aux noms de `display vrrp statistics`.
+ *
+ * Les noms sont ceux de la VRAIE sortie, releves sur la documentation de
+ * VRP, et non ceux qu'on aurait devines : la vue de ce depot annoncait
+ * `Advertisement sent`, `Become master` et `Track interfaces`, dont
+ * **aucun** ne figure dans la sortie d'une vraie machine — c'etait un
+ * format invente, en plus d'etre a zero.
+ *
+ * Chaque champ ci-dessous est soit COMPTE au point ou l'evenement a
+ * lieu, soit nul pour une raison ecrite dans `VrrpAgent`. Les deux se
+ * distinguent : un zero mesure et un zero faute de mesure ne veulent pas
+ * dire la meme chose a un operateur.
+ */
+export interface VrrpStats {
+  transitedToMaster: number;
+  transitedToBackup: number;
+  transitedToInitialize: number;
+  receivedAdvertisements: number;
+  sentAdvertisements: number;
+  advertisementIntervalErrors: number;
+  failedAuthCheck: number;
+  receivedIpTtlErrors: number;
+  receivedPriorityZero: number;
+  sentPriorityZero: number;
+  receivedInvalidType: number;
+  receivedUnmatchedAddressList: number;
+  unknownAuthType: number;
+  mismatchedAuthType: number;
+  packetLengthErrors: number;
+  discardedTrackAdminVrrp: number;
+  receivedAttacking: number;
+  receivedSelfsend: number;
+  sentGratuitousArp: number;
+}
+
+export function createVrrpStats(): VrrpStats {
+  return {
+    transitedToMaster: 0, transitedToBackup: 0, transitedToInitialize: 0,
+    receivedAdvertisements: 0, sentAdvertisements: 0,
+    advertisementIntervalErrors: 0, failedAuthCheck: 0, receivedIpTtlErrors: 0,
+    receivedPriorityZero: 0, sentPriorityZero: 0,
+    receivedInvalidType: 0, receivedUnmatchedAddressList: 0,
+    unknownAuthType: 0, mismatchedAuthType: 0, packetLengthErrors: 0,
+    discardedTrackAdminVrrp: 0, receivedAttacking: 0, receivedSelfsend: 0,
+    sentGratuitousArp: 0,
+  };
+}
+
+/**
+ * Les quatre compteurs que VRP tient pour la MACHINE et non par groupe.
+ *
+ * Ils sont globaux parce qu'ils portent sur des paquets qu'on n'a pas pu
+ * rattacher a un groupe : une somme de controle fausse ou un VRID
+ * inconnu, justement, ne designe aucun groupe.
+ */
+export interface VrrpGlobalStats {
+  checksumErrors: number;
+  versionErrors: number;
+  vridErrors: number;
+  otherErrors: number;
+}
+
+export function createVrrpGlobalStats(): VrrpGlobalStats {
+  return { checksumErrors: 0, versionErrors: 0, vridErrors: 0, otherErrors: 0 };
+}
+
 export interface VrrpGroupRuntime {
   iface: string;
   vrid: number;
@@ -68,6 +135,8 @@ export interface VrrpGroupRuntime {
    * pourrait que se rendre dans une vue.
    */
   preemptEligibleSinceMs?: number | null;
+  /** Les compteurs de `display vrrp statistics`, mesures. */
+  stats?: VrrpStats;
   description: string;
   authMode: VrrpAuthMode;
   authKey?: string;

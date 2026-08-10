@@ -1499,8 +1499,17 @@ export function registerDisplayCommands(
     if (groups.length === 0) return AUCUN_GROUPE;
     return rendreDisplayVrrp(groups);
   });
-  trie.register('display vrrp statistics', 'Display VRRP statistics', () =>
-    rendreDisplayVrrpStatistics(huaweiVrrpAgent(getRouter())?.listGroups() ?? []));
+  trie.register('display vrrp statistics', 'Display VRRP statistics', () => {
+    const ag = huaweiVrrpAgent(getRouter());
+    return rendreDisplayVrrpStatistics(ag?.listGroups() ?? [], ag?.getGlobalStats());
+  });
+  // `reset vrrp statistics` : une commande qui promet de remettre a zero
+  // doit le faire. Elle etait absente, donc un operateur ne pouvait pas
+  // repartir d'un comptage propre avant une mesure.
+  trie.register('reset vrrp statistics', 'Clear VRRP statistics', () => {
+    huaweiVrrpAgent(getRouter())?.resetStats();
+    return '';
+  });
 
   trie.register('display bfd configuration all', 'Display BFD configuration', () => {
     const svc = (getRouter() as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();

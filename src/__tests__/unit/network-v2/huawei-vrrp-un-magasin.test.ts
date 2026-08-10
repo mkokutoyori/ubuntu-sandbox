@@ -126,11 +126,17 @@ describe('une seule vue pour les deux plateformes', () => {
   it('`display vrrp statistics` est une vue A SOI, pas le bloc detaille', async () => {
     // Le greedy du commutateur avalait ses propres sous-commandes :
     // `statistics` et `verbose` y rendaient le bloc de `display vrrp`.
+    //
+    // Les intitules attendus ici etaient `Advertisement sent : 0` et
+    // `Track interfaces : 1` : **aucun des deux n'existe sur une vraie
+    // machine**, et ce cas encodait donc un format invente. Il verifie
+    // desormais les vrais champs (lot V17) ; son INTENTION — deux vues
+    // distinctes — est inchangee.
     for (const [nom, fabrique] of DEUX) {
       const d = await fabrique();
       const stats = await d.executeCommand('display vrrp statistics');
-      expect(stats, nom).toContain('Advertisement sent : 0');
-      expect(stats, nom).toContain('Track interfaces : 1');
+      expect(stats, nom).toContain('Transited to master : ');
+      expect(stats, nom).toContain('Sent advertisements : ');
       expect(stats, nom).not.toContain('Virtual MAC');
       expect(stats, nom).not.toBe(await d.executeCommand('display vrrp'));
     }

@@ -55,8 +55,8 @@
  */
 
 import type { VrrpAgent } from '../../../vrrp/VrrpAgent';
-import type { VrrpGroupRuntime, VrrpAuthMode } from '../../../vrrp/types';
-import { vrrpVirtualMac, effectivePriority } from '../../../vrrp/types';
+import type { VrrpGroupRuntime, VrrpAuthMode, VrrpGlobalStats } from '../../../vrrp/types';
+import { vrrpVirtualMac, effectivePriority, createVrrpStats } from '../../../vrrp/types';
 import { IPAddress } from '../../../core/types';
 import { huaweiDisplayInterfaceName } from '../cli-utils';
 import type { ErreurGrammaireVrp } from '../cli-utils';
@@ -282,17 +282,60 @@ export function rendreDisplayVrrpBrief(groupes: readonly VrrpGroupRuntime[]): st
  * ou recues, et afficher un nombre invente serait pire que zero. Ce qui
  * est compte pour de bon — le nombre de pistes — l'est depuis l'agent.
  */
-export function rendreDisplayVrrpStatistics(groupes: readonly VrrpGroupRuntime[]): string {
+/**
+ * `display vrrp statistics`.
+ *
+ * **Les intitules etaient INVENTES**, en plus d'etre a zero : cette vue
+ * annoncait `Advertisement sent`, `Become master` et `Track interfaces`,
+ * dont **aucun** ne figure dans la sortie d'une vraie machine. Ce sont
+ * desormais les dix-neuf champs de VRP, dans son ordre, precedes des
+ * quatre compteurs qu'il tient pour la MACHINE et non par groupe — ils
+ * sont globaux parce qu'ils portent sur des paquets qu'on n'a pas pu
+ * rattacher a un groupe, et une somme de controle fausse ou un VRID
+ * inconnu ne designent justement aucun groupe.
+ *
+ * L'alignement est celui de la sortie reelle : l'intitule, un espace, un
+ * deux-points, un espace, la valeur — VRP ne met pas ses valeurs en
+ * colonne ici, et les y mettre serait plus joli que la machine.
+ */
+export function rendreDisplayVrrpStatistics(
+  groupes: readonly VrrpGroupRuntime[],
+  globales?: Readonly<VrrpGlobalStats>,
+): string {
   if (groupes.length === 0) return AUCUN_GROUPE;
-  return groupes.map((g) => [
-    `  ${huaweiDisplayInterfaceName(g.iface)} | Virtual Router ${g.vrid}`,
-    `    Advertisement sent : 0`,
-    `    Advertisement received : 0`,
-    `    Priority zero packets sent : 0`,
-    `    Priority zero packets received : 0`,
-    `    Become master : 0`,
-    `    Track interfaces : ${g.tracks.length}`,
-  ].join('\n')).join('\n');
+  const gl = globales ?? { checksumErrors: 0, versionErrors: 0, vridErrors: 0, otherErrors: 0 };
+  const tete = [
+    `  Checksum errors : ${gl.checksumErrors}`,
+    `  Version errors : ${gl.versionErrors}`,
+    `  Vrid errors : ${gl.vridErrors}`,
+    `  Other errors : ${gl.otherErrors}`,
+  ];
+  const corps = groupes.map((g) => {
+    const c = g.stats ?? createVrrpStats();
+    return [
+      `  ${huaweiDisplayInterfaceName(g.iface)} | Virtual Router ${g.vrid}`,
+      `    Transited to master : ${c.transitedToMaster}`,
+      `    Transited to backup : ${c.transitedToBackup}`,
+      `    Transited to initialize : ${c.transitedToInitialize}`,
+      `    Received advertisements : ${c.receivedAdvertisements}`,
+      `    Sent advertisements : ${c.sentAdvertisements}`,
+      `    Advertisement interval errors : ${c.advertisementIntervalErrors}`,
+      `    Failed to authentication check : ${c.failedAuthCheck}`,
+      `    Received ip ttl errors : ${c.receivedIpTtlErrors}`,
+      `    Received packets with priority zero : ${c.receivedPriorityZero}`,
+      `    Sent packets with priority zero : ${c.sentPriorityZero}`,
+      `    Received invalid type packets : ${c.receivedInvalidType}`,
+      `    Received unmatched address list packets : ${c.receivedUnmatchedAddressList}`,
+      `    Unknown authentication type packets : ${c.unknownAuthType}`,
+      `    Mismatched authentication type : ${c.mismatchedAuthType}`,
+      `    Packet length errors : ${c.packetLengthErrors}`,
+      `    Discarded packets since track admin-vrrp : ${c.discardedTrackAdminVrrp}`,
+      `    Received attacking packets : ${c.receivedAttacking}`,
+      `    Received selfsend packets : ${c.receivedSelfsend}`,
+      `    Sent gratuitous arp packets : ${c.sentGratuitousArp}`,
+    ].join('\n');
+  });
+  return [...tete, ...corps].join('\n');
 }
 
 /**
