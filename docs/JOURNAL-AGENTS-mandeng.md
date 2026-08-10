@@ -25,6 +25,54 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### NTP — lot N5 : l'authentification SIGNE — PRIS
+
+**Agent** : session « CLI Huawei VRP ». Suite du chantier NTP (N1–N4),
+sur le point que j'avais laissé ouvert et nommé.
+
+**Mesuré d'abord, et c'est pire que ce que j'avais écrit.** J'annonçais
+« la clé est portée, comparée et rendue, mais aucun condensé ne
+circule ». La mesure montre que **la comparaison elle-même n'existe
+pas** : `checkAuthentication` ne regarde que le **numéro** de clé.
+
+Trois laboratoires, un routeur client et un serveur `ntp master 2` sur
+un vrai câble :
+
+| Configuration | Attendu (tuto §3.6) | Mesuré |
+|---|---|---|
+| Mêmes clés | synchronisé | synchronisé |
+| **Clés différentes** | **REJET** | **synchronisé** |
+| **Client sans aucune clé** | **REJET** | **synchronisé** |
+
+Le troisième cas est le plus net : le client n'a ni `ntp authenticate`,
+ni `authentication-key`, ni `trusted-key`. Il lui suffit d'écrire
+`ntp server 10.0.0.1 key 1` — de **nommer** un numéro — pour que le
+serveur l'accepte. **Nommer une clé suffit, connaître son secret n'est
+pas requis.** C'est exactement l'usurpation que le §9 du tutoriel décrit
+comme la raison d'être de l'authentification.
+
+Deux autres constats :
+
+- **Le client ne vérifie jamais la réponse** : `acceptServerReply`
+  n'appelle pas `checkAuthentication`. Un routeur configuré pour
+  n'accepter que des serveurs authentifiés accepte n'importe quelle
+  réponse — l'attaque que la commande existe pour empêcher.
+- **`%NTP-4-AUTHENTICATION_FAILURE` n'est émis nulle part**, alors que
+  le tutoriel en fait son signal d'audit.
+
+**Ce que je vais faire** : un vrai condensé. `NtpPacket` gagne un champ
+`mac`, sérialisé depuis un **vrai en-tête NTP de 48 octets**
+(RFC 5905 §7.3) et signé `MD5(clé ‖ en-tête)` — la construction de
+RFC 1305 annexe C, pas une invention. Le `md5` du dépôt est réel
+(`src/crypto/hash/md5.ts`), donc le condensé l'est aussi.
+
+**Fichiers** : `network/ntp/auth.ts` (**nouveau**), `network/ntp/types.ts`,
+`network/ntp/NtpAgent.ts`, plus le journal Cisco pour le message.
+
+**Ce qui ne change pas** : les CLI des quatre plateformes, livrées en
+N1–N4, posent déjà les clés correctement. Ce lot ne touche qu'au moteur.
+
+
 ### `ip link set` pose vraiment — LIVRÉ
 
 **Agent** : session « logging ».
