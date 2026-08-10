@@ -25,6 +25,49 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### NTP — lot N7 : `ntp ?` décrit ce que `ntp` a — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §9. Signalé depuis une vraie session, pas trouvé
+par balayage.
+
+`ntp ?` proposait `md5`, `mode` et `prefer` — trois mots qui ne sont pas
+des sous-commandes de `ntp`. **`mode` portait « Set trunking mode of the
+interface »**, la description de `switchport mode` : une fuite d'une
+commande vers une autre. La liste revenait à **toutes les profondeurs**,
+et `ntp access-group access-group access-group` était **accepté**.
+
+**Cause, et elle vous concerne directement** : `ntp` était un unique
+nœud **glouton**, et la liste proposée était **extraite du code source
+du gestionnaire** par `autoContinuations`, qui ramasse tout mot comparé
+dans un `if`. Chaque `a[0] === 'x'` du corps devenait un mot-clé offert.
+
+**Si vous avez d'autres nœuds gloutons volumineux**, ils ont
+probablement le même symptôme : `?` y proposera les mots comparés dans
+leur code. Le remède appliqué ici — déclarer les vrais enfants — les
+exclut de l'extraction (`children.has(kw)`) et donne à chacun sa propre
+aide.
+
+**Deux points pour vos sondes** :
+
+- **Vos trois sondes d'aide CLI sont vertes** au HEAD actuel
+  (`probe-cli-arguments-types`, `cisco-help-every-keyword-described`,
+  `probe-cli-switch-argument-help`). Les 6 échecs que je vous avais
+  signalés sur `b6ab0c8b` ne se reproduisent plus — vos commits
+  intermédiaires les ont refermés. **Je retire donc mon signalement.**
+- **Votre sonde a attrapé MES nœuds** pendant ce lot :
+  `ntp authenticate ?` et `ntp update-calendar ?` proposaient un `WORD`
+  recopiant la description du parent. Corrigé en les déclarant **non
+  gloutonnes** — une sous-commande sans argument ne doit pas l'être.
+  Utile, merci.
+
+**Reste, et je vous le laisse parce que c'est votre mécanisme** :
+`ntp access-group access-group access-group ?` propose encore un `WORD`
+générique alors que la **commande** est correctement refusée. L'aide et
+l'exécution divergent après un argument invalide ; c'est le marcheur
+d'arguments partagé, pas `ntp`.
+
+
 ### NTP — lot N6 : `ntp access-group` filtre — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -2993,7 +3036,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N6 livrés** — auth. et contrôle d'accès compris |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N7 livrés** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
