@@ -808,6 +808,8 @@ export class CommandTrie {
     let node = this.root;
     const completed: string[] = [];
     let paramIdx = 0;
+    /** Ce qui a été consommé PAR LE NŒUD COURANT, comme dans `?`. */
+    let argsSoFar: string[] = [];
 
     for (let i = 0; i < tokens.length - 1; i++) {
       const token = tokens[i].toLowerCase();
@@ -818,6 +820,7 @@ export class CommandTrie {
         completed.push(exact.keyword);
         node = exact;
         paramIdx = 0;
+        argsSoFar = [];
         continue;
       }
 
@@ -826,6 +829,7 @@ export class CommandTrie {
         completed.push(matches[0].keyword);
         node = matches[0];
         paramIdx = 0;
+        argsSoFar = [];
         continue;
       }
 
@@ -839,6 +843,7 @@ export class CommandTrie {
           completed.push(viable[0].keyword);
           node = viable[0];
           paramIdx = 0;
+          argsSoFar = [];
           continue;
         }
       }
@@ -859,8 +864,13 @@ export class CommandTrie {
       // Un vrai équipement ne complète rien après un mot qu'il ne
       // reconnaît pas. C'est la garde que `getCompletions` applique
       // depuis le typage des arguments, et qui manquait ici.
-      if (node.params.length > paramIdx || node.greedy) {
+      // `_porteGreedy` : un nœud purement indicatif créé par
+      // `describeArgs` sous une commande gloutonne absorbe la suite tout
+      // comme elle. Sans lui, Tab s'arrêtait là où `?` continuait —
+      // `tacacs-server host 1.1.1.1 p` ne complétait plus rien.
+      if (node.params.length > paramIdx || node.greedy || node._porteGreedy) {
         completed.push(tokens[i]);
+        argsSoFar.push(tokens[i]);
         paramIdx++;
         continue;
       }
@@ -879,15 +889,21 @@ export class CommandTrie {
       results.push(prefix + word);
     };
 
-    for (const m of this.prefixMatch(node, partialLower, true)) push(m.keyword);
+    for (const m of this.suggestionsApplicables(
+      this.prefixMatch(node, partialLower, true), paramIdx, argsSoFar)) {
+      push(m.keyword);
+    }
 
+    // La MÊME règle que `?`, lue au même endroit : ce que l'aide a
+    // délibérément retiré, la complétion ne le rend pas non plus.
     if (node.hintSuggestions) {
-      for (const h of node.hintSuggestions) {
+      for (const h of this.suggestionsApplicables(node.hintSuggestions, paramIdx, argsSoFar)) {
         if (h.keyword.toLowerCase().startsWith(partialLower)) push(h.keyword);
       }
     }
 
-    for (const auto of this.autoContinuations(node)) {
+    for (const auto of this.suggestionsApplicables(
+      this.autoContinuations(node), paramIdx, argsSoFar)) {
       if (auto.keyword.startsWith(partialLower)) push(auto.keyword);
     }
 
@@ -931,7 +947,32 @@ export class CommandTrie {
    * descriptions) take precedence at merge time; extraction fills the
    * rest. Computed lazily, once per node.
    */
-  private autoContinuations(node: CommandNode): ReadonlyArray<{ keyword: string; description: string }> {
+/**
+   * La règle que `?` ET la complétion par tabulation lisent.
+   *
+   * Corriger `?` seul laissait la moitié du défaut debout : `Tab` est
+   * une SECONDE marche (`tabCandidates`), avec ses propres gardes, qui
+   * recomplétait encore ce que `?` venait d'arrêter de proposer —
+   * `tacacs server s` + Tab rendait `server`. Deux réponses à une même
+   * question ; il n'y a plus qu'un endroit qui décide.
+   *
+   * Deux exclusions, et rien d'autre :
+   *   - un mot-clé DÉJÀ sur la ligne ;
+   *   - un mot-clé `leadingOnly` une fois qu'un argument a été donné
+   *     (`ping ip 1.1.1.1` existe, `ping 1.1.1.1 ip` non).
+   */
+  private suggestionsApplicables<T extends { keyword: string; leadingOnly?: boolean }>(
+    liste: ReadonlyArray<T>,
+    consumedArgs: number,
+    argsSoFar: readonly string[],
+  ): T[] {
+    const dejaTape = new Set(argsSoFar.map((a) => a.toLowerCase()));
+    return liste.filter((e) =>
+      !dejaTape.has(e.keyword.toLowerCase())
+      && !(e.leadingOnly && consumedArgs > 0));
+  }
+
+    private autoContinuations(node: CommandNode): ReadonlyArray<{ keyword: string; description: string }> {
     if (node._autoKeywords !== undefined) return node._autoKeywords;
     if (!node.greedy || !node.action) {
       node._autoKeywords = [];
@@ -1161,11 +1202,9 @@ export class CommandTrie {
      * offrir `timeout` et `size`, et ne plus offrir `repeat`. C'est
      * exactement ce que fait une vraie machine.
      */
-    const dejaTape = new Set(argsSoFar.map((a) => a.toLowerCase()));
-    const jamaisDeuxFois = (
-      liste: ReadonlyArray<{ keyword: string; description: string }>,
-    ): Array<{ keyword: string; description: string }> =>
-      liste.filter((e) => !dejaTape.has(e.keyword.toLowerCase()));
+    const jamaisDeuxFois = <T extends { keyword: string; leadingOnly?: boolean }>(
+      liste: ReadonlyArray<T>,
+    ): T[] => this.suggestionsApplicables(liste, consumedArgs, argsSoFar);
 
     // Tant que la commande ATTEND ENCORE un argument, les mots-clés
     // enfants ne sont pas des candidats : après `ip address
@@ -1207,9 +1246,7 @@ export class CommandTrie {
     if (!argumentsConsumed && !awaitsMandatory
         && node.hintSuggestions && node.hintSuggestions.length > 0) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
-      const utilisables = node.hintSuggestions
-        .filter((h) => !(h.leadingOnly && consumedArgs > 0));
-      for (const hint of jamaisDeuxFois(utilisables)) {
+      for (const hint of jamaisDeuxFois(node.hintSuggestions)) {
         if (!seen.has(hint.keyword.toLowerCase())) {
           // Un hint déclaré sous sa forme courte (`['count']`) naît sans
           // description ; la table canonique en a une.
