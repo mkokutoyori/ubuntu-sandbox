@@ -4410,6 +4410,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       configRouteMap: inutilise(),
       configTimeRange: inutilise(),
       configTrack: inutilise(),
+      configRouterOnly: inutilise(),
     });
 
     // ── Show commands ──────────────────────────────────────────────

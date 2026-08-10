@@ -36,6 +36,7 @@ export interface ArgumentHelpTries {
   configRouteMap: CommandTrie;
   configTimeRange: CommandTrie;
   configTrack: CommandTrie;
+  configRouterOnly: CommandTrie;
 }
 
 /**
@@ -225,14 +226,11 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ]);
   // Les NOMS restent des `WORD`, mais avec leur propre description.
   for (const [path, description] of [
-    ['crypto dynamic-map', 'Name of the dynamic crypto map'],
-    ['crypto keyring', 'Name of the ISAKMP keyring'],
     ['flow exporter', 'Name of the Flexible NetFlow exporter'],
     ['flow monitor', 'Name of the Flexible NetFlow monitor'],
     ['flow record', 'Name of the Flexible NetFlow record'],
     ['ip prefix-list', 'Name of a prefix list'],
     ['ip vrf', 'VRF name'],
-    ['vrf definition', 'VRF name'],
     ['ipv6 access-list', 'Name of the IPv6 access list'],
     ['ipv6 prefix-list', 'Name of an IPv6 prefix list'],
     ['key chain', 'Name of the key chain'],
@@ -242,6 +240,13 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     ['no username', 'Name of the local user'],
   ] as const) {
     tries.config.describeArgs(path, [WORD('name', description)]);
+  }
+  for (const [path, description] of [
+    ['crypto dynamic-map', 'Name of the dynamic crypto map'],
+    ['crypto keyring', 'Name of the ISAKMP keyring'],
+    ['vrf definition', 'VRF name'],
+  ] as const) {
+    tries.configRouterOnly.describeArgs(path, [WORD('name', description)]);
   }
   tries.config.describeArgs('router bgp', [
     INT('as-number', [1, 65535], 'Autonomous system number'),

@@ -320,6 +320,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       configRouteMap: this.configRouteMapTrie,
       configTimeRange: this.configTimeRangeTrie,
       configTrack: this.configTrackTrie,
+      configRouterOnly: this.configTrie,
     });
   }
 

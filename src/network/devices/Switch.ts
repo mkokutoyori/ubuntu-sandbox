@@ -3047,6 +3047,21 @@ export abstract class Switch extends Equipment {
   resetCliMode(): void { this.shell.resetCliMode?.(); }
 
   /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */
+  cliExecutablePaths(): string[] {
+    return (this.shell as unknown as { executablePathsInCurrentMode?: () => string[] })
+      .executablePathsInCurrentMode?.() ?? [];
+  }
+
+  cliCommandPaths(): string[] {
+    return (this.shell as unknown as { commandPathsInCurrentMode?: () => string[] })
+      .commandPathsInCurrentMode?.() ?? [];
+  }
+
+  cliUndescribedContinuations(): string[] {
+    return (this.shell as unknown as { undescribedContinuationsInCurrentMode?: () => string[] })
+      .undescribedContinuationsInCurrentMode?.() ?? [];
+  }
+
   cliHelp(inputBeforeQuestion: string): string {
     return this.shell.getHelp(inputBeforeQuestion, this);
   }

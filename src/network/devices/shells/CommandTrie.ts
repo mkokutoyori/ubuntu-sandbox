@@ -439,6 +439,7 @@ export class CommandTrie {
    * Supports abbreviated keywords (unique prefix matching).
    */
   match(input: string): MatchResult {
+    this.viderDeclarationsEnAttente();
     const tokens = input.trim().split(/\s+/).filter(t => t.length > 0);
     if (tokens.length === 0) {
       return { status: 'ok', args: [], matchedKeywords: [] };
@@ -678,7 +679,55 @@ export class CommandTrie {
     return entries.filter((e) => e.keyword === '<cr>' || filter(path, e.keyword));
   }
 
+  enumerateExecutablePaths(): string[] {
+    this.viderDeclarationsEnAttente();
+    const out: string[] = [];
+    const walk = (node: CommandNode, path: string[]): void => {
+      if (path.length > 0 && node.action && !node._hintOnly) out.push(path.join(' '));
+      for (const child of node.children.values()) {
+        walk(child, [...path, child.keyword]);
+      }
+    };
+    walk(this.root, []);
+    return out;
+  }
+
+  private porteUneSuite(node: CommandNode): boolean {
+    return node.params.length > 0
+      || node.children.size > 0
+      || (node.hintSuggestions?.length ?? 0) > 0;
+  }
+
+  enumerateUndescribedContinuations(): string[] {
+    this.viderDeclarationsEnAttente();
+    const out: string[] = [];
+    const walk = (node: CommandNode, path: string[]): void => {
+      for (const auto of this.autoContinuations(node)) {
+        if (!auto.description) out.push([...path, auto.keyword].join(' '));
+      }
+      for (const child of node.children.values()) {
+        walk(child, [...path, child.keyword]);
+      }
+    };
+    walk(this.root, []);
+    return out;
+  }
+
+  enumerateCommandPaths(): string[] {
+    this.viderDeclarationsEnAttente();
+    const out: string[] = [''];
+    const walk = (node: CommandNode, path: string[]): void => {
+      if (path.length > 0) out.push(path.join(' '));
+      for (const child of node.children.values()) {
+        walk(child, [...path, child.keyword]);
+      }
+    };
+    walk(this.root, []);
+    return out;
+  }
+
   getCompletions(inputBeforeQuestion: string): Array<{ keyword: string; description: string }> {
+    this.viderDeclarationsEnAttente();
     const raw = inputBeforeQuestion;
     const tokens = raw.trim().split(/\s+/).filter(t => t.length > 0);
     const endsWithSpace = raw.length > 0 && raw.endsWith(' ');
@@ -802,6 +851,7 @@ export class CommandTrie {
    * ("conf te" → "configure terminal").
    */
   tabCandidates(input: string): string[] {
+    this.viderDeclarationsEnAttente();
     const tokens = input.trim().split(/\s+/).filter(t => t.length > 0);
     if (tokens.length === 0 || input.endsWith(' ')) return [];
 
@@ -821,7 +871,7 @@ export class CommandTrie {
       // `aaa authentication lo` restait sur le nœud `aaa`, où `login`
       // n'est pas déclaré, et Tab tombait sur le mot grappillé `local`.
       const exactRaw = node.children.get(token);
-      const exact = exactRaw && (!exactRaw._hintOnly || exactRaw.params.length > 0)
+      const exact = exactRaw && (!exactRaw._hintOnly || this.porteUneSuite(exactRaw))
         ? exactRaw : undefined;
       if (exact) {
         completed.push(exact.keyword);
@@ -1039,12 +1089,34 @@ export class CommandTrie {
    * là où l'aide doit s'améliorer.
    */
   describeArgs(path: string, specs: readonly ParamSpec[]): void {
+    if (!this.attacherArgs(path, specs)) {
+      this.declarationsEnAttente.push({ path, specs: [...specs] });
+    }
+  }
+
+  private declarationsEnAttente: Array<{ path: string; specs: ParamSpec[] }> = [];
+
+
+
+  private viderDeclarationsEnAttente(): void {
+    if (this.declarationsEnAttente.length === 0) return;
+    const restantes = this.declarationsEnAttente;
+    this.declarationsEnAttente = [];
+    for (const declaration of restantes) {
+      if (!this.attacherArgs(declaration.path, declaration.specs)) {
+        this.declarationsEnAttente.push(declaration);
+      }
+    }
+  }
+
+  private attacherArgs(path: string, specs: readonly ParamSpec[]): boolean {
     const keywords = path.split(/\s+/).filter(Boolean);
     let node = this.root;
     for (const keyword of keywords) {
       const key = keyword.toLowerCase();
       let child = node.children.get(key);
       if (!child) {
+        if (!node.action && !node.greedy && !node._porteAction && !node._porteGreedy) return false;
         // Le mot-clé n'est pas un nœud réel : la commande est enregistrée
         // greedy et l'absorbe. On crée un nœud PUREMENT INDICATIF pour
         // pouvoir y accrocher les arguments — `prefixMatch` ignore les
@@ -1060,6 +1132,7 @@ export class CommandTrie {
       node = child;
     }
     node.params = [...specs];
+    return true;
   }
 
   /**
@@ -1139,6 +1212,7 @@ export class CommandTrie {
   }
 
   private nodeAt(path: string): CommandNode | null {
+    this.viderDeclarationsEnAttente();
     let node: CommandNode = this.root;
     for (const kw of path.split(/\s+/).filter(Boolean)) {
       const key = kw.toLowerCase();

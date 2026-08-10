@@ -29,7 +29,7 @@ afterEach(() => { CommandTrie.overwriteObserver = null; });
 const ROUTER_ALLOWED = new Set([
   'ip cef', 'no ip cef',        // base toggle ← CiscoSecurityCommands (CEF FIB)
   'no ip routing',              // base negation ← router CiscoOspfCommands
-  'aaa', 'username', 'ip ssh',  // base mgmt defaults ← CiscoSecurityCommands
+  'username', 'ip ssh',         // base mgmt defaults ← CiscoSecurityCommands
   'show ssh',                   // base mgmt default ← CiscoSecurityCommands
 ]);
 

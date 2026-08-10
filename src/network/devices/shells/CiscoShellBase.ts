@@ -484,6 +484,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Return the CommandTrie for the current mode */
   protected abstract getActiveTrie(): CommandTrie;
 
+  executablePathsInCurrentMode(): string[] {
+    return this.getActiveTrie().enumerateExecutablePaths();
+  }
+
+  commandPathsInCurrentMode(): string[] {
+    return this.getActiveTrie().enumerateCommandPaths();
+  }
+
+  undescribedContinuationsInCurrentMode(): string[] {
+    return this.getActiveTrie().enumerateUndescribedContinuations();
+  }
+
   /** Clear state fields when FSM exits a mode (e.g. selectedInterface) */
   protected abstract clearFields(fields: string[]): void;
 
@@ -4242,13 +4254,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    // Management commands missing on BOTH switch & router → shared here
-    // (DRY). Recognised; the sim has no AAA/crypto datapath.
-    this.configTrie.registerGreedy('aaa', 'AAA configuration', (args, raw) => {
-      const mgmt = getManagementService(this.d());
-      if (mgmt) (mgmt as unknown as { recordRaw: (f: string, l: string) => void }).recordRaw('aaa', raw ?? `aaa ${args.join(' ')}`);
-      return '';
-    });
     this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
       const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
       let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
