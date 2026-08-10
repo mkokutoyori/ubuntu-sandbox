@@ -160,6 +160,68 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### VRRP — lot V16 : le délai de préemption retarde, l'authentification authentifie — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-CLI-Fidelite-VRP.md` §25. C'est le point que §24.4 (lot V15) avait
+nommé sans le traiter.
+
+**Le défaut.** `preempt-mode timer delay` et `authentication-mode`
+étaient rangés, rendus et rejoués, et **le moteur ne différait aucune
+prise de rôle et n'authentifiait rien** : un routeur configuré avec un
+délai reprenait le rôle de maître immédiatement, et deux routeurs portant
+des clés **différentes** formaient un groupe parfaitement normal.
+
+**Ce que la recherche a tranché.** Le délai retarde la **préemption**
+d'un maître vivant, pas le **basculement** : la documentation Huawei
+conseille explicitement 0 sur le routeur de secours « to preempt the
+master role immediately after the master device is faulty ». Retarder le
+chemin de la panne ferait perdre du trafic pour rien.
+
+**Le défaut trouvé en écrivant l'exemption, et il vous concerne** :
+RFC 5798 §6.1 fait toujours préempter le **propriétaire** de l'adresse
+(priorité 255), « independent of the setting of this flag ». Cette règle
+n'existait pas — or la CLI refuse `priority 255` **à juste titre**
+(réservée), donc **la valeur était structurellement inatteignable et tout
+le code qui la traite était mort**, y compris la branche que je venais
+d'écrire. La possession est maintenant déduite de l'adresse à chaque
+lecture (`VrrpAgent.prioriteReelle`) plutôt que rangée : un drapeau
+stocké se serait mis à mentir dès la première renumérotation.
+
+**Ce qui touche le type partagé** : `VrrpPacket` gagne
+`authType`/`authData`, et `VrrpGroupRuntime` gagne
+`preemptEligibleSinceMs`. Nouvel événement **`vrrp.auth.rejected`**, avec
+un motif qui distingue le **type** de la **clé** — les deux envoient
+l'opérateur à deux endroits différents.
+
+**Une décision qui pourrait surprendre** : un groupe **sans**
+authentification accepte une annonce qui en porte une. C'est le
+comportement de VRRPv2, et c'est la seule façon de ne pas perdre les deux
+sens d'un coup quand un seul côté a été configuré — il faut que
+l'opérateur VOIE l'asymétrie.
+
+**Une contrainte d'ordre réelle, écrite dans la sonde plutôt que
+contournée** : l'authentification doit être posée **avant** `virtual-ip`,
+qui met le groupe en service ; dans l'autre ordre la première annonce
+part nue et est écartée pour désaccord de *type*, ce qui masque le
+désaccord de *clé*. Un vrai opérateur a la même contrainte.
+
+**Fichiers touchés** : `network/vrrp/` seul (`VrrpAgent.ts`, `types.ts`,
+`events.ts`). **Aucun contact avec le trie, l'aide `?`, le logging ni les
+vues.**
+
+**Mesures.** 70 suites connexes vertes (1 119 cas).
+`probe-vrrp-preempt-delay-et-auth.test.ts` (13 cas) discriminé par
+`git stash` sur `src/network/vrrp/` : **7 tombent**. Typecheck : jeu
+d'erreurs **identique** (217). Lint propre.
+
+**Reste ouvert** : les compteurs de `display vrrp statistics` sont
+toujours à zéro — rien ne compte les annonces. C'est un fait et non un
+manque, mais il devient utile, un refus d'authentification étant
+précisément ce qu'un opérateur voudrait voir compté.
+
+---
+
 ### Routage — lot R8 : `maximum-paths` borne vraiment la répartition — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -3533,7 +3595,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R8 livrés** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
+| CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V16 livrés** |
 | NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N11 livrés — chantier clos** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
