@@ -225,3 +225,76 @@ describe('the neighbour cache is viewable', () => {
     expect(out).toContain('IPv6 Address');
   }, 30_000);
 });
+
+describe('a router traces an IPv6 route', () => {
+  it('IOS reaches the destination in one hop, over real packets', async () => {
+    const { a } = await ciscoPair();
+    const icmp = watchIcmpv6();
+    const out = await a.executeCommand('traceroute ipv6 2001:db8::2');
+    expect(out).toContain('Tracing the route to 2001:db8::2');
+    expect(out).toContain('2001:db8::2');
+    expect(icmp.filter((t) => t === 'echo-request').length).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('a bare `traceroute <ipv6>` takes the same path', async () => {
+    const { a } = await ciscoPair();
+    const out = await a.executeCommand('traceroute 2001:db8::2');
+    expect(out).toContain('2001:db8::2');
+    expect(out).not.toContain('Unrecognized host');
+  }, 30_000);
+
+  it('VRP traces it too', async () => {
+    const { a } = await vrpPair();
+    const out = await a.executeCommand('tracert ipv6 2001:db8::2');
+    expect(out).toContain('2001:db8::2');
+    expect(out).not.toContain('Unknown host');
+  }, 30_000);
+});
+
+describe('the cache can be emptied', () => {
+  it('IOS `clear ipv6 neighbors` really empties it', async () => {
+    const { a } = await ciscoPair();
+    await a.executeCommand('ping ipv6 2001:db8::2 repeat 1');
+    expect(await a.executeCommand('show ipv6 neighbors')).toContain('2001:DB8::2');
+    expect(await a.executeCommand('clear ipv6 neighbors')).toBe('');
+    expect(await a.executeCommand('show ipv6 neighbors')).not.toContain('2001:DB8::2');
+  }, 30_000);
+
+  it('VRP `reset ipv6 neighbors` really empties it', async () => {
+    const { a } = await vrpPair();
+    await a.executeCommand('ping ipv6 -c 1 2001:db8::2');
+    expect(await a.executeCommand('display ipv6 neighbors')).toContain('2001:DB8::2');
+    await a.executeCommand('reset ipv6 neighbors');
+    expect(await a.executeCommand('display ipv6 neighbors')).toContain('Total: 0');
+  }, 30_000);
+});
+
+describe('an address is rendered as an address', () => {
+  it('no view uppercases a zone index or glues a prefix to it', async () => {
+    const { a } = await ciscoPair();
+    await a.executeCommand('ping ipv6 2001:db8::2 repeat 1');
+    const ios = await a.executeCommand('show ipv6 neighbors');
+    // The zone is an interface name, not part of the 128 bits.
+    expect(ios).not.toContain('%');
+    expect(ios).not.toContain('GIGABITETHERNET');
+
+    const { a: v } = await vrpPair();
+    await v.executeCommand('ping ipv6 -c 1 2001:db8::2');
+    expect(await v.executeCommand('display ipv6 neighbors')).not.toContain('%');
+  }, 30_000);
+
+  it('VRP\'s brief view puts one address per row, unmangled', async () => {
+    const { a } = await vrpPair();
+    const out = await a.executeCommand('display ipv6 interface brief');
+    // `fe80::ff:fe00:1%GE0/0/0/64` was an address that does not exist,
+    // and `…/64up` was the state glued onto an overflowed column.
+    expect(out).not.toMatch(/%\S*\/64/);
+    expect(out).not.toMatch(/\/64up/);
+    const lignes = out.split('\n');
+    expect(lignes[0]).toMatch(/^Interface\s+IPv6 Address\s+State$/);
+    // The link-local comes first, on the interface's own row; the
+    // global address gets a continuation row of its own.
+    expect(lignes[1]).toMatch(/^GE0\/0\/0\s+fe80::\S+\s+up$/);
+    expect(lignes[2]).toMatch(/^\s+2001:db8::1\/64$/);
+  }, 30_000);
+});

@@ -67,6 +67,15 @@ import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
+
+/** One probe of one hop, as both traceroute implementations report it. */
+export interface TracerouteProbe {
+  responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean;
+}
+export interface TracerouteHop {
+  hop: number; ip?: string; rttMs?: number; timeout: boolean;
+  unreachable?: boolean; probes: TracerouteProbe[];
+}
 import {
   EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
@@ -1666,6 +1675,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** The clock an entry's `timestamp` is expressed in. */
   getNeighborCacheNow(): number { return this.ipv6Engine.neighborCacheNow(); }
+
+  /** `clear ipv6 neighbors` / `reset ipv6 neighbors` — a command that
+   *  promises to reset something has to reset it. */
+  _clearNeighborCache(): void { this.ipv6Engine.clearNeighborCache(); }
 
   // ─── Performance Counters ─────────────────────────────────────
 
@@ -4372,6 +4385,91 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
     return rows;
+  }
+
+  /**
+   * The IPv6 counterpart of {@link executeTraceroute}. An intermediate
+   * router answers Time Exceeded without echoing an identifier, so a
+   * probe is correlated by the wildcard the failure path already uses
+   * (`id === -1`) rather than by sequence — the same rule the IPv4 side
+   * relies on for its own ICMP errors.
+   */
+  async executeTraceroute6(
+    targetIP: IPv6Address,
+    maxHops: number = 30,
+    timeoutMs: number = 2000,
+    probesPerHop: number = 3,
+  ): Promise<TracerouteHop[]> {
+    const egress = this.ipv6Engine.resolveEgress(targetIP);
+    if (!egress) return [];
+    const targetStr = targetIP.toString();
+    const hops: TracerouteHop[] = [];
+
+    for (let hopLimit = 1; hopLimit <= maxHops; hopLimit++) {
+      const probes: TracerouteProbe[] = [];
+      let reached = false;
+
+      for (let p = 0; p < probesPerHop; p++) {
+        this.pingIdCounter++;
+        const id = this.pingIdCounter;
+        const seq = p + 1;
+        const sentAt = performance.now();
+
+        const replyP = waitForEvent(
+          this.getBus(), 'host.icmp.echo-reply',
+          (pl) => pl.deviceId === this.id && pl.fromIp === targetStr
+            && pl.id === id && pl.seq === seq,
+          { timeoutMs, scheduler: this.getRouterScheduler() },
+        );
+        const failP = waitForEvent(
+          this.getBus(), 'host.icmp.echo-failed',
+          (pl) => pl.deviceId === this.id && (pl.id === -1 || (pl.id === id && pl.seq === seq)),
+          { timeoutMs, scheduler: this.getRouterScheduler() },
+        );
+        const replyOutcome = replyP.then((pl) => ({
+          ip: pl.fromIp, rttMs: performance.now() - sentAt,
+          timeout: false, reached: true, unreachable: undefined as boolean | undefined,
+        }));
+        const failOutcome = failP.then((pl) => ({
+          ip: pl.fromIp, rttMs: performance.now() - sentAt,
+          timeout: false, reached: false, unreachable: pl.reason === 'unreachable',
+        }));
+        replyOutcome.catch(() => {});
+        failOutcome.catch(() => {});
+
+        this.ipv6Engine.sendEchoRequest(egress, targetIP, id, seq, 56, hopLimit);
+
+        const probe = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
+          if (err instanceof WaitForEventTimeoutError) {
+            return { timeout: true, reached: false } as {
+              ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
+              unreachable?: boolean;
+            };
+          }
+          throw err;
+        });
+
+        probes.push({
+          responded: !probe.timeout, rttMs: probe.rttMs,
+          ip: probe.ip, unreachable: probe.unreachable,
+        });
+        if (probe.reached) reached = true;
+      }
+
+      const firstResponded = probes.find(p => p.responded);
+      const firstUnreachable = probes.find(p => p.unreachable);
+      hops.push({
+        hop: hopLimit,
+        ip: firstResponded?.ip,
+        rttMs: firstResponded?.rttMs,
+        timeout: probes.every(p => !p.responded),
+        unreachable: !!firstUnreachable,
+        probes,
+      });
+
+      if (reached || firstUnreachable) break;
+    }
+    return hops;
   }
 
   /**

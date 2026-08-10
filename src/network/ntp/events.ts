@@ -40,7 +40,12 @@ export interface NtpPeerRespondedPayload extends NtpDeviceRef {
 
 export interface NtpAuthRejectedPayload extends NtpDeviceRef {
   fromIp: string;
-  reason: 'no-key' | 'untrusted-key' | 'unconfigured';
+  /**
+   * `bad-mac` (lot N5) est le seul des quatre qui denonce une
+   * USURPATION plutot qu'une faute de configuration : le numero de clé
+   * est bon, elle est declaree fiable, et le condensé ne correspond pas.
+   */
+  reason: 'no-key' | 'untrusted-key' | 'unconfigured' | 'bad-mac';
 }
 
 export type NtpDomainEvent =
