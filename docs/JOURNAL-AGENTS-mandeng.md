@@ -93,11 +93,28 @@ tombent** ; son témoin (aucun `login` configuré) est là parce que « on
 n'est pas revenu au prompt » est trivialement vrai quand il n'y a jamais
 eu d'invite.
 
-**Reste ouvert, mesuré** : `crypto key generate rsa modulus 2048` ignore
-le modulus et génère 512 (le PRD crypto explique pourquoi la taille par
-défaut est petite, mais la taille DEMANDÉE devrait être honorée ici comme
-elle l'est pour `openssl genrsa`) ; `show ip ssh` ne rend pas la taille
-de clé hôte ; `banner exec` ne substitue pas `$USERNAME`/`$TIME`.
+**Suite immédiate — les clés RSA du Catalyst.** Une SECONDE copie en dur
+de `crypto key generate rsa`, `crypto key zeroize rsa` et
+`ip ssh version` vivait dans le shell du switch : la première ignorait
+`modulus`/`label`/`usage-keys` et annonçait 512 bits quoi qu'on demande
+(le tutoriel enseigne 2048), la deuxième rendait une phrase **sans rien
+supprimer**, la troisième ne rangeait rien — `show ip ssh` annonçait donc
+1.99 sur une machine qui venait d'accepter `ip ssh version 2`. Les trois
+viennent maintenant de la famille identité, sur le même magasin que le
+routeur, et `Switch` lit ses clés dans `CiscoSecurityConfig` au lieu d'un
+booléen privé : deux magasins donnaient deux réponses à « cette machine
+a-t-elle une paire ? », et c'est ce qui laissait `zeroize` annoncer une
+suppression qui n'écrivait dans aucun des deux.
+
+**Reste ouvert, mesuré** : `banner exec` ne substitue pas
+`$USERNAME`/`$TIME`.
+
+**Incident, pour mémoire** : le conteneur a été rembobiné une troisième
+fois en cours de lot — l'historique local est retombé sur un commit de
+l'autre agent. Rien n'a été perdu (tout était sur `origin/mandeng`), mais
+une édition par INDICES DE LIGNES faite entre-temps a tapé au mauvais
+endroit du fichier revenu en arrière. Deux leçons : pousser après chaque
+lot, et n'éditer que par ancres de texte, jamais par numéros de ligne.
 
 ---
 
