@@ -2454,3 +2454,83 @@ démarrer en Backup et attendre l'intervalle de maître absent, sauf pour
 le propriétaire. C'est le dernier point ouvert de la famille, et il
 touche le démarrage de **tout** groupe VRRP du dépôt — un lot à part et
 une décision à mesurer.
+
+---
+
+## 29. V20 — Le dernier point ouvert, mesuré et REFUSÉ ; et la couverture commutateur, vérifiée
+
+### 29.1 RFC 5798 §6.4.1 : implémenté, mesuré, retiré
+
+Le démarrage en **Backup** était le dernier point ouvert de la famille.
+Il a été écrit en entier : `startedAtMs` sur le groupe, l'attente calculée
+par `masterDownIntervalMs` — le même minuteur que la panne, pour ne pas en
+faire diverger deux —, un réveil sur le `Scheduler`, et l'exemption du
+propriétaire.
+
+**Puis mesuré : 25 cas existants tombent**, tous pour la même raison — sous
+horloge réelle, l'attente de ~3 s ne s'écoule jamais dans un test, donc
+plus aucun laboratoire VRRP ne produit de maître.
+
+**Il est retiré, et voici le raisonnement plutôt qu'un verdict.** Le défaut
+que cette règle empêche est le **double maître au démarrage** : deux
+routeurs qui se déclarent maîtres avant d'avoir pu s'entendre. Or dans ce
+simulateur **la livraison des trames est synchrone** — quand A entre en
+service et annonce, B l'entend dans le même tour. La fenêtre que la règle
+referme **ne peut pas s'ouvrir ici**. On paierait donc l'élection immédiate
+de 25 laboratoires contre un défaut inatteignable.
+
+C'est le même arbitrage que `PRD-IP-SLA.md` a écrit pour ses seuils
+(« `overThreshold` est atteignable par la logique, testé, pas par le
+chemin »), et il a la même condition de levée : **le jour où `Cable`
+portera une latence**, la fenêtre s'ouvrira et la règle deviendra à la
+fois nécessaire et testable. Le code de cette section est la marche à
+suivre.
+
+### 29.2 La couverture commutateur, vérifiée — et un défaut trouvé
+
+Les lots V16 à V19 ont modifié les **agents** et non les routeurs, donc
+la couverture du commutateur devait suivre par construction. « Devait
+suivre » est une supposition, et ce dépôt a déjà payé plusieurs fois le
+prix d'une plateforme servie et de sa jumelle oubliée — c'est exactement
+ce que V18 a trouvé entre Cisco et Huawei après que V16 eut cru avoir
+fini.
+
+Vérifié : le délai, l'authentification, les compteurs, `reset vrrp
+statistics` et la règle du propriétaire **fonctionnent tous sur des
+groupes portés par des Vlanif**, sur les deux constructeurs.
+
+**Mais le Catalyst a TROIS analyseurs à lui** — `vrrp`, `standby`,
+`glbp`, enregistrés dans `CiscoSwitchShell` et **distincts de ceux du
+routeur** — et **les trois laissaient tomber le délai**. Le correctif de
+V18 ne les atteignait pas. `glbp … authentication` n'y existait même pas :
+le mot-clé tombait dans le `default: return ''`. Les quatre sont corrigés.
+
+C'est la troisième fois que la même faute se présente dans ce chantier —
+une décision unique, plusieurs analyseurs — et c'est ce qui justifie que
+la règle vive sur `FhrpAgentBase` : les analyseurs peuvent se multiplier,
+la décision ne doit pas.
+
+### 29.3 Ce qui n'est PAS couvert côté commutateur, mesuré et dit
+
+- **Un commutateur n'a AUCUN agent NTP** (`Switch` n'instancie pas de
+  `NtpAgent`). Tout le chantier NTP, mode 6 compris, ne concerne donc que
+  les routeurs et les machines — ce n'est pas un oubli du lot N11, la
+  brique entière manque. Un cas de la sonde le **fixe** pour que
+  l'ajouter un jour se voie.
+- **Le plan de routage d'un commutateur n'a pas d'ECMP** :
+  `SwitchSvi.lookupRoute` prend le plus long préfixe et s'arrête au
+  premier, sans jamais collecter d'ex æquo. Le plafond du lot R8 n'a donc
+  rien à borner là, et l'absence d'ECMP y est un manque distinct et
+  antérieur, qui reste ouvert.
+
+### 29.4 Mesures
+
+`probe-fhrp-commutateurs-aussi.test.ts` (16 cas) discriminé par
+`git stash` sur `CiscoSwitchShell.ts` : **3 tombent** — exactement les
+trois analyseurs du Catalyst. Les 13 autres passent des deux côtés, et
+c'est le résultat recherché : ils **prouvent** que les lots V16-V19
+couvraient déjà le commutateur par les agents, au lieu de le supposer.
+
+104 suites connexes vertes (1 543 cas). Typecheck : les 2 erreurs de
+`CiscoSwitchShell.ts` préexistent, identiques avant et après. Lint sans
+erreur.

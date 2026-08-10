@@ -450,6 +450,51 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### FHRP — lot V20 : le démarrage RFC refusé après mesure, et la couverture commutateur vérifiée — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-CLI-Fidelite-VRP.md` §29.
+
+**Le dernier point ouvert est REFUSÉ, après l'avoir écrit.** Le démarrage
+en Backup (RFC 5798 §6.4.1) a été implémenté en entier, puis mesuré :
+**25 cas existants tombent**, tous parce que sous horloge réelle
+l'attente de ~3 s ne s'écoule jamais dans un test. Le défaut que la règle
+empêche est le **double maître au démarrage** — or **la livraison des
+trames est synchrone ici**, donc cette fenêtre ne peut pas s'ouvrir. On
+paierait l'élection immédiate de 25 laboratoires contre un défaut
+inatteignable. Même arbitrage que `PRD-IP-SLA.md` pour ses seuils, et
+même condition de levée : **le jour où `Cable` portera une latence**.
+
+**Ce qui vous concerne le plus** : j'ai vérifié la couverture
+**commutateur** de mes quatre derniers lots au lieu de la supposer — et
+j'ai trouvé un défaut. **`CiscoSwitchShell` a TROIS analyseurs à lui**
+(`vrrp`, `standby`, `glbp`), distincts de ceux du routeur, et **les trois
+laissaient tomber le délai de préemption** ; `glbp … authentication` n'y
+existait même pas (le mot-clé tombait dans `default: return ''`). Le
+correctif du lot V18 ne les atteignait pas.
+
+**C'est la troisième fois que cette faute se présente dans ce chantier** —
+une décision unique, plusieurs analyseurs. Si vous ajoutez une commande
+FHRP, elle doit écrire sur l'AGENT (`FhrpAgentBase`), jamais sur une
+façade ni dans un analyseur de plateforme : les analyseurs peuvent se
+multiplier, la décision ne doit pas.
+
+**Ce qui n'est PAS couvert côté commutateur, mesuré et fixé par un cas** :
+un commutateur n'a **aucun agent NTP** (`Switch` n'instancie pas de
+`NtpAgent`), donc tout le chantier NTP ne concerne que les routeurs et
+les machines ; et `SwitchSvi.lookupRoute` **n'a pas d'ECMP** (premier plus
+long préfixe, jamais d'ex æquo), donc le plafond du lot R8 n'a rien à
+borner là — manque distinct et antérieur, qui reste ouvert.
+
+**Mesures.** 104 suites connexes vertes (1 543 cas).
+`probe-fhrp-commutateurs-aussi.test.ts` (16 cas) : **3 tombent** par
+`git stash` — exactement les trois analyseurs du Catalyst. Les 13 autres
+passent des deux côtés **et c'est le résultat recherché** : ils prouvent
+que V16-V19 couvraient déjà le commutateur par les agents. Typecheck :
+les 2 erreurs de `CiscoSwitchShell.ts` préexistent. Lint sans erreur.
+
+---
+
 ### GLBP — lot V19 : l'authentification et le délai de préemption — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -4084,7 +4129,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R8 livrés** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V19 livrés** |
+| CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N11 livrés — chantier clos** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :

@@ -923,9 +923,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           agent.setPriority(iface, group, p);
           return '';
         }
-        case 'preempt':
-          agent.setPreempt(iface, group, true);
+        case 'preempt': {
+          // Le Catalyst a son PROPRE analyseur, distinct de celui du
+          // routeur : le correctif du lot V18 ne l'atteignait donc pas,
+          // et `preempt delay minimum` y laissait encore tomber sa
+          // valeur. C'est la meme faute que V18 a trouvee entre les deux
+          // constructeurs, ici entre les deux plateformes.
+          let delai: number | undefined;
+          if (args[2] === 'delay' && args[3] === 'minimum') {
+            const n = parseInt(args[4] ?? '', 10);
+            delai = Number.isFinite(n) && n > 0 ? n : undefined;
+          }
+          agent.setPreempt(iface, group, true, delai);
           return '';
+        }
         case 'track': {
           const raw = args[2] ?? '';
           const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
@@ -987,9 +998,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           agent.setPriority(iface, group, p);
           return '';
         }
-        case 'preempt':
-          agent.setPreempt(iface, group, true);
+        case 'preempt': {
+          let delai: number | undefined;
+          if (args[2] === 'delay' && args[3] === 'minimum') {
+            const n = parseInt(args[4] ?? '', 10);
+            delai = Number.isFinite(n) && n > 0 ? n : undefined;
+          }
+          agent.setPreempt(iface, group, true, delai);
           return '';
+        }
         case 'track': {
           const raw = args[2] ?? '';
           const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
@@ -1048,9 +1065,25 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           agent.setPriority(iface, group, p);
           return '';
         }
-        case 'preempt':
-          agent.setPreempt(iface, group, true);
+        case 'preempt': {
+          let delai: number | undefined;
+          if (args[2] === 'delay' && args[3] === 'minimum') {
+            const n = parseInt(args[4] ?? '', 10);
+            delai = Number.isFinite(n) && n > 0 ? n : undefined;
+          }
+          agent.setPreempt(iface, group, true, delai);
           return '';
+        }
+        case 'authentication': {
+          // Elle n'existait pas du tout sur le Catalyst : le mot-cle
+          // tombait dans le `default: return ''`, donc la commande etait
+          // acceptee et ne laissait aucune trace.
+          const iKey = args.indexOf('key-string');
+          const md5 = args[2] === 'md5';
+          const cle = iKey >= 0 ? args[iKey + 1] : args[args.length - 1];
+          agent.setAuth(iface, group, md5 ? 'md5' : 'text', cle);
+          return '';
+        }
         case 'weighting': {
           if (args[2] === 'track') {
             const raw = args[3] ?? '';
