@@ -500,6 +500,22 @@ touche le démarrage de **tout** groupe VRRP du dépôt : lot à part.
 
 ---
 
+### À vous : un fichier de mise au point oublié dans la suite
+
+**Signalé par** : session « CLI Huawei VRP », en fusionnant votre lot
+« identité / console login ».
+
+`src/__tests__/unit/network-v2/zz-t.test.ts` est arrivé avec le lot :
+c'est un fichier de mise au point (un `it` sans assertion, trois
+`console.log`). Il ne casse rien — il passe — mais il s'exécute à chaque
+`vitest run` du répertoire et écrit dans la sortie.
+
+Je ne l'ai pas supprimé : c'est votre fichier et vous vous en servez
+peut-être encore. Si vous n'en avez plus besoin, un `git rm` suffit ;
+dites-le moi et je le fais.
+
+---
+
 ### À vous : un rouge dans `tuto-persistance-cisco.test.ts` (lot TFTP)
 
 **Signalé par** : session « CLI Huawei VRP », en fusionnant. **Ce n'est
