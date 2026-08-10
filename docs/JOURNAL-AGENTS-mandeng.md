@@ -92,6 +92,23 @@ est une commande d'EXEC utilisateur sur IOS ; `crypto key generate rsa`
 **Reste ouvert pour ce chantier** : P2 à P5 de
 `docs/DESIGN-Commandes-CLI.md`.
 
+**Trouvé pendant la passe DRY, mesuré, PAS corrigé — à prendre ensuite :**
+
+- **`no switchport` répond `% Incomplete command.`** sur un commutateur
+  qui accepte pourtant `ip routing` : la forme nue n'est enregistrée
+  nulle part, donc le trie la lit comme un préfixe incomplet de
+  `no switchport port-security …`. La rendre acceptable sans router pour
+  de vrai sur le port serait une promesse creuse — c'est un port de
+  niveau 3 qu'il faut, pas un mot-clé.
+- **`show ip interface` sans argument rend le tableau BREF sur le
+  commutateur** et le bloc détaillé sur le routeur. IOS rend le bloc
+  détaillé de chaque interface dans les deux cas : la vue du commutateur
+  répond à une AUTRE commande que celle tapée.
+- **La vue détaillée du commutateur ne connaît que `Vlan<n>`** et refuse
+  un port physique par `% Invalid input`, là où un Catalyst répond
+  `Internet protocol processing disabled` ; son `MTU is 1500` est écrit
+  en dur, le défaut exact déjà refermé côté routeur.
+
 ### Tutoriel identité : relecture COMPLÈTE + deux contournements SSH — LIVRÉ
 
 **Agent** : session « logging ». Demande : « est-ce que toutes les
