@@ -6,6 +6,7 @@
  * via buildInteractiveFlow() → InteractiveFlowEngine.
  */
 
+import { expandBannerTokens } from '@/network/devices/shells/cisco/ciscoBannerTokens';
 import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
@@ -207,9 +208,29 @@ export class CiscoTerminalSession extends CLITerminalSession {
     ];
   }
 
+  /**
+   * La banniere telle qu'elle s'AFFICHE, jetons substitues. IOS remplace
+   * `$(hostname)`, `$(domain)`, `$(line)` et `$(line-desc)` depuis la
+   * 12.0(3)T ; ils sortaient litteralement, donc une banniere ecrite
+   * d'apres la documentation de Cisco affichait `$(hostname)`.
+   *
+   * La substitution est faite ICI et non au rangement, parce que le nom
+   * de la machine peut changer apres qu'on a ecrit la banniere.
+   */
   private deviceBanner(kind: 'motd' | 'login' | 'exec' | 'incoming'): string {
-    const dev = this.device as unknown as { getBanner?: (k: string) => string };
-    return dev.getBanner?.(kind) ?? '';
+    const dev = this.device as unknown as {
+      getBanner?: (k: string) => string;
+      getHostname?: () => string;
+      getDomainName?: () => string | null | undefined;
+      getManagementService?: () => { domainName?: string };
+    };
+    const brut = dev.getBanner?.(kind) ?? '';
+    return expandBannerTokens(brut, {
+      hostname: () => dev.getHostname?.() ?? '',
+      domain: () => dev.getManagementService?.().domainName ?? dev.getDomainName?.() ?? '',
+      line: () => (this.isVtyRemoteSession ? String(this.vty?.lineIndex ?? 0) : '0'),
+      lineDescription: () => '',
+    });
   }
 
   /**
