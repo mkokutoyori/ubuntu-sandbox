@@ -471,16 +471,29 @@ function verifyOfferedPassword(
   exec: RemoteExecLike | undefined,
   remoteUser: string,
   offeredPassword: string | undefined,
+  machine?: unknown,
 ): 'ok' | 'wrong-password' {
-  if (!exec) return 'ok';
-  const mgr = exec.userMgr as unknown as {
+  const mgr = exec?.userMgr as unknown as {
     checkPassword?: (u: string, p: string) => boolean;
     isAccountLockedOut?: (u: string) => boolean;
-  };
-  if (mgr.isAccountLockedOut?.(remoteUser)) return 'wrong-password';
+  } | undefined;
+  if (mgr?.isAccountLockedOut?.(remoteUser)) return 'wrong-password';
   if (offeredPassword === undefined) return 'ok';
-  if (typeof mgr.checkPassword !== 'function') return 'ok';
-  return mgr.checkPassword(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
+  if (typeof mgr?.checkPassword === 'function') {
+    return mgr.checkPassword(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
+  }
+  // La machine distante n'a pas de gestionnaire d'utilisateurs à la
+  // Linux — c'est le cas d'un routeur Cisco, dont les comptes vivent
+  // dans `username … secret …`. Elle porte pourtant `checkPassword`,
+  // et sans ce repli le mot de passe n'était JAMAIS vérifié : le
+  // serveur contrôlait que le compte existe et acceptait n'importe quel
+  // secret, ou aucun. Une porte qui ne vérifie que le nom n'est pas une
+  // porte.
+  const dev = machine as { checkPassword?: (u: string, p: string) => boolean } | undefined;
+  if (typeof dev?.checkPassword === 'function') {
+    return dev.checkPassword(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
+  }
+  return 'ok';
 }
 
 // ─── SendEnv / AcceptEnv environment forwarding ─────────────────────
@@ -958,7 +971,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // When the client supplied a password (via sshpass), validate it now.
   // Wrong passwords drive the brute-force detection chain: the
   // auth_failure event lands on the throttler which trips fail2ban.
-  if (auth.method === 'password' && verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword) === 'wrong-password') {
+  if (auth.method === 'password' && verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword, machine) === 'wrong-password') {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, 'password');
     throttler?.recordFailure(opts.sourceIp, Date.now());
     return {
