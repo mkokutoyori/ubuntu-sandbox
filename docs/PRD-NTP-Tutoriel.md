@@ -875,3 +875,176 @@ l'effet ; elle porte maintenant sur l'écart rattrapé.
 
 **Mesures.** 249 suites connexes vertes (4 636 cas). Typecheck : 216,
 inchangé.
+
+---
+
+## 12. N10 — Livré : chrony lit ses clés, et `ntp authenticate` gouverne le bon sens
+
+Deux chantiers dans un lot, parce que la mesure a montré qu'ils tenaient
+au même endroit : le premier est celui que la §6 laissait ouvert, le
+second a été trouvé **en le vérifiant**, comme la règle de travail
+l'exige, et c'est lui qui rend le premier simple.
+
+### 12.1 `keyfile` était lu par personne
+
+`parseChronyConf` analysait la directive, la rangeait dans
+`ChronyConf.keyfile`, et **aucun lecteur n'existait** — l'en-tête de
+`ChronyConfig.ts` la classait pourtant parmi les directives « LUES et
+agissantes », ce qui était faux.
+
+La conséquence n'est pas cosmétique. `server 10.0.0.1 key 1` transmettait
+bien le NUMÉRO de clé à l'agent (`addServer(ip, prefer, keyId)`), mais
+**aucun secret n'existait derrière ce numéro** : `signer()` ne trouvait
+pas la clé et laissait partir un paquet portant un identifiant de clé et
+**sans condensé** — exactement la forme qu'un serveur rejette. Une
+machine Linux ne pouvait donc pas authentifier NTP, alors que Cisco et
+Huawei le font depuis N5, et que le `chrony.conf` que Debian installe
+nomme lui-même ce fichier de clés.
+
+**Le format vient du fichier d'exemple livré avec chrony**, pas de
+mémoire :
+
+```
+#1 MD5 AVeryLongAndRandomPassword
+#2 MD5 HEX:12114855C7931009B4049EF3EFC48A139C3F989F
+#3 SHA1 HEX:B2159C05D6A219673A3B7E896B6DE07F6A440995
+#4 AES128 HEX:2DA837C4B6573748CA692B8C828E4891
+```
+
+`ChronyKeys.ts` le lit, et **`LinuxMachine` dépose le fichier au
+démarrage** en mode 0640 root:root — un fichier de clés lisible par tous
+est le défaut que la documentation de chrony signale en premier.
+
+### 12.2 Trois décisions, chacune parce que l'inverse était possible
+
+**Une clé du fichier EST une clé de confiance.** chrony n'a pas de
+`trusted-key` à côté, contrairement à IOS : écrire la clé dans un fichier
+que seul root peut lire est la déclaration de confiance. `chargerCles()`
+appelle donc `addAuthKey` et `addTrustedKey` ensemble.
+
+**chrony n'a aucun interrupteur global** équivalent à `ntp authenticate`
+: c'est le `key N` de la ligne `server` qui dit tout.
+`setAuthenticate(true)` reproduit exactement cela, l'agent n'exigeant une
+réponse authentifiée que d'une association qui NOMME une clé — sans
+`key N`, le drapeau ne change rien.
+
+**Les clés sont chargées AVANT les sources.** `addServer(..., keyId)`
+déclenche une interrogation immédiate ; dans l'autre ordre, le premier
+paquet partirait sans condensé et serait refusé pour une raison qui
+n'existe plus à la seconde suivante.
+
+### 12.3 SHA1 est réel, AES est refusé en nommant la brique absente
+
+`calculerMacNtp` ne connaissait que MD5. **SHA1 est indispensable côté
+Linux pour une raison concrète : `chronyc keygen` produit une clé SHA1
+par défaut** — s'en tenir à MD5 rendrait inutilisable la clé que la
+commande de génération vient elle-même d'écrire.
+
+`AES128` et `AES256` sont de VRAIES entrées de ce fichier et sont
+**refusées en nommant la fonction** : ce ne sont pas des condensés mais
+des CMAC (RFC 8573), une construction que ce dépôt n'a pas. Les accepter
+en les calculant comme un condensé donnerait une valeur qu'aucune vraie
+machine ne reconnaîtrait — un laboratoire « qui marche » ici et nulle
+part ailleurs.
+
+Le préfixe `HEX:` ne décore pas non plus : une clé de `keygen` est une
+suite d'octets aléatoires, dont beaucoup ne sont pas des caractères. La
+lire comme du texte donnerait un condensé calculé sur les lettres `4`,
+`1`, `3`… au lieu des octets qu'elles notent.
+
+### 12.4 Le défaut trouvé en vérifiant : `ntp authenticate` filtrait à l'envers
+
+La porte d'authentification de `handleUdp` lisait `config.authenticate` et
+s'appliquait à **TOUS** les paquets reçus, donc une machine armée refusait
+de servir un client ordinaire. La documentation Cisco dit l'inverse dans
+les deux sens :
+
+> « the system will not synchronize to a device unless the device carries
+> one of the specified authentication keys »
+
+— elle gouverne ce que la machine **CROIT**, pas ce qu'elle **SERT** — et
+
+> « does not ensure authentication of peer associations that are created
+> using the `ntp server` and the `ntp peer` commands »
+
+d'où le `key N` par association. Un routeur authentifiant continue donc
+de donner l'heure à qui la demande, et c'est `ntp access-group` — non
+l'authentification — qui restreint la clientèle. Un simulateur qui fait
+l'inverse enseigne qu'une commande de durcissement suffit là où il en
+faut deux, ce qui est la faute la plus coûteuse possible sur ce sujet.
+
+**Ce qui est vérifié est donc ce qui PRÉSENTE une clé** : une requête
+portant un identifiant de clé est contrôlée (et un mauvais condensé reçoit
+un crypto-NAK, comme avant), une requête nue est servie. Le côté client
+est décidé plus bas par `authRequise`/`replyIsAuthentic`, où il l'était
+déjà — ce qui explique que la correction n'ait rien coûté aux cas de N5 :
+les trois cas de rejet passaient par le client, un seul par le serveur.
+
+**Et c'est ce correctif qui rend §12.2 simple** : sans lui,
+`setAuthenticate(true)` sur une machine chrony l'aurait fait refuser de
+servir tout client sans clé.
+
+### 12.5 Deux compteurs corrigés
+
+`Authenticated NTP packets` de `chronyc serverstats` valait
+`reçus - échecs`, donc comptait comme authentifié **tout paquet nu** —
+sur une machine sans clé, la totalité. `NtpCounters.authOk` est désormais
+**mesuré** aux deux points où un condensé est reconnu bon (le serveur qui
+vérifie une requête, le client qui vérifie une réponse).
+
+Et `chronyc sources` imprimait la MÊME expression dans ses deux
+crochets, alors que sa propre légende les distingue (« xxxx = adjusted
+offset, yyyy = measured offset »). Depuis N9 l'écart APPLIQUÉ peut
+différer de l'écart MESURÉ — c'est tout l'objet de la discipline — donc
+les deux crochets montrent enfin deux faits.
+
+### 12.6 Les tableaux passent par `TextTable`
+
+`chronyc authdata`, `sources` et `sourcestats` déclarent leurs colonnes
+plutôt que de les dessiner à la main, comme `PRD-Tableaux-CLI.md`
+l'impose. Les largeurs sont **mesurées sur la sortie réelle** de la
+documentation de chrony, vérifiées au caractère près avant d'écrire une
+ligne de code — les trois lignes de données de son exemple `sources` sont
+reproduites exactement.
+
+**Une mesure inattendue, écrite plutôt que corrigée en douce** :
+l'en-tête de chrony **ne s'aligne pas sur ses propres données**. Sur son
+exemple, la valeur de `Poll` finit à la colonne 37 quand l'intitulé finit
+à la 38, `LastRx` à la 49 contre 51, et `Offset` de `sourcestats` à la 69
+contre 68 — l'en-tête est une chaîne fixe du code de chrony, les données
+un `printf` qui ne s'y aligne pas. Les colonnes portent donc les données,
+et l'en-tête reste la constante mesurée : la dériver donnerait un tableau
+**plus propre que la vraie machine**, donc faux, et un apprenant qui
+compare sa capture à la nôtre verrait un décalage qui n'existe pas chez
+lui. `authdata`, dont l'en-tête s'aligne, est entièrement déclaré.
+
+### 12.7 Deux erreurs à moi, corrigées
+
+- **Mon test du lot N8** (« une authentification qui échoue compte un
+  rejet ») montait un client **sans aucune clé** et attendait un rejet :
+  il encodait le défaut de §12.4 comme contrat. Réécrit avec un client
+  qui PRÉSENTE une clé et se trompe de secret, plus un cas jumeau qui
+  vérifie qu'un client nu est bien **servi**.
+- **Mon premier cas SHA1** montait un serveur Cisco. Mesure : `ntp
+  authentication-key` d'IOS classique ne prend que `md5`, donc le
+  laboratoire aurait échoué pour une raison qui n'est pas celle qu'il
+  teste. Il est Linux contre Linux.
+- **Mon cas « retirer la clé »** observait `chronyc tracking` : une
+  machine déjà synchronisée GARDE sa strate quand son authentification se
+  casse, donc l'assertion passait des deux côtés et ne prouvait rien.
+  Elle observe `authdata`, qui change vraiment.
+
+### 12.8 Mesures
+
+`tuto-ntp-chrony-cles.test.ts` (26 cas) discriminé par `git stash` :
+**19 tombent** avant correctif. Les 7 qui passent des deux côtés portent
+sur `parseChronyKeys` et `genererCleChrony` seuls — des modules neufs,
+donc des garde-fous de format et non des preuves de correction, ce que
+l'en-tête du fichier dit plutôt que de le laisser découvrir.
+
+### 12.9 Reste ouvert
+
+Les **requêtes de contrôle (mode 6)** n'existent pas, donc `query-only`
+de `ntp access-group` reste structurellement inerte : son seul effet
+observable est de refuser le service du temps. C'est le dernier point du
+chantier NTP.

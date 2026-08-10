@@ -51,6 +51,7 @@
 
 import type { NtpAgent } from '../../../ntp/NtpAgent';
 import { parseChronyConf, type ChronyConf, CHRONY_CONF_DEBIAN } from './ChronyConfig';
+import { parseChronyKeys, type ChronyKeysLecture } from './ChronyKeys';
 import { isValidIPv4 } from '../../../core/ip';
 
 /** Le chemin Debian, celui que le tutoriel fait editer. */
@@ -74,8 +75,12 @@ export class LinuxChronyService {
 
   constructor(private readonly host: ChronyHost) {}
 
+  /** Ce que le fichier de cles a donne au dernier demarrage/relecture. */
+  private cles: ChronyKeysLecture = { cles: [], refusees: [] };
+
   isRunning(): boolean { return this.actif; }
   getConf(): ChronyConf { return this.conf; }
+  getCles(): ChronyKeysLecture { return this.cles; }
   getUptimeSec(): number {
     return this.actif ? Math.max(0, Math.floor((Date.now() - this.demarreALe) / 1000)) : 0;
   }
@@ -171,8 +176,45 @@ export class LinuxChronyService {
    * contient a l'installation — et `chronyc sources` le montre absent
    * plutot que d'inventer une adresse.
    */
+  /**
+   * Charger le fichier de cles sur l'agent.
+   *
+   * Chez chrony, une cle presente dans le fichier EST une cle de
+   * confiance : il n'y a pas de `trusted-key` a cote, comme sur IOS —
+   * ecrire la cle dans un fichier que seul root peut lire est la
+   * declaration de confiance. Les deux appels vont donc de pair.
+   *
+   * De meme, chrony n'a **aucun interrupteur global** equivalent a `ntp
+   * authenticate` : c'est le `key N` de la ligne `server` qui dit tout.
+   * `setAuthenticate(true)` reproduit exactement cela, puisque l'agent
+   * n'exige une reponse authentifiee que d'une association qui NOMME une
+   * cle — sans `key N`, le drapeau ne change rien.
+   */
+  private chargerCles(): void {
+    const agent = this.host.ntp();
+    for (const id of [...agent.getConfig().authKeys.keys()]) {
+      agent.removeAuthKey(id);
+      agent.removeTrustedKey(id);
+    }
+    this.cles = { cles: [], refusees: [] };
+    if (!this.conf.keyfile) { agent.setAuthenticate(false); return; }
+    const texte = this.host.readFile(this.conf.keyfile);
+    if (texte === null) { agent.setAuthenticate(false); return; }
+    this.cles = parseChronyKeys(texte);
+    for (const k of this.cles.cles) {
+      agent.addAuthKey(k.id, k.algo, k.cle);
+      agent.addTrustedKey(k.id);
+    }
+    agent.setAuthenticate(this.cles.cles.length > 0);
+  }
+
   private appliquer(): void {
     const agent = this.host.ntp();
+    // Les cles AVANT les sources : `addServer(..., keyId)` declenche une
+    // interrogation immediate, qui signerait avec une cle pas encore
+    // chargee — donc un premier paquet sans condensé, refuse par le
+    // serveur pour une raison qui n'existe plus a la seconde suivante.
+    this.chargerCles();
     const voulues = new Set<string>();
     for (const s of this.conf.sources) {
       if (!isValidIPv4(s.hote)) continue;

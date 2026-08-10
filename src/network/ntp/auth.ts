@@ -65,7 +65,7 @@
  * paquet ne porte pas n'ajouterait rien.
  */
 
-import { md5 } from '@/crypto';
+import { md5, sha1 } from '@/crypto';
 import type { NtpPacket, NtpMode } from './types';
 
 /** Le decalage entre l'epoque NTP (1900) et l'epoque Unix (1970), en secondes. */
@@ -142,27 +142,65 @@ export function serialiserEnteteNtp(pkt: NtpPacket): Uint8Array {
   return octets;
 }
 
-/** Les octets d'une cle, telle que l'operateur l'a tapee. */
+/**
+ * Les octets d'une cle, telle que l'operateur l'a tapee.
+ *
+ * Le prefixe `HEX:` est celui du fichier de cles de chrony, et il ne
+ * decore pas : une cle produite par `chronyc keygen` est une suite
+ * d'octets ALEATOIRES, dont beaucoup ne sont pas des caracteres. La lire
+ * comme du texte donnerait un condensé calcule sur les lettres `4`, `1`,
+ * `3`… au lieu des octets qu'elles notent, donc deux machines portant la
+ * meme cle ne s'authentifieraient pas.
+ */
 function cleEnOctets(cle: string): Uint8Array {
+  if (/^HEX:[0-9a-fA-F]*$/.test(cle) && (cle.length - 4) % 2 === 0) {
+    const hexa = cle.slice(4);
+    const octets = new Uint8Array(hexa.length / 2);
+    for (let i = 0; i < octets.length; i++) octets[i] = parseInt(hexa.substr(i * 2, 2), 16);
+    return octets;
+  }
   const octets = new Uint8Array(cle.length);
   for (let i = 0; i < cle.length; i++) octets[i] = cle.charCodeAt(i) & 0xff;
   return octets;
 }
 
 /**
- * `MD5(cle ‖ en-tete)`, en hexadecimal — le condensé de RFC 5905 §7.3.
+ * Les fonctions de condensé qu'une cle peut nommer.
+ *
+ * MD5 est celle d'IOS et de VRP, qui n'en proposent pas d'autre pour
+ * NTP. SHA1 est indispensable cote Linux pour une raison concrete :
+ * **`chronyc keygen` produit une cle SHA1 par defaut**, donc s'en tenir
+ * a MD5 rendrait inutilisable la cle que la commande de generation vient
+ * elle-meme d'ecrire.
+ *
+ * AES128 et AES256, que le fichier de cles de chrony accepte aussi, ne
+ * sont PAS ici : ce ne sont pas des condensés mais des CMAC (RFC 8573),
+ * une construction differente que ce depot n'a pas. Les accepter en les
+ * calculant comme un condensé donnerait une valeur qu'aucune vraie
+ * machine ne reconnaitrait.
+ */
+export const CONDENSES_NTP = ['MD5', 'SHA1'] as const;
+export type CondenseNtp = (typeof CONDENSES_NTP)[number];
+
+export function estCondenseNtp(mot: string): mot is CondenseNtp {
+  return (CONDENSES_NTP as readonly string[]).includes(mot.toUpperCase());
+}
+
+/**
+ * `CONDENSE(cle ‖ en-tete)`, en hexadecimal — celui de RFC 5905 §7.3.
  *
  * La cle PRECEDE l'en-tete, elle ne le suit pas : c'est la construction
  * de NTP, distincte de HMAC, et l'inverser donnerait un condensé qui ne
  * correspondrait a rien.
  */
-export function calculerMacNtp(cle: string, pkt: NtpPacket): string {
+export function calculerMacNtp(cle: string, pkt: NtpPacket, algo: string = 'MD5'): string {
   const entete = serialiserEnteteNtp(pkt);
   const cleOctets = cleEnOctets(cle);
   const entree = new Uint8Array(cleOctets.length + entete.length);
   entree.set(cleOctets, 0);
   entree.set(entete, cleOctets.length);
-  return [...md5(entree)].map((o) => o.toString(16).padStart(2, '0')).join('');
+  const brut = algo.toUpperCase() === 'SHA1' ? sha1(entree) : md5(entree);
+  return [...brut].map((o) => o.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -173,7 +211,9 @@ export function calculerMacNtp(cle: string, pkt: NtpPacket): string {
  * bibliotheque de securite et ne pretend pas resister a une attaque
  * temporelle — la convention du depot pour toute sa cryptographie.
  */
-export function verifierMacNtp(cle: string, pkt: NtpPacket, mac: string | undefined): boolean {
+export function verifierMacNtp(
+  cle: string, pkt: NtpPacket, mac: string | undefined, algo: string = 'MD5',
+): boolean {
   if (!mac) return false;
-  return calculerMacNtp(cle, pkt) === mac;
+  return calculerMacNtp(cle, pkt, algo) === mac;
 }

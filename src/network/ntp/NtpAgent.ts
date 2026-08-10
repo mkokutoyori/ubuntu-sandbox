@@ -289,18 +289,29 @@ export class NtpAgent {
       },
     });
 
-    if (this.config.authenticate) {
+    // ── Ce qu'un serveur verifie, et ce qu'il ne verifie pas ─────────
+    //
+    // Cette porte lisait `config.authenticate` et s'appliquait a TOUS les
+    // paquets, donc une machine armee refusait de servir un client
+    // ordinaire. **C'est l'inverse de ce que fait la commande.** La
+    // documentation Cisco est explicite dans les deux sens : `ntp
+    // authenticate` fait que « the system will not synchronize to a
+    // device unless the device carries one of the specified
+    // authentication keys » — elle gouverne ce que la machine CROIT, pas
+    // ce qu'elle SERT ; et elle « does not ensure authentication of peer
+    // associations », d'ou le `key N` par association. Un routeur
+    // authentifiant continue donc de donner l'heure a qui la demande,
+    // et c'est `ntp access-group` — non l'authentification — qui
+    // restreint la clientele.
+    //
+    // Ce qui est verifie est donc ce qui PRESENTE une cle : une requete
+    // portant un identifiant de cle est controlee, une requete nue est
+    // servie. Le cote client, lui, est decide plus bas par
+    // `authRequise`/`replyIsAuthentic`, ou il l'etait deja.
+    if ((payload.mode === 'client' || payload.mode === 'symmetric-active')
+        && payload.keyId !== undefined && payload.keyId !== 0) {
       const auth = this.checkAuthentication(payload);
       if (!auth.ok) {
-        // Le verdict concerne une ASSOCIATION quand il vient d'un
-        // serveur qu'on interroge : sans cette trace, `show ntp
-        // associations detail` ne pourrait pas dire `unauthenticated`,
-        // et l'operateur n'aurait aucun moyen de distinguer « cle
-        // refusee » de « serveur muet ».
-        if (payload.mode === 'server') {
-          const assoc = this.config.associations.get(srcIp.toString());
-          if (assoc && assoc.keyId !== undefined) assoc.authenticated = false;
-        }
         // Un serveur ne se TAIT pas devant une requete mal
         // authentifiee : il repond par un crypto-NAK. La documentation
         // de reference le dit mot pour mot — « If the client sends
@@ -309,10 +320,7 @@ export class NtpAgent {
         // aussi le comportement le plus instructif : le client apprend
         // que son authentification a echoue, au lieu d'un silence
         // indiscernable d'un serveur en panne.
-        if (payload.mode === 'client' && this.config.serverMode
-            && auth.reason !== 'no-key') {
-          this.envoyerCryptoNak(inPort, srcIp, payload);
-        }
+        if (this.config.serverMode) this.envoyerCryptoNak(inPort, srcIp, payload);
         c.authFailures++;
         c.dropped++;
         this.getBus().publish({
@@ -324,6 +332,7 @@ export class NtpAgent {
         });
         return;
       }
+      c.authOk++;
     }
 
     // `processed` compte les paquets qui atteignent leur traitement. Il
@@ -512,7 +521,7 @@ export class NtpAgent {
     const cle = this.config.authKeys.get(payload.keyId);
     if (!cle) return { ok: false, reason: 'unconfigured' };
     if (!this.config.trustedKeys.has(payload.keyId)) return { ok: false, reason: 'untrusted-key' };
-    if (!verifierMacNtp(cle.key, payload, payload.mac)) return { ok: false, reason: 'bad-mac' };
+    if (!verifierMacNtp(cle.key, payload, payload.mac, cle.algo)) return { ok: false, reason: 'bad-mac' };
     return { ok: true, reason: 'no-key' };
   }
 
@@ -527,7 +536,7 @@ export class NtpAgent {
     if (pkt.keyId === undefined) return pkt;
     const cle = this.config.authKeys.get(pkt.keyId);
     if (!cle) return pkt;
-    return { ...pkt, mac: calculerMacNtp(cle.key, pkt) };
+    return { ...pkt, mac: calculerMacNtp(cle.key, pkt, cle.algo) };
   }
 
   /**
@@ -544,7 +553,7 @@ export class NtpAgent {
     const cle = a.keyId !== undefined ? this.config.authKeys.get(a.keyId) : undefined;
     if (!cle) return false;
     if (!this.config.trustedKeys.has(a.keyId!)) return false;
-    return verifierMacNtp(cle.key, reply, reply.mac);
+    return verifierMacNtp(cle.key, reply, reply.mac, cle.algo);
   }
 
   /**
@@ -604,6 +613,7 @@ export class NtpAgent {
     } else {
       const authentique = this.replyIsAuthentic(a, reply);
       a.authenticated = authentique;
+      if (authentique) this.config.counters.authOk++;
       if (!authentique) {
       // Aucun message n'est journalise ici, et c'est DELIBERE : aucune
       // source consultee ne confirme qu'IOS emette un syslog sur echec

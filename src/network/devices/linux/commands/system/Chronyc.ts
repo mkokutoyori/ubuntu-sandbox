@@ -12,12 +12,21 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import {
   chronycTracking, chronycSources, chronycSourcestats, chronycActivity, chronycServerstats,
-  CHRONYC_SANS_DEMON,
+  chronycAuthdata, CHRONYC_SANS_DEMON,
 } from '../../time/ChronycViews';
+import { genererCleChrony } from '../../time/ChronyKeys';
 
 /** Les sous-commandes que ce build implemente. */
 const CONNUES = ['tracking', 'sources', 'sourcestats', 'activity', 'makestep', 'reload',
-  'serverstats'];
+  'serverstats', 'authdata', 'keygen'];
+
+/**
+ * `keygen` ne parle PAS au demon : elle calcule une cle et l'ecrit sur
+ * la sortie standard, ce qui est tout ce qu'elle fait. La refuser quand
+ * chronyd est arrete empecherait de preparer un fichier de cles AVANT de
+ * demarrer le service — c'est-a-dire l'ordre normal des operations.
+ */
+const SANS_DEMON = ['keygen'];
 
 export const chronycCommand: LinuxCommand = {
   name: 'chronyc',
@@ -39,7 +48,15 @@ export const chronycCommand: LinuxCommand = {
     if (!CONNUES.includes(sous)) {
       return `chronyc: unknown command "${sous}"`;
     }
-    if (!service.isRunning()) return CHRONYC_SANS_DEMON;
+    if (sous === 'keygen') {
+      const r = genererCleChrony(
+        args[1] !== undefined ? Number(args[1]) : undefined,
+        args[2],
+        args[3] !== undefined ? Number(args[3]) : undefined,
+      );
+      return r.ok === true ? r.ligne : r.erreur;
+    }
+    if (!service.isRunning() && !SANS_DEMON.includes(sous)) return CHRONYC_SANS_DEMON;
 
     switch (sous) {
       case 'tracking': return chronycTracking(agent);
@@ -47,6 +64,7 @@ export const chronycCommand: LinuxCommand = {
       case 'sourcestats': return chronycSourcestats(agent);
       case 'activity': return chronycActivity(agent);
       case 'serverstats': return chronycServerstats(agent);
+      case 'authdata': return chronycAuthdata(agent);
       case 'reload': {
         const r = service.reload();
         return r.ok === true ? '200 OK' : r.erreur;

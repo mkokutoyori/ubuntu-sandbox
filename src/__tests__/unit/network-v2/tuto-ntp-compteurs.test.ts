@@ -158,14 +158,38 @@ describe('§8 — le filtre par mode', () => {
 
 describe('§8 — les compteurs distinguent les motifs de rejet', () => {
   it('une authentification qui echoue compte un rejet', async () => {
-    // Le serveur authentifie, le client nomme la cle sans la connaitre.
+    // Le client PRESENTE une cle et se trompe de secret. Ce cas etait
+    // ecrit avec un client SANS aucune cle, ce qui encodait un defaut :
+    // `ntp authenticate` ne restreint pas la clientele d'un serveur — la
+    // documentation Cisco dit qu'elle empeche de se SYNCHRONISER sur une
+    // source non authentifiee — donc un client nu doit etre servi, et
+    // n'a rien a compter comme rejet.
+    const srv = new CiscoRouter(`S${++serie}`);
+    const cli = new CiscoRouter(`C${++serie}`);
+    new Cable(`q${serie}`).connect(
+      srv.getPort('GigabitEthernet0/0')!, cli.getPort('GigabitEthernet0/0')!);
+    for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
+      'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'exit',
+      'ntp authenticate', 'ntp authentication-key 1 md5 LeVraiSecret',
+      'ntp trusted-key 1', 'ntp master 2', 'end']) await srv.executeCommand(c);
+    for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
+      'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
+      'ntp authenticate', 'ntp authentication-key 1 md5 UnAutreSecret',
+      'ntp trusted-key 1', 'ntp server 10.0.0.1 key 1', 'end']) await cli.executeCommand(c);
+    const c = srv.getNtpAgent().getCounters();
+    expect(c.received).toBeGreaterThan(0);
+    expect(c.authFailures).toBeGreaterThan(0);
+  });
+
+  it('un client SANS cle est SERVI par un serveur authentifiant', async () => {
+    // Le pendant du cas precedent, et la regle qu'il encodait a l'envers.
     const { srv } = await paire(
       ['ntp authenticate', 'ntp authentication-key 1 md5 Secret', 'ntp trusted-key 1'],
       []);
     const c = srv.getNtpAgent().getCounters();
     expect(c.received).toBeGreaterThan(0);
-    // Le client n'a pas signe : le serveur ecarte.
-    expect(c.authFailures + c.dropped).toBeGreaterThan(0);
+    expect(c.authFailures).toBe(0);
+    expect(c.sentByMode.server).toBeGreaterThan(0);
   });
 
   it('un refus d\'`access-group` compte un rejet, et le distingue', async () => {

@@ -121,6 +121,14 @@ export interface NtpCounters {
   dropped: number;
   /** Ecartes parce que l'authentification a echoue. */
   authFailures: number;
+  /**
+   * Paquets dont le condensé a ete VERIFIE et reconnu bon.
+   *
+   * Il est compte plutot que deduit : `recus - echecs` compterait comme
+   * authentifie tout paquet qui n'en portait aucune trace, c'est-a-dire
+   * l'immense majorite d'entre eux sur une machine sans cle.
+   */
+  authOk: number;
   /** Ecartes par `ntp access-group`. */
   accessDenied: number;
   /** Version NTP non prise en charge. */
@@ -139,7 +147,7 @@ export function createNtpCounters(): NtpCounters {
   });
   return {
     received: 0, sent: 0, processed: 0, dropped: 0,
-    authFailures: 0, accessDenied: 0, badVersion: 0, protocolError: 0,
+    authFailures: 0, authOk: 0, accessDenied: 0, badVersion: 0, protocolError: 0,
     receivedByMode: parMode(), sentByMode: parMode(),
   };
 }

@@ -9,6 +9,9 @@
 import type { NtpAgent } from '../../../ntp/NtpAgent';
 import type { NtpAssociation } from '../../../ntp/types';
 import type { LinuxChronyService } from './LinuxChronyService';
+import {
+  renderTable, FIXED_TABLE, type TableColumn,
+} from '../../shells/cli/TextTable';
 
 /** `506 Cannot talk to daemon` — ce que dit chronyc sans chronyd. */
 export const CHRONYC_SANS_DEMON = '506 Cannot talk to daemon';
@@ -80,8 +83,41 @@ const LEGENDE_SOURCES = [
   '||                                 |    |           \\',
 ];
 
+/**
+ * ── Pourquoi l'en-tete est une constante et non le produit des colonnes ──
+ *
+ * `TextTable` existe pour qu'un en-tete et ses donnees sortent du MEME
+ * calcul, un ecart entre les deux etant le defaut qu'il ferme. Ici cet
+ * ecart est REEL et appartient a chrony : sur l'exemple de sa propre
+ * documentation, la valeur de `Poll` finit a la colonne 37 quand
+ * l'intitule finit a la 38, et `LastRx` a la 49 contre 51 — l'en-tete
+ * est une chaine fixe du code de chrony, les donnees un `printf` qui ne
+ * s'aligne pas dessus.
+ *
+ * Les colonnes ci-dessous reproduisent les TROIS lignes de donnees de
+ * cet exemple au caractere pres (verifie avant d'ecrire quoi que ce
+ * soit). Deriver l'en-tete d'elles donnerait un tableau plus propre que
+ * la vraie machine, donc faux — et un apprenant qui compare sa capture a
+ * la notre verrait un decalage qui n'existe pas chez lui.
+ */
 const ENTETE_SOURCES = 'MS Name/IP address         Stratum Poll Reach LastRx Last sample';
 const FILET_SOURCES = '='.repeat(79);
+
+/** Les colonnes de `chronyc sources`, mesurees sur la sortie reelle. */
+const COLONNES_SOURCES: ReadonlyArray<TableColumn<RangeeSource>> = [
+  { header: 'MS', width: 3, value: (r) => r.ms },
+  { header: 'Name/IP address', width: 24, value: (r) => r.nom },
+  { header: 'Stratum', width: 7, align: 'right', value: (r) => String(r.stratum) },
+  { header: 'Poll', width: 4, align: 'right', value: (r) => String(r.poll) },
+  { header: 'Reach', width: 6, align: 'right', value: (r) => r.reach },
+  { header: 'LastRx', width: 6, align: 'right', value: (r) => String(r.lastRx) },
+  { header: 'Last sample', width: 29, align: 'right', value: (r) => r.echantillon },
+];
+
+interface RangeeSource {
+  ms: string; nom: string; stratum: number; poll: number;
+  reach: string; lastRx: number; echantillon: string;
+}
 
 /** `us`/`ms` selon l'ordre de grandeur, comme chrony l'ecrit. */
 function echelle(ms: number): string {
@@ -101,21 +137,30 @@ function echelle(ms: number): string {
  */
 export function chronycSources(agent: NtpAgent, verbose: boolean): string {
   const cfg = agent.getConfig();
-  const lignes: string[] = [];
+  const rangees: RangeeSource[] = [];
   for (const [, a] of cfg.associations) {
     const joignable = a.reach !== 0;
     const mode = a.mode === 'symmetric-active' ? '=' : '^';
     const etat = a.preferred && joignable ? '*' : joignable ? '+' : '?';
-    const log2 = Math.max(0, Math.round(Math.log2(a.pollSec)));
-    const depuis = a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 0;
-    lignes.push(
-      `${mode}${etat} ${a.serverIp}`.padEnd(29)
-      + `${String(a.stratum).padStart(2)}  ${String(log2).padStart(2)}  `
-      + `${a.reach.toString(8).padStart(3, '0')}   ${String(depuis).padStart(4)}  `
-      + `${echelle(a.offsetMs).padStart(7)}[${echelle(a.offsetMs).padStart(7)}] `
-      + `+/- ${echelle(a.dispersionMs).replace('+', '').padStart(6)}`,
-    );
+    rangees.push({
+      ms: `${mode}${etat}`,
+      nom: a.serverIp,
+      stratum: a.stratum,
+      poll: Math.max(0, Math.round(Math.log2(a.pollSec))),
+      reach: a.reach.toString(8).padStart(3, '0'),
+      lastRx: a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 0,
+      // La legende de chrony distingue les deux crochets : « xxxx =
+      // adjusted offset, yyyy = measured offset ». Les deux valaient la
+      // MEME expression, donc la distinction que la legende explique
+      // n'existait pas. Depuis le lot N9 l'ecart APPLIQUE peut differer
+      // de l'ecart MESURE — c'est tout l'objet de la discipline — et les
+      // deux crochets le montrent enfin.
+      echantillon: `${echelle(a.preferred ? cfg.offsetMs : a.offsetMs).padStart(7)}`
+        + `[${echelle(a.offsetMs).padStart(7)}] `
+        + `+/- ${echelle(a.dispersionMs).replace('+', '').padStart(6)}`,
+    });
   }
+  const lignes = renderTable(rangees, COLONNES_SOURCES, FIXED_TABLE).slice(1);
   const corps = [ENTETE_SOURCES, FILET_SOURCES, ...lignes];
   const tete = [`${cfg.associations.size} Sources`];
   return verbose ? [...LEGENDE_SOURCES, ...corps].join('\n') : [...tete, ...corps].join('\n');
@@ -131,19 +176,37 @@ export function chronycSources(agent: NtpAgent, verbose: boolean): string {
  * historique qui n'existe pas.
  */
 export function chronycSourcestats(agent: NtpAgent): string {
+  // Meme constat que pour `sources` : l'intitule `Offset` de chrony
+  // finit a la colonne 68 quand sa valeur finit a la 69. L'en-tete reste
+  // donc la chaine mesuree, les donnees passent par les colonnes.
   const entete = 'Name/IP Address            NP  NR  Span  Frequency  Freq Skew  Offset  Std Dev';
   const filet = '='.repeat(79);
-  const lignes: string[] = [];
+  interface Rangee {
+    nom: string; np: number; span: string;
+    freq: string; skew: string; offset: string; ecart: string;
+  }
+  const rangees: Rangee[] = [];
   for (const [, a] of agent.getConfig().associations) {
     const n = a.reach !== 0 ? 1 : 0;
-    lignes.push(
-      `${(a.serverIp).padEnd(26)} ${String(n).padStart(2)}  ${String(n).padStart(2)}  `
-      + `${(n ? String(a.pollSec) + 's' : '0').padStart(4)}  `
-      + `${(n ? agent.getDriftPpm().toFixed(3) : '+0.000').padStart(9)} ppm  `
-      + `${'0.000'.padStart(6)} ppm  ${echelle(a.offsetMs).padStart(6)}  `
-      + `${echelle(a.dispersionMs).replace('+', '').padStart(6)}`,
-    );
+    rangees.push({
+      nom: a.serverIp, np: n,
+      span: n ? `${a.pollSec}s` : '0',
+      freq: n ? agent.getDriftPpm().toFixed(3) : '+0.000',
+      skew: '0.000',
+      offset: echelle(a.offsetMs),
+      ecart: echelle(a.dispersionMs).replace('+', ''),
+    });
   }
+  const lignes = renderTable<Rangee>(rangees, [
+    { header: 'Name/IP Address', width: 27, value: (r) => r.nom },
+    { header: 'NP', width: 2, align: 'right', value: (r) => String(r.np) },
+    { header: 'NR', width: 4, align: 'right', value: (r) => String(r.np) },
+    { header: 'Span', width: 6, align: 'right', value: (r) => r.span },
+    { header: 'Frequency', width: 11, align: 'right', value: (r) => r.freq },
+    { header: 'Freq Skew', width: 11, align: 'right', value: (r) => r.skew },
+    { header: 'Offset', width: 9, align: 'right', value: (r) => r.offset },
+    { header: 'Std Dev', width: 8, align: 'right', value: (r) => r.ecart },
+  ], FIXED_TABLE).slice(1);
   return [entete, filet, ...lignes].join('\n');
 }
 
@@ -184,8 +247,72 @@ export function chronycServerstats(agent: NtpAgent): string {
     `Client log records dropped : 0`,
     `NTS-KE connections accepted: 0`,
     `NTS-KE connections dropped : 0`,
-    `Authenticated NTP packets  : ${c.received - c.authFailures}`,
+    // Ce nombre etait `recus - echecs`, donc il comptait comme
+    // authentifie tout paquet nu — sur une machine sans cle, la totalite.
+    // Il est desormais MESURE au point ou un condensé est reconnu bon.
+    `Authenticated NTP packets  : ${c.authOk}`,
   ].join('\n');
+}
+
+/**
+ * `chronyc authdata` — avec quoi chaque source est authentifiee.
+ *
+ * Les largeurs de colonnes sont celles de la sortie reelle de la
+ * documentation de chrony, verifiees au caractere pres contre son
+ * exemple (`ntp2.example.net              SK    30   13  128    -    0
+ * 0    0    0`) plutot que reconstruites a vue.
+ *
+ * `Type` est un CODE NUMERIQUE et non un nom : la table de chrony donne
+ * 1 pour MD5 et 2 pour SHA1. Ecrire `MD5` a la place serait plus lisible
+ * et faux.
+ *
+ * Trois colonnes valent zero ou `-` pour une raison qui tient au
+ * mecanisme et non a une simplification : `Last`, `Cook` et `CLen`
+ * decrivent l'ETABLISSEMENT de cle de NTS, qui n'existe pas pour une cle
+ * symetrique — la vraie sortie de chrony met `-` et des zeros sur la
+ * ligne `SK` de son propre exemple.
+ */
+export function chronycAuthdata(agent: NtpAgent): string {
+  const cfg = agent.getConfig();
+  interface Ligne { nom: string; mode: string; id: number; type: number; bits: number }
+  const rangees: Ligne[] = [];
+  for (const [, a] of cfg.associations) {
+    const cle = a.keyId !== undefined ? cfg.authKeys.get(a.keyId) : undefined;
+    rangees.push({
+      nom: a.serverIp,
+      mode: cle ? 'SK' : '-',
+      id: cle ? a.keyId! : 0,
+      type: cle ? (cle.algo === 'SHA1' ? 2 : 1) : 0,
+      bits: cle ? bitsDeCle(cle.key) : 0,
+    });
+  }
+  const D = (n: number) => ({ width: n, align: 'right' as const });
+  const lignes = renderTable<Ligne>(rangees, [
+    { header: 'Name/IP address', width: 28, value: (r) => r.nom },
+    { header: 'Mode', ...D(4), value: (r) => r.mode },
+    { header: 'KeyID', ...D(6), value: (r) => String(r.id) },
+    { header: 'Type', ...D(5), value: (r) => String(r.type) },
+    { header: 'KLen', ...D(5), value: (r) => String(r.bits) },
+    { header: 'Last', ...D(5), value: () => '-' },
+    { header: 'Atmp', ...D(5), value: () => '0' },
+    { header: 'NAK', ...D(5), value: () => '0' },
+    { header: 'Cook', ...D(5), value: () => '0' },
+    { header: 'CLen', ...D(5), value: () => '0' },
+  ], FIXED_TABLE);
+  return [lignes[0], '='.repeat(LARGEUR_AUTHDATA), ...lignes.slice(1)].join('\n');
+}
+
+/**
+ * Le filet de `authdata` fait la largeur du tableau, pas celle de
+ * l'en-tete rendu : `renderTable` retire les blancs de fin, donc la
+ * derniere colonne d'un en-tete plus court que sa largeur raccourcirait
+ * le filet. La somme des largeurs est la seule valeur juste.
+ */
+const LARGEUR_AUTHDATA = 28 + 4 + 6 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
+
+/** La longueur d'une cle en bits : une cle `HEX:` note des octets, pas des lettres. */
+function bitsDeCle(cle: string): number {
+  return /^HEX:/i.test(cle) ? ((cle.length - 4) / 2) * 8 : cle.length * 8;
 }
 
 /** `chronyc -n sources` etc. : la sortie depend du service, pas que de l'agent. */

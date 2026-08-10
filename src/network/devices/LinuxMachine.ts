@@ -29,6 +29,7 @@ import { findHostByAddress } from './linux/network/HostLookup';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { LinuxChronyService, CHRONY_CONF_PATH } from './linux/time/LinuxChronyService';
+import { CHRONY_KEYS_PATH, CHRONY_KEYS_DEBIAN } from './linux/time/ChronyKeys';
 import { LinuxApacheService } from './linux/http/apache/LinuxApacheService';
 import type { LinuxCommand } from './linux/commands/LinuxCommand';
 import {
@@ -1252,6 +1253,14 @@ export abstract class LinuxMachine extends EndHost
     }
     if (!vfs.exists(CHRONY_CONF_PATH)) {
       vfs.writeFile(CHRONY_CONF_PATH, LinuxChronyService.confParDefaut(), 0, 0, 0o022, true);
+    }
+    // Le paquet Debian dépose aussi le fichier de clés, VIDE de clés et
+    // plein de commentaires — c'est ce que `keyfile` du fichier de
+    // configuration désigne. Le mode 0640 root:root n'est pas décoratif :
+    // un fichier de clés lisible par tous est le défaut que la
+    // documentation de chrony signale en premier.
+    if (!vfs.exists(CHRONY_KEYS_PATH)) {
+      vfs.writeFile(CHRONY_KEYS_PATH, CHRONY_KEYS_DEBIAN, 0, 0, 0o137);
     }
     this.chronyService = new LinuxChronyService({
       readFile: (p) => vfs.readFile(p),
