@@ -14,6 +14,23 @@ export interface VrrpPacket extends NetworkPdu {
   advertiseSec: number;
   vips: string[];
   senderIp: string;
+  /**
+   * Le type et les donnees d'authentification de VRRPv2.
+   *
+   * Ils sont portes par le PAQUET et non deduits de la configuration du
+   * recepteur : c'est toute la difference entre authentifier et se
+   * croire authentifie. Un emetteur annonce ce qu'il emploie, le
+   * recepteur compare, et un desaccord fait ECARTER l'annonce.
+   *
+   * VRRPv2 (RFC 2338 §5.3.6) numerote les types : 0 aucune, 1 mot de
+   * passe simple, 2 en-tete AH. **RFC 3768 les a RETIRES** — « VRRP does
+   * not currently support authentication » — donc ce qu'implementent
+   * Huawei et Cisco aujourd'hui est une extension de constructeur
+   * heritee de VRRPv2, et non une fonction normalisee. Le dire vaut
+   * mieux que de laisser croire l'inverse.
+   */
+  authType?: number;
+  authData?: string;
 }
 
 export type VrrpTrackEntry = FhrpTrackEntry;
@@ -43,6 +60,14 @@ export interface VrrpGroupRuntime {
    * perdre ; les faire agir reste un travail de protocole.
    */
   preemptDelaySec: number;
+  /**
+   * Depuis quand ce routeur est ELIGIBLE a preempter le maitre courant.
+   *
+   * `null` quand il ne l'est pas. C'est ce qui rend le delai reel plutot
+   * que decoratif : sans cette date, `preempt-mode timer delay` ne
+   * pourrait que se rendre dans une vue.
+   */
+  preemptEligibleSinceMs?: number | null;
   description: string;
   authMode: VrrpAuthMode;
   authKey?: string;

@@ -2030,7 +2030,7 @@ et rejoués, mais **le moteur ne diffère aucune prise de rôle et
 n'authentifie rien**. C'était déjà le cas côté routeur ; ce lot leur
 donne un seul magasin au lieu de les **perdre** côté commutateur, ce qui
 est un progrès et non une décoration. Les faire agir est un travail de
-protocole, pas de CLI, et reste ouvert.
+protocole, pas de CLI — **et c'est fait par le lot V16, en §25**.
 
 Les compteurs de `display vrrp statistics` sont à zéro, et c'est un
 **fait** plutôt qu'un manque : rien dans cet agent ne compte les annonces
@@ -2073,3 +2073,117 @@ et les exigences. Un échec, `probe-debug-02-collecte.test.ts` (SPAN),
 **préexistant et sans rapport** : vérifié identique sur `HEAD` par
 `git stash`. Typecheck : jeu d'erreurs identique avant/après (212).
 Lint : **172 problèmes avant, 172 après**.
+
+---
+
+## 25. V16 — Livré : le délai de préemption retarde, et l'authentification authentifie
+
+§24.4 nommait ce point sans le traiter : `preempt-mode timer delay` et
+`authentication-mode` étaient rangés, rendus et rejoués, mais **le moteur
+ne différait aucune prise de rôle et n'authentifiait rien**. Le lot V15
+leur avait donné un magasin unique au lieu de les *perdre* côté
+commutateur — un progrès, pas une fonction. Ce lot est la fonction.
+
+### 25.1 Ce que la mesure a trouvé
+
+- Un routeur configuré avec un délai de préemption reprenait le rôle de
+  maître **immédiatement**.
+- Deux routeurs portant des clés **différentes** formaient un groupe
+  parfaitement normal : l'authentification était un affichage.
+
+### 25.2 Le délai retarde la PRÉEMPTION, pas le BASCULEMENT
+
+La documentation Huawei donne la raison d'être de la commande — « to
+prevent frequent switching of the VRRP group status » — et conseille
+explicitement de laisser le délai à 0 sur le routeur de secours « to
+preempt the master role immediately after the master device is faulty ».
+
+Le délai s'applique donc quand un maître **vivant annonce encore** ;
+quand il n'y a plus de maître du tout, la reprise est immédiate.
+Retarder le chemin de la panne ferait perdre du trafic pour rien.
+
+L'horloge part au moment où le routeur devient éligible et est **remise à
+zéro dès qu'il cesse de l'être** : sans cela, une éligibilité
+intermittente finirait par accumuler assez de temps pour préempter sans
+avoir jamais été stable une seule seconde.
+
+Un **rendez-vous** est armé sur le `Scheduler` partagé. Sans lui, la
+préemption n'aurait lieu qu'à la prochaine annonce reçue — donc jamais si
+le maître se tait, ce qui est précisément la situation où elle compte.
+
+### 25.3 Une règle du RFC qui manquait, et qui rendait le reste inatteignable
+
+`RFC 5798` §6.1 : le routeur qui **possède** l'adresse du routeur virtuel
+tourne à la priorité 255 et « always preempts, independent of the setting
+of this flag ».
+
+Cette règle n'existait pas. Or la CLI refuse `priority 255` — à juste
+titre, elle est réservée — donc **la priorité 255 était structurellement
+inatteignable et tout le code qui la traite était mort**, y compris la
+branche d'exemption que ce lot venait d'écrire. La possession est
+désormais déduite de l'adresse à chaque lecture (`prioriteReelle`) plutôt
+que rangée : elle change dès qu'on renumérote l'interface ou l'adresse
+virtuelle, et un drapeau stocké se serait mis à mentir à la première des
+deux.
+
+La sonde vérifie la priorité **sur le fil**, chez le voisin : une valeur
+juste chez soi et fausse sur le fil ne servirait à rien, puisque c'est le
+voisin qui décide de s'effacer.
+
+### 25.4 L'authentification est portée par le PAQUET
+
+`VrrpPacket` gagne `authType`/`authData`. Les déduire de la configuration
+du récepteur aurait été la définition même de se croire authentifié :
+l'émetteur annonce ce qu'il emploie, le récepteur compare.
+
+**La vérification a lieu AVANT que l'annonce ne serve à quoi que ce
+soit.** La poser d'abord et vérifier ensuite laisserait un imposteur
+remettre le minuteur de maître à zéro, donc empêcher le basculement —
+exactement ce que la commande existe pour empêcher.
+
+Le refus **distingue le type de la clé**, parce que les deux envoient
+l'opérateur à deux endroits : un type qui diffère veut dire que les deux
+routeurs n'ont pas la même commande, une clé qui diffère qu'ils ne
+partagent pas le secret. L'événement `vrrp.auth.rejected` porte le motif.
+
+**Un groupe sans authentification accepte une annonce qui en porte
+une** : c'est le comportement de VRRPv2, et c'est la seule façon de ne
+pas perdre les deux sens d'un coup quand un seul côté a été configuré —
+il faut que l'opérateur VOIE l'asymétrie.
+
+### 25.5 Ce que le simulateur dit en son nom propre
+
+VRRPv2 (RFC 2338 §5.3.6) numérotait les types d'authentification ;
+**RFC 3768 les a retirés** — « VRRP does not currently support
+authentication ». Ce qu'implémentent Huawei et Cisco aujourd'hui est donc
+une extension de constructeur héritée, et c'est écrit dans
+`vrrp/types.ts` plutôt que laissé croire normalisé. `md5` n'a pas de
+numéro dans la RFC et prend le 2, celui de l'authentification forte.
+
+### 25.6 Une contrainte d'ordre, réelle et documentée dans la sonde
+
+L'authentification doit être posée **avant** `virtual-ip`, qui est ce qui
+met le groupe en service : dans l'autre ordre la première annonce part
+nue et est écartée pour désaccord de *type*, ce qui masque le désaccord
+de *clé*. Un vrai opérateur a la même contrainte, et c'est pourquoi la
+documentation fait configurer le groupe avant de l'activer. La sonde
+l'écrit plutôt que de la contourner en silence.
+
+### 25.7 Mesures
+
+`probe-vrrp-preempt-delay-et-auth.test.ts` (13 cas) discriminé par
+`git stash` sur `src/network/vrrp/` : **7 tombent**. Les 6 qui passent des
+deux côtés sont les témoins (préemption sans délai, clés identiques),
+les rendus de configuration — déjà corrects depuis V15 — et le cas
+d'asymétrie, dont c'est l'objet de passer.
+
+70 suites connexes vertes (1 119 cas). Typecheck : jeu d'erreurs
+**identique** (217). Lint propre.
+
+### 25.8 Ce qui reste
+
+Les compteurs de `display vrrp statistics` restent à zéro : rien dans cet
+agent ne compte les annonces émises ou reçues. C'est un fait et non un
+manque — les compter est un lot à part, et il serait maintenant utile,
+puisqu'un refus d'authentification est exactement ce qu'un opérateur
+voudrait voir compté.
