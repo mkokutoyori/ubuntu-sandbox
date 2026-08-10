@@ -20,8 +20,12 @@
  *    JAMAIS affiché (SSH2 authentifie avant tout échange de bannière —
  *    déjà correct dans le scénario, confirmé ici), banner exec affiché
  *    après connexion réussie.
- *  - Aucune substitution de variable dans les bannières (`$(hostname)`
- *    reste du texte littéral).
+ *  - La CONFIGURATION rend la bannière telle qu'elle a été tapée :
+ *    `$(hostname)` y reste littéral. C'est bien ce qu'IOS fait — la
+ *    substitution des jetons a lieu à l'AFFICHAGE, pas au rangement, et
+ *    elle est couverte par `tuto-cycle-identite-cisco.test.ts`. L'intitulé
+ *    de ce bloc promettait « aucune substitution » tout court, ce qui
+ *    était plus large que ce qu'il mesure.
  *
  * Portée assumée : Telnet entrant n'a AUCUNE session interactive dans ce
  * simulateur aujourd'hui (`LinuxCommandExecutor.runTelnetClient` ne fait
@@ -300,8 +304,8 @@ describe('Scénario 3 — ordre réel des bannières via SSH entrant', () => {
   });
 });
 
-describe("Scénario 3 — aucune substitution de variable dans les bannières", () => {
-  it('"$(hostname)" dans un banner exec reste du texte littéral, pas remplacé par le hostname réel', async () => {
+describe("Scénario 3 — la configuration rend la bannière telle qu'elle a été tapée", () => {
+  it('"$(hostname)" reste littéral DANS LA CONFIGURATION (il est substitué à l\'affichage)', async () => {
     const r = new CiscoRouter('R1', 0, 0);
     await cfg(r);
     await r.executeCommand('hostname MANDENG-RTR');

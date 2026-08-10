@@ -361,3 +361,92 @@ describe('un Catalyst n\'a pas de registre de configuration', () => {
     expect(boot).toContain('Config file');
   }, 30_000);
 });
+
+/**
+ * Chapitre 8 — les jetons d'une bannière.
+ *
+ * IOS substitue `$(hostname)`, `$(domain)`, `$(line)` et `$(line-desc)`
+ * depuis la 12.0(3)T, vérifié contre la documentation de Cisco et non de
+ * mémoire. Ils sortaient littéralement : une bannière écrite d'après
+ * cette même documentation affichait `$(hostname)`.
+ *
+ * Les variables que le tutoriel emploie — `$USERNAME`, `$TIME` — ne sont
+ * PAS des jetons IOS. Ne pas les remplacer est la fidélité, comme pour
+ * `| head` et `show archive log config last N` : un vrai routeur les
+ * affiche telles quelles.
+ */
+describe('les jetons de bannière sont ceux d\'IOS, et seulement ceux-là', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const touche = (k: string) =>
+    ({ key: k, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false });
+
+  async function consoleAvecBanniere(texte: string): Promise<string> {
+    const d = new CiscoRouter('R1', 0, 0);
+    d.powerOn();
+    for (const c of [
+      'enable', 'configure terminal', 'hostname SW-BANQUE-01',
+      'ip domain-name ma-banque.cm',
+      'username jb privilege 15 secret JB',
+      'line console 0', 'login local', 'exit',
+      `banner exec #${texte}#`, 'end',
+    ]) await d.executeCommand(c);
+
+    const { CiscoTerminalSession } = await import('@/terminal/sessions');
+    const s = new CiscoTerminalSession('t1', d as never);
+    await s.init();
+    for (let i = 0; i < 40 && s.isBooting; i++) await tick();
+    await tick();
+    s.setInputBuf('jb');
+    s.handleKey(touche('Enter') as never);
+    for (let i = 0; i < 20; i++) await tick();
+    s.setPasswordBuf('JB');
+    s.handleKey(touche('Enter') as never);
+    for (let i = 0; i < 30; i++) await tick();
+    return s.lines.map((l) => l.text).join('\n');
+  }
+
+  it('`$(hostname)` et `$(domain)` sont remplacés à l\'affichage', async () => {
+    const vu = await consoleAvecBanniere('Bienvenue sur $(hostname).$(domain)');
+    expect(vu).toContain('Bienvenue sur SW-BANQUE-01.ma-banque.cm');
+    expect(vu).not.toContain('$(hostname)');
+  }, 30_000);
+
+  it('`$(line)` donne le numéro de ligne', async () => {
+    const vu = await consoleAvecBanniere('Vous etes sur la ligne $(line)');
+    expect(vu).toContain('Vous etes sur la ligne 0');
+  }, 30_000);
+
+  it('`$USERNAME` et `$TIME` restent littéraux — IOS ne les connaît pas', async () => {
+    const vu = await consoleAvecBanniere('Bienvenue, $USERNAME, a $TIME');
+    expect(vu).toContain('Bienvenue, $USERNAME, a $TIME');
+  }, 30_000);
+});
+
+/**
+ * Chapitre 10.3 — la séquence sûre d'activation d'AAA.
+ *
+ * `login authentication CONSOLE_LOCALE` sur `line console 0` est ce qui
+ * garde la console sur la base LOCALE : sans elle, un serveur TACACS+
+ * injoignable ferme la porte de l'équipement. Elle était acceptée,
+ * comprise comme un `login` nu, et rendue nulle part — donc perdue au
+ * rechargement de la topologie, ce qui est précisément le cas dangereux.
+ */
+describe('la ligne de secours d\'AAA survit à la configuration', () => {
+  for (const [nom, fabrique] of PLATEFORMES) {
+    it(`${nom} : \`login authentication <liste>\` est stockée ET rendue`, async () => {
+      const d = await machine(fabrique);
+      await tape(d, [
+        'configure terminal',
+        'username secours privilege 15 secret SecoursSuperSecret!',
+        'aaa authentication login CONSOLE_LOCALE local',
+        'aaa new-model',
+        'line console 0', 'login authentication CONSOLE_LOCALE', 'exit', 'end',
+      ]);
+      const bloc = await d.executeCommand('show running-config | section line console');
+      expect(bloc).toContain('login authentication CONSOLE_LOCALE');
+      // La forme nue ne doit PAS être rendue à sa place : les deux
+      // n'authentifient pas contre la même chose.
+      expect(bloc.split('\n').map((l) => l.trim())).not.toContain('login');
+    }, 30_000);
+  }
+});
