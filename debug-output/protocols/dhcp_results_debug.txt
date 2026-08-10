@@ -53,8 +53,6 @@ Total steps: 300
 <empty>
 
 [13/300] rbr <R-BR> display debugging
-  DHCP debugging:
-  DHCP server debugging is on
   DHCP server packet debugging is on
   DHCP server event debugging is on
 
@@ -201,10 +199,10 @@ Total steps: 300
 [46/300] rbr [R-BR] interface GigabitEthernet0/0/0
 <empty>
 
-[47/300] rbr [R-BR-GE0/0/0] dhcp select global
+[47/300] rbr [R-BR-GigabitEthernet0/0/0] dhcp select global
 <empty>
 
-[48/300] rbr [R-BR-GE0/0/0] quit
+[48/300] rbr [R-BR-GigabitEthernet0/0/0] quit
 <empty>
 
 [49/300] rbr [R-BR] quit
@@ -257,6 +255,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:47/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -266,11 +265,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.473 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.713 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.473/0.473/0.473/0.000 ms
+  rtt min/avg/max/mdev = 0.713/0.713/0.713/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -394,6 +393,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:53/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -403,11 +403,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.490 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.685 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.490/0.490/0.490/0.000 ms
+  rtt min/avg/max/mdev = 0.685/0.685/0.685/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -511,7 +511,7 @@ Total steps: 300
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [71/300] ldc ldc$ ip addr flush dev eth0
 <empty>
@@ -531,6 +531,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:5b/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -540,29 +541,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.550 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.520 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.550/0.550/0.550/0.000 ms
+  rtt min/avg/max/mdev = 0.520/0.520/0.520/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.435 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.425 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.435/0.435/0.435/0.000 ms
+  rtt min/avg/max/mdev = 0.425/0.425/0.425/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.625 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.908 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.625/0.625/0.625/0.000 ms
+  rtt min/avg/max/mdev = 0.908/0.908/0.908/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -576,24 +577,24 @@ Total steps: 300
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.553 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.819 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.553/0.553/0.553/0.000 ms
+  rtt min/avg/max/mdev = 0.819/0.819/0.819/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.613 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.762 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.613/0.613/0.613/0.000 ms
+  rtt min/avg/max/mdev = 0.762/0.762/0.762/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=1ms TTL=253
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=253
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
@@ -728,6 +729,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [93/300] lhq lhq$ cat /etc/resolv.conf
   search acme.example
@@ -751,6 +753,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [96/300] lbr lbr$ cat /etc/resolv.conf
   nameserver 10.3.3.10
@@ -773,6 +776,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [99/300] ldc ldc$ cat /etc/resolv.conf
   nameserver 10.3.3.10
@@ -863,6 +867,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [107/300] whq whq$ ipconfig /renew
   Windows IP Configuration
@@ -896,6 +901,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [111/300] wbr wbr$ ipconfig /renew
   Windows IP Configuration
@@ -929,6 +935,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [115/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1378,7 +1385,7 @@ Total steps: 300
 <empty>
 
 [189/300] rdc R-DC# show ip interface GigabitEthernet0/0 | include Helper
-<empty>
+    Helper address is not set
 
 [190/300] rhq R-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1414,6 +1421,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:5b/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -1609,35 +1617,35 @@ Total steps: 300
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.577 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.613 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.577/0.577/0.577/0.000 ms
+  rtt min/avg/max/mdev = 0.613/0.613/0.613/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.462 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.650 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.462/0.462/0.462/0.000 ms
+  rtt min/avg/max/mdev = 0.650/0.650/0.650/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.401 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.728 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.401/0.401/0.401/0.000 ms
+  rtt min/avg/max/mdev = 0.728/0.728/0.728/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.562 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.911 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.562/0.562/0.562/0.000 ms
+  rtt min/avg/max/mdev = 0.911/0.911/0.911/0.000 ms
 
 [214/300] whq whq$ ping -n 1 10.1.1.1
   
@@ -1657,7 +1665,7 @@ Total steps: 300
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [216/300] whq whq$ ping -n 1 10.3.3.1
   
@@ -1672,44 +1680,44 @@ Total steps: 300
 [217/300] whq whq$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=2ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 2ms, Average = 2ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.506 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=1.821 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.506/0.506/0.506/0.000 ms
+  rtt min/avg/max/mdev = 1.821/1.821/1.821/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.332 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.320 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.332/0.332/0.332/0.000 ms
+  rtt min/avg/max/mdev = 0.320/0.320/0.320/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.691 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.485 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.691/0.691/0.691/0.000 ms
+  rtt min/avg/max/mdev = 0.485/0.485/0.485/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.618 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=25.638 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.618/0.618/0.618/0.000 ms
+  rtt min/avg/max/mdev = 25.638/25.638/25.638/0.000 ms
 
 [222/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -1719,7 +1727,7 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [223/300] wbr wbr$ ping -n 1 10.2.2.1
   
@@ -1739,49 +1747,49 @@ Total steps: 300
   Ping statistics for 10.3.3.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [225/300] wbr wbr$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=5ms TTL=62
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 5ms, Maximum = 5ms, Average = 5ms
 
 [226/300] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.315 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.519 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.315/0.315/0.315/0.000 ms
+  rtt min/avg/max/mdev = 0.519/0.519/0.519/0.000 ms
 
 [227/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.422 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.463 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.422/0.422/0.422/0.000 ms
+  rtt min/avg/max/mdev = 0.463/0.463/0.463/0.000 ms
 
 [228/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.322 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.277 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.322/0.322/0.322/0.000 ms
+  rtt min/avg/max/mdev = 0.277/0.277/0.277/0.000 ms
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.226 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.441 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.226/0.226/0.226/0.000 ms
+  rtt min/avg/max/mdev = 0.441/0.441/0.441/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -1885,6 +1893,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [244/300] rhq R-HQ# show ip dhcp conflict
   IP address        Detection method   Detection time
@@ -2134,7 +2143,9 @@ Total steps: 300
   Enter system view, return user view with return command.
 
 [277/300] rbr [R-BR] ip pool
-  Error: Incomplete command.
+  Error: Incomplete command found at '^' position.
+  ip pool
+         ^
 
 [278/300] rbr [R-BR] gateway-list
   Error: Unrecognized command found at '^' position.
@@ -2164,7 +2175,7 @@ Total steps: 300
   All possible debugging has been turned off
 
 [285/300] rbr <R-BR> undo debugging all
-  All possible debugging has been turned off
+  Info: 2 debugging switch(es) have been turned off.
 
 [286/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -2256,6 +2267,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [292/300] whq whq$ ipconfig
   Windows IP Configuration
@@ -2287,6 +2299,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [294/300] wbr wbr$ ipconfig
   Windows IP Configuration
@@ -2318,6 +2331,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
 
 [296/300] rhq R-HQ# show ip dhcp server statistics
   Memory usage         36028
@@ -2368,11 +2382,11 @@ Total steps: 300
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 16 messages logged, xml disabled,
+      Console logging: level informational, 14 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 16 messages logged, xml disabled,
+      Monitor logging: level debugging, 14 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 88 messages logged, xml disabled,
+      Buffer logging:  level debugging, 86 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2381,97 +2395,95 @@ Total steps: 300
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 16 message lines logged
+      Trap logging: level informational, 14 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
   
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid A5A3A011, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid A5A3A011, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid A5A3A011, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.11 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid A5A3A011, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid A5A3A011, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid A5A3A011, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 136B0410, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid A5A3A011, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 136B0410, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid A5A3A011, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid D4F6C45F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 6FE8E3C5, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid D4F6C45F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 6FE8E3C5, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid D4F6C45F, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 6FE8E3C5, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid D4F6C45F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 6FE8E3C5, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid ACF5618F, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid D2E9257A, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid ACF5618F, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid D2E9257A, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid B29397DA, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 62E8BE78, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid B29397DA, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 62E8BE78, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 3DDE9A47, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid DC3C54D7, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 3DDE9A47, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid DC3C54D7, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid C50EBCD0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid E83F38B1, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid C50EBCD0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid E83F38B1, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid C50EBCD0, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid E83F38B1, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid C50EBCD0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid E83F38B1, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid E27D2B17, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid CEE467, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid E27D2B17, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid CEE467, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid E27D2B17, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid CEE467, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid E27D2B17, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid CEE467, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.005b for 10.3.3.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid B90161F3, chaddr 0200.0000.005b, ciaddr 10.3.3.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 288C217, chaddr 0200.0000.005b, ciaddr 10.3.3.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.005b for 10.3.3.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid B90161F3, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 288C217, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 1A5B9F53, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 571CDC71, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 1A5B9F53, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 571CDC71, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 1A5B9F53, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 571CDC71, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 1A5B9F53, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 571CDC71, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid FE8AF77, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid F728E17D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid FE8AF77, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid F728E17D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid FE8AF77, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid F728E17D, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid FE8AF77, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid F728E17D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
 

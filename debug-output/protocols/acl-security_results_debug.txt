@@ -31,11 +31,11 @@ Total steps: 400
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 13 messages logged, xml disabled,
+      Console logging: level informational, 11 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 13 messages logged, xml disabled,
+      Monitor logging: level debugging, 11 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 13 messages logged, xml disabled,
+      Buffer logging:  level debugging, 11 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -44,19 +44,17 @@ Total steps: 400
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 13 message lines logged
+      Trap logging: level informational, 11 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
   
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/3, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/3, changed state to up
@@ -83,11 +81,11 @@ Total steps: 400
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 9 messages logged, xml disabled,
+      Console logging: level informational, 8 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 9 messages logged, xml disabled,
+      Monitor logging: level debugging, 8 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 9 messages logged, xml disabled,
+      Buffer logging:  level debugging, 8 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -96,14 +94,13 @@ Total steps: 400
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 9 message lines logged
+      Trap logging: level informational, 8 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
   
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-HQ (GigabitEthernet0/2) discovered on GigabitEthernet0/1
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
@@ -124,48 +121,48 @@ Total steps: 400
 --- [17] § SEC — joignabilité de référence (avant filtrage) ---
 [17/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.646 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.094 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=5.791 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.320 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.646/0.870/1.094/0.224 ms
+  rtt min/avg/max/mdev = 1.320/3.556/5.791/2.235 ms
 
 [18/400] lbr lbr$ ping -c 2 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.788 ms
-  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=1.329 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.956 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=1.295 ms
   
   --- 198.51.100.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.788/1.059/1.329/0.270 ms
+  rtt min/avg/max/mdev = 0.956/1.126/1.295/0.170 ms
 
 [19/400] isphq isphq$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.847 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.909 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.969 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=1.660 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.847/0.878/0.909/0.031 ms
+  rtt min/avg/max/mdev = 0.969/1.315/1.660/0.346 ms
 
 [20/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.930 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.976 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=12.300 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.705 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.930/0.953/0.976/0.023 ms
+  rtt min/avg/max/mdev = 1.705/7.003/12.300/5.298 ms
 
 [21/400] ldc ldc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.598 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.956 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.992 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=1.263 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.598/0.777/0.956/0.179 ms
+  rtt min/avg/max/mdev = 0.992/1.128/1.263/0.136 ms
 
 
 --- [22] § ACL Cisco — standard (bloque un hôte source) ---
@@ -193,7 +190,8 @@ Total steps: 400
       20 permit any
 
 [29/400] rhq R-HQ# show ip interface GigabitEthernet0/3 | include access list
-<empty>
+    Outgoing access list is not set
+    Inbound  access list is not set
 
 [30/400] whq whq$ ping -n 2 203.0.113.10
   
@@ -206,12 +204,12 @@ Total steps: 400
 
 [31/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.522 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.850 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=3.932 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.104 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.522/0.686/0.850/0.164 ms
+  rtt min/avg/max/mdev = 1.104/2.518/3.932/1.414 ms
 
 [32/400] rhq R-HQ# show access-lists 10
   Standard IP access list 10
@@ -245,7 +243,7 @@ Total steps: 400
   Ping statistics for 203.0.113.10:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 
 --- [40] § ACL Cisco — étendue (pare-feu de bordure entrant) ---
@@ -305,12 +303,12 @@ Total steps: 400
 
 [54/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.574 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.030 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.994 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.878 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.574/0.802/1.030/0.228 ms
+  rtt min/avg/max/mdev = 0.994/1.436/1.878/0.442 ms
 
 [55/400] rhq R-HQ# show ip access-lists INTERNET-IN
   Extended IP access list INTERNET-IN
@@ -344,12 +342,12 @@ Total steps: 400
 
 [61/400] isphq isphq$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.598 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.995 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.869 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=1.592 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.598/0.797/0.995/0.198 ms
+  rtt min/avg/max/mdev = 0.869/1.230/1.592/0.361 ms
 
 
 --- [62] § ACL Cisco — nommée par port/service (DMZ-style) ---
@@ -403,12 +401,12 @@ Total steps: 400
 
 [76/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.107 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.226 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.179 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.476 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.107/1.166/1.226/0.060 ms
+  rtt min/avg/max/mdev = 1.179/1.327/1.476/0.149 ms
 
 [77/400] rdc R-DC# show ip access-lists DC-FILTER
   Extended IP access list DC-FILTER
@@ -433,12 +431,12 @@ Total steps: 400
 
 [82/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.755 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.123 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.066 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.215 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.755/0.939/1.123/0.184 ms
+  rtt min/avg/max/mdev = 1.066/1.141/1.215/0.074 ms
 
 
 --- [83] § ACL Cisco — séquençage / édition / resequence ---
@@ -495,10 +493,10 @@ Total steps: 400
 [97/400] rbr [R-BR] interface GE0/0/3
 <empty>
 
-[98/400] rbr [R-BR-GE0/0/3] traffic-filter outbound acl 2000
+[98/400] rbr [R-BR-GigabitEthernet0/0/3] traffic-filter outbound acl 2000
 <empty>
 
-[99/400] rbr [R-BR-GE0/0/3] quit
+[99/400] rbr [R-BR-GigabitEthernet0/0/3] quit
 <empty>
 
 [100/400] rbr [R-BR] quit
@@ -507,8 +505,8 @@ Total steps: 400
 [101/400] rbr <R-BR> display acl 2000
   Basic ACL 2000, 2 rule(s)
   ACL's step is 5
-   rule 0 deny source 10.2.2.11 0.0.0.0
-   rule 5 permit
+   rule 5 deny source 10.2.2.11 0.0.0.0
+   rule 10 permit
 
 [102/400] lbr lbr$ ping -c 2 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
@@ -522,8 +520,8 @@ Total steps: 400
 [103/400] rbr <R-BR> display acl 2000
   Basic ACL 2000, 2 rule(s)
   ACL's step is 5
-   rule 0 deny source 10.2.2.11 0.0.0.0 (2 matches)
-   rule 5 permit
+   rule 5 deny source 10.2.2.11 0.0.0.0 (2 matches)
+   rule 10 permit
 
 [104/400] rbr <R-BR> system-view
   Enter system view, return user view with return command.
@@ -531,10 +529,10 @@ Total steps: 400
 [105/400] rbr [R-BR] interface GE0/0/3
 <empty>
 
-[106/400] rbr [R-BR-GE0/0/3] undo traffic-filter outbound acl 2000
+[106/400] rbr [R-BR-GigabitEthernet0/0/3] undo traffic-filter outbound acl 2000
 <empty>
 
-[107/400] rbr [R-BR-GE0/0/3] quit
+[107/400] rbr [R-BR-GigabitEthernet0/0/3] quit
 <empty>
 
 [108/400] rbr [R-BR] quit
@@ -542,12 +540,12 @@ Total steps: 400
 
 [109/400] lbr lbr$ ping -c 2 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.543 ms
-  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.757 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.758 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.975 ms
   
   --- 198.51.100.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.543/0.650/0.757/0.107 ms
+  rtt min/avg/max/mdev = 0.758/0.867/0.975/0.108 ms
 
 
 --- [110] § ACL Huawei — advanced 3000 (proto/port) ---
@@ -575,10 +573,10 @@ Total steps: 400
 [117/400] rbr [R-BR] interface GE0/0/3
 <empty>
 
-[118/400] rbr [R-BR-GE0/0/3] traffic-filter inbound acl 3000
+[118/400] rbr [R-BR-GigabitEthernet0/0/3] traffic-filter inbound acl 3000
 <empty>
 
-[119/400] rbr [R-BR-GE0/0/3] quit
+[119/400] rbr [R-BR-GigabitEthernet0/0/3] quit
 <empty>
 
 [120/400] rbr [R-BR] quit
@@ -587,10 +585,10 @@ Total steps: 400
 [121/400] rbr <R-BR> display acl 3000
   Advanced ACL 3000, 4 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
-   rule 5 permit tcp
-   rule 10 deny icmp
-   rule 15 permit
+   rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+   rule 10 permit tcp
+   rule 15 deny icmp
+   rule 20 permit
 
 [122/400] rbr <R-BR> display traffic-filter applied-record
    Interface          Direction  ACL
@@ -608,10 +606,10 @@ Total steps: 400
 [124/400] rbr <R-BR> display acl 3000
   Advanced ACL 3000, 4 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
-   rule 5 permit tcp
-   rule 10 deny icmp (2 matches)
-   rule 15 permit
+   rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+   rule 10 permit tcp
+   rule 15 deny icmp (2 matches)
+   rule 20 permit
 
 [125/400] rbr <R-BR> system-view
   Enter system view, return user view with return command.
@@ -619,10 +617,10 @@ Total steps: 400
 [126/400] rbr [R-BR] interface GE0/0/3
 <empty>
 
-[127/400] rbr [R-BR-GE0/0/3] undo traffic-filter inbound acl 3000
+[127/400] rbr [R-BR-GigabitEthernet0/0/3] undo traffic-filter inbound acl 3000
 <empty>
 
-[128/400] rbr [R-BR-GE0/0/3] quit
+[128/400] rbr [R-BR-GigabitEthernet0/0/3] quit
 <empty>
 
 [129/400] rbr [R-BR] quit
@@ -668,12 +666,12 @@ Total steps: 400
 
 [137/400] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.416 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.509 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.625 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.724 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.416/0.463/0.509/0.047 ms
+  rtt min/avg/max/mdev = 0.625/0.675/0.724/0.050 ms
 
 [138/400] srvdc srvdc$ iptables -L INPUT -n -v
   Chain INPUT (policy ACCEPT)
@@ -705,12 +703,12 @@ Total steps: 400
 
 [142/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.843 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.014 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.196 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.429 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.843/0.928/1.014/0.086 ms
+  rtt min/avg/max/mdev = 1.196/1.313/1.429/0.117 ms
 
 
 --- [143] § pare-feu Linux — politique restrictive complète ---
@@ -745,12 +743,12 @@ Total steps: 400
 
 [149/400] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.464 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.559 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=1.104 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.759 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.464/0.511/0.559/0.048 ms
+  rtt min/avg/max/mdev = 0.759/0.932/1.104/0.172 ms
 
 [150/400] srvdc srvdc$ iptables-save
   # Generated by iptables-save
@@ -816,8 +814,9 @@ Total steps: 400
 
 [157/400] srvdc srvdc$ conntrack -L
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=39622 src=10.3.3.11 dst=224.0.0.252 sport=39622 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  conntrack v1.4.7 (conntrack-tools): 2 flow entries have been shown.
+  conntrack v1.4.7 (conntrack-tools): 3 flow entries have been shown.
 
 [158/400] srvdc srvdc$ cat /proc/net/nf_conntrack
   cat: /proc/net/nf_conntrack: No such file or directory
@@ -908,11 +907,11 @@ Total steps: 400
 
 [180/400] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.931 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.126 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.931/0.931/0.931/0.000 ms
+  rtt min/avg/max/mdev = 1.126/1.126/1.126/0.000 ms
 
 [181/400] swhq SW-HQ# show port-security interface FastEthernet0/2
   Port Security              : Enabled
@@ -973,11 +972,11 @@ Total steps: 400
 [195/400] swbr <SW-BR> display mac-address security
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -989,7 +988,7 @@ Total steps: 400
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [197/400] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1078,14 +1077,14 @@ Total steps: 400
 [217/400] rbr <R-BR> display acl all
   Basic ACL 2000, 2 rule(s)
   ACL's step is 5
-   rule 0 deny source 10.2.2.11 0.0.0.0 (2 matches)
-   rule 5 permit
+   rule 5 deny source 10.2.2.11 0.0.0.0 (2 matches)
+   rule 10 permit
   Advanced ACL 3000, 4 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
-   rule 5 permit tcp
-   rule 10 deny icmp (2 matches)
-   rule 15 permit
+   rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+   rule 10 permit tcp
+   rule 15 deny icmp (2 matches)
+   rule 20 permit
   Total 2 ACL(s)
 
 [218/400] rbr <R-BR> display traffic-filter applied-record
@@ -1178,7 +1177,8 @@ Total steps: 400
 <empty>
 
 [234/400] rhq R-HQ# show ip interface GigabitEthernet0/1 | include access
-<empty>
+    Outgoing access list is not set
+    Inbound  access list is not set
 
 [235/400] rdc R-DC# show access-lists
   Extended IP access list DC-FILTER
@@ -1205,36 +1205,37 @@ Total steps: 400
 <empty>
 
 [239/400] rdc R-DC# show ip interface GigabitEthernet0/1 | include access
-<empty>
+    Outgoing access list is not set
+    Inbound  access list is not set
 
 
 --- [240] § SEC — inventaire ACL consolidé (Huawei) ---
 [240/400] rbr <R-BR> display acl all
   Basic ACL 2000, 2 rule(s)
   ACL's step is 5
-   rule 0 deny source 10.2.2.11 0.0.0.0 (2 matches)
-   rule 5 permit
+   rule 5 deny source 10.2.2.11 0.0.0.0 (2 matches)
+   rule 10 permit
   Advanced ACL 3000, 4 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
-   rule 5 permit tcp
-   rule 10 deny icmp (2 matches)
-   rule 15 permit
+   rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+   rule 10 permit tcp
+   rule 15 deny icmp (2 matches)
+   rule 20 permit
   Total 2 ACL(s)
 
 [241/400] rbr <R-BR> display acl 2000
   Basic ACL 2000, 2 rule(s)
   ACL's step is 5
-   rule 0 deny source 10.2.2.11 0.0.0.0 (2 matches)
-   rule 5 permit
+   rule 5 deny source 10.2.2.11 0.0.0.0 (2 matches)
+   rule 10 permit
 
 [242/400] rbr <R-BR> display acl 3000
   Advanced ACL 3000, 4 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
-   rule 5 permit tcp
-   rule 10 deny icmp (2 matches)
-   rule 15 permit
+   rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+   rule 10 permit tcp
+   rule 15 deny icmp (2 matches)
+   rule 20 permit
 
 [243/400] rbr <R-BR> display traffic-filter applied-record
    No traffic-filter applied on any interface.
@@ -1245,14 +1246,15 @@ Total steps: 400
 
 [245/400] rbr <R-BR> display current-configuration configuration acl
   acl number 2000
-   rule 0 deny source 10.2.2.11 0.0.0.0
-   rule 5 permit
+   rule 5 deny source 10.2.2.11 0.0.0.0
+   rule 10 permit
   #
   acl number 3000
-   rule 0 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
-   rule 5 permit tcp
-   rule 10 deny icmp
-   rule 15 permit
+   rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+   rule 10 permit tcp
+   rule 15 deny icmp
+   rule 20 permit
+  #
 
 
 --- [246] § SEC — pare-feu Linux par hôte (matrice) ---
@@ -1406,99 +1408,99 @@ Total steps: 400
 --- [292] § SEC — matrice de joignabilité (sans filtre actif) ---
 [292/400] lhq lhq$ ping -c 1 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.586 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.950 ms
   
   --- 203.0.113.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.586/0.586/0.586/0.000 ms
+  rtt min/avg/max/mdev = 0.950/0.950/0.950/0.000 ms
 
 [293/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.505 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.128 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.505/0.505/0.505/0.000 ms
+  rtt min/avg/max/mdev = 1.128/1.128/1.128/0.000 ms
 
 [294/400] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.213 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.440 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.213/0.213/0.213/0.000 ms
+  rtt min/avg/max/mdev = 0.440/0.440/0.440/0.000 ms
 
 [295/400] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.428 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.669 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.428/0.428/0.428/0.000 ms
+  rtt min/avg/max/mdev = 0.669/0.669/0.669/0.000 ms
 
 [296/400] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.724 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.085 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.724/0.724/0.724/0.000 ms
+  rtt min/avg/max/mdev = 1.085/1.085/1.085/0.000 ms
 
 [297/400] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.348 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.510 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.348/0.348/0.348/0.000 ms
+  rtt min/avg/max/mdev = 0.510/0.510/0.510/0.000 ms
 
 [298/400] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.201 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.283 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.201/0.201/0.201/0.000 ms
+  rtt min/avg/max/mdev = 0.283/0.283/0.283/0.000 ms
 
 [299/400] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.178 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.334 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.178/0.178/0.178/0.000 ms
+  rtt min/avg/max/mdev = 0.334/0.334/0.334/0.000 ms
 
 [300/400] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.464 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.439 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.464/0.464/0.464/0.000 ms
+  rtt min/avg/max/mdev = 0.439/0.439/0.439/0.000 ms
 
 [301/400] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.355 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.661 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.355/0.355/0.355/0.000 ms
+  rtt min/avg/max/mdev = 0.661/0.661/0.661/0.000 ms
 
 [302/400] isphq isphq$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.432 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.559 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.432/0.432/0.432/0.000 ms
+  rtt min/avg/max/mdev = 0.559/0.559/0.559/0.000 ms
 
 [303/400] ispbr ispbr$ ping -c 1 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=63 time=0.326 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=63 time=0.583 ms
   
   --- 10.2.2.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.326/0.326/0.326/0.000 ms
+  rtt min/avg/max/mdev = 0.583/0.583/0.583/0.000 ms
 
 
 --- [304] § SEC — inspection des tables iptables par hôte ---
@@ -1565,14 +1567,15 @@ Total steps: 400
   iptables: Permission denied
 
 [321/400] ldc ldc$ conntrack -L
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.10 sport=5355 dport=35425 src=10.3.3.10 dst=224.0.0.252 sport=35425 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.11 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.11 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.11 dst=10.1.1.1 sport=0 dport=0 src=10.1.1.1 dst=10.3.3.11 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.11 dst=10.2.2.1 sport=0 dport=0 src=10.2.2.1 dst=10.3.3.11 sport=0 dport=0 mark=0 use=1
-  conntrack v1.4.7 (conntrack-tools): 4 flow entries have been shown.
+  conntrack v1.4.7 (conntrack-tools): 5 flow entries have been shown.
 
 [322/400] ldc ldc$ conntrack -S
-  cpu=0   found=0 invalid=0 insert=4 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0
+  cpu=0   found=0 invalid=0 insert=5 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0
 
 [323/400] srvdc srvdc$ iptables -t filter -L -n -v
   Chain INPUT (policy ACCEPT)
@@ -1622,12 +1625,13 @@ Total steps: 400
 
 [327/400] srvdc srvdc$ conntrack -L
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=39622 src=10.3.3.11 dst=224.0.0.252 sport=39622 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  conntrack v1.4.7 (conntrack-tools): 3 flow entries have been shown.
+  conntrack v1.4.7 (conntrack-tools): 4 flow entries have been shown.
 
 [328/400] srvdc srvdc$ conntrack -S
-  cpu=0   found=2 invalid=0 insert=3 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0
+  cpu=0   found=2 invalid=0 insert=4 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0
 
 
 --- [329] § SEC — politiques de chaîne & compteurs ---
@@ -1740,22 +1744,22 @@ Total steps: 400
 [351/400] swbr <SW-BR> display mac-address security
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
 [352/400] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -1782,8 +1786,9 @@ Total steps: 400
     Interface    User               Mode         Idle     Peer Address
 
 [357/400] rhq R-HQ# show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [358/400] rdc R-DC# show running-config | section line vty
 <empty>
@@ -1869,23 +1874,23 @@ Total steps: 400
 [377/400] rbr <R-BR> display acl all
   Basic ACL 2000, 2 rule(s)
   ACL's step is 5
-   rule 0 deny source 10.2.2.11 0.0.0.0 (2 matches)
-   rule 5 permit
+   rule 5 deny source 10.2.2.11 0.0.0.0 (2 matches)
+   rule 10 permit
   Advanced ACL 3000, 4 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
-   rule 5 permit tcp
-   rule 10 deny icmp (2 matches)
-   rule 15 permit
+   rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+   rule 10 permit tcp
+   rule 15 deny icmp (2 matches)
+   rule 20 permit
   Total 2 ACL(s)
 
 [378/400] lhq lhq$ ping -c 1 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.519 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=1.124 ms
   
   --- 203.0.113.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.519/0.519/0.519/0.000 ms
+  rtt min/avg/max/mdev = 1.124/1.124/1.124/0.000 ms
 
 [379/400] whq whq$ ping -n 1 203.0.113.10
   
@@ -1895,61 +1900,61 @@ Total steps: 400
   Ping statistics for 203.0.113.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [380/400] lbr lbr$ ping -c 1 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.289 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.612 ms
   
   --- 198.51.100.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.289/0.289/0.289/0.000 ms
+  rtt min/avg/max/mdev = 0.612/0.612/0.612/0.000 ms
 
 [381/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.515 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.774 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.515/0.515/0.515/0.000 ms
+  rtt min/avg/max/mdev = 0.774/0.774/0.774/0.000 ms
 
 [382/400] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.177 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.411 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.177/0.177/0.177/0.000 ms
+  rtt min/avg/max/mdev = 0.411/0.411/0.411/0.000 ms
 
 [383/400] isphq isphq$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.436 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.590 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.436/0.436/0.436/0.000 ms
+  rtt min/avg/max/mdev = 0.590/0.590/0.590/0.000 ms
 
 [384/400] rdc R-DC# ping 10.1.1.10
   Type escape sequence to abort.
   Sending 5, 100-byte ICMP Echos to 10.1.1.10, timeout is 2 seconds:
   !!!!!
-  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/1 ms
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/1/1 ms
 
 [385/400] ldc ldc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=1.225 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=1.125 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.225/1.225/1.225/0.000 ms
+  rtt min/avg/max/mdev = 1.125/1.125/1.125/0.000 ms
 
 [386/400] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.647 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.920 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.647/0.647/0.647/0.000 ms
+  rtt min/avg/max/mdev = 0.920/0.920/0.920/0.000 ms
 
 [387/400] whq whq$ ping -n 1 10.3.3.10
   
@@ -1959,7 +1964,7 @@ Total steps: 400
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [388/400] lhq lhq$ iptables -L -n
   iptables: Permission denied
@@ -2004,14 +2009,14 @@ Total steps: 400
 [394/400] rbr <R-BR> display acl all
   Basic ACL 2000, 2 rule(s)
   ACL's step is 5
-   rule 0 deny source 10.2.2.11 0.0.0.0 (2 matches)
-   rule 5 permit
+   rule 5 deny source 10.2.2.11 0.0.0.0 (2 matches)
+   rule 10 permit
   Advanced ACL 3000, 4 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
-   rule 5 permit tcp
-   rule 10 deny icmp (2 matches)
-   rule 15 permit
+   rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+   rule 10 permit tcp
+   rule 15 deny icmp (2 matches)
+   rule 20 permit
   Total 2 ACL(s)
 
 [395/400] swhq SW-HQ# show port-security
@@ -2027,11 +2032,11 @@ Total steps: 400
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 24 messages logged, xml disabled,
+      Console logging: level informational, 22 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 24 messages logged, xml disabled,
+      Monitor logging: level debugging, 22 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 24 messages logged, xml disabled,
+      Buffer logging:  level debugging, 22 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2040,31 +2045,29 @@ Total steps: 400
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 24 message lines logged
+      Trap logging: level informational, 22 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
   
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/3, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/3, changed state to up
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: %SEC-4-WARNINGS: R-HQ: ACL denied outbound on GigabitEthernet0/3: 10.1.1.11 → 203.0.113.10
-  *Jun  6 08:00:00.000: %SEC-4-WARNINGS: R-HQ: ACL denied outbound on GigabitEthernet0/3: 10.1.1.11 → 203.0.113.10
+  *Jun  6 08:00:00.000: %SEC-4-IPACCESSLOGP: R-HQ: ACL denied outbound on GigabitEthernet0/3: 10.1.1.11 → 203.0.113.10
+  *Jun  6 08:00:00.000: %SEC-4-IPACCESSLOGP: R-HQ: ACL denied outbound on GigabitEthernet0/3: 10.1.1.11 → 203.0.113.10
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: %SEC-4-WARNINGS: R-HQ: ACL denied inbound on GigabitEthernet0/3: 203.0.113.10 → 10.1.1.10
-  *Jun  6 08:00:00.000: %SEC-4-WARNINGS: R-HQ: ACL denied inbound on GigabitEthernet0/3: 203.0.113.10 → 10.1.1.10
+  *Jun  6 08:00:00.000: %SEC-4-IPACCESSLOGP: R-HQ: ACL denied inbound on GigabitEthernet0/3: 203.0.113.10 → 10.1.1.10
+  *Jun  6 08:00:00.000: %SEC-4-IPACCESSLOGP: R-HQ: ACL denied inbound on GigabitEthernet0/3: 203.0.113.10 → 10.1.1.10
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
@@ -2075,11 +2078,11 @@ Total steps: 400
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 11 messages logged, xml disabled,
+      Console logging: level informational, 10 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 11 messages logged, xml disabled,
+      Monitor logging: level debugging, 10 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 11 messages logged, xml disabled,
+      Buffer logging:  level debugging, 10 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2088,14 +2091,13 @@ Total steps: 400
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 11 message lines logged
+      Trap logging: level informational, 10 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
   
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-HQ (GigabitEthernet0/2) discovered on GigabitEthernet0/1
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up

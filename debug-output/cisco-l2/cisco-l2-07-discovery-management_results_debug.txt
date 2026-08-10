@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-07-discovery-management
-Generated: 2026-08-08T00:20:41.750Z
+Generated: 2026-08-10T19:34:12.817Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CDP/LLDP, management SVI, users/AAA, SSH, logging, NTP/SNTP, SNMP
 Total steps: 366
@@ -56,10 +56,17 @@ Total steps: 366
   Total entries displayed: 0
 
 [7/366] sw1 SW1# show clock
-  *00:20:41.000 UTC Sat Aug 8 2026
+  *19:34:12.000 UTC Mon Aug 10 2026
 
 [8/366] sw1 SW1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE24A634.D22D0E56 (19:34:12.821 UTC Mon Aug 10 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [9/366] sw1 SW1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -76,11 +83,11 @@ Total steps: 366
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 19 messages logged, xml disabled,
+      Console logging: level debugging, 9 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 19 messages logged, xml disabled,
+      Monitor logging: level debugging, 9 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 19 messages logged, xml disabled,
+      Buffer logging:  level debugging, 9 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -89,30 +96,20 @@ Total steps: 366
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 19 message lines logged
+      Trap logging: level informational, 9 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:20:41.718: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug  8 00:20:41.718: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug  8 00:20:41.721: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:20:41.722: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.722: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug  8 00:20:41.722: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug  8 00:20:41.723: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  *Aug  8 00:20:41.723: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.723: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug  8 00:20:41.723: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug  8 00:20:41.724: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  *Aug  8 00:20:41.724: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.727: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:20:41.727: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:20:41.729: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:20:41.729: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:20:41.729: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.736: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
-  *Aug  8 00:20:41.736: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.735: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 10 19:34:12.735: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 10 19:34:12.739: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 10 19:34:12.739: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 10 19:34:12.742: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 10 19:34:12.742: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 10 19:34:12.763: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:34:12.763: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:34:12.794: %SYS-5-CONFIG_I: Configured from console by console
 
 [12/366] sw1 SW1# show ip interface brief
   Interface              IP-Address      OK? Method Status                Protocol
@@ -919,10 +916,9 @@ Total steps: 366
 <empty>
 
 [162/366] sw1 SW1(config)# crypto key generate rsa modulus 2048
-  The name for the keys will be: SW1.lab.local
-  % The key modulus size is 512 bits
-  % Generating 512 bit RSA keys, keys will be non-exportable...[OK]
-  RSA key pair generated
+  The key modulus size is 2048 bits
+  % Generating 2048 bit RSA keys, keys will be non-exportable...
+  [OK] (elapsed time was 2 seconds)
 
 [163/366] sw1 SW1(config)# ip ssh version 2
 <empty>
@@ -944,7 +940,9 @@ Total steps: 366
 
 [169/366] sw1 SW1(config)# do show ip ssh
   SSH Enabled - version 2.0
-  Authentication timeout: 120 secs; Authentication retries: 3
+  Authentication timeout: 60 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
+  Hostkey RSA key size is 2048 bits
 
 [170/366] sw1 SW1(config)# do show ssh
   Connection Version Mode Encryption  Hmac  State  Username
@@ -993,11 +991,11 @@ Total steps: 366
   
   No Active Message Discriminator.
   
-      Console logging: level warnings, 33 messages logged, xml disabled,
+      Console logging: level warnings, 18 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 33 messages logged, xml disabled,
+      Monitor logging: level debugging, 18 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 33 messages logged, xml disabled,
+      Buffer logging:  level debugging, 18 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1007,7 +1005,7 @@ Total steps: 366
       Facility: local6
       Source interface: Vlan1
   
-      Trap logging: level informational, 33 message lines logged
+      Trap logging: level informational, 18 message lines logged
           Logging to 192.168.1.13  (udp port 514, audit disabled,
                 link up),
                 0 message lines logged, 0 message lines rate-limited,
@@ -1026,39 +1024,24 @@ Total steps: 366
   
   Log Buffer (16384 bytes):
   
-  *Aug  8 00:20:41.718: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug  8 00:20:41.718: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug  8 00:20:41.721: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:20:41.722: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.722: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug  8 00:20:41.722: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug  8 00:20:41.723: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  *Aug  8 00:20:41.723: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.723: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug  8 00:20:41.723: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug  8 00:20:41.724: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  *Aug  8 00:20:41.724: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.727: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:20:41.727: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:20:41.729: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:20:41.729: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:20:41.729: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.736: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
-  *Aug  8 00:20:41.736: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:20:41.753: %CDP-6-INFORMATIONAL: CDP enabled
-  *Aug  8 00:20:41.754: %CDP-6-INFORMATIONAL: CDP enabled
-  *Aug  8 00:20:41.754: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:20:41.757: %LLDP-6-INFORMATIONAL: LLDP enabled
-  *Aug  8 00:20:41.757: %LLDP-6-INFORMATIONAL: LLDP enabled
-  *Aug  8 00:20:41.757: %LLDP-6-INFORMATIONAL: LLDP enabled
-  *Aug  8 00:20:41.758: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:20:41.760: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
-  *Aug  8 00:20:41.760: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
-  *Aug  8 00:20:41.762: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:20:41.763: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:20:41.789: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:20:41.791: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:20:41.792: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.735: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 10 19:34:12.735: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 10 19:34:12.739: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 10 19:34:12.739: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 10 19:34:12.742: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 10 19:34:12.742: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 10 19:34:12.763: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:34:12.763: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:34:12.794: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.826: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.833: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.835: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
+  *Aug 10 19:34:12.835: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
+  *Aug 10 19:34:12.839: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.840: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.971: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.975: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.978: %SYS-5-CONFIG_I: Configured from console by console
 
 [184/366] sw1 SW1(config)# end
 <empty>
@@ -1094,13 +1077,22 @@ Total steps: 366
 
 [194/366] sw1 SW1(config)# do show ntp associations
     address         ref clock     st  when poll reach delay offset disp
+   ~192.168.1.13    .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~192.168.1.23    .INIT.        16  999   64   000   0.0    0.0 16000.0
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [195/366] sw1 SW1(config)# do show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE24A634.FF3B645A (19:34:12.997 UTC Mon Aug 10 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [196/366] sw1 SW1(config)# do show clock
-  *00:20:41.000 UTC Sat Aug 8 2026
+  *19:34:12.000 UTC Mon Aug 10 2026
 
 [197/366] sw1 SW1(config)# end
 <empty>
@@ -1189,21 +1181,21 @@ Total steps: 366
 --- [214] § management reachability from hosts ---
 [214/366] l1 l1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=1.594 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.787 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=3.489 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.698 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.787/1.191/1.594/0.404 ms
+  rtt min/avg/max/mdev = 0.698/2.094/3.489/1.396 ms
 
 [215/366] srv1 srv1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.431 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=1.097 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.366 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.875 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.431/0.764/1.097/0.333 ms
+  rtt min/avg/max/mdev = 0.366/0.621/0.875/0.254 ms
 
 [216/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -4416,10 +4408,9 @@ Total steps: 366
 <empty>
 
 [272/366] sw2 SW2(config)# crypto key generate rsa modulus 2048
-  The name for the keys will be: SW2.lab.local
-  % The key modulus size is 512 bits
-  % Generating 512 bit RSA keys, keys will be non-exportable...[OK]
-  RSA key pair generated
+  The key modulus size is 2048 bits
+  % Generating 2048 bit RSA keys, keys will be non-exportable...
+  [OK] (elapsed time was 2 seconds)
 
 [273/366] sw2 SW2(config)# ip ssh version 2
 <empty>
@@ -4469,17 +4460,19 @@ Total steps: 366
 [279/366] sw2 SW2# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
+  Hostkey RSA key size is 2048 bits
 
 [280/366] sw2 SW2# show logging
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 25 messages logged, xml disabled,
+      Console logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 25 messages logged, xml disabled,
+      Monitor logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 25 messages logged, xml disabled,
+      Buffer logging:  level debugging, 13 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -4488,7 +4481,7 @@ Total steps: 366
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 25 message lines logged
+      Trap logging: level informational, 13 message lines logged
           Logging to 192.168.1.13  (udp port 514, audit disabled,
                 link up),
                 1 message lines logged, 0 message lines rate-limited,
@@ -4497,48 +4490,38 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:20:41.725: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug  8 00:20:41.725: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug  8 00:20:41.725: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:20:41.725: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.725: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug  8 00:20:41.725: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug  8 00:20:41.726: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  *Aug  8 00:20:41.726: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.726: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug  8 00:20:41.726: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug  8 00:20:41.727: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  *Aug  8 00:20:41.727: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.730: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:20:41.730: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:20:41.730: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/2) discovered on GigabitEthernet0/1
-  *Aug  8 00:20:41.730: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:20:41.731: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:20:41.731: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:20:41.731: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
-  *Aug  8 00:20:41.737: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
-  *Aug  8 00:20:41.737: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:20:43.568: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:20:43.814: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
-  *Aug  8 00:20:43.814: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
-  *Aug  8 00:20:43.815: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:12.743: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 10 19:34:12.744: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 10 19:34:12.744: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 10 19:34:12.745: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 10 19:34:12.762: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 10 19:34:12.762: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 10 19:34:12.766: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:34:12.766: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:34:12.776: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
+  *Aug 10 19:34:12.796: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:34:15.050: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
+  *Aug 10 19:34:15.050: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
+  *Aug 10 19:34:15.054: %SYS-5-CONFIG_I: Configured from console by console
 
 [281/366] sw2 SW2# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
+   ~192.168.1.23    .INIT.        16  999   64   000   0.0    0.0 16000.0
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [282/366] sw2 SW2# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 1121 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW2
   !
   enable secret 5 $1$c0f9684e$1osZ/skd4BOgUxSatb3wM1
   !
   ip domain-name lab.local
-  !
-  ip default-gateway 192.168.1.1
   !
   interface FastEthernet0/1
   !
@@ -4597,19 +4580,20 @@ Total steps: 366
   interface Vlan1
    ip address 192.168.1.253 255.255.255.0
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
+  ip ssh version 2
+  ip default-gateway 192.168.1.1
   logging host 192.168.1.13
+  !
   end
 
 [283/366] l2 l2$ ping -c 2 192.168.1.253
   PING 192.168.1.253 (192.168.1.253) 56(84) bytes of data.
-  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.426 ms
-  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.754 ms
+  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=5.430 ms
+  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.854 ms
   
   --- 192.168.1.253 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.426/0.590/0.754/0.164 ms
+  rtt min/avg/max/mdev = 0.854/3.142/5.430/2.288 ms
 
 
 --- [284] § host service inspection (SRV1/SRV2) ---
@@ -4626,7 +4610,15 @@ Total steps: 366
   Unit sshd.service could not be found.
 
 [287/366] srv1 srv1$ systemctl status chronyd
-  Unit chronyd.service could not be found.
+  [0;1;32m●[0m chrony.service - chrony, an NTP client/server
+       Loaded: loaded (/usr/lib/systemd/system/chrony.service; enabled; vendor preset: enabled)
+       Active: [0;1;32mactive (running)[0m since Mon, 10 Aug 2026 19:34:12 GMT
+     Main PID: 24 (chronyd)
+        Tasks: 1
+       Memory: 4.4M
+          CPU: 34ms
+       CGroup: /system.slice/chrony.service
+               └─24 /usr/sbin/chronyd -F 1
 
 [288/366] srv1 srv1$ cat /etc/ntp.conf
   cat: /etc/ntp.conf: No such file or directory
@@ -4644,7 +4636,15 @@ Total steps: 366
   Unit sshd.service could not be found.
 
 [291/366] srv2 srv2$ systemctl status chronyd
-  Unit chronyd.service could not be found.
+  [0;1;32m●[0m chrony.service - chrony, an NTP client/server
+       Loaded: loaded (/usr/lib/systemd/system/chrony.service; enabled; vendor preset: enabled)
+       Active: [0;1;32mactive (running)[0m since Mon, 10 Aug 2026 19:34:12 GMT
+     Main PID: 24 (chronyd)
+        Tasks: 1
+       Memory: 4.4M
+          CPU: 34ms
+       CGroup: /system.slice/chrony.service
+               └─24 /usr/sbin/chronyd -F 1
 
 [292/366] srv2 srv2$ cat /etc/ntp.conf
   cat: /etc/ntp.conf: No such file or directory
@@ -4652,28 +4652,21 @@ Total steps: 366
 [293/366] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2202 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
   !
-  banner motd ^C
-  Unauthorized access prohibited
-  ^C
-  !
-  banner login ^C
-  Login banner
-  ^C
-  !
-  banner exec ^C
-  Welcome
-  ^C
-  !
   enable secret 5 $1$caacdc99$5IOA7Hw95rii7J3/tCAe01
-  enable password Weak
+  enable password 7 097B4B0812
+  !
+  aaa new-model
+  aaa authentication login default local
+  aaa authorization exec default local
   !
   ip domain-name lab.local
-  !
-  ip default-gateway 192.168.1.1
   !
   username admin privilege 15 secret 5 $1$9494d6ad$EMHpmgg3cgOQgnmM2gsQd.
   username user1 privilege 1 secret 5 $1$53e41c06$Q.24SB6EPZNFvvZvAbyKG/
@@ -4683,13 +4676,6 @@ Total steps: 366
   username user5 privilege 15 secret 5 $1$f5da3d83$NURfW2iLVUOBvHYPEyZ8x.
   username user6 privilege 15 secret 5 $1$fcc44acb$enYmhDDeJH6rnP1RMjWJ.1
   !
-  line vty 0 15
-   exec-timeout 10 0
-   login authentication default
-  !
-  !
-  cdp timer 30
-  cdp holdtime 120
   interface FastEthernet0/1
   !
   interface FastEthernet0/2
@@ -4747,19 +4733,38 @@ Total steps: 366
   interface Vlan1
    ip address 192.168.1.254 255.255.255.0
   !
+  ip ssh version 2
+  ip ssh time-out 60
+  ip default-gateway 192.168.1.1
+  cdp timer 30
+  cdp holdtime 120
   logging buffered 16384 debugging
   logging console warnings
   logging facility local6
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
   logging source-interface Vlan1
   logging host 192.168.1.13
   logging host 192.168.1.23
   logging host 10.0.0.50
   !
-  ip ssh time-out 60
-  ip ssh authentication-retries 3
-  sntp server 192.168.1.13
+  banner motd ^C
+  Unauthorized access prohibited
+  ^C
+  banner login ^C
+  Login banner
+  ^C
+  banner exec ^C
+  Welcome
+  ^C
+  !
+  line console 0
+   login local
+   logging synchronous
+  !
+  line vty 0 15
+   exec-timeout 10 0
+   login authentication default
+   transport input ssh
+  !
   end
 
 
@@ -4781,11 +4786,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 332 bytes, 0 no buffer
+       8 packets input, 644 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       23 packets output, 1548 bytes, 0 underruns
+       37 packets output, 2724 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4806,7 +4811,7 @@ Total steps: 366
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       20 packets output, 1280 bytes, 0 underruns
+       37 packets output, 2694 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4823,11 +4828,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 332 bytes, 0 no buffer
+       8 packets input, 650 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       21 packets output, 1420 bytes, 0 underruns
+       34 packets output, 2516 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -5268,11 +5273,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 332 bytes, 0 no buffer
+       8 packets input, 644 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       18 packets output, 1228 bytes, 0 underruns
+       32 packets output, 2404 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -5293,7 +5298,7 @@ Total steps: 366
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 960 bytes, 0 underruns
+       32 packets output, 2374 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -5310,11 +5315,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       5 packets input, 382 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       14 packets output, 896 bytes, 0 underruns
+       27 packets output, 1992 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

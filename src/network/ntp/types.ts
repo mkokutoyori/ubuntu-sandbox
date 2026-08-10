@@ -61,6 +61,7 @@ export interface NtpAssociation {
    * authentifie ni non authentifie.
    */
   authenticated?: boolean;
+  configuredAs?: 'ntp' | 'sntp';
 }
 
 export interface NtpAuthKey {

@@ -130,7 +130,10 @@ describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', ()
    */
   it('la configuration ne contient qu\'UNE ligne par directive `ip ssh`', async () => {
     const r = new CiscoRouter('R1');
-    await config(r, ['ip ssh version 2', 'ip ssh time-out 45', 'ip ssh authentication-retries 2']);
+    await config(r, [
+      'ip domain-name ma-banque.local', 'crypto key generate rsa modulus 2048',
+      'ip ssh version 2', 'ip ssh time-out 45', 'ip ssh authentication-retries 2',
+    ]);
     const cfg = await ios(r, ['show running-config']);
     for (const directive of ['ip ssh version', 'ip ssh time-out', 'ip ssh authentication-retries']) {
       const n = cfg.split('\n').filter((l) => l.trim().startsWith(directive)).length;

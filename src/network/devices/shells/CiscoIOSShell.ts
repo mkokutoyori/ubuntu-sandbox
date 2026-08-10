@@ -1009,11 +1009,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // `show startup-config` lit la NVRAM : son en-tête annonce
     // l'occupation, pas « Building configuration… » qui appartient à
     // `show running-config`.
-    const startupConfig = () => {
-      const snapshot = getRouter().getStartupConfigSnapshot();
-      if (snapshot === null) return '% startup-config is not present';
-      return renderStartupConfig(snapshot, this.fs().nvramTotalBytes());
-    };
+    const startupConfig = () => this.showStartupConfig();
     trie.register('show startup-config', 'Display saved configuration', startupConfig);
     trie.register('show configuration', 'Display saved configuration', startupConfig);
     trie.register('show ip rip database', 'Display RIP database',

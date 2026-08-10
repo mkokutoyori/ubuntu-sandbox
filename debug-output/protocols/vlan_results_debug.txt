@@ -840,22 +840,22 @@ Total steps: 401
 [189/401] wbr wbr$ ping -n 2 10.2.2.11
   
   Pinging 10.2.2.11 with 32 bytes of data:
-  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=1ms TTL=64
   Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 10.2.2.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.326 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.627 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.425 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.794 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.326/0.476/0.627/0.151 ms
+  rtt min/avg/max/mdev = 0.425/0.609/0.794/0.185 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -1015,63 +1015,63 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.425 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.619 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.683 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=1.086 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.425/0.522/0.619/0.097 ms
+  rtt min/avg/max/mdev = 0.683/0.885/1.086/0.201 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.385 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.619 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.626 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=1.171 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.385/0.502/0.619/0.117 ms
+  rtt min/avg/max/mdev = 0.626/0.899/1.171/0.272 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.533 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.776 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.905 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=3.269 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=1.295 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=1.565 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.776/1.072/1.533/0.331 ms
+  rtt min/avg/max/mdev = 1.295/2.043/3.269/0.874 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
+  Reply from 10.1.1.10: bytes=32 time=1ms TTL=63
   Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
   Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [234/401] whq whq$ ping -n 2 10.1.20.1
   
   Pinging 10.1.20.1 with 32 bytes of data:
-  Reply from 10.1.20.1: bytes=32 time=<1ms TTL=255
+  Reply from 10.1.20.1: bytes=32 time=1ms TTL=255
   Reply from 10.1.20.1: bytes=32 time=<1ms TTL=255
   
   Ping statistics for 10.1.20.1:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.750 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.948 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.869 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=2.279 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.750/0.849/0.948/0.099 ms
+  rtt min/avg/max/mdev = 0.869/1.574/2.279/0.705 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -1420,29 +1420,32 @@ Total steps: 401
 [292/401] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
-  02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 10         GigabitEthernet0/0/2  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/3  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
 [293/401] swbr <SW-BR> display mac-address vlan 10
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
+  0200-0000-004f 10         GigabitEthernet0/0/2  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/3  dynamic
 
 [294/401] dswbr <DSW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:4f10         GigabitEthernet0/0/1dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
   -------------------------------------------------------------------------------
-  Total items displayed = 4
+  Total items displayed = 5
 
 
 --- [295] § VLAN — spanning-tree par VLAN ---
@@ -1582,34 +1585,33 @@ Total steps: 401
   end
 
 [303/401] swhq SW-HQ# show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100  10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100  10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          notconnect   1          auto    auto   1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    10         a-full  a-100 10/100BaseTX
+  Fa0/3                        connected    20         a-full  a-100 10/100BaseTX
+  Fa0/4                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/5                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 [304/401] dsw1 DSW-HQ-1# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
@@ -1762,34 +1764,33 @@ Total steps: 401
   Fa0/5       1,10,20,30
 
 [314/401] swhq SW-HQ# show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100  10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100  10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          notconnect   1          auto    auto   1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    10         a-full  a-100 10/100BaseTX
+  Fa0/3                        connected    20         a-full  a-100 10/100BaseTX
+  Fa0/4                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/5                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 [315/401] swhq SW-HQ# show mac address-table
   Mac Address Table
@@ -1842,34 +1843,33 @@ Total steps: 401
   Fa0/2       1,10,20,30,99
 
 [320/401] dsw1 DSW-HQ-1# show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/3                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          notconnect   1          auto    auto   1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/3                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 [321/401] dsw1 DSW-HQ-1# show mac address-table
   Mac Address Table
@@ -1924,34 +1924,33 @@ Total steps: 401
   Fa0/2       1,10,20,30,99
 
 [326/401] dsw2 DSW-HQ-2# show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/3                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          notconnect   1          auto    auto   1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    trunk      a-full  a-100 10/100BaseTX
+  Fa0/3                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 [327/401] dsw2 DSW-HQ-2# show mac address-table
   Mac Address Table
@@ -2027,11 +2026,11 @@ Total steps: 401
 [333/401] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
-  02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 10         GigabitEthernet0/0/2  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/3  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -2082,14 +2081,15 @@ Total steps: 401
 [338/401] dswbr <DSW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:4f10         GigabitEthernet0/0/1dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
   -------------------------------------------------------------------------------
-  Total items displayed = 4
+  Total items displayed = 5
 
 
 --- [339] § VLAN — connectivité L2 intra-VLAN (matrice) ---
@@ -2101,33 +2101,33 @@ Total steps: 401
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.289 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.494 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.289/0.289/0.289/0.000 ms
+  rtt min/avg/max/mdev = 0.494/0.494/0.494/0.000 ms
 
 [341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.573 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.811 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.573/0.573/0.573/0.000 ms
+  rtt min/avg/max/mdev = 0.811/0.811/0.811/0.000 ms
 
 [342/401] whq whq$ ping -n 1 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=3ms TTL=63
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 3ms, Maximum = 3ms, Average = 3ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [343/401] lhq lhq$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -2348,11 +2348,11 @@ Total steps: 401
 [364/401] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
-  02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 10         GigabitEthernet0/0/2  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/3  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -2380,7 +2380,9 @@ Total steps: 401
   Enter system view, return user view with return command.
 
 [372/401] swbr [SW-BR] vlan 5000
-  Error: Wrong parameter found.
+  Error: Wrong parameter found at '^' position.
+  vlan 5000
+       ^
 
 [373/401] swbr [SW-BR] port default vlan
 <empty>
@@ -2526,19 +2528,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.681 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.627 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.681/0.681/0.681/0.000 ms
+  rtt min/avg/max/mdev = 1.627/1.627/1.627/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.655 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.879 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.655/0.655/0.655/0.000 ms
+  rtt min/avg/max/mdev = 0.879/0.879/0.879/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2566,11 +2568,11 @@ Total steps: 401
 [388/401] swbr [SW-BR] display mac-address total-number
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
-  02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 10         GigabitEthernet0/0/2  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/3  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -2649,6 +2651,7 @@ Total steps: 401
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 scope global eth0
+         valid_lft forever preferred_lft forever
 
 [396/401] whq whq$ ipconfig
   Windows IP Configuration
@@ -2678,11 +2681,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.510 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.603 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.510/0.510/0.510/0.000 ms
+  rtt min/avg/max/mdev = 0.603/0.603/0.603/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-08-08T00:33:28.644Z
+Generated: 2026-08-10T19:31:38.424Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -257,7 +257,7 @@ $ [49/303]> grep -r root /etc/hostname
 <empty>
 
 $ [50/303]> grep --color=auto root /etc/passwd
-  root:x:0:0:root:/root:/bin/bash
+  [01;31mroot[m:x:0:0:[01;31mroot[m:/[01;31mroot[m:/bin/bash
 
 $ [51/303]> grep -A1 bob gens.csv
   bob:25:lyon
@@ -505,7 +505,7 @@ $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  57
+  58
 
 
 --- [92] § sort — tri ---
@@ -1270,7 +1270,7 @@ $ [230/303]> pr -t fruits.txt
 $ [231/303]> pr -n fruits.txt
   
   
-  Sat Aug 08 2026  fruits.txt  Page 1
+  Mon Aug 10 2026  fruits.txt  Page 1
   
   
       1	banane

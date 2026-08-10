@@ -67,7 +67,7 @@ Total steps: 300
   Info: Current terminal debugging is on.
 
 [18/300] swbr <SW-BR> debugging stp packet
-  Info: stp packet debugging is on.
+  Info: STP debugging is on.
 
 [19/300] dswbr <DSW-BR> terminal monitor
   Info: Current terminal monitor is on.
@@ -76,7 +76,7 @@ Total steps: 300
   Info: Current terminal debugging is on.
 
 [21/300] dswbr <DSW-BR> debugging stp packet
-  Info: stp packet debugging is on.
+  Info: STP debugging is on.
 
 
 --- [22] § STP — état initial (Cisco) ---
@@ -1289,7 +1289,9 @@ Total steps: 300
 <empty>
 
 [172/300] swbr [SW-BR-GigabitEthernet0/0/2] stp bpdu-protection
-<empty>
+  Error: Incomplete command found at '^' position.
+  stp bpdu-protection
+                     ^
 
 [173/300] swbr [SW-BR-GigabitEthernet0/0/2] stp edged-port enable
 <empty>
@@ -1358,8 +1360,8 @@ Total steps: 300
 [190/300] swbr [SW-BR] display stp
   -------[CIST Global Info][Mode STP]-------
   CIST Bridge         :0.SW-BR
-  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Config Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
+  Active Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
   CIST Root/ERPC      :0.0200-0000-0027 / 0
   CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
@@ -1377,11 +1379,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.508 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.721 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.508/0.508/0.508/0.000 ms
+  rtt min/avg/max/mdev = 0.721/0.721/0.721/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1432,21 +1434,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.531 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.913 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.769 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=1.378 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.531/0.722/0.913/0.191 ms
+  rtt min/avg/max/mdev = 0.769/1.073/1.378/0.305 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.681 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.446 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=6.267 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.570 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.446/1.564/1.681/0.117 ms
+  rtt min/avg/max/mdev = 1.570/3.919/6.267/2.349 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1478,12 +1480,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.447 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.652 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.546 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.958 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.447/0.550/0.652/0.102 ms
+  rtt min/avg/max/mdev = 0.546/0.752/0.958/0.206 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1586,13 +1588,13 @@ Total steps: 300
 [218/300] wbr wbr$ ping -n 2 10.2.2.11
   
   Pinging 10.2.2.11 with 32 bytes of data:
-  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=1ms TTL=64
   Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 10.2.2.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [219/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1973,8 +1975,8 @@ Total steps: 300
 [247/300] swbr <SW-BR> display stp global
   -------[CIST Global Info][Mode STP]-------
   CIST Bridge         :0.SW-BR
-  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Config Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
+  Active Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
   CIST Root/ERPC      :0.0200-0000-0027 / 0
   CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
@@ -1996,27 +1998,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.355 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.458 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.355/0.355/0.355/0.000 ms
+  rtt min/avg/max/mdev = 0.458/0.458/0.458/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.207 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.365 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.207/0.207/0.207/0.000 ms
+  rtt min/avg/max/mdev = 0.365/0.365/0.365/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.208 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=2.357 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.208/0.208/0.208/0.000 ms
+  rtt min/avg/max/mdev = 2.357/2.357/2.357/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -2133,8 +2135,8 @@ Total steps: 300
 [271/300] swbr <SW-BR> display stp
   -------[CIST Global Info][Mode STP]-------
   CIST Bridge         :0.SW-BR
-  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Config Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
+  Active Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
   CIST Root/ERPC      :0.0200-0000-0027 / 0
   CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
@@ -2230,9 +2232,13 @@ Total steps: 300
 
 [281/300] swbr [SW-BR] stp priority 5000
   Error: Wrong parameter found at '^' position.
+  stp priority 5000
+               ^
 
 [282/300] swbr [SW-BR] stp mode bidon
   Error: Wrong parameter found at '^' position.
+  stp mode bidon
+           ^
 
 [283/300] swbr [SW-BR] quit
 <empty>
@@ -2255,10 +2261,10 @@ Total steps: 300
   All possible debugging has been turned off
 
 [289/300] swbr <SW-BR> undo debugging all
-  Info: All possible debugging functions are off.
+  Info: 1 debugging switch(es) have been turned off.
 
 [290/300] dswbr <DSW-BR> undo debugging all
-  Info: All possible debugging functions are off.
+  Info: 1 debugging switch(es) have been turned off.
 
 [291/300] swhq SW-HQ# show spanning-tree summary
   Switch is in bidon mode
@@ -2432,8 +2438,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.086 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.137 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.086/1.086/1.086/0.000 ms
+  rtt min/avg/max/mdev = 1.137/1.137/1.137/0.000 ms

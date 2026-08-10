@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-08-08T00:32:45.986Z
+Generated: 2026-08-10T19:33:39.553Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -964,7 +964,7 @@ Total steps: 370
     Certificate Serial Number: 0000000000001002
     Subject: CN=R1.lab.local
     Issuer: CN=http://10.0.0.5:80
-    Validity: 2026-08-08T00:32:46.028Z to 2027-08-08T00:32:46.028Z
+    Validity: 2026-08-10T19:33:39.673Z to 2027-08-10T19:33:39.673Z
   CA Certificate (Trustpoint CA1):
     Status: Available
     Certificate Serial Number: 0000000000001001
@@ -1067,7 +1067,7 @@ Total steps: 370
 [263/370] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 4016 bytes
+  Current configuration : 4089 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1240,6 +1240,8 @@ Total steps: 370
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
+  ! Last configuration change at 19:33:39 UTC Mon Aug 10 2026 by console
+  !
   end
 
 [264/370] r1 R1# show startup-config
@@ -1271,7 +1273,7 @@ Total steps: 370
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1339,6 +1341,25 @@ Total steps: 370
   Loopback0 is up, line protocol is up
     Hardware is Loopback
     Internet address is 1.1.1.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.16.0.1/30
@@ -1573,11 +1594,11 @@ Total steps: 370
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 13 messages logged, xml disabled,
+      Console logging: level debugging, 12 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 13 messages logged, xml disabled,
+      Monitor logging: level debugging, 12 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 13 messages logged, xml disabled,
+      Buffer logging:  level debugging, 12 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1586,24 +1607,23 @@ Total steps: 370
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 13 message lines logged
+      Trap logging: level informational, 12 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:32:45.980: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:32:45.981: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:32:45.983: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:32:45.983: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:32:45.984: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:32:45.993: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:45.997: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.003: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.005: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.008: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.012: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.052: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.547: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:39.548: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:39.550: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:39.550: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:39.578: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.592: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.600: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.612: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.619: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.624: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.631: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.702: %SYS-5-CONFIG_I: Configured from console by console
 
 [297/370] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1612,17 +1632,21 @@ Total steps: 370
   0 SNMP packets output
 
 [298/370] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE20F7AE.14FDF3B6 (00:32:46.082 UTC Sat Aug 8 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE24A613.C6A7EF9D (19:33:39.776 UTC Mon Aug 10 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [299/370] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [300/370] r1 R1# show clock
-  *00:32:46.000 UTC Sat Aug 8 2026
+  *19:33:39.000 UTC Mon Aug 10 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1719,7 +1743,7 @@ Total steps: 370
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1751,25 +1775,22 @@ Total steps: 370
 
 [311/370] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 294 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [312/370] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -1821,7 +1842,7 @@ Total steps: 370
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 4016 bytes
+  Current configuration : 4089 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1994,6 +2015,8 @@ Total steps: 370
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
+  ! Last configuration change at 19:33:39 UTC Mon Aug 10 2026 by console
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -2052,7 +2075,7 @@ Total steps: 370
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -2120,6 +2143,25 @@ Total steps: 370
   Loopback0 is up, line protocol is up
     Hardware is Loopback
     Internet address is 1.1.1.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.16.0.1/30
@@ -2203,11 +2245,11 @@ Total steps: 370
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 13 messages logged, xml disabled,
+      Console logging: level debugging, 12 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 13 messages logged, xml disabled,
+      Monitor logging: level debugging, 12 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 13 messages logged, xml disabled,
+      Buffer logging:  level debugging, 12 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2216,24 +2258,23 @@ Total steps: 370
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 13 message lines logged
+      Trap logging: level informational, 12 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:32:45.980: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:32:45.981: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:32:45.983: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:32:45.983: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:32:45.984: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:32:45.993: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:45.997: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.003: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.005: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.008: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.012: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:32:46.052: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.547: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:39.548: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:39.550: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:39.550: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:39.578: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.592: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.600: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.612: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.619: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.624: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.631: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:39.702: %SYS-5-CONFIG_I: Configured from console by console
 
 [314/370] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -2265,8 +2306,9 @@ Total steps: 370
   Host                      Port  Flags      Age Type   Address(es)
 
 [320/370] r1 R1# show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [321/370] r1 R1# show line
      Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
@@ -2354,7 +2396,7 @@ Total steps: 370
 [327/370] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 4016 bytes
+  Current configuration : 4089 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2689,37 +2731,40 @@ Total steps: 370
     <cr>         
 
 [367/370] r1 R1(config)# no ?
-    access-list  Remove an access list
-    alias        Remove a command alias
-    arp          Remove ARP entry
-    banner       Remove a banner
-    boot         Boot Commands
-    cdp          CDP global configuration
-    crypto       Encryption and key management
-    enable       Modify enable password parameters
-    event        Embedded Event Manager
-    hostname     Reset hostname
-    interface    Remove a virtual interface
-    ip           Global IP configuration subcommands
-    ipv6         Global IPv6 configuration subcommands
-    key          Key management
-    line         Remove line configuration
-    lldp         LLDP global configuration
-    logging      Modify message logging facilities
-    ntp          Remove NTP config
-    privilege    Remove privilege command rule
-    route-map    Remove a route-map
-    router       Enable a routing protocol
-    service      Disable a service
-    sntp         Configure SNTP
-    track        Remove a tracked object
-    username     Remove a local user
+    access-list    Remove an access list
+    alias          Remove a command alias
+    arp            Remove ARP entry
+    banner         Remove a banner
+    boot           Boot Commands
+    cdp            CDP global configuration
+    crypto         Encryption and key management
+    enable         Modify enable password parameters
+    event          Embedded Event Manager
+    hostname       Reset hostname
+    interface      Remove a virtual interface
+    ip             Global IP configuration subcommands
+    ipv6           Global IPv6 configuration subcommands
+    key            Key management
+    line           Remove line configuration
+    lldp           LLDP global configuration
+    logging        Modify message logging facilities
+    ntp            Network Time Protocol
+    parser         Negate a parser command
+    privilege      Remove privilege command rule
+    radius-server  Remove legacy radius host
+    route-map      Remove a route-map
+    router         Enable a routing protocol
+    service        Disable a service
+    sntp           Configure SNTP
+    tacacs-server  Remove legacy tacacs host
+    track          Remove a tracked object
+    username       Remove a local user
 
 [368/370] r1 R1(config)# end
 <empty>
 
 [369/370] r1 R1# show running-config | count !
-  39
+  40
 
 [370/370] r1 R1# write memory
   Building configuration...

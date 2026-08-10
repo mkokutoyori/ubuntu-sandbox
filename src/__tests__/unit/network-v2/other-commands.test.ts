@@ -87,10 +87,10 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(await sw.getPrompt()).toBe('Switch>');
     });
 
-    it('5. should reject disable command in User EXEC mode with error or ignore', async () => {
+    it('5. accepte `disable` en EXEC utilisateur : IOS y range cette commande', async () => {
       const { sw } = setupIsolatedSwitch();
-      const output = await sw.executeCommand('disable');
-      expect(output.toLowerCase()).toContain('%'); // unrecognized or invalid mode
+      expect(await sw.executeCommand('disable')).toBe('');
+      expect(await sw.getPrompt()).toBe('Switch>');
     });
 
     it('6. should transition from Privileged EXEC to Global Config via configure terminal', async () => {
@@ -737,7 +737,8 @@ describe('Cisco L2 Switch Command Suite', () => {
       await sw.executeCommand('configure terminal');
       await sw.executeCommand('ip domain-name local.net');
       const output = await sw.executeCommand('crypto key generate rsa');
-      expect(output.toLowerCase()).toContain('generate');
+      expect(output).toContain('The name for the keys will be: Switch.local.net');
+      expect(output).toContain('% Generating 1024 bit RSA keys');
     });
 
     it('81. should enforce password configuration on vty lines for incoming telnet', async () => {

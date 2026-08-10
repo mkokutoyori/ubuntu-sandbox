@@ -309,7 +309,12 @@ export function buildIdentityConfigCommands(
     // listener has to follow — the config and the service cannot disagree.
     (ctx.r() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
     const elapsedSec = Math.max(1, Math.round(modulus / 1024));
-    return `The key modulus size is ${modulus} bits\n% Generating ${modulus} bit RSA keys, keys will be non-exportable...\n[OK] (elapsed time was ${elapsedSec} seconds)`;
+    return [
+      `The name for the keys will be: ${label}`,
+      `% The key modulus size is ${modulus} bits`,
+      `% Generating ${modulus} bit RSA keys, keys will be non-exportable...`,
+      `[OK] (elapsed time was ${elapsedSec} seconds)`,
+    ].join('\n');
   });
 
   trie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
@@ -330,7 +335,16 @@ export function buildIdentityConfigCommands(
   });
 
   trie.registerGreedy('ip ssh', 'SSH config', (args) => {
-    if (args[0] === 'version' && args[1]) { sec().ssh.version = parseInt(args[1], 10); return ''; }
+    if (args[0] === 'version' && args[1]) {
+      const version = parseInt(args[1], 10);
+      if (version !== 1 && version !== 2) throw new CliInvalidInput({ token: args[1] });
+      const cles = sec().cryptoKeys;
+      if (!cles || cles.length === 0) {
+        return `Please create RSA keys (of at least 768 bits size) to enable SSH v${version}.`;
+      }
+      sec().ssh.version = version;
+      return '';
+    }
     if (args[0] === 'time-out' && args[1]) { sec().ssh.timeoutSec = parseInt(args[1], 10); return ''; }
     if (args[0] === 'authentication-retries' && args[1]) {
       const n = parseInt(args[1], 10);

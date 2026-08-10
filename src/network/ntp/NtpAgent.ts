@@ -85,15 +85,17 @@ export class NtpAgent {
     }
   }
 
-  addServer(serverIp: string, prefer = false, keyId?: number): void {
+  addServer(serverIp: string, prefer = false, keyId?: number, configuredAs: 'ntp' | 'sntp' = 'ntp'): void {
     if (!this.config.associations.has(serverIp)) {
       const a = defaultAssociation(serverIp, prefer);
       if (keyId !== undefined) a.keyId = keyId;
+      a.configuredAs = configuredAs;
       this.config.associations.set(serverIp, a);
     } else {
       const a = this.config.associations.get(serverIp)!;
       if (prefer) a.prefer = true;
       if (keyId !== undefined) a.keyId = keyId;
+      a.configuredAs = configuredAs;
     }
     if (this.config.enabled) {
       try { this.poll(serverIp); } catch { /* invalid target — keep the configuration entry, polling will retry once reachable */ }

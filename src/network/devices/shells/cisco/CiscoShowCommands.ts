@@ -6,6 +6,7 @@
  */
 
 import type { Router } from '../../Router';
+import { ntpConfigLines } from './ciscoNtpConfig';
 import type { Port } from '../../../hardware/Port';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
@@ -456,6 +457,9 @@ export function showRunningConfig(router: Router): string {
   }
 
   lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
+
+  const lignesNtp = ntpConfigLines(router);
+  if (lignesNtp.length > 0) { lines.push(...lignesNtp); lines.push('!'); }
 
   if (dhcp.isEnabled()) {
     lines.push('service dhcp');

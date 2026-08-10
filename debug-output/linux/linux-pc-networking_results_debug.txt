@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-08-07T17:39:31.576Z
+Generated: 2026-08-10T19:32:35.945Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -9,7 +9,7 @@ Total commands: 302
 
 --- [1] § interfaces — ip link ---
 $ [1/302]> ip link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
@@ -25,7 +25,7 @@ $ [1/302]> ip link
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [2/302]> ip link show
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
@@ -41,7 +41,7 @@ $ [2/302]> ip link show
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [3/302]> ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
@@ -57,7 +57,7 @@ $ [3/302]> ip -br link
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [4/302]> ip -s link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
       RX:  bytes packets errors dropped  missed   mcast
           0       0      0       0       0       0
@@ -97,7 +97,7 @@ $ [5/302]> ip link show eth0
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
 
 $ [6/302]> ip link show lo
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
 
 $ [7/302]> ip link set eth0 up
@@ -132,28 +132,29 @@ $ [15/302]> ip link set dev eth0 address 02:00:00:aa:bb:cc
 
 $ [16/302]> ip link show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
 
 $ [17/302]> ip link set lo up
-  Cannot find device "lo"
+<empty>
 
 $ [18/302]> ip link show interface_inexistante_xyz
   Device "interface_inexistante_xyz" does not exist.
 
 $ [19/302]> ip link set eth0 truc
-<empty>
+  Error: either "dev" is duplicate, or "truc" is a garbage.
 
 
 --- [20] § adresses — ip address (set/show) ---
 $ [20/302]> ip address
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-      inet 127.0.0.1/8 brd 127.255.255.255 scope host lo
+      inet 127.0.0.1/8 scope host lo
+         valid_lft forever preferred_lft forever
       inet6 ::1/128 scope host
          valid_lft forever preferred_lft forever
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
   
@@ -167,14 +168,15 @@ $ [20/302]> ip address
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [21/302]> ip address show
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-      inet 127.0.0.1/8 brd 127.255.255.255 scope host lo
+      inet 127.0.0.1/8 scope host lo
+         valid_lft forever preferred_lft forever
       inet6 ::1/128 scope host
          valid_lft forever preferred_lft forever
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
   
@@ -188,19 +190,20 @@ $ [21/302]> ip address show
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [22/302]> ip -br address
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            DOWN          
   eth1            DOWN          
   eth2            DOWN          
   eth3            DOWN          
 
 $ [23/302]> ip -4 address show
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-      inet 127.0.0.1/8 brd 127.255.255.255 scope host lo
+      inet 127.0.0.1/8 scope host lo
+         valid_lft forever preferred_lft forever
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
   
   3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
@@ -212,13 +215,13 @@ $ [23/302]> ip -4 address show
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [24/302]> ip -6 address show
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
       inet6 ::1/128 scope host
          valid_lft forever preferred_lft forever
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
   
@@ -233,7 +236,7 @@ $ [24/302]> ip -6 address show
 
 $ [25/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -242,13 +245,14 @@ $ [26/302]> ip addr add 192.168.10.2/24 dev eth0
 
 $ [27/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [28/302]> ip -br addr show eth0
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            DOWN          192.168.10.2/24
   eth1            DOWN          
   eth2            DOWN          
@@ -259,9 +263,11 @@ $ [29/302]> ip addr add 192.168.10.3/24 dev eth0
 
 $ [30/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
+         valid_lft forever preferred_lft forever
       inet 192.168.10.3/24 brd 192.168.10.255 scope global secondary eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -270,8 +276,9 @@ $ [31/302]> ip addr del 192.168.10.3/24 dev eth0
 
 $ [32/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -280,9 +287,11 @@ $ [33/302]> ip addr add 10.0.0.1/8 dev eth0
 
 $ [34/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
+         valid_lft forever preferred_lft forever
       inet 10.0.0.1/8 brd 10.255.255.255 scope global secondary eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -291,7 +300,7 @@ $ [35/302]> ip addr flush dev eth0
 
 $ [36/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -310,7 +319,7 @@ $ [40/302]> ifconfig
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
           inet6 fe80::ff:fe00:1%eth0  prefixlen 64  scopeid 0x20<link>
-          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          ether 02:00:00:aa:bb:cc  txqueuelen 1000  (Ethernet)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -332,6 +341,15 @@ $ [40/302]> ifconfig
   
   eth3: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           ether 02:00:00:00:00:04  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+          inet 127.0.0.1  netmask 255.0.0.0
+          inet6 ::1  prefixlen 128  scopeid 0x0<global>
+          loop  txqueuelen 1000  (Local Loopback)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -341,7 +359,7 @@ $ [41/302]> ifconfig -a
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
           inet6 fe80::ff:fe00:1%eth0  prefixlen 64  scopeid 0x20<link>
-          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          ether 02:00:00:aa:bb:cc  txqueuelen 1000  (Ethernet)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -363,6 +381,15 @@ $ [41/302]> ifconfig -a
   
   eth3: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           ether 02:00:00:00:00:04  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+          inet 127.0.0.1  netmask 255.0.0.0
+          inet6 ::1  prefixlen 128  scopeid 0x0<global>
+          loop  txqueuelen 1000  (Local Loopback)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -372,20 +399,27 @@ $ [42/302]> ifconfig eth0
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
           inet6 fe80::ff:fe00:1%eth0  prefixlen 64  scopeid 0x20<link>
-          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          ether 02:00:00:aa:bb:cc  txqueuelen 1000  (Ethernet)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
           TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [43/302]> ifconfig lo
-  ifconfig: error: lo: Device not found
+  lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+          inet 127.0.0.1  netmask 255.0.0.0
+          inet6 ::1  prefixlen 128  scopeid 0x0<global>
+          loop  txqueuelen 1000  (Local Loopback)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [44/302]> ifconfig -s
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
           inet6 fe80::ff:fe00:1%eth0  prefixlen 64  scopeid 0x20<link>
-          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          ether 02:00:00:aa:bb:cc  txqueuelen 1000  (Ethernet)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -407,6 +441,15 @@ $ [44/302]> ifconfig -s
   
   eth3: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           ether 02:00:00:00:00:04  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+          inet 127.0.0.1  netmask 255.0.0.0
+          inet6 ::1  prefixlen 128  scopeid 0x0<global>
+          loop  txqueuelen 1000  (Local Loopback)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -419,7 +462,7 @@ $ [46/302]> ifconfig eth0
   eth0: flags=4098<BROADCAST,MULTICAST>  mtu 1500
           inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
           inet6 fe80::ff:fe00:1%eth0  prefixlen 64  scopeid 0x20<link>
-          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          ether 02:00:00:aa:bb:cc  txqueuelen 1000  (Ethernet)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -435,7 +478,7 @@ $ [49/302]> ifconfig eth0
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           inet 192.168.20.2  netmask 255.255.255.0  broadcast 192.168.20.255
           inet6 fe80::ff:fe00:1%eth0  prefixlen 64  scopeid 0x20<link>
-          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          ether 02:00:00:aa:bb:cc  txqueuelen 1000  (Ethernet)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -448,7 +491,7 @@ $ [51/302]> ifconfig eth0
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
           inet 192.168.20.2  netmask 255.255.255.0  broadcast 192.168.20.255
           inet6 fe80::ff:fe00:1%eth0  prefixlen 64  scopeid 0x20<link>
-          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          ether 02:00:00:aa:bb:cc  txqueuelen 1000  (Ethernet)
           RX packets 0  bytes 0 (0.0 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 0  bytes 0 (0.0 KiB)
@@ -963,6 +1006,7 @@ $ [159/302]> netstat -i
   eth1          1500        0      0      0 0                0      0      0      0 BMU
   eth2          1500        0      0      0 0                0      0      0      0 BMU
   eth3          1500        0      0      0 0                0      0      0      0 BMU
+  lo           65536        0      0      0 0                0      0      0      0 BMRU
   lo        65536      128      0      0 0           128      0      0      0 LRU
 
 $ [160/302]> netstat -rn
@@ -1011,18 +1055,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-08-07 17:39:34--  http://192.168.10.1
+  --2026-08-10 19:32:39--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-08-07 17:39:34--  http://192.168.10.1
+  --2026-08-10 19:32:39--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-08-07 17:39:34--  http://192.168.10.99
+  --2026-08-10 19:32:39--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1166,6 +1210,7 @@ $ [214/302]> tcpdump -D
   3.eth1 [Up, Running]
   4.eth2 [Up, Running]
   5.eth3 [Up, Running]
+  6.lo [Up, Running]
 
 $ [215/302]> arping -c 1 192.168.10.1
   ARPING 192.168.10.1
@@ -1188,11 +1233,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 77 Aug  7 17:39 /tmp/id_rsa
-  -rw-r--r-- 1 user user 37 Aug  7 17:39 /tmp/id_rsa.pub
+  -rw------- 1 user user 77 Aug 10 19:32 /tmp/id_rsa
+  -rw-r--r-- 1 user user 38 Aug 10 19:32 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAr0w3yxmgj7 user@linux-pc
+  ssh-rsa AAAAjxgbotxz5ec user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1201,7 +1246,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAic724ukwukh user@localhost
+  ssh-ed25519 AAAA8fa4epiavkm user@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1219,23 +1264,23 @@ $ [227/302]> dhclient eth0
 
 $ [228/302]> dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
-  Listening on LPF/eth0/02:00:00:00:00:01
-  Sending on   LPF/eth0/02:00:00:00:00:01
+  Listening on LPF/eth0/02:00:00:aa:bb:cc
+  Sending on   LPF/eth0/02:00:00:aa:bb:cc
   INIT-REBOOT state
-  DHCPREQUEST for 169.254.1.1 on eth0 to 255.255.255.255 port 67
+  DHCPREQUEST for 169.254.188.204 on eth0 to 255.255.255.255 port 67
   DHCPNAK or no response - reverting to DHCPDISCOVER
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
   No DHCPOFFERS received.
-  Trying recorded lease 169.254.1.1
+  Trying recorded lease 169.254.188.204
   bound: renewal in 43200 seconds.
 
 $ [229/302]> dhclient -r eth0
-  released 169.254.1.1
+  released 169.254.188.204
 
 $ [230/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -1258,8 +1303,9 @@ $ [235/302]> ip route add default via 192.168.50.1
 
 $ [236/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -1279,7 +1325,7 @@ $ [239/302]> ip neigh
 <empty>
 
 $ [240/302]> ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            DOWN          192.168.50.10/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1298,11 +1344,11 @@ $ [243/302]> ip route
 
 --- [244] § inventaire réseau consolidé ---
 $ [244/302]> ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
   
   3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
@@ -1314,7 +1360,7 @@ $ [244/302]> ip -br link
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [245/302]> ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            DOWN          192.168.50.10/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1339,7 +1385,7 @@ $ [251/302]> hostname
   linux-pc
 
 $ [252/302]> ip addr show | grep inet
-      inet 127.0.0.1/8 brd 127.255.255.255 scope host lo
+      inet 127.0.0.1/8 scope host lo
       inet6 ::1/128 scope host
       inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
       inet6 fe80::ff:fe00:1/64 scope link
@@ -1347,13 +1393,13 @@ $ [252/302]> ip addr show | grep inet
 
 --- [253] § IPv6 — adresses & routes ---
 $ [253/302]> ip -6 addr show
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP group default
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
       link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
       inet6 ::1/128 scope host
          valid_lft forever preferred_lft forever
   
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
   
@@ -1368,7 +1414,7 @@ $ [253/302]> ip -6 addr show
 
 $ [254/302]> ip -6 addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -1383,7 +1429,7 @@ $ [257/302]> ip addr add 2001:db8::10/64 dev eth0
 
 $ [258/302]> ip -6 addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
       inet6 2001:db8::10/64 scope global
@@ -1393,6 +1439,7 @@ $ [259/302]> ip -6 route add default via 2001:db8::1
   Command "add" is unknown, try "ip route help".
 
 $ [260/302]> ip -6 route show
+  fe80::/10 dev eth0 proto kernel metric 0 pref medium
   2001:db8::/64 dev eth0 proto kernel metric 0 pref medium
 
 $ [261/302]> ping6 -c 1 ::1
@@ -1416,7 +1463,7 @@ $ [263/302]> ip addr del 2001:db8::10/64 dev eth0
 
 $ [264/302]> ip -6 addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
       inet6 2001:db8::10/64 scope global
@@ -1429,13 +1476,13 @@ $ [266/302]> cat /proc/sys/net/ipv6/conf/all/disable_ipv6
   cat: /proc/sys/net/ipv6/conf/all/disable_ipv6: No such file or directory
 
 $ [267/302]> ip link show eth0 | grep -i link
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
 
 
 --- [268] § statistiques & compteurs ---
 $ [268/302]> ip -s link show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       RX:  bytes packets errors dropped  missed   mcast
           0       0      0       0       0       0
       TX:  bytes packets errors dropped carrier collsns
@@ -1457,6 +1504,7 @@ $ [271/302]> netstat -i
   eth1          1500        0      0      0 0                0      0      0      0 BMU
   eth2          1500        0      0      0 0                0      0      0      0 BMU
   eth3          1500        0      0      0 0                0      0      0      0 BMU
+  lo           65536        0      0      0 0                0      0      0      0 BMRU
   lo        65536      128      0      0 0           128      0      0      0 LRU
 
 $ [272/302]> ss -s
@@ -1487,7 +1535,7 @@ $ [274/302]> cat /proc/net/sockstat
 
 $ [275/302]> ip -s -s link show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       RX:  bytes packets errors dropped  missed   mcast
           0       0      0       0       0       0
       TX:  bytes packets errors dropped carrier collsns
@@ -1603,7 +1651,7 @@ $ [288/302]> ethtool -S eth0
        rx_errors: 0
        tx_errors: 0
        rx_dropped: 0
-       tx_dropped: 4
+       tx_dropped: 6
        rx_crc_errors: 0
        collisions: 0
 
@@ -1614,7 +1662,7 @@ $ [290/302]> cat /sys/class/net/eth0/mtu
   1500
 
 $ [291/302]> cat /sys/class/net/eth0/address
-  02:00:00:00:00:01
+  02:00:00:aa:bb:cc
 
 $ [292/302]> cat /sys/class/net/eth0/operstate
   down

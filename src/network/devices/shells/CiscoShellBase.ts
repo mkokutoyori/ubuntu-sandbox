@@ -13,6 +13,8 @@
  */
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
+import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
+import { ntpConfigLines } from './cisco/ciscoNtpConfig';
 import { CommandTrie } from './CommandTrie';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
@@ -887,6 +889,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * lui faut alors un `flash:` à décrire.
    */
   private _fs: CiscoFileSystem | null = null;
+  protected ntpConfigLines(): string[] {
+    return ntpConfigLines(this.d());
+  }
+
+
+
+  protected showStartupConfig(): string {
+    const dev = this.deviceRef as unknown as {
+      getStartupConfigSnapshot?: () => string | null;
+      getStartupConfig?: () => string | null;
+    } | null;
+    const snapshot = dev?.getStartupConfigSnapshot?.() ?? dev?.getStartupConfig?.() ?? null;
+    if (snapshot === null) return '% startup-config is not present';
+    return renderStartupConfig(snapshot, this.fs().nvramTotalBytes());
+  }
+
   protected fs(): CiscoFileSystem {
     const dev = this.deviceRef as unknown as {
       _getCiscoFileSystem?: (
@@ -1501,7 +1519,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // noms (« Translating "help"… »), en configuration il répondait au
     // caret. C'est le texte d'IOS, mot pour mot.
     if (lower === 'help') return HELP_SYSTEM_TEXT;
-    if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
+    if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) {
+      return this.fermerSessionExec();
+    }
     // `disable [niveau]` — IOS accepte un niveau de destination, et
     // c'est la moitie de la manoeuvre d'escalade temporaire : on monte a
     // 15 pour l'intervention, on REDESCEND ensuite. Seul `disable` nu
@@ -2058,11 +2078,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * quitte les droits d'administration les gardait — et le terminal, ne
    * recevant aucune annonce, gardait l'onglet ouvert.
    */
+  protected fermerSessionExec(): string {
+    this.terminalMonitor = false;
+    this.currentPrivilegeLevel = 1;
+    this.mode = 'user';
+    this.fsm.mode = 'user';
+    return 'Connection closed.';
+  }
+
   protected cmdExit(): string {
-    if (this.mode === 'user' || this.mode === 'privileged') {
-      this.terminalMonitor = false;
-      return 'Connection closed.';
-    }
+    if (this.mode === 'user' || this.mode === 'privileged') return this.fermerSessionExec();
     const wasConfig = this.isConfigMode();
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
@@ -3502,7 +3527,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const target = this.resolveNtpTarget(args[0]);
       if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
       const agent = getNtpAgent(this.d());
-      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer', undefined, 'sntp');
       return '';
     });
     this.configTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
@@ -3511,7 +3536,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
       const agent = getNtpAgent(this.d());
-      if (agent) agent.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      if (agent) agent.addServer(target, args[1]?.toLowerCase() === 'prefer', undefined, 'sntp');
       else dev._recordUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
       return '';
     });

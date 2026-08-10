@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-08-08T00:33:04.997Z
+Generated: 2026-08-10T19:33:11.251Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -65,10 +65,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [4/482] r1 R1> show calendar
-  00:33:05 UTC Sat Aug 8 2026
+  19:33:11 UTC Mon Aug 10 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -157,7 +157,7 @@ Total steps: 482
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -236,36 +236,20 @@ Total steps: 482
 [20/482] r1 R1> show interfaces summary
    Interface                IHQ   IQD  OHQ   OQD  RXBS RXPS  TXBS  TXPS  TRTL
   --------------------------------------------------------------------------
-   GigabitEthernet0/0        0     0    0     0     0    0     0     0     0
-   GigabitEthernet0/1        0     0    0     0     0    0     0     0     0
-   GigabitEthernet0/2        0     0    0     0     0    0     0     0     0
-   GigabitEthernet0/3        0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/0         0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/1         0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/2         0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/3         0     0    0     0     0    0     0     0     0
 
 [21/482] r1 R1> show ip interface
   GigabitEthernet0/0 is up, line protocol is up
     Internet protocol processing disabled
-    Broadcast address is 255.255.255.255
-    MTU is 1500 bytes
-    ICMP redirects are always sent
-    Proxy ARP is enabled
   GigabitEthernet0/1 is up, line protocol is up
     Internet protocol processing disabled
-    Broadcast address is 255.255.255.255
-    MTU is 1500 bytes
-    ICMP redirects are always sent
-    Proxy ARP is enabled
   GigabitEthernet0/2 is down, line protocol is down
     Internet protocol processing disabled
-    Broadcast address is 255.255.255.255
-    MTU is 1500 bytes
-    ICMP redirects are always sent
-    Proxy ARP is enabled
   GigabitEthernet0/3 is down, line protocol is down
     Internet protocol processing disabled
-    Broadcast address is 255.255.255.255
-    MTU is 1500 bytes
-    ICMP redirects are always sent
-    Proxy ARP is enabled
 
 [22/482] r1 R1> show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -438,11 +422,11 @@ Total steps: 482
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 5 messages logged, xml disabled,
+      Console logging: level debugging, 4 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 5 messages logged, xml disabled,
+      Monitor logging: level debugging, 4 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 5 messages logged, xml disabled,
+      Buffer logging:  level debugging, 4 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -451,16 +435,15 @@ Total steps: 482
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 5 message lines logged
+      Trap logging: level informational, 4 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:33:04.990: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:33:04.990: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:33:04.993: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:33:04.993: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:33:04.994: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug 10 19:33:11.232: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:11.240: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:11.247: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:11.247: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [42/482] r1 R1> show snmp
   Chassis: FTX1234567A
@@ -469,10 +452,14 @@ Total steps: 482
   0 SNMP packets output
 
 [43/482] r1 R1> show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE20F7C1.05E353F7 (00:33:05.023 UTC Sat Aug 8 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE24A5F7.49BA5E35 (19:33:11.288 UTC Mon Aug 10 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [44/482] r1 R1> show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -600,8 +587,9 @@ Total steps: 482
   Host                      Port  Flags      Age Type   Address(es)
 
 [61/482] r1 R1> show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [62/482] r1 R1> show ssh
   No SSHv2 server connections running.
@@ -660,12 +648,15 @@ Total steps: 482
     event       Embedded Event Manager
     exit        Exit from the EXEC
     help        Description of the interactive help system
+    mkdir       Create a directory
     more        Display a file
     no          Negate a command or set its defaults
     ping        Send echo messages
     pwd         Display current working directory
     resume      Resume an outgoing connection
+    rmdir       Remove a directory
     show        Show running system information
+    squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
     terminal    Set terminal parameters
@@ -676,6 +667,7 @@ Total steps: 482
 [72/482] r1 R1> show ?
     aaa            Display AAA state
     access-lists   Display all access lists
+    accounting     Display accounting records
     adjacency      Display CEF adjacency table
     aliases        Display command aliases
     arp            Display ARP table
@@ -715,8 +707,9 @@ Total steps: 482
     logging        Show the contents of logging buffers
     login          Display login config
     memory         Display memory statistics
-    ntp            Display NTP associations
+    ntp            Network Time Protocol
     parameter-map  Display parameter-map
+    parser         Display parser information
     platform       Display platform information
     policy-map     Show policy-map
     privilege      Display current privilege level
@@ -744,6 +737,7 @@ Total steps: 482
     vlans          Display VLANs (router)
     vrf            Display VRFs
     vrrp           Display VRRP state
+    who            Display active lines
     zone           Display security zone
     zone-pair      Display security zone-pair
 
@@ -797,10 +791,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [81/482] r1 R1# show calendar
-  00:33:05 UTC Sat Aug 8 2026
+  19:33:11 UTC Mon Aug 10 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -954,7 +948,7 @@ Total steps: 482
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1033,36 +1027,20 @@ Total steps: 482
 [97/482] r1 R1# show interfaces summary
    Interface                IHQ   IQD  OHQ   OQD  RXBS RXPS  TXBS  TXPS  TRTL
   --------------------------------------------------------------------------
-   GigabitEthernet0/0        0     0    0     0     0    0     0     0     0
-   GigabitEthernet0/1        0     0    0     0     0    0     0     0     0
-   GigabitEthernet0/2        0     0    0     0     0    0     0     0     0
-   GigabitEthernet0/3        0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/0         0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/1         0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/2         0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/3         0     0    0     0     0    0     0     0     0
 
 [98/482] r1 R1# show ip interface
   GigabitEthernet0/0 is up, line protocol is up
     Internet protocol processing disabled
-    Broadcast address is 255.255.255.255
-    MTU is 1500 bytes
-    ICMP redirects are always sent
-    Proxy ARP is enabled
   GigabitEthernet0/1 is up, line protocol is up
     Internet protocol processing disabled
-    Broadcast address is 255.255.255.255
-    MTU is 1500 bytes
-    ICMP redirects are always sent
-    Proxy ARP is enabled
   GigabitEthernet0/2 is down, line protocol is down
     Internet protocol processing disabled
-    Broadcast address is 255.255.255.255
-    MTU is 1500 bytes
-    ICMP redirects are always sent
-    Proxy ARP is enabled
   GigabitEthernet0/3 is down, line protocol is down
     Internet protocol processing disabled
-    Broadcast address is 255.255.255.255
-    MTU is 1500 bytes
-    ICMP redirects are always sent
-    Proxy ARP is enabled
 
 [99/482] r1 R1# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -1235,11 +1213,11 @@ Total steps: 482
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 5 messages logged, xml disabled,
+      Console logging: level debugging, 4 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 5 messages logged, xml disabled,
+      Monitor logging: level debugging, 4 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 5 messages logged, xml disabled,
+      Buffer logging:  level debugging, 4 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1248,16 +1226,15 @@ Total steps: 482
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 5 message lines logged
+      Trap logging: level informational, 4 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:33:04.990: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:33:04.990: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:33:04.993: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:33:04.993: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:33:04.994: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug 10 19:33:11.232: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:11.240: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:11.247: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:11.247: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [119/482] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1266,10 +1243,14 @@ Total steps: 482
   0 SNMP packets output
 
 [120/482] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE20F7C1.147AE147 (00:33:05.080 UTC Sat Aug 8 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE24A5F7.59DB22D0 (19:33:11.351 UTC Mon Aug 10 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [121/482] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -1397,8 +1378,9 @@ Total steps: 482
   Host                      Port  Flags      Age Type   Address(es)
 
 [138/482] r1 R1# show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [139/482] r1 R1# show ssh
   No SSHv2 server connections running.
@@ -1521,7 +1503,7 @@ Total steps: 482
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1634,11 +1616,11 @@ Total steps: 482
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 5 messages logged, xml disabled,
+      Console logging: level debugging, 4 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 5 messages logged, xml disabled,
+      Monitor logging: level debugging, 4 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 5 messages logged, xml disabled,
+      Buffer logging:  level debugging, 4 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1647,16 +1629,15 @@ Total steps: 482
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 5 message lines logged
+      Trap logging: level informational, 4 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:33:04.990: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:33:04.990: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:33:04.993: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:33:04.993: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:33:04.994: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug 10 19:33:11.232: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:11.240: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:11.247: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:11.247: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [146/482] r1 R1# show diag
   Slot 0:
@@ -1691,7 +1672,7 @@ Total steps: 482
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1702,10 +1683,10 @@ Total steps: 482
 [150/482] r1 R1# show interfaces GigabitEthernet0/0 stats
   GigabitEthernet0/0
             Switching path    Pkts In    Chars In    Pkts Out   Chars Out
-                 Processor          0           0           1          64
+                 Processor          2         160           1          64
                Route cache          0           0           0           0
-        Distributed cache          0           0           0           0
-                    Total          0           0           1          64
+         Distributed cache          0           0           0           0
+                     Total          2         160           1          64
 
 [151/482] r1 R1# show interfaces accounting
   GigabitEthernet0/0
@@ -1735,7 +1716,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1744,7 +1725,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1753,7 +1734,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1762,7 +1743,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1771,7 +1752,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1780,7 +1761,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1789,7 +1770,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1798,7 +1779,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1807,7 +1788,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1816,7 +1797,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1825,7 +1806,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1834,7 +1815,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1843,7 +1824,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1852,7 +1833,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1861,7 +1842,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1870,7 +1851,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1879,7 +1860,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1888,7 +1869,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1897,7 +1878,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1906,7 +1887,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1915,7 +1896,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1924,7 +1905,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config-vrf)# do show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [221/482] r1 R1(config-vrf)# exit
 <empty>
@@ -2145,31 +2126,34 @@ Total steps: 482
     rip    Enter RIP routing protocol configuration
 
 [258/482] r1 R1-EDGE(config)# no ?
-    access-list  Remove an access list
-    alias        Remove a command alias
-    arp          Remove ARP entry
-    banner       Remove a banner
-    boot         Boot Commands
-    cdp          CDP global configuration
-    crypto       Encryption and key management
-    enable       Modify enable password parameters
-    event        Embedded Event Manager
-    hostname     Reset hostname
-    interface    Remove a virtual interface
-    ip           Global IP configuration subcommands
-    ipv6         Global IPv6 configuration subcommands
-    key          Key management
-    line         Remove line configuration
-    lldp         LLDP global configuration
-    logging      Modify message logging facilities
-    ntp          Remove NTP config
-    privilege    Remove privilege command rule
-    route-map    Remove a route-map
-    router       Enable a routing protocol
-    service      Disable a service
-    sntp         Configure SNTP
-    track        Remove a tracked object
-    username     Remove a local user
+    access-list    Remove an access list
+    alias          Remove a command alias
+    arp            Remove ARP entry
+    banner         Remove a banner
+    boot           Boot Commands
+    cdp            CDP global configuration
+    crypto         Encryption and key management
+    enable         Modify enable password parameters
+    event          Embedded Event Manager
+    hostname       Reset hostname
+    interface      Remove a virtual interface
+    ip             Global IP configuration subcommands
+    ipv6           Global IPv6 configuration subcommands
+    key            Key management
+    line           Remove line configuration
+    lldp           LLDP global configuration
+    logging        Modify message logging facilities
+    ntp            Network Time Protocol
+    parser         Negate a parser command
+    privilege      Remove privilege command rule
+    radius-server  Remove legacy radius host
+    route-map      Remove a route-map
+    router         Enable a routing protocol
+    service        Disable a service
+    sntp           Configure SNTP
+    tacacs-server  Remove legacy tacacs host
+    track          Remove a tracked object
+    username       Remove a local user
 
 [259/482] r1 R1-EDGE(config)# crypto ?
     dynamic-map  Define a dynamic crypto map
@@ -2216,16 +2200,16 @@ Total steps: 482
     userinfo          Enable logging of user info on privileged mode enabling
 
 [263/482] r1 R1-EDGE(config)# ntp ?
-    access-group        Specify access control for packets
-    authenticate        Authentication configuration
-    authentication-key  Authentication key
-    master              Master
-    md5                 MD5 authentication
-    peer                Peer
-    prefer              Preferred server
-    server              Server
-    source              Source
-    trusted-key         Trusted authentication key
+    access-group        Control NTP access
+    allow               Allow processing of packets
+    authenticate        Authenticate time sources
+    authentication-key  Authentication key for trusted time sources
+    master              Act as NTP master clock
+    peer                Configure NTP peer
+    server              Configure NTP server
+    source              Configure interface for source address
+    trusted-key         Key numbers for trusted time sources
+    update-calendar     Periodically update calendar from NTP
 
 [264/482] r1 R1-EDGE(config)# clock ?
     set          Set system clock
@@ -2234,8 +2218,10 @@ Total steps: 482
     <cr>         
 
 [265/482] r1 R1-EDGE(config)# banner ?
-    motd  Message of the day banner
-    <cr>  
+    exec      EXEC process
+    incoming  Incoming
+    login     Login configuration
+    motd      Message of the day banner
 
 [266/482] r1 R1-EDGE(config)# aaa ?
     accounting      Accounting configuration
@@ -2247,12 +2233,17 @@ Total steps: 482
     session-id      AAA Session ID
 
 [267/482] r1 R1-EDGE(config)# username ?
-    description  Description text
-    nopassword   No password required
-    password     Password
-    privilege    Privilege level
-    secret       Encrypted secret
-    <cr>         
+    algorithm-type  Algorithm used to hash the password
+    description     Description text
+    md5             MD5 authentication
+    nopassword      No password required
+    password        Password
+    privilege       Privilege level
+    scrypt          Use the scrypt hashing algorithm
+    secret          Encrypted secret
+    sha256          Use the SHA-256 hashing algorithm
+    view            Command-line interface view
+    <cr>            
 
 [268/482] r1 R1-EDGE(config)# line ?
     aux      Auxiliary line
@@ -2451,7 +2442,7 @@ Total steps: 482
 [313/482] r1 R1-EDGE# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1283 bytes
+  Current configuration : 1364 bytes
   no service password-encryption
   no service bootp-server
   no service finger
@@ -2521,16 +2512,22 @@ Total steps: 482
    no ip address
   !
   interface Loopback0
+  !
   interface Tunnel0
   !
   router eigrp 100
+  !
   router bgp 65000
+  !
   router ospf 1
   !
+  ! Last configuration change at 19:33:11 UTC Mon Aug 10 2026 by console
   ip vrf CUST
   no logging buffered
   no cdp run
+  !
   class-map match-all CM1
+  !
   policy-map PM1
   !
   route-map RM1 permit 10
@@ -2562,12 +2559,15 @@ Total steps: 482
    no ip address
   !
   interface Loopback0
+  !
   interface Tunnel0
   !
 
 [316/482] r1 R1-EDGE# show running-config | section router
   router eigrp 100
+  !
   router bgp 65000
+  !
   router ospf 1
   !
 
@@ -2613,7 +2613,7 @@ Total steps: 482
 [325/482] r1 R1-EDGE# show running-config | tee flash:cfg.txt
   Building configuration...
   
-  Current configuration : 1283 bytes
+  Current configuration : 1364 bytes
   !
   no service password-encryption
   no service bootp-server
@@ -2664,16 +2664,22 @@ Total steps: 482
    no ip address
   !
   interface Loopback0
+  !
   interface Tunnel0
   !
   router eigrp 100
+  !
   router bgp 65000
+  !
   router ospf 1
   !
+  ! Last configuration change at 19:33:11 UTC Mon Aug 10 2026 by console
   ip vrf CUST
   no logging buffered
   no cdp run
+  !
   class-map match-all CM1
+  !
   policy-map PM1
   !
   route-map RM1 permit 10
@@ -2798,7 +2804,7 @@ Total steps: 482
 [359/482] r1 R1-EDGE# sr
   Building configuration...
   
-  Current configuration : 1761 bytes
+  Current configuration : 1842 bytes
   !
   service password-encryption
   no service bootp-server
@@ -2854,19 +2860,25 @@ Total steps: 482
    no ip address
   !
   interface Loopback0
+  !
   interface Tunnel0
   !
   router eigrp 100
+  !
   router bgp 65000
+  !
   router ospf 1
   !
+  ! Last configuration change at 19:33:11 UTC Mon Aug 10 2026 by console
   alias exec sr show running-config
   alias exec sib show ip interface brief
   ip vrf CUST
   privilege exec level 5 show running-config
   no logging buffered
   no cdp run
+  !
   class-map match-all CM1
+  !
   policy-map PM1
   !
   route-map RM1 permit 10
@@ -2926,15 +2938,14 @@ Total steps: 482
 
 [364/482] r1 R1-EDGE# copy startup-config running-config
   Destination filename [running-config]?
-  [OK]
+  1976 bytes copied
 
 [365/482] r1 R1-EDGE# copy running-config tftp:
-  Destination filename [tftp:]?
-  Writing tftp: ... [OK]
+  %Error: no remote host in the destination URL (write it as tftp://<address>/<filename>).
 
 [366/482] r1 R1-EDGE# copy running-config flash:backup.cfg
-  Destination filename [flash:backup.cfg]?
-  Writing flash:backup.cfg ... [OK]
+  Destination filename [backup.cfg]?
+  1976 bytes copied
 
 [367/482] r1 R1-EDGE# write erase
   Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]
@@ -2996,7 +3007,7 @@ Total steps: 482
 [375/482] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1660 bytes
+  Current configuration : 1812 bytes
   !
   service password-encryption
   no service bootp-server
@@ -3052,17 +3063,24 @@ Total steps: 482
    no ip address
   !
   interface Loopback0
+  !
   interface Tunnel0
   !
   router eigrp 100
+  !
   router bgp 65000
+  !
   router ospf 1
   !
+  ! Last configuration change at 19:33:11 UTC Mon Aug 10 2026 by console
+  ! NVRAM config last updated at 19:33:11 UTC Mon Aug 10 2026 by console
   ip vrf CUST
   privilege exec level 5 show running-config
   no logging buffered
   no cdp run
+  !
   class-map match-all CM1
+  !
   policy-map PM1
   !
   route-map RM1 permit 10
@@ -3112,7 +3130,7 @@ Total steps: 482
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       3 packets input, 234 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -3178,6 +3196,25 @@ Total steps: 482
        0 input drops, 0 output drops
   Loopback0 is up, line protocol is up
     Hardware is Loopback
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Tunnel protocol/transport GRE/IP
@@ -3393,9 +3430,9 @@ Total steps: 482
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 18 messages logged, xml disabled,
+      Console logging: level debugging, 12 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 18 messages logged, xml disabled,
+      Monitor logging: level debugging, 12 messages logged, xml disabled,
                        filtering disabled
       Buffer logging:  disabled
       Exception Logging: size (4096 bytes)
@@ -3405,7 +3442,7 @@ Total steps: 482
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 18 message lines logged
+      Trap logging: level informational, 12 message lines logged
           No active syslog hosts
 
 [409/482] r1 R1# show snmp
@@ -3415,17 +3452,21 @@ Total steps: 482
   0 SNMP packets output
 
 [410/482] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE20F7C1.3D70A3D7 (00:33:05.240 UTC Sat Aug 8 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE24A5F7.E872B020 (19:33:11.908 UTC Mon Aug 10 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [411/482] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [412/482] r1 R1# show clock
-  *00:33:05.000 UTC Sat Aug 8 2026
+  *19:33:11.000 UTC Mon Aug 10 2026
 
 [413/482] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3466,9 +3507,10 @@ Total steps: 482
   
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
-      3  -rwx         1346   Aug 08 2026 00:33:05  cfg.txt
+      3  -rwx         1427   Aug 10 2026 19:33:11  cfg.txt
+      4  -rwx         1976   Aug 10 2026 19:33:11  backup.cfg
   
-  256016384 bytes total (169778878 bytes free)
+  256016384 bytes total (169776821 bytes free)
 
 [418/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -3540,7 +3582,7 @@ Total steps: 482
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       3 packets input, 234 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -3571,24 +3613,7 @@ Total steps: 482
 
 [423/482] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 192 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 256 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Internet protocol processing disabled
 
 [424/482] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -3640,7 +3665,7 @@ Total steps: 482
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 1660 bytes
+  Current configuration : 1812 bytes
   !
   service password-encryption
   no service bootp-server
@@ -3696,17 +3721,24 @@ Total steps: 482
    no ip address
   !
   interface Loopback0
+  !
   interface Tunnel0
   !
   router eigrp 100
+  !
   router bgp 65000
+  !
   router ospf 1
   !
+  ! Last configuration change at 19:33:11 UTC Mon Aug 10 2026 by console
+  ! NVRAM config last updated at 19:33:11 UTC Mon Aug 10 2026 by console
   ip vrf CUST
   privilege exec level 5 show running-config
   no logging buffered
   no cdp run
+  !
   class-map match-all CM1
+  !
   policy-map PM1
   !
   route-map RM1 permit 10
@@ -3767,7 +3799,7 @@ Total steps: 482
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       3 packets input, 234 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -3833,6 +3865,25 @@ Total steps: 482
        0 input drops, 0 output drops
   Loopback0 is up, line protocol is up
     Hardware is Loopback
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Tunnel protocol/transport GRE/IP
@@ -3907,9 +3958,9 @@ Total steps: 482
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 18 messages logged, xml disabled,
+      Console logging: level debugging, 12 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 18 messages logged, xml disabled,
+      Monitor logging: level debugging, 12 messages logged, xml disabled,
                        filtering disabled
       Buffer logging:  disabled
       Exception Logging: size (4096 bytes)
@@ -3919,7 +3970,7 @@ Total steps: 482
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 18 message lines logged
+      Trap logging: level informational, 12 message lines logged
           No active syslog hosts
 
 [426/482] r1 R1# show inventory
@@ -3954,8 +4005,9 @@ Total steps: 482
   Host                      Port  Flags      Age Type   Address(es)
 
 [432/482] r1 R1# show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [433/482] r1 R1# show line
      Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
@@ -4008,6 +4060,7 @@ Total steps: 482
    no ip address
   !
   interface Loopback0
+  !
   interface Tunnel0
   !
 
@@ -4027,17 +4080,24 @@ Total steps: 482
    no ip address
   !
   interface Loopback0
+  !
   interface Tunnel0
   !
   router eigrp 100
+  !
   router bgp 65000
+  !
   router ospf 1
   !
+  ! Last configuration change at 19:33:11 UTC Mon Aug 10 2026 by console
+  ! NVRAM config last updated at 19:33:11 UTC Mon Aug 10 2026 by console
   ip vrf CUST
   privilege exec level 5 show running-config
   no logging buffered
   no cdp run
+  !
   class-map match-all CM1
+  !
   policy-map PM1
   !
   route-map RM1 permit 10
@@ -4065,7 +4125,7 @@ Total steps: 482
 [439/482] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1660 bytes
+  Current configuration : 1812 bytes
   service password-encryption
   no service bootp-server
   no service finger
@@ -4352,37 +4412,40 @@ Total steps: 482
     <cr>         
 
 [479/482] r1 R1(config)# no ?
-    access-list  Remove an access list
-    alias        Remove a command alias
-    arp          Remove ARP entry
-    banner       Remove a banner
-    boot         Boot Commands
-    cdp          CDP global configuration
-    crypto       Encryption and key management
-    enable       Modify enable password parameters
-    event        Embedded Event Manager
-    hostname     Reset hostname
-    interface    Remove a virtual interface
-    ip           Global IP configuration subcommands
-    ipv6         Global IPv6 configuration subcommands
-    key          Key management
-    line         Remove line configuration
-    lldp         LLDP global configuration
-    logging      Modify message logging facilities
-    ntp          Remove NTP config
-    privilege    Remove privilege command rule
-    route-map    Remove a route-map
-    router       Enable a routing protocol
-    service      Disable a service
-    sntp         Configure SNTP
-    track        Remove a tracked object
-    username     Remove a local user
+    access-list    Remove an access list
+    alias          Remove a command alias
+    arp            Remove ARP entry
+    banner         Remove a banner
+    boot           Boot Commands
+    cdp            CDP global configuration
+    crypto         Encryption and key management
+    enable         Modify enable password parameters
+    event          Embedded Event Manager
+    hostname       Reset hostname
+    interface      Remove a virtual interface
+    ip             Global IP configuration subcommands
+    ipv6           Global IPv6 configuration subcommands
+    key            Key management
+    line           Remove line configuration
+    lldp           LLDP global configuration
+    logging        Modify message logging facilities
+    ntp            Network Time Protocol
+    parser         Negate a parser command
+    privilege      Remove privilege command rule
+    radius-server  Remove legacy radius host
+    route-map      Remove a route-map
+    router         Enable a routing protocol
+    service        Disable a service
+    sntp           Configure SNTP
+    tacacs-server  Remove legacy tacacs host
+    track          Remove a tracked object
+    username       Remove a local user
 
 [480/482] r1 R1(config)# end
 <empty>
 
 [481/482] r1 R1# show running-config | count !
-  23
+  30
 
 [482/482] r1 R1# write memory
   Building configuration...

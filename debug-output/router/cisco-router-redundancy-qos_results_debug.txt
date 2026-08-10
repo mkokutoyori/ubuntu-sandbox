@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-08-08T00:34:30.980Z
+Generated: 2026-08-10T19:33:20.313Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1638,7 +1638,7 @@ Total steps: 413
 [306/413] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 3048 bytes
+  Current configuration : 3119 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1732,6 +1732,7 @@ Total steps: 413
   ip access-list extended VIDEO
    permit tcp any any eq 1720
   !
+  ! Last configuration change at 19:33:20 UTC Mon Aug 10 2026 by console
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
   !
@@ -1795,7 +1796,7 @@ Total steps: 413
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -2124,11 +2125,11 @@ Total steps: 413
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 31 messages logged, xml disabled,
+      Console logging: level debugging, 29 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 31 messages logged, xml disabled,
+      Monitor logging: level debugging, 29 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 31 messages logged, xml disabled,
+      Buffer logging:  level debugging, 29 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2137,42 +2138,40 @@ Total steps: 413
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 31 message lines logged
+      Trap logging: level informational, 29 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:34:30.974: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:30.974: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:30.976: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:30.977: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:30.978: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:30.986: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:30.988: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state init -> speak
-  *Aug  8 00:34:30.989: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state speak -> active
-  *Aug  8 00:34:30.997: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
-  *Aug  8 00:34:31.000: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state init -> speak
-  *Aug  8 00:34:31.000: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state speak -> active
-  *Aug  8 00:34:31.000: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
-  *Aug  8 00:34:31.002: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state init -> speak
-  *Aug  8 00:34:31.002: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state speak -> active
-  *Aug  8 00:34:31.002: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
-  *Aug  8 00:34:31.003: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state init -> speak
-  *Aug  8 00:34:31.003: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state speak -> active
-  *Aug  8 00:34:31.003: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
-  *Aug  8 00:34:31.004: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.006: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 1 state init -> master
-  *Aug  8 00:34:31.007: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 2 state init -> master
-  *Aug  8 00:34:31.008: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 3 state init -> master
-  *Aug  8 00:34:31.008: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.010: %GLBP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Fwd 1 assigned MAC 00:07:b4:00:01:01
-  *Aug  8 00:34:31.010: %GLBP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 AVG state init -> active
-  *Aug  8 00:34:31.015: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.017: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.028: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.032: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.036: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.038: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.304: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:20.305: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:20.307: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:20.307: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:20.326: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.328: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
+  *Aug 10 19:33:20.330: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
+  *Aug 10 19:33:20.331: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  *Aug 10 19:33:20.334: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
+  *Aug 10 19:33:20.335: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
+  *Aug 10 19:33:20.335: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  *Aug 10 19:33:20.337: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
+  *Aug 10 19:33:20.337: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
+  *Aug 10 19:33:20.338: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  *Aug 10 19:33:20.339: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
+  *Aug 10 19:33:20.339: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
+  *Aug 10 19:33:20.340: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  *Aug 10 19:33:20.341: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.345: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
+  *Aug 10 19:33:20.347: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
+  *Aug 10 19:33:20.348: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
+  *Aug 10 19:33:20.349: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.351: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Aug 10 19:33:20.370: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.373: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.399: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.405: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.410: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.413: %SYS-5-CONFIG_I: Configured from console by console
 
 [340/413] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2181,17 +2180,21 @@ Total steps: 413
   0 SNMP packets output
 
 [341/413] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE20F817.174BC6A7 (00:34:31.091 UTC Sat Aug 8 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE24A600.76041893 (19:33:20.461 UTC Mon Aug 10 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [342/413] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [343/413] r1 R1# show clock
-  *00:34:31.000 UTC Sat Aug 8 2026
+  *19:33:20.000 UTC Mon Aug 10 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2285,7 +2288,7 @@ Total steps: 413
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -2317,25 +2320,22 @@ Total steps: 413
 
 [354/413] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       6 packets output, 404 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [355/413] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -2387,7 +2387,7 @@ Total steps: 413
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 3048 bytes
+  Current configuration : 3119 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2481,6 +2481,7 @@ Total steps: 413
   ip access-list extended VIDEO
    permit tcp any any eq 1720
   !
+  ! Last configuration change at 19:33:20 UTC Mon Aug 10 2026 by console
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
   !
@@ -2563,7 +2564,7 @@ Total steps: 413
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -2687,11 +2688,11 @@ Total steps: 413
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 31 messages logged, xml disabled,
+      Console logging: level debugging, 29 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 31 messages logged, xml disabled,
+      Monitor logging: level debugging, 29 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 31 messages logged, xml disabled,
+      Buffer logging:  level debugging, 29 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2700,42 +2701,40 @@ Total steps: 413
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 31 message lines logged
+      Trap logging: level informational, 29 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:34:30.974: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:30.974: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:30.976: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:30.977: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:30.978: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:30.986: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:30.988: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state init -> speak
-  *Aug  8 00:34:30.989: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 state speak -> active
-  *Aug  8 00:34:30.997: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
-  *Aug  8 00:34:31.000: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state init -> speak
-  *Aug  8 00:34:31.000: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 2 state speak -> active
-  *Aug  8 00:34:31.000: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
-  *Aug  8 00:34:31.002: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state init -> speak
-  *Aug  8 00:34:31.002: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 3 state speak -> active
-  *Aug  8 00:34:31.002: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
-  *Aug  8 00:34:31.003: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state init -> speak
-  *Aug  8 00:34:31.003: %HSRP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 4 state speak -> active
-  *Aug  8 00:34:31.003: %HSRP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
-  *Aug  8 00:34:31.004: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.006: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 1 state init -> master
-  *Aug  8 00:34:31.007: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 2 state init -> master
-  *Aug  8 00:34:31.008: %VRRP-5-NOTIFICATIONS: GigabitEthernet0/0 VRID 3 state init -> master
-  *Aug  8 00:34:31.008: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.010: %GLBP-6-INFORMATIONAL: GigabitEthernet0/0 Grp 1 Fwd 1 assigned MAC 00:07:b4:00:01:01
-  *Aug  8 00:34:31.010: %GLBP-5-NOTIFICATIONS: GigabitEthernet0/0 Grp 1 AVG state init -> active
-  *Aug  8 00:34:31.015: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.017: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.028: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.032: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.036: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:31.038: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.304: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:20.305: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:20.307: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:20.307: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:20.326: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.328: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
+  *Aug 10 19:33:20.330: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
+  *Aug 10 19:33:20.331: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  *Aug 10 19:33:20.334: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
+  *Aug 10 19:33:20.335: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
+  *Aug 10 19:33:20.335: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  *Aug 10 19:33:20.337: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
+  *Aug 10 19:33:20.337: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
+  *Aug 10 19:33:20.338: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  *Aug 10 19:33:20.339: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
+  *Aug 10 19:33:20.339: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
+  *Aug 10 19:33:20.340: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  *Aug 10 19:33:20.341: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.345: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
+  *Aug 10 19:33:20.347: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
+  *Aug 10 19:33:20.348: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
+  *Aug 10 19:33:20.349: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.351: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Aug 10 19:33:20.370: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.373: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.399: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.405: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.410: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:20.413: %SYS-5-CONFIG_I: Configured from console by console
 
 [357/413] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -2767,8 +2766,9 @@ Total steps: 413
   Host                      Port  Flags      Age Type   Address(es)
 
 [363/413] r1 R1# show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [364/413] r1 R1# show line
      Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
@@ -2918,6 +2918,7 @@ Total steps: 413
   ip access-list extended VIDEO
    permit tcp any any eq 1720
   !
+  ! Last configuration change at 19:33:20 UTC Mon Aug 10 2026 by console
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
   !
@@ -2960,7 +2961,7 @@ Total steps: 413
 [370/413] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 3048 bytes
+  Current configuration : 3119 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -3245,37 +3246,40 @@ Total steps: 413
     <cr>         
 
 [410/413] r1 R1(config)# no ?
-    access-list  Remove an access list
-    alias        Remove a command alias
-    arp          Remove ARP entry
-    banner       Remove a banner
-    boot         Boot Commands
-    cdp          CDP global configuration
-    crypto       Encryption and key management
-    enable       Modify enable password parameters
-    event        Embedded Event Manager
-    hostname     Reset hostname
-    interface    Remove a virtual interface
-    ip           Global IP configuration subcommands
-    ipv6         Global IPv6 configuration subcommands
-    key          Key management
-    line         Remove line configuration
-    lldp         LLDP global configuration
-    logging      Modify message logging facilities
-    ntp          Remove NTP config
-    privilege    Remove privilege command rule
-    route-map    Remove a route-map
-    router       Enable a routing protocol
-    service      Disable a service
-    sntp         Configure SNTP
-    track        Remove a tracked object
-    username     Remove a local user
+    access-list    Remove an access list
+    alias          Remove a command alias
+    arp            Remove ARP entry
+    banner         Remove a banner
+    boot           Boot Commands
+    cdp            CDP global configuration
+    crypto         Encryption and key management
+    enable         Modify enable password parameters
+    event          Embedded Event Manager
+    hostname       Reset hostname
+    interface      Remove a virtual interface
+    ip             Global IP configuration subcommands
+    ipv6           Global IPv6 configuration subcommands
+    key            Key management
+    line           Remove line configuration
+    lldp           LLDP global configuration
+    logging        Modify message logging facilities
+    ntp            Network Time Protocol
+    parser         Negate a parser command
+    privilege      Remove privilege command rule
+    radius-server  Remove legacy radius host
+    route-map      Remove a route-map
+    router         Enable a routing protocol
+    service        Disable a service
+    sntp           Configure SNTP
+    tacacs-server  Remove legacy tacacs host
+    track          Remove a tracked object
+    username       Remove a local user
 
 [411/413] r1 R1(config)# end
 <empty>
 
 [412/413] r1 R1# show running-config | count !
-  36
+  37
 
 [413/413] r1 R1# write memory
   Building configuration...

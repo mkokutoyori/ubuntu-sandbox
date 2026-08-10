@@ -26,11 +26,11 @@ Total steps: 339
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 9 messages logged, xml disabled,
+      Console logging: level informational, 7 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 9 messages logged, xml disabled,
+      Monitor logging: level debugging, 7 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 9 messages logged, xml disabled,
+      Buffer logging:  level debugging, 7 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -39,19 +39,17 @@ Total steps: 339
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 9 message lines logged
+      Trap logging: level informational, 7 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
   
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
 
 [6/339] rdc R-DC# terminal monitor
@@ -69,11 +67,11 @@ Total steps: 339
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 8 messages logged, xml disabled,
+      Console logging: level informational, 7 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 8 messages logged, xml disabled,
+      Monitor logging: level debugging, 7 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 8 messages logged, xml disabled,
+      Buffer logging:  level debugging, 7 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -82,14 +80,13 @@ Total steps: 339
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 8 message lines logged
+      Trap logging: level informational, 7 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
   
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-HQ (GigabitEthernet0/2) discovered on GigabitEthernet0/1
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
@@ -110,11 +107,11 @@ Total steps: 339
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 14 messages logged, xml disabled,
+      Console logging: level debugging, 7 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 14 messages logged, xml disabled,
+      Monitor logging: level debugging, 7 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 14 messages logged, xml disabled,
+      Buffer logging:  level debugging, 7 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -123,24 +120,17 @@ Total steps: 339
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 14 message lines logged
+      Trap logging: level informational, 7 message lines logged
           No active syslog hosts
   
   Log Buffer (16384 bytes):
   
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-HQ (GigabitEthernet0/0) discovered on FastEthernet0/1
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Jun  6 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  *Jun  6 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Jun  6 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  *Jun  6 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Jun  6 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  *Jun  6 08:00:00.000: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
 
 
@@ -152,10 +142,10 @@ Total steps: 339
   Info: Current terminal debugging is on.
 
 [16/339] rbr <R-BR> debugging arp packet
-  Info: arp packet debugging is on.
+  Info: ARP packet debugging is on.
 
 [17/339] rbr <R-BR> display debugging
-  arp packet debugging is on
+  ARP packet debugging is on
 
 [18/339] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -423,21 +413,21 @@ Total steps: 339
 --- [51] § ARP — tables initiales (Huawei) ---
 [51/339] rbr <R-BR> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       02:00:00:00:00:530          D         GE0/0/0
-  10.2.2.10       02:00:00:00:00:4f0          D         GE0/0/0
-  172.16.12.1     02:00:00:00:00:020          D         GE0/0/1
+  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
+  172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
 
 [52/339] rbr <R-BR> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       02:00:00:00:00:530          D         GE0/0/0
-  10.2.2.10       02:00:00:00:00:4f0          D         GE0/0/0
-  172.16.12.1     02:00:00:00:00:020          D         GE0/0/1
+  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
+  172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
 
 [53/339] rbr <R-BR> display arp dynamic
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       02:00:00:00:00:530          D         GE0/0/0
-  10.2.2.10       02:00:00:00:00:4f0          D         GE0/0/0
-  172.16.12.1     02:00:00:00:00:020          D         GE0/0/1
+  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
+  172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
 
 [54/339] rbr <R-BR> display arp static
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -489,40 +479,47 @@ Total steps: 339
 [60/339] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
 [61/339] swbr <SW-BR> display mac-address dynamic
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
 [62/339] swbr <SW-BR> display mac-address summary
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
 [63/339] swdc SW-DC> show mac address-table
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:09 DYNAMIC     eth0
+  1       02:00:00:00:00:57 DYNAMIC     eth1
+  1       02:00:00:00:00:5b DYNAMIC     eth2
+  
+  Total Mac Addresses for this criterion: 3
 
 
 --- [64] § ARP — tables initiales (hôtes) ---
@@ -660,11 +657,11 @@ Total steps: 339
 
 [90/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.536 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.724 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.536/0.536/0.536/0.000 ms
+  rtt min/avg/max/mdev = 0.724/0.724/0.724/0.000 ms
 
 [91/339] lhq lhq$ arp -n 10.1.1.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -684,11 +681,11 @@ Total steps: 339
 
 [96/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.477 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.532 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.477/0.477/0.477/0.000 ms
+  rtt min/avg/max/mdev = 0.532/0.532/0.532/0.000 ms
 
 [97/339] lbr lbr$ arp -n 10.2.2.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -708,11 +705,11 @@ Total steps: 339
 
 [102/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.520 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.367 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.520/0.520/0.520/0.000 ms
+  rtt min/avg/max/mdev = 0.367/0.367/0.367/0.000 ms
 
 [103/339] ldc ldc$ arp -n 10.3.3.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -732,11 +729,11 @@ Total steps: 339
 
 [108/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.497 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.411 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.497/0.497/0.497/0.000 ms
+  rtt min/avg/max/mdev = 0.411/0.411/0.411/0.000 ms
 
 [109/339] srvdc srvdc$ arp -n 10.3.3.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -754,7 +751,7 @@ Total steps: 339
 [113/339] whq whq$ ping -n 1 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=1ms TTL=64
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
@@ -778,7 +775,7 @@ Total steps: 339
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [117/339] wbr wbr$ arp -a
   
@@ -796,11 +793,11 @@ Total steps: 339
 
 [120/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.462 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.396 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.462/0.462/0.462/0.000 ms
+  rtt min/avg/max/mdev = 0.396/0.396/0.396/0.000 ms
 
 [121/339] lhq lhq$ ip neigh show 10.1.1.1 dev eth0
   10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
@@ -814,11 +811,11 @@ Total steps: 339
 
 [124/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.623 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.408 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.623/0.623/0.623/0.000 ms
+  rtt min/avg/max/mdev = 0.408/0.408/0.408/0.000 ms
 
 [125/339] lbr lbr$ ip neigh show 10.2.2.1 dev eth0
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -832,11 +829,11 @@ Total steps: 339
 
 [128/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.418 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.413 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.418/0.418/0.418/0.000 ms
+  rtt min/avg/max/mdev = 0.413/0.413/0.413/0.000 ms
 
 [129/339] ldc ldc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -850,11 +847,11 @@ Total steps: 339
 
 [132/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.383 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.359 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.383/0.383/0.383/0.000 ms
+  rtt min/avg/max/mdev = 0.359/0.359/0.359/0.000 ms
 
 [133/339] srvdc srvdc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -881,9 +878,9 @@ Total steps: 339
 
 [137/339] rbr <R-BR> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       02:00:00:00:00:530          D         GE0/0/0
-  10.2.2.10       02:00:00:00:00:4f0          D         GE0/0/0
-  172.16.12.1     02:00:00:00:00:020          D         GE0/0/1
+  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
+  172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
 
 [138/339] rhq R-HQ# show ip arp 10.1.1.10
   Protocol  Address          Age (min)   Hardware Addr   Type   Interface
@@ -894,8 +891,8 @@ Total steps: 339
   Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
 
 [140/339] rbr <R-BR> display arp | include 10.2.2
-  10.2.2.11       02:00:00:00:00:530          D         GE0/0/0
-  10.2.2.10       02:00:00:00:00:4f0          D         GE0/0/0
+  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
 
 
 --- [141] § ARP statique — Linux (set → show → del) ---
@@ -1128,10 +1125,10 @@ Total steps: 339
 
 [204/339] rbr <R-BR> display arp static
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.9.9.9        00:e0:fc:12:34:560          static    
+  10.9.9.9        00e0-fc12-3456  0          static
 
 [205/339] rbr <R-BR> display arp | include 10.9.9.9
-  10.9.9.9        00:e0:fc:12:34:560          static    
+  10.9.9.9        00e0-fc12-3456  0          static
 
 [206/339] rbr <R-BR> system-view
   Enter system view, return user view with return command.
@@ -1146,26 +1143,22 @@ Total steps: 339
 --- [209] § Proxy ARP — Cisco ---
 [209/339] rhq R-HQ# show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Description: LAN-HQ
-    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 10.1.1.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 100Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       20 packets input, 1470 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 894 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [210/339] rhq R-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1178,52 +1171,44 @@ Total steps: 339
 
 [213/339] rhq R-HQ(config-if)# do show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Description: LAN-HQ
-    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 10.1.1.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 100Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       20 packets input, 1470 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 894 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [214/339] rhq R-HQ(config-if)# no ip proxy-arp
 <empty>
 
 [215/339] rhq R-HQ(config-if)# do show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Description: LAN-HQ
-    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 10.1.1.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 100Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       20 packets input, 1470 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 894 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is disabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [216/339] rhq R-HQ(config-if)# end
 <empty>
@@ -1236,10 +1221,10 @@ Total steps: 339
 [218/339] rbr [R-BR] interface GigabitEthernet0/0/0
 <empty>
 
-[219/339] rbr [R-BR-GE0/0/0] arp-proxy enable
+[219/339] rbr [R-BR-GigabitEthernet0/0/0] arp-proxy enable
 <empty>
 
-[220/339] rbr [R-BR-GE0/0/0] display this
+[220/339] rbr [R-BR-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    description LAN-BR
@@ -1247,10 +1232,10 @@ Total steps: 339
    arp-proxy enable
   #
 
-[221/339] rbr [R-BR-GE0/0/0] undo arp-proxy enable
+[221/339] rbr [R-BR-GigabitEthernet0/0/0] undo arp-proxy enable
 <empty>
 
-[222/339] rbr [R-BR-GE0/0/0] quit
+[222/339] rbr [R-BR-GigabitEthernet0/0/0] quit
 <empty>
 
 [223/339] rbr [R-BR] quit
@@ -1391,10 +1376,10 @@ Total steps: 339
 [253/339] rbr [R-BR] interface GigabitEthernet0/0/0
 <empty>
 
-[254/339] rbr [R-BR-GE0/0/0] arp expire-time 600
+[254/339] rbr [R-BR-GigabitEthernet0/0/0] arp expire-time 600
 <empty>
 
-[255/339] rbr [R-BR-GE0/0/0] display this
+[255/339] rbr [R-BR-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    description LAN-BR
@@ -1402,10 +1387,10 @@ Total steps: 339
    arp expire-time 600
   #
 
-[256/339] rbr [R-BR-GE0/0/0] undo arp expire-time
+[256/339] rbr [R-BR-GigabitEthernet0/0/0] undo arp expire-time
 <empty>
 
-[257/339] rbr [R-BR-GE0/0/0] quit
+[257/339] rbr [R-BR-GigabitEthernet0/0/0] quit
 <empty>
 
 [258/339] rbr [R-BR] quit
@@ -1430,12 +1415,12 @@ Total steps: 339
 
 [264/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.420 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.556 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.704 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.847 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.420/0.488/0.556/0.068 ms
+  rtt min/avg/max/mdev = 0.704/0.775/0.847/0.072 ms
 
 [265/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=0
 <empty>
@@ -1448,12 +1433,12 @@ Total steps: 339
 
 [268/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.258 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.781 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.430 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.605 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.258/0.520/0.781/0.262 ms
+  rtt min/avg/max/mdev = 0.430/0.518/0.605/0.087 ms
 
 
 --- [269] § L2 — corrélation MAC/ARP sur switchs ---
@@ -1499,11 +1484,11 @@ Total steps: 339
 [273/339] swbr <SW-BR> display mac-address dynamic
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -1512,8 +1497,15 @@ Total steps: 339
 
 [275/339] swdc SW-DC> show mac address-table
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:09 DYNAMIC     eth0
+  1       02:00:00:00:00:57 DYNAMIC     eth1
+  1       02:00:00:00:00:5b DYNAMIC     eth2
+  
+  Total Mac Addresses for this criterion: 3
 
 
 --- [276] § Dynamic ARP Inspection (DAI) — tentatives ---
@@ -1598,27 +1590,27 @@ Total steps: 339
 --- [298] § ARP — re-résolution complète après flush ---
 [298/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.602 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=5.829 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.602/0.602/0.602/0.000 ms
+  rtt min/avg/max/mdev = 5.829/5.829/5.829/0.000 ms
 
 [299/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.495 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.466 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.495/0.495/0.495/0.000 ms
+  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
 
 [300/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.704 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.349 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.704/0.704/0.704/0.000 ms
+  rtt min/avg/max/mdev = 0.349/0.349/0.349/0.000 ms
 
 [301/339] lhq lhq$ ip -s neigh
   10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
@@ -1627,19 +1619,19 @@ Total steps: 339
 
 [302/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.616 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.361 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.616/0.616/0.616/0.000 ms
+  rtt min/avg/max/mdev = 0.361/0.361/0.361/0.000 ms
 
 [303/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.168 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.366 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.168/0.168/0.168/0.000 ms
+  rtt min/avg/max/mdev = 0.366/0.366/0.366/0.000 ms
 
 [304/339] lbr lbr$ ip -s neigh
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -1647,19 +1639,19 @@ Total steps: 339
 
 [305/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.238 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.304 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.238/0.238/0.238/0.000 ms
+  rtt min/avg/max/mdev = 0.304/0.304/0.304/0.000 ms
 
 [306/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.154 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.321 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.154/0.154/0.154/0.000 ms
+  rtt min/avg/max/mdev = 0.321/0.321/0.321/0.000 ms
 
 [307/339] ldc ldc$ ip -s neigh
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1667,19 +1659,19 @@ Total steps: 339
 
 [308/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.310 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.255 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.310/0.310/0.310/0.000 ms
+  rtt min/avg/max/mdev = 0.255/0.255/0.255/0.000 ms
 
 [309/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.212 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.471 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.212/0.212/0.212/0.000 ms
+  rtt min/avg/max/mdev = 0.471/0.471/0.471/0.000 ms
 
 [310/339] srvdc srvdc$ ip -s neigh
   10.3.3.11 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
@@ -1763,7 +1755,7 @@ Total steps: 339
   All possible debugging has been turned off
 
 [322/339] rbr <R-BR> undo debugging all
-  All possible debugging has been turned off
+  Info: 1 debugging switch(es) have been turned off.
 
 [323/339] rhq R-HQ# show ip arp
   Protocol  Address          Age (min)   Hardware Addr   Type   Interface
@@ -1776,7 +1768,7 @@ Total steps: 339
 
 [325/339] rbr <R-BR> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       02:00:00:00:00:530          D         GE0/0/0
+  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
 
 [326/339] swhq SW-HQ# show mac address-table
   Mac Address Table
@@ -1793,11 +1785,11 @@ Total steps: 339
 [327/339] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From   Type
+  MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
-  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
+  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -1856,11 +1848,11 @@ Total steps: 339
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 13 messages logged, xml disabled,
+      Console logging: level informational, 11 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 13 messages logged, xml disabled,
+      Monitor logging: level debugging, 11 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 26 messages logged, xml disabled,
+      Buffer logging:  level debugging, 24 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1869,19 +1861,17 @@ Total steps: 339
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 13 message lines logged
+      Trap logging: level informational, 11 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
   
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor SW-HQ (FastEthernet0/1) discovered on GigabitEthernet0/0
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
-  *Jun  6 08:00:00.000: %CDP-6-INFORMATIONAL: Neighbor R-DC (GigabitEthernet0/1) discovered on GigabitEthernet0/2
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.11 0000.0000.0000 GigabitEthernet0/0
   *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.11 0200.0000.004b, dst 10.1.1.10 0000.0000.0000 GigabitEthernet0/0

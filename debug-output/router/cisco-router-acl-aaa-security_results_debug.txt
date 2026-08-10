@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-08-08T00:34:51.002Z
+Generated: 2026-08-10T19:33:30.184Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -600,25 +600,22 @@ Total steps: 388
 
 [136/388] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 
 --- [137] § IPv6 ACL ---
@@ -760,7 +757,16 @@ Total steps: 388
               Response: accept 0, reject 0, challenge 0
       Account: request 0, timeouts 0, retransmission 0
               Response: 0
-  TACACS+: id 2, host 10.0.0.3, port 49
+  RADIUS: id 2, priority 1, host 10.0.0.2, auth-port 1645, acct-port 1646
+      State: current UP, duration 0s, previous duration 0s
+      Authen: request 0, timeouts 0, retransmission 0
+              Response: accept 0, reject 0, challenge 0
+      Account: request 0, timeouts 0, retransmission 0
+              Response: 0
+  TACACS+: id 3, host 10.0.0.3, port 49
+      Socket opens: 0, closes: 0, aborts: 0, errors: 0
+      Authen: request 0, success 0, fail 0
+  TACACS+: id 4, host 10.0.0.3, port 49
       Socket opens: 0, closes: 0, aborts: 0, errors: 0
       Authen: request 0, success 0, fail 0
 
@@ -772,11 +778,19 @@ Total steps: 388
     Server: RAD1 (10.0.0.2)
       Auth requests: 0, retransmits: 0, accepts: 0, rejects: 0
       Acct requests: 0, retransmits: 0, responses: 0
+    Server: 10.0.0.2 (10.0.0.2)
+      Auth requests: 0, retransmits: 0, accepts: 0, rejects: 0
+      Acct requests: 0, retransmits: 0, responses: 0
 
 [182/388] r1 R1# show tacacs
   Tacacs+ Server : 10.0.0.3/49
   Socket opens: 0, closes: 0
   Authen: request 0, success 0, fail 0
+  Failed accounting: 0
+  Tacacs+ Server : 10.0.0.3/49
+  Socket opens: 0, closes: 0
+  Authen: request 0, success 0, fail 0
+  Failed accounting: 0
 
 
 --- [183] § SSH / device hardening ---
@@ -879,49 +893,51 @@ Total steps: 388
 
 [214/388] r1 R1# show ip ssh
   SSH Enabled - version 2.0
-  Authentication timeout: 120 secs; Authentication retries: 3
+  Authentication timeout: 60 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 2048 bits
+  Hostkey RSA key size is 2048 bits
 
 [215/388] r1 R1# show ssh
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 00:34:51 UTC Aug 8 2026
+  % Key pair was generated at: 19:33:30 UTC Aug 10 2026
   Key name: R1.lab.local
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   B580178D0CC3B5915A6BE0DF163C3F5F9922741C326172CCEAD99C98AF1C91E8
-    C7367D8D3A61E62140E0801BF5FC1443C5C9CF5CF518BF5486930D1459EFF2CC
-    4419C60D64EE065921EC39D7645AB31F51F0FD1C71E2A164CDAB88101D4A8B08
-    6B29D10D783A9F999D58EE13D1AE8B73430BDD5C4560BF6C6A20ED8C6C4DC36C
-    E3CE7E8D159085F171C7B2EF1E6AD8EF0ACFDC3CCE6202ECB55E1FA830B81AD8
-    5AAF46ADF958428127CB4A4B9FDE3A735B77E59CA4604DF4B0BD144498F2E39C
-    5756094D3E579A19C097942716660D8FAEC1D97C92CBA5E46765AB609D63C9D8
-    8934A66DAD3EB9597CC870830C1583E37D5397DC1546D9EC58C6313CDAEBCEFC
+   1C3DD4D9FD4FA0CDA568AE6BA1F43D8B8027BDE83F6E67A8D9F2DC2C5906C45C
+    15C89959DCC7803D7598F1AFFD8AB8A7340F7D282AEEAB20F2B9A3209B6C1BC8
+    EC4730595FAE99459EE4A463C5B2580B7022D3E85577B8003C3744A4971EC63C
+    CFF959D9F6694575A60EBCA75F67B2E7FF73D8287FD1A2886452F6B85794C8F8
+    E0416BD9A999BF0D6BCB7A5B27405D1B69F393C869E3C528EE90371C0288402C
+    7CA84E39665F1B9D8B6B457F720EC937325124E89A423DA0341FF9F067652098
+    A649EB19C288910540D4E813EC0F771B3E98358807EAD300135BFF541CC0B58C
+    C4F40279E3DDE25597F9583707428AF78EA8DBA85B53DA888CBB110822C6C948
   
-  % Key pair was generated at: 00:34:51 UTC Aug 8 2026
+  % Key pair was generated at: 19:33:30 UTC Aug 10 2026
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   7F598CB9EAC9562D069BB04BD516B86B776EE9C84FFC7E082305120CA6ADA43C
-    09F6B93953C40F9D2FADDB8F47D475873E3011087FBE0B805E44C100854A6DA8
-    B3B5B8398CF562A531A976438DF836EB488ACFC82B60C2605F494A846ADE6A1C
-    175649B9C97BA8D5B3D17687A32093C7BC113C0871D6B6E8E679E498DAB19ED8
-    9EBAC3B90E131C6D995A1C3B89651FFB5B345FA86B91438869DA0CFCC630280C
-    D3EC0E191754D2FD6013CF5F4BFA4E17C32358C8FC0E8600151AB7D04E57FA78
-    C28612F917EA0265066559F3405E9DFBD469D168E59645607915A534F330616C
-    BCD69259F9D46DB53ABFB21736B433D76967DF88D448D6E8B6A00B284E4B85E8
-    D6CDE239A90A1F6D120517AB0152F60BDBDC8D08558112C8BEAB676C27DF3C9C
-    1702EA7903AF4A1D4633F2AF0542AAA722C4F808250594803256AE208E886B48
-    B81F9539D4E2B765FC610D232829EE0B1AFACA888C8276A0F2699F64A2AEBEBC
-    CDFFA279E1A68F55D42B5D27048B24E71DAC1A88D3C20BE82A27713873C4F738
-    A0A16839FCDB75AD7E23229BFFEF2D9BF3C45E289EE2E848DB444D5CE3CB106C
-    525F2699F46AFC3D3EAB75FF24516BB71D2FF748F5DDD980232E047087452C98
-    0C867779DB0C9DA530BC2053F0A8F59BC3BB8FE8921A5C20BA35A5945590E28C
-    FFB36AD96E9113F5223518B74C804277F4863E082EA75F6855B917C880B99FC8
+   F126A85D0BD206A1CFB850AFA1353CAF398512ECFD196D5CEAC9BA680CEF9EB8
+    02026A5D836CEE318B7D8BEB56A2249380A44A2C0AA598E4BE5E46E400ECDA9C
+    B1A00EDD4091D56958DEE1A7D6A2266F6EB853EC3691E9F4F236DDE0D19D1DD8
+    5ABF75DD489A45A9C76631E396AEB1C38CF5102C92AF06FCCF00957C5897009C
+    C672D55DE08E1F411230D29F7E85B01F4B59BECC31F09E3CD4A90B5857995AC8
+    E2C3353DBC596AD1035615BBF418BB63CEB747ECC7EE3B449B2713B4E1215ECC
+    BE7C5F9D637E0AA95525DB576AC638FFC9278B8CA3628674A13E8E90E5628408
+    B3EC347D9D67E4E966580373F0FAD653C0AC69AC6C8CFD7CCA2C25CC5D7828CC
+    125E3DDDD1995921F23F644F2060488FAF7F7AAC249EA95CDB460008B4E59B58
+    8126641DE943BDF163982FCBA9BAC2B3BE93AE2C83D3AEE46C3734C4B5DC77FC
+    8F1A9CDD22B007A9B0A845C76143F10F5B18E42C07AEBFB4BBF9A400E22AD9F8
+    01DEC81DDC04F1A9149D8643750C3D233EA6FCAC74ADDF3CCC5E63DC4DC3093C
+    A8691BDD19B589C1A139473FC0D8D53F36C2CB4C0D48D73CB5A265F8C5372728
+    BC7147BDDDE80811FE002A1BC3C7BE43E97FF46CD6E4CA4441FFA21432617A6C
+    1311661DBCFD54296CB10FF7136697DF23B7580C7845E174ECC2A9303764FA68
+    0C4906FD38CED429D094D7D339DCD1F39CABD62C9365A6FC445C4CAC14C767AC
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1026,7 +1042,7 @@ Total steps: 388
 
 [245/388] r1 R1# show ip traffic
   IP statistics:
-    Rcvd:  2 total, 2 local destination
+    Rcvd:  4 total, 4 local destination
            0 format errors, 0 checksum errors, 0 bad hop count
            0 unknown protocol, 0 not a gateway, 0 security failures
            0 bad options, 0 with options, 0 dropped
@@ -1188,7 +1204,7 @@ Total steps: 388
 [281/388] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 6819 bytes
+  Current configuration : 6911 bytes
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -1338,6 +1354,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
+  ! Last configuration change at 19:33:30 UTC Mon Aug 10 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -1354,11 +1371,12 @@ Total steps: 388
    address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
    key radiussecret
   !
+  radius-server host 10.0.0.2 key legacy
+  !
   tacacs server TAC1
    address ipv4 10.0.0.3
    key tacacssecret
   !
-  radius-server host 10.0.0.2 key legacy
   tacacs-server host 10.0.0.3 key legacy
   !
   time-range BUSINESS-HOURS
@@ -1393,7 +1411,7 @@ Total steps: 388
    service-policy type inspect PM-IN-OUT
   !
   line console 0
-   login
+   login authentication CON
    exec-timeout 10 0
    logging synchronous
   !
@@ -1430,7 +1448,7 @@ Total steps: 388
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1806,21 +1824,21 @@ Total steps: 388
   No IP SLAs operations configured.
 
 [313/388] r1 R1# show policy-map interface
-   GigabitEthernet0/1
-    Zone member: OUTSIDE
    GigabitEthernet0/0
     Zone member: INSIDE
+   GigabitEthernet0/1
+    Zone member: OUTSIDE
 
 [314/388] r1 R1# show logging
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 16 messages logged, xml disabled,
+      Console logging: level debugging, 15 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 16 messages logged, xml disabled,
+      Monitor logging: level debugging, 15 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 16 messages logged, xml disabled,
+      Buffer logging:  level debugging, 15 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1829,27 +1847,26 @@ Total steps: 388
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 16 message lines logged
+      Trap logging: level informational, 15 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:34:50.996: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:50.996: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:50.998: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:50.998: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:50.999: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:51.009: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.019: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.021: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.024: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.025: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.026: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.028: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.030: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.034: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.036: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.037: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.166: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:30.167: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:30.170: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:30.171: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:30.200: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.204: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.207: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.211: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.221: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.225: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.227: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.233: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.241: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.244: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.246: %SYS-5-CONFIG_I: Configured from console by console
 
 [315/388] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1858,17 +1875,21 @@ Total steps: 388
   0 SNMP packets output
 
 [316/388] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE20F82B.1916872B (00:34:51.098 UTC Sat Aug 8 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE24A60A.50A3D70A (19:33:30.315 UTC Mon Aug 10 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [317/388] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [318/388] r1 R1# show clock
-  *00:34:51.000 UTC Sat Aug 8 2026
+  *19:33:30.000 UTC Mon Aug 10 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1961,7 +1982,7 @@ Total steps: 388
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1993,25 +2014,22 @@ Total steps: 388
 
 [329/388] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is disabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [330/388] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -2063,7 +2081,7 @@ Total steps: 388
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 6819 bytes
+  Current configuration : 6911 bytes
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -2213,6 +2231,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
+  ! Last configuration change at 19:33:30 UTC Mon Aug 10 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2229,11 +2248,12 @@ Total steps: 388
    address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
    key radiussecret
   !
+  radius-server host 10.0.0.2 key legacy
+  !
   tacacs server TAC1
    address ipv4 10.0.0.3
    key tacacssecret
   !
-  radius-server host 10.0.0.2 key legacy
   tacacs-server host 10.0.0.3 key legacy
   !
   time-range BUSINESS-HOURS
@@ -2268,7 +2288,7 @@ Total steps: 388
    service-policy type inspect PM-IN-OUT
   !
   line console 0
-   login
+   login authentication CON
    exec-timeout 10 0
    logging synchronous
   !
@@ -2322,7 +2342,7 @@ Total steps: 388
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -2436,11 +2456,11 @@ Total steps: 388
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 16 messages logged, xml disabled,
+      Console logging: level debugging, 15 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 16 messages logged, xml disabled,
+      Monitor logging: level debugging, 15 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 16 messages logged, xml disabled,
+      Buffer logging:  level debugging, 15 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2449,27 +2469,26 @@ Total steps: 388
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 16 message lines logged
+      Trap logging: level informational, 15 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:34:50.996: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:50.996: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:50.998: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:50.998: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:50.999: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:51.009: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.019: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.021: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.024: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.025: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.026: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.028: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.030: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.034: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.036: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:51.037: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.166: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:30.167: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 10 19:33:30.170: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:30.171: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 10 19:33:30.200: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.204: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.207: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.211: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.221: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.225: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.227: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.233: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.241: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.244: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 10 19:33:30.246: %SYS-5-CONFIG_I: Configured from console by console
 
 [332/388] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -2502,7 +2521,9 @@ Total steps: 388
 
 [338/388] r1 R1# show ip ssh
   SSH Enabled - version 2.0
-  Authentication timeout: 120 secs; Authentication retries: 3
+  Authentication timeout: 60 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 2048 bits
+  Hostkey RSA key size is 2048 bits
 
 [339/388] r1 R1# show line
      Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
@@ -2699,6 +2720,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
+  ! Last configuration change at 19:33:30 UTC Mon Aug 10 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2715,11 +2737,12 @@ Total steps: 388
    address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
    key radiussecret
   !
+  radius-server host 10.0.0.2 key legacy
+  !
   tacacs server TAC1
    address ipv4 10.0.0.3
    key tacacssecret
   !
-  radius-server host 10.0.0.2 key legacy
   tacacs-server host 10.0.0.3 key legacy
   !
   time-range BUSINESS-HOURS
@@ -2754,7 +2777,7 @@ Total steps: 388
    service-policy type inspect PM-IN-OUT
   !
   line console 0
-   login
+   login authentication CON
    exec-timeout 10 0
    logging synchronous
   !
@@ -2770,7 +2793,7 @@ Total steps: 388
 [345/388] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 6819 bytes
+  Current configuration : 6911 bytes
   service password-encryption
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2914,10 +2937,10 @@ Total steps: 388
   radius server RAD1
    address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
    key radiussecret
+  radius-server host 10.0.0.2 key legacy
   tacacs server TAC1
    address ipv4 10.0.0.3
    key tacacssecret
-  radius-server host 10.0.0.2 key legacy
   tacacs-server host 10.0.0.3 key legacy
   time-range BUSINESS-HOURS
    absolute start 0:00 1 January 2024 end 23:59 31 December 2024
@@ -2943,7 +2966,7 @@ Total steps: 388
   zone-pair security IN-OUT source INSIDE destination OUTSIDE
    service-policy type inspect PM-IN-OUT
   line console 0
-   login
+   login authentication CON
    exec-timeout 10 0
    logging synchronous
   line vty 0 4
@@ -3141,37 +3164,40 @@ Total steps: 388
     <cr>         
 
 [385/388] r1 R1(config)# no ?
-    access-list  Remove an access list
-    alias        Remove a command alias
-    arp          Remove ARP entry
-    banner       Remove a banner
-    boot         Boot Commands
-    cdp          CDP global configuration
-    crypto       Encryption and key management
-    enable       Modify enable password parameters
-    event        Embedded Event Manager
-    hostname     Reset hostname
-    interface    Remove a virtual interface
-    ip           Global IP configuration subcommands
-    ipv6         Global IPv6 configuration subcommands
-    key          Key management
-    line         Remove line configuration
-    lldp         LLDP global configuration
-    logging      Modify message logging facilities
-    ntp          Remove NTP config
-    privilege    Remove privilege command rule
-    route-map    Remove a route-map
-    router       Enable a routing protocol
-    service      Disable a service
-    sntp         Configure SNTP
-    track        Remove a tracked object
-    username     Remove a local user
+    access-list    Remove an access list
+    alias          Remove a command alias
+    arp            Remove ARP entry
+    banner         Remove a banner
+    boot           Boot Commands
+    cdp            CDP global configuration
+    crypto         Encryption and key management
+    enable         Modify enable password parameters
+    event          Embedded Event Manager
+    hostname       Reset hostname
+    interface      Remove a virtual interface
+    ip             Global IP configuration subcommands
+    ipv6           Global IPv6 configuration subcommands
+    key            Key management
+    line           Remove line configuration
+    lldp           LLDP global configuration
+    logging        Modify message logging facilities
+    ntp            Network Time Protocol
+    parser         Negate a parser command
+    privilege      Remove privilege command rule
+    radius-server  Remove legacy radius host
+    route-map      Remove a route-map
+    router         Enable a routing protocol
+    service        Disable a service
+    sntp           Configure SNTP
+    tacacs-server  Remove legacy tacacs host
+    track          Remove a tracked object
+    username       Remove a local user
 
 [386/388] r1 R1(config)# end
 <empty>
 
 [387/388] r1 R1# show running-config | count !
-  35
+  37
 
 [388/388] r1 R1# write memory
   Building configuration...

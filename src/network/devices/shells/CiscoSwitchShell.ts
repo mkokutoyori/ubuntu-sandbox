@@ -2405,10 +2405,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.buildRunningConfig(this.d());
     });
 
-    this.privilegedTrie.register('show startup-config', 'Display startup configuration', () => {
-      const startup = this.d().getStartupConfig();
-      return startup ? startup : '% startup-config is not present';
-    });
+    this.privilegedTrie.register('show startup-config', 'Display startup configuration',
+      () => this.showStartupConfig());
+    this.privilegedTrie.register('show configuration', 'Display saved configuration',
+      () => this.showStartupConfig());
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
       return this.d().writeMemory();
@@ -3279,6 +3279,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // Ils n'etaient ecrits que la, donc un Catalyst acceptait
     // `password`/`login` sur sa console et ne les rendait nulle part.
     lines.push(...consoleAndAuxLineConfigLines(sw, chiffre));
+
+    const lignesNtp = this.ntpConfigLines();
+    if (lignesNtp.length > 0) { lines.push(...lignesNtp); lines.push('!'); }
 
     // VTY line configuration (transport input, login, password, …).
     const vtyLines = sw._getVtyLineConfig().renderAllCisco(chiffre);
