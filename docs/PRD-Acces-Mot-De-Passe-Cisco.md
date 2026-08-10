@@ -59,9 +59,9 @@ d'algorithme, exactement comme `cryptPrefixType` côté rendu : c'est la
 valeur qui dit ce qu'elle est, et une étiquette qui la contredirait (un
 `$9$` rangé sous `enable secret 5`) ne doit pas décider à sa place.
 
-### Les cinq portes qui comparaient par égalité
+### Les six portes qui comparaient par égalité
 
-Fixer `enable` seul aurait laissé les quatre autres cassées de la même
+Fixer `enable` seul aurait laissé les cinq autres cassées de la même
 façon :
 
 | Porte | Fichier |
@@ -71,6 +71,31 @@ façon :
 | Connexion telnet vers une vty | `RouterTelnetServerContext.authenticate` |
 | AAA, méthodes `enable` et `line` | `AaaAuthenticator.tryLocalMethods` |
 | `ip http authentication enable` | `Router.authenticateHttp` |
+| **`login local` — le compte local** | `NetworkOsAccount.authenticate` |
+
+La dernière est venue de l'audit qui a suivi le correctif, et c'est la
+porte que les cours font poser **juste après** `enable`. Elle était
+d'autant plus frappante que ce fichier appliquait **déjà** la règle côté
+Huawei, son commentaire l'énonçant mot pour mot ; seul le côté Cisco
+retombait sur l'égalité. Mesuré :
+
+```
+username admin privilege 15 secret Admin@2025
+  authenticate('admin','Admin@2025')  → true
+  … rendu : username admin privilege 15 secret 5 $1$c40d53d7$BcMGxv…
+  … après rejeu de cette ligne        → FALSE
+
+username carl password Carlsecret1 + service password-encryption
+  authenticate('carl','Carlsecret1')  → FALSE
+```
+
+Le second ne demande **même pas un rechargement** : la même machine, au
+même instant, refuse le mot de passe qu'on vient de lui donner. C'est le
+jumeau exact du bug signalé, sur l'autre porte. Le témoin qui rend la
+mesure lisible est `username bob password Bobsecret1` sans chiffrement,
+qui traverse l'aller-retour intact (`password 0 Bobsecret1`) — sans lui,
+« l'authentification échoue » ne distinguerait pas un défaut de
+vérification d'un laboratoire mal monté.
 
 ### Deux défauts trouvés en chemin, dans l'analyseur du mot de passe de ligne
 
@@ -152,6 +177,15 @@ mot de passe vide** au lieu de poser une question. Les trois lisaient donc
 - `cisco-privilege-levels-really-gate.test.ts` (2 cas)
 - `cisco-local-auth-privilege-levels.test.ts` (1 cas)
 
+Deux autres, dans `cisco-huawei-aaa-security.test.ts`, échouaient pour une
+raison différente et le produit avait raison contre eux : ils appelaient
+`runSshCommandSync('', 'show running-config')` — la **chaîne vide** comme
+nom d'utilisateur. `show running-config` est une commande de niveau 15 et
+la porte SSH lit le niveau du compte, donc un utilisateur inconnu vaut 1
+et lit le refus. En production `RouterSshServerContext` passe toujours le
+nom authentifié ; seule cette abréviation de test ne le faisait pas. Ils
+interrogent désormais la machine en tant que quelqu'un.
+
 ---
 
 ## 4. Laissé ouvert, mesuré et écrit plutôt que tu
@@ -174,16 +208,17 @@ mot de passe vide** au lieu de poser une question. Les trois lisaient donc
 
 ## Mesures
 
-`probe-acces-mot-de-passe-et-console.test.ts` — **24 cas**, les deux
+`probe-acces-mot-de-passe-et-console.test.ts` — **27 cas**, les deux
 plateformes (routeur et commutateur), discriminé par `git stash` :
-**12 tombent authentiquement** avant correctif. Les 12 autres portent sur
-le module de vérification lui-même et sur les cas de refus, et passent des
-deux côtés — ils gardent la règle, ils ne prouvent pas la correction.
+**12 tombent authentiquement** avant correctif (plus 2 des 3 cas de
+`login local` ajoutés par l'audit). Les autres portent sur le module de
+vérification lui-même et sur les cas de refus, et passent des deux
+côtés — ils gardent la règle, ils ne prouvent pas la correction.
 
 `e2e/cisco-enable-password-et-console-liberee.spec.ts` — **6 cas
 Playwright** dans le vrai navigateur, les deux plateformes : les deux bugs
 se voient sur l'onglet de terminal et nulle part ailleurs.
 
-Régressions connexes : 15 suites d'accès/AAA/privilèges/console, **310
-cas verts**. Typecheck : jeu d'erreurs identique (120 hors tests). Lint :
+Régressions connexes : **22 suites** d'accès/AAA/privilèges/console/SSH,
+**371 cas verts**. Typecheck : jeu d'erreurs identique (120 hors tests). Lint :
 identique (les 2 erreurs de `Router.ts` préexistent, lignes 515 et 5132).

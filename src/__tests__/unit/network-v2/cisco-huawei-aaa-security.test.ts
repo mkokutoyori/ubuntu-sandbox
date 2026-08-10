@@ -135,7 +135,13 @@ describe('§C — local users appear in running-config / current-configuration',
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
     await lab.ciscoR1.executeCommand('end');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show running-config');
+    // Le nom du compte AUTHENTIFIE, pas la chaine vide. `show
+    // running-config` est une commande de niveau 15 et la porte SSH lit
+    // le niveau du compte : un utilisateur inconnu vaut 1, donc ce cas
+    // interrogeait la machine en tant que personne et lisait le refus.
+    // En production `RouterSshServerContext` passe toujours le nom
+    // authentifie ; seule cette abreviation de test ne le faisait pas.
+    const out = lab.ciscoR1.runSshCommandSync('admin', 'show running-config');
     expect(out?.output).toMatch(/username admin privilege 15 secret/);
   });
 
@@ -418,8 +424,9 @@ describe('§I — login block-for / authentication-retries wired into Router', (
   test('Cisco show running-config retains login block-for line', async () => {
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
+    await lab.ciscoR1.executeCommand('username auditeur privilege 15 secret Audit@123');
     await lab.ciscoR1.executeCommand('end');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show running-config');
+    const out = lab.ciscoR1.runSshCommandSync('auditeur', 'show running-config');
     expect(out?.output).toMatch(/login block-for 60 attempts 2 within 30/);
   });
 

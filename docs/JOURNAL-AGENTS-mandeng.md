@@ -4398,18 +4398,36 @@ sans les deux, `exit` **rendait les droits d'administration à qui appuie
 sur une touche**. Visible seulement parce que l'assertion a été ancrée —
 `level is 1` est un préfixe de `level is 15`.
 
+**Suite de l'audit, dans le même lot.** La sixième porte : `login local`.
+`NetworkOsAccount.authenticate` appliquait **déjà** la règle côté Huawei —
+son commentaire l'énonce mot pour mot — et le côté Cisco retombait sur
+l'égalité. Deux mesures : `username X secret` ne survit pas à
+l'aller-retour (le compte ne se connecte plus jamais), et
+`username X password` + `service password-encryption` casse **sur-le-champ**,
+sans même attendre un rechargement. Témoin gardé dans le même
+laboratoire : `username bob password Bobsecret1` sans chiffrement, qui
+traverse intact.
+
+Deux tests de `cisco-huawei-aaa-security.test.ts` échouaient aussi avant
+ce lot, et **le produit avait raison contre eux** : ils appelaient
+`runSshCommandSync('', …)`, la chaîne vide comme nom d'utilisateur, donc
+ils interrogeaient la machine en tant que personne et lisaient le refus de
+niveau. En production `RouterSshServerContext` passe toujours le nom
+authentifié.
+
 **Fichiers touchés** : `shells/cisco/ciscoPasswordVerify.ts` (nouveau),
+`router/aaa/NetworkOsAccount.ts`,
 `shells/CiscoShellBase.ts`, `router/vty/VtyLineConfig.ts`,
 `router/aaa/AaaAuthenticator.ts`, `devices/Router.ts`,
 `protocols/telnet/RouterTelnetServerContext.ts`,
 `terminal/sessions/CLITerminalSession.ts`,
 `terminal/sessions/CiscoTerminalSession.ts`.
 
-**Mesures.** `probe-acces-mot-de-passe-et-console.test.ts` (24 cas, les
+**Mesures.** `probe-acces-mot-de-passe-et-console.test.ts` (27 cas, les
 deux plateformes) discriminé par `git stash` : **12 tombent** avant.
 `e2e/cisco-enable-password-et-console-liberee.spec.ts` (6 cas Playwright).
-15 suites connexes vertes (310 cas). Typecheck et lint : jeux identiques.
-**Trois tests existants corrigés** — ils échouaient AVANT ce lot (vérifié
+22 suites connexes vertes (371 cas). Typecheck et lint : jeux identiques.
+**Cinq tests existants corrigés** — ils échouaient AVANT ce lot (vérifié
 par revert complet) et encodaient un contrat périmé : `enable` laisse
 trois essais, donc `show privilege` tapé après un seul refus soumet un mot
 de passe VIDE au lieu de poser une question.

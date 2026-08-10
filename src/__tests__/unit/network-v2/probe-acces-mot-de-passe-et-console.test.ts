@@ -323,3 +323,66 @@ for (const [nom, fabrique] of PLATEFORMES) {
     }, 30_000);
   });
 }
+
+// ── 5. `login local` : le compte local suit la meme regle ───────────
+
+/**
+ * Le meme defaut, sur l'autre porte — celle que les cours font poser
+ * juste apres (`login local`). `NetworkOsAccount.authenticate`
+ * appliquait deja la regle cote HUAWEI, et son commentaire l'enonce mot
+ * pour mot ; le cote Cisco retombait sur l'egalite.
+ */
+describe('un compte local Cisco survit au chiffrement et au rechargement', () => {
+  const compte = (d: CiscoRouter) => (d as unknown as {
+    getCredentialStore(): { authenticate(n: string, p: string): boolean };
+  }).getCredentialStore();
+
+  it("`username X secret` survit a l'aller-retour d'une configuration", async () => {
+    const source = new CiscoRouter('R1', 0, 0);
+    source.powerOn();
+    for (const c of ['enable', 'configure terminal',
+      'username admin privilege 15 secret Admin@2025', 'end']) {
+      await source.executeCommand(c);
+    }
+    expect(compte(source).authenticate('admin', 'Admin@2025')).toBe(true);
+
+    const rendu = (await source.executeCommand('show running-config'))
+      .split('\n').filter((l) => /^\s*username admin /.test(l));
+    // La configuration porte le CONDENSE — sans quoi ce cas ne prouve rien.
+    expect(rendu.join('\n')).toContain('secret 5 $1$');
+
+    const rechargee = new CiscoRouter('R2', 0, 0);
+    rechargee.powerOn();
+    await rechargee.executeCommand('enable');
+    await rechargee.executeCommand('configure terminal');
+    for (const l of rendu) await rechargee.executeCommand(l.trim());
+    await rechargee.executeCommand('end');
+
+    expect(compte(rechargee).authenticate('admin', 'Admin@2025')).toBe(true);
+    expect(compte(rechargee).authenticate('admin', 'PasLeBon')).toBe(false);
+  }, 30_000);
+
+  it('`username X password` survit a `service password-encryption`', async () => {
+    // Celui-ci ne demande meme pas un rechargement : la MEME machine, au
+    // MEME instant, refusait le mot de passe qu'on venait de lui donner.
+    const d = new CiscoRouter('R1', 0, 0);
+    d.powerOn();
+    for (const c of ['enable', 'configure terminal',
+      'username carl password Carlsecret1', 'service password-encryption', 'end']) {
+      await d.executeCommand(c);
+    }
+    expect(compte(d).authenticate('carl', 'Carlsecret1')).toBe(true);
+    expect(compte(d).authenticate('carl', 'Carlsecret2')).toBe(false);
+  }, 30_000);
+
+  it('un mot de passe en clair reste compare par egalite — le temoin', async () => {
+    const d = new CiscoRouter('R1', 0, 0);
+    d.powerOn();
+    for (const c of ['enable', 'configure terminal',
+      'username bob password Bobsecret1', 'end']) {
+      await d.executeCommand(c);
+    }
+    expect(compte(d).authenticate('bob', 'Bobsecret1')).toBe(true);
+    expect(compte(d).authenticate('bob', 'autre')).toBe(false);
+  }, 30_000);
+});

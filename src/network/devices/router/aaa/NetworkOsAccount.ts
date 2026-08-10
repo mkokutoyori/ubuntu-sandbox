@@ -3,6 +3,7 @@ import {
   huaweiIrreversibleCipher, huaweiDecipher,
   looksLikeIrreversibleCipher, looksLikeReversibleCipher,
 } from '@/crypto/passwords/huawei';
+import { ciscoPasswordMatches } from '../../shells/cisco/ciscoPasswordVerify';
 
 export type SshAuthMethod = 'password' | 'publickey' | 'keyboard-interactive';
 export type PasswordHashAlgorithm =
@@ -333,7 +334,16 @@ export class NetworkOsAccount {
         ? huaweiDecipher(this.secret) === password
         : this.secret === password;
     }
-    return this.secret === password;
+    // Cote Cisco, le meme raisonnement — la configuration ne porte pas le
+    // clair — n'etait applique NULLE PART : `username X secret <mot>` est
+    // rendu `username X secret 5 $1$...`, donc l'import d'une topologie
+    // rangeait le condense et le compte ne se connectait plus jamais ;
+    // et `service password-encryption` cassait `username X password`
+    // sur-le-champ, sans meme attendre un rechargement. Mesure :
+    // `authenticate('admin','Admin@2025')` vrai avant sauvegarde, faux
+    // apres. `ciscoPasswordMatches` retombe sur l'egalite pour une valeur
+    // en clair, donc le cas ordinaire ne change pas.
+    return ciscoPasswordMatches(password, this.secret, this.passwordHashAlgorithm);
   }
 
   allowsService(service: AccountServiceType): boolean {
