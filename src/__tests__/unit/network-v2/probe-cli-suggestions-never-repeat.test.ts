@@ -247,3 +247,129 @@ describe('le cas rapporté, tel quel', () => {
     expect(await r.executeCommand('tacacs-server host 1.1.1.1 key SEC port 49')).toBe('');
   }, 30_000);
 });
+
+/**
+ * `?` et Tab lisent la MÊME règle.
+ *
+ * Corriger `?` seul laissait la moitié du défaut en place : la
+ * complétion par tabulation est une SECONDE marche (`tabCandidates`),
+ * avec ses propres gardes, qui proposait encore ce que `?` venait
+ * d'arrêter de proposer. Deux réponses à une même question, c'est le
+ * défaut que ce dépôt referme partout ailleurs.
+ *
+ * L'invariant n'est pas « les deux listes sont identiques » — Tab
+ * accepte délibérément un mot-clé réel pas encore décrit, que `?`
+ * masque, et c'est écrit dans `autoContinuations`. L'invariant est plus
+ * étroit et plus vrai : **Tab ne propose jamais ce que `?` a
+ * délibérément RETIRÉ** — un mot déjà tapé, un sélecteur de protocole
+ * après la cible.
+ */
+interface TabCli extends Cli {
+  cliTabCandidates(input: string): string[];
+}
+
+/** Le dernier mot de chaque candidat, qui est ce que Tab ajouterait. */
+function tabWords(cli: TabCli, prefix: string): string[] {
+  return cli.cliTabCandidates(prefix)
+    .map((c) => c.trim().split(/\s+/).pop() ?? '')
+    .filter(Boolean);
+}
+
+/**
+ * Marche la même arborescence que la sonde `?`, mais interroge Tab
+ * comme un opérateur le fait : avec un DÉBUT de mot.
+ *
+ * La première écriture demandait Tab sur un préfixe finissant par une
+ * espace — or `tabCandidates` rend `[]` dans ce cas, donc les dix-neuf
+ * cas passaient sans rien vérifier. C'est la faute que cette suite est
+ * censée attraper chez les autres ; elle est notée ici plutôt que
+ * corrigée en silence.
+ */
+async function walkTab(
+  cli: TabCli, mode: string[], label: string, depth = 3,
+): Promise<string[]> {
+  const faults: string[] = [];
+  const seenPrefix = new Set<string>();
+
+  const visit = async (prefix: string, typed: string[], left: number): Promise<void> => {
+    if (left === 0 || seenPrefix.has(prefix)) return;
+    seenPrefix.add(prefix);
+    const already = new Set(typed.map((t) => t.toLowerCase()));
+    // Ce que `?` connaît à cette place sert de plan de marche ; ce que
+    // Tab en fait est ce qu'on vérifie.
+    for (const k of keywords(cli.cliHelp(prefix))) {
+      for (const t of tabWords(cli, `${prefix}${k[0]}`)) {
+        if (already.has(t.toLowerCase())) {
+          faults.push(`${label}: Tab après "${prefix}${k[0]}" propose « ${t} », déjà tapé`);
+        }
+      }
+      if (!already.has(k.toLowerCase())) {
+        await visit(`${prefix}${k} `, [...typed, k], left - 1);
+      }
+    }
+  };
+
+  for (const c of mode) await cli.executeCommand(c);
+  await visit('', [], depth);
+  return [...new Set(faults)];
+}
+
+describe('Tab lit la même règle que `?`', () => {
+  for (const [label, mode] of CISCO_ROUTER_MODES) {
+    it(`${label} (Tab)`, async () => {
+      const r = await ciscoRouter();
+      const faults = await walkTab(r as unknown as TabCli, mode, label);
+      expect(faults, faults.slice(0, 25).join('\n')).toEqual([]);
+    }, 180_000);
+  }
+
+  for (const [label, mode] of CISCO_SWITCH_MODES) {
+    it(`${label} (Tab)`, async () => {
+      const s = await ciscoSwitch();
+      const faults = await walkTab(s as unknown as TabCli, mode, label);
+      expect(faults, faults.slice(0, 25).join('\n')).toEqual([]);
+    }, 180_000);
+  }
+
+  for (const [label, mode] of VRP_ROUTER_MODES) {
+    it(`${label} (Tab)`, async () => {
+      const r = await huaweiRouter();
+      const faults = await walkTab(r as unknown as TabCli, mode, label);
+      expect(faults, faults.slice(0, 25).join('\n')).toEqual([]);
+    }, 180_000);
+  }
+
+  for (const [label, mode] of VRP_SWITCH_MODES) {
+    it(`${label} (Tab)`, async () => {
+      const s = await huaweiSwitch();
+      const faults = await walkTab(s as unknown as TabCli, mode, label);
+      expect(faults, faults.slice(0, 25).join('\n')).toEqual([]);
+    }, 180_000);
+  }
+
+  it('le cas rapporté : Tab ne recomplète pas `server` après `tacacs server`', async () => {
+    const r = await ciscoRouter();
+    await r.executeCommand('configure terminal');
+    const cli = r as unknown as TabCli;
+    expect(tabWords(cli, 'tacacs s')).toContain('server');
+    expect(tabWords(cli, 'tacacs server s')).not.toContain('server');
+    expect(tabWords(cli, 'tacacs-server host k')).toContain('key');
+    expect(tabWords(cli, 'tacacs-server host key k')).not.toContain('key');
+  }, 30_000);
+
+  it('un sélecteur de protocole ne se recomplète pas après la cible', async () => {
+    const r = await ciscoRouter();
+    const cli = r as unknown as TabCli;
+    expect(tabWords(cli, 'ping i')).toEqual(expect.arrayContaining(['ip', 'ipv6']));
+    expect(tabWords(cli, 'ping 1.1.1.1 i')).not.toContain('ip');
+  }, 30_000);
+
+  it('un mot-clé absorbé par un parent glouton reste complétable au-delà', async () => {
+    const r = await ciscoRouter();
+    await r.executeCommand('configure terminal');
+    const cli = r as unknown as TabCli;
+    // `host` est un nœud purement indicatif : la marche de Tab s'y
+    // arrêtait et ne rendait plus rien.
+    expect(tabWords(cli, 'tacacs-server host 1.1.1.1 p')).toContain('port');
+  }, 30_000);
+});

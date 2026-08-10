@@ -25,6 +25,58 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Tab lit la MÊME règle que `?` — LIVRÉ (suite de l'audit)
+
+**Agent** : session « logging ». L'utilisateur a signalé, à juste titre,
+que le correctif précédent n'en couvrait que la moitié : ce que `?` ne
+proposait plus, **Tab le recomplétait encore**.
+
+**Cause** : `tabCandidates` est une SECONDE marche de l'arbre, avec ses
+propres gardes. Elle lisait `node.hintSuggestions` et
+`autoContinuations` directement, sans savoir ce qui avait déjà été
+consommé. Deux réponses à une même question — le défaut que ce dépôt
+referme partout ailleurs.
+
+**Il n'y a plus qu'un endroit qui décide** : `suggestionsApplicables`,
+lue par `nodeCompletionsUnsorted` (`?`) et par `tabCandidates` (Tab).
+Deux exclusions et rien d'autre : un mot-clé déjà sur la ligne, et un
+mot-clé `leadingOnly` une fois qu'un argument a été donné.
+
+**`_porteGreedy` manquait aussi à la marche de Tab** : un nœud purement
+indicatif créé par `describeArgs` sous une commande gloutonne absorbe la
+suite comme elle, et Tab s'arrêtait là où `?` continuait —
+`tacacs-server host 1.1.1.1 p` ne complétait plus rien.
+
+**L'invariant n'est PAS « les deux listes sont identiques »**, et c'est
+écrit dans la sonde : Tab accepte délibérément un mot-clé réel pas
+encore décrit, que `?` masque (`autoContinuations` le documente depuis
+longtemps). L'invariant est plus étroit et plus vrai : Tab ne propose
+jamais ce que `?` a délibérément RETIRÉ.
+
+**Une faute de sonde attrapée avant de compter comme une couverture** :
+la première écriture de la marche Tab interrogeait `tabCandidates` sur
+un préfixe finissant par une espace — or elle rend `[]` dans ce cas,
+donc les dix-neuf cas passaient **sans rien vérifier**. La marche tape
+maintenant un DÉBUT de mot, comme un opérateur ; c'est noté dans le
+fichier plutôt que corrigé en silence.
+
+**Fichiers touchés** : `shells/CommandTrie.ts`.
+
+**Mesures.** 59 fautes Tab distinctes → **0**.
+`probe-cli-suggestions-never-repeat` passe de 25 à **47 cas** (les 22
+modes en `?` et les 22 mêmes en Tab, plus les cas rapportés).
+
+```
+Tab "tacacs server s"          -> []
+Tab "tacacs-server host key k" -> []
+Tab "ping 1.1.1.1 i"           -> []
+Tab "ping 1.1.1.1 repeat 5 r"  -> []
+Tab "ping 1.1.1.1 repeat 5 s"  -> [... size, ... source]
+```
+
+---
+
+
 ### `?` ne repropose plus ce qui est déjà tapé — LIVRÉ (audit complet)
 
 **Agent** : session « logging ». Signalé par l'utilisateur sur `tacacs`,
